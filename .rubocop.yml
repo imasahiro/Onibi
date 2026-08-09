@@ -1,14 +1,8 @@
 AllCops:
-  NewCops: disable
+  TargetRubyVersion: 3.2
 
-Metrics/AbcSize:
-  Exclude:
-    - 'test/**/*'
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
 
-Metrics/BlockLength:
-  Exclude:
-    - 'test/**/*'
-
-Metrics/MethodLength:
-  Exclude:
-    - 'test/**/*'
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
