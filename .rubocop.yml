@@ -1,0 +1,14 @@
+AllCops:
+  NewCops: disable
+
+Metrics/AbcSize:
+  Exclude:
+    - 'test/**/*'
+
+Metrics/BlockLength:
+  Exclude:
+    - 'test/**/*'
+
+Metrics/MethodLength:
+  Exclude:
+    - 'test/**/*'
