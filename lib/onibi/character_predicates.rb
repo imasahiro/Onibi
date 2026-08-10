@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Matches Core MVP character classes without delegating to MRI Regexp.
   module CharacterPredicates
     ASCII_WHITESPACE = [9, 10, 11, 12, 13, 32].freeze
 
