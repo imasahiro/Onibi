@@ -254,7 +254,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Ruby literal interpolation 自体は文字列 API の範囲外として維持する。
 - [x] acceptance: mode の on/off scope と comment/whitespace の parse/match を MRI と比較する。
 
-### REGEXP-010 — Regexp public API を拡張する
+### REGEXP-010 [Complete] — Regexp public API を拡張する
 
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-008, REGEXP-009
@@ -276,6 +276,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.timeout` / `timeout=` と constructor timeout keywordの基本設定を追加する。
 - [x] Onibi Regexp copy時のtimeout保持とconstructor/compile overrideを追加する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
+- [x] `Regexp.last_match` は global match state を導入しない v1 non-goal とする。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - [x] `Regexp.union` の単一 Array 入力（文字列、compiled pattern、空配列）を追加する。
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
