@@ -94,7 +94,7 @@
 | introspection | options | ◐ | `Regexp#options` はRuby互換の整数bitmaskを返す。array constructor入力を含む全option意味・encoding flagの互換性は未対応。 |
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
 | introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、match評価への基本適用を実装。Rubyの厳密なtimeout error/class・copy semanticsは未対応。 |
-| object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。全 encoding/option 表現は未対応。 |
+| object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。`to_s` / `inspect` の Ruby mode flag order（`mix`）も対応。全 encoding/option 表現は未対応。 |
 | class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の ignorecase に加えて multiline / extended scope も保持するが、その他の全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
 | class utility | Regexp.linear_time? | ◐ | String/MRI Regexp/Onibi Regexpを受け取り、backreference、subexpression call、lookaround、atomic groupを含むpatternを保守的にfalse判定する基本APIを実装。nested quantifierや実行器依存の厳密判定は未対応。 |
@@ -246,6 +246,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] source と casefold? の基本 introspection を追加する。
 - [x] `==`、`eql?`、`hash` の基本 object semantics を追加する。
 - [x] 基本的な `inspect` / `to_s` formatting を追加する。
+- [x] `to_s` / `inspect` の Ruby mode flag order（`mix`）を追加する。
 - [x] 既存 `Onibi::Regexp` を `new` / `compile` に渡す基本コピーを追加する。
 - [x] MRI `Regexp` を `new` / `compile` に渡す source/options ベースの基本コピーを追加する。
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
