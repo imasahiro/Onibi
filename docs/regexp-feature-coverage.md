@@ -79,7 +79,7 @@
 
 | 分類 | Ruby 4.0.6 の機能 | Onibi | 判定理由 |
 | --- | --- | --- | --- |
-| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式。整数/文字列 flag、Regexp 引数、timeout は未対応。 |
+| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式だが、既存 Onibi::Regexp 引数のコピーを実装。Ruby 互換 flags、Regexp 引数の全互換、timeout は未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
@@ -238,6 +238,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] source と casefold? の基本 introspection を追加する。
 - [x] `==`、`eql?`、`hash` の基本 object semantics を追加する。
 - [x] 基本的な `inspect` / `to_s` formatting を追加する。
+- [x] 既存 `Onibi::Regexp` を `new` / `compile` に渡す基本コピーを追加する。
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
