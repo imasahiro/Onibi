@@ -23,6 +23,8 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def match: (String input) -> MatchData?"
     assert_includes signature, "def encoding: () -> Encoding"
     assert_includes signature, "def fixed_encoding?: () -> bool"
+    assert_includes signature, "(::Regexp pattern) -> Regexp"
+    assert_includes signature, "(::Regexp pattern) -> void"
     assert_includes signature, "def options: () -> (Array[String] | Integer)"
     assert_includes signature, "def self.dfa_memory_budget: () -> Integer"
     assert_includes signature, "def self.dfa_memory_budget=: (Integer value) -> Integer"

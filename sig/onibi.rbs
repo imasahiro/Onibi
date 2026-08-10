@@ -17,6 +17,7 @@ module Onibi
     def self.compile: (String pattern) -> Regexp
                       | (String pattern, Array[String]? options) -> Regexp
                       | (String pattern, Integer options) -> Regexp
+                      | (::Regexp pattern) -> Regexp
                       | (Regexp pattern) -> Regexp
     def self.escape: (untyped string) -> String
     def self.union: (*String patterns) -> Regexp
@@ -26,6 +27,7 @@ module Onibi
     def initialize: (String pattern) -> void
                   | (String pattern, Array[String]? options) -> void
                   | (String pattern, Integer options) -> void
+                  | (::Regexp pattern) -> void
                   | (Regexp pattern) -> void
     def match?: (String input) -> bool
     def match: (String input) -> MatchData?

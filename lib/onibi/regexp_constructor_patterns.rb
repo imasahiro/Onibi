@@ -6,9 +6,13 @@ module Onibi
     private
 
     def normalize_constructor_pattern(pattern, options)
-      return [pattern.source, pattern.options] if pattern.is_a?(Regexp)
+      return [pattern.source, pattern.options] if compiled_pattern?(pattern)
 
       [pattern, options]
+    end
+
+    def compiled_pattern?(pattern)
+      pattern.respond_to?(:source) && pattern.respond_to?(:options)
     end
 
     def prepare_constructor_pattern(pattern, options)
