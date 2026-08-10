@@ -3,8 +3,19 @@
 module Onibi
   # Matches Unicode general categories and POSIX-compatible categories.
   module UnicodePropertyCategories
+    UNCASED_LETTER_RANGES = [
+      (0x3040..0x30FF), # Hiragana and Katakana
+      (0x3400..0x4DBF), # CJK Unified Ideographs Extension A
+      (0x4E00..0x9FFF), # CJK Unified Ideographs
+      (0xAC00..0xD7AF)  # Hangul syllables
+    ].freeze
+
     def letter?(character)
-      character.downcase != character.upcase
+      character.downcase != character.upcase || uncased_letter?(character)
+    end
+
+    def uncased_letter?(character)
+      UNCASED_LETTER_RANGES.any? { |range| range.cover?(character.codepoints.first) }
     end
 
     def digit?(character)
