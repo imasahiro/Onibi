@@ -16,31 +16,27 @@ module Onibi
     private
 
     def match_from?(input, start)
-      pending = [[0, start]]
       visited = {}
 
-      until pending.empty?
-        pc, position = pending.pop
-        next if visited[[pc, position]]
+      run_state(0, start, input, visited)
+    end
 
-        visited[[pc, position]] = true
-        instruction = instruction_at(pc)
-        puts "VM #{pc}:#{position} #{instruction.opcode} #{input[position].inspect}" if ENV["ONIBI_TRACE"]
-        case instruction.opcode
-        when :match then return true
-        when :split
-          pending << [instruction.operand, position]
-          pending << [instruction.target, position]
-        when :jump then pending << [instruction.target, position]
-        when :save_start, :save_end then pending << [pc + 1, position]
-        when :anchor
-          pending << [pc + 1, position] if anchor_matches?(instruction.operand, position, input.length)
-        when :char, :class, :escape, :any
-          pending << [pc + 1, position + 1] if position < input.length && matches?(instruction, input[position])
-        end
-      end
+    def run_state(pc, position, input, visited)
+      return false if visited[[pc, position]]
 
-      false
+      visited[[pc, position]] = true
+      instruction = instruction_at(pc)
+      return true if instruction.opcode == :match
+      return run_state(instruction.operand, position, input, visited) ||
+        run_state(instruction.target, position, input, visited) if instruction.opcode == :split
+      return run_state(instruction.target, position, input, visited) if instruction.opcode == :jump
+      return run_state(pc + 1, position, input, visited) if %i[save_start save_end].include?(instruction.opcode)
+      return run_state(pc + 1, position, input, visited) if instruction.opcode == :anchor && anchor_matches?(instruction.operand, position, input.length)
+      return false unless position < input.length
+      return false unless %i[char class escape any].include?(instruction.opcode)
+      return false unless matches?(instruction, input[position])
+
+      run_state(pc + 1, position + 1, input, visited)
     end
 
     def matches?(instruction, character)
