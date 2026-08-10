@@ -37,4 +37,12 @@ class CharacterClassSyntaxTest < Minitest::Test
     assert not_alpha.match?("1")
     refute not_alpha.match?("A")
   end
+
+  def test_caret_control_escapes_inside_character_classes
+    regexp = Onibi::Regexp.new("[\\cA\\C-B]")
+
+    assert regexp.match?("\x01")
+    assert regexp.match?("\x02")
+    refute regexp.match?("A")
+  end
 end
