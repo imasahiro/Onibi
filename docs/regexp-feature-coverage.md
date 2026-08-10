@@ -178,7 +178,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] character class 内の caret control escapes（`\\cX`、`\\C-X`）を class matcher に接続する。
 - [x] ASCII-8BIT character class 内の meta escapes（`\\M-X`、`\\M-\\C-X`、`\\M-\\xNN`）を class matcher に接続する。
 - [x] Unicode property escapes（`\\p{...}`、`\\P{...}`、`\\p{^...}`）を class matcher に接続する。
-- acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
+- [x] character class の acceptance corpus を MRI と比較する（nested、intersection、literal escape、hex/Unicode escape）。
 
 ### REGEXP-005 [Complete] — Unicode property と POSIX class を実装する
 
