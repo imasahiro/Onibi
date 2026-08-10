@@ -296,7 +296,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - class/instance timeout と timeout error を追加する。
 - [x] class/instance timeout の 0 および負値を拒否する。
 - [x] timeout 発生時に `Regexp::TimeoutError` 相当の専用例外を返す。
-- Regexp.linear_time? 相当の安全性判定を追加する。
+- [x] Regexp.linear_time? 相当の保守的な安全性判定（backreference、lookaround、atomic group、absence operator）を追加する。
 - NFA/DFA のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。
 - backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
 
