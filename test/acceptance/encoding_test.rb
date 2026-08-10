@@ -31,6 +31,12 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_invalid_utf8_pattern_raises_argument_error
+    invalid_utf8 = [0xff].pack("C*").force_encoding(Encoding::UTF_8)
+
+    assert_raises(ArgumentError) { Onibi::Regexp.new(invalid_utf8) }
+  end
+
   def test_incompatible_pattern_and_input_encodings_raise
     utf8_pattern = "é".encode(Encoding::UTF_8)
     ascii8bit_input = "é".b
