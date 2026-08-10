@@ -118,4 +118,20 @@ class RegexpUtilityTest < Minitest::Test
     refute Onibi::Regexp.linear_time?("(?=a)b")
     refute Onibi::Regexp.linear_time?("(?~a)")
   end
+
+  def test_linear_time_rejects_each_supported_non_linear_syntax_family
+    unsafe_patterns = [
+      "(?<word>a)\\k<word>",
+      "(?=a)b",
+      "(?!a)b",
+      "(?<=a)b",
+      "(?<!a)b",
+      "(?>a|ab)",
+      "(?~a)"
+    ]
+
+    unsafe_patterns.each do |pattern|
+      refute Onibi::Regexp.linear_time?(pattern), "expected #{pattern} to be unsafe"
+    end
+  end
 end

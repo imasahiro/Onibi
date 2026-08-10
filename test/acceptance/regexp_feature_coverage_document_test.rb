@@ -36,5 +36,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "global match variables は設計スコープ外"
     assert_includes document, "public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較"
     assert_includes document, "MatchData メソッド一覧を網羅"
+    assert_includes document, "危険パターンの安全性を differential/property test"
   end
 end
