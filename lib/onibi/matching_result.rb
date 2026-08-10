@@ -42,6 +42,8 @@ module Onibi
     end
 
     def literal_casefold_matchable?(pattern, options)
+      return false if options.include?("extended")
+
       options.include?("ignorecase") && pattern.each_char.all? do |character|
         !"\\()|*+?{}[].^$".include?(character)
       end
