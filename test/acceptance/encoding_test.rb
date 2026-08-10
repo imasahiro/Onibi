@@ -45,4 +45,17 @@ class EncodingTest < Minitest::Test
       Onibi::Regexp.new(utf8_pattern).match?(ascii8bit_input)
     end
   end
+
+  def test_noencoding_matches_binary_input_one_byte_at_a_time
+    regexp = Onibi::Regexp.new(".", Onibi::Regexp::NOENCODING)
+
+    assert_equal Onibi::Regexp::NOENCODING, regexp.options
+    assert regexp.match?("é".b)
+  end
+
+  def test_noencoding_rejects_non_ascii_patterns
+    assert_raises(Onibi::RegexpError) do
+      Onibi::Regexp.new("é", Onibi::Regexp::NOENCODING)
+    end
+  end
 end
