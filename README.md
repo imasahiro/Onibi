@@ -25,6 +25,10 @@ require "onibi"
 
 regexp = Onibi::Regexp.new("a+")
 regexp.match?("aaa")
+regexp.match("aaa")[0]
+
+compiled = Onibi::Regexp.compile("cat", ["ignorecase"])
+compiled.match?("A CAT")
 ```
 
 ## Development

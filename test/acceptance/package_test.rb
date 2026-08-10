@@ -4,6 +4,7 @@ require "test_helper"
 require "open3"
 require "tmpdir"
 require "rbconfig"
+require "rubygems/package"
 
 class PackageTest < Minitest::Test
   def test_gem_installs_in_a_clean_home_and_loads_public_api
@@ -14,6 +15,22 @@ class PackageTest < Minitest::Test
       assert_command_success(run_smoke(gem_home))
     end
   end
+
+  # rubocop:disable Metrics/AbcSize
+  def test_gem_contains_release_files_and_no_runtime_dependencies
+    Dir.mktmpdir("onibi-package") do |directory|
+      gem_path = build_package(directory)
+      specification = Gem::Package.new(gem_path).spec
+
+      assert_equal "0.1.0", specification.version.to_s
+      assert_empty specification.runtime_dependencies
+      assert_includes specification.files, "README.md"
+      assert_includes specification.files, "LICENSE"
+      assert_includes specification.files, "onibi.gemspec"
+      assert_includes specification.files, "lib/onibi.rb"
+    end
+  end
+  # rubocop:enable Metrics/AbcSize
 
   private
 
