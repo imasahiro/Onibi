@@ -7,6 +7,7 @@ module Onibi
     include LexerOptionGroups
     include LexerComments
     include LexerExtendedMode
+    include LexerExtendedScopes
     include LexerDispatch
     include LexerTokenStream
     include LexerEscapes
@@ -43,6 +44,7 @@ module Onibi
     def initialize(source, options = [])
       @source = LexerScopedExtended.normalize(source)
       @extended = options.include?("extended")
+      @extended_scopes = []
     end
 
     private
