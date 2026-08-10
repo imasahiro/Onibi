@@ -92,7 +92,9 @@ module Onibi
     end
 
     def ast_matcher_required?
-      ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P"].any? { |escape| @pattern.include?(escape) }
+      ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "*+", "++", "?+", "*?", "++", "+?", "??"].any? do |escape|
+        @pattern.include?(escape)
+      end
     end
 
     def normalize_options(options)
