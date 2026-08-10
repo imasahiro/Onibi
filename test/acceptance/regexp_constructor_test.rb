@@ -14,7 +14,8 @@ class RegexpConstructorTest < Minitest::Test
   def test_default_options_are_stable_and_invalid_options_fail
     regexp = Onibi::Regexp.new("cat")
 
-    assert_equal [], regexp.options
+    assert_equal 0, regexp.options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", ["ignorecase"]).options
     assert_raises(ArgumentError) { Onibi::Regexp.compile("cat", ["unknown"]) }
   end
 

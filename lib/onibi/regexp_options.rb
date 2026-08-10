@@ -96,7 +96,13 @@ module Onibi
     def store_pattern_options(pattern, normalized_options, options)
       @pattern = pattern
       @options = normalized_options
-      @public_options = options.is_a?(Integer) ? options : normalized_options
+      @public_options = option_bits(normalized_options)
+    end
+
+    def option_bits(options)
+      integer_option_names.reduce(0) do |bits, (name, flag)|
+        options.include?(name) ? bits | flag : bits
+      end
     end
 
     def normalize_integer_options(options)
