@@ -10,6 +10,6 @@ class MatchDataTest < Minitest::Test
     assert_equal ["bc"], match_data.captures
     assert_equal 0, match_data.begin(0)
     assert_equal 3, match_data.end(1)
-    assert_equal ["abcd", "bc"], match_data.to_a
+    assert_equal %w[abcd bc], match_data.to_a
   end
 end
