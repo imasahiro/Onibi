@@ -54,6 +54,14 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal "(?i-mx:cat)", regexp.to_s
   end
 
+  def test_to_s_and_inspect_use_ruby_mode_flag_order
+    regexp = Onibi::Regexp.new("cat", Onibi::Regexp::IGNORECASE |
+      Onibi::Regexp::MULTILINE | Onibi::Regexp::EXTENDED)
+
+    assert_equal "(?mix:cat)", regexp.to_s
+    assert_equal "/cat/mix", regexp.inspect
+  end
+
   def test_inspect_uses_regexp_literal_format
     regexp = Onibi::Regexp.new("cat", ["ignorecase"])
 
