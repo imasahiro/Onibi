@@ -27,4 +27,14 @@ class CharacterClassSyntaxTest < Minitest::Test
     assert regexp.match?("]")
     refute regexp.match?("a")
   end
+
+  def test_unicode_property_escapes_inside_character_classes
+    hiragana = Onibi::Regexp.new("[\\p{Hiragana}]")
+    not_alpha = Onibi::Regexp.new("[\\P{Alpha}]")
+
+    assert hiragana.match?("あ")
+    refute hiragana.match?("A")
+    assert not_alpha.match?("1")
+    refute not_alpha.match?("A")
+  end
 end

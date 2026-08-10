@@ -58,6 +58,9 @@ module Onibi
         return [[:nested, source[(index + 1)...ending]], ending + 1]
       end
       if source[index] == "\\"
+        property, ending = property_escape(source, index)
+        return [property, ending] if property
+
         decoded, ending = literal_escape(source, index)
         return [[:literal, decoded], ending] if decoded
 
@@ -116,8 +119,32 @@ module Onibi
       kind, value = atom
       return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
       return matches?(value, character, ignorecase: ignorecase) if kind == :nested
+      return property_matches?(value, character) if kind == :property
 
       escaped_matches?(value, character)
+    end
+
+    def property_matches?(property, character)
+      name, negated = property
+      matched = UnicodeProperties.matches?(name, character)
+      negated ? !matched : matched
+    end
+
+    def property_escape(source, index)
+      kind = source[index + 1]
+      return [nil, nil] unless %w[p P].include?(kind) && source[index + 2] == "{"
+
+      ending = source.index("}", index + 3)
+      raise RegexpError, "invalid Unicode property" unless ending
+
+      name = source[(index + 3)...ending]
+      negated = kind == "P"
+      if name.start_with?("^")
+        name = name[1..]
+        negated = !negated
+      end
+      UnicodeProperties.validate!(name)
+      [[:property, [name, negated]], ending + 1]
     end
 
     def escaped_matches?(value, character)
