@@ -16,6 +16,7 @@ module Onibi
       AST::Property => :property_results,
       AST::Backreference => :backreference_results,
       AST::SubexpressionCall => :subexpression_call_results,
+      AST::Absence => :absence_results,
       AST::Assertion => :assertion_results,
       AST::Any => :any_results,
       AST::Anchor => :anchor_results
@@ -28,7 +29,8 @@ module Onibi
       AST::Alternation => :alternation_capture_count,
       AST::Quantifier => :expression_capture_count,
       AST::Conditional => :conditional_capture_count,
-      AST::SubexpressionCall => :subexpression_capture_count
+      AST::SubexpressionCall => :subexpression_capture_count,
+      AST::Absence => :body_capture_count
     }.freeze
 
     private
