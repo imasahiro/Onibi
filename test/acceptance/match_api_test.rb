@@ -78,4 +78,15 @@ class MatchApiTest < Minitest::Test
     assert_equal ["abcd", "cd", nil], match.values_at(0, 2, 9)
     assert_equal %w[abcd ab], match.values_at(0..1)
   end
+
+  def test_match_exposes_input_regexp_and_surrounding_text
+    regexp = Onibi::Regexp.new("cat")
+    input = "wildcatdog"
+    match = regexp.match(input)
+
+    assert_same input, match.string
+    assert_same regexp, match.regexp
+    assert_equal "wild", match.pre_match
+    assert_equal "dog", match.post_match
+  end
 end

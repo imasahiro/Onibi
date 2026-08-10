@@ -52,6 +52,10 @@ module Onibi
     def length: () -> Integer
     def size: () -> Integer
     def values_at: (*untyped indices) -> Array[String?]
+    def string: () -> String?
+    def regexp: () -> Regexp?
+    def pre_match: () -> String?
+    def post_match: () -> String?
     def named_captures: () -> Hash[String, String?]
   end
 end
