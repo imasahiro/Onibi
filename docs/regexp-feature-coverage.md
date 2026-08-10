@@ -25,7 +25,7 @@
 | 文字クラス | 列挙 | [abc] | ✅ | 実装済み。 |
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
 | 文字クラス | 範囲 | [a-z]、[a-cd-f] | ✅ | 基本範囲を実装済み。 |
-| 文字クラス | クラス内のエスケープ | [\]]、[\-]、[\x41]、[\u{1F600}] | ◐ | character class escape decoder で control/hex/Unicode escape、Unicode property escape（`[\\p{...}]` / `[\\P{...}]`）と literal escape を処理する。POSIX/全 Unicode class escape の互換性は未完了。 |
+| 文字クラス | クラス内のエスケープ | [\]]、[\-]、[\x41]、[\u{1F600}] | ◐ | character class escape decoder で control（`\\cX` / `\\C-X`）/hex/Unicode escape、Unicode property escape（`[\\p{...}]` / `[\\P{...}]`）と literal escape を処理する。POSIX/全 Unicode class escape の互換性は未完了。 |
 | 文字クラス | ネスト | [a-z[0-9]] | ✅ | 実装済み。 |
 | 文字クラス | 交差 | [a-w&&[^c-g]z] | ✅ | && による集合演算を実装済み。 |
 | 省略クラス | 単語文字 | \w | ✅ | ASCII の [A-Za-z0-9_] 相当。Ruby 4.0.6 の `\\w` も Unicode word ではないため、ASCII-only semantics が一致する。 |
@@ -174,6 +174,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] caret control escapes（`\\cX`、`\\C-X`）を literal AST に接続する。
 - [x] meta escapes（`\\M-X`、`\\M-\\C-X`、`\\M-\\xNN`）を ASCII-8BIT の high-bit byte に接続する。
 - [x] character class escape decoder を class matcher に接続する。
+- [x] character class 内の caret control escapes（`\\cX`、`\\C-X`）を class matcher に接続する。
 - [x] Unicode property escapes（`\\p{...}`、`\\P{...}`、`\\p{^...}`）を class matcher に接続する。
 - acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
 
