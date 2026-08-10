@@ -39,7 +39,6 @@ module Onibi
     end
     # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
-    # rubocop:disable Metrics/MethodLength
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
@@ -49,7 +48,6 @@ module Onibi
       dfa_specialization
       result
     end
-    # rubocop:enable Metrics/MethodLength
 
     def match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
