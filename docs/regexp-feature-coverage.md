@@ -83,7 +83,7 @@
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
-| mode | x / EXTENDED | ◐ | `extended` option と `Regexp::EXTENDED` integer flag で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
+| mode | x / EXTENDED | ◐ | `extended` option と `Regexp::EXTENDED` integer flag で pattern の whitespace と top-level `#` comment を無視し、escaped whitespace/comment marker を literal として処理する。一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
 | mode | inline modifier | (?i)、(?-i)、(?m)、(?-m)、(?x)、(?-x)、(?imx)、(?-imx)、(?i:pat) | ◐ | single/combined prefix と、`(?i:pat)` / `(?-i:pat)` / scoped multiline / positive scoped extended mode / negative scoped extended mode / nested mixed extended scopes / scoped combined i/m/x modes の option・lexer処理を実装。任意の混在 scopeは未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返し、position 引数による検索開始位置、capture、offset、regexp、pre/post match 等を提供する。ただし MatchData の互換性は未完成。 |
@@ -231,6 +231,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P1
 - Dependencies: REGEXP-002, REGEXP-007
 - [x] extended mode x の whitespace/comment 処理を lexer 前処理として追加する。
+- [x] extended mode の escaped whitespace と escaped `#` を literal として処理する。
 - [x] (?#comment) を追加する。
 - [x] inline modifier prefix `(?i)` / `(?-i)` を追加する。
 - [x] inline modifier prefix `(?m)` / `(?-m)` を既存の multiline option に接続する。
