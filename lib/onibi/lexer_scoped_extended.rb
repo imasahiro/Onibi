@@ -30,6 +30,14 @@ module Onibi
       index = 0
       in_class = false
       while index < source.length
+        if !in_class && source[index, 5] == "(?-x:"
+          ending = group_end(source, index)
+          raise RegexpError, "unterminated scoped extended group" unless ending
+
+          result << source[index..ending]
+          index = ending + 1
+          next
+        end
         character = source[index]
         if character == "\\"
           result << source[index, 2]
