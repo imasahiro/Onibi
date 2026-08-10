@@ -22,6 +22,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u{}") }
   end
 
+  def test_character_classes_decode_literal_escape_sequences
+    assert Onibi::Regexp.new("[\\x41]").match?("A")
+    assert Onibi::Regexp.new("[\\n]").match?("\n")
+    assert Onibi::Regexp.new("[\\u{1F600}]").match?("😀")
+  end
+
   def test_dot_excludes_newline_unless_multiline_is_enabled
     refute Onibi::Regexp.new(".").match?("\n")
     assert Onibi::Regexp.new(".", ["multiline"]).match?("\n")
