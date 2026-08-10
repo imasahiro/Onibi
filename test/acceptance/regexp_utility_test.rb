@@ -10,4 +10,18 @@ class RegexpUtilityTest < Minitest::Test
   def test_escape_quotes_spaces_and_comments
     assert_equal "a\\ b\\#", Onibi::Regexp.escape("a b#")
   end
+
+  def test_union_escapes_string_patterns_and_matches_each_alternative
+    regexp = Onibi::Regexp.union("a.b", "cat")
+
+    assert_equal "a\\.b|cat", regexp.source
+    assert regexp.match?("a.b")
+    assert regexp.match?("cat")
+    refute regexp.match?("dog")
+  end
+
+  def test_union_of_no_patterns_never_matches
+    refute Onibi::Regexp.union.match?("")
+    refute Onibi::Regexp.union.match?("anything")
+  end
 end

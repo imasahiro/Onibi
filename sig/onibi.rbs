@@ -17,6 +17,7 @@ module Onibi
                       | (String pattern, Array[String]? options) -> Regexp
                       | (String pattern, Integer options) -> Regexp
     def self.escape: (untyped string) -> String
+    def self.union: (*String patterns) -> Regexp
     def self.dfa_memory_budget: () -> Integer
     def self.dfa_memory_budget=: (Integer value) -> Integer
 
