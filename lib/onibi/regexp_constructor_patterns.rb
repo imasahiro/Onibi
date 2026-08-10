@@ -5,10 +5,13 @@ module Onibi
   module RegexpConstructorPatterns
     private
 
-    def normalize_constructor_pattern(pattern, options)
-      return [pattern.source, pattern.options] if compiled_pattern?(pattern)
+    def normalize_constructor_pattern(pattern, options, timeout)
+      if compiled_pattern?(pattern)
+        inherited_timeout = timeout.nil? && pattern.respond_to?(:timeout) ? pattern.timeout : timeout
+        return [pattern.source, pattern.options, inherited_timeout]
+      end
 
-      [pattern, options]
+      [pattern, options, timeout]
     end
 
     def compiled_pattern?(pattern)

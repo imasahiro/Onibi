@@ -94,4 +94,12 @@ class RegexpConstructorTest < Minitest::Test
   ensure
     Onibi::Regexp.timeout = original
   end
+
+  def test_copy_preserves_or_overrides_instance_timeout
+    original = Onibi::Regexp.new("cat", timeout: 0.5)
+
+    assert_equal 0.5, Onibi::Regexp.new(original).timeout
+    assert_equal 0.2, Onibi::Regexp.new(original, timeout: 0.2).timeout
+    assert_equal 0.2, Onibi::Regexp.compile(original, timeout: 0.2).timeout
+  end
 end

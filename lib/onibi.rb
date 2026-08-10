@@ -81,7 +81,7 @@ module Onibi
     end
 
     def initialize(pattern, options = nil, timeout: nil)
-      pattern, options = normalize_constructor_pattern(pattern, options)
+      pattern, options, timeout = normalize_constructor_pattern(pattern, options, timeout)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       @ast = Parser.new(pattern, normalized_options).parse
