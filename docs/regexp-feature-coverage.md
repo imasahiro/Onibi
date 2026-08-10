@@ -81,11 +81,11 @@
 | --- | --- | --- | --- |
 | constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式。整数/文字列 flag、Regexp 引数、timeout は未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
-| mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と全構文への fold 伝播は未対応。 |
+| mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ◐ | Onibi の multiline は ^/$ の判定にも影響する。Ruby の m は dot-all で ^/$ を変更しない。 |
-| mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と inline modifier は未対応。 |
+| mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
-| mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と全体 wrapper の `(?i:pat)` を実装。複合 pattern 内の任意 scope は未対応。 |
+| mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と、複合 pattern 内を含む `(?i:pat)` / `(?-i:pat)` の scoped option AST を実装。全 modifier 組み合わせは未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
 | matching | Regexp#match? | ✅ | boolean を返す基本 API は実装済み。 |
 | matching | Regexp#=~、Regexp#===、unary ~ | ❌ | 未実装。 |
@@ -224,7 +224,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] (?#comment) を追加する。
 - [x] inline modifier prefix `(?i)` / `(?-i)` を追加する。
 - [x] inline modifier `(?i:...)` を全体 wrapper として追加する。
-- inline modifier を複合 pattern 内の scope 付き option AST にする。
+- [x] inline modifier を複合 pattern 内の scope 付き option AST にする。
 - Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
 - acceptance: mode の on/off scope と comment/whitespace の parse/match を比較する。
 
