@@ -6,7 +6,10 @@ class LexerTest < Minitest::Test
   def test_core_syntax_is_tokenized_through_the_public_engine
     tokens = Onibi::Lexer.new("a\\d[bc](x|y)*^$").tokens
 
-    expected = %i[literal digit class open_group literal alternation literal close_group quantifier anchor_start anchor_end]
+    expected = %i[
+      literal digit class open_group literal alternation literal close_group
+      quantifier anchor_start anchor_end
+    ]
 
     assert_equal expected,
                  tokens.map(&:type)
