@@ -100,7 +100,7 @@ module Onibi
     end
 
     def class_matches?(source, character)
-      ClassPredicates.matches?(source, character)
+      ClassPredicates.matches?(source, character, ignorecase: @ignorecase)
     end
 
     def character_matches?(source, character)
