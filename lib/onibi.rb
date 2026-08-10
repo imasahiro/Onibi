@@ -101,7 +101,7 @@ module Onibi
     def validate_pattern_encoding!(pattern)
       return if pattern.valid_encoding?
 
-      raise ArgumentError, "invalid byte sequence in #{pattern.encoding}"
+      raise RegexpError, "invalid byte sequence in #{pattern.encoding}"
     end
 
     def ast_matcher_required?
