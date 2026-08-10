@@ -63,6 +63,7 @@ module Onibi
     include RegexpConstructorPatterns
     include RegexpEncodingValidation
     include RegexpObjectSemantics
+    include RegexpTimeout
 
     IGNORECASE = 1
     EXTENDED = 2
@@ -71,18 +72,8 @@ module Onibi
     NOENCODING = 32
 
     @dfa_memory_budget = 1
-    @timeout = nil
-
     class << self
       attr_accessor :dfa_memory_budget
-
-      def timeout
-        @timeout
-      end
-
-      def timeout=(value)
-        @timeout = RegexpTimeout.normalize_timeout(value)
-      end
     end
 
     def self.compile(pattern, options = nil, timeout: nil)
@@ -97,16 +88,12 @@ module Onibi
       @bytecode = Compiler.new(@ast).compile
     end
 
-    def timeout
-      @timeout
-    end
-
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
 
-      result = RegexpTimeout.with_timeout(@timeout, self.class.timeout) { matching_result(input) }
+      result = with_timeout { matching_result(input) }
 
       dfa_specialization
       result
@@ -117,7 +104,7 @@ module Onibi
 
       validate_encoding!(input)
 
-      details = RegexpTimeout.with_timeout(@timeout, self.class.timeout) { match_details(input) }
+      details = with_timeout { match_details(input) }
       dfa_specialization
       return nil unless details
 

@@ -5,7 +5,21 @@ require "timeout"
 module Onibi
   # Applies class and instance timeout limits to regexp matching.
   module RegexpTimeout
-    module_function
+    def self.included(base)
+      base.extend(ClassMethods)
+    end
+
+    attr_reader :timeout
+
+    module ClassMethods
+      def timeout
+        @timeout
+      end
+
+      def timeout=(value)
+        @timeout = RegexpTimeout.normalize_timeout(value)
+      end
+    end
 
     def normalize_timeout(value)
       return if value.nil?
@@ -14,12 +28,13 @@ module Onibi
 
       value.to_f
     end
+    module_function :normalize_timeout
 
-    def with_timeout(instance_timeout, class_timeout)
-      limit = instance_timeout.nil? ? class_timeout : instance_timeout
-      return yield if limit.nil?
+    def with_timeout(&block)
+      limit = @timeout.nil? ? self.class.timeout : @timeout
+      return block.call if limit.nil?
 
-      Timeout.timeout(limit) { yield }
+      Timeout.timeout(limit, &block)
     end
   end
 end
