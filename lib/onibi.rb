@@ -5,6 +5,7 @@ require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
 require_relative "onibi/lexer_classes"
+require_relative "onibi/lexer_escapes"
 require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
 require_relative "onibi/class_predicates"
@@ -25,6 +26,7 @@ require_relative "onibi/ast_matcher_dispatch"
 require_relative "onibi/ast_matcher"
 require_relative "onibi/capture_matcher_dispatch"
 require_relative "onibi/capture_matcher_atoms"
+require_relative "onibi/capture_matcher_subexpressions"
 require_relative "onibi/capture_matcher"
 require_relative "onibi/capture_name_collector"
 require_relative "onibi/backreference_lexer"
@@ -114,7 +116,7 @@ module Onibi
     end
 
     def capture_matcher_required?
-      ["\\k", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?("].any? do |escape|
+      ["\\k", "\\g", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?("].any? do |escape|
         @pattern.include?(escape)
       end
     end

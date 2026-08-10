@@ -4,6 +4,7 @@ module Onibi
   # Converts the Core MVP pattern syntax into parser-ready tokens.
   class Lexer
     include LexerClasses
+    include LexerEscapes
     Token = Struct.new(:type, :value, :position)
 
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
@@ -82,12 +83,12 @@ module Onibi
     def escaped_token(index)
       escaped = @source[index + 1]
       raise RegexpError, "trailing escape" if escaped.nil?
-      return backreference_token(index) if digit_escape?(escaped) || escaped == "k"
-      return property_token(index) if %w[p P].include?(escaped)
+
+      special = special_escape_token(index, escaped)
+      return special if special
 
       type = ESCAPED_TYPES[escaped]
-      return [Token.new(type, escaped, index), index + 2] if type
-      return [Token.new(:literal, escaped, index), index + 2] if ESCAPED_LITERALS.include?(escaped)
+      return escaped_type_token(type, escaped, index) if type || ESCAPED_LITERALS.include?(escaped)
 
       raise RegexpError, "unknown escape \\#{escaped}"
     end
