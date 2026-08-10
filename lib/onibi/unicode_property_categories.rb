@@ -1,0 +1,62 @@
+# frozen_string_literal: true
+
+module Onibi
+  # Matches Unicode general categories and POSIX-compatible categories.
+  module UnicodePropertyCategories
+    def letter?(character)
+      character.downcase != character.upcase
+    end
+
+    def digit?(character)
+      codepoint = character.codepoints.first
+      CharacterPredicates.escape_matches?(:digit, character) || codepoint.between?(0x660, 0x669)
+    end
+
+    def xdigit?(character)
+      codepoint = character.downcase.codepoints.first
+      digit?(character) || codepoint.between?("a".ord, "f".ord)
+    end
+
+    def alnum?(character)
+      letter?(character) || digit?(character)
+    end
+
+    def lower?(character)
+      letter?(character) && character == character.downcase
+    end
+
+    def upper?(character)
+      letter?(character) && character == character.upcase
+    end
+
+    def space?(character)
+      CharacterPredicates.whitespace?(character)
+    end
+
+    def word?(character)
+      CharacterPredicates.word?(character) || letter?(character)
+    end
+
+    def blank?(character)
+      CharacterPredicates.horizontal_whitespace?(character)
+    end
+
+    def cntrl?(character)
+      character.codepoints.first < 32 || character.codepoints.first == 127
+    end
+
+    def graph?(character)
+      !space?(character) && !cntrl?(character)
+    end
+
+    def print?(character)
+      !cntrl?(character)
+    end
+
+    def punct?(character)
+      codepoint = character.codepoints.first
+      codepoint.between?(33, 47) || codepoint.between?(58, 64) ||
+        codepoint.between?(91, 96) || codepoint.between?(123, 126)
+    end
+  end
+end

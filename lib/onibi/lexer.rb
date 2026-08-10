@@ -81,6 +81,7 @@ module Onibi
     def escaped_token(index)
       escaped = @source[index + 1]
       raise RegexpError, "trailing escape" if escaped.nil?
+      return property_token(index) if %w[p P].include?(escaped)
 
       type = ESCAPED_TYPES[escaped]
       return [Token.new(type, escaped, index), index + 2] if type

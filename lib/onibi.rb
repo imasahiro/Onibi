@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/unicode_property_scripts"
+require_relative "onibi/unicode_property_categories"
+require_relative "onibi/unicode_properties"
 require_relative "onibi/lexer_classes"
 require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
 require_relative "onibi/class_predicates"
+require_relative "onibi/class_predicates_posix"
 require_relative "onibi/ast"
 require_relative "onibi/parser"
 require_relative "onibi/parser_tokens"
@@ -88,7 +92,7 @@ module Onibi
     end
 
     def ast_matcher_required?
-      ["\\R", "\\b", "\\B", "\\G"].any? { |escape| @pattern.include?(escape) }
+      ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P"].any? { |escape| @pattern.include?(escape) }
     end
 
     def normalize_options(options)

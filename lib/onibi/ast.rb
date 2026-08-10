@@ -5,6 +5,7 @@ module Onibi
     Literal = Struct.new(:value)
     CharacterClass = Struct.new(:value)
     Escape = Struct.new(:kind)
+    Property = Struct.new(:name, :negated)
     Any = Struct.new(:value)
     Anchor = Struct.new(:kind)
     Sequence = Struct.new(:parts)

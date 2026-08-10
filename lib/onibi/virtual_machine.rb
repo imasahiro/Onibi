@@ -51,7 +51,7 @@ module Onibi
 
     def consume_instruction(program_counter, position, input, visited, instruction)
       return false unless position < input.length
-      return false unless %i[char class escape any].include?(instruction.opcode)
+      return false unless %i[char class escape property any].include?(instruction.opcode)
       return false unless matches?(instruction, input[position])
 
       run_state(program_counter + 1, position + 1, input, visited)
@@ -75,7 +75,7 @@ module Onibi
     end
 
     def consumable_instruction?(instruction, position, input)
-      position < input.length && %i[char class escape any].include?(instruction.opcode) &&
+      position < input.length && %i[char class escape property any].include?(instruction.opcode) &&
         matches?(instruction, input[position])
     end
 
@@ -85,7 +85,13 @@ module Onibi
       when :any then !(!@multiline && character == "\n".ord)
       when :escape then escape_matches?(instruction.operand, character)
       when :class then class_matches?(instruction.operand, character)
+      when :property then property_matches?(instruction.operand, character)
       end
+    end
+
+    def property_matches?(property, character)
+      name, negated = property
+      UnicodeProperties.matches?(name, character.chr) ^ negated
     end
 
     def escape_matches?(kind, character)

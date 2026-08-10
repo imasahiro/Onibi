@@ -11,6 +11,7 @@ module Onibi
       AST::Literal => :literal_positions,
       AST::CharacterClass => :class_positions,
       AST::Escape => :escape_positions,
+      AST::Property => :property_positions,
       AST::Any => :any_positions,
       AST::Anchor => :anchor_positions
     }.freeze
