@@ -47,5 +47,7 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "Unicode/POSIX property の acceptance corpus を MRI と比較"
     assert_includes document, "counting range suffix（`{min,max}+`）を受理し、MRI の greedy 相当 semantics と比較"
     assert_includes document, "advanced syntax の acceptance corpus を MRI と比較"
+    assert_includes document, "### REGEXP-008 [Complete]"
+    assert_includes document, "全 encoding semantics のうち v1 で検証する範囲"
   end
 end
