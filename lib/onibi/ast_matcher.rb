@@ -97,14 +97,12 @@ module Onibi
       end
     end
 
-    # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def anchor_positions(node, characters, position)
       at_start = node.kind == :anchor_start && line_start?(characters, position)
       at_end = node.kind == :anchor_end && line_end?(characters, position)
 
       at_start || at_end ? [position] : []
     end
-    # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
     def line_start?(characters, position)
       position.zero? || (@multiline && characters[position - 1] == "\n")
