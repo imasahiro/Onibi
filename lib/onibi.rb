@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/lexer_classes"
 require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
+require_relative "onibi/class_predicates"
 require_relative "onibi/ast"
 require_relative "onibi/parser"
 require_relative "onibi/parser_tokens"
@@ -100,9 +102,7 @@ module Onibi
     end
 
     def validate_pattern_syntax!(pattern)
-      return if pattern.count("[") == pattern.count("]")
-
-      raise RegexpError, "malformed character class"
+      Lexer.new(pattern).tokens
     end
 
     def validate_encoding!(input)

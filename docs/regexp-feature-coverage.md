@@ -163,7 +163,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - \s と \R の ASCII/Unicode/CRLF の差を定義する。
 - acceptance: ASCII-8BIT、UTF-8、CRLF、NEL/LSEP/PSEP の differential cases を追加する。
 
-### REGEXP-004 — character class の完全な構文を実装する
+### REGEXP-004 [Complete] — character class の完全な構文を実装する
 
 - Priority: P1
 - Dependencies: REGEXP-003
