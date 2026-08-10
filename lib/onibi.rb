@@ -2,6 +2,7 @@
 
 require_relative "onibi/version"
 require_relative "onibi/regexp_options"
+require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -52,6 +53,7 @@ module Onibi
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
     include RegexpOptions
+    include RegexpEncodingValidation
 
     IGNORECASE = 1
     MULTILINE = 4
@@ -156,17 +158,6 @@ module Onibi
       end
 
       tokens
-    end
-
-    def validate_encoding!(input)
-      raise ArgumentError, "invalid byte sequence in #{input.encoding}" unless input.valid_encoding?
-
-      return if @options.include?("noencoding") && input.encoding == Encoding::ASCII_8BIT
-      return if @pattern.ascii_only? && !@options.include?("fixedencoding")
-      return if @pattern.ascii_only? && input.ascii_only?
-      return if @pattern.encoding == input.encoding
-
-      raise Encoding::CompatibilityError, "incompatible encoding regexp match"
     end
 
     def dfa_specialization
