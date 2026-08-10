@@ -50,9 +50,9 @@ module Onibi
           | (Range[Integer] index) -> Array[String?]
           | (String | Symbol index) -> String?
     def captures: () -> Array[String?]
-    def offset: (Integer index) -> [Integer, Integer]?
-    def begin: (Integer index) -> Integer?
-    def end: (Integer index) -> Integer?
+    def offset: (Integer | String | Symbol index) -> [Integer, Integer]?
+    def begin: (Integer | String | Symbol index) -> Integer?
+    def end: (Integer | String | Symbol index) -> Integer?
     def to_a: () -> Array[String?]
     def length: () -> Integer
     def size: () -> Integer
@@ -61,10 +61,10 @@ module Onibi
     def regexp: () -> Regexp?
     def pre_match: () -> String?
     def post_match: () -> String?
-    def bytebegin: (Integer index) -> Integer?
-    def byteend: (Integer index) -> Integer?
-    def byteoffset: (Integer index) -> [Integer, Integer]?
-    def match_length: (Integer index) -> Integer?
+    def bytebegin: (Integer | String | Symbol index) -> Integer?
+    def byteend: (Integer | String | Symbol index) -> Integer?
+    def byteoffset: (Integer | String | Symbol index) -> [Integer, Integer]?
+    def match_length: (Integer | String | Symbol index) -> Integer?
     def named_captures: () -> Hash[String, String?]
     def names: () -> Array[String]
     def deconstruct: () -> Array[String?]

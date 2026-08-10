@@ -117,4 +117,15 @@ class MatchApiTest < Minitest::Test
     assert_equal({ "animal" => "cat" }, match.deconstruct_keys([:animal]))
     assert_equal({ "animal" => "cat" }, match.deconstruct_keys(nil))
   end
+
+  def test_offset_apis_validate_indices_and_accept_named_captures
+    match = Onibi::Regexp.new("(?<animal>cat)").match("cat")
+
+    assert_equal [0, 3], match.offset("animal")
+    assert_equal 0, match.begin(:animal)
+    assert_equal 3, match.end(:animal)
+    assert_raises(IndexError) { match.offset(-1) }
+    assert_raises(IndexError) { match.bytebegin(2) }
+    assert_raises(TypeError) { match.match_length(nil) }
+  end
 end
