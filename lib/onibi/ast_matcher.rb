@@ -12,14 +12,14 @@ module Onibi
       @multiline = options.include?("multiline")
     end
 
-    def match?(input)
-      !match_span(input).nil?
+    def match?(input, start_position = 0)
+      !match_span(input, start_position).nil?
     end
 
-    def match_span(input)
+    def match_span(input, start_position = 0)
       characters = input.chars
 
-      (0..characters.length).each do |start|
+      (start_position..characters.length).each do |start|
         finish = match_positions(@ast, characters, start).max
         return [start, finish] if finish
       end

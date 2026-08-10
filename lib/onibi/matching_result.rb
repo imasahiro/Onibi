@@ -5,35 +5,35 @@ module Onibi
   module MatchingResult
     module_function
 
-    def call(ast, bytecode, pattern, options, input)
-      literal_result = literal_casefold_result(pattern, options, input)
+    def call(ast, bytecode, pattern, options, input, start_position = 0)
+      literal_result = literal_casefold_result(pattern, options, input, start_position)
       return literal_result unless literal_result.nil?
 
-      specialized_result = specialized_result(ast, pattern, options, input)
+      specialized_result = specialized_result(ast, pattern, options, input, start_position)
       return specialized_result unless specialized_result.nil?
 
-      default_result(bytecode, ast, pattern, options, input)
+      default_result(bytecode, ast, pattern, options, input, start_position)
     end
 
-    def specialized_result(ast, pattern, options, input)
-      return !CaptureMatcher.new(ast, options).match_details(input).nil? if capture_matcher_required?(pattern)
-      return AstMatcher.new(ast, options).match?(input) if ast_matcher_required?(pattern)
+    def specialized_result(ast, pattern, options, input, start_position)
+      return !CaptureMatcher.new(ast, options).match_details(input, start_position).nil? if capture_matcher_required?(pattern)
+      return AstMatcher.new(ast, options).match?(input, start_position) if ast_matcher_required?(pattern)
 
       nil
     end
 
-    def default_result(bytecode, ast, pattern, options, input)
-      result = VirtualMachine.new(bytecode, options).match?(input)
-      result ||= (pattern.include?("|") || pattern.include?("(")) && AstMatcher.new(ast, options).match?(input)
+    def default_result(bytecode, ast, pattern, options, input, start_position)
+      result = VirtualMachine.new(bytecode, options).match?(input, start_position)
+      result ||= (pattern.include?("|") || pattern.include?("(")) && AstMatcher.new(ast, options).match?(input, start_position)
       result
     end
 
-    def literal_casefold_result(pattern, options, input)
+    def literal_casefold_result(pattern, options, input, start_position)
       return nil unless literal_casefold_matchable?(pattern, options)
 
       characters = input.chars
       maximum_length = [pattern.length * 3, 1].max
-      characters.each_index.any? do |start|
+      (start_position..characters.length).any? do |start|
         (1..maximum_length).any? do |length|
           candidate = characters[start, length]&.join
           candidate && pattern.casecmp?(candidate)

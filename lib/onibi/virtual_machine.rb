@@ -11,7 +11,7 @@ module Onibi
       @multiline = options.include?("multiline")
     end
 
-    def match?(input)
+    def match?(input, start_position = 0)
       @input_encoding = input.encoding
       characters = if input.valid_encoding?
                      input.chars.map { |character| character.codepoints.first }
@@ -19,7 +19,7 @@ module Onibi
                      input.bytes
                    end
 
-      (0..characters.length).any? { |start| match_from?(characters, start) }
+      (start_position..characters.length).any? { |start| match_from?(characters, start) }
     end
 
     private

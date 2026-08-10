@@ -24,10 +24,10 @@ module Onibi
       @capture_count = capture_count(ast)
     end
 
-    def match_details(input)
+    def match_details(input, start_position = 0)
       characters = input.chars
 
-      (0..characters.length).each do |start|
+      (start_position..characters.length).each do |start|
         @match_reset_position = nil
         captures = Array.new(@capture_count)
         results = match_results(@ast, characters, start, captures)
