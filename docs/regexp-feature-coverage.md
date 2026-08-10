@@ -276,6 +276,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Onibi Regexp copy時のtimeout保持とconstructor/compile overrideを追加する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
+- [x] `Regexp.union` の単一 Array 入力（文字列、compiled pattern、空配列）を追加する。
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
 - [x] `Regexp.escape` の hyphen と control whitespace（`\\t`、`\\n`、`\\v`、`\\f`、`\\r`）をRuby形式に揃える。
 - [x] `Regexp.escape` の ASCII-only result encoding を US-ASCII に揃える。
