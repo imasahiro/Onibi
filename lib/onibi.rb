@@ -94,7 +94,7 @@ module Onibi
 
     def ast_matcher_required?
       matcher_tokens = [
-        "\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!",
+        "\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!", "(?>",
         "*+", "++", "?+", "*?", "+?", "??"
       ]
       matcher_tokens.any? do |escape|

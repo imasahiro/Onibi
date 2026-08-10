@@ -7,6 +7,7 @@ module Onibi
       AST::Sequence => :sequence_results,
       AST::Alternation => :alternation_results,
       AST::Group => :group_results,
+      AST::AtomicGroup => :atomic_group_results,
       AST::Quantifier => :quantifier_results,
       AST::Literal => :literal_results,
       AST::CharacterClass => :class_results,
@@ -20,6 +21,7 @@ module Onibi
 
     CAPTURE_COUNTS = {
       AST::Group => :group_capture_count,
+      AST::AtomicGroup => :body_capture_count,
       AST::Sequence => :sequence_capture_count,
       AST::Alternation => :alternation_capture_count,
       AST::Quantifier => :expression_capture_count
@@ -56,6 +58,10 @@ module Onibi
 
     def expression_capture_count(node)
       capture_count(node.expression)
+    end
+
+    def body_capture_count(node)
+      capture_count(node.body)
     end
   end
 end
