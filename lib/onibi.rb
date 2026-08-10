@@ -6,6 +6,7 @@ require_relative "onibi/regexp_utilities"
 require_relative "onibi/regexp_constructor_patterns"
 require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/regexp_object_semantics"
+require_relative "onibi/regexp_timeout"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -70,20 +71,34 @@ module Onibi
     NOENCODING = 32
 
     @dfa_memory_budget = 1
+    @timeout = nil
 
     class << self
       attr_accessor :dfa_memory_budget
+
+      def timeout
+        @timeout
+      end
+
+      def timeout=(value)
+        @timeout = RegexpTimeout.normalize_timeout(value)
+      end
     end
 
-    def self.compile(pattern, options = nil)
-      new(pattern, options)
+    def self.compile(pattern, options = nil, timeout: nil)
+      new(pattern, options, timeout: timeout)
     end
 
-    def initialize(pattern, options = nil)
+    def initialize(pattern, options = nil, timeout: nil)
       pattern, options = normalize_constructor_pattern(pattern, options)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
+      @timeout = RegexpTimeout.normalize_timeout(timeout)
       @ast = Parser.new(pattern, normalized_options).parse
       @bytecode = Compiler.new(@ast).compile
+    end
+
+    def timeout
+      @timeout
     end
 
     def match?(input)
@@ -91,7 +106,7 @@ module Onibi
 
       validate_encoding!(input)
 
-      result = matching_result(input)
+      result = RegexpTimeout.with_timeout(@timeout, self.class.timeout) { matching_result(input) }
 
       dfa_specialization
       result
@@ -102,7 +117,7 @@ module Onibi
 
       validate_encoding!(input)
 
-      details = match_details(input)
+      details = RegexpTimeout.with_timeout(@timeout, self.class.timeout) { match_details(input) }
       dfa_specialization
       return nil unless details
 
