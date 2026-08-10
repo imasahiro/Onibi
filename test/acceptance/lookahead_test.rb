@@ -28,4 +28,8 @@ class LookaheadTest < Minitest::Test
     assert_equal "b", regexp.match("cb")[0]
     assert_nil regexp.match("ab")
   end
+
+  def test_lookbehind_rejects_a_variable_width_body
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a+)b") }
+  end
 end
