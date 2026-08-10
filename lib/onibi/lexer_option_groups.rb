@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Recognizes scoped inline casefold groups.
   module LexerOptionGroups
     private
 

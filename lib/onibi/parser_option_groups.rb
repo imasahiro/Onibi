@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Parses scoped inline casefold groups.
   module ParserOptionGroups
     private
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Matches scoped inline casefold groups against AST positions.
   module AstMatcherOptionGroups
     private
 
@@ -13,6 +14,7 @@ module Onibi
     end
   end
 
+  # Matches scoped inline casefold groups while preserving captures.
   module CaptureMatcherOptionGroups
     private
 
