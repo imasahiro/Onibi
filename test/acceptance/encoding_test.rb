@@ -69,6 +69,14 @@ class EncodingTest < Minitest::Test
     refute noencoding.fixed_encoding?
   end
 
+  def test_fixed_encoding_rejects_non_ascii_input_in_another_encoding
+    regexp = Onibi::Regexp.new("a", Onibi::Regexp::FIXEDENCODING)
+
+    assert_raises(Encoding::CompatibilityError) do
+      regexp.match?("あ".encode(Encoding::EUC_JP))
+    end
+  end
+
   def test_unicode_properties_decode_non_utf8_inputs
     [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
       pattern = "\\p{Hiragana}".encode(encoding)
