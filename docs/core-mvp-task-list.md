@@ -99,7 +99,7 @@ Implement AST nodes and parsing for literals, concatenation, alternation, groups
 
 **Dependencies:** CORE-006.
 
-### CORE-008 — Compile AST to Thompson-NFA bytecode
+### CORE-008 — Compile AST to Thompson-NFA bytecode [Complete]
 
 Compile the parsed AST into the bytecode representation used by the single VM. Include epsilon transitions, character transitions, accept states, capture tags, and option metadata.
 
