@@ -10,11 +10,18 @@ module Onibi
     end
 
     def match?(input)
+      !match_span(input).nil?
+    end
+
+    def match_span(input)
       characters = input.chars
 
-      (0..characters.length).any? do |start|
-        !match_positions(@ast, characters, start).empty?
+      (0..characters.length).each do |start|
+        finish = match_positions(@ast, characters, start).max
+        return [start, finish] if finish
       end
+
+      nil
     end
 
     private
