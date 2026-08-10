@@ -5,6 +5,7 @@ module Onibi
   class Parser
     include ParserAssertions
     include ParserQuantifiers
+    include ParserOptionGroups
     GROUP_OPENINGS = %i[
       open_group open_non_capture open_named_group open_atomic open_conditional open_absence
       open_option_group
@@ -98,12 +99,6 @@ module Onibi
       body = parse_alternation
       expect(:close_group)
       AST::Absence.new(body)
-    end
-
-    def parse_option_group(opening)
-      body = parse_alternation
-      expect(:close_group)
-      AST::OptionGroup.new(body, opening.value)
     end
 
     def current_token

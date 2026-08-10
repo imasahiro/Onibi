@@ -4,6 +4,7 @@ module Onibi
   # Produces a match span and numbered capture spans without using MRI Regexp.
   class CaptureMatcher
     include CaptureMatcherDispatch
+    include CaptureMatcherOptionGroups
     include CaptureMatcherAtoms
     include CaptureMatcherSubexpressions
     include CaptureMatcherAbsence

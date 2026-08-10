@@ -4,6 +4,7 @@ module Onibi
   # Correctness fallback for ASTs that cannot complete through bytecode dispatch.
   class AstMatcher
     include AstMatcherDispatch
+    include AstMatcherOptionGroups
 
     def initialize(ast, options = [])
       @ast = ast
@@ -73,14 +74,6 @@ module Onibi
       return [] unless class_matches?(node.value, characters[position])
 
       [position + 1]
-    end
-
-    def option_group_positions(node, characters, position)
-      original = @ignorecase
-      @ignorecase = node.ignorecase
-      match_positions(node.body, characters, position)
-    ensure
-      @ignorecase = original
     end
 
     def class_matches?(source, character)
