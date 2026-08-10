@@ -108,7 +108,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 
 | Ruby 4.0.6 の機能 | 代表的なメソッド | Onibi | 判定理由 |
 | --- | --- | --- | --- |
-| full match / numbered capture | []、captures、to_a | ◐ | メソッドはあるが、Regexp#match が capture を正しく構築していない。負数・範囲・名前 index も未対応。 |
+| full match / numbered capture | []、captures、to_a | ◐ | full match、numbered capture、負数・範囲・名前 index の基本取得を実装。全 Ruby extraction/error 互換は未対応。 |
 | capture count | length、size | ✅ | length と size を実装済み。 |
 | character offsets | begin、end、offset | ◐ | begin/end は初期実装のみ。offset、全 capture offsets、Unicode の byte/character 差は未完成。 |
 | byte offsets | bytebegin、byteend、byteoffset | ◐ | UTF-8 を含む character offset から byte offset を導出。全 encoding matrix は未検証。 |
@@ -116,7 +116,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | source string | string | ◐ | `MatchData#string` を match input として返す。直接構築時の context は未対応。 |
 | original regexp | regexp | ◐ | `MatchData#regexp` を元の Onibi::Regexp として返す。直接構築時の context は未対応。 |
 | surrounding text | pre_match、post_match | ◐ | match の文字 offset を利用した前後文字列を返す。全 byte offset 互換は未対応。 |
-| named captures | names、named_captures | ◐ | named capture、`names`、`named_captures` を実装。name による `[]` 参照など全 API は未対応。 |
+| named captures | names、named_captures | ◐ | named capture、`names`、`named_captures`、string/symbol による `[]` / `values_at` を実装。全 API は未対応。 |
 | indexed extraction | values_at | ◐ | integer index、range、out-of-range nil を実装。全 Ruby index 型互換は未対応。 |
 | formatting / identity | inspect、to_s、==、eql?、hash | ❌ | 未実装。 |
 | modern destructuring | deconstruct、deconstruct_keys | ❌ | 未実装。 |
@@ -263,6 +263,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#string`、`regexp`、`pre_match`、`post_match` の match context を追加する。
 - [x] `MatchData#names` と `named_captures` の基本取得を追加する。
 - [x] `MatchData#bytebegin`、`byteend`、`byteoffset`、`match_length` の基本取得を追加する。
+- [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。
 - inspect、to_s、==、eql?、hash、deconstruct、deconstruct_keys を追加する。
 - String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
 - acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
