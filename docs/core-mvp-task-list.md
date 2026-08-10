@@ -195,7 +195,7 @@ Expand the corpus to cover every Core MVP syntax feature and public method combi
 
 **Dependencies:** CORE-001, CORE-004, CORE-015, CORE-018.
 
-### CORE-020 — Complete package, clean-install, and release checks
+### CORE-020 — Complete package, clean-install, and release checks [Complete]
 
 Finalize gem metadata, README usage examples, version `0.x.y`, package contents, and the MVP release checklist. Verify that the package has no runtime dependencies and can be installed in a clean environment.
 
