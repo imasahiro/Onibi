@@ -67,7 +67,7 @@ Add RuboCop configuration and `.githooks/pre-commit`. Configure `core.hooksPath`
 
 **Dependencies:** CORE-002.
 
-### CORE-004 — Build the MRI differential-test harness
+### CORE-004 — Build the MRI differential-test harness [Complete]
 
 Implement a reusable harness that runs the same pattern, options, and input through MRI `Regexp` and `Onibi::Regexp`. Normalize results so class identity and implementation-specific details are excluded while match values, captures, offsets, and exceptions remain comparable.
 
