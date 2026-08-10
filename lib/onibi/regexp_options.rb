@@ -23,7 +23,7 @@ module Onibi
     def fixed_encoding?
       return false if @options.include?("noencoding")
 
-      @options.include?("fixedencoding") || !@pattern.ascii_only?
+      @options.include?("fixedencoding") || fixed_encoding_pattern?
     end
 
     private
@@ -106,9 +106,14 @@ module Onibi
     end
 
     def implicit_fixed_encoding_bit(options, pattern)
-      return 0 if options.include?("noencoding") || pattern.ascii_only?
+      return 0 if options.include?("noencoding")
+      return 0 unless fixed_encoding_pattern?(pattern)
 
       Regexp::FIXEDENCODING
+    end
+
+    def fixed_encoding_pattern?(pattern = @pattern)
+      !pattern.ascii_only? || pattern.include?("\\p") || pattern.include?("\\P")
     end
 
     def normalize_integer_options(options)
