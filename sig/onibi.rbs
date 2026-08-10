@@ -70,8 +70,8 @@ module Onibi
     def named_captures: () -> Hash[String, String?]
     def names: () -> Array[String]
     def deconstruct: () -> Array[String?]
-    def deconstruct_keys: (Array[Symbol] keys) -> Hash[String, String?]
-      | (nil keys) -> Hash[String, String?]
+    def deconstruct_keys: (Array[Symbol] keys) -> Hash[Symbol, String?]
+      | (nil keys) -> Hash[Symbol, String?]
     def to_s: () -> String?
     def inspect: () -> String
     def ==: (untyped other) -> bool

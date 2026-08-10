@@ -119,7 +119,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | named captures | names、named_captures | ◐ | named capture、`names`、`named_captures`、string/symbol による `[]` / `values_at` を実装。全 API は未対応。 |
 | indexed extraction | values_at | ◐ | integer/Float index、range、out-of-range nil、未知named captureのIndexErrorを実装。全 Ruby index 型互換は未対応。 |
 | formatting / identity | inspect、to_s、==、eql?、hash | ◐ | `MatchData#to_s` / `inspect`、`==` / `eql?` / `hash` の基本値 semantics を実装。全 encoding/context 表現は未対応。 |
-| modern destructuring | deconstruct、deconstruct_keys | ◐ | positional values と named capture の基本的な分解を実装。Ruby 4.0.6 の全 pattern-matching edge case は未検証。 |
+| modern destructuring | deconstruct、deconstruct_keys | ◐ | capture-only positional values と Symbol-keyed named capture の分解を実装。Ruby 4.0.6 の全 pattern-matching edge case は未検証。 |
 
 ## 現時点の結論
 
@@ -298,6 +298,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#to_s` と named capture を含む基本 `inspect` を追加する。
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。
 - [x] `MatchData#deconstruct`、`deconstruct_keys` の positional/named capture 分解を追加する。
+- [x] `deconstruct` から full match を除外し、`deconstruct_keys` を Symbol-keyed Ruby semantics に揃える。
 - String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
 - acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
 
