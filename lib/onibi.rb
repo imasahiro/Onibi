@@ -152,7 +152,7 @@ module Onibi
     end
 
     def named_captures
-      capture_names.transform_values { |index| [index] }
+      CaptureNameCollector.indices(@ast)
     end
 
     private
