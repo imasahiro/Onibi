@@ -37,7 +37,7 @@ module Onibi
     # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     def compile_alternation(node)
       splits = node.branches.length - 1
-      split = emit(:split)
+      emit(:split)
       branch_starts = []
       jumps = []
 
@@ -45,8 +45,7 @@ module Onibi
         branch_starts << @instructions.length
         compile_node(branch)
         jumps << emit(:jump) unless index == node.branches.length - 1
-        next_split = emit(:split) if index < splits - 1
-        split = next_split if next_split
+        emit(:split) if index < splits - 1
       end
 
       end_target = @instructions.length

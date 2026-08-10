@@ -8,7 +8,9 @@ module Onibi
     end
 
     def match?(input)
-      (0..input.length).any? { |start| match_from?(input, start) }
+      characters = input.each_char.to_a
+
+      (0..characters.length).any? { |start| match_from?(characters, start) }
     end
 
     private
