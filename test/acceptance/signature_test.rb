@@ -15,6 +15,7 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "class TimeoutError < RegexpError"
     assert_includes signature, "NOENCODING: Integer"
     assert_includes signature, "def self.compile: (String pattern, ?Array[String]? options,"
+    assert_includes signature, "?(String | Symbol | bool) options"
     assert_includes signature, "| (String pattern, ?Integer options, ?timeout: Numeric?) -> Regexp"
     assert_includes signature, "?timeout: Numeric?"
     assert_includes signature, "def initialize: (String pattern, ?Array[String]? options, ?timeout: Numeric?) -> void"

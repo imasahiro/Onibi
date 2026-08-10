@@ -41,5 +41,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal"
     assert_includes document, "ASCII-compatible pattern/input の全 4×4 encoding matrix"
     assert_includes document, "mode の on/off scope と comment/whitespace の parse/match を MRI と比較"
+    assert_includes document, "constructor options の boolean/string/symbol flags"
   end
 end
