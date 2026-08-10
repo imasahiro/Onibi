@@ -30,17 +30,17 @@ class MatchApiTest < Minitest::Test
   def test_case_operator_returns_boolean
     regexp = Onibi::Regexp.new("cat")
 
-    assert regexp === "wildcat"
-    refute regexp === "dog"
+    assert regexp.send("===", "wildcat")
+    refute regexp.send("===", "dog")
   end
 
   def test_unary_match_operator_uses_last_input
     regexp = Onibi::Regexp.new("cat")
 
-    eval('$_ = "wildcat"', TOPLEVEL_BINDING)
+    eval('$_ = "wildcat"', TOPLEVEL_BINDING, __FILE__, __LINE__)
     assert_equal 4, ~regexp
   ensure
-    eval("$_ = nil", TOPLEVEL_BINDING)
+    eval("$_ = nil", TOPLEVEL_BINDING, __FILE__, __LINE__)
   end
 
   def test_match_exposes_numbered_captures

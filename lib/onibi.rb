@@ -113,7 +113,8 @@ module Onibi
     end
 
     def ~
-      send([61, 126].pack("C*"), eval("$_", TOPLEVEL_BINDING))
+      input = eval("$_", TOPLEVEL_BINDING, __FILE__, __LINE__)
+      send([61, 126].pack("C*"), input)
     end
 
     def options
