@@ -28,15 +28,22 @@ module Onibi
       visited[[program_counter, position]] = true
       instruction = instruction_at(program_counter)
       return true if instruction.opcode == :match
+
       if instruction.opcode == :split
         first_branch = run_state(instruction.operand, position, input, visited)
         second_branch = run_state(instruction.target, position, input, visited)
         return first_branch || second_branch
       end
       return run_state(instruction.target, position, input, visited) if instruction.opcode == :jump
-      return run_state(program_counter + 1, position, input, visited) if %i[save_start save_end].include?(instruction.opcode)
+      if %i[save_start save_end].include?(instruction.opcode)
+        return run_state(program_counter + 1, position, input, visited)
+      end
+
       if instruction.opcode == :anchor
-        return run_state(program_counter + 1, position, input, visited) if anchor_matches?(instruction.operand, position, input.length)
+        if anchor_matches?(instruction.operand, position, input.length)
+          return run_state(program_counter + 1, position, input, visited)
+        end
+
         return false
       end
       return false unless position < input.length
