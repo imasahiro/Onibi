@@ -73,4 +73,13 @@ class RegexpConstructorTest < Minitest::Test
 
     assert Onibi::Regexp.compile(original).match?("CAT")
   end
+
+  def test_new_accepts_a_builtin_regexp_by_source_and_options
+    original = ::Regexp.new("cat", ::Regexp::IGNORECASE)
+
+    copy = Onibi::Regexp.new(original)
+
+    assert_equal ::Regexp::IGNORECASE, copy.options
+    assert copy.match?("CAT")
+  end
 end
