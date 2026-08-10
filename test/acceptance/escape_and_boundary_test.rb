@@ -10,6 +10,14 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute Onibi::Regexp.new("\\W").match?("_")
   end
 
+  def test_word_shorthand_is_ascii_only_like_ruby
+    regexp = Onibi::Regexp.new("\\w")
+
+    assert regexp.match?("_")
+    assert regexp.match?("7")
+    refute regexp.match?("あ")
+  end
+
   def test_horizontal_and_non_space_shorthand_classes
     assert Onibi::Regexp.new("\\h").match?("\t")
     refute Onibi::Regexp.new("\\h").match?("\n")

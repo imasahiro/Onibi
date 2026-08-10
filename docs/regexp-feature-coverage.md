@@ -28,7 +28,7 @@
 | 文字クラス | クラス内のエスケープ | [\]]、[\-]、[\x41]、[\u{1F600}] | ◐ | character class escape decoder で control/hex/Unicode escape、Unicode property escape（`[\\p{...}]` / `[\\P{...}]`）と literal escape を処理する。POSIX/全 Unicode class escape の互換性は未完了。 |
 | 文字クラス | ネスト | [a-z[0-9]] | ✅ | 実装済み。 |
 | 文字クラス | 交差 | [a-w&&[^c-g]z] | ✅ | && による集合演算を実装済み。 |
-| 省略クラス | 単語文字 | \w | ◐ | ASCII の [A-Za-z0-9_] 相当のみ。Ruby の Unicode 拡張ではない。 |
+| 省略クラス | 単語文字 | \w | ✅ | ASCII の [A-Za-z0-9_] 相当。Ruby 4.0.6 の `\\w` も Unicode word ではないため、ASCII-only semantics が一致する。 |
 | 省略クラス | 非単語文字 | \W | ✅ | 実装済み。 |
 | 省略クラス | ASCII 数字 | \d | ✅ | [0-9] 相当を実装済み。 |
 | 省略クラス | 非数字 | \D | ✅ | 実装済み。 |
