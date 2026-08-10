@@ -116,6 +116,15 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_ascii_character_classes_reject_non_ascii_input_without_error
+    [Encoding::EUC_JP, Encoding::Windows_31J, Encoding::ASCII_8BIT].each do |pattern_encoding|
+      pattern = "[a-z]".encode(pattern_encoding)
+      input = "あ".encode(Encoding::UTF_8)
+
+      refute Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
+
   def test_noencoding_accepts_binary_byte_patterns
     byte = [0xa4].pack("C").b
     regexp = Onibi::Regexp.new(byte, Onibi::Regexp::NOENCODING)
