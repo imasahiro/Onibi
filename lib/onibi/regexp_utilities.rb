@@ -12,15 +12,16 @@ module Onibi
       raise TypeError, "no implicit conversion of #{string.class} into String" unless source
 
       special = "\\.^$*+?{}[]()|-# "
-      source.each_char.each_with_object(source.dup.clear) do |character, escaped|
+      escaped = source.each_char.each_with_object(source.dup.clear) do |character, result|
         control = ESCAPED_CONTROL_CHARACTERS[character]
         if control
-          escaped << control
+          result << control
           next
         end
-        escaped << "\\" if special.include?(character)
-        escaped << character
+        result << "\\" if special.include?(character)
+        result << character
       end
+      source.ascii_only? ? escaped.force_encoding(Encoding::US_ASCII) : escaped
     end
 
     def union(*patterns)
