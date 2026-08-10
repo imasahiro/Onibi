@@ -104,11 +104,11 @@ module Onibi
     end
 
     def line_start?(characters, position)
-      position.zero? || (@multiline && characters[position - 1] == "\n")
+      position.zero? || characters[position - 1] == "\n"
     end
 
     def line_end?(characters, position)
-      position == characters.length || (@multiline && characters[position] == "\n")
+      position == characters.length || characters[position] == "\n"
     end
   end
 end

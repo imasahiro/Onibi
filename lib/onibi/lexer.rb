@@ -6,6 +6,14 @@ module Onibi
     Token = Struct.new(:type, :value, :position)
 
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
+    ESCAPED_TYPES = {
+      "d" => :digit,
+      "s" => :space,
+      "w" => :word,
+      "A" => :anchor_absolute_start,
+      "Z" => :anchor_before_final_newline,
+      "z" => :anchor_absolute_end
+    }.freeze
     SIMPLE_TOKENS = {
       "(" => :open_group,
       ")" => :close_group,
@@ -64,7 +72,7 @@ module Onibi
       escaped = @source[index + 1]
       raise RegexpError, "trailing escape" if escaped.nil?
 
-      type = { "d" => :digit, "s" => :space, "w" => :word }[escaped]
+      type = ESCAPED_TYPES[escaped]
       return [Token.new(type, escaped, index), index + 2] if type
       return [Token.new(:literal, escaped, index), index + 2] if ESCAPED_LITERALS.include?(escaped)
 

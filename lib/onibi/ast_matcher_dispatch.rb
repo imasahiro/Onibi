@@ -30,7 +30,10 @@ module Onibi
     end
 
     def any_positions(_node, characters, position)
-      position < characters.length ? [position + 1] : []
+      return [] unless position < characters.length
+      return [] if !@multiline && characters[position] == "\n"
+
+      [position + 1]
     end
   end
 end
