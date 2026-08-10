@@ -110,7 +110,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | --- | --- | --- | --- |
 | full match / numbered capture | []、captures、to_a | ◐ | full match、numbered capture、Floatのinteger coercion、未知named captureのIndexError、負数・範囲・名前 index の基本取得を実装。全 Ruby extraction/error 互換は未対応。 |
 | capture count | length、size | ✅ | length と size を実装済み。 |
-| character offsets | begin、end、offset | ◐ | integerの型・範囲検証、named capture index、全captureのcharacter offsetを実装。全Unicode/encoding差は未検証。 |
+| character offsets | begin、end、offset | ◐ | integerの型・範囲検証、named capture index、unmatched capture の `[nil, nil]` offset、全captureのcharacter offsetを実装。全Unicode/encoding差は未検証。 |
 | byte offsets | bytebegin、byteend、byteoffset | ◐ | character offsetからbyte offsetを導出し、integer/named indexの型・範囲検証を実装。全encoding matrixは未検証。 |
 | matched length | match_length | ◐ | captureのcharacter lengthとinteger/named indexの型・範囲検証を実装。全Ruby error互換は未対応。 |
 | source string | string | ◐ | `MatchData#string` を match input として返す。直接構築時の context は未対応。 |
@@ -295,6 +295,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#names` と `named_captures` の基本取得を追加する。
 - [x] `MatchData#bytebegin`、`byteend`、`byteoffset`、`match_length` の基本取得を追加する。
 - [x] offset系APIのnamed index、負数・範囲外・型エラーをRuby互換に近づける。
+- [x] unmatched capture の `offset` を `[nil, nil]` として返す。
 - [x] `MatchData#[]` / `values_at` のFloat coercionと未知named capture errorを追加する。
 - [x] `MatchData#[]` / `values_at` の負数 index を capture-only range として処理する。
 - [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。

@@ -12,4 +12,12 @@ class MatchDataTest < Minitest::Test
     assert_equal 3, match_data.end(1)
     assert_equal %w[abcd bc], match_data.to_a
   end
+
+  def test_unmatched_capture_offset_is_a_pair_of_nil_values
+    match_data = Onibi::Regexp.new("(?<prefix>a)?b").match("b")
+
+    assert_equal [nil, nil], match_data.offset(:prefix)
+    assert_nil match_data.begin(:prefix)
+    assert_nil match_data.end(:prefix)
+  end
 end
