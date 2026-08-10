@@ -54,6 +54,7 @@ module Onibi
 
     def initialize(pattern, options = nil)
       validate_pattern_type!(pattern)
+      validate_pattern_encoding!(pattern)
       normalized_options = normalize_options(options)
       validate_pattern_syntax!(pattern)
       @pattern = pattern
@@ -95,6 +96,12 @@ module Onibi
       return if pattern.is_a?(String)
 
       raise TypeError, "no implicit conversion of #{pattern.class} into String"
+    end
+
+    def validate_pattern_encoding!(pattern)
+      return if pattern.valid_encoding?
+
+      raise ArgumentError, "invalid byte sequence in #{pattern.encoding}"
     end
 
     def ast_matcher_required?
