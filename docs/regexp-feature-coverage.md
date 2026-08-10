@@ -108,7 +108,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 
 | Ruby 4.0.6 の機能 | 代表的なメソッド | Onibi | 判定理由 |
 | --- | --- | --- | --- |
-| full match / numbered capture | []、captures、to_a | ◐ | full match、numbered capture、負数・範囲・名前 index の基本取得を実装。全 Ruby extraction/error 互換は未対応。 |
+| full match / numbered capture | []、captures、to_a | ◐ | full match、numbered capture、Floatのinteger coercion、未知named captureのIndexError、負数・範囲・名前 index の基本取得を実装。全 Ruby extraction/error 互換は未対応。 |
 | capture count | length、size | ✅ | length と size を実装済み。 |
 | character offsets | begin、end、offset | ◐ | integerの型・範囲検証、named capture index、全captureのcharacter offsetを実装。全Unicode/encoding差は未検証。 |
 | byte offsets | bytebegin、byteend、byteoffset | ◐ | character offsetからbyte offsetを導出し、integer/named indexの型・範囲検証を実装。全encoding matrixは未検証。 |
@@ -117,7 +117,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | original regexp | regexp | ◐ | `MatchData#regexp` を元の Onibi::Regexp として返す。直接構築時の context は未対応。 |
 | surrounding text | pre_match、post_match | ◐ | match の文字 offset を利用した前後文字列を返す。全 byte offset 互換は未対応。 |
 | named captures | names、named_captures | ◐ | named capture、`names`、`named_captures`、string/symbol による `[]` / `values_at` を実装。全 API は未対応。 |
-| indexed extraction | values_at | ◐ | integer index、range、out-of-range nil を実装。全 Ruby index 型互換は未対応。 |
+| indexed extraction | values_at | ◐ | integer/Float index、range、out-of-range nil、未知named captureのIndexErrorを実装。全 Ruby index 型互換は未対応。 |
 | formatting / identity | inspect、to_s、==、eql?、hash | ◐ | `MatchData#to_s` / `inspect`、`==` / `eql?` / `hash` の基本値 semantics を実装。全 encoding/context 表現は未対応。 |
 | modern destructuring | deconstruct、deconstruct_keys | ◐ | positional values と named capture の基本的な分解を実装。Ruby 4.0.6 の全 pattern-matching edge case は未検証。 |
 
@@ -275,6 +275,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#names` と `named_captures` の基本取得を追加する。
 - [x] `MatchData#bytebegin`、`byteend`、`byteoffset`、`match_length` の基本取得を追加する。
 - [x] offset系APIのnamed index、負数・範囲外・型エラーをRuby互換に近づける。
+- [x] `MatchData#[]` / `values_at` のFloat coercionと未知named capture errorを追加する。
 - [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。
 - [x] `MatchData#to_s` と named capture を含む基本 `inspect` を追加する。
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。
