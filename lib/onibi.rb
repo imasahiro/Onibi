@@ -139,6 +139,8 @@ module Onibi
     end
 
     def validate_encoding!(input)
+      raise ArgumentError, "invalid byte sequence in #{input.encoding}" unless input.valid_encoding?
+
       return if @pattern.encoding == input.encoding
       return if @pattern.ascii_only? && input.ascii_only?
 

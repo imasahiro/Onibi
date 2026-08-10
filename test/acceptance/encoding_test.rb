@@ -17,10 +17,18 @@ class EncodingTest < Minitest::Test
     assert Onibi::Regexp.new("\\d".b).match?("7".b)
   end
 
-  def test_invalid_utf8_input_keeps_byte_matching_behavior
+  def test_valid_utf8_input_matches_normally
+    valid_utf8 = "é".encode(Encoding::UTF_8)
+
+    assert Onibi::Regexp.new(".".encode(Encoding::UTF_8)).match?(valid_utf8)
+  end
+
+  def test_invalid_utf8_input_raises_argument_error
     invalid_utf8 = [0xff].pack("C*").force_encoding(Encoding::UTF_8)
 
-    assert Onibi::Regexp.new(".".encode(Encoding::UTF_8)).match?(invalid_utf8)
+    assert_raises(ArgumentError) do
+      Onibi::Regexp.new(".".encode(Encoding::UTF_8)).match?(invalid_utf8)
+    end
   end
 
   def test_incompatible_pattern_and_input_encodings_raise
