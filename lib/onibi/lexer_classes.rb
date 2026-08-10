@@ -80,13 +80,24 @@ module Onibi
       condition = @source[(index + 3)...ending] if ending
       raise RegexpError, "invalid conditional group" unless ending && valid_condition?(condition)
 
-      [Lexer::Token.new(:open_conditional, Integer(condition), index), ending + 1]
+      [Lexer::Token.new(:open_conditional, conditional_value(condition), index), ending + 1]
     end
 
     def valid_condition?(condition)
       return false if condition.nil? || condition.empty?
+      return valid_named_condition?(condition) if condition.start_with?("<")
 
       condition.chars.all? { |character| character >= "0" && character <= "9" }
+    end
+
+    def valid_named_condition?(condition)
+      condition.end_with?(">") && condition.length > 2
+    end
+
+    def conditional_value(condition)
+      return [condition[1...-1], true] if condition.start_with?("<")
+
+      [Integer(condition), false]
     end
 
     def conditional_group_start?(index)

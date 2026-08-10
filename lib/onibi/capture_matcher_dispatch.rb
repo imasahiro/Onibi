@@ -71,8 +71,14 @@ module Onibi
     end
 
     def conditional_results(node, characters, position, captures)
-      branch = captures[node.condition - 1] ? node.yes_branch : node.no_branch
+      branch = condition_captured?(node.condition, captures) ? node.yes_branch : node.no_branch
       match_results(branch, characters, position, captures)
+    end
+
+    def condition_captured?(condition, captures)
+      identifier, named = condition
+      index = named ? CaptureNameCollector.call(@ast)[identifier] : identifier
+      index && captures[index - 1]
     end
 
     def conditional_capture_count(node)
