@@ -28,5 +28,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "negative scoped extended mode"
     assert_includes document, "scoped combined i/m/x modes"
     assert_includes document, "Ruby mode flag order"
+    assert_includes document, "common control-character escapes"
   end
 end

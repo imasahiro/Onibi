@@ -20,7 +20,7 @@
 | 分類 | Ruby 4.0.6 の機能 | 代表例 | Onibi | 判定理由 |
 | --- | --- | --- | --- | --- |
 | リテラル | 文字・Unicode 文字 | abc、こんにちは | ✅ | UTF-8 と ASCII-8BIT の範囲で実装・テスト済み。 |
-| メタ文字 | . ? - + * ^ バックスラッシュ 縦棒 $ ( ) [ ] { } | a\+、バックスラッシュ | ◐ | エスケープ対象の一部を実装。Ruby の escape sequence 全体は未実装。 |
+| メタ文字 | . ? - + * ^ バックスラッシュ 縦棒 $ ( ) [ ] { } | a\+、バックスラッシュ | ◐ | common control-character escapes（`\\n`、`\\r`、`\\t`、`\\f`、`\\v`、`\\a`、`\\e`）とメタ文字 escape を実装。hex/Unicode/control escape 等は未実装。 |
 | 任意文字 | 改行以外の任意の 1 文字 | . | ✅ | 通常は改行を除外し、`multiline` option で Ruby の dot-all 相当になる。 |
 | 文字クラス | 列挙 | [abc] | ✅ | 実装済み。 |
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
@@ -169,6 +169,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Dependencies: REGEXP-003
 - クラス内 escape、literal hyphen/bracket、nested class、&& intersection を実装する。
 - parser と matcher で class AST を構造化し、文字列の再解釈をやめる。
+- [x] common control-character escapes（`\\n`、`\\r`、`\\t`、`\\f`、`\\v`、`\\a`、`\\e`）を literal AST に接続する。
 - acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
 
 ### REGEXP-005 [Complete] — Unicode property と POSIX class を実装する
