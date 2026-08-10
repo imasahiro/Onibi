@@ -4,6 +4,7 @@ module Onibi
   # Immutable observable match result for the Core MVP.
   class MatchData
     include MatchDataDestructuring
+    include MatchDataOffsets
 
     Context = Struct.new(:string, :regexp)
 
@@ -24,18 +25,6 @@ module Onibi
 
     def captures
       @captures.dup
-    end
-
-    def offset(index)
-      @offsets.fetch(index)&.dup
-    end
-
-    def begin(index)
-      @offsets.fetch(index)&.first
-    end
-
-    def end(index)
-      @offsets.fetch(index)&.last
     end
 
     def to_a
@@ -64,27 +53,6 @@ module Onibi
     def post_match
       finish = self.end(0)
       @string[finish..] || ""
-    end
-
-    def bytebegin(index)
-      offset = @offsets[index]
-      offset && byte_position(offset.first)
-    end
-
-    def byteend(index)
-      offset = @offsets[index]
-      offset && byte_position(offset.last)
-    end
-
-    def byteoffset(index)
-      return unless @offsets[index]
-
-      [bytebegin(index), byteend(index)]
-    end
-
-    def match_length(index)
-      offset = @offsets[index]
-      offset && offset.last - offset.first
     end
 
     def named_captures
@@ -126,10 +94,6 @@ module Onibi
     def value_at(index)
       index = @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
       @values[index]
-    end
-
-    def byte_position(character_position)
-      @string[0, character_position].bytesize
     end
   end
 end
