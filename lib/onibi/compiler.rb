@@ -17,6 +17,7 @@ module Onibi
       AST::Escape => :compile_escape,
       AST::Property => :compile_property,
       AST::Backreference => :compile_backreference,
+      AST::SubexpressionCall => :compile_subexpression_call,
       AST::Assertion => :compile_assertion,
       AST::Any => :compile_any,
       AST::Anchor => :compile_anchor
@@ -84,6 +85,10 @@ module Onibi
 
     def compile_atomic_group(node)
       compile_node(node.body)
+    end
+
+    def compile_subexpression_call(_node)
+      emit(:match)
     end
 
     def compile_conditional(node)

@@ -15,6 +15,7 @@ module Onibi
       AST::Escape => :escape_results,
       AST::Property => :property_results,
       AST::Backreference => :backreference_results,
+      AST::SubexpressionCall => :subexpression_call_results,
       AST::Assertion => :assertion_results,
       AST::Any => :any_results,
       AST::Anchor => :anchor_results
@@ -26,7 +27,8 @@ module Onibi
       AST::Sequence => :sequence_capture_count,
       AST::Alternation => :alternation_capture_count,
       AST::Quantifier => :expression_capture_count,
-      AST::Conditional => :conditional_capture_count
+      AST::Conditional => :conditional_capture_count,
+      AST::SubexpressionCall => :subexpression_capture_count
     }.freeze
 
     private
@@ -73,6 +75,10 @@ module Onibi
 
     def conditional_capture_count(node)
       [capture_count(node.yes_branch), capture_count(node.no_branch)].max
+    end
+
+    def subexpression_capture_count(_node)
+      0
     end
   end
 end

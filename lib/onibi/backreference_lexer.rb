@@ -5,6 +5,27 @@ module Onibi
   module LexerClasses
     private
 
+    def subexpression_token(index)
+      return named_subexpression_token(index) if @source[index + 2] == "<"
+
+      ending = index + 2
+      ending += 1 while @source[ending] && digit_escape?(@source[ending])
+      identifier = @source[(index + 2)...ending]
+      raise RegexpError, "invalid subexpression call" if identifier.empty?
+
+      [Lexer::Token.new(:subexpression_call, [Integer(identifier), false], index), ending]
+    end
+
+    def named_subexpression_token(index)
+      ending = @source.index(">", index + 3)
+      raise RegexpError, "invalid subexpression call" unless ending
+
+      identifier = @source[(index + 3)...ending]
+      raise RegexpError, "invalid subexpression call" if identifier.empty?
+
+      [Lexer::Token.new(:subexpression_call, [identifier, true], index), ending + 1]
+    end
+
     def backreference_token(index)
       escaped = @source[index + 1]
       return numbered_backreference_token(index) if escaped >= "0" && escaped <= "9"
