@@ -75,6 +75,7 @@ module Onibi
     end
 
     def initialize(pattern, options = nil)
+      pattern, options = normalize_constructor_pattern(pattern, options)
       validate_pattern_type!(pattern)
       validate_pattern_encoding!(pattern)
       @source_pattern = pattern
@@ -142,6 +143,12 @@ module Onibi
       return if pattern.is_a?(String)
 
       raise TypeError, "no implicit conversion of #{pattern.class} into String"
+    end
+
+    def normalize_constructor_pattern(pattern, options)
+      return [pattern.source, pattern.options] if pattern.is_a?(Regexp)
+
+      [pattern, options]
     end
 
     def validate_pattern_encoding!(pattern)

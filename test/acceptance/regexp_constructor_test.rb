@@ -51,4 +51,19 @@ class RegexpConstructorTest < Minitest::Test
 
     assert_equal "/cat/i", regexp.inspect
   end
+
+  def test_new_accepts_an_existing_onibi_regexp
+    original = Onibi::Regexp.new("cat", ["ignorecase"])
+    copy = Onibi::Regexp.new(original)
+
+    assert_equal original.source, copy.source
+    assert_equal original.options, copy.options
+    assert copy.match?("CAT")
+  end
+
+  def test_compile_accepts_an_existing_onibi_regexp
+    original = Onibi::Regexp.new("cat", ["ignorecase"])
+
+    assert Onibi::Regexp.compile(original).match?("CAT")
+  end
 end
