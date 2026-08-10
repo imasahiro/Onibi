@@ -45,6 +45,16 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("CAT")
   end
 
+  def test_union_preserves_compiled_multiline_and_extended_options
+    multiline = Onibi::Regexp.union(::Regexp.new(".", ::Regexp::MULTILINE))
+    extended = Onibi::Regexp.union(::Regexp.new("a b", ::Regexp::EXTENDED))
+    combined = Onibi::Regexp.union(::Regexp.new("a b", ::Regexp::IGNORECASE | Regexp::EXTENDED))
+
+    assert multiline.match?("\n")
+    assert extended.match?("ab")
+    assert combined.match?("AB")
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
