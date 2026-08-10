@@ -60,6 +60,14 @@ class RegexpUtilityTest < Minitest::Test
     refute Onibi::Regexp.union.match?("anything")
   end
 
+  def test_union_accepts_a_single_array_of_patterns
+    regexp = Onibi::Regexp.union(["a.b", "cat"])
+
+    assert_equal "a\\.b|cat", regexp.source
+    assert regexp.match?("a.b")
+    assert regexp.match?("cat")
+  end
+
   def test_union_accepts_compiled_regexp_patterns
     regexp = Onibi::Regexp.union(::Regexp.new("a|b"), "cat")
 
