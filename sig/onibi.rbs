@@ -1,4 +1,31 @@
 module Onibi
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+  class Error < StandardError
+  end
+
+  class RegexpError < Error
+  end
+
+  class Regexp
+    def self.compile: (String pattern) -> Regexp
+                      | (String pattern, Array[String]? options) -> Regexp
+    def self.dfa_memory_budget: () -> Integer
+    def self.dfa_memory_budget=: (Integer value) -> Integer
+
+    def initialize: (String pattern) -> void
+                  | (String pattern, Array[String]? options) -> void
+    def match?: (String input) -> bool
+    def match: (String input) -> MatchData?
+    def options: () -> Array[String]
+  end
+
+  class MatchData
+    def []: (Integer index) -> String
+    def captures: () -> Array[String]
+    def begin: (Integer index) -> Integer?
+    def end: (Integer index) -> Integer?
+    def to_a: () -> Array[String]
+    def length: () -> Integer
+  end
 end
