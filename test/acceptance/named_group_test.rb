@@ -15,5 +15,6 @@ class NamedGroupTest < Minitest::Test
 
     assert_equal "cat", match[1]
     assert_equal({ "word" => "cat" }, match.named_captures)
+    assert_equal ["word"], match.names
   end
 end

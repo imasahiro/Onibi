@@ -67,5 +67,9 @@ module Onibi
     def named_captures
       @names.transform_values { |index| self[index] }
     end
+
+    def names
+      @names.keys
+    end
   end
 end
