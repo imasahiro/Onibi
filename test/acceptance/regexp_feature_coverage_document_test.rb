@@ -30,5 +30,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "Ruby mode flag order"
     assert_includes document, "common control-character escapes"
     assert_includes document, "hex and Unicode escapes"
+    assert_includes document, "character class escape decoder"
   end
 end

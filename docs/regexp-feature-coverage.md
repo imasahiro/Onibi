@@ -25,7 +25,7 @@
 | 文字クラス | 列挙 | [abc] | ✅ | 実装済み。 |
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
 | 文字クラス | 範囲 | [a-z]、[a-cd-f] | ✅ | 基本範囲を実装済み。 |
-| 文字クラス | クラス内のエスケープ | [\]]、[\-] | ◐ | クラス全体を単純な文字列として処理するため、Ruby と同じ意味にならない場合がある。 |
+| 文字クラス | クラス内のエスケープ | [\]]、[\-]、[\x41]、[\u{1F600}] | ◐ | character class escape decoder で control/hex/Unicode escape と literal escape を処理する。POSIX/全 Unicode class escape の互換性は未完了。 |
 | 文字クラス | ネスト | [a-z[0-9]] | ✅ | 実装済み。 |
 | 文字クラス | 交差 | [a-w&&[^c-g]z] | ✅ | && による集合演算を実装済み。 |
 | 省略クラス | 単語文字 | \w | ◐ | ASCII の [A-Za-z0-9_] 相当のみ。Ruby の Unicode 拡張ではない。 |
@@ -171,6 +171,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - parser と matcher で class AST を構造化し、文字列の再解釈をやめる。
 - [x] common control-character escapes（`\\n`、`\\r`、`\\t`、`\\f`、`\\v`、`\\a`、`\\e`）を literal AST に接続する。
 - [x] hex and Unicode escapes（`\\xNN`、`\\uNNNN`、`\\u{...}`）を literal AST に接続する。
+- [x] character class escape decoder を class matcher に接続する。
 - acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
 
 ### REGEXP-005 [Complete] — Unicode property と POSIX class を実装する
