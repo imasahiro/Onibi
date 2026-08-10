@@ -21,5 +21,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "position 引数"
     assert_includes document, "compiled pattern の ignorecase"
     assert_includes document, "scoped multiline"
+    assert_includes document, "positive scoped extended mode の option"
   end
 end
