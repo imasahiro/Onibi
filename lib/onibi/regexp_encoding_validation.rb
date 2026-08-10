@@ -25,7 +25,7 @@ module Onibi
     end
 
     def compatible_ascii_input?(input)
-      return true if @pattern.ascii_only? && !@options.include?("fixedencoding")
+      return true if @pattern.ascii_only? && !fixed_encoding?
 
       input.ascii_only?
     end
