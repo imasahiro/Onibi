@@ -30,6 +30,8 @@ module Onibi
     def encoding: () -> Encoding
     def fixed_encoding?: () -> bool
     def options: () -> (Array[String] | Integer)
+    def source: () -> String
+    def casefold?: () -> bool
   end
 
   class MatchData
