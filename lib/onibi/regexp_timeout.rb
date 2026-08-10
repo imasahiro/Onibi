@@ -11,6 +11,7 @@ module Onibi
 
     attr_reader :timeout
 
+    # Defines process-level timeout accessors for the regexp class.
     module ClassMethods
       def timeout
         @timeout
