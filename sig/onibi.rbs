@@ -44,6 +44,7 @@ module Onibi
   class MatchData
     def []: (Integer index) -> String?
           | (Range[Integer] index) -> Array[String?]
+          | (String | Symbol index) -> String?
     def captures: () -> Array[String?]
     def offset: (Integer index) -> [Integer, Integer]?
     def begin: (Integer index) -> Integer?
