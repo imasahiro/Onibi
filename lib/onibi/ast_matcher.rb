@@ -67,7 +67,7 @@ module Onibi
 
     def class_matches?(source, character)
       negated = source.start_with?("^")
-      content = source[(negated ? 1 : 0)..-1]
+      content = source[(negated ? 1 : 0)..]
       matched = content.include?(character)
       matched ||= content.each_char.each_cons(3).any? do |first, hyphen, last|
         hyphen == "-" && character >= first && character <= last

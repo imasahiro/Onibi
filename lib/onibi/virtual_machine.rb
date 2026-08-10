@@ -71,9 +71,10 @@ module Onibi
       end
     end
 
+    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     def class_matches?(source, character)
       negated = source.start_with?("^")
-      codepoints = source[(negated ? 1 : 0)..-1].codepoints
+      codepoints = source[(negated ? 1 : 0)..].codepoints
       matched = false
       index = 0
 
@@ -89,6 +90,7 @@ module Onibi
 
       negated ? !matched : matched
     end
+    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
     def anchor_matches?(kind, position, input_length)
       (kind == :anchor_start && position.zero?) || (kind == :anchor_end && position == input_length)
