@@ -95,6 +95,5 @@ module Onibi
       index = @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
       @values[index]
     end
-
   end
 end
