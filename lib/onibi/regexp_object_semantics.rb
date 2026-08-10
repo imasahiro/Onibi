@@ -31,7 +31,7 @@ module Onibi
     private
 
     def regexp_mode_flags
-      { ignorecase: "i", multiline: "m", extended: "x" }
+      { multiline: "m", ignorecase: "i", extended: "x" }
     end
   end
 end
