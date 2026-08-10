@@ -7,7 +7,9 @@ class ParserTest < Minitest::Test
     ast = Onibi::Parser.new("ab|cd").parse
 
     assert_instance_of Onibi::AST::Alternation, ast
-    assert_equal %w[ab cd], ast.branches.map { |branch| branch.parts.map(&:value).join }
+    branches = ast.branches.map { |branch| branch.parts.map(&:value).join }
+
+    assert_equal %w[ab cd], branches
   end
 
   def test_groups_and_quantifiers_are_nested_in_the_expected_order

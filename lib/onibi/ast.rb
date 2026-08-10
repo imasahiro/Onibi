@@ -10,6 +10,6 @@ module Onibi
     Sequence = Struct.new(:parts)
     Alternation = Struct.new(:branches)
     Group = Struct.new(:body, :number)
-    Quantifier = Struct.new(:expression, :kind, :min, :max)
+    Quantifier = Struct.new(:expression, :kind, :minimum, :maximum)
   end
 end
