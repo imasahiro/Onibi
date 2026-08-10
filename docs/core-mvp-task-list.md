@@ -91,7 +91,7 @@ Implement tokenization for literals, escaped metacharacters, grouping, alternati
 
 **Dependencies:** CORE-005.
 
-### CORE-007 — Implement the AST and parser precedence
+### CORE-007 — Implement the AST and parser precedence [Complete]
 
 Implement AST nodes and parsing for literals, concatenation, alternation, groups, quantifiers, character classes, anchors, and options. Explicitly test precedence and grouping.
 

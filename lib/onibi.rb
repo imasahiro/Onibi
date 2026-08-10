@@ -2,6 +2,8 @@
 
 require_relative "onibi/version"
 require_relative "onibi/lexer"
+require_relative "onibi/ast"
+require_relative "onibi/parser"
 
 module Onibi
   class Error < StandardError; end
@@ -15,6 +17,7 @@ module Onibi
       raise RegexpError, "malformed character class" unless pattern.count("[") == pattern.count("]")
 
       @pattern = pattern
+      @ast = Parser.new(pattern).parse
     end
 
     def match?(input)
