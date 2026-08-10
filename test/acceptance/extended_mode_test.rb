@@ -15,4 +15,12 @@ class ExtendedModeTest < Minitest::Test
     assert regexp.match?(" ")
     assert regexp.match?("a")
   end
+
+  def test_inline_extended_modifier_ignores_whitespace_and_comments
+    assert Onibi::Regexp.new("(?x)a b # comment\n c").match?("abc")
+  end
+
+  def test_inline_extended_disable_modifier_preserves_whitespace
+    refute Onibi::Regexp.new("(?-x)a b", ["extended"]).match?("ab")
+  end
 end
