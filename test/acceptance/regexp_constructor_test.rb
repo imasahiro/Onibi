@@ -142,4 +142,14 @@ class RegexpConstructorTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }
     assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }
   end
+
+  def test_timeout_raises_regexp_timeout_error
+    regexp = Onibi::Regexp.new("z", timeout: 0.001)
+
+    error = assert_raises(Onibi::Regexp::TimeoutError) do
+      regexp.match?("a" * 1_000_000)
+    end
+
+    assert_match "regexp match timeout", error.message
+  end
 end

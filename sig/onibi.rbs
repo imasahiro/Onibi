@@ -8,6 +8,9 @@ module Onibi
   end
 
   class Regexp
+    class TimeoutError < RegexpError
+    end
+
     IGNORECASE: Integer
     EXTENDED: Integer
     MULTILINE: Integer
