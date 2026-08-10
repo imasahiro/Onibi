@@ -80,6 +80,19 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal Encoding::UTF_8, regexp.encoding
   end
 
+  def test_union_reconciles_noencoding_with_string_alternatives
+    noencoding = ::Regexp.new("a", ::Regexp::NOENCODING)
+
+    ascii = Onibi::Regexp.union(noencoding, "a")
+    assert_equal 0, ascii.options
+    refute ascii.fixed_encoding?
+
+    binary = Onibi::Regexp.union(noencoding, "é".b)
+    assert_equal Onibi::Regexp::FIXEDENCODING, binary.options
+    assert_equal Encoding::ASCII_8BIT, binary.encoding
+    assert binary.fixed_encoding?
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))

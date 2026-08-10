@@ -281,6 +281,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取り、compiled pattern の ignorecase scope を保持する基本対応を追加する。
 - [x] `Regexp.union` がcompiled pattern の multiline / extended scope と複合 option を保持する基本対応を追加する。
 - [x] `Regexp.union` がcompiled pattern の `FIXEDENCODING` / `NOENCODING` を保持する基本対応を追加する。
+- [x] `Regexp.union` が string alternative 追加時に `NOENCODING` を MRI の encoding option semantics に合わせて再計算する。
 - [x] `Regexp#match` / `match?` の position 引数を実装し、負数・Float coercion・範囲外を処理する。
 - [x] global match variables は設計スコープ外とし、Onibi の明示的な match API が global state を変更しないことを維持する。
 - acceptance: public API inventory の全メソッドを MRI と比較する。
