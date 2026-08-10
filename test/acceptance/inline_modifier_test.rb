@@ -44,6 +44,16 @@ class InlineModifierTest < Minitest::Test
     refute regexp.match?("ab#cd")
   end
 
+  def test_scoped_combined_ignorecase_and_multiline_modifiers
+    regexp = Onibi::Regexp.new("(?im:a.)")
+    disabled = Onibi::Regexp.new("(?-im:a.)", ["ignorecase", "multiline"])
+    extended = Onibi::Regexp.new("(?imx: a # scoped comment\n)")
+
+    assert regexp.match?("A\n")
+    refute disabled.match?("A\n")
+    assert extended.match?("A")
+  end
+
   def test_inline_multiline_modifier_enables_dot_all
     assert Onibi::Regexp.new("(?m).").match?("\n")
   end

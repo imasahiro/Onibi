@@ -6,18 +6,39 @@ module Onibi
     private
 
     def option_group_start?(index)
-      @source[index, 4] == "(?i:" || @source[index, 5] == "(?-i:" ||
-        @source[index, 4] == "(?m:" || @source[index, 5] == "(?-m:" ||
-        @source[index, 5] == "(?-x:"
+      !scoped_option_spec(index).nil?
     end
 
     def option_group_token(index)
-      return [Lexer::Token.new(:open_option_group, [true, nil], index), index + 4] if @source[index, 4] == "(?i:"
-      return [Lexer::Token.new(:open_option_group, [false, nil], index), index + 5] if @source[index, 5] == "(?-i:"
-      return [Lexer::Token.new(:open_option_group, [nil, true], index), index + 4] if @source[index, 4] == "(?m:"
-      return [Lexer::Token.new(:open_option_group, [nil, nil, false], index), index + 5] if @source[index, 5] == "(?-x:"
+      specification, ending = scoped_option_spec(index)
+      enabled, disabled = specification.split("-", -1)
+      disabled ||= ""
+      states = %w[i m x].map do |modifier|
+        if enabled.include?(modifier)
+          true
+        elsif disabled.include?(modifier)
+          false
+        end
+      end
 
-      [Lexer::Token.new(:open_option_group, [nil, false], index), index + 5]
+      [Lexer::Token.new(:open_option_group, states, index), ending + 1]
+    end
+
+    def scoped_option_spec(index)
+      return unless @source[index, 2] == "(?"
+
+      ending = @source.index(":", index + 2)
+      return unless ending
+
+      specification = @source[(index + 2)...ending]
+      enabled, disabled = specification.split("-", -1)
+      enabled ||= ""
+      disabled ||= ""
+      return if enabled.empty? && disabled.empty?
+      return unless (enabled + disabled).chars.all? { |modifier| %w[i m x].include?(modifier) }
+      return unless (enabled.chars & disabled.chars).empty?
+
+      [specification, ending]
     end
   end
 end
