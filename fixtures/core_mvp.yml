@@ -1,0 +1,140 @@
+---
+supported_features:
+- anchors
+- captures
+- character_classes
+- concatenation
+- escapes
+- literals
+- options
+- quantifiers
+- unicode
+unsupported_features:
+- atomic_groups
+- backreferences
+- lookarounds
+- named_captures
+- possessive_quantifiers
+- unicode_properties
+cases:
+- name: literal match
+  feature: literals
+  pattern: cat
+  options: []
+  input: catnap
+  encoding: UTF-8
+  outcome: match
+- name: literal no match
+  feature: literals
+  pattern: cat
+  options: []
+  input: dog
+  encoding: UTF-8
+  outcome: no_match
+- name: unicode literal
+  feature: unicode
+  pattern: "こんにちは"
+  options: []
+  input: "世界、こんにちは"
+  encoding: UTF-8
+  outcome: match
+- name: concatenation
+  feature: concatenation
+  pattern: ab
+  options: []
+  input: xxabyy
+  encoding: UTF-8
+  outcome: match
+- name: alternation
+  feature: concatenation
+  pattern: cat|dog
+  options: []
+  input: dog
+  encoding: UTF-8
+  outcome: match
+- name: numbered capture
+  feature: captures
+  pattern: "(ab)(cd)"
+  options: []
+  input: xxabcdyy
+  encoding: UTF-8
+  outcome: match
+- name: greedy star
+  feature: quantifiers
+  pattern: ab*
+  options: []
+  input: abbb
+  encoding: UTF-8
+  outcome: match
+- name: bounded repetition
+  feature: quantifiers
+  pattern: a{2,4}
+  options: []
+  input: aaaaa
+  encoding: UTF-8
+  outcome: match
+- name: character class
+  feature: character_classes
+  pattern: "[a-c]+"
+  options: []
+  input: cab
+  encoding: UTF-8
+  outcome: match
+- name: negated character class
+  feature: character_classes
+  pattern: "[^0-9]+"
+  options: []
+  input: abc
+  encoding: UTF-8
+  outcome: match
+- name: digit escape
+  feature: escapes
+  pattern: "\\d+"
+  options: []
+  input: "2026"
+  encoding: UTF-8
+  outcome: match
+- name: escaped metacharacter
+  feature: escapes
+  pattern: "\\."
+  options: []
+  input: .
+  encoding: UTF-8
+  outcome: match
+- name: beginning and end anchors
+  feature: anchors
+  pattern: "^cat$"
+  options: []
+  input: cat
+  encoding: UTF-8
+  outcome: match
+- name: case insensitive option
+  feature: options
+  pattern: cat
+  options:
+  - ignorecase
+  input: CAT
+  encoding: UTF-8
+  outcome: match
+- name: multiline option
+  feature: options
+  pattern: "^cat$"
+  options:
+  - multiline
+  input: "dog\ncat\nbird"
+  encoding: UTF-8
+  outcome: match
+- name: ascii binary literal
+  feature: literals
+  pattern: abc
+  options: []
+  input: abc
+  encoding: ASCII-8BIT
+  outcome: match
+- name: malformed pattern
+  feature: literals
+  pattern: "["
+  options: []
+  input: ""
+  encoding: UTF-8
+  outcome: error
