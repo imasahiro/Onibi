@@ -158,6 +158,7 @@ module Onibi
       simple = {"a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v"}[escaped]
       return [simple, index + 2] if simple
       return decode_control_escape(source, index) if %w[c C].include?(escaped)
+      return decode_meta_escape(source, index) if escaped == "M"
       return decode_hex_escape(source, index) if escaped == "x"
       return decode_unicode_escape(source, index) if escaped == "u"
 
@@ -170,6 +171,33 @@ module Onibi
       raise RegexpError, "invalid control escape" unless character
 
       [(character.ord & 0x1f).chr(source.encoding), character_index + 1]
+    end
+
+    def decode_meta_escape(source, index)
+      raise RegexpError, "invalid meta escape" unless source[index + 2] == "-"
+
+      character, ending = meta_escape_character(source, index + 3)
+      raise RegexpError, "invalid meta escape" unless character
+
+      [(character.ord | 0x80).chr(source.encoding), ending]
+    rescue EncodingError
+      raise RegexpError, "invalid meta escape"
+    end
+
+    def meta_escape_character(source, index)
+      return [source[index], index + 1] unless source[index] == "\\"
+
+      escaped = source[index + 1]
+      if escaped == "C"
+        character_index = source[index + 2] == "-" ? index + 3 : index + 2
+        character = source[character_index]
+        return [(character.ord & 0x1f).chr, character_index + 1] if character
+      elsif escaped == "x"
+        digits = source[(index + 2), 2]
+        return [digits.to_i(16).chr, index + 4] if digits && digits.length == 2 && digits.each_char.all? { |digit| hex_digit?(digit) }
+      end
+
+      nil
     end
 
     def decode_hex_escape(source, index)
