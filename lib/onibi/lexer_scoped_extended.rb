@@ -6,7 +6,7 @@ module Onibi
     module_function
 
     def normalize(source)
-      result = +""
+      result = (+"").force_encoding(source.encoding)
       index = 0
       while index < source.length
         unless source[index, 4] == "(?x:"

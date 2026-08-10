@@ -9,8 +9,32 @@ module Onibi
       return hex_escape_token(index) if escaped == "x"
       return unicode_escape_token(index) if escaped == "u"
       return control_escape_token(index, escaped) if %w[c C].include?(escaped)
+      return meta_escape_token(index) if escaped == "M"
 
       nil
+    end
+
+    def meta_escape_token(index)
+      raise RegexpError, "invalid meta escape" unless @source[index + 2] == "-"
+
+      character, ending = meta_escape_character(index + 3)
+      raise RegexpError, "invalid meta escape" unless character
+
+      value = [character.ord | 0x80].pack("C").force_encoding(@source.encoding)
+      raise RegexpError, "invalid meta escape" unless value.valid_encoding?
+
+      [Lexer::Token.new(:literal, value, index), ending]
+    rescue EncodingError
+      raise RegexpError, "invalid meta escape"
+    end
+
+    def meta_escape_character(index)
+      return [@source[index], index + 1] unless @source[index] == "\\"
+
+      escaped = @source[index + 1]
+      return unless escaped == "C" && @source[index + 2] == "-" && @source[index + 3]
+
+      [(@source[index + 3].ord & 0x1f).chr, index + 4]
     end
 
     def control_escape_token(index, escaped)
