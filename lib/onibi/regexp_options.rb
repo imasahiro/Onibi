@@ -51,6 +51,7 @@ module Onibi
 
     def validate_noencoding_pattern!(pattern, options)
       return unless options.include?("noencoding") && !pattern.ascii_only?
+      return if pattern.encoding == Encoding::ASCII_8BIT
 
       raise RegexpError, "non-ASCII pattern with no encoding"
     end
