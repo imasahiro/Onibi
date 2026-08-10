@@ -6,7 +6,7 @@ module Onibi
     include ParserAssertions
     include ParserQuantifiers
     GROUP_OPENINGS = %i[
-      open_group open_non_capture open_named_group open_atomic open_conditional
+      open_group open_non_capture open_named_group open_atomic open_conditional open_absence
       open_positive_lookahead open_negative_lookahead
       open_positive_lookbehind open_negative_lookbehind
     ].freeze
@@ -63,6 +63,7 @@ module Onibi
       return parse_assertion(opening) if opening.type.to_s.include?("look")
       return parse_atomic_group if opening.type == :open_atomic
       return parse_conditional(opening) if opening.type == :open_conditional
+      return parse_absence(opening) if opening.type == :open_absence
 
       parse_capture_group(opening)
     end
@@ -89,6 +90,12 @@ module Onibi
       branches = body.is_a?(AST::Alternation) ? body.branches : [body]
       no_branch = branches[1] || AST::Sequence.new([])
       AST::Conditional.new(opening.value, branches.first, no_branch)
+    end
+
+    def parse_absence(_opening)
+      body = parse_alternation
+      expect(:close_group)
+      AST::Absence.new(body)
     end
 
     def current_token

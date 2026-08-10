@@ -6,6 +6,7 @@ module Onibi
     include CaptureMatcherDispatch
     include CaptureMatcherAtoms
     include CaptureMatcherSubexpressions
+    include CaptureMatcherAbsence
 
     LAZY_MATCHERS = {
       AST::Quantifier => :lazy_quantifier_node?,

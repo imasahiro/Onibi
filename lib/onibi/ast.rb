@@ -16,6 +16,7 @@ module Onibi
     AtomicGroup = Struct.new(:body)
     Conditional = Struct.new(:condition, :yes_branch, :no_branch)
     SubexpressionCall = Struct.new(:identifier, :named)
+    Absence = Struct.new(:body)
     Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
   end
 end

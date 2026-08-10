@@ -51,7 +51,7 @@ module Onibi
     end
 
     def special_group_token(index)
-      return conditional_token(index) if conditional_group_start?(index)
+      return group_prefix_token(index) if absence_group_start?(index) || conditional_group_start?(index)
 
       token = {
         "(?:" => :open_non_capture,
@@ -63,6 +63,16 @@ module Onibi
       return lookbehind_token(index) if @source[index, 3] == "(?<"
 
       raise RegexpError, "unknown group extension"
+    end
+
+    def group_prefix_token(index)
+      return [Lexer::Token.new(:open_absence, "?~", index), index + 3] if absence_group_start?(index)
+
+      conditional_token(index)
+    end
+
+    def absence_group_start?(index)
+      @source[index] == "(" && @source[index + 1] == "?" && @source[index + 2] == "~"
     end
 
     def conditional_token(index)
