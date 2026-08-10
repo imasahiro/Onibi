@@ -37,6 +37,7 @@ module Onibi
     end
 
     def union(*patterns)
+      patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
       source = patterns.empty? ? "(?!)" : patterns.map { |pattern| union_source(pattern) }.join("|")
       Onibi::Regexp.new(source, union_encoding_options(patterns))
     end
