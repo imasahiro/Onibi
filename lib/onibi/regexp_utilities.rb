@@ -56,12 +56,20 @@ module Onibi
     end
 
     def union_encoding_options(patterns)
+      return Onibi::Regexp::FIXEDENCODING if patterns.any? { |pattern| non_ascii_pattern?(pattern) }
+
       compiled = patterns.select { |pattern| compiled_pattern?(pattern) }
+      return 0 if compiled.length < patterns.length
       return 0 if compiled.empty?
       return Onibi::Regexp::NOENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::NOENCODING).positive? }
       return Onibi::Regexp::FIXEDENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::FIXEDENCODING).positive? }
 
       0
+    end
+
+    def non_ascii_pattern?(pattern)
+      source = compiled_pattern?(pattern) ? pattern.source : String.try_convert(pattern)
+      source && !source.ascii_only?
     end
 
     def compiled_pattern?(pattern)
