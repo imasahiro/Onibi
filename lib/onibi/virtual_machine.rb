@@ -12,6 +12,7 @@ module Onibi
     end
 
     def match?(input)
+      @input_encoding = input.encoding
       characters = if input.valid_encoding?
                      input.chars.map { |character| character.codepoints.first }
                    else
@@ -91,11 +92,11 @@ module Onibi
 
     def property_matches?(property, character)
       name, negated = property
-      UnicodeProperties.matches?(name, character.chr) ^ negated
+      UnicodeProperties.matches?(name, character_string(character)) ^ negated
     end
 
     def escape_matches?(kind, character)
-      CharacterPredicates.escape_matches?(kind, character.chr)
+      CharacterPredicates.escape_matches?(kind, character_string(character))
     end
 
     def class_matches?(source, character)
@@ -105,7 +106,11 @@ module Onibi
     def character_matches?(source, character)
       return source.codepoints.first == character unless @ignorecase
 
-      source.downcase.codepoints.first == character.chr.downcase.codepoints.first
+      source.downcase == character_string(character).downcase
+    end
+
+    def character_string(character)
+      character.chr(@input_encoding)
     end
 
     def instruction_at(program_counter)
