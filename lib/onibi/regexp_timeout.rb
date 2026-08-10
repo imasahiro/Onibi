@@ -25,7 +25,7 @@ module Onibi
     def normalize_timeout(value)
       return if value.nil?
       raise TypeError, "timeout must be a Numeric or nil" unless value.is_a?(Numeric)
-      raise ArgumentError, "timeout must be finite and non-negative" unless value.finite? && value >= 0
+      raise ArgumentError, "timeout must be positive" if value <= 0
 
       value.to_f
     end
