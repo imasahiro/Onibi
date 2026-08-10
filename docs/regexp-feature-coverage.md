@@ -90,7 +90,7 @@
 | matching | Regexp#match? | ◐ | boolean と position 引数による検索開始位置を実装。Ruby の全エラー・encoding semantics は未完成。 |
 | matching | Regexp#=~、Regexp#===、unary ~ | ◐ | `=~` は match begin offset、`===` は boolean、unary `~` は top-level `$_` への match 結果を返す。offset 引数と完全な global match state は未対応。 |
 | matching state | $~、$&、$1 等 | 対象外 | global match variables を変更しない opt-in API という設計。 |
-| introspection | source | ◐ | 元の pattern を返す。Ruby 互換の frozen/encoding 詳細は未対応。 |
+| introspection | source | ◐ | 元の pattern を返し、non-fixed ASCII-only pattern は US-ASCII encoding に正規化する。Ruby 互換の frozen/その他 encoding 詳細は未対応。 |
 | introspection | options | ◐ | `Regexp#options` はRuby互換の整数bitmaskを返す。array constructor入力を含む全option意味・encoding flagの互換性は未対応。 |
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
 | introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、positive timeout validation、match評価への基本適用を実装。Rubyの厳密なtimeout error/class・copy semanticsは未対応。 |
@@ -253,6 +253,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - constructor の Ruby 互換 flags、Regexp 引数、keyword timeout を追加する。
 - source、encoding、fixed_encoding?、casefold?、==、eql?、hash、inspect、to_s を追加する。
 - [x] source と casefold? の基本 introspection を追加する。
+- [x] ASCII-only non-fixed pattern の `Regexp#source` encoding を US-ASCII に揃える。
 - [x] `==`、`eql?`、`hash` の基本 object semantics を追加する。
 - [x] 基本的な `inspect` / `to_s` formatting を追加する。
 - [x] `to_s` / `inspect` の Ruby mode flag order（`mix`）を追加する。
