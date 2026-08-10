@@ -52,6 +52,7 @@ module Onibi
 
     def special_group_token(index)
       return comment_token(index) if comment_group_start?(index)
+      return option_group_token(index) if option_group_start?(index)
       return group_prefix_token(index) if absence_group_start?(index) || conditional_group_start?(index)
 
       simple_token = simple_group_token(index)

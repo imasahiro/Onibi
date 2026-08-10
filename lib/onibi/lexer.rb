@@ -4,6 +4,7 @@ module Onibi
   # Converts the Core MVP pattern syntax into parser-ready tokens.
   class Lexer
     include LexerClasses
+    include LexerOptionGroups
     include LexerComments
     include LexerExtendedMode
     include LexerDispatch

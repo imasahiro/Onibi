@@ -9,6 +9,7 @@ module Onibi
       AST::Sequence => :compile_sequence,
       AST::Alternation => :compile_alternation,
       AST::Group => :compile_group,
+      AST::OptionGroup => :compile_option_group,
       AST::AtomicGroup => :compile_atomic_group,
       AST::Conditional => :compile_conditional,
       AST::Quantifier => :compile_quantifier,
@@ -82,6 +83,10 @@ module Onibi
       emit(:save_start, node.number)
       compile_node(node.body)
       emit(:save_end, node.number)
+    end
+
+    def compile_option_group(node)
+      compile_node(node.body)
     end
 
     def compile_atomic_group(node)

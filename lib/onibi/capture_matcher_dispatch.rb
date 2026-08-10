@@ -7,6 +7,7 @@ module Onibi
       AST::Sequence => :sequence_results,
       AST::Alternation => :alternation_results,
       AST::Group => :group_results,
+      AST::OptionGroup => :option_group_results,
       AST::AtomicGroup => :atomic_group_results,
       AST::Conditional => :conditional_results,
       AST::Quantifier => :quantifier_results,

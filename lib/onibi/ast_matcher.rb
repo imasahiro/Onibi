@@ -4,6 +4,7 @@ module Onibi
   # Correctness fallback for ASTs that cannot complete through bytecode dispatch.
   class AstMatcher
     include AstMatcherDispatch
+    include AstMatcherOptionGroups
 
     def initialize(ast, options = [])
       @ast = ast
