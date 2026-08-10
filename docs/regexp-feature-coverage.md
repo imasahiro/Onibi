@@ -97,7 +97,7 @@
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。全 encoding/option 表現は未対応。 |
 | class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の option scope や全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
-| class utility | Regexp.linear_time? | ❌ | Onibi の NFA/DFA 実行器に対応する公開判定 API は未実装。 |
+| class utility | Regexp.linear_time? | ◐ | String/MRI Regexp/Onibi Regexpを受け取り、backreference、subexpression call、lookaround、atomic groupを含むpatternを保守的にfalse判定する基本APIを実装。nested quantifierや実行器依存の厳密判定は未対応。 |
 | class utility | Regexp.timeout、Regexp.timeout= | ◐ | class-level timeoutのget/setとNumeric validationを実装。Ractor/global state・完全なerror compatibilityは未対応。 |
 | serialization | as_json、json_create、to_json | ❌ | JSON 拡張との連携は未実装。 |
 | integration | String#match、scan、gsub、sub | 対象外 | Core MVP/v1 の non-goal。Onibi を明示的に呼び出す API を優先する。 |
@@ -246,6 +246,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
 - [x] `Regexp::EXTENDED` integer flag を既存の extended mode に接続する。
 - [x] `Regexp#options` を全constructor形式で整数bitmaskとして返す。
+- [x] `Regexp.linear_time?` の保守的な危険構文判定を追加する。
 - [x] `Regexp.timeout` / `timeout=` と constructor timeout keywordの基本設定を追加する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
