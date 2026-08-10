@@ -11,6 +11,11 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal "a\\ b\\#", Onibi::Regexp.escape("a b#")
   end
 
+  def test_escape_quotes_hyphens_and_control_whitespace
+    assert_equal "\\-", Onibi::Regexp.escape("-")
+    assert_equal "\\t\\n\\v\\f\\r", Onibi::Regexp.escape("\t\n\v\f\r")
+  end
+
   def test_escape_matches_ruby_input_coercion_errors
     assert_equal "a", Onibi::Regexp.escape(:a)
     assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
