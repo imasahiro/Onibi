@@ -21,7 +21,7 @@
 | --- | --- | --- | --- | --- |
 | リテラル | 文字・Unicode 文字 | abc、こんにちは | ✅ | UTF-8 と ASCII-8BIT の範囲で実装・テスト済み。 |
 | メタ文字 | . ? - + * ^ バックスラッシュ 縦棒 $ ( ) [ ] { } | a\+、バックスラッシュ | ◐ | エスケープ対象の一部を実装。Ruby の escape sequence 全体は未実装。 |
-| 任意文字 | 改行以外の任意の 1 文字 | . | ◐ | Onibi は現在 . が改行にも一致する。Ruby の /m に相当する挙動が常時有効。 |
+| 任意文字 | 改行以外の任意の 1 文字 | . | ✅ | 通常は改行を除外し、`multiline` option で Ruby の dot-all 相当になる。 |
 | 文字クラス | 列挙 | [abc] | ✅ | 実装済み。 |
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
 | 文字クラス | 範囲 | [a-z]、[a-cd-f] | ✅ | 基本範囲を実装済み。 |
@@ -82,7 +82,7 @@
 | constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式。整数/文字列 flag、Regexp 引数、timeout は未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
-| mode | m / MULTILINE | ◐ | Onibi の multiline は ^/$ の判定にも影響する。Ruby の m は dot-all で ^/$ を変更しない。 |
+| mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
 | mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
 | mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と、複合 pattern 内を含む `(?i:pat)` / `(?-i:pat)` の scoped option AST を実装。全 modifier 組み合わせは未対応。 |
