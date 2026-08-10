@@ -47,6 +47,7 @@ module Onibi
 
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+      validate_encoding!(input)
 
       result = VirtualMachine.new(@bytecode, @options).match?(input)
       result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
@@ -57,6 +58,7 @@ module Onibi
 
     def match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+      validate_encoding!(input)
 
       span = AstMatcher.new(@ast, @options).match_span(input)
       dfa_specialization
@@ -72,6 +74,13 @@ module Onibi
     end
 
     private
+
+    def validate_encoding!(input)
+      return if @pattern.encoding == input.encoding
+      return if @pattern.ascii_only? && input.ascii_only?
+
+      raise Encoding::CompatibilityError, "incompatible encoding regexp match"
+    end
 
     def dfa_specialization
       return if self.class.dfa_memory_budget.zero?

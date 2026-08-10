@@ -179,7 +179,7 @@ Add a configurable internal memory budget for per-instance DFA specialization. W
 
 **Dependencies:** CORE-016.
 
-### CORE-018 — Validate UTF-8 and ASCII-8BIT behavior
+### CORE-018 — Validate UTF-8 and ASCII-8BIT behavior [Complete]
 
 Complete the Core MVP encoding handling for UTF-8 and ASCII-8BIT, including compatible pattern/input combinations and documented incompatibility errors.
 
