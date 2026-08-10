@@ -38,4 +38,11 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("cat")
     refute regexp.match?("dog")
   end
+
+  def test_linear_time_reports_conservative_pattern_safety
+    assert Onibi::Regexp.linear_time?("a*")
+    assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
+    refute Onibi::Regexp.linear_time?("(a*)\\1")
+    refute Onibi::Regexp.linear_time?("(?=a)b")
+  end
 end
