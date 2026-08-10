@@ -50,6 +50,12 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
   end
 
+  def test_named_captures_collects_duplicate_group_numbers
+    regexp = Onibi::Regexp.new("(?<value>x)(?<value>y)")
+
+    assert_equal({ "value" => [1, 2] }, regexp.named_captures)
+  end
+
   def test_equal_regexps_have_equal_object_semantics
     first = Onibi::Regexp.new("cat", ["ignorecase"])
     second = Onibi::Regexp.new("cat", ["ignorecase"])
