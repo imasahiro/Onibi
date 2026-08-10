@@ -51,6 +51,8 @@ module Onibi
     end
 
     def special_group_token(index)
+      return conditional_token(index) if conditional_group_start?(index)
+
       token = {
         "(?:" => :open_non_capture,
         "(?>" => :open_atomic,
@@ -61,6 +63,24 @@ module Onibi
       return lookbehind_token(index) if @source[index, 3] == "(?<"
 
       raise RegexpError, "unknown group extension"
+    end
+
+    def conditional_token(index)
+      ending = @source.index(")", index + 3)
+      condition = @source[(index + 3)...ending] if ending
+      raise RegexpError, "invalid conditional group" unless ending && valid_condition?(condition)
+
+      [Lexer::Token.new(:open_conditional, Integer(condition), index), ending + 1]
+    end
+
+    def valid_condition?(condition)
+      return false if condition.nil? || condition.empty?
+
+      condition.chars.all? { |character| character >= "0" && character <= "9" }
+    end
+
+    def conditional_group_start?(index)
+      @source[index] == "(" && @source[index + 1] == "?" && @source[index + 2] == "("
     end
 
     def lookbehind_token(index)

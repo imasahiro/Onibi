@@ -95,7 +95,7 @@ module Onibi
     def ast_matcher_required?
       matcher_tokens = [
         "\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!", "(?>",
-        "*+", "++", "?+", "*?", "+?", "??"
+        "*+", "++", "?+", "*?", "+?", "??", "?("
       ]
       matcher_tokens.any? do |escape|
         @pattern.include?(escape)
@@ -114,7 +114,7 @@ module Onibi
     end
 
     def capture_matcher_required?
-      ["\\k", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9"].any? do |escape|
+      ["\\k", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?("].any? do |escape|
         @pattern.include?(escape)
       end
     end

@@ -8,6 +8,7 @@ module Onibi
       AST::Alternation => :alternation_positions,
       AST::Group => :group_positions,
       AST::AtomicGroup => :atomic_group_positions,
+      AST::Conditional => :conditional_positions,
       AST::Assertion => :assertion_positions,
       AST::Quantifier => :quantifier_positions,
       AST::Literal => :literal_positions,
@@ -35,6 +36,10 @@ module Onibi
     def atomic_group_positions(node, characters, position)
       result = match_positions(node.body, characters, position).first
       result ? [result] : []
+    end
+
+    def conditional_positions(node, characters, position)
+      match_positions(node.no_branch, characters, position)
     end
 
     def assertion_positions(node, characters, position)

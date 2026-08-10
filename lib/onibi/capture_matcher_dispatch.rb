@@ -8,6 +8,7 @@ module Onibi
       AST::Alternation => :alternation_results,
       AST::Group => :group_results,
       AST::AtomicGroup => :atomic_group_results,
+      AST::Conditional => :conditional_results,
       AST::Quantifier => :quantifier_results,
       AST::Literal => :literal_results,
       AST::CharacterClass => :class_results,
@@ -24,7 +25,8 @@ module Onibi
       AST::AtomicGroup => :body_capture_count,
       AST::Sequence => :sequence_capture_count,
       AST::Alternation => :alternation_capture_count,
-      AST::Quantifier => :expression_capture_count
+      AST::Quantifier => :expression_capture_count,
+      AST::Conditional => :conditional_capture_count
     }.freeze
 
     private
@@ -62,6 +64,15 @@ module Onibi
 
     def body_capture_count(node)
       capture_count(node.body)
+    end
+
+    def conditional_results(node, characters, position, captures)
+      branch = captures[node.condition - 1] ? node.yes_branch : node.no_branch
+      match_results(branch, characters, position, captures)
+    end
+
+    def conditional_capture_count(node)
+      [capture_count(node.yes_branch), capture_count(node.no_branch)].max
     end
   end
 end
