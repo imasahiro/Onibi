@@ -25,7 +25,7 @@ module Onibi
 
         visited[[pc, position]] = true
         instruction = instruction_at(pc)
-        warn "VM #{pc}:#{position} #{instruction.opcode} #{input[position].inspect}" if ENV["ONIBI_TRACE"]
+        puts "VM #{pc}:#{position} #{instruction.opcode} #{input[position].inspect}" if ENV["ONIBI_TRACE"]
         case instruction.opcode
         when :match then return true
         when :split
