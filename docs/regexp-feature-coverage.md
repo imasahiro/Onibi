@@ -83,7 +83,7 @@
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と全構文への fold 伝播は未対応。 |
 | mode | m / MULTILINE | ◐ | Onibi の multiline は ^/$ の判定にも影響する。Ruby の m は dot-all で ^/$ を変更しない。 |
-| mode | x / EXTENDED | ❌ | 空白・# コメントを無視する extended mode は未実装。 |
+| mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
 | mode | inline modifier | (?i)、(?-i)、(?i:pat) | ❌ | 未実装。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
@@ -220,7 +220,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 
 - Priority: P1
 - Dependencies: REGEXP-002, REGEXP-007
-- extended mode x の whitespace/comment 処理を lexer 前処理として追加する。
+- [x] extended mode x の whitespace/comment 処理を lexer 前処理として追加する。
 - [x] (?#comment) を追加する。
 - inline modifier (?i)、(?-i)、(?i:...) 等を scope 付き option AST にする。
 - Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
