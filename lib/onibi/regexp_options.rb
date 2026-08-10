@@ -30,6 +30,19 @@ module Onibi
       normalized_options
     end
 
+    def normalize_inline_modifier(pattern, options)
+      return [pattern[4..], options | ["ignorecase"]] if pattern.start_with?("(?i)")
+      return [pattern[5..], options.reject { |option| option == "ignorecase" }] if pattern.start_with?("(?-i)")
+
+      [pattern, options]
+    end
+
+    def store_pattern_options(pattern, normalized_options, options)
+      @pattern = pattern
+      @options = normalized_options
+      @public_options = options.is_a?(Integer) ? options : normalized_options
+    end
+
     def normalize_integer_options(options)
       raise ArgumentError, "invalid options" if invalid_integer_options?(options)
 
