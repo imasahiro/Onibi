@@ -44,6 +44,8 @@ module Onibi
 
     def group_results(node, characters, position, captures)
       match_results(node.body, characters, position, captures).map do |finish, state|
+        next [finish, state] unless node.capture
+
         updated = state.dup
         updated[node.number - 1] = [position, finish]
         [finish, updated]

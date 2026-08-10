@@ -29,5 +29,6 @@ module Onibi
     def to_a: () -> Array[String?]
     def length: () -> Integer
     def size: () -> Integer
+    def named_captures: () -> Hash[String, String?]
   end
 end

@@ -3,10 +3,11 @@
 module Onibi
   # Immutable observable match result for the Core MVP.
   class MatchData
-    def initialize(values, captures, offsets)
+    def initialize(values, captures, offsets, names = {})
       @values = ([values] + captures).freeze
       @captures = captures.freeze
       @offsets = offsets.freeze
+      @names = names.freeze
     end
 
     def [](index)
@@ -39,6 +40,10 @@ module Onibi
 
     def size
       length
+    end
+
+    def named_captures
+      @names.transform_values { |index| self[index] }
     end
   end
 end

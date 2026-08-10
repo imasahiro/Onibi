@@ -69,6 +69,8 @@ module Onibi
     end
 
     def compile_group(node)
+      return compile_node(node.body) unless node.capture
+
       emit(:save_start, node.number)
       compile_node(node.body)
       emit(:save_end, node.number)

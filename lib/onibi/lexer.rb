@@ -56,6 +56,7 @@ module Onibi
       return literal_token(character, index) unless special_character?(character)
       return escaped_token(index) if character == "\\"
       return class_token(index) if character == "["
+      return group_token(index) if character == "("
       return simple_token(character, index) if SIMPLE_TOKENS.key?(character)
       return quantifier_token(index) if "*+?{".include?(character)
 

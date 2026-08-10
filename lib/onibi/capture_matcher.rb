@@ -69,7 +69,7 @@ module Onibi
     end
 
     def group_capture_count(node)
-      [node.number, capture_count(node.body)].max
+      node.capture ? [node.number, capture_count(node.body)].max : capture_count(node.body)
     end
 
     def sequence_capture_count(node)

@@ -34,7 +34,11 @@ module Onibi
       token = current_token
       raise RegexpError, "expected expression" unless token
 
-      atom = token.type == :open_group ? parse_group : parse_simple_atom(token)
+      atom = if %i[open_group open_non_capture open_named_group].include?(token.type)
+               parse_group
+             else
+               parse_simple_atom(token)
+             end
 
       parse_quantifier(atom)
     end
@@ -48,11 +52,14 @@ module Onibi
     end
 
     def parse_group
-      consume(:open_group)
-      @group_number += 1
+      opening = consume
+      capture = opening.type != :open_non_capture
+      @group_number += 1 if capture
       body = parse_alternation
       expect(:close_group)
-      AST::Group.new(body, @group_number)
+      number = capture ? @group_number : nil
+      name = opening.type == :open_named_group ? opening.value : nil
+      AST::Group.new(body, number, capture, name)
     end
 
     def parse_quantifier(atom)

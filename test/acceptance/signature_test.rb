@@ -30,6 +30,7 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def to_a: () -> Array[String?]"
     assert_includes signature, "def length: () -> Integer"
     assert_includes signature, "def size: () -> Integer"
+    assert_includes signature, "def named_captures: () -> Hash[String, String?]"
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end
