@@ -3,6 +3,7 @@
 require_relative "onibi/version"
 require_relative "onibi/regexp_options"
 require_relative "onibi/regexp_utilities"
+require_relative "onibi/regexp_constructor_patterns"
 require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/unicode_property_scripts"
@@ -56,6 +57,7 @@ module Onibi
   class Regexp
     extend RegexpUtilities
     include RegexpOptions
+    include RegexpConstructorPatterns
     include RegexpEncodingValidation
     include RegexpObjectSemantics
 
@@ -75,14 +77,8 @@ module Onibi
     end
 
     def initialize(pattern, options = nil)
-      validate_pattern_type!(pattern)
-      validate_pattern_encoding!(pattern)
-      @source_pattern = pattern
-      normalized_options = normalize_options(options)
-      pattern, normalized_options = normalize_inline_modifier(pattern, normalized_options)
-      validate_noencoding_pattern!(pattern, normalized_options)
-      validate_pattern_syntax!(pattern, normalized_options)
-      store_pattern_options(pattern, normalized_options, options)
+      pattern, options = normalize_constructor_pattern(pattern, options)
+      pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @ast = Parser.new(pattern, normalized_options).parse
       @bytecode = Compiler.new(@ast).compile
     end
