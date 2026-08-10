@@ -280,6 +280,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.escape` の ASCII-only result encoding を US-ASCII に揃える。
 - [x] `Regexp.quote` を `Regexp.escape` の alias として追加する。
 - [x] `Regexp.try_convert` の self / `to_regexp` / nil / TypeError contract を追加する。
+- [x] `Regexp#names` と `Regexp#named_captures` の基本取得を追加する。
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取り、compiled pattern の ignorecase scope を保持する基本対応を追加する。
 - [x] `Regexp.union` がcompiled pattern の multiline / extended scope と複合 option を保持する基本対応を追加する。
 - [x] `Regexp.union` がcompiled pattern の `FIXEDENCODING` / `NOENCODING` を保持する基本対応を追加する。
