@@ -47,6 +47,7 @@ module Onibi
 
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
       validate_encoding!(input)
 
       result = VirtualMachine.new(@bytecode, @options).match?(input)
@@ -58,6 +59,7 @@ module Onibi
 
     def match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
       validate_encoding!(input)
 
       span = AstMatcher.new(@ast, @options).match_span(input)
