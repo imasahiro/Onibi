@@ -75,7 +75,7 @@ Implement a reusable harness that runs the same pattern, options, and input thro
 
 **Dependencies:** CORE-002.
 
-### CORE-005 — Define public errors and input validation
+### CORE-005 — Define public errors and input validation [Complete]
 
 Define the initial public error behavior for invalid pattern types, invalid input types, invalid options, and malformed syntax. Add `Onibi::RegexpError` only if the compatibility design requires a namespaced error; otherwise map to the documented Ruby-compatible exception class.
 

@@ -4,15 +4,22 @@ require_relative "onibi/version"
 
 module Onibi
   class Error < StandardError; end
+  class RegexpError < Error; end
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
-    def initialize(pattern)
-      @pattern = String(pattern)
+    def initialize(pattern, options = nil)
+      raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
+      raise ArgumentError, "invalid options" unless options.nil?
+      raise RegexpError, "malformed character class" unless pattern.count("[") == pattern.count("]")
+
+      @pattern = pattern
     end
 
     def match?(input)
-      String(input).include?(@pattern)
+      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
+      input.include?(@pattern)
     end
   end
 end
