@@ -4,7 +4,7 @@ module Onibi
   # Provides MatchData character and byte offset accessors.
   module MatchDataOffsets
     def offset(index)
-      offset_at(index)&.dup
+      offset_at(index) || [nil, nil]
     end
 
     def begin(index)

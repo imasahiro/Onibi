@@ -77,7 +77,7 @@ class MatchApiTest < Minitest::Test
     repeated = Onibi::Regexp.new("(ab)+").match("abab")
 
     assert_nil optional[1]
-    assert_nil optional.offset(1)
+    assert_equal [nil, nil], optional.offset(1)
     assert_equal "ab", repeated[1]
     assert_equal [2, 4], repeated.offset(1)
   end
