@@ -11,8 +11,8 @@ module Onibi
       not_space: ->(character) { !whitespace?(character) },
       word: ->(character) { word?(character) },
       not_word: ->(character) { !word?(character) },
-      horizontal_space: ->(character) { horizontal_whitespace?(character) },
-      not_horizontal_space: ->(character) { !horizontal_whitespace?(character) }
+      horizontal_space: ->(character) { hex_digit?(character) },
+      not_horizontal_space: ->(character) { !hex_digit?(character) }
     }.freeze
 
     module_function
@@ -28,6 +28,11 @@ module Onibi
 
     def horizontal_whitespace?(character)
       [9, 32].include?(codepoint(character))
+    end
+
+    def hex_digit?(character)
+      value = codepoint(character)
+      value.between?(48, 57) || value.between?(65, 70) || value.between?(97, 102)
     end
 
     def linebreak?(character)
