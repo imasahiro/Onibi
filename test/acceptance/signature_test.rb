@@ -36,6 +36,7 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def self.try_convert: (untyped value) -> Regexp?"
     assert_includes signature, "def names: () -> Array[String]"
     assert_includes signature, "def named_captures: () -> Hash[String, Array[Integer]]"
+    assert_includes signature, "def hash: () -> Integer\n    def to_s: () -> String\n    def inspect: () -> String"
     assert_includes signature, "class MatchData"
     assert_includes signature, "def []: (Integer index) -> String?"
     assert_includes signature, "def captures: () -> Array[String?]"
