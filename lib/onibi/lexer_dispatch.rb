@@ -19,7 +19,16 @@ module Onibi
       return literal_token(character, index) unless special_character?(character)
       return escaped_token(index) if character == "\\"
       return class_token(index) if character == "["
-      return group_token(index) if character == "("
+      if character == "("
+        token, ending = group_token(index)
+        extended_scope_opened(token)
+        return [token, ending]
+      end
+      if character == ")"
+        token = simple_token(character, index)
+        extended_scope_closed
+        return token
+      end
       return simple_token(character, index) if Lexer::SIMPLE_TOKENS.key?(character)
       return quantifier_token(index) if "*+?{".include?(character)
 
