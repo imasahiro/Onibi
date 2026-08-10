@@ -42,5 +42,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "ASCII-compatible pattern/input の全 4×4 encoding matrix"
     assert_includes document, "mode の on/off scope と comment/whitespace の parse/match を MRI と比較"
     assert_includes document, "constructor options の boolean/string/symbol flags"
+    assert_includes document, "`Regexp.union` の単一 Array 入力"
   end
 end

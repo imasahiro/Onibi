@@ -33,6 +33,7 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def self.timeout: () -> Float?"
     assert_includes signature, "def self.timeout=: (Numeric? value) -> Float?"
     assert_includes signature, "def self.linear_time?:"
+    assert_includes signature, "def self.union: (Array[String] patterns)"
     assert_includes signature, "def self.quote: (untyped string) -> String"
     assert_includes signature, "def self.try_convert: (untyped value) -> Regexp?"
     assert_includes signature, "def names: () -> Array[String]"

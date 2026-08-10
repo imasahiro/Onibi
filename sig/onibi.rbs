@@ -25,7 +25,9 @@ module Onibi
     def self.escape: (untyped string) -> String
     def self.quote: (untyped string) -> String
     def self.try_convert: (untyped value) -> Regexp?
-    def self.union: (*String patterns) -> Regexp
+    def self.union: (Array[String] patterns) -> Regexp
+                   | (Array[::Regexp | String] patterns) -> Regexp
+                   | (*String patterns) -> Regexp
                    | (*(::Regexp | String) patterns) -> Regexp
     def self.linear_time?: (String | ::Regexp | Regexp pattern) -> bool
     def self.dfa_memory_budget: () -> Integer
