@@ -4,6 +4,8 @@ require_relative "onibi/version"
 require_relative "onibi/lexer"
 require_relative "onibi/ast"
 require_relative "onibi/parser"
+require_relative "onibi/bytecode"
+require_relative "onibi/compiler"
 
 module Onibi
   class Error < StandardError; end
@@ -18,6 +20,7 @@ module Onibi
 
       @pattern = pattern
       @ast = Parser.new(pattern).parse
+      @bytecode = Compiler.new(@ast).compile
     end
 
     def match?(input)
