@@ -64,12 +64,39 @@ module Onibi
       @string[finish..] || ""
     end
 
+    def bytebegin(index)
+      offset = @offsets[index]
+      offset && byte_position(offset.first)
+    end
+
+    def byteend(index)
+      offset = @offsets[index]
+      offset && byte_position(offset.last)
+    end
+
+    def byteoffset(index)
+      return unless @offsets[index]
+
+      [bytebegin(index), byteend(index)]
+    end
+
+    def match_length(index)
+      offset = @offsets[index]
+      offset && offset.last - offset.first
+    end
+
     def named_captures
       @names.transform_values { |index| self[index] }
     end
 
     def names
       @names.keys
+    end
+
+    private
+
+    def byte_position(character_position)
+      @string[0, character_position].bytesize
     end
   end
 end
