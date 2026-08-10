@@ -24,6 +24,8 @@ module Onibi
       source.ascii_only? ? escaped.force_encoding(Encoding::US_ASCII) : escaped
     end
 
+    alias quote escape
+
     def union(*patterns)
       source = patterns.empty? ? "(?!)" : patterns.map { |pattern| union_source(pattern) }.join("|")
       Onibi::Regexp.new(source, union_encoding_options(patterns))
