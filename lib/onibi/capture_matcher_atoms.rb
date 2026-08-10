@@ -38,6 +38,15 @@ module Onibi
       matched ? [[position + 1, captures]] : []
     end
 
+    def backreference_results(node, characters, position, captures)
+      index = node.named ? CaptureNameCollector.call(@ast)[node.identifier] : node.identifier
+      offset = captures[index && index - 1]
+      return [] unless offset
+
+      length = offset[1] - offset[0]
+      characters[position, length] == characters[offset[0]...offset[1]] ? [[position + length, captures]] : []
+    end
+
     def escape_matches?(kind, character)
       CharacterPredicates.escape_matches?(kind, character)
     end

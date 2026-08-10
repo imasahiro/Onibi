@@ -12,6 +12,7 @@ module Onibi
       AST::CharacterClass => :class_results,
       AST::Escape => :escape_results,
       AST::Property => :property_results,
+      AST::Backreference => :backreference_results,
       AST::Any => :any_results,
       AST::Anchor => :anchor_results
     }.freeze

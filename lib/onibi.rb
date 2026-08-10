@@ -14,6 +14,7 @@ require_relative "onibi/parser"
 require_relative "onibi/parser_tokens"
 require_relative "onibi/bytecode"
 require_relative "onibi/alternation_compiler"
+require_relative "onibi/compiler_references"
 require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine_anchors"
 require_relative "onibi/virtual_machine"
@@ -23,6 +24,7 @@ require_relative "onibi/capture_matcher_dispatch"
 require_relative "onibi/capture_matcher_atoms"
 require_relative "onibi/capture_matcher"
 require_relative "onibi/capture_name_collector"
+require_relative "onibi/backreference_lexer"
 require_relative "onibi/match_data"
 require_relative "onibi/dfa"
 
@@ -57,12 +59,7 @@ module Onibi
 
       validate_encoding!(input)
 
-      result = if ast_matcher_required?
-                 AstMatcher.new(@ast, @options).match?(input)
-               else
-                 VirtualMachine.new(@bytecode, @options).match?(input)
-               end
-      result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
+      result = matching_result(input)
 
       dfa_specialization
       result
@@ -93,7 +90,25 @@ module Onibi
     end
 
     def ast_matcher_required?
-      ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "*+", "++", "?+", "*?", "++", "+?", "??"].any? do |escape|
+      matcher_tokens = ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "*+", "++", "?+", "*?", "+?", "??"]
+      matcher_tokens.any? do |escape|
+        @pattern.include?(escape)
+      end
+    end
+
+    def matching_result(input)
+      return !CaptureMatcher.new(@ast, @options).match_details(input).nil? if capture_matcher_required?
+
+      return AstMatcher.new(@ast, @options).match?(input) if ast_matcher_required?
+
+      result = nil
+      result ||= VirtualMachine.new(@bytecode, @options).match?(input)
+      result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
+      result
+    end
+
+    def capture_matcher_required?
+      ["\\k", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9"].any? do |escape|
         @pattern.include?(escape)
       end
     end

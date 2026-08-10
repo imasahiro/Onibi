@@ -6,6 +6,7 @@ module Onibi
     CharacterClass = Struct.new(:value)
     Escape = Struct.new(:kind)
     Property = Struct.new(:name, :negated)
+    Backreference = Struct.new(:identifier, :named)
     Any = Struct.new(:value)
     Anchor = Struct.new(:kind)
     Sequence = Struct.new(:parts)

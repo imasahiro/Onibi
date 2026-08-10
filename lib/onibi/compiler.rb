@@ -3,6 +3,7 @@
 module Onibi
   # Compiles AST nodes into Thompson-NFA instructions.
   class Compiler
+    include CompilerReferences
     NODE_COMPILERS = {
       AST::Sequence => :compile_sequence,
       AST::Alternation => :compile_alternation,
@@ -12,6 +13,7 @@ module Onibi
       AST::CharacterClass => :compile_character_class,
       AST::Escape => :compile_escape,
       AST::Property => :compile_property,
+      AST::Backreference => :compile_backreference,
       AST::Any => :compile_any,
       AST::Anchor => :compile_anchor
     }.freeze

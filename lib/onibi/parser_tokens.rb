@@ -18,6 +18,7 @@ module Onibi
       not_word_boundary: ->(token) { AST::Escape.new(token.type) },
       start_match: ->(token) { AST::Escape.new(token.type) },
       property: ->(token) { AST::Property.new(token.value[0], token.value[1]) },
+      backreference: ->(token) { AST::Backreference.new(token.value, token.value.is_a?(String)) },
       class: ->(token) { AST::CharacterClass.new(token.value) },
       dot: ->(token) { AST::Any.new(token.value) },
       anchor_start: ->(token) { AST::Anchor.new(token.type) },
