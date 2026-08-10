@@ -2,6 +2,7 @@
 
 require_relative "onibi/version"
 require_relative "onibi/lexer"
+require_relative "onibi/character_predicates"
 require_relative "onibi/ast"
 require_relative "onibi/parser"
 require_relative "onibi/bytecode"

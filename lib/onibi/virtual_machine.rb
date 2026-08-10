@@ -89,8 +89,8 @@ module Onibi
     def escape_matches?(kind, character)
       case kind
       when :digit then character.between?("0".ord, "9".ord)
-      when :space then character.chr =~ /\s/
-      when :word then character.chr =~ /[A-Za-z0-9_]/
+      when :space then CharacterPredicates.whitespace?(character)
+      when :word then CharacterPredicates.word?(character)
       end
     end
 
