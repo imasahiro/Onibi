@@ -57,7 +57,12 @@ module Onibi
         ending = nested_end(source, index)
         return [[:nested, source[(index + 1)...ending]], ending + 1]
       end
-      return [[:escaped, source[index + 1]], index + 2] if source[index] == "\\"
+      if source[index] == "\\"
+        decoded, ending = literal_escape(source, index)
+        return [[:literal, decoded], ending] if decoded
+
+        return [[:escaped, source[index + 1]], index + 2]
+      end
 
       [[:literal, source[index]], index + 1]
     end
@@ -119,6 +124,57 @@ module Onibi
       return value == character unless %w[d D s S w W h H].include?(value)
 
       CharacterPredicates.escape_matches?(escape_kind(value), character)
+    end
+
+    def literal_escape(source, index)
+      escaped = source[index + 1]
+      simple = {"a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v"}[escaped]
+      return [simple, index + 2] if simple
+      return decode_hex_escape(source, index) if escaped == "x"
+      return decode_unicode_escape(source, index) if escaped == "u"
+
+      [nil, nil]
+    end
+
+    def decode_hex_escape(source, index)
+      cursor = index + 2
+      digits = +""
+      while digits.length < 2 && hex_digit?(source[cursor])
+        digits << source[cursor]
+        cursor += 1
+      end
+      raise RegexpError, "invalid hex escape" if digits.empty?
+
+      [digits.to_i(16).chr(source.encoding), cursor]
+    end
+
+    def decode_unicode_escape(source, index)
+      if source[index + 2] == "{"
+        ending = source.index("}", index + 3)
+        raise RegexpError, "invalid Unicode escape" unless ending
+
+        values = source[(index + 3)...ending].split.map { |digits| unicode_codepoint(digits) }
+        raise RegexpError, "invalid Unicode escape" if values.empty?
+
+        return [values.map { |value| value.chr(source.encoding) }.join, ending + 1]
+      end
+
+      digits = source[(index + 2), 4]
+      raise RegexpError, "invalid Unicode escape" unless digits && digits.length == 4 && digits.each_char.all? { |digit| hex_digit?(digit) }
+
+      [digits.to_i(16).chr(source.encoding), index + 6]
+    rescue RangeError, EncodingError
+      raise RegexpError, "invalid Unicode escape"
+    end
+
+    def unicode_codepoint(digits)
+      raise RegexpError, "invalid Unicode escape" if digits.empty? || digits.length > 6 || !digits.each_char.all? { |digit| hex_digit?(digit) }
+
+      digits.to_i(16)
+    end
+
+    def hex_digit?(character)
+      character && (character >= "0" && character <= "9" || character >= "a" && character <= "f" || character >= "A" && character <= "F")
     end
 
     def escape_kind(value)
