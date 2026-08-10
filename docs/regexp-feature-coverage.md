@@ -194,9 +194,12 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-003
-- 非捕捉 group、named capture、named/numbered backreference を追加する。
-- positive/negative lookahead/lookbehind と fixed-width lookbehind 検証を追加する。
-- atomic group、conditional、subexpression call、absence operator を個別の AST/VM 機能として追加する。
+- [x] 非捕捉 group、named capture、named/numbered backreference を追加する。
+- [x] positive/negative lookahead/lookbehind と fixed-width lookbehind 検証を追加する。
+- [x] atomic group を個別の AST/VM 機能として追加する。
+- [ ] conditional group を個別の AST/VM 機能として追加する。
+- [ ] subexpression call を個別の AST/VM 機能として追加する。
+- [ ] absence operator を個別の AST/VM 機能として追加する。
 - \K match reset も capture/span 設計と合わせて追加する。
 - acceptance: 各構文を独立 fixture とし、parse error、capture、zero-width span を比較する。
 
