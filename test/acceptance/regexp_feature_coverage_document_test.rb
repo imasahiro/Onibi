@@ -34,5 +34,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "caret control escapes"
     assert_includes document, "`Regexp.new` の options ではなく regex literal"
     assert_includes document, "global match variables は設計スコープ外"
+    assert_includes document, "public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較"
   end
 end
