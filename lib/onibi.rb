@@ -39,27 +39,23 @@ module Onibi
     end
     # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
+    # rubocop:disable Metrics/MethodLength
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       result = VirtualMachine.new(@bytecode, @options).match?(input)
-      unless result
-        result = if @pattern.include?("|") || @pattern.include?("(")
-                   AstMatcher.new(@ast, @options).match?(input)
-                 else
-                   false
-                 end
-      end
+      result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
 
-      publish_dfa_specialization
+      dfa_specialization
       result
     end
+    # rubocop:enable Metrics/MethodLength
 
     def match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       span = AstMatcher.new(@ast, @options).match_span(input)
-      publish_dfa_specialization
+      dfa_specialization
       return nil unless span
 
       characters = input.chars
@@ -73,7 +69,7 @@ module Onibi
 
     private
 
-    def publish_dfa_specialization
+    def dfa_specialization
       @dfa_specialization ||= DfaSpecialization.new(@ast)
     end
   end
