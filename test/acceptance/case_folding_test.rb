@@ -10,4 +10,8 @@ class CaseFoldingTest < Minitest::Test
   def test_ignorecase_matches_unicode_full_case_folding
     assert Onibi::Regexp.new("ß", ["ignorecase"]).match?("SS")
   end
+
+  def test_ignorecase_applies_to_character_classes
+    assert Onibi::Regexp.new("[k]", ["ignorecase"]).match?("K")
+  end
 end

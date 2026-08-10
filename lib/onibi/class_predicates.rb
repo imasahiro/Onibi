@@ -5,18 +5,24 @@ module Onibi
   module ClassPredicates
     module_function
 
-    def matches?(source, character)
+    def matches?(source, character, ignorecase: false)
       character = character.chr(source.encoding) if character.is_a?(Integer)
       posix = POSIX_PROPERTIES[source]
       return UnicodeProperties.matches?(posix, character) if posix
 
       intersection = split_intersection(source)
-      return matches?(intersection[0], character) && matches?(intersection[1], character) if intersection
+      return intersection_matches?(intersection, character, ignorecase) if intersection
 
       negated = source.start_with?("^")
       content = negated ? source[1..] : source
-      result = union_matches?(content, character)
+      result = union_matches?(content, character, ignorecase)
       negated ? !result : result
+    end
+
+    def intersection_matches?(intersection, character, ignorecase)
+      left = matches?(intersection[0], character, ignorecase: ignorecase)
+      right = matches?(intersection[1], character, ignorecase: ignorecase)
+      left && right
     end
 
     def split_intersection(source)
@@ -33,12 +39,12 @@ module Onibi
       nil
     end
 
-    def union_matches?(source, character)
+    def union_matches?(source, character, ignorecase)
       index = 0
       while index < source.length
         first, index = atom(source, index)
         return true if range_matches?(source, index, first, character)
-        return true if atom_matches?(first, character)
+        return true if atom_matches?(first, character, ignorecase)
 
         index = range_end(source, index, first)
       end
@@ -101,10 +107,10 @@ module Onibi
       [depth, cursor + 1]
     end
 
-    def atom_matches?(atom, character)
+    def atom_matches?(atom, character, ignorecase)
       kind, value = atom
-      return value == character if kind == :literal
-      return matches?(value, character) if kind == :nested
+      return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
+      return matches?(value, character, ignorecase: ignorecase) if kind == :nested
 
       escaped_matches?(value, character)
     end
