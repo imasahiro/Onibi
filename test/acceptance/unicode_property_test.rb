@@ -21,6 +21,13 @@ class UnicodePropertyTest < Minitest::Test
     assert Onibi::Regexp.new("[[:word:]]").match?("あ")
   end
 
+  def test_uncased_letters_are_not_upper_or_lower_and_ascii_posix_class_matches
+    refute Onibi::Regexp.new("\\p{Upper}").match?("あ")
+    refute Onibi::Regexp.new("\\p{Lower}").match?("あ")
+    assert Onibi::Regexp.new("[[:ascii:]]").match?("A")
+    refute Onibi::Regexp.new("[[:ascii:]]").match?("あ")
+  end
+
   def test_negated_property_and_posix_digit_class
     assert Onibi::Regexp.new("\\P{ASCII}").match?("é")
     refute Onibi::Regexp.new("\\P{ASCII}").match?("A")

@@ -33,11 +33,15 @@ module Onibi
     end
 
     def lower?(character)
-      letter?(character) && character == character.downcase
+      caseable_letter?(character) && character == character.downcase
     end
 
     def upper?(character)
-      letter?(character) && character == character.upcase
+      caseable_letter?(character) && character == character.upcase
+    end
+
+    def caseable_letter?(character)
+      letter?(character) && character.downcase != character.upcase
     end
 
     def space?(character)
