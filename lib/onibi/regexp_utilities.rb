@@ -16,7 +16,7 @@ module Onibi
 
     def union(*patterns)
       source = patterns.empty? ? "(?!)" : patterns.map { |pattern| union_source(pattern) }.join("|")
-      Onibi::Regexp.new(source)
+      Onibi::Regexp.new(source, union_encoding_options(patterns))
     end
 
     def linear_time?(pattern)
@@ -43,6 +43,15 @@ module Onibi
       source = "(?x:#{source})" if (options & Onibi::Regexp::EXTENDED).positive?
 
       source
+    end
+
+    def union_encoding_options(patterns)
+      compiled = patterns.select { |pattern| compiled_pattern?(pattern) }
+      return 0 if compiled.empty?
+      return Onibi::Regexp::NOENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::NOENCODING).positive? }
+      return Onibi::Regexp::FIXEDENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::FIXEDENCODING).positive? }
+
+      0
     end
 
     def compiled_pattern?(pattern)
