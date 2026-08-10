@@ -74,6 +74,12 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal "/cat/i", regexp.inspect
   end
 
+  def test_inspect_reports_noencoding_mode
+    regexp = Onibi::Regexp.new("cat", Onibi::Regexp::NOENCODING)
+
+    assert_equal "/cat/n", regexp.inspect
+  end
+
   def test_new_accepts_an_existing_onibi_regexp
     original = Onibi::Regexp.new("cat", ["ignorecase"])
     copy = Onibi::Regexp.new(original)
