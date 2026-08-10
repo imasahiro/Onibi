@@ -71,4 +71,11 @@ class MatchApiTest < Minitest::Test
     assert_equal "ab", repeated[1]
     assert_equal [2, 4], repeated.offset(1)
   end
+
+  def test_match_values_at_extracts_indices_and_ranges
+    match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
+
+    assert_equal ["abcd", "cd", nil], match.values_at(0, 2, 9)
+    assert_equal %w[abcd ab], match.values_at(0..1)
+  end
 end

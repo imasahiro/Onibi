@@ -43,6 +43,7 @@ module Onibi
 
   class MatchData
     def []: (Integer index) -> String?
+          | (Range[Integer] index) -> Array[String?]
     def captures: () -> Array[String?]
     def offset: (Integer index) -> [Integer, Integer]?
     def begin: (Integer index) -> Integer?
@@ -50,6 +51,7 @@ module Onibi
     def to_a: () -> Array[String?]
     def length: () -> Integer
     def size: () -> Integer
+    def values_at: (*untyped indices) -> Array[String?]
     def named_captures: () -> Hash[String, String?]
   end
 end
