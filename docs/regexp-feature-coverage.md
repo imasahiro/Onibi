@@ -118,7 +118,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | surrounding text | pre_match、post_match | ◐ | match の文字 offset を利用した前後文字列を返す。全 byte offset 互換は未対応。 |
 | named captures | names、named_captures | ◐ | named capture、`names`、`named_captures`、string/symbol による `[]` / `values_at` を実装。全 API は未対応。 |
 | indexed extraction | values_at | ◐ | integer index、range、out-of-range nil を実装。全 Ruby index 型互換は未対応。 |
-| formatting / identity | inspect、to_s、==、eql?、hash | ❌ | 未実装。 |
+| formatting / identity | inspect、to_s、==、eql?、hash | ◐ | `MatchData#to_s` / `inspect` を実装。`==` / `eql?` / `hash` と full identity compatibility は未対応。 |
 | modern destructuring | deconstruct、deconstruct_keys | ❌ | 未実装。 |
 
 ## 現時点の結論
@@ -264,6 +264,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#names` と `named_captures` の基本取得を追加する。
 - [x] `MatchData#bytebegin`、`byteend`、`byteoffset`、`match_length` の基本取得を追加する。
 - [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。
+- [x] `MatchData#to_s` と named capture を含む基本 `inspect` を追加する。
 - inspect、to_s、==、eql?、hash、deconstruct、deconstruct_keys を追加する。
 - String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
 - acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
