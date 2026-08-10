@@ -28,7 +28,9 @@ module Onibi
         warn "VM #{pc}:#{position} #{instruction.opcode} #{input[position].inspect}" if ENV["ONIBI_TRACE"]
         case instruction.opcode
         when :match then return true
-        when :split then pending.push([instruction.operand, position], [instruction.target, position])
+        when :split
+          pending << [instruction.operand, position]
+          pending << [instruction.target, position]
         when :jump then pending << [instruction.target, position]
         when :save_start, :save_end then pending << [pc + 1, position]
         when :anchor
