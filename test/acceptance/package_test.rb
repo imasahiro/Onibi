@@ -8,22 +8,10 @@ require "rbconfig"
 class PackageTest < Minitest::Test
   def test_gem_installs_in_a_clean_home_and_loads_public_api
     Dir.mktmpdir("onibi-package") do |directory|
-      gem_path = File.join(directory, "onibi.gem")
-      gem_home = File.join(directory, "gems")
+      gem_path = build_package(directory)
+      gem_home = install_package(directory, gem_path)
 
-      build = run_command("gem", "build", "onibi.gemspec", "--output", gem_path)
-      assert_command_success(build)
-
-      install = run_command("gem", "install", "--local", "--install-dir", gem_home, gem_path, "--no-document")
-      assert_command_success(install)
-
-      smoke = run_command(
-        { "GEM_HOME" => gem_home, "GEM_PATH" => gem_home },
-        RbConfig.ruby,
-        "-e",
-        'require "onibi"; abort unless Onibi::Regexp.new("a").match?("a")'
-      )
-      assert_command_success(smoke)
+      assert_command_success(run_smoke(gem_home))
     end
   end
 
@@ -31,6 +19,28 @@ class PackageTest < Minitest::Test
 
   def run_command(*command)
     Open3.capture3(*command, chdir: File.expand_path("../..", __dir__))
+  end
+
+  def build_package(directory)
+    gem_path = File.join(directory, "onibi.gem")
+
+    assert_command_success(run_command("gem", "build", "onibi.gemspec", "--output", gem_path))
+    gem_path
+  end
+
+  def install_package(directory, gem_path)
+    gem_home = File.join(directory, "gems")
+    command = ["gem", "install", "--local", "--install-dir", gem_home, gem_path, "--no-document"]
+
+    assert_command_success(run_command(*command))
+    gem_home
+  end
+
+  def run_smoke(gem_home)
+    environment = { "GEM_HOME" => gem_home, "GEM_PATH" => gem_home }
+    command = [RbConfig.ruby, "-e", 'require "onibi"; abort unless Onibi::Regexp.new("a").match?("a")']
+
+    run_command(environment, *command)
   end
 
   def build_output(result)
