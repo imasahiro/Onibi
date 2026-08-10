@@ -34,6 +34,7 @@ module Onibi
       instruction = instruction_at(program_counter)
 
       return true if instruction.opcode == :match
+
       dispatch_instruction(program_counter, position, input, visited, instruction)
     end
 
