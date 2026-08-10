@@ -1,0 +1,34 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class EncodingTest < Minitest::Test
+  def test_utf8_literals_and_classes_match
+    assert Onibi::Regexp.new("é").match?("café")
+    assert Onibi::Regexp.new("[é]").match?("é")
+    assert Onibi::Regexp.new("(é)+").match?("éé")
+  end
+
+  def test_ascii8bit_literals_and_classes_match
+    pattern = "[a-c]".b
+    input = "zzb".b
+
+    assert Onibi::Regexp.new(pattern).match?(input)
+    assert Onibi::Regexp.new("\\d".b).match?("7".b)
+  end
+
+  def test_invalid_utf8_input_keeps_byte_matching_behavior
+    invalid_utf8 = [0xff].pack("C*").force_encoding(Encoding::UTF_8)
+
+    assert Onibi::Regexp.new(".".encode(Encoding::UTF_8)).match?(invalid_utf8)
+  end
+
+  def test_incompatible_pattern_and_input_encodings_raise
+    utf8_pattern = "é".encode(Encoding::UTF_8)
+    ascii8bit_input = "é".b
+
+    assert_raises(Encoding::CompatibilityError) do
+      Onibi::Regexp.new(utf8_pattern).match?(ascii8bit_input)
+    end
+  end
+end

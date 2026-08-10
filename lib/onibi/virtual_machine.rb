@@ -10,7 +10,11 @@ module Onibi
     end
 
     def match?(input)
-      characters = input.chars.map { |character| character.codepoints.first }
+      characters = if input.valid_encoding?
+                     input.chars.map { |character| character.codepoints.first }
+                   else
+                     input.bytes
+                   end
 
       (0..characters.length).any? { |start| match_from?(characters, start) }
     end
