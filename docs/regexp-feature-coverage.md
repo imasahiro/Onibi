@@ -306,7 +306,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
 - timeout/resource control の v1 scope は positive timeout と専用例外、保守的な linear-time 判定、既存 DFA memory budget とし、包括的な ReDoS/step/cancellation 制御は v2 に延期する。
 
-### REGEXP-012 — MatchData の完全な Ruby API と統合を追加する
+### REGEXP-012 [Complete] — MatchData の完全な Ruby API と統合を追加する
 
 - Priority: P2
 - Dependencies: REGEXP-001, REGEXP-010
@@ -329,6 +329,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `deconstruct` から full match を除外し、`deconstruct_keys` を Symbol-keyed Ruby semantics に揃える。
 - [x] String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal とし、v2 の MRI integration shape 判断時に解除を再検討する。
 - [x] acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
+- MatchData integration の v1 scope は Onibi::Regexp が明示的に返す MatchData API とし、String/Symbol 側の implicit match/scan/gsub/sub integration は v2 に延期する。
 
 ## 参照資料
 
