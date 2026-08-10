@@ -76,6 +76,6 @@ class MatchApiTest < Minitest::Test
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 
     assert_equal ["abcd", "cd", nil], match.values_at(0, 2, 9)
-    assert_equal ["abcd", "ab"], match.values_at(0..1)
+    assert_equal %w[abcd ab], match.values_at(0..1)
   end
 end
