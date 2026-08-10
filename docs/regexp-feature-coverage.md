@@ -181,7 +181,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Ruby 4.0.6 が参照する Unicode データと更新手順を固定する。
 - acceptance: Unicode property の代表値と invalid property error を differential test する。
 
-### REGEXP-006 — quantifier の lazy / possessive semantics を実装する
+### REGEXP-006 [Complete] — quantifier の lazy / possessive semantics を実装する
 
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-002

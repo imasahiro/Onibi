@@ -98,21 +98,21 @@ module Onibi
     end
 
     def quantifier_value(index)
-      return @source[index] unless @source[index] == "{"
-
-      ending = @source.index("}", index)
-      raise RegexpError, "unterminated quantifier" unless ending
-
-      @source[index..ending]
+      @source[index...quantifier_end(index)]
     end
 
     def quantifier_end(index)
-      return index + 1 unless @source[index] == "{"
+      ending = index + 1
+      if @source[index] == "{"
+        ending = @source.index("}", index)
+        raise RegexpError, "unterminated quantifier" unless ending
 
-      ending = @source.index("}", index)
-      raise RegexpError, "unterminated quantifier" unless ending
+        ending += 1
+      end
 
-      ending + 1
+      ending += 1 if %w[? +].include?(@source[ending])
+
+      ending
     end
   end
 end

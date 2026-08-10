@@ -59,8 +59,18 @@ module Onibi
       return atom unless current_token&.type == :quantifier
 
       value = consume.value
-      kind, minimum, maximum = quantifier_bounds(value)
-      AST::Quantifier.new(atom, kind, minimum, maximum)
+      mode, base = quantifier_mode(value)
+      kind, minimum, maximum = quantifier_bounds(base)
+      raise RegexpError, "possessive bounded quantifier is not supported" if mode == :possessive && kind == :bounded
+
+      AST::Quantifier.new(atom, kind, minimum, maximum, mode)
+    end
+
+    def quantifier_mode(value)
+      return [:lazy, value[0...-1]] if value.end_with?("?") && value.length > 1
+      return [:possessive, value[0...-1]] if value.end_with?("+") && value.length > 1
+
+      [:greedy, value]
     end
 
     def quantifier_bounds(value)

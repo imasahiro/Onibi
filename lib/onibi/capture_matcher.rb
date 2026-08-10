@@ -6,6 +6,13 @@ module Onibi
     include CaptureMatcherDispatch
     include CaptureMatcherAtoms
 
+    LAZY_MATCHERS = {
+      AST::Quantifier => :lazy_quantifier_node?,
+      AST::Sequence => :lazy_sequence?,
+      AST::Alternation => :lazy_alternation?,
+      AST::Group => :lazy_group?
+    }.freeze
+
     def initialize(ast, options = [])
       @ast = ast
       @ignorecase = options.include?("ignorecase")
@@ -18,7 +25,8 @@ module Onibi
 
       (0..characters.length).each do |start|
         captures = Array.new(@capture_count)
-        result = match_results(@ast, characters, start, captures).max_by(&:first)
+        results = match_results(@ast, characters, start, captures)
+        result = (lazy_pattern? ? results.min_by(&:first) : results.max_by(&:first))
         return [start, result[0], result[1]] if result
       end
 
@@ -41,7 +49,7 @@ module Onibi
         current = next_results
       end
 
-      all.select { |finish, _state| finish >= position + node.minimum }
+      quantifier_results_for(node, position, all)
     end
 
     def quantifier_limit(node, characters)
@@ -74,6 +82,38 @@ module Onibi
 
     def parts_capture_count(parts)
       parts.map { |part| capture_count(part) }.max || 0
+    end
+
+    def quantifier_results_for(node, position, all)
+      results = all.select { |finish, _state| finish >= position + node.minimum }
+      return [results.max_by(&:first)] if node.mode == :possessive
+
+      results
+    end
+
+    def lazy_pattern?
+      lazy_quantifier?(@ast)
+    end
+
+    def lazy_quantifier?(node)
+      matcher = LAZY_MATCHERS[node.class]
+      matcher ? send(matcher, node) : false
+    end
+
+    def lazy_quantifier_node?(node)
+      node.mode == :lazy || lazy_quantifier?(node.expression)
+    end
+
+    def lazy_sequence?(node)
+      node.parts.any? { |part| lazy_quantifier?(part) }
+    end
+
+    def lazy_alternation?(node)
+      node.branches.any? { |branch| lazy_quantifier?(branch) }
+    end
+
+    def lazy_group?(node)
+      lazy_quantifier?(node.body)
     end
   end
 end

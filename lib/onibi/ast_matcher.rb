@@ -45,12 +45,17 @@ module Onibi
       positions = [position]
       maximum = node.maximum || characters.length + 1
       maximum.times do
-        next_positions = positions.flat_map { |current| match_positions(node.expression, characters, current) }.uniq
+        next_positions = quantifier_step(node, characters, positions)
         break if next_positions.empty? || next_positions == positions
 
         positions.concat(next_positions).uniq!
       end
-      positions.select { |current| current >= position + node.minimum }
+      results = positions.select { |current| current >= position + node.minimum }
+      node.mode == :possessive ? [results.max].compact : results
+    end
+
+    def quantifier_step(node, characters, positions)
+      positions.flat_map { |current| match_positions(node.expression, characters, current) }.uniq
     end
 
     def literal_positions(node, characters, position)
