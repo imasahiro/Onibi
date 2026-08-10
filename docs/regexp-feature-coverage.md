@@ -294,7 +294,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] global match variables は設計スコープ外とし、Onibi の明示的な match API が global state を変更しないことを維持する。
 - [x] public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較し、global match state の `last_match` は設計スコープ外として明記する。
 
-### REGEXP-011 — timeout、linear-time 判定、ReDoS 制御を追加する
+### REGEXP-011 [Complete] — timeout、linear-time 判定、ReDoS 制御を追加する
 
 - Priority: P2
 - Dependencies: REGEXP-007, REGEXP-010
@@ -304,6 +304,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Regexp.linear_time? 相当の保守的な安全性判定（backreference、lookaround、atomic group、absence operator）を追加する。
 - [x] NFA/DFA のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。v1 は DFA memory budget を必須とし、包括的な ReDoS 対策、CPU timeout、入力/pattern 上限、step budget、割り込み・キャンセル、運用可観測性は設計書どおり v2 に延期する。
 - [x] backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
+- timeout/resource control の v1 scope は positive timeout と専用例外、保守的な linear-time 判定、既存 DFA memory budget とし、包括的な ReDoS/step/cancellation 制御は v2 に延期する。
 
 ### REGEXP-012 — MatchData の完全な Ruby API と統合を追加する
 

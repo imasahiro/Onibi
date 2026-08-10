@@ -51,5 +51,7 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "全 encoding semantics のうち v1 で検証する範囲"
     assert_includes document, "### REGEXP-010 [Complete]"
     assert_includes document, "`Regexp.last_match` は global match state を導入しない v1 non-goal"
+    assert_includes document, "### REGEXP-011 [Complete]"
+    assert_includes document, "timeout/resource control の v1 scope"
   end
 end
