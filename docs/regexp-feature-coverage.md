@@ -288,7 +288,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.union` が string alternative 追加時に `NOENCODING` を MRI の encoding option semantics に合わせて再計算する。
 - [x] `Regexp#match` / `match?` の position 引数を実装し、負数・Float coercion・範囲外を処理する。
 - [x] global match variables は設計スコープ外とし、Onibi の明示的な match API が global state を変更しないことを維持する。
-- acceptance: public API inventory の全メソッドを MRI と比較する。
+- [x] public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較し、global match state の `last_match` は設計スコープ外として明記する。
 
 ### REGEXP-011 — timeout、linear-time 判定、ReDoS 制御を追加する
 
