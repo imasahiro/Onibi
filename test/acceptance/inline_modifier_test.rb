@@ -30,4 +30,14 @@ class InlineModifierTest < Minitest::Test
   def test_inline_multiline_disable_modifier_turns_dot_all_off
     refute Onibi::Regexp.new("(?-m).", ["multiline"]).match?("\n")
   end
+
+  def test_combined_inline_modifiers_enable_multiple_modes
+    assert Onibi::Regexp.new("(?imx)a # comment\n").match?("A")
+  end
+
+  def test_combined_inline_modifiers_disable_multiple_modes
+    regexp = Onibi::Regexp.new("(?-imx). a", ["ignorecase", "multiline", "extended"])
+
+    refute regexp.match?("\n A")
+  end
 end

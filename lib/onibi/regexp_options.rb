@@ -11,6 +11,7 @@ module Onibi
       ["(?x)", "extended", true],
       ["(?-x)", "extended", false]
     ].freeze
+    INLINE_OPTION_NAMES = { "i" => "ignorecase", "m" => "multiline", "x" => "extended" }.freeze
 
     def encoding
       return Encoding::US_ASCII if @options.include?("noencoding")
@@ -43,11 +44,41 @@ module Onibi
       return [pattern[4...-1], options | ["ignorecase"]] if whole_scoped_ignorecase?(pattern)
 
       modifier = INLINE_MODIFIERS.find { |prefix, _option, _enabled| pattern.start_with?(prefix) }
-      return [pattern, options] unless modifier
+      return apply_inline_modifier(pattern, options, modifier) if modifier
 
+      combined = combined_inline_modifier(pattern)
+      return [pattern, options] unless combined
+
+      prefix_length, enabled, disabled = combined
+      updated_options = options.dup
+      enabled.each { |modifier_name| updated_options |= [INLINE_OPTION_NAMES.fetch(modifier_name)] }
+      disabled.each { |modifier_name| updated_options.delete(INLINE_OPTION_NAMES.fetch(modifier_name)) }
+      [pattern[prefix_length..], updated_options]
+    end
+
+    def apply_inline_modifier(pattern, options, modifier)
       prefix, option, enabled = modifier
       updated_options = enabled ? options | [option] : options.reject { |item| item == option }
       [pattern[prefix.length..], updated_options]
+    end
+
+    def combined_inline_modifier(pattern)
+      return unless pattern.start_with?("(?")
+
+      closing = pattern.index(")")
+      return unless closing
+
+      enabled, disabled = pattern[2...closing].split("-", -1)
+      enabled = enabled.to_s.chars
+      disabled = disabled.to_s.chars
+      return unless valid_inline_modifier_names?(enabled, disabled)
+
+      [closing + 1, enabled, disabled]
+    end
+
+    def valid_inline_modifier_names?(enabled, disabled)
+      names = enabled + disabled
+      !names.empty? && names.all? { |name| INLINE_OPTION_NAMES.key?(name) } && (enabled & disabled).empty?
     end
 
     def whole_scoped_ignorecase?(pattern)
