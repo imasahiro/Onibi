@@ -230,7 +230,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Unicode property pattern の source encoding と implicit `FIXEDENCODING` introspection を追加する。
 - /u、/e、/s 相当と `FIXEDENCODING` の完全な互換性を追加する。
 - 全 encoding matrix と encoding mode の発生条件を揃える。
-- acceptance: Ruby 4.0.6 の encoding matrix を fixture 化する。
+- [x] acceptance: Ruby 4.0.6 の代表的な encoding matrix を `fixtures/regexp_encoding_matrix.yml` に fixture 化する。
 
 ### REGEXP-009 — mode と source preprocessing を実装する
 
