@@ -10,6 +10,7 @@ module Onibi
       AST::Alternation => :compile_alternation,
       AST::Group => :compile_group,
       AST::AtomicGroup => :compile_atomic_group,
+      AST::Conditional => :compile_conditional,
       AST::Quantifier => :compile_quantifier,
       AST::Literal => :compile_literal,
       AST::CharacterClass => :compile_character_class,
@@ -83,6 +84,10 @@ module Onibi
 
     def compile_atomic_group(node)
       compile_node(node.body)
+    end
+
+    def compile_conditional(node)
+      compile_node(node.yes_branch)
     end
 
     def emit(opcode, operand = nil)
