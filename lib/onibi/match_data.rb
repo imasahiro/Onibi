@@ -92,7 +92,12 @@ module Onibi
     end
 
     def value_at(index)
-      index = @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
+      if index.is_a?(String) || index.is_a?(Symbol)
+        name = index.to_s
+        raise IndexError, "undefined group name reference: #{name}" unless @names.key?(name)
+
+        index = @names[name]
+      end
       @values[index]
     end
   end
