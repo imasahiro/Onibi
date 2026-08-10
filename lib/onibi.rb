@@ -66,7 +66,7 @@ module Onibi
       validate_pattern_encoding!(pattern)
       normalized_options = normalize_options(options)
       validate_noencoding_pattern!(pattern, normalized_options)
-      validate_pattern_syntax!(pattern)
+      validate_pattern_syntax!(pattern, normalized_options)
       @pattern = pattern
       @options = normalized_options
       @public_options = options.is_a?(Integer) ? options : normalized_options
@@ -119,9 +119,10 @@ module Onibi
       MatchingResult.call(@ast, @bytecode, @pattern, @options, input)
     end
 
-    def validate_pattern_syntax!(pattern)
+    def validate_pattern_syntax!(pattern, options)
       tokens = Lexer.new(pattern).tokens
-      if pattern.encoding == Encoding::ASCII_8BIT && tokens.any? { |token| token.type == :property }
+      binary_pattern = pattern.encoding == Encoding::ASCII_8BIT || options.include?("noencoding")
+      if binary_pattern && tokens.any? { |token| token.type == :property }
         raise RegexpError, "Unicode properties require a text encoding"
       end
 
