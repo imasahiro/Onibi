@@ -3,8 +3,10 @@
 module Onibi
   # Correctness fallback for ASTs that cannot complete through bytecode dispatch.
   class AstMatcher
-    def initialize(ast)
+    def initialize(ast, options = [])
       @ast = ast
+      @ignorecase = options.include?("ignorecase")
+      @multiline = options.include?("multiline")
     end
 
     def match?(input)
@@ -55,7 +57,11 @@ module Onibi
     def literal_positions(node, characters, position)
       value = node.value.chars
 
-      characters[position, value.length] == value ? [position + value.length] : []
+      expected = @ignorecase ? value.map(&:downcase) : value
+      actual = characters[position, value.length]
+      actual = actual.map(&:downcase) if @ignorecase
+
+      actual == expected ? [position + value.length] : []
     end
 
     def class_positions(node, characters, position)
@@ -92,8 +98,8 @@ module Onibi
     end
 
     def anchor_positions(node, characters, position)
-      at_start = node.kind == :anchor_start && position.zero?
-      at_end = node.kind == :anchor_end && position == characters.length
+      at_start = node.kind == :anchor_start && (position.zero? || (@multiline && characters[position - 1] == "\n"))
+      at_end = node.kind == :anchor_end && (position == characters.length || (@multiline && characters[position] == "\n"))
 
       at_start || at_end ? [position] : []
     end

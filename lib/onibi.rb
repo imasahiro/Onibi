@@ -17,10 +17,13 @@ module Onibi
   class Regexp
     def initialize(pattern, options = nil)
       raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
-      raise ArgumentError, "invalid options" unless options.nil?
+      normalized_options = options || []
+      valid_options = normalized_options.is_a?(Array) && normalized_options.all? { |option| %w[ignorecase multiline].include?(option) }
+      raise ArgumentError, "invalid options" unless valid_options
       raise RegexpError, "malformed character class" unless pattern.count("[") == pattern.count("]")
 
       @pattern = pattern
+      @options = normalized_options
       @ast = Parser.new(pattern).parse
       @bytecode = Compiler.new(@ast).compile
     end
@@ -28,10 +31,10 @@ module Onibi
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      return true if VirtualMachine.new(@bytecode).match?(input)
+      return true if VirtualMachine.new(@bytecode, @options).match?(input)
       return false unless @pattern.include?("|") || @pattern.include?("(")
 
-      AstMatcher.new(@ast).match?(input)
+      AstMatcher.new(@ast, @options).match?(input)
     end
   end
 end

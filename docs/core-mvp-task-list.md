@@ -131,7 +131,7 @@ Implement positive classes, negated classes, ranges, escaped characters inside c
 
 **Dependencies:** CORE-009.
 
-### CORE-012 — Implement anchors and matching options
+### CORE-012 — Implement anchors and matching options [Complete]
 
 Implement `^`, `$`, case-insensitive matching, and multiline behavior as defined for the Core MVP.
 
