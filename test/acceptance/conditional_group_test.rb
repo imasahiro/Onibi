@@ -14,4 +14,11 @@ class ConditionalGroupTest < Minitest::Test
 
     assert_equal "c", regexp.match("c")[0]
   end
+
+  def test_named_conditional_group_selects_branch_from_named_capture
+    regexp = Onibi::Regexp.new("(?<letter>a)?(?(<letter>)b|c)")
+
+    assert_equal "ab", regexp.match("ab")[0]
+    assert_equal "c", regexp.match("c")[0]
+  end
 end
