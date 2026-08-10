@@ -93,7 +93,7 @@ module Onibi
       pattern.start_with?("(?i:") && pattern.end_with?(")")
     end
 
-    def store_pattern_options(pattern, normalized_options, options)
+    def store_pattern_options(pattern, normalized_options, _options)
       @pattern = pattern
       @options = normalized_options
       @public_options = option_bits(normalized_options)
