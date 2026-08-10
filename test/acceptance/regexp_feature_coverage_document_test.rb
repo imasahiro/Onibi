@@ -38,5 +38,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "MatchData メソッド一覧を網羅"
     assert_includes document, "危険パターンの安全性を differential/property test"
     assert_includes document, "DFA memory budget"
+    assert_includes document, "String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal"
   end
 end
