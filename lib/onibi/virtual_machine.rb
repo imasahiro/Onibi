@@ -4,6 +4,7 @@ module Onibi
   # Executes Thompson bytecode without recursive backtracking.
   class VirtualMachine
     include VirtualMachineAnchors
+
     def initialize(program, options = [])
       @program = program
       @ignorecase = options.include?("ignorecase")
@@ -88,11 +89,7 @@ module Onibi
     end
 
     def escape_matches?(kind, character)
-      case kind
-      when :digit then character.between?("0".ord, "9".ord)
-      when :space then CharacterPredicates.whitespace?(character)
-      when :word then CharacterPredicates.word?(character)
-      end
+      CharacterPredicates.escape_matches?(kind, character.chr)
     end
 
     def class_matches?(source, character)

@@ -31,18 +31,33 @@ module Onibi
     end
 
     def escape_results(node, characters, position, captures)
+      return zero_width_results(node.kind, characters, position, captures) if zero_width_escape?(node.kind)
+      return linebreak_results(characters, position, captures) if node.kind == :linebreak
       return [] unless position < characters.length && escape_matches?(node.kind, characters[position])
 
       [[position + 1, captures]]
     end
 
     def escape_matches?(kind, character)
-      predicates = {
-        digit: -> { character >= "0" && character <= "9" },
-        space: -> { CharacterPredicates.whitespace?(character) },
-        word: -> { CharacterPredicates.word?(character) }
-      }
-      predicates.fetch(kind).call
+      CharacterPredicates.escape_matches?(kind, character)
+    end
+
+    def zero_width_escape?(kind)
+      %i[word_boundary not_word_boundary start_match].include?(kind)
+    end
+
+    def zero_width_results(kind, characters, position, captures)
+      matches = CharacterPredicates.word_boundary?(characters, position)
+      matches = !matches if kind == :not_word_boundary
+      matches = position.zero? if kind == :start_match
+      matches ? [[position, captures]] : []
+    end
+
+    def linebreak_results(characters, position, captures)
+      return [] unless position < characters.length && CharacterPredicates.linebreak?(characters[position])
+      return [[position + 2, captures]] if characters[position, 2] == ["\r", "\n"]
+
+      [[position + 1, captures]]
     end
 
     def any_results(_node, characters, position, captures)

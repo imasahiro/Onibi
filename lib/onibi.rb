@@ -5,6 +5,7 @@ require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
 require_relative "onibi/ast"
 require_relative "onibi/parser"
+require_relative "onibi/parser_tokens"
 require_relative "onibi/bytecode"
 require_relative "onibi/alternation_compiler"
 require_relative "onibi/compiler"
@@ -49,7 +50,11 @@ module Onibi
 
       validate_encoding!(input)
 
-      result = VirtualMachine.new(@bytecode, @options).match?(input)
+      result = if ast_matcher_required?
+                 AstMatcher.new(@ast, @options).match?(input)
+               else
+                 VirtualMachine.new(@bytecode, @options).match?(input)
+               end
       result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
 
       dfa_specialization
@@ -78,6 +83,10 @@ module Onibi
       return if pattern.is_a?(String)
 
       raise TypeError, "no implicit conversion of #{pattern.class} into String"
+    end
+
+    def ast_matcher_required?
+      ["\\R", "\\b", "\\B", "\\G"].any? { |escape| @pattern.include?(escape) }
     end
 
     def normalize_options(options)

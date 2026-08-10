@@ -8,8 +8,17 @@ module Onibi
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
     ESCAPED_TYPES = {
       "d" => :digit,
+      "D" => :not_digit,
       "s" => :space,
+      "S" => :not_space,
       "w" => :word,
+      "W" => :not_word,
+      "h" => :horizontal_space,
+      "H" => :not_horizontal_space,
+      "R" => :linebreak,
+      "b" => :word_boundary,
+      "B" => :not_word_boundary,
+      "G" => :start_match,
       "A" => :anchor_absolute_start,
       "Z" => :anchor_before_final_newline,
       "z" => :anchor_absolute_end
