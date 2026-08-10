@@ -95,7 +95,7 @@
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
 | introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、match評価への基本適用を実装。Rubyの厳密なtimeout error/class・copy semanticsは未対応。 |
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。`to_s` / `inspect` の Ruby mode flag order（`mix`）も対応。全 encoding/option 表現は未対応。 |
-| class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の ignorecase に加えて multiline / extended scope も保持するが、その他の全オプション互換は未対応。 |
+| class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の ignorecase、multiline / extended scope、FIXEDENCODING / NOENCODING も保持するが、その他の全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
 | class utility | Regexp.linear_time? | ◐ | String/MRI Regexp/Onibi Regexpを受け取り、backreference、subexpression call、lookaround、atomic groupを含むpatternを保守的にfalse判定する基本APIを実装。nested quantifierや実行器依存の厳密判定は未対応。 |
 | class utility | Regexp.timeout、Regexp.timeout= | ◐ | class-level timeoutのget/setとNumeric validationを実装。Ractor/global state・完全なerror compatibilityは未対応。 |
@@ -269,6 +269,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取り、compiled pattern の ignorecase scope を保持する基本対応を追加する。
 - [x] `Regexp.union` がcompiled pattern の multiline / extended scope と複合 option を保持する基本対応を追加する。
+- [x] `Regexp.union` がcompiled pattern の `FIXEDENCODING` / `NOENCODING` を保持する基本対応を追加する。
 - [x] `Regexp#match` / `match?` の position 引数を実装し、負数・Float coercion・範囲外を処理する。
 - global match variables を opt-in replacement で扱うか、Onibi 独自 API として明確に分離する。
 - acceptance: public API inventory の全メソッドを MRI と比較する。
