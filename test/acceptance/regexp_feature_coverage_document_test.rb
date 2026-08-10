@@ -49,5 +49,7 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "advanced syntax の acceptance corpus を MRI と比較"
     assert_includes document, "### REGEXP-008 [Complete]"
     assert_includes document, "全 encoding semantics のうち v1 で検証する範囲"
+    assert_includes document, "### REGEXP-010 [Complete]"
+    assert_includes document, "Regexp.last_match は v1 non-goal"
   end
 end
