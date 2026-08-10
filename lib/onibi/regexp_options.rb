@@ -31,10 +31,15 @@ module Onibi
     end
 
     def normalize_inline_modifier(pattern, options)
+      return [pattern[4...-1], options | ["ignorecase"]] if whole_scoped_ignorecase?(pattern)
       return [pattern[4..], options | ["ignorecase"]] if pattern.start_with?("(?i)")
       return [pattern[5..], options.reject { |option| option == "ignorecase" }] if pattern.start_with?("(?-i)")
 
       [pattern, options]
+    end
+
+    def whole_scoped_ignorecase?(pattern)
+      pattern.start_with?("(?i:") && pattern.end_with?(")")
     end
 
     def store_pattern_options(pattern, normalized_options, options)
