@@ -41,7 +41,7 @@ module Onibi
 
     def values_at(*indices)
       indices.flat_map do |index|
-        index.is_a?(Range) ? index.map { |value| value_at(value) } : [value_at(index)]
+        index.is_a?(Range) ? range_values(index) : [value_at(index)]
       end
     end
 
@@ -89,6 +89,23 @@ module Onibi
 
     def match_identity
       [@values, @offsets, @string, @regexp]
+    end
+
+    def range_values(range)
+      first = range_index(range.begin)
+      last = range_index(range.end)
+      last -= 1 if range.exclude_end?
+      raise RangeError, "#{range} out of range" if first.negative?
+
+      return [] if first > last
+
+      (first..last).map { |index| value_at(index) }
+    end
+
+    def range_index(index)
+      return index + @captures.length + 1 if index.is_a?(Integer) && index.negative?
+
+      index
     end
 
     def value_at(index)
