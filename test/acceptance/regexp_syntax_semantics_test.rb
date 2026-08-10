@@ -9,6 +9,19 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     end
   end
 
+  def test_hex_and_unicode_escapes_match_literal_characters
+    assert Onibi::Regexp.new("\\x41").match?("A")
+    assert Onibi::Regexp.new("\\u0041").match?("A")
+    assert Onibi::Regexp.new("\\u{1F600}").match?("😀")
+    assert Onibi::Regexp.new("\\u{41 42}").match?("AB")
+  end
+
+  def test_invalid_hex_and_unicode_escapes_raise_regexp_error
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\x") }
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u12") }
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u{}") }
+  end
+
   def test_dot_excludes_newline_unless_multiline_is_enabled
     refute Onibi::Regexp.new(".").match?("\n")
     assert Onibi::Regexp.new(".", ["multiline"]).match?("\n")
