@@ -93,20 +93,7 @@ module Onibi
     end
 
     def class_matches?(source, character)
-      negated = source.start_with?("^")
-      codepoints = source[(negated ? 1 : 0)..].codepoints
-      matched = class_codepoints_match?(codepoints, character)
-
-      negated ? !matched : matched
-    end
-
-    def class_codepoints_match?(codepoints, character)
-      codepoints.each_with_index.any? do |codepoint, index|
-        next codepoint == character unless codepoints[index + 1] == "-".ord
-
-        ending = codepoints[index + 2]
-        ending && codepoint.upto(ending).include?(character)
-      end
+      ClassPredicates.matches?(source, character)
     end
 
     def character_matches?(source, character)

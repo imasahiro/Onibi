@@ -3,6 +3,7 @@
 module Onibi
   # Converts the Core MVP pattern syntax into parser-ready tokens.
   class Lexer
+    include LexerClasses
     Token = Struct.new(:type, :value, :position)
 
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
@@ -89,11 +90,10 @@ module Onibi
     end
 
     def class_token(index)
-      ending = index + 1
-      ending += 1 while ending < @source.length && @source[ending] != "]"
-      raise RegexpError, "unterminated character class" if ending == @source.length
+      ending = class_ending(index)
+      raise RegexpError, "unterminated character class" unless ending
 
-      [Token.new(:class, @source[(index + 1)...ending], index), ending + 1]
+      [Token.new(:class, @source[(index + 1)...(ending - 1)], index), ending]
     end
 
     def quantifier_value(index)
