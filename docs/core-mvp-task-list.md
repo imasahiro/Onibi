@@ -51,7 +51,7 @@ Create the initial acceptance corpus and explicitly record supported and unsuppo
 
 **Dependencies:** None.
 
-### CORE-002 — Bootstrap the Ruby gem and test harness
+### CORE-002 — Bootstrap the Ruby gem and test harness [Complete]
 
 Create `onibi.gemspec`, `Gemfile`, `Rakefile`, `lib/onibi.rb`, `test/test_helper.rb`, and the initial Minitest layout. Configure zero runtime dependencies and Apache License 2.0 metadata.
 
