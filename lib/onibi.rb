@@ -147,7 +147,19 @@ module Onibi
       @options.include?("ignorecase")
     end
 
+    def names
+      capture_names.keys
+    end
+
+    def named_captures
+      capture_names.transform_values { |index| [index] }
+    end
+
     private
+
+    def capture_names
+      @capture_names ||= CaptureNameCollector.call(@ast)
+    end
 
     def validate_pattern_type!(pattern)
       return if pattern.is_a?(String)
