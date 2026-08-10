@@ -83,7 +83,7 @@
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
-| mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
+| mode | x / EXTENDED | ◐ | `extended` option と `Regexp::EXTENDED` integer flag で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
 | mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と、複合 pattern 内を含む `(?i:pat)` / `(?-i:pat)` の scoped option AST を実装。全 modifier 組み合わせは未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
@@ -240,6 +240,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] 基本的な `inspect` / `to_s` formatting を追加する。
 - [x] 既存 `Onibi::Regexp` を `new` / `compile` に渡す基本コピーを追加する。
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
+- [x] `Regexp::EXTENDED` integer flag を既存の extended mode に接続する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - global match variables を opt-in replacement で扱うか、Onibi 独自 API として明確に分離する。
