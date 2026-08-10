@@ -83,4 +83,11 @@ class EncodingTest < Minitest::Test
       refute Onibi::Regexp.new("a").match?("あ".encode(encoding))
     end
   end
+
+  def test_noencoding_accepts_binary_byte_patterns
+    byte = [0xa4].pack("C").b
+    regexp = Onibi::Regexp.new(byte, Onibi::Regexp::NOENCODING)
+
+    assert regexp.match?(byte)
+  end
 end
