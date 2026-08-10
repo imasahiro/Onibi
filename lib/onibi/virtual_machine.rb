@@ -33,11 +33,22 @@ module Onibi
       visited[[program_counter, position]] = true
       instruction = instruction_at(program_counter)
       return true if instruction.opcode == :match
+      dispatch_instruction(program_counter, position, input, visited, instruction)
+    end
+
+    def dispatch_instruction(program_counter, position, input, visited, instruction)
       return run_split(instruction, position, input, visited) if instruction.opcode == :split
       return run_state(instruction.target, position, input, visited) if instruction.opcode == :jump
       return run_state(program_counter + 1, position, input, visited) if tag_instruction?(instruction)
       return run_anchor(program_counter, instruction, position, input, visited) if instruction.opcode == :anchor
-      return false unless consumable_instruction?(instruction, position, input)
+
+      consume_instruction(program_counter, position, input, visited, instruction)
+    end
+
+    def consume_instruction(program_counter, position, input, visited, instruction)
+      return false unless position < input.length
+      return false unless %i[char class escape any].include?(instruction.opcode)
+      return false unless matches?(instruction, input[position])
 
       run_state(program_counter + 1, position + 1, input, visited)
     end

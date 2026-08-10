@@ -36,8 +36,7 @@ module Onibi
     end
 
     def compile_alternation(node)
-      branch_starts, jumps = compile_alternation_branches(node)
-      connect_alternation_branches(node, branch_starts, jumps)
+      AlternationCompiler.new(@instructions, method(:compile_node)).compile(node)
     end
 
     def compile_sequence(node)
@@ -64,31 +63,6 @@ module Onibi
       emit(:anchor, node.kind)
     end
 
-    def compile_alternation_branches(node)
-      splits = node.branches.length - 1
-      emit(:split)
-      branch_starts = []
-      jumps = []
-      node.branches.each_with_index do |branch, index|
-        branch_starts << @instructions.length
-        compile_node(branch)
-        jumps << emit(:jump) unless index == node.branches.length - 1
-        emit(:split) if index < splits - 1
-      end
-      [branch_starts, jumps]
-    end
-
-    def connect_alternation_branches(node, branch_starts, jumps)
-      end_target = @instructions.length
-      jumps.each { |jump| jump.target = end_target }
-      splits = node.branches.length - 1
-      node.branches.each_with_index do |_branch, index|
-        next unless index < splits
-
-        @instructions[index.zero? ? 0 : branch_starts[index] - 1].operand = branch_starts[index]
-      end
-      @instructions[0].target = branch_starts[1] if splits.positive?
-    end
 
     def compile_group(node)
       emit(:save_start, node.number)
