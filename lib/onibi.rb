@@ -120,7 +120,12 @@ module Onibi
     end
 
     def validate_pattern_syntax!(pattern)
-      Lexer.new(pattern).tokens
+      tokens = Lexer.new(pattern).tokens
+      if pattern.encoding == Encoding::ASCII_8BIT && tokens.any? { |token| token.type == :property }
+        raise RegexpError, "Unicode properties require a text encoding"
+      end
+
+      tokens
     end
 
     def validate_encoding!(input)
