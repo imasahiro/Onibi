@@ -104,4 +104,10 @@ class EncodingTest < Minitest::Test
       Onibi::Regexp.new("\\p{Hiragana}".b)
     end
   end
+
+  def test_noencoding_patterns_reject_unicode_properties
+    assert_raises(Onibi::RegexpError) do
+      Onibi::Regexp.new("\\p{Hiragana}", Onibi::Regexp::NOENCODING)
+    end
+  end
 end
