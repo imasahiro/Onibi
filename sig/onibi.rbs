@@ -57,5 +57,6 @@ module Onibi
     def pre_match: () -> String?
     def post_match: () -> String?
     def named_captures: () -> Hash[String, String?]
+    def names: () -> Array[String]
   end
 end
