@@ -90,4 +90,12 @@ class EncodingTest < Minitest::Test
 
     assert regexp.match?(byte)
   end
+
+  def test_match_decodes_non_utf8_unicode_properties
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
+
+      refute_nil regexp.match("あ".encode(encoding))
+    end
+  end
 end
