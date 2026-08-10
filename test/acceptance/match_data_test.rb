@@ -20,4 +20,13 @@ class MatchDataTest < Minitest::Test
     assert_nil match_data.begin(:prefix)
     assert_nil match_data.end(:prefix)
   end
+
+  def test_match_returns_the_value_for_an_index_or_name
+    match = Onibi::Regexp.new("(?<animal>cat)(dog)").match("catdog")
+
+    assert_equal "catdog", match.match(0)
+    assert_equal "cat", match.match(1)
+    assert_equal "cat", match.match("animal")
+    assert_equal "cat", match.match(:animal)
+  end
 end

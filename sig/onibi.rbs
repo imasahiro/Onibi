@@ -60,6 +60,7 @@ module Onibi
     def []: (Integer index) -> String?
           | (Range[Integer] index) -> Array[String?]
           | (String | Symbol index) -> String?
+    def match: (Integer | String | Symbol index) -> String?
     def captures: () -> Array[String?]
     def offset: (Integer | String | Symbol index) -> [Integer, Integer]?
     def begin: (Integer | String | Symbol index) -> Integer?

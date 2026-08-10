@@ -316,6 +316,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#[]` / `values_at` の負数 index を capture-only range として処理する。
 - [x] `MatchData#values_at` の負数 range bound と exclusive end をRuby semanticsに揃える。
 - [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。
+- [x] `MatchData#match` の index/name value lookup を追加する。
 - [x] `MatchData#to_s` と named capture を含む基本 `inspect` を追加する。
 - [x] `MatchData#inspect` の Ruby class name formatting（`#<MatchData ...>`）を追加する。
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。

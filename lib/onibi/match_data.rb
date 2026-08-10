@@ -23,6 +23,10 @@ module Onibi
       value_at(index)
     end
 
+    def match(index)
+      value_at(index)
+    end
+
     def captures
       @captures.dup
     end
