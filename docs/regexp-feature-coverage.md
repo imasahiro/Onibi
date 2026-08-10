@@ -190,7 +190,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Hiragana、Katakana、CJK、Hangul など uncased Unicode letter の Alpha/Word 判定を追加する。
 - [x] uncased Unicode letter の Upper/Lower 誤判定を修正し、`[[:ascii:]]` を追加する。
 - Ruby 4.0.6 が参照する Unicode データと更新手順を固定する。
-- acceptance: Unicode property の代表値と invalid property error を differential test する。
+- [x] Unicode/POSIX property の acceptance corpus を MRI と比較する（代表 property、Ruby 拡張 class、invalid property error）。
 
 ### REGEXP-006 [Complete] — quantifier の lazy / possessive semantics を実装する
 
