@@ -28,4 +28,15 @@ class RegexpConstructorTest < Minitest::Test
     assert Onibi::Regexp.new("cat", ["ignorecase"]).casefold?
     refute Onibi::Regexp.new("cat").casefold?
   end
+
+  def test_equal_regexps_have_equal_object_semantics
+    first = Onibi::Regexp.new("cat", ["ignorecase"])
+    second = Onibi::Regexp.new("cat", ["ignorecase"])
+    different = Onibi::Regexp.new("dog", ["ignorecase"])
+
+    assert_equal first, second
+    assert first.eql?(second)
+    assert_equal first.hash, second.hash
+    refute_equal first, different
+  end
 end
