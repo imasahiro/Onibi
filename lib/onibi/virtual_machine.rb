@@ -59,7 +59,7 @@ module Onibi
       when :char then instruction.operand.codepoints.first == character
       when :any then true
       when :escape then escape_matches?(instruction.operand, character)
-      when :class then instruction.operand.codepoints.include?(character)
+      when :class then class_matches?(instruction.operand, character)
       end
     end
 
@@ -69,6 +69,25 @@ module Onibi
       when :space then character.chr =~ /\s/
       when :word then character.chr =~ /[A-Za-z0-9_]/
       end
+    end
+
+    def class_matches?(source, character)
+      negated = source.start_with?("^")
+      codepoints = source[(negated ? 1 : 0)..-1].codepoints
+      matched = false
+      index = 0
+
+      while index < codepoints.length
+        if codepoints[index + 1] == "-".ord && codepoints[index + 2]
+          matched ||= codepoints[index].upto(codepoints[index + 2]).include?(character)
+          index += 3
+        else
+          matched ||= codepoints[index] == character
+          index += 1
+        end
+      end
+
+      negated ? !matched : matched
     end
 
     def anchor_matches?(kind, position, input_length)

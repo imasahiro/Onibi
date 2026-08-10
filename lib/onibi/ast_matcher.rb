@@ -60,9 +60,20 @@ module Onibi
 
     def class_positions(node, characters, position)
       return [] unless position < characters.length
-      return [] unless node.value.include?(characters[position])
+      return [] unless class_matches?(node.value, characters[position])
 
       [position + 1]
+    end
+
+    def class_matches?(source, character)
+      negated = source.start_with?("^")
+      content = source[(negated ? 1 : 0)..-1]
+      matched = content.include?(character)
+      matched ||= content.each_char.each_cons(3).any? do |first, hyphen, last|
+        hyphen == "-" && character >= first && character <= last
+      end
+
+      negated ? !matched : matched
     end
 
     def escape_positions(node, characters, position)

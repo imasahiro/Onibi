@@ -123,7 +123,7 @@ Add `*`, `+`, `?`, and `{m,n}` with greedy behavior, including bounded and unbou
 
 **Dependencies:** CORE-009.
 
-### CORE-011 — Implement character classes and Core MVP escapes
+### CORE-011 — Implement character classes and Core MVP escapes [Complete]
 
 Implement positive classes, negated classes, ranges, escaped characters inside classes, and the Core MVP forms of `\d`, `\s`, and `\w`.
 
