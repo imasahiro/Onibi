@@ -49,14 +49,17 @@ class CoreMvpCorpusTest < Minitest::Test
 
   def assert_case_shape(fixture)
     required_keys = %w[encoding feature input name options outcome pattern]
+    typed_fields = {
+      "input" => String,
+      "name" => String,
+      "options" => Array,
+      "pattern" => String
+    }
 
     assert_equal required_keys.sort, fixture.keys.sort
     assert SUPPORTED_FEATURES.include?(fixture.fetch("feature")), fixture.fetch("feature")
-    assert fixture.fetch("input").is_a?(String)
-    assert fixture.fetch("name").is_a?(String)
-    assert fixture.fetch("options").is_a?(Array)
+    typed_fields.each { |field, type| assert_kind_of type, fixture.fetch(field) }
     assert %w[ASCII-8BIT UTF-8].include?(fixture.fetch("encoding"))
     assert %w[match no_match error].include?(fixture.fetch("outcome"))
-    assert fixture.fetch("pattern").is_a?(String)
   end
 end
