@@ -115,7 +115,7 @@ Implement the bytecode VM's Thompson-NFA simulation, including epsilon closure, 
 
 **Dependencies:** CORE-008.
 
-### CORE-010 — Implement greedy quantifiers
+### CORE-010 — Implement greedy quantifiers [Complete]
 
 Add `*`, `+`, `?`, and `{m,n}` with greedy behavior, including bounded and unbounded repetition and the empty-match cases.
 

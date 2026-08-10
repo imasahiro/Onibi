@@ -71,11 +71,7 @@ module Onibi
       return compile_star(node) if node.kind == :*
       return compile_plus(node) if node.kind == :+
 
-      split = emit(:split)
-      body_start = @instructions.length
-      compile_node(node.expression)
-      split.operand = body_start
-      split.target = @instructions.length
+      compile_optional(node.expression)
     end
 
     def compile_star(node)
@@ -98,8 +94,19 @@ module Onibi
     end
 
     def compile_bounded(node)
-      emit(:repeat, [node.minimum, node.maximum])
-      compile_node(node.expression)
+      node.minimum.times { compile_node(node.expression) }
+      optional_count = node.maximum && node.maximum - node.minimum
+      return compile_star(node.expression) unless optional_count
+
+      optional_count.times { compile_optional(node.expression) }
+    end
+
+    def compile_optional(expression)
+      split = emit(:split)
+      body_start = @instructions.length
+      compile_node(expression)
+      split.operand = body_start
+      split.target = @instructions.length
     end
 
     def emit(opcode, operand = nil)
