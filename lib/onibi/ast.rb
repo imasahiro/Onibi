@@ -13,7 +13,7 @@ module Onibi
     Sequence = Struct.new(:parts)
     Alternation = Struct.new(:branches)
     Group = Struct.new(:body, :number, :capture, :name)
-    OptionGroup = Struct.new(:body, :ignorecase)
+    OptionGroup = Struct.new(:body, :ignorecase, :multiline)
     AtomicGroup = Struct.new(:body)
     Conditional = Struct.new(:condition, :yes_branch, :no_branch)
     SubexpressionCall = Struct.new(:identifier, :named)
