@@ -18,11 +18,13 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute regexp.match?("あ")
   end
 
-  def test_horizontal_and_non_space_shorthand_classes
-    assert Onibi::Regexp.new("\\h").match?("\t")
-    refute Onibi::Regexp.new("\\h").match?("\n")
+  def test_hex_and_non_hex_shorthand_classes
+    assert Onibi::Regexp.new("\\h").match?("a")
+    assert Onibi::Regexp.new("\\h").match?("F")
+    refute Onibi::Regexp.new("\\h").match?("g")
+    assert Onibi::Regexp.new("\\H").match?("g")
     assert Onibi::Regexp.new("\\H").match?("\n")
-    refute Onibi::Regexp.new("\\H").match?(" ")
+    refute Onibi::Regexp.new("\\H").match?("F")
   end
 
   def test_non_space_shorthand_classes
