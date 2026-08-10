@@ -4,6 +4,7 @@ require "test_helper"
 
 class NfaVmTest < Minitest::Test
   def test_public_matching_uses_leftmost_search_and_alternation
+    assert Onibi::Regexp.new("cd").match?("xxcdyy")
     regexp = Onibi::Regexp.new("ab|cd")
 
     assert regexp.match?("xxcdyy"), regexp.instance_variable_get(:@bytecode).instructions.inspect
