@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+mapfile -t ruby_files < <(git diff --cached --name-only --diff-filter=ACMR -- '*.rb')
+
+if [ "${#ruby_files[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+bundle exec rubocop -A "${ruby_files[@]}"
+
+if ! git diff --quiet -- "${ruby_files[@]}"; then
+  echo "RuboCop formatted staged Ruby files; review and stage the changes before committing." >&2
+  exit 1
+fi
+
+bundle exec rubocop "${ruby_files[@]}"

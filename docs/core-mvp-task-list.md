@@ -59,7 +59,7 @@ Create `onibi.gemspec`, `Gemfile`, `Rakefile`, `lib/onibi.rb`, `test/test_helper
 
 **Dependencies:** CORE-001.
 
-### CORE-003 — Add RuboCop and the pre-commit hook
+### CORE-003 — Add RuboCop and the pre-commit hook [Complete]
 
 Add RuboCop configuration and `.githooks/pre-commit`. Configure `core.hooksPath` documentation and ensure the hook formats changed Ruby files, runs lint, and stops when formatting changes require re-staging.
 
