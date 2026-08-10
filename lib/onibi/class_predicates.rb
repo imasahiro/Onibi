@@ -17,6 +17,8 @@ module Onibi
       content = negated ? source[1..] : source
       result = union_matches?(content, character, ignorecase)
       negated ? !result : result
+    rescue RangeError
+      false
     end
 
     def intersection_matches?(intersection, character, ignorecase)
