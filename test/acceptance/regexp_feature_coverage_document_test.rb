@@ -33,5 +33,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "character class escape decoder"
     assert_includes document, "caret control escapes"
     assert_includes document, "`Regexp.new` の options ではなく regex literal"
+    assert_includes document, "global match variables は設計スコープ外"
   end
 end
