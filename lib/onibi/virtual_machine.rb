@@ -3,8 +3,10 @@
 module Onibi
   # Executes Thompson bytecode without recursive backtracking.
   class VirtualMachine
-    def initialize(program)
+    def initialize(program, options = [])
       @program = program
+      @ignorecase = options.include?("ignorecase")
+      @multiline = options.include?("multiline")
     end
 
     def match?(input)
@@ -40,7 +42,7 @@ module Onibi
       end
 
       if instruction.opcode == :anchor
-        if anchor_matches?(instruction.operand, position, input.length)
+        if anchor_matches?(instruction.operand, position, input)
           return run_state(program_counter + 1, position, input, visited)
         end
 
@@ -56,7 +58,7 @@ module Onibi
 
     def matches?(instruction, character)
       case instruction.opcode
-      when :char then instruction.operand.codepoints.first == character
+      when :char then character_matches?(instruction.operand, character)
       when :any then true
       when :escape then escape_matches?(instruction.operand, character)
       when :class then class_matches?(instruction.operand, character)
@@ -90,11 +92,22 @@ module Onibi
 
       negated ? !matched : matched
     end
+
+    def character_matches?(source, character)
+      return source.codepoints.first == character unless @ignorecase
+
+      source.downcase.codepoints.first == character.chr.downcase.codepoints.first
+    end
     # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-    def anchor_matches?(kind, position, input_length)
-      (kind == :anchor_start && position.zero?) || (kind == :anchor_end && position == input_length)
+    # rubocop:disable Metrics/CyclomaticComplexity
+    def anchor_matches?(kind, position, input)
+      at_start = position.zero? || (@multiline && input[position - 1] == "\n".ord)
+      at_end = position == input.length || (@multiline && input[position] == "\n".ord)
+
+      (kind == :anchor_start && at_start) || (kind == :anchor_end && at_end)
     end
+    # rubocop:enable Metrics/CyclomaticComplexity
 
     def instruction_at(program_counter)
       @program.instructions.fetch(program_counter)
