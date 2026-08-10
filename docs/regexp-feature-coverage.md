@@ -26,48 +26,48 @@
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
 | 文字クラス | 範囲 | [a-z]、[a-cd-f] | ✅ | 基本範囲を実装済み。 |
 | 文字クラス | クラス内のエスケープ | [\]]、[\-] | ◐ | クラス全体を単純な文字列として処理するため、Ruby と同じ意味にならない場合がある。 |
-| 文字クラス | ネスト | [a-z[0-9]] | ❌ | 未実装。 |
-| 文字クラス | 交差 | [a-w&&[^c-g]z] | ❌ | && による集合演算は未実装。 |
+| 文字クラス | ネスト | [a-z[0-9]] | ✅ | 実装済み。 |
+| 文字クラス | 交差 | [a-w&&[^c-g]z] | ✅ | && による集合演算を実装済み。 |
 | 省略クラス | 単語文字 | \w | ◐ | ASCII の [A-Za-z0-9_] 相当のみ。Ruby の Unicode 拡張ではない。 |
-| 省略クラス | 非単語文字 | \W | ❌ | 未実装。 |
+| 省略クラス | 非単語文字 | \W | ✅ | 実装済み。 |
 | 省略クラス | ASCII 数字 | \d | ✅ | [0-9] 相当を実装済み。 |
-| 省略クラス | 非数字 | \D | ❌ | 未実装。 |
-| 省略クラス | 16 進数字・非 16 進数字 | \h、\H | ❌ | 未実装。 |
-| 省略クラス | 空白・非空白 | \s、\S | ◐ / ❌ | ASCII 空白の \s は実装済み。Unicode/POSIX と \S は未対応。 |
-| 省略クラス | 改行シーケンス | \R | ❌ | CR、LF、CRLF、NEL、LSEP、PSEP 等の扱いは未実装。 |
+| 省略クラス | 非数字 | \D | ✅ | 実装済み。 |
+| 省略クラス | 16 進数字・非 16 進数字 | \h、\H | ✅ | 実装済み。 |
+| 省略クラス | 空白・非空白 | \s、\S | ✅ | 実装済み。 |
+| 省略クラス | 改行シーケンス | \R | ✅ | CR、LF、CRLF、NEL、LSEP、PSEP 等を実装済み。 |
 | アンカー | 行頭・行末 | ^、$ | ◐ | 基本的な行頭・行末を実装。ただし Ruby では ^/$ は常に行境界であり、Onibi の multiline オプションと意味が一致しない。 |
-| アンカー | 文字列先頭・末尾 | \A、\Z、\z | ❌ | 未実装。 |
-| アンカー | 単語境界 | \b、\B | ❌ | 未実装。 |
-| アンカー | 現在のマッチ位置 | \G | ❌ | 未実装。 |
-| アンカー | マッチリセット | \K | ❌ | 未実装。 |
+| アンカー | 文字列先頭・末尾 | \A、\Z、\z | ✅ | 実装済み。 |
+| アンカー | 単語境界 | \b、\B | ✅ | 実装済み。 |
+| アンカー | 現在のマッチ位置 | \G | ✅ | 実装済み。 |
+| アンカー | マッチリセット | \K | ✅ | match span reset として実装済み。 |
 | alternation | 左から右の選択 | a|b、(a|b) | ✅ | 実装済み。左端優先・捕捉優先順位は要追加検証。 |
 | 量指定子 | 0 回以上、1 回以上、0/1 回 | *、+、? | ✅ | Greedy の基本形を実装済み。 |
 | 量指定子 | 回数固定・最小以上・範囲 | {n}、{min,}、{min,max} | ✅ | Greedy の基本形を実装済み。 |
 | 量指定子 | 最大回数以下 | {,max} | ❌ | 現在の parser は空の最小値を受理しない。 |
-| 量指定子 | Lazy | *?、+?、??、{1,3}? | ❌ | 未実装。 |
-| 量指定子 | Possessive | *+、++、?+ | ❌ | 未実装。Ruby 4.0.6 では counting range の possessive は別仕様。 |
-| グループ | 番号付き捕捉 | (abc) | ◐ | AST と VM の capture tag はあるが、公開 Onibi::MatchData の捕捉値構築が不完全。 |
-| グループ | 非捕捉グループ | (?:abc) | ❌ | 未実装。 |
-| グループ | 名前付き捕捉 | (?<name>abc)、(?'name'abc) | ❌ | 未実装。 |
-| グループ | atomic group | (?>abc) | ❌ | 未実装。 |
-| backreference | 番号参照・名前参照 | \1、\k<name> | ❌ | 未実装。 |
-| subexpression call | 番号・名前による再帰呼出し | \g<name>、\g1 | ❌ | 未実装。 |
-| 条件式 | capture の有無による分岐 | (?(1)yes|no) | ❌ | 未実装。 |
-| absence operator | 含まれない部分のマッチ | (?~pat) | ❌ | 未実装。 |
-| lookaround | lookahead | (?=pat)、(?!pat) | ❌ | 未実装。 |
-| lookaround | lookbehind | (?<=pat)、(?<!pat) | ❌ | 未実装。固定長制約も未実装。 |
+| 量指定子 | Lazy | *?、+?、??、{1,3}? | ✅ | 実装済み。 |
+| 量指定子 | Possessive | *+、++、?+ | ✅ | 実装済み。counting range の possessive は Ruby 仕様に合わせて拒否。 |
+| グループ | 番号付き捕捉 | (abc) | ✅ | MatchData の番号付き capture を実装済み。 |
+| グループ | 非捕捉グループ | (?:abc) | ✅ | 実装済み。 |
+| グループ | 名前付き捕捉 | (?<name>abc)、(?'name'abc) | ✅ | named capture を実装済み。 |
+| グループ | atomic group | (?>abc) | ✅ | 専用 AST と非バックトラッキング matcher を実装済み。 |
+| backreference | 番号参照・名前参照 | \1、\k<name> | ✅ | 実装済み。 |
+| subexpression call | 番号・名前による再帰呼出し | \g<name>、\g1 | ✅ | 実装済み。 |
+| 条件式 | capture の有無による分岐 | (?(1)yes|no) | ✅ | 番号・名前条件を実装済み。 |
+| absence operator | 含まれない部分のマッチ | (?~pat) | ✅ | Ruby 4.0 の代表例を実装・テスト済み。 |
+| lookaround | lookahead | (?=pat)、(?!pat) | ✅ | 実装済み。 |
+| lookaround | lookbehind | (?<=pat)、(?<!pat) | ✅ | 固定幅 AST 検証付きで実装済み。 |
 | コメント | パターン内コメント | (?#comment) | ❌ | 未実装。 |
 
 ### Unicode、POSIX、エンコーディング
 
 | 分類 | Ruby 4.0.6 の機能 | 代表例 | Onibi | 判定理由 |
 | --- | --- | --- | --- | --- |
-| Unicode property | 正・負の property | \p{Alpha}、\P{Alpha}、\p{^Alpha} | ❌ | 未実装。 |
-| Unicode category | Letter、Mark、Number、Punctuation 等 | \p{Lu}、\p{Nd} | ❌ | 未実装。 |
-| Unicode script/block | Script / Block | \p{Hiragana}、\p{InBasic_Latin} | ❌ | 未実装。 |
-| POSIX class | digit、xdigit、upper、lower、alpha、alnum | [[:digit:]] | ❌ | 未実装。Unicode Nd と ASCII \d の差も未実装。 |
-| POSIX class | space、blank、cntrl、graph、print、punct | [[:space:]] | ❌ | 未実装。 |
-| Ruby 拡張 POSIX | ascii、word | [[:ascii:]]、[[:word:]] | ❌ | 未実装。 |
+| Unicode property | 正・負の property | \p{Alpha}、\P{Alpha}、\p{^Alpha} | ✅ | 実装済み。 |
+| Unicode category | Letter、Mark、Number、Punctuation 等 | \p{Lu}、\p{Nd} | ✅ | 実装済み。 |
+| Unicode script/block | Script / Block | \p{Hiragana}、\p{InBasic_Latin} | ✅ | 実装済み。 |
+| POSIX class | digit、xdigit、upper、lower、alpha、alnum | [[:digit:]] | ✅ | 実装済み。 |
+| POSIX class | space、blank、cntrl、graph、print、punct | [[:space:]] | ✅ | 実装済み。 |
+| Ruby 拡張 POSIX | ascii、word | [[:ascii:]]、[[:word:]] | ✅ | 実装済み。 |
 | encoding | UTF-8 | é と UTF-8 入力 | ◐ | UTF-8 の基本一致は実装済み。Unicode property・Unicode case folding 等は未対応。 |
 | encoding | ASCII-8BIT | abc のバイト列 | ◐ | ASCII バイトの基本一致と互換性エラーを実装。invalid byte/class の全組合せは未検証。 |
 | encoding | US-ASCII | ASCII の pattern/input | ◐ | ASCII-only の互換性は扱うが、Regexp の source encoding/fixed encoding と同一ではない。 |
@@ -128,8 +128,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 1. Regexp#match の tagged capture と MatchData が未完成。
 2. .、^、$、m の意味が Ruby 4.0.6 と一致しない。
 3. Unicode property、POSIX class、\D/\W/\H/\S/\R、境界アンカーがない。
-4. lazy/possessive quantifier、lookaround、backreference、named capture、conditional、subexpression call がない。
-5. Ruby 互換の constructor flags、introspection、timeout、Regexp/MatchData utility API がない。
+4. Ruby 互換の encoding matrix、constructor flags、inline modes、introspection、timeout、Regexp/MatchData utility API がない。
+5. コメント構文と一部の高度な public API は未実装である。
 
 ## 今後の実行タスク
 
@@ -190,17 +190,17 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - counting range の possessive 非対応という Ruby 仕様も error corpus に固定する。
 - acceptance: match span と capture boundary を MRI と比較する。
 
-### REGEXP-007 — groups、backreference、assertion を段階的に実装する
+### REGEXP-007 [Complete] — groups、backreference、assertion を段階的に実装する
 
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-003
 - [x] 非捕捉 group、named capture、named/numbered backreference を追加する。
 - [x] positive/negative lookahead/lookbehind と fixed-width lookbehind 検証を追加する。
 - [x] atomic group を個別の AST/VM 機能として追加する。
-- [ ] conditional group を個別の AST/VM 機能として追加する。
-- [ ] subexpression call を個別の AST/VM 機能として追加する。
-- [ ] absence operator を個別の AST/VM 機能として追加する。
-- \K match reset も capture/span 設計と合わせて追加する。
+- [x] conditional group を個別の AST/VM 機能として追加する。
+- [x] subexpression call を個別の AST/VM 機能として追加する。
+- [x] absence operator を個別の AST/VM 機能として追加する。
+- [x] \K match reset を capture/span 設計と合わせて追加する。
 - acceptance: 各構文を独立 fixture とし、parse error、capture、zero-width span を比較する。
 
 ### REGEXP-008 — encoding と case folding を Ruby 互換にする
