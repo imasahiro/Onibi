@@ -258,6 +258,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-008, REGEXP-009
 - constructor の Ruby 互換 flags、Regexp 引数、keyword timeout を追加する。
+- [x] constructor options の boolean/string/symbol flags（`true`、`false`、`"imx"`、`:i`）を Ruby 4.0.6 互換に近づける。
 - source、encoding、fixed_encoding?、casefold?、==、eql?、hash、inspect、to_s を追加する。
 - [x] source と casefold? の基本 introspection を追加する。
 - [x] ASCII-only non-fixed pattern の `Regexp#source` encoding を US-ASCII に揃える。
