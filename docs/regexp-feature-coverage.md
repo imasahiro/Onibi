@@ -93,7 +93,7 @@
 | introspection | source | ◐ | 元の pattern を返し、non-fixed ASCII-only pattern は US-ASCII encoding に正規化する。Ruby 互換の frozen/その他 encoding 詳細は未対応。 |
 | introspection | options | ◐ | `Regexp#options` はRuby互換の整数bitmaskを返す。array constructor入力を含む全option意味・encoding flagの互換性は未対応。 |
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
-| introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、positive timeout validation、match評価への基本適用を実装。Rubyの厳密なtimeout error/class・copy semanticsは未対応。 |
+| introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、positive timeout validation、match評価、`Regexp::TimeoutError` 相当の専用例外を実装。Rubyの完全な timeout error/copy semantics は未対応。 |
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。`to_s` / `inspect` の Ruby mode flag order（`mix`）と NOENCODING suffix（`n`）も対応。全 encoding/option 表現は未対応。 |
 | class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercion、hyphen/control-whitespace escape、ASCII-only result encoding と、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の ignorecase、multiline / extended scope、FIXEDENCODING / NOENCODING も保持するが、その他の全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
@@ -295,6 +295,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Dependencies: REGEXP-007, REGEXP-010
 - class/instance timeout と timeout error を追加する。
 - [x] class/instance timeout の 0 および負値を拒否する。
+- [x] timeout 発生時に `Regexp::TimeoutError` 相当の専用例外を返す。
 - Regexp.linear_time? 相当の安全性判定を追加する。
 - NFA/DFA のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。
 - backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
