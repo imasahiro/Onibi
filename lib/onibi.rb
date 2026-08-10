@@ -78,14 +78,7 @@ module Onibi
 
     def initialize(pattern, options = nil)
       pattern, options = normalize_constructor_pattern(pattern, options)
-      validate_pattern_type!(pattern)
-      validate_pattern_encoding!(pattern)
-      @source_pattern = pattern
-      normalized_options = normalize_options(options)
-      pattern, normalized_options = normalize_inline_modifier(pattern, normalized_options)
-      validate_noencoding_pattern!(pattern, normalized_options)
-      validate_pattern_syntax!(pattern, normalized_options)
-      store_pattern_options(pattern, normalized_options, options)
+      pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @ast = Parser.new(pattern, normalized_options).parse
       @bytecode = Compiler.new(@ast).compile
     end
