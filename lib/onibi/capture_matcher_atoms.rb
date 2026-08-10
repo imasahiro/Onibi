@@ -48,9 +48,21 @@ module Onibi
     end
 
     def assertion_results(node, characters, position, captures)
-      matched = !match_results(node.body, characters, position, captures).empty?
-      matched = !matched if node.kind == :negative
+      matched = assertion_matches?(node, characters, position, captures)
+      matched = !matched if %i[negative negative_lookbehind].include?(node.kind)
       matched ? [[position, captures]] : []
+    end
+
+    def assertion_matches?(node, characters, position, captures)
+      return !match_results(node.body, characters, position, captures).empty? unless lookbehind?(node)
+
+      (0..position).any? do |start|
+        match_results(node.body, characters, start, captures).any? { |finish, _state| finish == position }
+      end
+    end
+
+    def lookbehind?(node)
+      %i[positive_lookbehind negative_lookbehind].include?(node.kind)
     end
 
     def escape_matches?(kind, character)
