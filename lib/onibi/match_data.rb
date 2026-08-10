@@ -17,7 +17,7 @@ module Onibi
     end
 
     def [](index)
-      @values[index]
+      value_at(index)
     end
 
     def captures
@@ -50,7 +50,7 @@ module Onibi
 
     def values_at(*indices)
       indices.flat_map do |index|
-        index.is_a?(Range) ? index.map { |value| @values[value] } : [@values[index]]
+        index.is_a?(Range) ? index.map { |value| value_at(value) } : [value_at(index)]
       end
     end
 
@@ -94,6 +94,11 @@ module Onibi
     end
 
     private
+
+    def value_at(index)
+      index = @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
+      @values[index]
+    end
 
     def byte_position(character_position)
       @string[0, character_position].bytesize
