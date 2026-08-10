@@ -27,38 +27,55 @@ module Onibi
       run_state(0, start, input, visited)
     end
 
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     def run_state(program_counter, position, input, visited)
       return false if visited[[program_counter, position]]
 
       visited[[program_counter, position]] = true
       instruction = instruction_at(program_counter)
+
       return true if instruction.opcode == :match
 
-      if instruction.opcode == :split
-        first_branch = run_state(instruction.operand, position, input, visited)
-        second_branch = run_state(instruction.target, position, input, visited)
-        return first_branch || second_branch
-      end
+      dispatch_instruction(program_counter, position, input, visited, instruction)
+    end
+
+    def dispatch_instruction(program_counter, position, input, visited, instruction)
+      return run_split(instruction, position, input, visited) if instruction.opcode == :split
       return run_state(instruction.target, position, input, visited) if instruction.opcode == :jump
-      if %i[save_start save_end].include?(instruction.opcode)
-        return run_state(program_counter + 1, position, input, visited)
-      end
+      return run_state(program_counter + 1, position, input, visited) if tag_instruction?(instruction)
+      return run_anchor(program_counter, instruction, position, input, visited) if instruction.opcode == :anchor
 
-      if instruction.opcode == :anchor
-        if anchor_matches?(instruction.operand, position, input)
-          return run_state(program_counter + 1, position, input, visited)
-        end
+      consume_instruction(program_counter, position, input, visited, instruction)
+    end
 
-        return false
-      end
+    def consume_instruction(program_counter, position, input, visited, instruction)
       return false unless position < input.length
       return false unless %i[char class escape any].include?(instruction.opcode)
       return false unless matches?(instruction, input[position])
 
       run_state(program_counter + 1, position + 1, input, visited)
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+    def run_split(instruction, position, input, visited)
+      first_branch = run_state(instruction.operand, position, input, visited)
+      return true if first_branch
+
+      run_state(instruction.target, position, input, visited)
+    end
+
+    def run_anchor(program_counter, instruction, position, input, visited)
+      return false unless anchor_matches?(instruction.operand, position, input)
+
+      run_state(program_counter + 1, position, input, visited)
+    end
+
+    def tag_instruction?(instruction)
+      %i[save_start save_end].include?(instruction.opcode)
+    end
+
+    def consumable_instruction?(instruction, position, input)
+      position < input.length && %i[char class escape any].include?(instruction.opcode) &&
+        matches?(instruction, input[position])
+    end
 
     def matches?(instruction, character)
       case instruction.opcode
@@ -77,24 +94,21 @@ module Onibi
       end
     end
 
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     def class_matches?(source, character)
       negated = source.start_with?("^")
       codepoints = source[(negated ? 1 : 0)..].codepoints
-      matched = false
-      index = 0
-
-      while index < codepoints.length
-        if codepoints[index + 1] == "-".ord && codepoints[index + 2]
-          matched ||= codepoints[index].upto(codepoints[index + 2]).include?(character)
-          index += 3
-        else
-          matched ||= codepoints[index] == character
-          index += 1
-        end
-      end
+      matched = class_codepoints_match?(codepoints, character)
 
       negated ? !matched : matched
+    end
+
+    def class_codepoints_match?(codepoints, character)
+      codepoints.each_with_index.any? do |codepoint, index|
+        next codepoint == character unless codepoints[index + 1] == "-".ord
+
+        ending = codepoints[index + 2]
+        ending && codepoint.upto(ending).include?(character)
+      end
     end
 
     def character_matches?(source, character)
@@ -102,16 +116,21 @@ module Onibi
 
       source.downcase.codepoints.first == character.chr.downcase.codepoints.first
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-    # rubocop:disable Metrics/CyclomaticComplexity
     def anchor_matches?(kind, position, input)
-      at_start = position.zero? || (@multiline && input[position - 1] == "\n".ord)
-      at_end = position == input.length || (@multiline && input[position] == "\n".ord)
+      return line_start?(position, input) if kind == :anchor_start
+      return line_end?(position, input) if kind == :anchor_end
 
-      (kind == :anchor_start && at_start) || (kind == :anchor_end && at_end)
+      false
     end
-    # rubocop:enable Metrics/CyclomaticComplexity
+
+    def line_start?(position, input)
+      position.zero? || (@multiline && input[position - 1] == "\n".ord)
+    end
+
+    def line_end?(position, input)
+      position == input.length || (@multiline && input[position] == "\n".ord)
+    end
 
     def instruction_at(program_counter)
       @program.instructions.fetch(program_counter)

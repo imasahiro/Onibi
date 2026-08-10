@@ -3,6 +3,8 @@
 module Onibi
   # Correctness fallback for ASTs that cannot complete through bytecode dispatch.
   class AstMatcher
+    include AstMatcherDispatch
+
     def initialize(ast, options = [])
       @ast = ast
       @ignorecase = options.include?("ignorecase")
@@ -26,22 +28,12 @@ module Onibi
 
     private
 
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     def match_positions(node, characters, position)
-      case node
-      when AST::Sequence then sequence_positions(node.parts, characters, position)
-      when AST::Alternation then node.branches.flat_map { |branch| match_positions(branch, characters, position) }
-      when AST::Group then match_positions(node.body, characters, position)
-      when AST::Quantifier then quantifier_positions(node, characters, position)
-      when AST::Literal then literal_positions(node, characters, position)
-      when AST::CharacterClass then class_positions(node, characters, position)
-      when AST::Escape then escape_positions(node, characters, position)
-      when AST::Any then position < characters.length ? [position + 1] : []
-      when AST::Anchor then anchor_positions(node, characters, position)
-      else []
-      end
+      matcher = NODE_MATCHERS[node.class]
+      return [] unless matcher
+
+      send(matcher, node, characters, position)
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
 
     def sequence_positions(parts, characters, position)
       parts.reduce([position]) do |positions, part|
