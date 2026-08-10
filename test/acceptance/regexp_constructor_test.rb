@@ -43,6 +43,13 @@ class RegexpConstructorTest < Minitest::Test
     refute Onibi::Regexp.new("cat").casefold?
   end
 
+  def test_names_and_named_captures_describe_named_groups
+    regexp = Onibi::Regexp.new("(?<animal>cat)(?<sound>meow)?")
+
+    assert_equal ["animal", "sound"], regexp.names
+    assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
+  end
+
   def test_equal_regexps_have_equal_object_semantics
     first = Onibi::Regexp.new("cat", ["ignorecase"])
     second = Onibi::Regexp.new("cat", ["ignorecase"])

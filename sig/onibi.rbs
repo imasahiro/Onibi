@@ -19,6 +19,8 @@ module Onibi
                       | (::Regexp pattern, ?timeout: Numeric?) -> Regexp
                       | (Regexp pattern, ?timeout: Numeric?) -> Regexp
     def self.escape: (untyped string) -> String
+    def self.quote: (untyped string) -> String
+    def self.try_convert: (untyped value) -> Regexp?
     def self.union: (*String patterns) -> Regexp
                    | (*(::Regexp | String) patterns) -> Regexp
     def self.linear_time?: (String | ::Regexp | Regexp pattern) -> bool
@@ -42,6 +44,8 @@ module Onibi
     def options: () -> Integer
     def source: () -> String
     def casefold?: () -> bool
+    def names: () -> Array[String]
+    def named_captures: () -> Hash[String, Array[Integer]]
     def ==: (untyped other) -> bool
     def eql?: (untyped other) -> bool
     def hash: () -> Integer
