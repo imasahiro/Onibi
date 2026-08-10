@@ -8,7 +8,7 @@ module Onibi
     end
 
     def match?(input)
-      characters = input.each_char.to_a
+      characters = input.each_char.map(&:ord)
 
       (0..characters.length).any? { |start| match_from?(characters, start) }
     end
@@ -65,18 +65,18 @@ module Onibi
 
     def matches?(instruction, character)
       case instruction.opcode
-      when :char then instruction.operand == character
+      when :char then instruction.operand.ord == character
       when :any then true
       when :escape then escape_matches?(instruction.operand, character)
-      when :class then instruction.operand.include?(character)
+      when :class then instruction.operand.codepoints.include?(character)
       end
     end
 
     def escape_matches?(kind, character)
       case kind
-      when :digit then character >= "0" && character <= "9"
-      when :space then character =~ /\s/
-      when :word then character =~ /[A-Za-z0-9_]/
+      when :digit then character.between?("0".ord, "9".ord)
+      when :space then character.chr =~ /\s/
+      when :word then character.chr =~ /[A-Za-z0-9_]/
       end
     end
 
