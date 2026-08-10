@@ -3,6 +3,7 @@
 module Onibi
   # Executes Thompson bytecode without recursive backtracking.
   class VirtualMachine
+    include VirtualMachineAnchors
     def initialize(program, options = [])
       @program = program
       @ignorecase = options.include?("ignorecase")
@@ -80,7 +81,7 @@ module Onibi
     def matches?(instruction, character)
       case instruction.opcode
       when :char then character_matches?(instruction.operand, character)
-      when :any then true
+      when :any then !(!@multiline && character == "\n".ord)
       when :escape then escape_matches?(instruction.operand, character)
       when :class then class_matches?(instruction.operand, character)
       end
@@ -115,21 +116,6 @@ module Onibi
       return source.codepoints.first == character unless @ignorecase
 
       source.downcase.codepoints.first == character.chr.downcase.codepoints.first
-    end
-
-    def anchor_matches?(kind, position, input)
-      return line_start?(position, input) if kind == :anchor_start
-      return line_end?(position, input) if kind == :anchor_end
-
-      false
-    end
-
-    def line_start?(position, input)
-      position.zero? || (@multiline && input[position - 1] == "\n".ord)
-    end
-
-    def line_end?(position, input)
-      position == input.length || (@multiline && input[position] == "\n".ord)
     end
 
     def instruction_at(program_counter)

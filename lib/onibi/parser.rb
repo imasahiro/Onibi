@@ -11,7 +11,10 @@ module Onibi
       class: ->(token) { AST::CharacterClass.new(token.value) },
       dot: ->(token) { AST::Any.new(token.value) },
       anchor_start: ->(token) { AST::Anchor.new(token.type) },
-      anchor_end: ->(token) { AST::Anchor.new(token.type) }
+      anchor_end: ->(token) { AST::Anchor.new(token.type) },
+      anchor_absolute_start: ->(token) { AST::Anchor.new(token.type) },
+      anchor_before_final_newline: ->(token) { AST::Anchor.new(token.type) },
+      anchor_absolute_end: ->(token) { AST::Anchor.new(token.type) }
     }.freeze
 
     def initialize(source)
@@ -78,7 +81,7 @@ module Onibi
       return simple_quantifier_bounds(value) unless value.start_with?("{")
 
       bounds = value[1...-1].split(",", -1)
-      minimum = Integer(bounds.first)
+      minimum = bounds.first.empty? ? 0 : Integer(bounds.first)
       maximum = bounded_maximum(bounds, minimum)
       raise RegexpError, "invalid quantifier" if maximum && maximum < minimum
 

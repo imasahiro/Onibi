@@ -53,17 +53,38 @@ module Onibi
     end
 
     def anchor_results(node, characters, position, captures)
-      at_start = node.kind == :anchor_start && line_start?(characters, position)
-      at_end = node.kind == :anchor_end && line_end?(characters, position)
+      at_start = %i[anchor_start anchor_absolute_start].include?(node.kind) &&
+                 anchor_start?(node, characters, position)
+      at_end = %i[anchor_end anchor_before_final_newline anchor_absolute_end].include?(node.kind) &&
+               anchor_end?(node, characters, position)
       at_start || at_end ? [[position, captures]] : []
     end
 
+    def anchor_start?(node, characters, position)
+      return position.zero? if node.kind == :anchor_absolute_start
+
+      line_start?(characters, position)
+    end
+
+    def anchor_end?(node, characters, position)
+      return position == characters.length if node.kind == :anchor_absolute_end
+      if node.kind == :anchor_before_final_newline
+        return position == characters.length || final_newline?(characters, position)
+      end
+
+      line_end?(characters, position)
+    end
+
     def line_start?(characters, position)
-      position.zero? || (@multiline && characters[position - 1] == "\n")
+      position.zero? || characters[position - 1] == "\n"
     end
 
     def line_end?(characters, position)
-      position == characters.length || (@multiline && characters[position] == "\n")
+      position == characters.length || characters[position] == "\n"
+    end
+
+    def final_newline?(characters, position)
+      position == characters.length - 1 && characters[position] == "\n"
     end
   end
 end

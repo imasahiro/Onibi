@@ -144,7 +144,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Unicode の character offset と byte offset を分離する。
 - acceptance: match? と match の両方で MRI 4.0.6 と full/capture/offset を比較する。
 
-### REGEXP-002 — 基本構文の Ruby 意味を修正する
+### REGEXP-002 [Complete] — 基本構文の Ruby 意味を修正する
 
 - Priority: P0
 - Dependencies: REGEXP-001
