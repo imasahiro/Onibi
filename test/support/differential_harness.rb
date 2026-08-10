@@ -20,8 +20,8 @@ module DifferentialHarness
   def execute(regexp_class, fixture)
     regexp = build_regexp(regexp_class, fixture)
     normalize(regexp.public_send(fixture.fetch(:operation, :match?), fixture.fetch(:input)))
-  rescue StandardError => error
-    { kind: :error, class: error.class.name, message: normalize_error(error.message) }
+  rescue StandardError => e
+    { kind: :error, class: e.class.name, message: normalize_error(e.message) }
   end
 
   def build_regexp(regexp_class, fixture)
