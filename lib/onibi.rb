@@ -15,7 +15,7 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
-    # rubocop:disable Metrics/AbcSize
+    # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     def initialize(pattern, options = nil)
       raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
 
@@ -31,7 +31,7 @@ module Onibi
       @ast = Parser.new(pattern).parse
       @bytecode = Compiler.new(@ast).compile
     end
-    # rubocop:enable Metrics/AbcSize
+    # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
