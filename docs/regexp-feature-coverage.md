@@ -85,7 +85,7 @@
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
 | mode | x / EXTENDED | ◐ | `extended` option と `Regexp::EXTENDED` integer flag で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
-| mode | inline modifier | (?i)、(?-i)、(?m)、(?-m)、(?x)、(?-x)、(?imx)、(?-imx)、(?i:pat) | ◐ | single/combined prefix と、`(?i:pat)` / `(?-i:pat)` / scoped multiline / positive scoped extended mode / negative scoped extended mode の option・lexer処理を実装。任意の混在 scopeは未対応。 |
+| mode | inline modifier | (?i)、(?-i)、(?m)、(?-m)、(?x)、(?-x)、(?imx)、(?-imx)、(?i:pat) | ◐ | single/combined prefix と、`(?i:pat)` / `(?-i:pat)` / scoped multiline / positive scoped extended mode / negative scoped extended mode / scoped combined i/m/x modes の option・lexer処理を実装。任意の混在 scopeは未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返し、position 引数による検索開始位置、capture、offset、regexp、pre/post match 等を提供する。ただし MatchData の互換性は未完成。 |
 | matching | Regexp#match? | ◐ | boolean と position 引数による検索開始位置を実装。Ruby の全エラー・encoding semantics は未完成。 |
 | matching | Regexp#=~、Regexp#===、unary ~ | ◐ | `=~` は match begin offset、`===` は boolean、unary `~` は top-level `$_` への match 結果を返す。offset 引数と完全な global match state は未対応。 |
@@ -232,6 +232,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] scoped multiline modifier `(?m:...)` / `(?-m:...)` を option AST と matcher state に接続する。
 - [x] positive scoped extended mode `(?x:...)` の whitespace/comment 処理を lexer scanner に接続する。
 - [x] negative scoped extended mode `(?-x:...)` の lexer state stack を実装する。
+- [x] scoped combined i/m/x modes (`(?im:...)`、`(?-im:...)`、`(?imx:...)`) を実装する。
 - [x] inline modifier を複合 pattern 内の scope 付き option AST にする。
 - Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
 - acceptance: mode の on/off scope と comment/whitespace の parse/match を比較する。

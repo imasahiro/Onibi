@@ -26,5 +26,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "non-ASCII pattern の implicit FIXEDENCODING"
     assert_includes document, "Unicode property pattern の source encoding"
     assert_includes document, "negative scoped extended mode"
+    assert_includes document, "scoped combined i/m/x modes"
   end
 end
