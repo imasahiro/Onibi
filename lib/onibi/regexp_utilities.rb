@@ -19,6 +19,14 @@ module Onibi
       Onibi::Regexp.new(source)
     end
 
+    def linear_time?(pattern)
+      source = compiled_pattern?(pattern) ? pattern.source : String.try_convert(pattern)
+      raise TypeError, "no implicit conversion of #{pattern.class} into String" unless source
+
+      unsafe_features = ["\\1", "\\2", "\\3", "\\k", "\\g", "(?=", "(?!", "(?<=", "(?<!", "(?>"]
+      unsafe_features.none? { |feature| source.include?(feature) }
+    end
+
     private
 
     def union_source(pattern)

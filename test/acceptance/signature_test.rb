@@ -30,6 +30,7 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def self.dfa_memory_budget=: (Integer value) -> Integer"
     assert_includes signature, "def self.timeout: () -> Float?"
     assert_includes signature, "def self.timeout=: (Numeric? value) -> Float?"
+    assert_includes signature, "def self.linear_time?:"
     assert_includes signature, "class MatchData"
     assert_includes signature, "def []: (Integer index) -> String?"
     assert_includes signature, "def captures: () -> Array[String?]"
