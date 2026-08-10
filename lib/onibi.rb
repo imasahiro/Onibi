@@ -2,6 +2,7 @@
 
 require_relative "onibi/version"
 require_relative "onibi/regexp_options"
+require_relative "onibi/regexp_utilities"
 require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/unicode_property_scripts"
@@ -53,6 +54,7 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
+    extend RegexpUtilities
     include RegexpOptions
     include RegexpEncodingValidation
     include RegexpObjectSemantics
