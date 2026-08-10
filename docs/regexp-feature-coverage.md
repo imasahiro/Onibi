@@ -322,7 +322,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。
 - [x] `MatchData#deconstruct`、`deconstruct_keys` の positional/named capture 分解を追加する。
 - [x] `deconstruct` から full match を除外し、`deconstruct_keys` を Symbol-keyed Ruby semantics に揃える。
-- String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
+- [x] String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal とし、v2 の MRI integration shape 判断時に解除を再検討する。
 - [x] acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
 
 ## 参照資料
