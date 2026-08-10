@@ -45,7 +45,7 @@
 | 量指定子 | 回数固定・最小以上・範囲 | {n}、{min,}、{min,max} | ✅ | Greedy の基本形を実装済み。 |
 | 量指定子 | 最大回数以下 | {,max} | ✅ | 空の最小値を 0 として parser と matcher が処理する。`{,max}` の空・上限・超過ケースを acceptance test 済み。 |
 | 量指定子 | Lazy | *?、+?、??、{1,3}? | ✅ | 実装済み。 |
-| 量指定子 | Possessive | *+、++、?+ | ✅ | 実装済み。counting range の possessive は Ruby 仕様に合わせて拒否。 |
+| 量指定子 | Possessive | *+、++、?+ | ✅ | 実装済み。Ruby 4.0.6 の counting range suffix（`{1,3}+`）は受理して greedy 相当として扱う。 |
 | グループ | 番号付き捕捉 | (abc) | ✅ | MatchData の番号付き capture を実装済み。 |
 | グループ | 非捕捉グループ | (?:abc) | ✅ | 実装済み。 |
 | グループ | 名前付き捕捉 | (?<name>abc)、(?'name'abc) | ✅ | named capture を実装済み。 |
@@ -198,7 +198,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Dependencies: REGEXP-001, REGEXP-002
 - *?、+?、??、{min,max}? の lazy capture を実装する。
 - *+、++、?+ の no-backtracking semantics を実装する。
-- counting range の possessive 非対応という Ruby 仕様も error corpus に固定する。
+- [x] Ruby 4.0.6 の counting range suffix（`{min,max}+`）を受理し、MRI の greedy 相当 semantics と比較する。
 - acceptance: match span と capture boundary を MRI と比較する。
 
 ### REGEXP-007 [Complete] — groups、backreference、assertion を段階的に実装する

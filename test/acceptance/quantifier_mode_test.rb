@@ -20,7 +20,13 @@ class QuantifierModeTest < Minitest::Test
     assert Onibi::Regexp.new("a++").match?("aaa")
   end
 
-  def test_possessive_bounded_quantifier_is_rejected
-    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("a{1,3}+") }
+  def test_possessive_bounded_quantifier_does_not_backtrack
+    regexp = Onibi::Regexp.new("a{1,3}+a")
+
+    assert regexp.match?("aaa")
+    assert regexp.match?("aaaa")
+    ["aaa", "aaaa"].each do |input|
+      assert_equal Regexp.new("a{1,3}+a").match?(input), regexp.match?(input)
+    end
   end
 end
