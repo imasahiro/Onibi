@@ -212,7 +212,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] subexpression call を個別の AST/VM 機能として追加する。
 - [x] absence operator を個別の AST/VM 機能として追加する。
 - [x] \K match reset を capture/span 設計と合わせて追加する。
-- acceptance: 各構文を独立 fixture とし、parse error、capture、zero-width span を比較する。
+- [x] advanced syntax の acceptance corpus を MRI と比較する（capture、zero-width span、match reset、absence operator を含む）。
 
 ### REGEXP-008 — encoding と case folding を Ruby 互換にする
 
