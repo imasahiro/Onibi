@@ -134,7 +134,6 @@ module Onibi
       @options.include?("ignorecase")
     end
 
-
     private
 
     def validate_pattern_type!(pattern)
