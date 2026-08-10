@@ -93,6 +93,19 @@ module Onibi
       @names.keys
     end
 
+    def deconstruct
+      to_a
+    end
+
+    def deconstruct_keys(keys)
+      return named_captures unless keys
+
+      keys.each_with_object({}) do |key, result|
+        name = key.to_s
+        result[name] = self[name] if @names.key?(name)
+      end
+    end
+
     def to_s
       self[0]
     end

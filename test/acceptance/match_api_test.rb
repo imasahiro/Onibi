@@ -109,4 +109,12 @@ class MatchApiTest < Minitest::Test
     assert_equal first.hash, second.hash
     refute_equal first, different
   end
+
+  def test_match_data_supports_pattern_matching_destructuring
+    match = Onibi::Regexp.new("(?<animal>cat)(dog)").match("catdog")
+
+    assert_equal ["catdog", "cat", "dog"], match.deconstruct
+    assert_equal({"animal" => "cat"}, match.deconstruct_keys([:animal]))
+    assert_equal({"animal" => "cat"}, match.deconstruct_keys(nil))
+  end
 end
