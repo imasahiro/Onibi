@@ -32,6 +32,12 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal "(?i:cat)", regexp.source
   end
 
+  def test_source_uses_us_ascii_for_non_fixed_ascii_patterns
+    regexp = Onibi::Regexp.new("cat")
+
+    assert_equal Encoding::US_ASCII, regexp.source.encoding
+  end
+
   def test_casefold_reports_the_ignorecase_option
     assert Onibi::Regexp.new("cat", ["ignorecase"]).casefold?
     refute Onibi::Regexp.new("cat").casefold?

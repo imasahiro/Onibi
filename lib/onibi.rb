@@ -137,7 +137,10 @@ module Onibi
     end
 
     def source
-      @source_pattern.dup
+      source = @source_pattern.dup
+      return source if fixed_encoding? || !source.ascii_only?
+
+      source.force_encoding(Encoding::US_ASCII)
     end
 
     def casefold?
