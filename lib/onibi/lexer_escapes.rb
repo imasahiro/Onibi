@@ -32,9 +32,15 @@ module Onibi
       return [@source[index], index + 1] unless @source[index] == "\\"
 
       escaped = @source[index + 1]
-      return unless escaped == "C" && @source[index + 2] == "-" && @source[index + 3]
+      if escaped == "C" && @source[index + 2] == "-" && @source[index + 3]
+        return [(@source[index + 3].ord & 0x1f).chr, index + 4]
+      end
+      return unless escaped == "x"
 
-      [(@source[index + 3].ord & 0x1f).chr, index + 4]
+      digits = @source[(index + 2), 2]
+      return unless digits && digits.length == 2 && digits.each_char.all? { |digit| hex_digit?(digit) }
+
+      [digits.to_i(16).chr, index + 4]
     end
 
     def control_escape_token(index, escaped)

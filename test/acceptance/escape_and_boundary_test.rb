@@ -56,6 +56,13 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute regexp.match?([0x01].pack("C*").b)
   end
 
+  def test_meta_hex_escape_matches_high_bit_ascii8bit_byte
+    regexp = Onibi::Regexp.new("\\M-\\x41".b)
+
+    assert regexp.match?([0xc1].pack("C*").b)
+    refute regexp.match?([0x41].pack("C*").b)
+  end
+
   def test_meta_escape_rejects_utf8_patterns_that_produce_invalid_bytes
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\M-a") }
   end
