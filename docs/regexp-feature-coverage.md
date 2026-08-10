@@ -85,7 +85,7 @@
 | mode | m / MULTILINE | ◐ | Onibi の multiline は ^/$ の判定にも影響する。Ruby の m は dot-all で ^/$ を変更しない。 |
 | mode | x / EXTENDED | ◐ | `extended` option で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
-| mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | pattern prefix の `(?i)` / `(?-i)` を実装。scope付き `(?i:pat)` は未対応。 |
+| mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と全体 wrapper の `(?i:pat)` を実装。複合 pattern 内の任意 scope は未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
 | matching | Regexp#match? | ✅ | boolean を返す基本 API は実装済み。 |
 | matching | Regexp#=~、Regexp#===、unary ~ | ❌ | 未実装。 |
@@ -223,7 +223,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] extended mode x の whitespace/comment 処理を lexer 前処理として追加する。
 - [x] (?#comment) を追加する。
 - [x] inline modifier prefix `(?i)` / `(?-i)` を追加する。
-- inline modifier `(?i:...)` 等を scope 付き option AST にする。
+- [x] inline modifier `(?i:...)` を全体 wrapper として追加する。
+- inline modifier を複合 pattern 内の scope 付き option AST にする。
 - Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
 - acceptance: mode の on/off scope と comment/whitespace の parse/match を比較する。
 
