@@ -56,6 +56,8 @@ module Onibi
     end
 
     def ast_matcher_required?(pattern)
+      return true if pattern.include?("(?")
+
       ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!", "(?>",
        "*+", "++", "?+", "*?", "+?", "??", "?(", "(?i:", "(?-i:"].any? do |escape|
         pattern.include?(escape)
