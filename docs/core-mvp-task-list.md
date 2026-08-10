@@ -155,7 +155,7 @@ Expose the public constructors, pattern/options storage, and compile-time valida
 
 **Dependencies:** CORE-005, CORE-013.
 
-### CORE-015 — Implement `Regexp#match` and `Regexp#match?`
+### CORE-015 — Implement `Regexp#match` and `Regexp#match?` [Complete]
 
 Connect the public methods to the single bytecode VM and `Onibi::MatchData` builder. Ensure `#match` returns `nil` on no match and `#match?` returns only a boolean.
 

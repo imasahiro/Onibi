@@ -47,6 +47,17 @@ module Onibi
       AstMatcher.new(@ast, @options).match?(input)
     end
 
+    def match(input)
+      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
+      span = AstMatcher.new(@ast, @options).match_span(input)
+      return nil unless span
+
+      characters = input.chars
+      full_match = characters[span[0]...span[1]].join
+      MatchData.new(full_match, [], [span])
+    end
+
     def options
       @options.dup
     end
