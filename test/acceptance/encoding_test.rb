@@ -98,4 +98,10 @@ class EncodingTest < Minitest::Test
       refute_nil regexp.match("あ".encode(encoding))
     end
   end
+
+  def test_ascii8bit_patterns_reject_unicode_properties
+    assert_raises(Onibi::RegexpError) do
+      Onibi::Regexp.new("\\p{Hiragana}".b)
+    end
+  end
 end
