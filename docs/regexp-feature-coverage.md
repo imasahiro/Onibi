@@ -71,9 +71,9 @@
 | encoding | UTF-8 | é と UTF-8 入力 | ◐ | UTF-8 の基本一致、不正 pattern/input の例外、literal/class の Unicode case folding を実装済み。全 Unicode fold と encoding mode は未対応。 |
 | encoding | ASCII-8BIT | abc のバイト列 | ◐ | ASCII バイトの基本一致と互換性エラーを実装。invalid byte/class の全組合せは未検証。 |
 | encoding | US-ASCII | ASCII の pattern/input | ◐ | ASCII-only の互換性は扱うが、Regexp の source encoding/fixed encoding と同一ではない。 |
-| encoding | EUC-JP、Windows-31J 等 | /pat/e、/pat/s | ❌ | 未実装。 |
+| encoding | EUC-JP、Windows-31J 等 | /pat/e、/pat/s | ◐ | 同一 encoding の pattern/input と互換性エラーは基本対応。constructor encoding mode は未実装。 |
 | encoding mode | encoding 指定 | /pat/u、/pat/n、/pat/e、/pat/s | ❌ | Ruby の regexp option として未実装。 |
-| encoding mode | fixed/no encoding | Regexp::FIXEDENCODING、Regexp::NOENCODING | ❌ | 未実装。 |
+| encoding mode | fixed/no encoding | Regexp::FIXEDENCODING、Regexp::NOENCODING | ◐ | integer option、ASCII pattern の NOENCODING、binary input の byte match を実装。FIXEDENCODING の introspection と完全な互換性は未対応。 |
 
 ### モード・Regexp API
 
@@ -210,7 +210,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - US-ASCII、UTF-8、ASCII-8BIT、EUC-JP、Windows-31J の pattern/input matrix を実装する。
 - [x] invalid encoded pattern/input、compatible ASCII、Encoding::CompatibilityError の基本条件を揃える。
 - [x] literal と character class の Unicode case folding と ignorecase を実装する。
-- /u、/n、/e、/s 相当と fixed/no encoding を追加する。
+- [x] `Regexp::NOENCODING` と binary input の byte 単位 match を追加する。
+- /u、/e、/s 相当と `FIXEDENCODING` の完全な互換性を追加する。
 - 全 encoding matrix と encoding mode の発生条件を揃える。
 - acceptance: Ruby 4.0.6 の encoding matrix を fixture 化する。
 
