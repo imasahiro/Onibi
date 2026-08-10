@@ -83,4 +83,15 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal ::Regexp::IGNORECASE, copy.options
     assert copy.match?("CAT")
   end
+
+  def test_timeout_has_class_default_and_instance_override
+    original = Onibi::Regexp.timeout
+    Onibi::Regexp.timeout = 0.25
+
+    assert_equal 0.25, Onibi::Regexp.timeout
+    regexp = Onibi::Regexp.new("cat", timeout: 0.5)
+    assert_equal 0.5, regexp.timeout
+  ensure
+    Onibi::Regexp.timeout = original
+  end
 end

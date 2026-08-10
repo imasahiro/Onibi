@@ -14,24 +14,25 @@ module Onibi
     FIXEDENCODING: Integer
     NOENCODING: Integer
 
-    def self.compile: (String pattern) -> Regexp
-                      | (String pattern, Array[String]? options) -> Regexp
-                      | (String pattern, Integer options) -> Regexp
-                      | (::Regexp pattern) -> Regexp
-                      | (Regexp pattern) -> Regexp
+    def self.compile: (String pattern, ?Array[String]? options, ?timeout: Numeric?) -> Regexp
+                      | (String pattern, ?Integer options, ?timeout: Numeric?) -> Regexp
+                      | (::Regexp pattern, ?timeout: Numeric?) -> Regexp
+                      | (Regexp pattern, ?timeout: Numeric?) -> Regexp
     def self.escape: (untyped string) -> String
     def self.union: (*String patterns) -> Regexp
                    | (*(::Regexp | String) patterns) -> Regexp
     def self.dfa_memory_budget: () -> Integer
     def self.dfa_memory_budget=: (Integer value) -> Integer
+    def self.timeout: () -> Float?
+    def self.timeout=: (Numeric? value) -> Float?
 
-    def initialize: (String pattern) -> void
-                  | (String pattern, Array[String]? options) -> void
-                  | (String pattern, Integer options) -> void
-                  | (::Regexp pattern) -> void
-                  | (Regexp pattern) -> void
+    def initialize: (String pattern, ?Array[String]? options, ?timeout: Numeric?) -> void
+                  | (String pattern, ?Integer options, ?timeout: Numeric?) -> void
+                  | (::Regexp pattern, ?timeout: Numeric?) -> void
+                  | (Regexp pattern, ?timeout: Numeric?) -> void
     def match?: (String input) -> bool
     def match: (String input) -> MatchData?
+    def timeout: () -> Float?
     def =~: (String input) -> Integer?
     def ===: (String input) -> bool
     def ~: () -> Integer?
