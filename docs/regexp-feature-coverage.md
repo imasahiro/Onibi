@@ -79,7 +79,7 @@
 
 | 分類 | Ruby 4.0.6 の機能 | Onibi | 判定理由 |
 | --- | --- | --- | --- |
-| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式だが、既存 Onibi::Regexp と MRI Regexp の source/options によるコピー、timeout keywordの基本設定を実装。Ruby 互換 flags の全組合せとRegexp copy timeoutは未対応。 |
+| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式だが、既存 Onibi::Regexp と MRI Regexp の source/options によるコピー、timeout keyword、Onibi copy時のtimeout保持/overrideを実装。Ruby 互換 flags の全組合せとMRI Regexpのtimeout copyは未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
@@ -248,6 +248,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp#options` を全constructor形式で整数bitmaskとして返す。
 - [x] `Regexp.linear_time?` の保守的な危険構文判定を追加する。
 - [x] `Regexp.timeout` / `timeout=` と constructor timeout keywordの基本設定を追加する。
+- [x] Onibi Regexp copy時のtimeout保持とconstructor/compile overrideを追加する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
