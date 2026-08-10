@@ -89,4 +89,13 @@ class MatchApiTest < Minitest::Test
     assert_equal "wild", match.pre_match
     assert_equal "dog", match.post_match
   end
+
+  def test_match_exposes_byte_offsets_and_match_length
+    match = Onibi::Regexp.new("é").match("aéz")
+
+    assert_equal 1, match.bytebegin(0)
+    assert_equal 3, match.byteend(0)
+    assert_equal [1, 3], match.byteoffset(0)
+    assert_equal 1, match.match_length(0)
+  end
 end

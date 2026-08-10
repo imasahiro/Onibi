@@ -56,6 +56,10 @@ module Onibi
     def regexp: () -> Regexp?
     def pre_match: () -> String?
     def post_match: () -> String?
+    def bytebegin: (Integer index) -> Integer?
+    def byteend: (Integer index) -> Integer?
+    def byteoffset: (Integer index) -> [Integer, Integer]?
+    def match_length: (Integer index) -> Integer?
     def named_captures: () -> Hash[String, String?]
     def names: () -> Array[String]
   end
