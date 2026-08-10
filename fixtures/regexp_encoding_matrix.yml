@@ -1,0 +1,55 @@
+encodings:
+  - ASCII-8BIT
+  - EUC-JP
+  - UTF-8
+  - Windows-31J
+cases:
+  - name: ASCII pattern and UTF-8 input
+    pattern: a
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: UTF-8
+    options: []
+    outcome: match
+  - name: ASCII pattern and EUC-JP input
+    pattern: a
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: EUC-JP
+    options: []
+    outcome: match
+  - name: ASCII pattern and Windows-31J input
+    pattern: a
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: Windows-31J
+    options: []
+    outcome: match
+  - name: ASCII pattern and ASCII-8BIT input
+    pattern: a
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: ASCII-8BIT
+    options: []
+    outcome: match
+  - name: Non-ASCII pattern and ASCII input
+    pattern: é
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: EUC-JP
+    options: []
+    outcome: no_match
+  - name: Unicode property and incompatible input
+    pattern: \p{Hiragana}
+    pattern_encoding: UTF-8
+    input: あ
+    input_encoding: EUC-JP
+    options: []
+    outcome: error
+  - name: EUC-JP character class and incompatible input
+    pattern: '[a-z]'
+    pattern_encoding: EUC-JP
+    input: あ
+    input_encoding: UTF-8
+    options: []
+    outcome: no_match
