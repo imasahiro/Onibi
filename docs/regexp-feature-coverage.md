@@ -185,6 +185,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - POSIX の digit、xdigit、upper、lower、alpha、alnum、space、blank、cntrl、graph、print、punct を追加する。
 - Ruby 拡張の ascii、word も追加する。
 - [x] Hiragana、Katakana、CJK、Hangul など uncased Unicode letter の Alpha/Word 判定を追加する。
+- [x] uncased Unicode letter の Upper/Lower 誤判定を修正し、`[[:ascii:]]` を追加する。
 - Ruby 4.0.6 が参照する Unicode データと更新手順を固定する。
 - acceptance: Unicode property の代表値と invalid property error を differential test する。
 
