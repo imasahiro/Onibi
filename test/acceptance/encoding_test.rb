@@ -140,6 +140,15 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_unicode_property_pattern_rejects_non_ascii_input_in_another_encoding
+    pattern = "\\p{Hiragana}".encode(Encoding::UTF_8)
+    input = "あ".encode(Encoding::EUC_JP)
+
+    assert_raises(Encoding::CompatibilityError) do
+      Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
+
   def test_ascii8bit_patterns_reject_unicode_properties
     assert_raises(Onibi::RegexpError) do
       Onibi::Regexp.new("\\p{Hiragana}".b)
