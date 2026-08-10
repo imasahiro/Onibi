@@ -73,6 +73,9 @@ module Onibi
     FIXEDENCODING = 16
     NOENCODING = 32
 
+    class TimeoutError < RegexpError
+    end
+
     @dfa_memory_budget = 1
     class << self
       attr_accessor :dfa_memory_budget

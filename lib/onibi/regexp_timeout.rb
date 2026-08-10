@@ -35,7 +35,7 @@ module Onibi
       limit = @timeout.nil? ? self.class.timeout : @timeout
       return block.call if limit.nil?
 
-      Timeout.timeout(limit, &block)
+      Timeout.timeout(limit, Onibi::Regexp::TimeoutError, "regexp match timeout", &block)
     end
   end
 end
