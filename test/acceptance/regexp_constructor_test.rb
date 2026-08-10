@@ -17,4 +17,15 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal [], regexp.options
     assert_raises(ArgumentError) { Onibi::Regexp.compile("cat", ["unknown"]) }
   end
+
+  def test_source_returns_the_original_pattern
+    regexp = Onibi::Regexp.new("(?i:cat)")
+
+    assert_equal "(?i:cat)", regexp.source
+  end
+
+  def test_casefold_reports_the_ignorecase_option
+    assert Onibi::Regexp.new("cat", ["ignorecase"]).casefold?
+    refute Onibi::Regexp.new("cat").casefold?
+  end
 end

@@ -71,6 +71,7 @@ module Onibi
     def initialize(pattern, options = nil)
       validate_pattern_type!(pattern)
       validate_pattern_encoding!(pattern)
+      @source_pattern = pattern
       normalized_options = normalize_options(options)
       pattern, normalized_options = normalize_inline_modifier(pattern, normalized_options)
       validate_noencoding_pattern!(pattern, normalized_options)
@@ -119,6 +120,14 @@ module Onibi
 
     def options
       @public_options.is_a?(Array) ? @public_options.dup : @public_options
+    end
+
+    def source
+      @source_pattern.dup
+    end
+
+    def casefold?
+      @options.include?("ignorecase")
     end
 
     private
