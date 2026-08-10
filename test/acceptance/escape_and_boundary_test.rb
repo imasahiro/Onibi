@@ -41,4 +41,22 @@ class EscapeAndBoundaryTest < Minitest::Test
     assert Onibi::Regexp.new("\\Gcat").match?("cat nap")
     refute Onibi::Regexp.new("\\Gcat").match?("a cat")
   end
+
+  def test_meta_escape_matches_high_bit_ascii8bit_byte
+    regexp = Onibi::Regexp.new("\\M-a".b)
+
+    assert regexp.match?([0xe1].pack("C*").b)
+    refute regexp.match?([0xe2].pack("C*").b)
+  end
+
+  def test_meta_control_escape_matches_high_bit_control_byte
+    regexp = Onibi::Regexp.new("\\M-\\C-A".b)
+
+    assert regexp.match?([0x81].pack("C*").b)
+    refute regexp.match?([0x01].pack("C*").b)
+  end
+
+  def test_meta_escape_rejects_utf8_patterns_that_produce_invalid_bytes
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\M-a") }
+  end
 end
