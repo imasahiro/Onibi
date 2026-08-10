@@ -11,7 +11,7 @@ class EncodingMatrixTest < Minitest::Test
     matrix = YAML.safe_load(File.read(MATRIX_PATH))
 
     assert_equal REQUIRED_ENCODINGS.sort, matrix.fetch("encodings").sort
-    assert_operator matrix.fetch("cases").length, :>=, REQUIRED_ENCODINGS.length
+    assert_equal REQUIRED_ENCODINGS.length**2, ascii_pair_cases(matrix).length
     matrix.fetch("cases").each { |fixture| assert_case_shape(fixture) }
   end
 
@@ -29,6 +29,12 @@ class EncodingMatrixTest < Minitest::Test
   end
 
   private
+
+  def ascii_pair_cases(matrix)
+    matrix.fetch("cases").select do |fixture|
+      fixture.fetch("pattern") == "a" && fixture.fetch("input") == "a"
+    end
+  end
 
   def assert_case_shape(fixture)
     assert_equal %w[input input_encoding name options outcome pattern pattern_encoding].sort, fixture.keys.sort
