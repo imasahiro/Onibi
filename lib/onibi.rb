@@ -3,6 +3,7 @@
 require_relative "onibi/version"
 require_relative "onibi/regexp_options"
 require_relative "onibi/regexp_encoding_validation"
+require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -54,6 +55,7 @@ module Onibi
   class Regexp
     include RegexpOptions
     include RegexpEncodingValidation
+    include RegexpObjectSemantics
 
     IGNORECASE = 1
     MULTILINE = 4
@@ -132,17 +134,6 @@ module Onibi
       @options.include?("ignorecase")
     end
 
-    def ==(other)
-      other.is_a?(Regexp) && source == other.source && options == other.options
-    end
-
-    def eql?(other)
-      self == other
-    end
-
-    def hash
-      [source, options].hash
-    end
 
     private
 
