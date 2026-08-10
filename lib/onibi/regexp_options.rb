@@ -3,6 +3,13 @@
 module Onibi
   # Normalizes the public constructor options into VM option names.
   module RegexpOptions
+    INLINE_MODIFIERS = [
+      ["(?i)", "ignorecase", true],
+      ["(?-i)", "ignorecase", false],
+      ["(?m)", "multiline", true],
+      ["(?-m)", "multiline", false]
+    ].freeze
+
     def encoding
       return Encoding::US_ASCII if @options.include?("noencoding")
       return @pattern.encoding if fixed_encoding?
@@ -32,12 +39,13 @@ module Onibi
 
     def normalize_inline_modifier(pattern, options)
       return [pattern[4...-1], options | ["ignorecase"]] if whole_scoped_ignorecase?(pattern)
-      return [pattern[4..], options | ["ignorecase"]] if pattern.start_with?("(?i)")
-      return [pattern[5..], options.reject { |option| option == "ignorecase" }] if pattern.start_with?("(?-i)")
-      return [pattern[4..], options | ["multiline"]] if pattern.start_with?("(?m)")
-      return [pattern[5..], options.reject { |option| option == "multiline" }] if pattern.start_with?("(?-m)")
 
-      [pattern, options]
+      modifier = INLINE_MODIFIERS.find { |prefix, _option, _enabled| pattern.start_with?(prefix) }
+      return [pattern, options] unless modifier
+
+      prefix, option, enabled = modifier
+      updated_options = enabled ? options | [option] : options.reject { |item| item == option }
+      [pattern[prefix.length..], updated_options]
     end
 
     def whole_scoped_ignorecase?(pattern)
