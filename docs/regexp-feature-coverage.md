@@ -56,7 +56,7 @@
 | absence operator | 含まれない部分のマッチ | (?~pat) | ✅ | Ruby 4.0 の代表例を実装・テスト済み。 |
 | lookaround | lookahead | (?=pat)、(?!pat) | ✅ | 実装済み。 |
 | lookaround | lookbehind | (?<=pat)、(?<!pat) | ✅ | 固定幅 AST 検証付きで実装済み。 |
-| コメント | パターン内コメント | (?#comment) | ❌ | 未実装。 |
+| コメント | パターン内コメント | (?#comment) | ✅ | lexer で無視し、capture を生成しない。unterminated comment は RegexpError。 |
 
 ### Unicode、POSIX、エンコーディング
 
@@ -221,7 +221,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P1
 - Dependencies: REGEXP-002, REGEXP-007
 - extended mode x の whitespace/comment 処理を lexer 前処理として追加する。
-- (?#comment) を追加する。
+- [x] (?#comment) を追加する。
 - inline modifier (?i)、(?-i)、(?i:...) 等を scope 付き option AST にする。
 - Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
 - acceptance: mode の on/off scope と comment/whitespace の parse/match を比較する。
