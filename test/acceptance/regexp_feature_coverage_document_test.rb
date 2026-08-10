@@ -19,5 +19,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "https://docs.ruby-lang.org/en/4.0/Regexp.html"
     assert_includes document, "https://docs.ruby-lang.org/en/4.0/MatchData.html"
     assert_includes document, "position 引数"
+    assert_includes document, "compiled pattern の ignorecase"
   end
 end
