@@ -127,8 +127,8 @@ module Onibi
       raise ArgumentError, "invalid byte sequence in #{input.encoding}" unless input.valid_encoding?
 
       return if @options.include?("noencoding") && input.encoding == Encoding::ASCII_8BIT
+      return if @pattern.ascii_only?
       return if @pattern.encoding == input.encoding
-      return if @pattern.ascii_only? && input.ascii_only?
 
       raise Encoding::CompatibilityError, "incompatible encoding regexp match"
     end

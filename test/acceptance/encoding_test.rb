@@ -77,4 +77,10 @@ class EncodingTest < Minitest::Test
       assert Onibi::Regexp.new(pattern).match?(input)
     end
   end
+
+  def test_ascii_patterns_are_compatible_with_non_ascii_inputs
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      refute Onibi::Regexp.new("a").match?("あ".encode(encoding))
+    end
+  end
 end
