@@ -88,7 +88,7 @@
 | mode | inline modifier | (?i)、(?-i)、(?i:pat) | ◐ | prefix `(?i)` / `(?-i)` と、複合 pattern 内を含む `(?i:pat)` / `(?-i:pat)` の scoped option AST を実装。全 modifier 組み合わせは未対応。 |
 | matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
 | matching | Regexp#match? | ✅ | boolean を返す基本 API は実装済み。 |
-| matching | Regexp#=~、Regexp#===、unary ~ | ❌ | 未実装。 |
+| matching | Regexp#=~、Regexp#===、unary ~ | ◐ | `=~` は match begin offset、`===` は boolean、unary `~` は top-level `$_` への match 結果を返す。offset 引数と完全な global match state は未対応。 |
 | matching state | $~、$&、$1 等 | 対象外 | global match variables を変更しない opt-in API という設計。 |
 | introspection | source | ❌ | 未実装。 |
 | introspection | options | ◐ | Onibi は option 名の配列を返す。Ruby の整数 bit mask とは異なる。 |
@@ -234,7 +234,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Dependencies: REGEXP-001, REGEXP-008, REGEXP-009
 - constructor の Ruby 互換 flags、Regexp 引数、keyword timeout を追加する。
 - source、encoding、fixed_encoding?、casefold?、==、eql?、hash、inspect、to_s を追加する。
-- Regexp#=~、===、unary ~ と offset 引数を追加する。
+- [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - global match variables を opt-in replacement で扱うか、Onibi 独自 API として明確に分離する。
 - acceptance: public API inventory の全メソッドを MRI と比較する。
