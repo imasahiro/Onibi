@@ -4,7 +4,9 @@ module Onibi
   # Provides class-level regexp construction helpers.
   module RegexpUtilities
     def escape(string)
-      source = string.to_s
+      source = string.is_a?(Symbol) ? string.to_s : String.try_convert(string)
+      raise TypeError, "no implicit conversion of #{string.class} into String" unless source
+
       special = "\\.^$*+?{}[]()|# "
       source.each_char.each_with_object(source.dup.clear) do |character, escaped|
         escaped << "\\" if special.include?(character)

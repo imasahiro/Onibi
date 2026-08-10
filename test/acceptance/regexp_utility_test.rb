@@ -11,6 +11,12 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal "a\\ b\\#", Onibi::Regexp.escape("a b#")
   end
 
+  def test_escape_matches_ruby_input_coercion_errors
+    assert_equal "a", Onibi::Regexp.escape(:a)
+    assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
+    assert_raises(TypeError) { Onibi::Regexp.escape(1) }
+  end
+
   def test_union_escapes_string_patterns_and_matches_each_alternative
     regexp = Onibi::Regexp.union("a.b", "cat")
 
