@@ -53,6 +53,11 @@ module Onibi
       matched ? [[position, captures]] : []
     end
 
+    def atomic_group_results(node, characters, position, captures)
+      result = match_results(node.body, characters, position, captures).first
+      result ? [result] : []
+    end
+
     def assertion_matches?(node, characters, position, captures)
       return !match_results(node.body, characters, position, captures).empty? unless lookbehind?(node)
 

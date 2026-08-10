@@ -45,12 +45,22 @@ module Onibi
     end
 
     def group_token(index)
-      return [Lexer::Token.new(:open_non_capture, "?:", index), index + 3] if @source[index, 3] == "(?:"
-      return [Lexer::Token.new(:open_positive_lookahead, "?=", index), index + 3] if @source[index, 3] == "(?="
-      return [Lexer::Token.new(:open_negative_lookahead, "?!", index), index + 3] if @source[index, 3] == "(?!"
-      return lookbehind_token(index) if @source[index, 3] == "(?<"
+      return special_group_token(index) if @source[index, 2] == "(?"
 
       [Lexer::Token.new(:open_group, "(", index), index + 1]
+    end
+
+    def special_group_token(index)
+      token = {
+        "(?:" => :open_non_capture,
+        "(?>" => :open_atomic,
+        "(?=" => :open_positive_lookahead,
+        "(?!" => :open_negative_lookahead
+      }[@source[index, 3]]
+      return [Lexer::Token.new(token, @source[(index + 2), 1], index), index + 3] if token
+      return lookbehind_token(index) if @source[index, 3] == "(?<"
+
+      raise RegexpError, "unknown group extension"
     end
 
     def lookbehind_token(index)

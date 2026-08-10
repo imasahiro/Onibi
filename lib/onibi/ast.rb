@@ -13,6 +13,7 @@ module Onibi
     Sequence = Struct.new(:parts)
     Alternation = Struct.new(:branches)
     Group = Struct.new(:body, :number, :capture, :name)
+    AtomicGroup = Struct.new(:body)
     Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
   end
 end
