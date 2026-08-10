@@ -7,7 +7,9 @@ module Onibi
       ["(?i)", "ignorecase", true],
       ["(?-i)", "ignorecase", false],
       ["(?m)", "multiline", true],
-      ["(?-m)", "multiline", false]
+      ["(?-m)", "multiline", false],
+      ["(?x)", "extended", true],
+      ["(?-x)", "extended", false]
     ].freeze
 
     def encoding
