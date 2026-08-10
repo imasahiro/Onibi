@@ -36,7 +36,7 @@ class InlineModifierTest < Minitest::Test
   end
 
   def test_combined_inline_modifiers_disable_multiple_modes
-    regexp = Onibi::Regexp.new("(?-imx). a", ["ignorecase", "multiline", "extended"])
+    regexp = Onibi::Regexp.new("(?-imx). a", %w[ignorecase multiline extended])
 
     refute regexp.match?("\n A")
   end

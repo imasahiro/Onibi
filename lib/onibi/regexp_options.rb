@@ -46,14 +46,22 @@ module Onibi
       modifier = INLINE_MODIFIERS.find { |prefix, _option, _enabled| pattern.start_with?(prefix) }
       return apply_inline_modifier(pattern, options, modifier) if modifier
 
+      apply_combined_inline_modifier(pattern, options)
+    end
+
+    def apply_combined_inline_modifier(pattern, options)
       combined = combined_inline_modifier(pattern)
       return [pattern, options] unless combined
 
       prefix_length, enabled, disabled = combined
+      [pattern[prefix_length..], update_combined_options(options, enabled, disabled)]
+    end
+
+    def update_combined_options(options, enabled, disabled)
       updated_options = options.dup
       enabled.each { |modifier_name| updated_options |= [INLINE_OPTION_NAMES.fetch(modifier_name)] }
       disabled.each { |modifier_name| updated_options.delete(INLINE_OPTION_NAMES.fetch(modifier_name)) }
-      [pattern[prefix_length..], updated_options]
+      updated_options
     end
 
     def apply_inline_modifier(pattern, options, modifier)
