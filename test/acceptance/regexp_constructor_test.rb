@@ -19,6 +19,15 @@ class RegexpConstructorTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Regexp.compile("cat", ["unknown"]) }
   end
 
+  def test_constructor_accepts_ruby_boolean_string_and_symbol_options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", true).options
+    assert_equal 0, Onibi::Regexp.new("cat", false).options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", "i").options
+    assert_equal Onibi::Regexp::IGNORECASE | Onibi::Regexp::MULTILINE | Onibi::Regexp::EXTENDED,
+      Onibi::Regexp.new("cat", "imx").options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", :i).options
+  end
+
   def test_extended_integer_flag_enables_extended_mode
     regexp = Onibi::Regexp.new("a b # comment\n c", Onibi::Regexp::EXTENDED)
 
