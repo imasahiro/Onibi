@@ -96,13 +96,19 @@ module Onibi
     def store_pattern_options(pattern, normalized_options, _options)
       @pattern = pattern
       @options = normalized_options
-      @public_options = option_bits(normalized_options)
+      @public_options = option_bits(normalized_options, pattern)
     end
 
-    def option_bits(options)
+    def option_bits(options, pattern)
       integer_option_names.reduce(0) do |bits, (name, flag)|
         options.include?(name) ? bits | flag : bits
-      end
+      end | implicit_fixed_encoding_bit(options, pattern)
+    end
+
+    def implicit_fixed_encoding_bit(options, pattern)
+      return 0 if options.include?("noencoding") || pattern.ascii_only?
+
+      Regexp::FIXEDENCODING
     end
 
     def normalize_integer_options(options)
