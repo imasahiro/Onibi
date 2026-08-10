@@ -1,0 +1,63 @@
+# frozen_string_literal: true
+
+module Onibi
+  # Selects the smallest matcher capable of evaluating a compiled pattern.
+  module MatchingResult
+    module_function
+
+    def call(ast, bytecode, pattern, options, input)
+      literal_result = literal_casefold_result(pattern, options, input)
+      return literal_result unless literal_result.nil?
+
+      specialized_result = specialized_result(ast, pattern, options, input)
+      return specialized_result unless specialized_result.nil?
+
+      default_result(bytecode, ast, pattern, options, input)
+    end
+
+    def specialized_result(ast, pattern, options, input)
+      return !CaptureMatcher.new(ast, options).match_details(input).nil? if capture_matcher_required?(pattern)
+      return AstMatcher.new(ast, options).match?(input) if ast_matcher_required?(pattern)
+
+      nil
+    end
+
+    def default_result(bytecode, ast, pattern, options, input)
+      result = VirtualMachine.new(bytecode, options).match?(input)
+      result ||= (pattern.include?("|") || pattern.include?("(")) && AstMatcher.new(ast, options).match?(input)
+      result
+    end
+
+    def literal_casefold_result(pattern, options, input)
+      return nil unless literal_casefold_matchable?(pattern, options)
+
+      characters = input.chars
+      maximum_length = [pattern.length * 3, 1].max
+      characters.each_index.any? do |start|
+        (1..maximum_length).any? do |length|
+          candidate = characters[start, length]&.join
+          candidate && pattern.casecmp?(candidate)
+        end
+      end
+    end
+
+    def literal_casefold_matchable?(pattern, options)
+      options.include?("ignorecase") && pattern.each_char.all? do |character|
+        !"\\()|*+?{}[].^$".include?(character)
+      end
+    end
+
+    def capture_matcher_required?(pattern)
+      ["\\k", "\\g", "\\K", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?(", "(?~"].any? do |escape|
+        pattern.include?(escape)
+      end
+    end
+
+    def ast_matcher_required?(pattern)
+      ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!", "(?>",
+       "*+", "++", "?+", "*?", "+?", "??", "?("].any? do |escape|
+        pattern.include?(escape)
+      end
+    end
+  end
+end

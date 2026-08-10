@@ -23,6 +23,7 @@ require_relative "onibi/compiler_quantifiers"
 require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine_anchors"
 require_relative "onibi/virtual_machine"
+require_relative "onibi/matching_result"
 require_relative "onibi/ast_matcher_dispatch"
 require_relative "onibi/ast_matcher"
 require_relative "onibi/capture_matcher_dispatch"
@@ -104,31 +105,8 @@ module Onibi
       raise RegexpError, "invalid byte sequence in #{pattern.encoding}"
     end
 
-    def ast_matcher_required?
-      matcher_tokens = [
-        "\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!", "(?>",
-        "*+", "++", "?+", "*?", "+?", "??", "?("
-      ]
-      matcher_tokens.any? do |escape|
-        @pattern.include?(escape)
-      end
-    end
-
     def matching_result(input)
-      return !CaptureMatcher.new(@ast, @options).match_details(input).nil? if capture_matcher_required?
-
-      return AstMatcher.new(@ast, @options).match?(input) if ast_matcher_required?
-
-      result = nil
-      result ||= VirtualMachine.new(@bytecode, @options).match?(input)
-      result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
-      result
-    end
-
-    def capture_matcher_required?
-      ["\\k", "\\g", "\\K", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?(", "(?~"].any? do |escape|
-        @pattern.include?(escape)
-      end
+      MatchingResult.call(@ast, @bytecode, @pattern, @options, input)
     end
 
     def normalize_options(options)
