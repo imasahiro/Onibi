@@ -171,7 +171,7 @@ Implement runtime conversion of reachable NFA state sets into DFA bytecode seque
 
 **Dependencies:** CORE-013, CORE-015.
 
-### CORE-017 — Add DFA memory budget and NFA fallback
+### CORE-017 — Add DFA memory budget and NFA fallback [Complete]
 
 Add a configurable internal memory budget for per-instance DFA specialization. When the budget is exhausted or a state cannot be specialized, continue execution through the NFA path without changing observable behavior.
 
