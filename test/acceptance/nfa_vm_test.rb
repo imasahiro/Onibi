@@ -4,12 +4,16 @@ require "test_helper"
 
 class NfaVmTest < Minitest::Test
   def test_public_matching_uses_leftmost_search_and_alternation
-    assert Onibi::Regexp.new("ab|cd").match?("xxcdyy")
+    regexp = Onibi::Regexp.new("ab|cd")
+
+    assert regexp.match?("xxcdyy"), regexp.instance_variable_get(:@bytecode).instructions.inspect
     refute Onibi::Regexp.new("ab|cd").match?("xxefyy")
   end
 
   def test_public_matching_handles_groups_and_greedy_star
-    assert Onibi::Regexp.new("a(bc)*d").match?("abcbcd")
+    regexp = Onibi::Regexp.new("a(bc)*d")
+
+    assert regexp.match?("abcbcd"), regexp.instance_variable_get(:@bytecode).instructions.inspect
     assert Onibi::Regexp.new("a*").match?("bbb")
   end
 
