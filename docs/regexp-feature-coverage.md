@@ -62,7 +62,7 @@
 
 | 分類 | Ruby 4.0.6 の機能 | 代表例 | Onibi | 判定理由 |
 | --- | --- | --- | --- | --- |
-| Unicode property | 正・負の property | \p{Alpha}、\P{Alpha}、\p{^Alpha} | ✅ | 実装済み。 |
+| Unicode property | 正・負の property | \p{Alpha}、\P{Alpha}、\p{^Alpha} | ✅ | 実装済み。Unicode property pattern は source encoding を fixed encoding として introspection する。 |
 | Unicode category | Letter、Mark、Number、Punctuation 等 | \p{Lu}、\p{Nd} | ✅ | 実装済み。 |
 | Unicode script/block | Script / Block | \p{Hiragana}、\p{InBasic_Latin} | ✅ | 実装済み。 |
 | POSIX class | digit、xdigit、upper、lower、alpha、alnum | [[:digit:]] | ✅ | 実装済み。 |
@@ -213,6 +213,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp::NOENCODING` と binary input の byte 単位 match を追加する。
 - [x] EUC-JP / Windows-31J の property、`match`、ASCII-8BIT property validation を追加する。
 - [x] `FIXEDENCODING` の ASCII pattern に対する非 ASCII cross-encoding input の拒否を追加する。
+- [x] Unicode property pattern の source encoding と implicit `FIXEDENCODING` introspection を追加する。
 - /u、/e、/s 相当と `FIXEDENCODING` の完全な互換性を追加する。
 - 全 encoding matrix と encoding mode の発生条件を揃える。
 - acceptance: Ruby 4.0.6 の encoding matrix を fixture 化する。
