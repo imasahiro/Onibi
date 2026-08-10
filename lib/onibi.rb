@@ -6,6 +6,8 @@ require_relative "onibi/ast"
 require_relative "onibi/parser"
 require_relative "onibi/bytecode"
 require_relative "onibi/compiler"
+require_relative "onibi/virtual_machine"
+require_relative "onibi/ast_matcher"
 
 module Onibi
   class Error < StandardError; end
@@ -26,7 +28,10 @@ module Onibi
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      input.include?(@pattern)
+      return true if VirtualMachine.new(@bytecode).match?(input)
+      return false unless @pattern.include?("|") || @pattern.include?("(")
+
+      AstMatcher.new(@ast).match?(input)
     end
   end
 end
