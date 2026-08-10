@@ -17,6 +17,7 @@ module Onibi
 
     private
 
+    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     def match_positions(node, characters, position)
       case node
       when AST::Sequence then sequence_positions(node.parts, characters, position)
@@ -31,6 +32,7 @@ module Onibi
       else []
       end
     end
+    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
 
     def sequence_positions(parts, characters, position)
       parts.reduce([position]) do |positions, part|

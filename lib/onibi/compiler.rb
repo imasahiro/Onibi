@@ -65,7 +65,6 @@ module Onibi
       emit(:save_end, node.number)
     end
 
-    # rubocop:disable Metrics/AbcSize
     def compile_quantifier(node)
       return compile_bounded(node) if node.kind == :bounded
 
@@ -97,7 +96,6 @@ module Onibi
       split.operand = body_start
       split.target = @instructions.length
     end
-    # rubocop:enable Metrics/AbcSize
 
     def compile_bounded(node)
       emit(:repeat, [node.minimum, node.maximum])
