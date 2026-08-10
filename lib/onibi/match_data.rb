@@ -93,6 +93,16 @@ module Onibi
       @names.keys
     end
 
+    def to_s
+      self[0]
+    end
+
+    def inspect
+      details = @names.map { |name, index| "#{name}:#{self[index].inspect}" }
+      suffix = details.empty? ? "" : " #{details.join(" ")}"
+      "#<Onibi::MatchData #{self[0].inspect}#{suffix}>"
+    end
+
     private
 
     def value_at(index)
