@@ -11,6 +11,7 @@ module Onibi
       AST::Literal => :compile_literal,
       AST::CharacterClass => :compile_character_class,
       AST::Escape => :compile_escape,
+      AST::Property => :compile_property,
       AST::Any => :compile_any,
       AST::Anchor => :compile_anchor
     }.freeze
@@ -53,6 +54,10 @@ module Onibi
 
     def compile_escape(node)
       emit(:escape, node.kind)
+    end
+
+    def compile_property(node)
+      emit(:property, [node.name, node.negated])
     end
 
     def compile_any(_node)

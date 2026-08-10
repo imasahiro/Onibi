@@ -31,6 +31,13 @@ module Onibi
       [[position + 1, captures]]
     end
 
+    def property_results(node, characters, position, captures)
+      return [] unless position < characters.length
+
+      matched = UnicodeProperties.matches?(node.name, characters[position]) ^ node.negated
+      matched ? [[position + 1, captures]] : []
+    end
+
     def escape_matches?(kind, character)
       CharacterPredicates.escape_matches?(kind, character)
     end

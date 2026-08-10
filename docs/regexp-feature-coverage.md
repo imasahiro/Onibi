@@ -171,7 +171,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - parser と matcher で class AST を構造化し、文字列の再解釈をやめる。
 - acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
 
-### REGEXP-005 — Unicode property と POSIX class を実装する
+### REGEXP-005 [Complete] — Unicode property と POSIX class を実装する
 
 - Priority: P1
 - Dependencies: REGEXP-004, REGEXP-008

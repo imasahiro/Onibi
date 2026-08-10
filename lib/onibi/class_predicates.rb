@@ -7,6 +7,9 @@ module Onibi
 
     def matches?(source, character)
       character = character.chr(source.encoding) if character.is_a?(Integer)
+      posix = POSIX_PROPERTIES[source]
+      return UnicodeProperties.matches?(posix, character) if posix
+
       intersection = split_intersection(source)
       return matches?(intersection[0], character) && matches?(intersection[1], character) if intersection
 
