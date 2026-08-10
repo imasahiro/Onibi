@@ -24,4 +24,12 @@ class RegexpUtilityTest < Minitest::Test
     refute Onibi::Regexp.union.match?("")
     refute Onibi::Regexp.union.match?("anything")
   end
+
+  def test_union_accepts_compiled_regexp_patterns
+    regexp = Onibi::Regexp.union(::Regexp.new("a|b"), "cat")
+
+    assert regexp.match?("b")
+    assert regexp.match?("cat")
+    refute regexp.match?("dog")
+  end
 end
