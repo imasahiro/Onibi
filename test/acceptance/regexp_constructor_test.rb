@@ -18,6 +18,13 @@ class RegexpConstructorTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Regexp.compile("cat", ["unknown"]) }
   end
 
+  def test_extended_integer_flag_enables_extended_mode
+    regexp = Onibi::Regexp.new("a b # comment\n c", Onibi::Regexp::EXTENDED)
+
+    assert_equal Onibi::Regexp::EXTENDED, regexp.options
+    assert regexp.match?("abc")
+  end
+
   def test_source_returns_the_original_pattern
     regexp = Onibi::Regexp.new("(?i:cat)")
 

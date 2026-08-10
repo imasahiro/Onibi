@@ -9,6 +9,7 @@ module Onibi
 
   class Regexp
     IGNORECASE: Integer
+    EXTENDED: Integer
     MULTILINE: Integer
     FIXEDENCODING: Integer
     NOENCODING: Integer

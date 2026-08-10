@@ -57,13 +57,15 @@ module Onibi
     end
 
     def invalid_integer_options?(options)
-      supported = Regexp::IGNORECASE | Regexp::MULTILINE | Regexp::FIXEDENCODING | Regexp::NOENCODING
+      supported = Regexp::IGNORECASE | Regexp::EXTENDED | Regexp::MULTILINE |
+                  Regexp::FIXEDENCODING | Regexp::NOENCODING
       options.negative? || (options & ~supported).positive? ||
         ((options & Regexp::FIXEDENCODING).positive? && (options & Regexp::NOENCODING).positive?)
     end
 
     def integer_option_names
-      [["ignorecase", Regexp::IGNORECASE], ["multiline", Regexp::MULTILINE],
+      [["ignorecase", Regexp::IGNORECASE], ["extended", Regexp::EXTENDED],
+       ["multiline", Regexp::MULTILINE],
        ["fixedencoding", Regexp::FIXEDENCODING], ["noencoding", Regexp::NOENCODING]]
     end
 
