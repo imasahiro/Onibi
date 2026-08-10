@@ -76,6 +76,9 @@ module Onibi
       special = special_escape_token(index, escaped)
       return special if special
 
+      character_escape = character_escape_token(index, escaped)
+      return character_escape if character_escape
+
       character = ESCAPED_CHARACTERS[escaped]
       return [Token.new(:literal, character, index), index + 2] if character
 
