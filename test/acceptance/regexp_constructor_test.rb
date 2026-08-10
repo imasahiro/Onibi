@@ -110,4 +110,11 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal 0.2, Onibi::Regexp.new(original, timeout: 0.2).timeout
     assert_equal 0.2, Onibi::Regexp.compile(original, timeout: 0.2).timeout
   end
+
+  def test_timeout_rejects_zero_and_negative_values
+    assert_raises(ArgumentError) { Onibi::Regexp.timeout = 0 }
+    assert_raises(ArgumentError) { Onibi::Regexp.timeout = -0.1 }
+    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }
+    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }
+  end
 end
