@@ -18,5 +18,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     REQUIRED_SECTIONS.each { |section| assert_includes document, section }
     assert_includes document, "https://docs.ruby-lang.org/en/4.0/Regexp.html"
     assert_includes document, "https://docs.ruby-lang.org/en/4.0/MatchData.html"
+    assert_includes document, "position 引数"
   end
 end
