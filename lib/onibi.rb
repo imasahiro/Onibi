@@ -16,6 +16,10 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
+    def self.compile(pattern, options = nil)
+      new(pattern, options)
+    end
+
     # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     def initialize(pattern, options = nil)
       raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
@@ -41,6 +45,10 @@ module Onibi
       return false unless @pattern.include?("|") || @pattern.include?("(")
 
       AstMatcher.new(@ast, @options).match?(input)
+    end
+
+    def options
+      @options.dup
     end
   end
 end

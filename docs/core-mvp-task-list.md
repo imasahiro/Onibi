@@ -147,7 +147,7 @@ Implement capture start/end tags in NFA execution and construct the initial publ
 
 **Dependencies:** CORE-010, CORE-011, CORE-012.
 
-### CORE-014 — Implement `Onibi::Regexp.new` and `.compile`
+### CORE-014 — Implement `Onibi::Regexp.new` and `.compile` [Complete]
 
 Expose the public constructors, pattern/options storage, and compile-time validation. Ensure equivalent constructor forms behave consistently.
 
