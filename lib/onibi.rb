@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/regexp_options"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -43,6 +44,13 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
+    include RegexpOptions
+
+    IGNORECASE = 1
+    MULTILINE = 4
+    FIXEDENCODING = 16
+    NOENCODING = 32
+
     @dfa_memory_budget = 1
 
     class << self
@@ -57,9 +65,11 @@ module Onibi
       validate_pattern_type!(pattern)
       validate_pattern_encoding!(pattern)
       normalized_options = normalize_options(options)
+      validate_noencoding_pattern!(pattern, normalized_options)
       validate_pattern_syntax!(pattern)
       @pattern = pattern
       @options = normalized_options
+      @public_options = options.is_a?(Integer) ? options : normalized_options
       @ast = Parser.new(pattern).parse
       @bytecode = Compiler.new(@ast).compile
     end
@@ -88,7 +98,7 @@ module Onibi
     end
 
     def options
-      @options.dup
+      @public_options.is_a?(Array) ? @public_options.dup : @public_options
     end
 
     private
@@ -109,16 +119,6 @@ module Onibi
       MatchingResult.call(@ast, @bytecode, @pattern, @options, input)
     end
 
-    def normalize_options(options)
-      normalized_options = options || []
-      valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
-        %w[ignorecase multiline].include?(option)
-      end
-      raise ArgumentError, "invalid options" unless valid_options
-
-      normalized_options
-    end
-
     def validate_pattern_syntax!(pattern)
       Lexer.new(pattern).tokens
     end
@@ -126,6 +126,7 @@ module Onibi
     def validate_encoding!(input)
       raise ArgumentError, "invalid byte sequence in #{input.encoding}" unless input.valid_encoding?
 
+      return if @options.include?("noencoding") && input.encoding == Encoding::ASCII_8BIT
       return if @pattern.encoding == input.encoding
       return if @pattern.ascii_only? && input.ascii_only?
 

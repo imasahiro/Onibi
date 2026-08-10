@@ -8,16 +8,23 @@ module Onibi
   end
 
   class Regexp
+    IGNORECASE: Integer
+    MULTILINE: Integer
+    FIXEDENCODING: Integer
+    NOENCODING: Integer
+
     def self.compile: (String pattern) -> Regexp
                       | (String pattern, Array[String]? options) -> Regexp
+                      | (String pattern, Integer options) -> Regexp
     def self.dfa_memory_budget: () -> Integer
     def self.dfa_memory_budget=: (Integer value) -> Integer
 
     def initialize: (String pattern) -> void
                   | (String pattern, Array[String]? options) -> void
+                  | (String pattern, Integer options) -> void
     def match?: (String input) -> bool
     def match: (String input) -> MatchData?
-    def options: () -> Array[String]
+    def options: () -> (Array[String] | Integer)
   end
 
   class MatchData
