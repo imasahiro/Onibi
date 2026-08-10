@@ -14,6 +14,10 @@ module Onibi
     Token = Struct.new(:type, :value, :position)
 
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
+    ESCAPED_CHARACTERS = {
+      "a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n",
+      "r" => "\r", "t" => "\t", "v" => "\v"
+    }.freeze
     ESCAPED_TYPES = {
       "d" => :digit,
       "D" => :not_digit,
@@ -71,6 +75,9 @@ module Onibi
 
       special = special_escape_token(index, escaped)
       return special if special
+
+      character = ESCAPED_CHARACTERS[escaped]
+      return [Token.new(:literal, character, index), index + 2] if character
 
       type = ESCAPED_TYPES[escaped]
       return escaped_type_token(type, escaped, index) if type || ESCAPED_LITERALS.include?(escaped)
