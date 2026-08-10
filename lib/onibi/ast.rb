@@ -10,7 +10,7 @@ module Onibi
     Anchor = Struct.new(:kind)
     Sequence = Struct.new(:parts)
     Alternation = Struct.new(:branches)
-    Group = Struct.new(:body, :number)
+    Group = Struct.new(:body, :number, :capture, :name)
     Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
   end
 end

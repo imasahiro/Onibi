@@ -43,5 +43,22 @@ module Onibi
 
       @source.index("}", index + 3)
     end
+
+    def group_token(index)
+      return [Lexer::Token.new(:open_non_capture, "?:", index), index + 3] if @source[index, 3] == "(?:"
+      return named_group_token(index) if @source[index, 3] == "(?<"
+
+      [Lexer::Token.new(:open_group, "(", index), index + 1]
+    end
+
+    def named_group_token(index)
+      ending = @source.index(">", index + 3)
+      raise RegexpError, "invalid named capture" unless ending
+
+      name = @source[(index + 3)...ending]
+      raise RegexpError, "invalid named capture" if name.empty?
+
+      [Lexer::Token.new(:open_named_group, name, index), ending + 1]
+    end
   end
 end

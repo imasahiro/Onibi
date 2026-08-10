@@ -22,6 +22,7 @@ require_relative "onibi/ast_matcher"
 require_relative "onibi/capture_matcher_dispatch"
 require_relative "onibi/capture_matcher_atoms"
 require_relative "onibi/capture_matcher"
+require_relative "onibi/capture_name_collector"
 require_relative "onibi/match_data"
 require_relative "onibi/dfa"
 
@@ -76,7 +77,7 @@ module Onibi
       dfa_specialization
       return nil unless details
 
-      MatchData.new(*match_data_arguments(details, input))
+      MatchData.new(*match_data_arguments(details, input), CaptureNameCollector.call(@ast))
     end
 
     def options
