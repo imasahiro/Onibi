@@ -98,6 +98,8 @@ module Onibi
 
         index = @names[name]
       end
+      return nil if index.is_a?(Integer) && index.negative? && index < -@captures.length
+
       @values[index]
     end
   end

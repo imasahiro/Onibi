@@ -12,4 +12,12 @@ class MatchDataIndexTest < Minitest::Test
     assert_raises(IndexError) { match.values_at("unknown") }
     assert_raises(TypeError) { match[nil] }
   end
+
+  def test_match_value_access_returns_nil_beyond_negative_capture_range
+    match = Onibi::Regexp.new("(a)(b)").match("ab")
+
+    assert_nil match[-3]
+    assert_equal [nil], match.values_at(-3)
+    assert_equal "a", match[-2]
+  end
 end
