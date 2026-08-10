@@ -4,5 +4,15 @@ require_relative "onibi/version"
 
 module Onibi
   class Error < StandardError; end
-  # Your code goes here...
+
+  # Minimal public regexp facade used while the engine is bootstrapped.
+  class Regexp
+    def initialize(pattern)
+      @pattern = String(pattern)
+    end
+
+    def match?(input)
+      String(input).include?(@pattern)
+    end
+  end
 end
