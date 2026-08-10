@@ -44,6 +44,13 @@ class InlineModifierTest < Minitest::Test
     refute regexp.match?("ab#cd")
   end
 
+  def test_nested_negative_extended_scope_preserves_its_literal_whitespace
+    regexp = Onibi::Regexp.new("(?x:(?-x: a b ) c)")
+
+    assert regexp.match?(" a b c")
+    refute regexp.match?("a b c")
+  end
+
   def test_scoped_combined_ignorecase_and_multiline_modifiers
     regexp = Onibi::Regexp.new("(?im:a.)")
     disabled = Onibi::Regexp.new("(?-im:a.)", ["ignorecase", "multiline"])
