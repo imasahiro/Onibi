@@ -23,5 +23,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "scoped multiline"
     assert_includes document, "positive scoped extended mode の option"
     assert_includes document, "compiled pattern の multiline / extended scope"
+    assert_includes document, "non-ASCII pattern の implicit FIXEDENCODING"
   end
 end
