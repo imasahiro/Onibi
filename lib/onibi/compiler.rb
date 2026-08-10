@@ -70,15 +70,33 @@ module Onibi
     def compile_quantifier(node)
       return compile_bounded(node) if node.kind == :bounded
 
+      return compile_star(node) if node.kind == :*
+      return compile_plus(node) if node.kind == :+
+
       split = emit(:split)
       body_start = @instructions.length
       compile_node(node.expression)
-      jump = emit(:jump)
-      after = @instructions.length
       split.operand = body_start
-      split.target = after if node.kind == :"?"
-      jump.target = body_start if node.kind == :*
-      jump.target = after if node.kind == :+
+      split.target = @instructions.length
+    end
+
+    def compile_star(node)
+      start_split = emit(:split)
+      body_start = @instructions.length
+      compile_node(node.expression)
+      end_split = emit(:split)
+      start_split.operand = body_start
+      start_split.target = @instructions.length
+      end_split.operand = body_start
+      end_split.target = @instructions.length
+    end
+
+    def compile_plus(node)
+      body_start = @instructions.length
+      compile_node(node.expression)
+      split = emit(:split)
+      split.operand = body_start
+      split.target = @instructions.length
     end
     # rubocop:enable Metrics/AbcSize
 

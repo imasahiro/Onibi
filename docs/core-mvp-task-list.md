@@ -107,7 +107,7 @@ Compile the parsed AST into the bytecode representation used by the single VM. I
 
 **Dependencies:** CORE-007.
 
-### CORE-009 — Implement the NFA execution path
+### CORE-009 — Implement the NFA execution path [Complete]
 
 Implement the bytecode VM's Thompson-NFA simulation, including epsilon closure, input consumption, search semantics, and leftmost-first behavior.
 
