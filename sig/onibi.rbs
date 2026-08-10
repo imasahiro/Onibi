@@ -19,6 +19,7 @@ module Onibi
 
     def self.compile: (String pattern, ?Array[String]? options, ?timeout: Numeric?) -> Regexp
                       | (String pattern, ?Integer options, ?timeout: Numeric?) -> Regexp
+                      | (String pattern, ?(String | Symbol | bool) options, ?timeout: Numeric?) -> Regexp
                       | (::Regexp pattern, ?timeout: Numeric?) -> Regexp
                       | (Regexp pattern, ?timeout: Numeric?) -> Regexp
     def self.escape: (untyped string) -> String
@@ -34,6 +35,7 @@ module Onibi
 
     def initialize: (String pattern, ?Array[String]? options, ?timeout: Numeric?) -> void
                   | (String pattern, ?Integer options, ?timeout: Numeric?) -> void
+                  | (String pattern, ?(String | Symbol | bool) options, ?timeout: Numeric?) -> void
                   | (::Regexp pattern, ?timeout: Numeric?) -> void
                   | (Regexp pattern, ?timeout: Numeric?) -> void
     def match?: (String input, ?Numeric position) -> bool

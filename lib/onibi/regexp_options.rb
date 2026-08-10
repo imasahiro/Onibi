@@ -30,14 +30,25 @@ module Onibi
 
     def normalize_options(options)
       return normalize_integer_options(options) if options.is_a?(Integer)
+      return ["ignorecase"] if options == true
+      return [] if options.nil? || options == false
+      return normalize_flag_options(options) if options.is_a?(String) || options.is_a?(Symbol)
 
-      normalized_options = options || []
+      normalized_options = options
       valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
         %w[ignorecase multiline extended].include?(option)
       end
       raise ArgumentError, "invalid options" unless valid_options
 
       normalized_options
+    end
+
+    def normalize_flag_options(options)
+      flags = options.to_s.chars
+      names = { "i" => "ignorecase", "m" => "multiline", "x" => "extended" }
+      raise ArgumentError, "invalid options" unless flags.all? { |flag| names.key?(flag) }
+
+      flags.map { |flag| names.fetch(flag) }.uniq
     end
 
     def normalize_inline_modifier(pattern, options)
