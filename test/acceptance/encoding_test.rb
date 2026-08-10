@@ -68,4 +68,13 @@ class EncodingTest < Minitest::Test
     assert_equal Encoding::US_ASCII, noencoding.encoding
     refute noencoding.fixed_encoding?
   end
+
+  def test_unicode_properties_decode_non_utf8_inputs
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      pattern = "\\p{Hiragana}".encode(encoding)
+      input = "あ".encode(encoding)
+
+      assert Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
 end

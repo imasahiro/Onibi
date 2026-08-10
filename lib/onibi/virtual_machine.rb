@@ -92,7 +92,8 @@ module Onibi
 
     def property_matches?(property, character)
       name, negated = property
-      UnicodeProperties.matches?(name, character_string(character)) ^ negated
+      unicode_character = character_string(character).encode(Encoding::UTF_8)
+      UnicodeProperties.matches?(name, unicode_character) ^ negated
     end
 
     def escape_matches?(kind, character)
