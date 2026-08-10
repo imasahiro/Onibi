@@ -8,8 +8,18 @@ module Onibi
     def character_escape_token(index, escaped)
       return hex_escape_token(index) if escaped == "x"
       return unicode_escape_token(index) if escaped == "u"
+      return control_escape_token(index, escaped) if %w[c C].include?(escaped)
 
       nil
+    end
+
+    def control_escape_token(index, escaped)
+      character_index = escaped == "C" && @source[index + 2] == "-" ? index + 3 : index + 2
+      character = @source[character_index]
+      raise RegexpError, "invalid control escape" unless character && character.length == 1
+
+      ending = character_index + 1
+      [Lexer::Token.new(:literal, (character.ord & 0x1f).chr(@source.encoding), index), ending]
     end
 
     def hex_escape_token(index)

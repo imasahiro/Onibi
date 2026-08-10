@@ -28,6 +28,11 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert Onibi::Regexp.new("[\\u{1F600}]").match?("😀")
   end
 
+  def test_control_escapes_match_control_characters
+    assert Onibi::Regexp.new("\\cA").match?("\x01")
+    assert Onibi::Regexp.new("\\C-A").match?("\x01")
+  end
+
   def test_dot_excludes_newline_unless_multiline_is_enabled
     refute Onibi::Regexp.new(".").match?("\n")
     assert Onibi::Regexp.new(".", ["multiline"]).match?("\n")
