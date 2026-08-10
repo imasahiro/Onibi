@@ -15,6 +15,12 @@ class UnicodePropertyTest < Minitest::Test
     refute Onibi::Regexp.new("\\p{Lower}").match?("É")
   end
 
+  def test_uncased_unicode_scripts_are_alpha_and_word
+    assert Onibi::Regexp.new("\\p{Alpha}").match?("あ")
+    assert Onibi::Regexp.new("\\p{Word}").match?("あ")
+    assert Onibi::Regexp.new("[[:word:]]").match?("あ")
+  end
+
   def test_negated_property_and_posix_digit_class
     assert Onibi::Regexp.new("\\P{ASCII}").match?("é")
     refute Onibi::Regexp.new("\\P{ASCII}").match?("A")
