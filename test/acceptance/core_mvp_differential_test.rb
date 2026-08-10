@@ -7,15 +7,19 @@ require_relative "../support/differential_harness"
 class CoreMvpDifferentialTest < Minitest::Test
   CORPUS_PATH = File.expand_path("../../fixtures/core_mvp.yml", __dir__)
 
+  # rubocop:disable Metrics/AbcSize
   def test_every_core_mvp_fixture_matches_mri
     corpus = YAML.safe_load(File.read(CORPUS_PATH))
     fixtures = corpus.fetch("cases").map { |fixture| normalize_fixture(fixture) }
     results = fixtures.map { |fixture| DifferentialHarness.compare(fixture) }
 
-    assert_equal corpus.fetch("supported_features").sort, fixtures.map { |fixture| fixture.fetch(:feature, "") }.uniq.sort
+    supported_features = corpus.fetch("supported_features").sort
+    fixture_features = fixtures.map { |fixture| fixture.fetch(:feature, "") }.uniq.sort
+    assert_equal supported_features, fixture_features
     assert_equal fixtures.length, results.length
     assert results.all? { |result| result.fetch(:equal) }, mismatch_report(results)
   end
+  # rubocop:enable Metrics/AbcSize
 
   private
 
