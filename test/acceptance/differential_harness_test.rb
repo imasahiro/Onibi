@@ -17,10 +17,7 @@ class DifferentialHarnessTest < Minitest::Test
     assert_equal true, equal_results?(results.take(2))
     mismatch = first_mismatch(results.drop(2))
 
-    refute_nil mismatch
-    assert_includes mismatch.fetch(:message), mismatch.fetch(:name)
-    assert mismatch.fetch(:mri).is_a?(Hash)
-    assert mismatch.fetch(:onibi).is_a?(Hash)
+    assert_mismatch(mismatch)
   end
 
   private
@@ -31,5 +28,12 @@ class DifferentialHarnessTest < Minitest::Test
 
   def first_mismatch(results)
     results.find { |result| !result.fetch(:equal) }
+  end
+
+  def assert_mismatch(mismatch)
+    refute_nil mismatch
+    assert_includes mismatch.fetch(:message), mismatch.fetch(:name)
+    assert_kind_of Hash, mismatch.fetch(:mri)
+    assert_kind_of Hash, mismatch.fetch(:onibi)
   end
 end
