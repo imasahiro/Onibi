@@ -26,6 +26,16 @@ module Onibi
 
     alias quote escape
 
+    def try_convert(value)
+      return value if value.is_a?(self)
+      return nil unless value.respond_to?(:to_regexp)
+
+      converted = value.to_regexp
+      return converted if converted.is_a?(self)
+
+      raise TypeError, "can't convert #{value.class} to Regexp (to_regexp did not return Regexp)"
+    end
+
     def union(*patterns)
       source = patterns.empty? ? "(?!)" : patterns.map { |pattern| union_source(pattern) }.join("|")
       Onibi::Regexp.new(source, union_encoding_options(patterns))

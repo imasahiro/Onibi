@@ -33,6 +33,19 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)
   end
 
+  def test_try_convert_handles_to_regexp_contract
+    regexp = Onibi::Regexp.new("a")
+    convertible = Object.new
+    convertible.define_singleton_method(:to_regexp) { regexp }
+    invalid = Object.new
+    invalid.define_singleton_method(:to_regexp) { "not a regexp" }
+
+    assert_same regexp, Onibi::Regexp.try_convert(regexp)
+    assert_same regexp, Onibi::Regexp.try_convert(convertible)
+    assert_nil Onibi::Regexp.try_convert(Object.new)
+    assert_raises(TypeError) { Onibi::Regexp.try_convert(invalid) }
+  end
+
   def test_union_escapes_string_patterns_and_matches_each_alternative
     regexp = Onibi::Regexp.union("a.b", "cat")
 
