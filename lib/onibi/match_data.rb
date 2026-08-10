@@ -3,6 +3,8 @@
 module Onibi
   # Immutable observable match result for the Core MVP.
   class MatchData
+    include MatchDataDestructuring
+
     Context = Struct.new(:string, :regexp)
 
     attr_reader :string, :regexp
