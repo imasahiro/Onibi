@@ -32,6 +32,9 @@ module Onibi
     def options: () -> (Array[String] | Integer)
     def source: () -> String
     def casefold?: () -> bool
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
   end
 
   class MatchData

@@ -132,6 +132,18 @@ module Onibi
       @options.include?("ignorecase")
     end
 
+    def ==(other)
+      other.is_a?(Regexp) && source == other.source && options == other.options
+    end
+
+    def eql?(other)
+      self == other
+    end
+
+    def hash
+      [source, options].hash
+    end
+
     private
 
     def validate_pattern_type!(pattern)
