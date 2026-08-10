@@ -18,6 +18,13 @@ class CoreMvpCorpusTest < Minitest::Test
     unicode
   ].freeze
 
+  TYPED_FIELDS = {
+    "input" => String,
+    "name" => String,
+    "options" => Array,
+    "pattern" => String
+  }.freeze
+
   def test_corpus_cases_have_a_complete_shape
     corpus = YAML.safe_load(File.read(CORPUS_PATH))
 
@@ -49,17 +56,17 @@ class CoreMvpCorpusTest < Minitest::Test
 
   def assert_case_shape(fixture)
     required_keys = %w[encoding feature input name options outcome pattern]
-    typed_fields = {
-      "input" => String,
-      "name" => String,
-      "options" => Array,
-      "pattern" => String
-    }
 
     assert_equal required_keys.sort, fixture.keys.sort
-    assert SUPPORTED_FEATURES.include?(fixture.fetch("feature")), fixture.fetch("feature")
-    typed_fields.each { |field, type| assert_kind_of type, fixture.fetch(field) }
-    assert %w[ASCII-8BIT UTF-8].include?(fixture.fetch("encoding"))
-    assert %w[match no_match error].include?(fixture.fetch("outcome"))
+    assert_supported_feature(fixture)
+    TYPED_FIELDS.each { |field, type| assert_kind_of type, fixture.fetch(field) }
+    assert_includes %w[ASCII-8BIT UTF-8], fixture.fetch("encoding")
+    assert_includes %w[match no_match error], fixture.fetch("outcome")
+  end
+
+  def assert_supported_feature(fixture)
+    feature = fixture.fetch("feature")
+
+    assert_includes SUPPORTED_FEATURES, feature
   end
 end
