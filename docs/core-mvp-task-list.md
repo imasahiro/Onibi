@@ -187,7 +187,7 @@ Complete the Core MVP encoding handling for UTF-8 and ASCII-8BIT, including comp
 
 **Dependencies:** CORE-011, CORE-013, CORE-015.
 
-### CORE-019 — Complete the Core MVP differential corpus
+### CORE-019 — Complete the Core MVP differential corpus [Complete]
 
 Expand the corpus to cover every Core MVP syntax feature and public method combination. Add regression cases for every defect found during implementation.
 
