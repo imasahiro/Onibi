@@ -25,6 +25,7 @@ module Onibi
     def inspect
       escaped_source = source.gsub("/", "\\/")
       flags = regexp_mode_flags.select { |name, _flag| @options.include?(name.to_s) }.map(&:last).join
+      flags += "n" if @options.include?("noencoding")
       "/#{escaped_source}/#{flags}"
     end
 
