@@ -110,9 +110,9 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | --- | --- | --- | --- |
 | full match / numbered capture | []、captures、to_a | ◐ | full match、numbered capture、負数・範囲・名前 index の基本取得を実装。全 Ruby extraction/error 互換は未対応。 |
 | capture count | length、size | ✅ | length と size を実装済み。 |
-| character offsets | begin、end、offset | ◐ | begin/end は初期実装のみ。offset、全 capture offsets、Unicode の byte/character 差は未完成。 |
-| byte offsets | bytebegin、byteend、byteoffset | ◐ | UTF-8 を含む character offset から byte offset を導出。全 encoding matrix は未検証。 |
-| matched length | match_length | ◐ | capture の character length を返す。全 Ruby index/error 互換は未対応。 |
+| character offsets | begin、end、offset | ◐ | integerの型・範囲検証、named capture index、全captureのcharacter offsetを実装。全Unicode/encoding差は未検証。 |
+| byte offsets | bytebegin、byteend、byteoffset | ◐ | character offsetからbyte offsetを導出し、integer/named indexの型・範囲検証を実装。全encoding matrixは未検証。 |
+| matched length | match_length | ◐ | captureのcharacter lengthとinteger/named indexの型・範囲検証を実装。全Ruby error互換は未対応。 |
 | source string | string | ◐ | `MatchData#string` を match input として返す。直接構築時の context は未対応。 |
 | original regexp | regexp | ◐ | `MatchData#regexp` を元の Onibi::Regexp として返す。直接構築時の context は未対応。 |
 | surrounding text | pre_match、post_match | ◐ | match の文字 offset を利用した前後文字列を返す。全 byte offset 互換は未対応。 |
@@ -269,6 +269,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#string`、`regexp`、`pre_match`、`post_match` の match context を追加する。
 - [x] `MatchData#names` と `named_captures` の基本取得を追加する。
 - [x] `MatchData#bytebegin`、`byteend`、`byteoffset`、`match_length` の基本取得を追加する。
+- [x] offset系APIのnamed index、負数・範囲外・型エラーをRuby互換に近づける。
 - [x] `MatchData#[]` / `values_at` の string/symbol named index を追加する。
 - [x] `MatchData#to_s` と named capture を含む基本 `inspect` を追加する。
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。
