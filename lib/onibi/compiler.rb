@@ -37,7 +37,7 @@ module Onibi
     # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     def compile_alternation(node)
       splits = node.branches.length - 1
-      split = emit(:split)
+      emit(:split)
       branch_starts = []
       jumps = []
 
@@ -45,8 +45,7 @@ module Onibi
         branch_starts << @instructions.length
         compile_node(branch)
         jumps << emit(:jump) unless index == node.branches.length - 1
-        next_split = emit(:split) if index < splits - 1
-        split = next_split if next_split
+        emit(:split) if index < splits - 1
       end
 
       end_target = @instructions.length
@@ -66,21 +65,37 @@ module Onibi
       emit(:save_end, node.number)
     end
 
-    # rubocop:disable Metrics/AbcSize
     def compile_quantifier(node)
       return compile_bounded(node) if node.kind == :bounded
+
+      return compile_star(node) if node.kind == :*
+      return compile_plus(node) if node.kind == :+
 
       split = emit(:split)
       body_start = @instructions.length
       compile_node(node.expression)
-      jump = emit(:jump)
-      after = @instructions.length
       split.operand = body_start
-      split.target = after if node.kind == :"?"
-      jump.target = body_start if node.kind == :*
-      jump.target = after if node.kind == :+
+      split.target = @instructions.length
     end
-    # rubocop:enable Metrics/AbcSize
+
+    def compile_star(node)
+      start_split = emit(:split)
+      body_start = @instructions.length
+      compile_node(node.expression)
+      end_split = emit(:split)
+      start_split.operand = body_start
+      start_split.target = @instructions.length
+      end_split.operand = body_start
+      end_split.target = @instructions.length
+    end
+
+    def compile_plus(node)
+      body_start = @instructions.length
+      compile_node(node.expression)
+      split = emit(:split)
+      split.operand = body_start
+      split.target = @instructions.length
+    end
 
     def compile_bounded(node)
       emit(:repeat, [node.minimum, node.maximum])
