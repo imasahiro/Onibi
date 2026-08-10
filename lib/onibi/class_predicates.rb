@@ -157,10 +157,19 @@ module Onibi
       escaped = source[index + 1]
       simple = {"a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v"}[escaped]
       return [simple, index + 2] if simple
+      return decode_control_escape(source, index) if %w[c C].include?(escaped)
       return decode_hex_escape(source, index) if escaped == "x"
       return decode_unicode_escape(source, index) if escaped == "u"
 
       [nil, nil]
+    end
+
+    def decode_control_escape(source, index)
+      character_index = source[index + 1] == "C" && source[index + 2] == "-" ? index + 3 : index + 2
+      character = source[character_index]
+      raise RegexpError, "invalid control escape" unless character
+
+      [(character.ord & 0x1f).chr(source.encoding), character_index + 1]
     end
 
     def decode_hex_escape(source, index)
