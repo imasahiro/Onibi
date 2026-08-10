@@ -25,6 +25,6 @@ class NamedGroupTest < Minitest::Test
     match = Onibi::Regexp.new("(?<word>cat)").match("a cat")
 
     assert_equal "cat", match.to_s
-    assert_equal '#<Onibi::MatchData "cat" word:"cat">', match.inspect
+    assert_equal '#<MatchData "cat" word:"cat">', match.inspect
   end
 end

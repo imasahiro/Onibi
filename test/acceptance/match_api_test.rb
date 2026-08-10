@@ -134,6 +134,12 @@ class MatchApiTest < Minitest::Test
     assert_raises(TypeError) { match.deconstruct_keys(["animal"]) }
   end
 
+  def test_match_data_inspect_uses_ruby_class_name
+    match = Onibi::Regexp.new("(?<animal>cat)(?<dog>dog)?").match("cat")
+
+    assert_equal '#<MatchData "cat" animal:"cat" dog:nil>', match.inspect
+  end
+
   def test_offset_apis_validate_indices_and_accept_named_captures
     match = Onibi::Regexp.new("(?<animal>cat)").match("cat")
 
