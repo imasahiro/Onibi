@@ -78,4 +78,34 @@ class InlineModifierTest < Minitest::Test
 
     refute regexp.match?("\n A")
   end
+
+  def test_supported_modifier_scopes_match_mri
+    cases = [
+      ["(?i:cat)dog", 0, "CATdog"],
+      ["(?-i:cat)dog", Regexp::IGNORECASE, "CATdog"],
+      ["a(?m:.)b", 0, "a\nb"],
+      ["(?-m:a.)", Regexp::MULTILINE, "a\n"],
+      ["(?x:a b # comment\n c)", 0, "abc"],
+      ["(?-x:a b#c )", Regexp::EXTENDED, "a b#c "],
+      ["(?imx:a . # comment\n)", 0, "A\n"],
+      ["(?-imx:a .)", Regexp::IGNORECASE | Regexp::MULTILINE | Regexp::EXTENDED, "A\n"]
+    ]
+
+    cases.each do |source, options, input|
+      mri_options = Regexp.new(source, options)
+      onibi_options = option_names(options)
+
+      assert_equal mri_options.match?(input), Onibi::Regexp.new(source, onibi_options).match?(input), source
+    end
+  end
+
+  private
+
+  def option_names(options)
+    names = []
+    names << "ignorecase" if (options & Regexp::IGNORECASE).positive?
+    names << "multiline" if (options & Regexp::MULTILINE).positive?
+    names << "extended" if (options & Regexp::EXTENDED).positive?
+    names
+  end
 end

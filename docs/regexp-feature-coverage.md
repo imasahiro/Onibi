@@ -232,7 +232,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] ASCII-compatible pattern/input の全 4×4 encoding matrix と encoding mode の発生条件を整理する。非 ASCII pattern の互換性は個別の Unicode/property・fixed encoding テストで扱い、literal の /u、/e、/s は対象外とする。
 - [x] acceptance: Ruby 4.0.6 の代表的な encoding matrix を `fixtures/regexp_encoding_matrix.yml` に fixture 化する。
 
-### REGEXP-009 — mode と source preprocessing を実装する
+### REGEXP-009 [Complete] — mode と source preprocessing を実装する
 
 - Priority: P1
 - Dependencies: REGEXP-002, REGEXP-007
@@ -250,8 +250,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] scoped combined i/m/x modes (`(?im:...)`、`(?-im:...)`、`(?imx:...)`) を実装する。
 - [x] nested positive/negative extended scopes で、無効化された scope の whitespace/comment を保持する。
 - [x] inline modifier を複合 pattern 内の scope 付き option AST にする。
-- Ruby literal interpolation 自体は文字列 API の範囲外として維持するか、別 API の要否を決める。
-- acceptance: mode の on/off scope と comment/whitespace の parse/match を比較する。
+- [x] Ruby literal interpolation 自体は文字列 API の範囲外として維持する。
+- [x] acceptance: mode の on/off scope と comment/whitespace の parse/match を MRI と比較する。
 
 ### REGEXP-010 — Regexp public API を拡張する
 
