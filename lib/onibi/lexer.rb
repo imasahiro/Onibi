@@ -21,6 +21,7 @@ module Onibi
       "b" => :word_boundary,
       "B" => :not_word_boundary,
       "G" => :start_match,
+      "K" => :match_reset,
       "A" => :anchor_absolute_start,
       "Z" => :anchor_before_final_newline,
       "z" => :anchor_absolute_end

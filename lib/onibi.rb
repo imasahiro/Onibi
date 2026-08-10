@@ -28,6 +28,7 @@ require_relative "onibi/capture_matcher_dispatch"
 require_relative "onibi/capture_matcher_atoms"
 require_relative "onibi/capture_matcher_subexpressions"
 require_relative "onibi/capture_matcher_absence"
+require_relative "onibi/capture_matcher_linebreaks"
 require_relative "onibi/capture_matcher"
 require_relative "onibi/capture_name_collector"
 require_relative "onibi/backreference_lexer"
@@ -117,7 +118,7 @@ module Onibi
     end
 
     def capture_matcher_required?
-      ["\\k", "\\g", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?(", "(?~"].any? do |escape|
+      ["\\k", "\\g", "\\K", "\\1", "\\2", "\\3", "\\4", "\\5", "\\6", "\\7", "\\8", "\\9", "?(", "(?~"].any? do |escape|
         @pattern.include?(escape)
       end
     end
