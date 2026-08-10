@@ -5,6 +5,9 @@ module Onibi
   class Lexer
     include LexerClasses
     include LexerComments
+    include LexerExtendedMode
+    include LexerDispatch
+    include LexerTokenStream
     include LexerEscapes
     Token = Struct.new(:type, :value, :position)
 
@@ -36,35 +39,12 @@ module Onibi
       "$" => :anchor_end
     }.freeze
 
-    def initialize(source)
+    def initialize(source, options = [])
       @source = source
-    end
-
-    def tokens
-      result = []
-      index = 0
-
-      while index < @source.length
-        token, index = next_token(index)
-        result << token unless token.type == :comment
-      end
-
-      result
+      @extended = options.include?("extended")
     end
 
     private
-
-    def next_token(index)
-      character = @source[index]
-      return literal_token(character, index) unless special_character?(character)
-      return escaped_token(index) if character == "\\"
-      return class_token(index) if character == "["
-      return group_token(index) if character == "("
-      return simple_token(character, index) if SIMPLE_TOKENS.key?(character)
-      return quantifier_token(index) if "*+?{".include?(character)
-
-      raise RegexpError, "unexpected character class terminator"
-    end
 
     def special_character?(character)
       "\\()|*+?{}[].^$".include?(character)

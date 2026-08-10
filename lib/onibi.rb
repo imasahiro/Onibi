@@ -7,6 +7,9 @@ require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
 require_relative "onibi/lexer_classes"
 require_relative "onibi/lexer_comments"
+require_relative "onibi/lexer_extended_mode"
+require_relative "onibi/lexer_dispatch"
+require_relative "onibi/lexer_token_stream"
 require_relative "onibi/lexer_escapes"
 require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
@@ -71,7 +74,7 @@ module Onibi
       @pattern = pattern
       @options = normalized_options
       @public_options = options.is_a?(Integer) ? options : normalized_options
-      @ast = Parser.new(pattern).parse
+      @ast = Parser.new(pattern, normalized_options).parse
       @bytecode = Compiler.new(@ast).compile
     end
 
@@ -121,7 +124,7 @@ module Onibi
     end
 
     def validate_pattern_syntax!(pattern, options)
-      tokens = Lexer.new(pattern).tokens
+      tokens = Lexer.new(pattern, options).tokens
       binary_pattern = pattern.encoding == Encoding::ASCII_8BIT || options.include?("noencoding")
       if binary_pattern && tokens.any? { |token| token.type == :property }
         raise RegexpError, "Unicode properties require a text encoding"

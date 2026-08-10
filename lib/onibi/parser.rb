@@ -10,8 +10,8 @@ module Onibi
       open_positive_lookahead open_negative_lookahead
       open_positive_lookbehind open_negative_lookbehind
     ].freeze
-    def initialize(source)
-      @tokens = Lexer.new(source).tokens
+    def initialize(source, options = [])
+      @tokens = Lexer.new(source, options).tokens
       @index = 0
       @group_number = 0
     end

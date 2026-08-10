@@ -23,7 +23,7 @@ module Onibi
 
       normalized_options = options || []
       valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
-        %w[ignorecase multiline].include?(option)
+        %w[ignorecase multiline extended].include?(option)
       end
       raise ArgumentError, "invalid options" unless valid_options
 
