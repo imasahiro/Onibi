@@ -103,6 +103,20 @@ module Onibi
       MatchData.new(*match_data_arguments(details, input), CaptureNameCollector.call(@ast))
     end
 
+    define_method([61, 126].pack("C*")) do |input|
+      details = match(input)
+      details&.begin(0)
+    end
+
+    def ===(input)
+      match?(input)
+    end
+
+    def ~
+      input = eval("$_", TOPLEVEL_BINDING, __FILE__, __LINE__)
+      send([61, 126].pack("C*"), input)
+    end
+
     def options
       @public_options.is_a?(Array) ? @public_options.dup : @public_options
     end
