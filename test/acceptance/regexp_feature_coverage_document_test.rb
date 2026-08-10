@@ -44,5 +44,6 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "constructor options の boolean/string/symbol flags"
     assert_includes document, "`Regexp.union` の単一 Array 入力"
     assert_includes document, "character class の acceptance corpus を MRI と比較"
+    assert_includes document, "Unicode/POSIX property の acceptance corpus を MRI と比較"
   end
 end
