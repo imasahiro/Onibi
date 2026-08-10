@@ -51,18 +51,26 @@ module Onibi
     end
 
     def special_group_token(index)
+      return comment_token(index) if comment_group_start?(index)
       return group_prefix_token(index) if absence_group_start?(index) || conditional_group_start?(index)
 
+      simple_token = simple_group_token(index)
+      return simple_token if simple_token
+      return lookbehind_token(index) if @source[index, 3] == "(?<"
+
+      raise RegexpError, "unknown group extension"
+    end
+
+    def simple_group_token(index)
       token = {
         "(?:" => :open_non_capture,
         "(?>" => :open_atomic,
         "(?=" => :open_positive_lookahead,
         "(?!" => :open_negative_lookahead
       }[@source[index, 3]]
-      return [Lexer::Token.new(token, @source[(index + 2), 1], index), index + 3] if token
-      return lookbehind_token(index) if @source[index, 3] == "(?<"
+      return unless token
 
-      raise RegexpError, "unknown group extension"
+      [Lexer::Token.new(token, @source[(index + 2), 1], index), index + 3]
     end
 
     def group_prefix_token(index)

@@ -4,6 +4,7 @@ module Onibi
   # Converts the Core MVP pattern syntax into parser-ready tokens.
   class Lexer
     include LexerClasses
+    include LexerComments
     include LexerEscapes
     Token = Struct.new(:type, :value, :position)
 
@@ -45,7 +46,7 @@ module Onibi
 
       while index < @source.length
         token, index = next_token(index)
-        result << token
+        result << token unless token.type == :comment
       end
 
       result
