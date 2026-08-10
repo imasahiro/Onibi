@@ -43,7 +43,7 @@ Core MVP is complete only when all tasks below are complete and the following ar
 
 ## Ordered tasks
 
-### CORE-001 — Freeze Core MVP scope and fixtures
+### CORE-001 — Freeze Core MVP scope and fixtures [Complete]
 
 Create the initial acceptance corpus and explicitly record supported and unsupported syntax. Include positive matches, negative matches, captures, invalid patterns, UTF-8, and ASCII-8BIT cases.
 
@@ -216,4 +216,3 @@ Finalize gem metadata, README usage examples, version `0.x.y`, package contents,
 - [ ] Gem/package checks pass when applicable.
 - [ ] The GitHub PR has required checks enabled.
 - [ ] The PR is merged with GitHub auto-merge and squash merge.
-
