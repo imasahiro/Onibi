@@ -20,7 +20,7 @@
 | 分類 | Ruby 4.0.6 の機能 | 代表例 | Onibi | 判定理由 |
 | --- | --- | --- | --- | --- |
 | リテラル | 文字・Unicode 文字 | abc、こんにちは | ✅ | UTF-8 と ASCII-8BIT の範囲で実装・テスト済み。 |
-| メタ文字 | . ? - + * ^ バックスラッシュ 縦棒 $ ( ) [ ] { } | a\+、バックスラッシュ | ◐ | common control-character escapes、caret control escapes（`\\cX`、`\\C-X`）、hex and Unicode escapes、メタ文字 escape を実装。meta escapes 等は未実装。 |
+| メタ文字 | . ? - + * ^ バックスラッシュ 縦棒 $ ( ) [ ] { } | a\+、バックスラッシュ | ◐ | common control-character escapes、caret control escapes（`\\cX`、`\\C-X`）、hex and Unicode escapes、メタ文字 escape（`\\M-X`、`\\M-\\C-X`）を実装。その他の meta escape 組み合わせは未実装。 |
 | 任意文字 | 改行以外の任意の 1 文字 | . | ✅ | 通常は改行を除外し、`multiline` option で Ruby の dot-all 相当になる。 |
 | 文字クラス | 列挙 | [abc] | ✅ | 実装済み。 |
 | 文字クラス | 否定 | [^a] | ✅ | 実装済み。 |
@@ -172,6 +172,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] common control-character escapes（`\\n`、`\\r`、`\\t`、`\\f`、`\\v`、`\\a`、`\\e`）を literal AST に接続する。
 - [x] hex and Unicode escapes（`\\xNN`、`\\uNNNN`、`\\u{...}`）を literal AST に接続する。
 - [x] caret control escapes（`\\cX`、`\\C-X`）を literal AST に接続する。
+- [x] meta escapes（`\\M-X`、`\\M-\\C-X`）を ASCII-8BIT の high-bit byte に接続する。
 - [x] character class escape decoder を class matcher に接続する。
 - acceptance: [a-z[0-9]]、[a-w&&[^c-g]z]、[\-\]] 等を MRI と比較する。
 
