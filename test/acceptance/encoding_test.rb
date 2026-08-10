@@ -58,4 +58,14 @@ class EncodingTest < Minitest::Test
       Onibi::Regexp.new("é", Onibi::Regexp::NOENCODING)
     end
   end
+
+  def test_encoding_flags_are_reflected_by_encoding_introspection
+    fixed = Onibi::Regexp.new("a", Onibi::Regexp::FIXEDENCODING)
+    noencoding = Onibi::Regexp.new("a", Onibi::Regexp::NOENCODING)
+
+    assert_equal Encoding::UTF_8, fixed.encoding
+    assert fixed.fixed_encoding?
+    assert_equal Encoding::US_ASCII, noencoding.encoding
+    refute noencoding.fixed_encoding?
+  end
 end

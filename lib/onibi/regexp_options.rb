@@ -3,6 +3,19 @@
 module Onibi
   # Normalizes the public constructor options into VM option names.
   module RegexpOptions
+    def encoding
+      return Encoding::US_ASCII if @options.include?("noencoding")
+      return @pattern.encoding if fixed_encoding?
+
+      Encoding::US_ASCII
+    end
+
+    def fixed_encoding?
+      return false if @options.include?("noencoding")
+
+      @options.include?("fixedencoding") || !@pattern.ascii_only?
+    end
+
     private
 
     def normalize_options(options)
@@ -32,7 +45,8 @@ module Onibi
     end
 
     def integer_option_names
-      [["ignorecase", Regexp::IGNORECASE], ["multiline", Regexp::MULTILINE], ["noencoding", Regexp::NOENCODING]]
+      [["ignorecase", Regexp::IGNORECASE], ["multiline", Regexp::MULTILINE],
+       ["fixedencoding", Regexp::FIXEDENCODING], ["noencoding", Regexp::NOENCODING]]
     end
 
     def validate_noencoding_pattern!(pattern, options)
