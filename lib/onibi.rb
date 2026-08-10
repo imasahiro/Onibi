@@ -125,7 +125,7 @@ module Onibi
     end
 
     def options
-      @public_options.is_a?(Array) ? @public_options.dup : @public_options
+      @public_options
     end
 
     def source

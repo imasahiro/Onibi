@@ -37,7 +37,7 @@ module Onibi
     def ~: () -> Integer?
     def encoding: () -> Encoding
     def fixed_encoding?: () -> bool
-    def options: () -> (Array[String] | Integer)
+    def options: () -> Integer
     def source: () -> String
     def casefold?: () -> bool
     def ==: (untyped other) -> bool
