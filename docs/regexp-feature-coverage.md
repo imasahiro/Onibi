@@ -298,8 +298,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] class/instance timeout の 0 および負値を拒否する。
 - [x] timeout 発生時に `Regexp::TimeoutError` 相当の専用例外を返す。
 - [x] Regexp.linear_time? 相当の保守的な安全性判定（backreference、lookaround、atomic group、absence operator）を追加する。
-- NFA/DFA のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。
-- backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
+- [x] NFA/DFA のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。v1 は DFA memory budget を必須とし、包括的な ReDoS 対策、CPU timeout、入力/pattern 上限、step budget、割り込み・キャンセル、運用可観測性は設計書どおり v2 に延期する。
+- [x] backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
 
 ### REGEXP-012 — MatchData の完全な Ruby API と統合を追加する
 
@@ -322,8 +322,8 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `MatchData#==`、`eql?`、`hash` の基本 value semantics を追加する。
 - [x] `MatchData#deconstruct`、`deconstruct_keys` の positional/named capture 分解を追加する。
 - [x] `deconstruct` から full match を除外し、`deconstruct_keys` を Symbol-keyed Ruby semantics に揃える。
-- String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
-- acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
+- [x] String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal とし、v2 の MRI integration shape 判断時に解除を再検討する。
+- [x] acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
 
 ## 参照資料
 
