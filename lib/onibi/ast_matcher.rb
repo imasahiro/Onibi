@@ -3,6 +3,18 @@
 module Onibi
   # Correctness fallback for ASTs that cannot complete through bytecode dispatch.
   class AstMatcher
+    NODE_MATCHERS = {
+      AST::Sequence => :sequence_node_positions,
+      AST::Alternation => :alternation_positions,
+      AST::Group => :group_positions,
+      AST::Quantifier => :quantifier_positions,
+      AST::Literal => :literal_positions,
+      AST::CharacterClass => :class_positions,
+      AST::Escape => :escape_positions,
+      AST::Any => :any_positions,
+      AST::Anchor => :anchor_positions
+    }.freeze
+
     def initialize(ast, options = [])
       @ast = ast
       @ignorecase = options.include?("ignorecase")
@@ -26,22 +38,28 @@ module Onibi
 
     private
 
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     def match_positions(node, characters, position)
-      case node
-      when AST::Sequence then sequence_positions(node.parts, characters, position)
-      when AST::Alternation then node.branches.flat_map { |branch| match_positions(branch, characters, position) }
-      when AST::Group then match_positions(node.body, characters, position)
-      when AST::Quantifier then quantifier_positions(node, characters, position)
-      when AST::Literal then literal_positions(node, characters, position)
-      when AST::CharacterClass then class_positions(node, characters, position)
-      when AST::Escape then escape_positions(node, characters, position)
-      when AST::Any then position < characters.length ? [position + 1] : []
-      when AST::Anchor then anchor_positions(node, characters, position)
-      else []
-      end
+      matcher = NODE_MATCHERS[node.class]
+      return [] unless matcher
+
+      send(matcher, node, characters, position)
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+
+    def alternation_positions(node, characters, position)
+      node.branches.flat_map { |branch| match_positions(branch, characters, position) }
+    end
+
+    def sequence_node_positions(node, characters, position)
+      sequence_positions(node.parts, characters, position)
+    end
+
+    def group_positions(node, characters, position)
+      match_positions(node.body, characters, position)
+    end
+
+    def any_positions(_node, characters, position)
+      position < characters.length ? [position + 1] : []
+    end
 
     def sequence_positions(parts, characters, position)
       parts.reduce([position]) do |positions, part|

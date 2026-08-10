@@ -3,6 +3,18 @@
 module Onibi
   # Compiles AST nodes into Thompson-NFA instructions.
   class Compiler
+    NODE_COMPILERS = {
+      AST::Sequence => :compile_sequence,
+      AST::Alternation => :compile_alternation,
+      AST::Group => :compile_group,
+      AST::Quantifier => :compile_quantifier,
+      AST::Literal => :compile_literal,
+      AST::CharacterClass => :compile_character_class,
+      AST::Escape => :compile_escape,
+      AST::Any => :compile_any,
+      AST::Anchor => :compile_anchor
+    }.freeze
+
     def initialize(ast)
       @ast = ast
       @instructions = []
@@ -16,40 +28,60 @@ module Onibi
 
     private
 
-    # AST dispatch is intentionally explicit so each node maps to one opcode family.
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     def compile_node(node)
-      case node
-      when AST::Sequence then node.parts.each { |part| compile_node(part) }
-      when AST::Alternation then compile_alternation(node)
-      when AST::Group then compile_group(node)
-      when AST::Quantifier then compile_quantifier(node)
-      when AST::Literal then emit(:char, node.value)
-      when AST::CharacterClass then emit(:class, node.value)
-      when AST::Escape then emit(:escape, node.kind)
-      when AST::Any then emit(:any)
-      when AST::Anchor then emit(:anchor, node.kind)
-      else raise ArgumentError, "unsupported AST node #{node.class}"
-      end
-    end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+      compiler = NODE_COMPILERS[node.class]
+      raise ArgumentError, "unsupported AST node #{node.class}" unless compiler
 
-    # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+      send(compiler, node)
+    end
+
     def compile_alternation(node)
+      branch_starts, jumps = compile_alternation_branches(node)
+      connect_alternation_branches(node, branch_starts, jumps)
+    end
+
+    def compile_sequence(node)
+      node.parts.each { |part| compile_node(part) }
+    end
+
+    def compile_literal(node)
+      emit(:char, node.value)
+    end
+
+    def compile_character_class(node)
+      emit(:class, node.value)
+    end
+
+    def compile_escape(node)
+      emit(:escape, node.kind)
+    end
+
+    def compile_any(_node)
+      emit(:any)
+    end
+
+    def compile_anchor(node)
+      emit(:anchor, node.kind)
+    end
+
+    def compile_alternation_branches(node)
       splits = node.branches.length - 1
       emit(:split)
       branch_starts = []
       jumps = []
-
       node.branches.each_with_index do |branch, index|
         branch_starts << @instructions.length
         compile_node(branch)
         jumps << emit(:jump) unless index == node.branches.length - 1
         emit(:split) if index < splits - 1
       end
+      [branch_starts, jumps]
+    end
 
+    def connect_alternation_branches(node, branch_starts, jumps)
       end_target = @instructions.length
       jumps.each { |jump| jump.target = end_target }
+      splits = node.branches.length - 1
       node.branches.each_with_index do |_branch, index|
         next unless index < splits
 
@@ -57,7 +89,6 @@ module Onibi
       end
       @instructions[0].target = branch_starts[1] if splits.positive?
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
     def compile_group(node)
       emit(:save_start, node.number)

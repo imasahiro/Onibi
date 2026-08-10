@@ -27,23 +27,15 @@ module Onibi
       new(pattern, options)
     end
 
-    # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     def initialize(pattern, options = nil)
-      raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
-
-      normalized_options = options || []
-      valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
-        %w[ignorecase multiline].include?(option)
-      end
-      raise ArgumentError, "invalid options" unless valid_options
-      raise RegexpError, "malformed character class" unless pattern.count("[") == pattern.count("]")
-
+      validate_pattern_type!(pattern)
+      normalized_options = normalize_options(options)
+      validate_pattern_syntax!(pattern)
       @pattern = pattern
       @options = normalized_options
       @ast = Parser.new(pattern).parse
       @bytecode = Compiler.new(@ast).compile
     end
-    # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
@@ -76,6 +68,28 @@ module Onibi
     end
 
     private
+
+    def validate_pattern_type!(pattern)
+      return if pattern.is_a?(String)
+
+      raise TypeError, "no implicit conversion of #{pattern.class} into String"
+    end
+
+    def normalize_options(options)
+      normalized_options = options || []
+      valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
+        %w[ignorecase multiline].include?(option)
+      end
+      raise ArgumentError, "invalid options" unless valid_options
+
+      normalized_options
+    end
+
+    def validate_pattern_syntax!(pattern)
+      return if pattern.count("[") == pattern.count("]")
+
+      raise RegexpError, "malformed character class"
+    end
 
     def validate_encoding!(input)
       return if @pattern.encoding == input.encoding
