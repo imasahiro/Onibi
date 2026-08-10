@@ -11,5 +11,10 @@ module Onibi
         escaped << character
       end
     end
+
+    def union(*patterns)
+      source = patterns.empty? ? "(?!)" : patterns.map { |pattern| escape(pattern) }.join("|")
+      Onibi::Regexp.new(source)
+    end
   end
 end
