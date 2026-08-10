@@ -116,5 +116,6 @@ class RegexpUtilityTest < Minitest::Test
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
     refute Onibi::Regexp.linear_time?("(a*)\\1")
     refute Onibi::Regexp.linear_time?("(?=a)b")
+    refute Onibi::Regexp.linear_time?("(?~a)")
   end
 end
