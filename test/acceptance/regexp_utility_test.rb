@@ -28,6 +28,11 @@ class RegexpUtilityTest < Minitest::Test
     assert_raises(TypeError) { Onibi::Regexp.escape(1) }
   end
 
+  def test_quote_is_an_alias_for_escape
+    assert_equal Onibi::Regexp.escape("a+b"), Onibi::Regexp.quote("a+b")
+    assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)
+  end
+
   def test_union_escapes_string_patterns_and_matches_each_alternative
     regexp = Onibi::Regexp.union("a.b", "cat")
 
