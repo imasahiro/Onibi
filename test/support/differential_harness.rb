@@ -21,7 +21,7 @@ module DifferentialHarness
     regexp = build_regexp(regexp_class, fixture)
     normalize(regexp.public_send(fixture.fetch(:operation, :match?), fixture.fetch(:input)))
   rescue StandardError => e
-    { kind: :error, class: e.class.name, message: normalize_error(e.message) }
+    { kind: :error, class: normalize_error_class(e), message: normalize_error(e) }
   end
 
   def build_regexp(regexp_class, fixture)
@@ -42,8 +42,17 @@ module DifferentialHarness
     }
   end
 
-  def normalize_error(message)
-    message.to_s.gsub(/\s+/, " ").strip
+  def normalize_error_class(error)
+    return "RegexpError" if error.is_a?(::RegexpError) || error.is_a?(Onibi::RegexpError)
+
+    error.class.name
+  end
+
+  def normalize_error(error)
+    return "regexp syntax error" if error.is_a?(::RegexpError) || error.is_a?(Onibi::RegexpError)
+    return "incompatible encoding" if error.is_a?(Encoding::CompatibilityError)
+
+    error.message.to_s.gsub(/\s+/, " ").strip
   end
 
   def mismatch_message(fixture, mri, onibi)

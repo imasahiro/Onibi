@@ -66,6 +66,20 @@ cases:
   input: abbb
   encoding: UTF-8
   outcome: match
+- name: greedy plus
+  feature: quantifiers
+  pattern: ab+
+  options: []
+  input: abbb
+  encoding: UTF-8
+  outcome: match
+- name: optional quantifier
+  feature: quantifiers
+  pattern: colou?r
+  options: []
+  input: color
+  encoding: UTF-8
+  outcome: match
 - name: bounded repetition
   feature: quantifiers
   pattern: a{2,4}
@@ -80,6 +94,20 @@ cases:
   input: cab
   encoding: UTF-8
   outcome: match
+- name: character class range
+  feature: character_classes
+  pattern: "[a-z]+"
+  options: []
+  input: hello
+  encoding: UTF-8
+  outcome: match
+- name: unicode character class
+  feature: character_classes
+  pattern: "[é]"
+  options: []
+  input: "café"
+  encoding: UTF-8
+  outcome: match
 - name: negated character class
   feature: character_classes
   pattern: "[^0-9]+"
@@ -92,6 +120,20 @@ cases:
   pattern: "\\d+"
   options: []
   input: "2026"
+  encoding: UTF-8
+  outcome: match
+- name: space escape
+  feature: escapes
+  pattern: "\\s+"
+  options: []
+  input: "a b"
+  encoding: UTF-8
+  outcome: match
+- name: word escape
+  feature: escapes
+  pattern: "\\w+"
+  options: []
+  input: word_2026
   encoding: UTF-8
   outcome: match
 - name: escaped metacharacter
