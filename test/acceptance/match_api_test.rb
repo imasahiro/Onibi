@@ -98,4 +98,15 @@ class MatchApiTest < Minitest::Test
     assert_equal [1, 3], match.byteoffset(0)
     assert_equal 1, match.match_length(0)
   end
+
+  def test_match_data_has_value_object_semantics
+    first = Onibi::Regexp.new("cat").match("wildcat")
+    second = Onibi::Regexp.new("cat").match("wildcat")
+    different = Onibi::Regexp.new("cat").match("cat")
+
+    assert_equal first, second
+    assert first.eql?(second)
+    assert_equal first.hash, second.hash
+    refute_equal first, different
+  end
 end

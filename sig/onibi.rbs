@@ -65,5 +65,8 @@ module Onibi
     def names: () -> Array[String]
     def to_s: () -> String?
     def inspect: () -> String
+    def ==: (untyped other) -> bool
+    def eql?: (untyped other) -> bool
+    def hash: () -> Integer
   end
 end
