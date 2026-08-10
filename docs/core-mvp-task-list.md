@@ -163,7 +163,7 @@ Connect the public methods to the single bytecode VM and `Onibi::MatchData` buil
 
 **Dependencies:** CORE-014.
 
-### CORE-016 — Add lazy DFA specialization
+### CORE-016 — Add lazy DFA specialization [Complete]
 
 Implement runtime conversion of reachable NFA state sets into DFA bytecode sequences. Store specialization pointers in the bytecode, publish generated sequences only after completion, and preserve tagged capture semantics.
 

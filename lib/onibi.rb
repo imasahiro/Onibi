@@ -9,6 +9,7 @@ require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine"
 require_relative "onibi/ast_matcher"
 require_relative "onibi/match_data"
+require_relative "onibi/dfa"
 
 module Onibi
   class Error < StandardError; end
@@ -41,16 +42,18 @@ module Onibi
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      return true if VirtualMachine.new(@bytecode, @options).match?(input)
-      return false unless @pattern.include?("|") || @pattern.include?("(")
+      result = VirtualMachine.new(@bytecode, @options).match?(input)
+      result ||= (@pattern.include?("|") || @pattern.include?("(")) && AstMatcher.new(@ast, @options).match?(input)
 
-      AstMatcher.new(@ast, @options).match?(input)
+      dfa_specialization
+      result
     end
 
     def match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       span = AstMatcher.new(@ast, @options).match_span(input)
+      dfa_specialization
       return nil unless span
 
       characters = input.chars
@@ -60,6 +63,12 @@ module Onibi
 
     def options
       @options.dup
+    end
+
+    private
+
+    def dfa_specialization
+      @dfa_specialization ||= DfaSpecialization.new(@ast)
     end
   end
 end
