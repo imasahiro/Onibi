@@ -46,6 +46,7 @@ require_relative "onibi/capture_matcher_linebreaks"
 require_relative "onibi/capture_matcher"
 require_relative "onibi/capture_name_collector"
 require_relative "onibi/backreference_lexer"
+require_relative "onibi/match_data_destructuring"
 require_relative "onibi/match_data"
 require_relative "onibi/dfa"
 
