@@ -159,6 +159,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P0
 - Dependencies: REGEXP-002
 - \D、\W、\H、\S、\h、\R を lexer/AST/VM/fallback に追加する。
+- [x] `\h` / `\H` を Ruby の hexadecimal / non-hexadecimal shorthand semantics に揃える。
 - \b、\B、\G を zero-width assertion として追加する。
 - \s と \R の ASCII/Unicode/CRLF の差を定義する。
 - acceptance: ASCII-8BIT、UTF-8、CRLF、NEL/LSEP/PSEP の differential cases を追加する。
