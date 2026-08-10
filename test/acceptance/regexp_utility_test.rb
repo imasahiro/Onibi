@@ -39,6 +39,12 @@ class RegexpUtilityTest < Minitest::Test
     refute regexp.match?("dog")
   end
 
+  def test_union_preserves_compiled_pattern_options
+    regexp = Onibi::Regexp.union(::Regexp.new("cat", ::Regexp::IGNORECASE))
+
+    assert regexp.match?("CAT")
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
