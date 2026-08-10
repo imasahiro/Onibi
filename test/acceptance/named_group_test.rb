@@ -19,6 +19,11 @@ class NamedGroupTest < Minitest::Test
     assert_equal({ "word" => "cat" }, match.named_captures)
     assert_equal ["word"], match.names
     assert_equal ["cat"], match.values_at("word")
+  end
+
+  def test_named_match_data_formats_full_match_and_names
+    match = Onibi::Regexp.new("(?<word>cat)").match("a cat")
+
     assert_equal "cat", match.to_s
     assert_equal '#<Onibi::MatchData "cat" word:"cat">', match.inspect
   end
