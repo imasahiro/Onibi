@@ -79,7 +79,7 @@
 
 | 分類 | Ruby 4.0.6 の機能 | Onibi | 判定理由 |
 | --- | --- | --- | --- |
-| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式だが、既存 Onibi::Regexp と MRI Regexp の source/options によるコピーを実装。Ruby 互換 flags の全組合せと timeout は未対応。 |
+| constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式だが、既存 Onibi::Regexp と MRI Regexp の source/options によるコピー、timeout keywordの基本設定を実装。Ruby 互換 flags の全組合せとRegexp copy timeoutは未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
 | mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と scoped option AST の fold 伝播を実装。全構文への fold 対応は未完了。 |
 | mode | m / MULTILINE | ✅ | `multiline` option は `.` の dot-all 挙動だけを変更し、^/$ は常に行境界として扱う。 |
@@ -93,12 +93,12 @@
 | introspection | source | ◐ | 元の pattern を返す。Ruby 互換の frozen/encoding 詳細は未対応。 |
 | introspection | options | ◐ | `Regexp#options` はRuby互換の整数bitmaskを返す。array constructor入力を含む全option意味・encoding flagの互換性は未対応。 |
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
-| introspection | timeout、timeout= | ❌ | 未実装。 |
+| introspection | timeout、timeout= | ◐ | class default timeout、instance timeout、timeout keyword、match評価への基本適用を実装。Rubyの厳密なtimeout error/class・copy semanticsは未対応。 |
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。全 encoding/option 表現は未対応。 |
 | class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の option scope や全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
 | class utility | Regexp.linear_time? | ❌ | Onibi の NFA/DFA 実行器に対応する公開判定 API は未実装。 |
-| class utility | Regexp.timeout、Regexp.timeout= | ❌ | 未実装。 |
+| class utility | Regexp.timeout、Regexp.timeout= | ◐ | class-level timeoutのget/setとNumeric validationを実装。Ractor/global state・完全なerror compatibilityは未対応。 |
 | serialization | as_json、json_create、to_json | ❌ | JSON 拡張との連携は未実装。 |
 | integration | String#match、scan、gsub、sub | 対象外 | Core MVP/v1 の non-goal。Onibi を明示的に呼び出す API を優先する。 |
 
@@ -246,6 +246,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
 - [x] `Regexp::EXTENDED` integer flag を既存の extended mode に接続する。
 - [x] `Regexp#options` を全constructor形式で整数bitmaskとして返す。
+- [x] `Regexp.timeout` / `timeout=` と constructor timeout keywordの基本設定を追加する。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
