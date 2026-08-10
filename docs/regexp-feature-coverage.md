@@ -135,7 +135,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 
 依存関係を考慮し、上から順に着手する。各タスクは既存の開発ルールに従い、専用 worktree、先行する acceptance test、差分テスト、RuboCop、Ruby 4.0.6 CI、squash merge を必須とする。
 
-### REGEXP-001 — MatchData と tagged capture を完成させる
+### REGEXP-001 [Complete] — MatchData と tagged capture を完成させる
 
 - Priority: P0
 - Dependencies: CORE-013, CORE-015

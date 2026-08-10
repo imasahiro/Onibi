@@ -17,6 +17,10 @@ module Onibi
       @captures.dup
     end
 
+    def offset(index)
+      @offsets.fetch(index)&.dup
+    end
+
     def begin(index)
       @offsets.fetch(index)&.first
     end
@@ -31,6 +35,10 @@ module Onibi
 
     def length
       @values.length
+    end
+
+    def size
+      length
     end
   end
 end

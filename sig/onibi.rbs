@@ -21,11 +21,13 @@ module Onibi
   end
 
   class MatchData
-    def []: (Integer index) -> String
-    def captures: () -> Array[String]
+    def []: (Integer index) -> String?
+    def captures: () -> Array[String?]
+    def offset: (Integer index) -> [Integer, Integer]?
     def begin: (Integer index) -> Integer?
     def end: (Integer index) -> Integer?
-    def to_a: () -> Array[String]
+    def to_a: () -> Array[String?]
     def length: () -> Integer
+    def size: () -> Integer
   end
 end
