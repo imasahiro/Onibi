@@ -117,7 +117,7 @@ Ruby 4.0.6 の MatchData は、番号・名前による値取得だけでなく�
 | original regexp | regexp | ❌ | 未実装。 |
 | surrounding text | pre_match、post_match | ❌ | 未実装。 |
 | named captures | names、named_captures | ❌ | named capture 自体が未実装。 |
-| indexed extraction | values_at | ❌ | 未実装。 |
+| indexed extraction | values_at | ◐ | integer index、range、out-of-range nil を実装。全 Ruby index 型互換は未対応。 |
 | formatting / identity | inspect、to_s、==、eql?、hash | ❌ | 未実装。 |
 | modern destructuring | deconstruct、deconstruct_keys | ❌ | 未実装。 |
 
@@ -259,6 +259,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P2
 - Dependencies: REGEXP-001, REGEXP-010
 - bytebegin、byteend、byteoffset、match_length、pre_match、post_match、string、regexp、names、named_captures、values_at を追加する。
+- [x] `MatchData#values_at` の integer/range 基本抽出を追加する。
 - inspect、to_s、==、eql?、hash、deconstruct、deconstruct_keys を追加する。
 - String/Symbol の match、match?、scan、gsub、sub 統合を、v1 non-goal の解除判断とともに設計する。
 - acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
