@@ -34,6 +34,8 @@ module Onibi
       return [pattern[4...-1], options | ["ignorecase"]] if whole_scoped_ignorecase?(pattern)
       return [pattern[4..], options | ["ignorecase"]] if pattern.start_with?("(?i)")
       return [pattern[5..], options.reject { |option| option == "ignorecase" }] if pattern.start_with?("(?-i)")
+      return [pattern[4..], options | ["multiline"]] if pattern.start_with?("(?m)")
+      return [pattern[5..], options.reject { |option| option == "multiline" }] if pattern.start_with?("(?-m)")
 
       [pattern, options]
     end

@@ -22,4 +22,12 @@ class InlineModifierTest < Minitest::Test
     refute_nil regexp.match("aBCd")
     refute regexp.match?("ABCD")
   end
+
+  def test_inline_multiline_modifier_enables_dot_all
+    assert Onibi::Regexp.new("(?m).").match?("\n")
+  end
+
+  def test_inline_multiline_disable_modifier_turns_dot_all_off
+    refute Onibi::Regexp.new("(?-m).", ["multiline"]).match?("\n")
+  end
 end
