@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/lexer"
 
 module Onibi
   class Error < StandardError; end

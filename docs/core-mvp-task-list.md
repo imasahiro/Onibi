@@ -83,7 +83,7 @@ Define the initial public error behavior for invalid pattern types, invalid inpu
 
 **Dependencies:** CORE-004.
 
-### CORE-006 — Implement the lexer for literals and escapes
+### CORE-006 — Implement the lexer for literals and escapes [Complete]
 
 Implement tokenization for literals, escaped metacharacters, grouping, alternation, quantifiers, character classes, anchors, options, and the Core MVP escapes `\d`, `\s`, and `\w`.
 
