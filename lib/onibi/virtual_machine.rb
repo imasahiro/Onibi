@@ -8,7 +8,7 @@ module Onibi
     end
 
     def match?(input)
-      characters = input.each_char.map(&:ord)
+      characters = input.chars.map { |character| character.codepoints.first }
 
       (0..characters.length).any? { |start| match_from?(characters, start) }
     end
@@ -42,7 +42,7 @@ module Onibi
 
     def matches?(instruction, character)
       case instruction.opcode
-      when :char then instruction.operand.ord == character
+      when :char then instruction.operand.codepoints.first == character
       when :any then true
       when :escape then escape_matches?(instruction.operand, character)
       when :class then instruction.operand.codepoints.include?(character)
