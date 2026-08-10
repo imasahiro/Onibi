@@ -3,6 +3,7 @@
 require_relative "onibi/version"
 require_relative "onibi/regexp_options"
 require_relative "onibi/regexp_utilities"
+require_relative "onibi/regexp_constructor_patterns"
 require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/unicode_property_scripts"
@@ -56,6 +57,7 @@ module Onibi
   class Regexp
     extend RegexpUtilities
     include RegexpOptions
+    include RegexpConstructorPatterns
     include RegexpEncodingValidation
     include RegexpObjectSemantics
 
@@ -143,12 +145,6 @@ module Onibi
       return if pattern.is_a?(String)
 
       raise TypeError, "no implicit conversion of #{pattern.class} into String"
-    end
-
-    def normalize_constructor_pattern(pattern, options)
-      return [pattern.source, pattern.options] if pattern.is_a?(Regexp)
-
-      [pattern, options]
     end
 
     def validate_pattern_encoding!(pattern)
