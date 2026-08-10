@@ -30,6 +30,13 @@ class InlineModifierTest < Minitest::Test
     refute Onibi::Regexp.new("a(?m:.)c.").match?("a\nb\n")
   end
 
+  def test_scoped_extended_modifier_ignores_whitespace_and_comments_only_inside_group
+    regexp = Onibi::Regexp.new("a(?x: b # inner comment\n c )d")
+
+    assert regexp.match?("abcd")
+    refute regexp.match?("a bcd")
+  end
+
   def test_inline_multiline_modifier_enables_dot_all
     assert Onibi::Regexp.new("(?m).").match?("\n")
   end
