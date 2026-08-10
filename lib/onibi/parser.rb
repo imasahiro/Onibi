@@ -3,6 +3,12 @@
 module Onibi
   # Parses lexer tokens with alternation, concatenation, and quantifier precedence.
   class Parser
+    include ParserAssertions
+    include ParserQuantifiers
+    GROUP_OPENINGS = %i[
+      open_group open_non_capture open_named_group
+      open_positive_lookahead open_negative_lookahead
+    ].freeze
     def initialize(source)
       @tokens = Lexer.new(source).tokens
       @index = 0
@@ -34,7 +40,7 @@ module Onibi
       token = current_token
       raise RegexpError, "expected expression" unless token
 
-      atom = if %i[open_group open_non_capture open_named_group].include?(token.type)
+      atom = if GROUP_OPENINGS.include?(token.type)
                parse_group
              else
                parse_simple_atom(token)
@@ -53,6 +59,8 @@ module Onibi
 
     def parse_group
       opening = consume
+      return parse_assertion(opening) if opening.type.to_s.include?("lookahead")
+
       capture = opening.type != :open_non_capture
       @group_number += 1 if capture
       body = parse_alternation
@@ -60,51 +68,6 @@ module Onibi
       number = capture ? @group_number : nil
       name = opening.type == :open_named_group ? opening.value : nil
       AST::Group.new(body, number, capture, name)
-    end
-
-    def parse_quantifier(atom)
-      return atom unless current_token&.type == :quantifier
-
-      value = consume.value
-      mode, base = quantifier_mode(value)
-      kind, minimum, maximum = quantifier_bounds(base)
-      raise RegexpError, "possessive bounded quantifier is not supported" if mode == :possessive && kind == :bounded
-
-      AST::Quantifier.new(atom, kind, minimum, maximum, mode)
-    end
-
-    def quantifier_mode(value)
-      return [:lazy, value[0...-1]] if value.end_with?("?") && value.length > 1
-      return [:possessive, value[0...-1]] if value.end_with?("+") && value.length > 1
-
-      [:greedy, value]
-    end
-
-    def quantifier_bounds(value)
-      return simple_quantifier_bounds(value) unless value.start_with?("{")
-
-      bounds = value[1...-1].split(",", -1)
-      minimum = bounds.first.empty? ? 0 : Integer(bounds.first)
-      maximum = bounded_maximum(bounds, minimum)
-      raise RegexpError, "invalid quantifier" if maximum && maximum < minimum
-
-      [:bounded, minimum, maximum]
-    rescue ArgumentError, TypeError
-      raise RegexpError, "invalid quantifier"
-    end
-
-    def simple_quantifier_bounds(value)
-      minimum = { "*" => 0, "+" => 1, "?" => 0 }.fetch(value)
-      maximum = { "*" => nil, "+" => nil, "?" => 1 }.fetch(value)
-
-      [value.to_sym, minimum, maximum]
-    end
-
-    def bounded_maximum(bounds, minimum)
-      return minimum if bounds.length == 1
-      return nil if bounds.last.empty?
-
-      Integer(bounds.last)
     end
 
     def current_token

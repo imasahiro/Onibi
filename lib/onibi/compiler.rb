@@ -4,6 +4,7 @@ module Onibi
   # Compiles AST nodes into Thompson-NFA instructions.
   class Compiler
     include CompilerReferences
+    include CompilerQuantifiers
     NODE_COMPILERS = {
       AST::Sequence => :compile_sequence,
       AST::Alternation => :compile_alternation,
@@ -14,6 +15,7 @@ module Onibi
       AST::Escape => :compile_escape,
       AST::Property => :compile_property,
       AST::Backreference => :compile_backreference,
+      AST::Assertion => :compile_assertion,
       AST::Any => :compile_any,
       AST::Anchor => :compile_anchor
     }.freeze
@@ -76,50 +78,6 @@ module Onibi
       emit(:save_start, node.number)
       compile_node(node.body)
       emit(:save_end, node.number)
-    end
-
-    def compile_quantifier(node)
-      return compile_bounded(node) if node.kind == :bounded
-
-      return compile_star(node) if node.kind == :*
-      return compile_plus(node) if node.kind == :+
-
-      compile_optional(node.expression)
-    end
-
-    def compile_star(node)
-      start_split = emit(:split)
-      body_start = @instructions.length
-      compile_node(node.expression)
-      end_split = emit(:split)
-      start_split.operand = body_start
-      start_split.target = @instructions.length
-      end_split.operand = body_start
-      end_split.target = @instructions.length
-    end
-
-    def compile_plus(node)
-      body_start = @instructions.length
-      compile_node(node.expression)
-      split = emit(:split)
-      split.operand = body_start
-      split.target = @instructions.length
-    end
-
-    def compile_bounded(node)
-      node.minimum.times { compile_node(node.expression) }
-      optional_count = node.maximum && node.maximum - node.minimum
-      return compile_star(node.expression) unless optional_count
-
-      optional_count.times { compile_optional(node.expression) }
-    end
-
-    def compile_optional(expression)
-      split = emit(:split)
-      body_start = @instructions.length
-      compile_node(expression)
-      split.operand = body_start
-      split.target = @instructions.length
     end
 
     def emit(opcode, operand = nil)

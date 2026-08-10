@@ -7,6 +7,7 @@ module Onibi
     Escape = Struct.new(:kind)
     Property = Struct.new(:name, :negated)
     Backreference = Struct.new(:identifier, :named)
+    Assertion = Struct.new(:body, :kind)
     Any = Struct.new(:value)
     Anchor = Struct.new(:kind)
     Sequence = Struct.new(:parts)

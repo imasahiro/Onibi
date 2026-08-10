@@ -10,11 +10,14 @@ require_relative "onibi/character_predicates"
 require_relative "onibi/class_predicates"
 require_relative "onibi/class_predicates_posix"
 require_relative "onibi/ast"
+require_relative "parser_assertions"
+require_relative "onibi/parser_quantifiers"
 require_relative "onibi/parser"
 require_relative "onibi/parser_tokens"
 require_relative "onibi/bytecode"
 require_relative "onibi/alternation_compiler"
 require_relative "onibi/compiler_references"
+require_relative "onibi/compiler_quantifiers"
 require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine_anchors"
 require_relative "onibi/virtual_machine"
@@ -90,7 +93,7 @@ module Onibi
     end
 
     def ast_matcher_required?
-      matcher_tokens = ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "*+", "++", "?+", "*?", "+?", "??"]
+      matcher_tokens = ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "*+", "++", "?+", "*?", "+?", "??"]
       matcher_tokens.any? do |escape|
         @pattern.include?(escape)
       end

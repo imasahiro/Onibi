@@ -13,6 +13,7 @@ module Onibi
       AST::Escape => :escape_results,
       AST::Property => :property_results,
       AST::Backreference => :backreference_results,
+      AST::Assertion => :assertion_results,
       AST::Any => :any_results,
       AST::Anchor => :anchor_results
     }.freeze

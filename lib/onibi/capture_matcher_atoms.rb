@@ -47,6 +47,12 @@ module Onibi
       characters[position, length] == characters[offset[0]...offset[1]] ? [[position + length, captures]] : []
     end
 
+    def assertion_results(node, characters, position, captures)
+      matched = !match_results(node.body, characters, position, captures).empty?
+      matched = !matched if node.kind == :negative
+      matched ? [[position, captures]] : []
+    end
+
     def escape_matches?(kind, character)
       CharacterPredicates.escape_matches?(kind, character)
     end
