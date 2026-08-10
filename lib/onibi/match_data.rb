@@ -103,7 +103,23 @@ module Onibi
       "#<Onibi::MatchData #{self[0].inspect}#{suffix}>"
     end
 
+    def ==(other)
+      other.is_a?(MatchData) && match_identity == other.send(:match_identity)
+    end
+
+    def eql?(other)
+      self == other
+    end
+
+    def hash
+      match_identity.hash
+    end
+
     private
+
+    def match_identity
+      [@values, @offsets, @string, @regexp]
+    end
 
     def value_at(index)
       index = @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
