@@ -7,7 +7,7 @@ module Onibi
       "[:space:]" => "Space", "[:word:]" => "Word", "[:xdigit:]" => "XDigit",
       "[:upper:]" => "Upper", "[:lower:]" => "Lower", "[:blank:]" => "Blank",
       "[:cntrl:]" => "Cntrl", "[:graph:]" => "Graph", "[:print:]" => "Print",
-      "[:punct:]" => "Punct"
+      "[:punct:]" => "Punct", "[:ascii:]" => "ASCII"
     }.freeze
   end
 end
