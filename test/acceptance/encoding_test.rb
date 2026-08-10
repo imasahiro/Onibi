@@ -46,6 +46,13 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_non_ascii_pattern_accepts_ascii_only_input_in_another_encoding
+    pattern = "é".encode(Encoding::UTF_8)
+    input = "a".encode(Encoding::EUC_JP)
+
+    refute Onibi::Regexp.new(pattern).match?(input)
+  end
+
   def test_noencoding_matches_binary_input_one_byte_at_a_time
     regexp = Onibi::Regexp.new(".", Onibi::Regexp::NOENCODING)
 
