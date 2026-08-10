@@ -73,7 +73,7 @@
 | encoding | US-ASCII | ASCII の pattern/input | ◐ | ASCII-only の互換性は扱うが、Regexp の source encoding/fixed encoding と同一ではない。 |
 | encoding | EUC-JP、Windows-31J 等 | /pat/e、/pat/s | ◐ | 同一 encoding の literal/class/property、`match`/`match?`、ASCII pattern の cross-encoding、互換性エラーを基本対応。constructor encoding mode は未実装。 |
 | encoding mode | encoding 指定 | /pat/u、/pat/n、/pat/e、/pat/s | ❌ | Ruby の regexp option として未実装。 |
-| encoding mode | fixed/no encoding | Regexp::FIXEDENCODING、Regexp::NOENCODING | ◐ | integer option、encoding/fixed_encoding? introspection、ASCII-8BIT pattern、Unicode property validation、binary input の byte match を実装。完全な互換性は未対応。 |
+| encoding mode | fixed/no encoding | Regexp::FIXEDENCODING、Regexp::NOENCODING | ◐ | integer option、encoding/fixed_encoding? introspection、ASCII-8BIT pattern、Unicode property validation、binary input の byte match、固定 encoding と非 ASCII input の互換性検証を実装。完全な互換性は未対応。 |
 
 ### モード・Regexp API
 
@@ -212,6 +212,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] literal と character class の Unicode case folding と ignorecase を実装する。
 - [x] `Regexp::NOENCODING` と binary input の byte 単位 match を追加する。
 - [x] EUC-JP / Windows-31J の property、`match`、ASCII-8BIT property validation を追加する。
+- [x] `FIXEDENCODING` の ASCII pattern に対する非 ASCII cross-encoding input の拒否を追加する。
 - /u、/e、/s 相当と `FIXEDENCODING` の完全な互換性を追加する。
 - 全 encoding matrix と encoding mode の発生条件を揃える。
 - acceptance: Ruby 4.0.6 の encoding matrix を fixture 化する。
