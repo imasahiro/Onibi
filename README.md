@@ -31,6 +31,7 @@ regexp.match?("aaa")
 
 ```sh
 bin/setup
+git config core.hooksPath .githooks
 bundle exec rake test
 bundle exec rubocop
 bundle exec rake build
