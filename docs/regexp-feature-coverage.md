@@ -95,7 +95,7 @@
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
 | introspection | timeout、timeout= | ❌ | 未実装。 |
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。全 encoding/option 表現は未対応。 |
-| class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` と、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の option scope や全オプション互換は未対応。 |
+| class utility | Regexp.escape、Regexp.union | ◐ | `Regexp.escape` のSymbol/`to_str`/TypeError coercionと、文字列 alternatives / 空集合、および compiled pattern の source を扱う `Regexp.union` を実装。compiled pattern の option scope や全オプション互換は未対応。 |
 | class utility | Regexp.last_match | 対象外 | global match state を持たない設計。 |
 | class utility | Regexp.linear_time? | ❌ | Onibi の NFA/DFA 実行器に対応する公開判定 API は未実装。 |
 | class utility | Regexp.timeout、Regexp.timeout= | ❌ | 未実装。 |
@@ -248,6 +248,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp#options` を全constructor形式で整数bitmaskとして返す。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
+- [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取る基本対応を追加する。
 - global match variables を opt-in replacement で扱うか、Onibi 独自 API として明確に分離する。
 - acceptance: public API inventory の全メソッドを MRI と比較する。
