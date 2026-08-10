@@ -6,6 +6,14 @@ module Onibi
     Token = Struct.new(:type, :value, :position)
 
     ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
+    SIMPLE_TOKENS = {
+      "(" => :open_group,
+      ")" => :close_group,
+      "|" => :alternation,
+      "." => :dot,
+      "^" => :anchor_start,
+      "$" => :anchor_end
+    }.freeze
 
     def initialize(source)
       @source = source
@@ -27,20 +35,29 @@ module Onibi
 
     def next_token(index)
       character = @source[index]
-      return [Token.new(:literal, character, index), index + 1] unless "\\()|*+?{}[].^$".include?(character)
+      return literal_token(character, index) unless special_character?(character)
+      return escaped_token(index) if character == "\\"
+      return class_token(index) if character == "["
+      return simple_token(character, index) if SIMPLE_TOKENS.key?(character)
+      return quantifier_token(index) if "*+?{".include?(character)
 
-      case character
-      when "\\" then escaped_token(index)
-      when "[" then class_token(index)
-      when "(" then [Token.new(:open_group, character, index), index + 1]
-      when ")" then [Token.new(:close_group, character, index), index + 1]
-      when "|" then [Token.new(:alternation, character, index), index + 1]
-      when "*", "+", "?", "{" then [Token.new(:quantifier, quantifier_value(index)), quantifier_end(index)]
-      when "]" then raise RegexpError, "unexpected character class terminator"
-      when "." then [Token.new(:dot, character, index), index + 1]
-      when "^" then [Token.new(:anchor_start, character, index), index + 1]
-      when "$" then [Token.new(:anchor_end, character, index), index + 1]
-      end
+      raise RegexpError, "unexpected character class terminator"
+    end
+
+    def special_character?(character)
+      "\\()|*+?{}[].^$".include?(character)
+    end
+
+    def literal_token(character, index)
+      [Token.new(:literal, character, index), index + 1]
+    end
+
+    def simple_token(character, index)
+      [Token.new(SIMPLE_TOKENS.fetch(character), character, index), index + 1]
+    end
+
+    def quantifier_token(index)
+      [Token.new(:quantifier, quantifier_value(index), index), quantifier_end(index)]
     end
 
     def escaped_token(index)
