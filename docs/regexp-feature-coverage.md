@@ -91,7 +91,7 @@
 | matching | Regexp#=~、Regexp#===、unary ~ | ◐ | `=~` は match begin offset、`===` は boolean、unary `~` は top-level `$_` への match 結果を返す。offset 引数と完全な global match state は未対応。 |
 | matching state | $~、$&、$1 等 | 対象外 | global match variables を変更しない opt-in API という設計。 |
 | introspection | source | ◐ | 元の pattern を返す。Ruby 互換の frozen/encoding 詳細は未対応。 |
-| introspection | options | ◐ | Onibi は option 名の配列を返す。Ruby の整数 bit mask とは異なる。 |
+| introspection | options | ◐ | `Regexp#options` はRuby互換の整数bitmaskを返す。array constructor入力を含む全option意味・encoding flagの互換性は未対応。 |
 | introspection | encoding、fixed_encoding?、casefold? | ◐ | encoding / fixed_encoding? / casefold? の基本 introspection を実装。Ruby 互換の全 encoding mode は未対応。 |
 | introspection | timeout、timeout= | ❌ | 未実装。 |
 | object semantics | ==、eql?、hash、inspect、to_s | ◐ | `==`、`eql?`、`hash` と基本的な Ruby 形式の `inspect` / `to_s` を実装。全 encoding/option 表現は未対応。 |
@@ -245,6 +245,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] MRI `Regexp` を `new` / `compile` に渡す source/options ベースの基本コピーを追加する。
 - [x] Regexp#=~、===、unary ~ を追加する。offset 引数は未対応のまま。
 - [x] `Regexp::EXTENDED` integer flag を既存の extended mode に接続する。
+- [x] `Regexp#options` を全constructor形式で整数bitmaskとして返す。
 - Regexp.escape、Regexp.union、Regexp.last_match を追加する。
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取る基本対応を追加する。
