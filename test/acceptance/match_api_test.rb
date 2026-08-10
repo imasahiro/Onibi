@@ -123,9 +123,15 @@ class MatchApiTest < Minitest::Test
   def test_match_data_supports_pattern_matching_destructuring
     match = Onibi::Regexp.new("(?<animal>cat)(dog)").match("catdog")
 
-    assert_equal %w[catdog cat dog], match.deconstruct
-    assert_equal({ "animal" => "cat" }, match.deconstruct_keys([:animal]))
-    assert_equal({ "animal" => "cat" }, match.deconstruct_keys(nil))
+    assert_equal %w[cat dog], match.deconstruct
+    assert_equal({ animal: "cat" }, match.deconstruct_keys([:animal]))
+    assert_equal({ animal: "cat" }, match.deconstruct_keys(nil))
+  end
+
+  def test_match_data_destructuring_rejects_string_keys
+    match = Onibi::Regexp.new("(?<animal>cat)").match("cat")
+
+    assert_raises(TypeError) { match.deconstruct_keys(["animal"]) }
   end
 
   def test_offset_apis_validate_indices_and_accept_named_captures
