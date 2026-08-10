@@ -30,9 +30,16 @@ module Onibi
     private
 
     def union_source(pattern)
-      return pattern.source if compiled_pattern?(pattern)
+      return scoped_union_source(pattern) if compiled_pattern?(pattern)
 
       escape(pattern)
+    end
+
+    def scoped_union_source(pattern)
+      source = pattern.source
+      return source unless (pattern.options & Onibi::Regexp::IGNORECASE).positive?
+
+      "(?i:#{source})"
     end
 
     def compiled_pattern?(pattern)
