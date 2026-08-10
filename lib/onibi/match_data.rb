@@ -11,7 +11,7 @@ module Onibi
     end
 
     def [](index)
-      @values.fetch(index)
+      @values[index]
     end
 
     def captures
@@ -40,6 +40,12 @@ module Onibi
 
     def size
       length
+    end
+
+    def values_at(*indices)
+      indices.flat_map do |index|
+        index.is_a?(Range) ? index.map { |value| @values[value] } : [@values[index]]
+      end
     end
 
     def named_captures
