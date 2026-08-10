@@ -70,7 +70,7 @@ module Onibi
     def inspect
       details = @names.map { |name, index| "#{name}:#{self[index].inspect}" }
       suffix = details.empty? ? "" : " #{details.join(" ")}"
-      "#<Onibi::MatchData #{self[0].inspect}#{suffix}>"
+      "#<MatchData #{self[0].inspect}#{suffix}>"
     end
 
     def ==(other)
