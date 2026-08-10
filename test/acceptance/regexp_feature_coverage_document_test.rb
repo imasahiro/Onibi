@@ -21,9 +21,10 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "position 引数"
     assert_includes document, "compiled pattern の ignorecase"
     assert_includes document, "scoped multiline"
-    assert_includes document, "positive scoped extended mode の option"
+    assert_includes document, "positive scoped extended mode / negative scoped extended mode"
     assert_includes document, "compiled pattern の multiline / extended scope"
     assert_includes document, "non-ASCII pattern の implicit FIXEDENCODING"
     assert_includes document, "Unicode property pattern の source encoding"
+    assert_includes document, "negative scoped extended mode"
   end
 end
