@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Builds the split and jump instructions for an alternation node.
   class AlternationCompiler
     def initialize(instructions, compile_node)
       @instructions = instructions
@@ -20,12 +21,17 @@ module Onibi
       branch_starts = []
       jumps = []
       node.branches.each_with_index do |branch, index|
-        branch_starts << @instructions.length
-        @compile_node.call(branch)
-        jumps << emit(:jump) unless index == node.branches.length - 1
-        emit(:split) if index < splits - 1
+        branch_starts << compile_branch(branch, index, node, splits, jumps)
       end
       [branch_starts, jumps]
+    end
+
+    def compile_branch(branch, index, node, splits, jumps)
+      branch_start = @instructions.length
+      @compile_node.call(branch)
+      jumps << emit(:jump) unless index == node.branches.length - 1
+      emit(:split) if index < splits - 1
+      branch_start
     end
 
     def connect_branches(node, branch_starts, jumps)

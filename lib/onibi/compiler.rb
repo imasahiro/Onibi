@@ -63,7 +63,6 @@ module Onibi
       emit(:anchor, node.kind)
     end
 
-
     def compile_group(node)
       emit(:save_start, node.number)
       compile_node(node.body)

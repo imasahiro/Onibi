@@ -32,6 +32,7 @@ module Onibi
 
       visited[[program_counter, position]] = true
       instruction = instruction_at(program_counter)
+
       return true if instruction.opcode == :match
       dispatch_instruction(program_counter, position, input, visited, instruction)
     end
@@ -114,6 +115,7 @@ module Onibi
 
       source.downcase.codepoints.first == character.chr.downcase.codepoints.first
     end
+
     def anchor_matches?(kind, position, input)
       return line_start?(position, input) if kind == :anchor_start
       return line_end?(position, input) if kind == :anchor_end

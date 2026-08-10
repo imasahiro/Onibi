@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Holds AST dispatch helpers separate from the matching algorithms.
   module AstMatcherDispatch
     NODE_MATCHERS = {
       AST::Sequence => :sequence_node_positions,
