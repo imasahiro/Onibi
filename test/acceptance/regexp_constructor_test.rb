@@ -39,4 +39,16 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal first.hash, second.hash
     refute_equal first, different
   end
+
+  def test_to_s_reports_explicit_mode_scope
+    regexp = Onibi::Regexp.new("cat", ["ignorecase"])
+
+    assert_equal "(?i-mx:cat)", regexp.to_s
+  end
+
+  def test_inspect_uses_regexp_literal_format
+    regexp = Onibi::Regexp.new("cat", ["ignorecase"])
+
+    assert_equal "/cat/i", regexp.inspect
+  end
 end
