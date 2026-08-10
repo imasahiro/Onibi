@@ -72,6 +72,15 @@ module Onibi
       new(pattern, options)
     end
 
+    def self.escape(string)
+      source = string.to_s
+      special = "\\.^$*+?{}[]()|# "
+      source.each_char.each_with_object(source.dup.clear) do |character, escaped|
+        escaped << "\\" if special.include?(character)
+        escaped << character
+      end
+    end
+
     def initialize(pattern, options = nil)
       validate_pattern_type!(pattern)
       validate_pattern_encoding!(pattern)
