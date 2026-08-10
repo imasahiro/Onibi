@@ -139,7 +139,7 @@ Implement `^`, `$`, case-insensitive matching, and multiline behavior as defined
 
 **Dependencies:** CORE-009, CORE-011.
 
-### CORE-013 — Implement tagged captures and `Onibi::MatchData`
+### CORE-013 — Implement tagged captures and `Onibi::MatchData` [Complete]
 
 Implement capture start/end tags in NFA execution and construct the initial public `Onibi::MatchData`. Support the Core MVP operations required to inspect the full match, numbered captures, capture values, and begin/end offsets.
 
