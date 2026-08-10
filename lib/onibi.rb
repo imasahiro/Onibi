@@ -17,6 +17,12 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
+    @dfa_memory_budget = 1
+
+    class << self
+      attr_accessor :dfa_memory_budget
+    end
+
     def self.compile(pattern, options = nil)
       new(pattern, options)
     end
@@ -68,6 +74,8 @@ module Onibi
     private
 
     def dfa_specialization
+      return if self.class.dfa_memory_budget.zero?
+
       @dfa_specialization ||= DfaSpecialization.new(@ast)
     end
   end
