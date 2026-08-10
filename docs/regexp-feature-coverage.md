@@ -86,8 +86,8 @@
 | mode | x / EXTENDED | ◐ | `extended` option と `Regexp::EXTENDED` integer flag で pattern の whitespace と top-level `#` comment を無視する。escaped whitespace と一部 inline modifier は未対応。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
 | mode | inline modifier | (?i)、(?-i)、(?m)、(?-m)、(?x)、(?-x)、(?imx)、(?-imx)、(?i:pat) | ◐ | single/combined prefix `(?i)` / `(?-i)` / `(?m)` / `(?-m)` / `(?x)` / `(?-x)` / `(?imx)` / `(?-imx)` と、複合 pattern 内を含む `(?i:pat)` / `(?-i:pat)` の scoped option AST を実装。任意の混在scopeは未対応。 |
-| matching | Regexp#match | ◐ | Onibi::MatchData または nil を返すが、capture、offset、regexp、pre/post match 等が不完全。 |
-| matching | Regexp#match? | ✅ | boolean を返す基本 API は実装済み。 |
+| matching | Regexp#match | ◐ | Onibi::MatchData または nil を返し、position 引数による検索開始位置、capture、offset、regexp、pre/post match 等を提供する。ただし MatchData の互換性は未完成。 |
+| matching | Regexp#match? | ◐ | boolean と position 引数による検索開始位置を実装。Ruby の全エラー・encoding semantics は未完成。 |
 | matching | Regexp#=~、Regexp#===、unary ~ | ◐ | `=~` は match begin offset、`===` は boolean、unary `~` は top-level `$_` への match 結果を返す。offset 引数と完全な global match state は未対応。 |
 | matching state | $~、$&、$1 等 | 対象外 | global match variables を変更しない opt-in API という設計。 |
 | introspection | source | ◐ | 元の pattern を返す。Ruby 互換の frozen/encoding 詳細は未対応。 |
@@ -253,6 +253,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] `Regexp.escape` と文字列 alternatives / 空集合の `Regexp.union` を追加する。Regexp 引数や全オプション互換は未対応。
 - [x] `Regexp.escape` のSymbol、`to_str`、非変換値TypeErrorをRuby互換に近づける。
 - [x] `Regexp.union` がMRI/Onibiのcompiled patternをsource alternativeとして受け取る基本対応を追加する。
+- [x] `Regexp#match` / `match?` の position 引数を実装し、負数・Float coercion・範囲外を処理する。
 - global match variables を opt-in replacement で扱うか、Onibi 独自 API として明確に分離する。
 - acceptance: public API inventory の全メソッドを MRI と比較する。
 
