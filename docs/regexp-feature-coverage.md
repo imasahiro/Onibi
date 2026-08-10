@@ -154,7 +154,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - {,max} を追加し、量指定子の構文エラーと greedy 境界を MRI と揃える。
 - acceptance: 改行、末尾改行、空文字列、bounded quantifier の differential corpus を追加する。
 
-### REGEXP-003 — 省略クラスと境界アンカーを拡張する
+### REGEXP-003 [Complete] — 省略クラスと境界アンカーを拡張する
 
 - Priority: P0
 - Dependencies: REGEXP-002

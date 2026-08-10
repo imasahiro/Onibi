@@ -82,6 +82,8 @@ module Onibi
     end
 
     def escape_positions(node, characters, position)
+      return zero_width_positions(node.kind, characters, position) if zero_width_escape?(node.kind)
+      return linebreak_positions(characters, position) if node.kind == :linebreak
       return [] unless position < characters.length
       return [] unless escape_matches?(node.kind, characters[position])
 
@@ -89,11 +91,25 @@ module Onibi
     end
 
     def escape_matches?(kind, character)
-      case kind
-      when :digit then character >= "0" && character <= "9"
-      when :space then CharacterPredicates.whitespace?(character)
-      when :word then CharacterPredicates.word?(character)
-      end
+      CharacterPredicates.escape_matches?(kind, character)
+    end
+
+    def zero_width_escape?(kind)
+      %i[word_boundary not_word_boundary start_match].include?(kind)
+    end
+
+    def zero_width_positions(kind, characters, position)
+      matches = CharacterPredicates.word_boundary?(characters, position)
+      matches = !matches if kind == :not_word_boundary
+      matches = position.zero? if kind == :start_match
+      matches ? [position] : []
+    end
+
+    def linebreak_positions(characters, position)
+      return [] unless position < characters.length && CharacterPredicates.linebreak?(characters[position])
+      return [position + 2] if characters[position, 2] == ["\r", "\n"]
+
+      [position + 1]
     end
 
     def anchor_positions(node, characters, position)

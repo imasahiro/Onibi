@@ -3,20 +3,6 @@
 module Onibi
   # Parses lexer tokens with alternation, concatenation, and quantifier precedence.
   class Parser
-    AST_BUILDERS = {
-      literal: ->(token) { AST::Literal.new(token.value) },
-      digit: ->(token) { AST::Escape.new(token.type) },
-      space: ->(token) { AST::Escape.new(token.type) },
-      word: ->(token) { AST::Escape.new(token.type) },
-      class: ->(token) { AST::CharacterClass.new(token.value) },
-      dot: ->(token) { AST::Any.new(token.value) },
-      anchor_start: ->(token) { AST::Anchor.new(token.type) },
-      anchor_end: ->(token) { AST::Anchor.new(token.type) },
-      anchor_absolute_start: ->(token) { AST::Anchor.new(token.type) },
-      anchor_before_final_newline: ->(token) { AST::Anchor.new(token.type) },
-      anchor_absolute_end: ->(token) { AST::Anchor.new(token.type) }
-    }.freeze
-
     def initialize(source)
       @tokens = Lexer.new(source).tokens
       @index = 0
@@ -54,7 +40,7 @@ module Onibi
     end
 
     def parse_simple_atom(token)
-      builder = AST_BUILDERS[token.type]
+      builder = ParserTokens::AST_BUILDERS[token.type]
       raise RegexpError, "unexpected token #{token.type}" unless builder
 
       consume
