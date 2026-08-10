@@ -8,6 +8,7 @@ require_relative "onibi/bytecode"
 require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine"
 require_relative "onibi/ast_matcher"
+require_relative "onibi/match_data"
 
 module Onibi
   class Error < StandardError; end
