@@ -68,7 +68,7 @@
 | POSIX class | digit、xdigit、upper、lower、alpha、alnum | [[:digit:]] | ✅ | 実装済み。 |
 | POSIX class | space、blank、cntrl、graph、print、punct | [[:space:]] | ✅ | 実装済み。 |
 | Ruby 拡張 POSIX | ascii、word | [[:ascii:]]、[[:word:]] | ✅ | 実装済み。 |
-| encoding | UTF-8 | é と UTF-8 入力 | ◐ | UTF-8 の基本一致は実装済み。Unicode property・Unicode case folding 等は未対応。 |
+| encoding | UTF-8 | é と UTF-8 入力 | ◐ | UTF-8 の基本一致、不正 pattern/input の例外、literal/class の Unicode case folding を実装済み。全 Unicode fold と encoding mode は未対応。 |
 | encoding | ASCII-8BIT | abc のバイト列 | ◐ | ASCII バイトの基本一致と互換性エラーを実装。invalid byte/class の全組合せは未検証。 |
 | encoding | US-ASCII | ASCII の pattern/input | ◐ | ASCII-only の互換性は扱うが、Regexp の source encoding/fixed encoding と同一ではない。 |
 | encoding | EUC-JP、Windows-31J 等 | /pat/e、/pat/s | ❌ | 未実装。 |
@@ -81,7 +81,7 @@
 | --- | --- | --- | --- |
 | constructor | Regexp.new(string, options = 0, timeout: nil) | ◐ | Onibi は pattern と Array[String] の独自形式。整数/文字列 flag、Regexp 引数、timeout は未対応。 |
 | constructor | Regexp.compile | ◐ | メソッドはあるが Ruby の .new と同じ引数互換性はない。 |
-| mode | i / IGNORECASE | ◐ | ignorecase 配列 option で基本 ASCII case-folding。Unicode case-folding と inline modifier は未対応。 |
+| mode | i / IGNORECASE | ◐ | ignorecase 配列 option で literal/class の Unicode case folding を実装。inline modifier と全構文への fold 伝播は未対応。 |
 | mode | m / MULTILINE | ◐ | Onibi の multiline は ^/$ の判定にも影響する。Ruby の m は dot-all で ^/$ を変更しない。 |
 | mode | x / EXTENDED | ❌ | 空白・# コメントを無視する extended mode は未実装。 |
 | mode | o / interpolation | 対象外 | Onibi は /.../ literal を parse せず、文字列 pattern を受け取る設計。 |
@@ -208,9 +208,10 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - Priority: P1
 - Dependencies: REGEXP-001, REGEXP-005
 - US-ASCII、UTF-8、ASCII-8BIT、EUC-JP、Windows-31J の pattern/input matrix を実装する。
+- [x] invalid encoded pattern/input、compatible ASCII、Encoding::CompatibilityError の基本条件を揃える。
+- [x] literal と character class の Unicode case folding と ignorecase を実装する。
 - /u、/n、/e、/s 相当と fixed/no encoding を追加する。
-- invalid byte、compatible ASCII、Encoding::CompatibilityError の発生条件を揃える。
-- Unicode case folding と ignorecase を実装する。
+- 全 encoding matrix と encoding mode の発生条件を揃える。
 - acceptance: Ruby 4.0.6 の encoding matrix を fixture 化する。
 
 ### REGEXP-009 — mode と source preprocessing を実装する
