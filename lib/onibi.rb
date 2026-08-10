@@ -15,10 +15,14 @@ module Onibi
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
+    # rubocop:disable Metrics/AbcSize
     def initialize(pattern, options = nil)
       raise TypeError, "no implicit conversion of #{pattern.class} into String" unless pattern.is_a?(String)
+
       normalized_options = options || []
-      valid_options = normalized_options.is_a?(Array) && normalized_options.all? { |option| %w[ignorecase multiline].include?(option) }
+      valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
+        %w[ignorecase multiline].include?(option)
+      end
       raise ArgumentError, "invalid options" unless valid_options
       raise RegexpError, "malformed character class" unless pattern.count("[") == pattern.count("]")
 
@@ -27,6 +31,7 @@ module Onibi
       @ast = Parser.new(pattern).parse
       @bytecode = Compiler.new(@ast).compile
     end
+    # rubocop:enable Metrics/AbcSize
 
     def match?(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)

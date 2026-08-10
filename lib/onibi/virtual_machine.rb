@@ -100,12 +100,14 @@ module Onibi
     end
     # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
+    # rubocop:disable Metrics/CyclomaticComplexity
     def anchor_matches?(kind, position, input)
       at_start = position.zero? || (@multiline && input[position - 1] == "\n".ord)
       at_end = position == input.length || (@multiline && input[position] == "\n".ord)
 
       (kind == :anchor_start && at_start) || (kind == :anchor_end && at_end)
     end
+    # rubocop:enable Metrics/CyclomaticComplexity
 
     def instruction_at(program_counter)
       @program.instructions.fetch(program_counter)
