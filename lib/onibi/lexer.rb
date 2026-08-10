@@ -41,7 +41,7 @@ module Onibi
     }.freeze
 
     def initialize(source, options = [])
-      @source = source
+      @source = LexerScopedExtended.normalize(source)
       @extended = options.include?("extended")
     end
 
