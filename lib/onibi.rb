@@ -11,6 +11,9 @@ require_relative "onibi/compiler"
 require_relative "onibi/virtual_machine"
 require_relative "onibi/ast_matcher_dispatch"
 require_relative "onibi/ast_matcher"
+require_relative "onibi/capture_matcher_dispatch"
+require_relative "onibi/capture_matcher_atoms"
+require_relative "onibi/capture_matcher"
 require_relative "onibi/match_data"
 require_relative "onibi/dfa"
 
@@ -57,13 +60,11 @@ module Onibi
 
       validate_encoding!(input)
 
-      span = AstMatcher.new(@ast, @options).match_span(input)
+      details = match_details(input)
       dfa_specialization
-      return nil unless span
+      return nil unless details
 
-      characters = input.chars
-      full_match = characters[span[0]...span[1]].join
-      MatchData.new(full_match, [], [span])
+      MatchData.new(*match_data_arguments(details, input))
     end
 
     def options
@@ -105,6 +106,18 @@ module Onibi
       return if self.class.dfa_memory_budget.zero?
 
       @dfa_specialization ||= DfaSpecialization.new(@ast)
+    end
+
+    def match_details(input)
+      CaptureMatcher.new(@ast, @options).match_details(input)
+    end
+
+    def match_data_arguments(details, input)
+      start, finish, capture_offsets = details
+      characters = input.chars
+      full_match = characters[start...finish].join
+      captures = capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
+      [full_match, captures, [[start, finish]] + capture_offsets]
     end
   end
 end

@@ -22,12 +22,14 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def self.dfa_memory_budget: () -> Integer"
     assert_includes signature, "def self.dfa_memory_budget=: (Integer value) -> Integer"
     assert_includes signature, "class MatchData"
-    assert_includes signature, "def []: (Integer index) -> String"
-    assert_includes signature, "def captures: () -> Array[String]"
+    assert_includes signature, "def []: (Integer index) -> String?"
+    assert_includes signature, "def captures: () -> Array[String?]"
+    assert_includes signature, "def offset: (Integer index) -> [Integer, Integer]?"
     assert_includes signature, "def begin: (Integer index) -> Integer?"
     assert_includes signature, "def end: (Integer index) -> Integer?"
-    assert_includes signature, "def to_a: () -> Array[String]"
+    assert_includes signature, "def to_a: () -> Array[String?]"
     assert_includes signature, "def length: () -> Integer"
+    assert_includes signature, "def size: () -> Integer"
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end
