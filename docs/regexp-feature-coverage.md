@@ -225,6 +225,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] EUC-JP / Windows-31J の property、`match`、ASCII-8BIT property validation を追加する。
 - [x] `FIXEDENCODING` の ASCII pattern に対する非 ASCII cross-encoding input の拒否を追加する。
 - [x] 非 ASCII pattern に対する ASCII-only cross-encoding input を `false` として扱う。
+- [x] 非 UTF-8 の ASCII character class と incompatible な非 ASCII input を error ではなく `false` として扱う。
 - [x] Unicode property pattern の source encoding と implicit `FIXEDENCODING` introspection を追加する。
 - /u、/e、/s 相当と `FIXEDENCODING` の完全な互換性を追加する。
 - 全 encoding matrix と encoding mode の発生条件を揃える。
