@@ -8,7 +8,8 @@ module Onibi
     def parse_option_group(opening)
       body = parse_alternation
       expect(:close_group)
-      AST::OptionGroup.new(body, opening.value)
+      ignorecase, multiline = opening.value
+      AST::OptionGroup.new(body, ignorecase, multiline)
     end
   end
 end

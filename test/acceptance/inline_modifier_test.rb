@@ -23,6 +23,13 @@ class InlineModifierTest < Minitest::Test
     refute regexp.match?("ABCD")
   end
 
+  def test_scoped_multiline_modifier_applies_dot_all_only_inside_group
+    regexp = Onibi::Regexp.new("a(?m:.)b")
+
+    assert regexp.match?("a\nb")
+    refute Onibi::Regexp.new("a(?m:.)c.").match?("a\nb\n")
+  end
+
   def test_inline_multiline_modifier_enables_dot_all
     assert Onibi::Regexp.new("(?m).").match?("\n")
   end
