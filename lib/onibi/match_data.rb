@@ -3,13 +3,17 @@
 module Onibi
   # Immutable observable match result for the Core MVP.
   class MatchData
-    def initialize(values, captures, offsets, names = {}, string = nil, regexp = nil)
+    Context = Struct.new(:string, :regexp)
+
+    attr_reader :string, :regexp
+
+    def initialize(values, captures, offsets, names = {}, context = nil)
       @values = ([values] + captures).freeze
       @captures = captures.freeze
       @offsets = offsets.freeze
       @names = names.freeze
-      @string = string
-      @regexp = regexp
+      @string = context&.string
+      @regexp = context&.regexp
     end
 
     def [](index)
@@ -50,14 +54,6 @@ module Onibi
       end
     end
 
-    def string
-      @string
-    end
-
-    def regexp
-      @regexp
-    end
-
     def pre_match
       start_position = self.begin(0)
       @string[0, start_position]
@@ -65,7 +61,7 @@ module Onibi
 
     def post_match
       finish = self.end(0)
-      @string[finish..-1] || ""
+      @string[finish..] || ""
     end
 
     def named_captures

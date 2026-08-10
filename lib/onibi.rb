@@ -103,7 +103,8 @@ module Onibi
       dfa_specialization
       return nil unless details
 
-      MatchData.new(*match_data_arguments(details, input), CaptureNameCollector.call(@ast), input, self)
+      context = MatchData::Context.new(input, self)
+      MatchData.new(*match_data_arguments(details, input), CaptureNameCollector.call(@ast), context)
     end
 
     define_method([61, 126].pack("C*")) do |input|
