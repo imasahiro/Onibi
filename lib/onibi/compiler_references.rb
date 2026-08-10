@@ -8,5 +8,9 @@ module Onibi
     def compile_backreference(node)
       emit(:backreference, [node.identifier, node.named])
     end
+
+    def compile_assertion(node)
+      compile_node(node.body)
+    end
   end
 end

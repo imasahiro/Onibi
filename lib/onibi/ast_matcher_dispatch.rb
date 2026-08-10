@@ -7,6 +7,7 @@ module Onibi
       AST::Sequence => :sequence_node_positions,
       AST::Alternation => :alternation_positions,
       AST::Group => :group_positions,
+      AST::Assertion => :assertion_positions,
       AST::Quantifier => :quantifier_positions,
       AST::Literal => :literal_positions,
       AST::CharacterClass => :class_positions,
@@ -28,6 +29,12 @@ module Onibi
 
     def group_positions(node, characters, position)
       match_positions(node.body, characters, position)
+    end
+
+    def assertion_positions(node, characters, position)
+      matched = !match_positions(node.body, characters, position).empty?
+      matched = !matched if node.kind == :negative
+      matched ? [position] : []
     end
 
     def any_positions(_node, characters, position)
