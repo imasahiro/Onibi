@@ -13,7 +13,7 @@ module Onibi
     include LexerEscapes
     Token = Struct.new(:type, :value, :position)
 
-    ESCAPED_LITERALS = ".^$*+?{}[]()|\\".chars.freeze
+    ESCAPED_LITERALS = ".^$*+?{}[]()|\\ #".chars.freeze
     ESCAPED_CHARACTERS = {
       "a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n",
       "r" => "\r", "t" => "\t", "v" => "\v"

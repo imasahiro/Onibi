@@ -23,4 +23,11 @@ class ExtendedModeTest < Minitest::Test
   def test_inline_extended_disable_modifier_preserves_whitespace
     refute Onibi::Regexp.new("(?-x)a b", ["extended"]).match?("ab")
   end
+
+  def test_extended_mode_escaped_whitespace_and_comment_marker_are_literals
+    regexp = Onibi::Regexp.new("a\\ b\\#c", ["extended"])
+
+    assert regexp.match?("a b#c")
+    refute regexp.match?("ab#c")
+  end
 end
