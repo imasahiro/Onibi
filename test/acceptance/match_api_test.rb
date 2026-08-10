@@ -20,6 +20,16 @@ class MatchApiTest < Minitest::Test
     assert_equal false, regexp.match?("dog")
   end
 
+  def test_match_and_match_question_mark_accept_a_start_position
+    regexp = Onibi::Regexp.new("cat")
+
+    assert_equal 2, regexp.match("xxcat", 2).begin(0)
+    assert regexp.match?("xxcat", 2)
+    assert_equal 2, regexp.match("xxcat", -3.5).begin(0)
+    assert_nil regexp.match("xxcat", 99)
+    assert_raises(TypeError) { regexp.match?("xxcat", nil) }
+  end
+
   def test_match_operator_returns_match_beginning_or_nil
     regexp = Onibi::Regexp.new("cat")
 

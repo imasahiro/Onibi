@@ -88,23 +88,27 @@ module Onibi
       @bytecode = Compiler.new(@ast).compile
     end
 
-    def match?(input)
+    def match?(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      start_position = normalize_match_position(input, position)
+      return false if start_position.negative? || start_position > input.length
 
-      result = with_timeout { matching_result(input) }
+      result = with_timeout { matching_result(input, start_position) }
 
       dfa_specialization
       result
     end
 
-    def match(input)
+    def match(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      start_position = normalize_match_position(input, position)
+      return nil if start_position.negative? || start_position > input.length
 
-      details = with_timeout { match_details(input) }
+      details = with_timeout { match_details(input, start_position) }
       dfa_specialization
       return nil unless details
 
@@ -152,8 +156,8 @@ module Onibi
       raise RegexpError, "invalid byte sequence in #{pattern.encoding}"
     end
 
-    def matching_result(input)
-      MatchingResult.call(@ast, @bytecode, @pattern, @options, input)
+    def matching_result(input, start_position = 0)
+      MatchingResult.call(@ast, @bytecode, @pattern, @options, input, start_position)
     end
 
     def validate_pattern_syntax!(pattern, options)
@@ -172,8 +176,16 @@ module Onibi
       @dfa_specialization ||= DfaSpecialization.new(@ast)
     end
 
-    def match_details(input)
-      CaptureMatcher.new(@ast, @options).match_details(input)
+    def match_details(input, start_position = 0)
+      CaptureMatcher.new(@ast, @options).match_details(input, start_position)
+    end
+
+    def normalize_match_position(input, position)
+      position = position.to_int if position.respond_to?(:to_int)
+      raise TypeError, "no implicit conversion of #{position.class} into Integer" unless position.is_a?(Integer)
+
+      position += input.length if position.negative?
+      position
     end
 
     def match_data_arguments(details, input)

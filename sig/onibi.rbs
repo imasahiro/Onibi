@@ -31,8 +31,8 @@ module Onibi
                   | (String pattern, ?Integer options, ?timeout: Numeric?) -> void
                   | (::Regexp pattern, ?timeout: Numeric?) -> void
                   | (Regexp pattern, ?timeout: Numeric?) -> void
-    def match?: (String input) -> bool
-    def match: (String input) -> MatchData?
+    def match?: (String input, ?Numeric position) -> bool
+    def match: (String input, ?Numeric position) -> MatchData?
     def timeout: () -> Float?
     def =~: (String input) -> Integer?
     def ===: (String input) -> bool
