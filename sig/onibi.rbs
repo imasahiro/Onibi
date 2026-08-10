@@ -24,6 +24,9 @@ module Onibi
                   | (String pattern, Integer options) -> void
     def match?: (String input) -> bool
     def match: (String input) -> MatchData?
+    def =~: (String input) -> Integer?
+    def ===: (String input) -> bool
+    def ~: () -> Integer?
     def encoding: () -> Encoding
     def fixed_encoding?: () -> bool
     def options: () -> (Array[String] | Integer)
