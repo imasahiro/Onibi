@@ -55,6 +55,20 @@ class RegexpUtilityTest < Minitest::Test
     assert combined.match?("AB")
   end
 
+  def test_union_preserves_compiled_noencoding_option
+    regexp = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::NOENCODING))
+
+    assert_equal Onibi::Regexp::NOENCODING, regexp.options
+    assert_equal Encoding::US_ASCII, regexp.encoding
+  end
+
+  def test_union_preserves_compiled_fixed_encoding_option
+    regexp = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::FIXEDENCODING))
+
+    assert_equal Onibi::Regexp::FIXEDENCODING, regexp.options
+    assert_equal Encoding::UTF_8, regexp.encoding
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
