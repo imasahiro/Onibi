@@ -24,6 +24,10 @@ module Onibi
     end
 
     def escape_results(node, characters, position, captures)
+      if node.kind == :match_reset
+        @match_reset_position = position
+        return [[position, captures]]
+      end
       return zero_width_results(node.kind, characters, position, captures) if zero_width_escape?(node.kind)
       return linebreak_results(characters, position, captures) if node.kind == :linebreak
       return [] unless position < characters.length && escape_matches?(node.kind, characters[position])
@@ -83,13 +87,6 @@ module Onibi
       matches = !matches if kind == :not_word_boundary
       matches = position.zero? if kind == :start_match
       matches ? [[position, captures]] : []
-    end
-
-    def linebreak_results(characters, position, captures)
-      return [] unless position < characters.length && CharacterPredicates.linebreak?(characters[position])
-      return [[position + 2, captures]] if characters[position, 2] == ["\r", "\n"]
-
-      [[position + 1, captures]]
     end
 
     def any_results(_node, characters, position, captures)

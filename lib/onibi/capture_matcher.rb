@@ -7,6 +7,7 @@ module Onibi
     include CaptureMatcherAtoms
     include CaptureMatcherSubexpressions
     include CaptureMatcherAbsence
+    include CaptureMatcherLinebreaks
 
     LAZY_MATCHERS = {
       AST::Quantifier => :lazy_quantifier_node?,
@@ -26,10 +27,11 @@ module Onibi
       characters = input.chars
 
       (0..characters.length).each do |start|
+        @match_reset_position = nil
         captures = Array.new(@capture_count)
         results = match_results(@ast, characters, start, captures)
         result = (lazy_pattern? ? results.min_by(&:first) : results.max_by(&:first))
-        return [start, result[0], result[1]] if result
+        return [@match_reset_position || start, result[0], result[1]] if result
       end
 
       nil
