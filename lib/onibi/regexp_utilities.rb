@@ -3,12 +3,21 @@
 module Onibi
   # Provides class-level regexp construction helpers.
   module RegexpUtilities
+    ESCAPED_CONTROL_CHARACTERS = {
+      "\t" => "\\t", "\n" => "\\n", "\v" => "\\v", "\f" => "\\f", "\r" => "\\r"
+    }.freeze
+
     def escape(string)
       source = string.is_a?(Symbol) ? string.to_s : String.try_convert(string)
       raise TypeError, "no implicit conversion of #{string.class} into String" unless source
 
-      special = "\\.^$*+?{}[]()|# "
+      special = "\\.^$*+?{}[]()|-# "
       source.each_char.each_with_object(source.dup.clear) do |character, escaped|
+        control = ESCAPED_CONTROL_CHARACTERS[character]
+        if control
+          escaped << control
+          next
+        end
         escaped << "\\" if special.include?(character)
         escaped << character
       end
