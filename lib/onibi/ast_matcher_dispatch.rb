@@ -32,9 +32,21 @@ module Onibi
     end
 
     def assertion_positions(node, characters, position)
-      matched = !match_positions(node.body, characters, position).empty?
-      matched = !matched if node.kind == :negative
+      matched = assertion_matches?(node, characters, position)
+      matched = !matched if %i[negative negative_lookbehind].include?(node.kind)
       matched ? [position] : []
+    end
+
+    def assertion_matches?(node, characters, position)
+      return !match_positions(node.body, characters, position).empty? unless lookbehind?(node)
+
+      (0..position).any? do |start|
+        match_positions(node.body, characters, start).include?(position)
+      end
+    end
+
+    def lookbehind?(node)
+      %i[positive_lookbehind negative_lookbehind].include?(node.kind)
     end
 
     def any_positions(_node, characters, position)

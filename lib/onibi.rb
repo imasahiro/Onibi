@@ -93,7 +93,10 @@ module Onibi
     end
 
     def ast_matcher_required?
-      matcher_tokens = ["\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "*+", "++", "?+", "*?", "+?", "??"]
+      matcher_tokens = [
+        "\\R", "\\b", "\\B", "\\G", "\\p", "\\P", "(?=", "(?!", "(?<=", "(?<!",
+        "*+", "++", "?+", "*?", "+?", "??"
+      ]
       matcher_tokens.any? do |escape|
         @pattern.include?(escape)
       end

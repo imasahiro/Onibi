@@ -46,11 +46,18 @@ module Onibi
 
     def group_token(index)
       return [Lexer::Token.new(:open_non_capture, "?:", index), index + 3] if @source[index, 3] == "(?:"
-      return named_group_token(index) if @source[index, 3] == "(?<"
       return [Lexer::Token.new(:open_positive_lookahead, "?=", index), index + 3] if @source[index, 3] == "(?="
       return [Lexer::Token.new(:open_negative_lookahead, "?!", index), index + 3] if @source[index, 3] == "(?!"
+      return lookbehind_token(index) if @source[index, 3] == "(?<"
 
       [Lexer::Token.new(:open_group, "(", index), index + 1]
+    end
+
+    def lookbehind_token(index)
+      return [Lexer::Token.new(:open_positive_lookbehind, "?<=", index), index + 4] if @source[index, 4] == "(?<="
+      return [Lexer::Token.new(:open_negative_lookbehind, "?<!", index), index + 4] if @source[index, 4] == "(?<!"
+
+      named_group_token(index)
     end
 
     def named_group_token(index)

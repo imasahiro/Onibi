@@ -8,6 +8,7 @@ module Onibi
     GROUP_OPENINGS = %i[
       open_group open_non_capture open_named_group
       open_positive_lookahead open_negative_lookahead
+      open_positive_lookbehind open_negative_lookbehind
     ].freeze
     def initialize(source)
       @tokens = Lexer.new(source).tokens
@@ -59,7 +60,7 @@ module Onibi
 
     def parse_group
       opening = consume
-      return parse_assertion(opening) if opening.type.to_s.include?("lookahead")
+      return parse_assertion(opening) if opening.type.to_s.include?("look")
 
       capture = opening.type != :open_non_capture
       @group_number += 1 if capture
