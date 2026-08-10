@@ -7,6 +7,7 @@ module Onibi
     include ParserQuantifiers
     GROUP_OPENINGS = %i[
       open_group open_non_capture open_named_group open_atomic open_conditional open_absence
+      open_option_group
       open_positive_lookahead open_negative_lookahead
       open_positive_lookbehind open_negative_lookbehind
     ].freeze
@@ -64,6 +65,7 @@ module Onibi
       return parse_atomic_group if opening.type == :open_atomic
       return parse_conditional(opening) if opening.type == :open_conditional
       return parse_absence(opening) if opening.type == :open_absence
+      return parse_option_group(opening) if opening.type == :open_option_group
 
       parse_capture_group(opening)
     end
@@ -96,6 +98,12 @@ module Onibi
       body = parse_alternation
       expect(:close_group)
       AST::Absence.new(body)
+    end
+
+    def parse_option_group(opening)
+      body = parse_alternation
+      expect(:close_group)
+      AST::OptionGroup.new(body, opening.value)
     end
 
     def current_token

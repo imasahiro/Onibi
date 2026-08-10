@@ -19,6 +19,14 @@ module Onibi
       [[position + 1, captures]]
     end
 
+    def option_group_results(node, characters, position, captures)
+      original = @ignorecase
+      @ignorecase = node.ignorecase
+      match_results(node.body, characters, position, captures)
+    ensure
+      @ignorecase = original
+    end
+
     def class_matches?(source, character)
       ClassPredicates.matches?(source, character)
     end

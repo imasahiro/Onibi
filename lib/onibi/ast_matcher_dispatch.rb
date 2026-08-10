@@ -7,6 +7,7 @@ module Onibi
       AST::Sequence => :sequence_node_positions,
       AST::Alternation => :alternation_positions,
       AST::Group => :group_positions,
+      AST::OptionGroup => :option_group_positions,
       AST::AtomicGroup => :atomic_group_positions,
       AST::Conditional => :conditional_positions,
       AST::Assertion => :assertion_positions,

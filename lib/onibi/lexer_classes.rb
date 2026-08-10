@@ -52,6 +52,7 @@ module Onibi
 
     def special_group_token(index)
       return comment_token(index) if comment_group_start?(index)
+      return option_group_token(index) if option_group_start?(index)
       return group_prefix_token(index) if absence_group_start?(index) || conditional_group_start?(index)
 
       simple_token = simple_group_token(index)
@@ -59,6 +60,16 @@ module Onibi
       return lookbehind_token(index) if @source[index, 3] == "(?<"
 
       raise RegexpError, "unknown group extension"
+    end
+
+    def option_group_start?(index)
+      @source[index, 4] == "(?i:" || @source[index, 5] == "(?-i:"
+    end
+
+    def option_group_token(index)
+      return [Lexer::Token.new(:open_option_group, true, index), index + 4] if @source[index, 4] == "(?i:"
+
+      [Lexer::Token.new(:open_option_group, false, index), index + 5]
     end
 
     def simple_group_token(index)

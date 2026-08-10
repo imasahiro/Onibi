@@ -75,6 +75,14 @@ module Onibi
       [position + 1]
     end
 
+    def option_group_positions(node, characters, position)
+      original = @ignorecase
+      @ignorecase = node.ignorecase
+      match_positions(node.body, characters, position)
+    ensure
+      @ignorecase = original
+    end
+
     def class_matches?(source, character)
       ClassPredicates.matches?(source, character)
     end
