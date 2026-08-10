@@ -91,7 +91,8 @@ module Onibi
     def property_positions(node, characters, position)
       return [] unless position < characters.length
 
-      matched = UnicodeProperties.matches?(node.name, characters[position]) ^ node.negated
+      character = characters[position].encode(Encoding::UTF_8)
+      matched = UnicodeProperties.matches?(node.name, character) ^ node.negated
       matched ? [position + 1] : []
     end
 
