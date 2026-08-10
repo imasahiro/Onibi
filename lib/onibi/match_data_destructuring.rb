@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Pattern-matching protocol for MatchData values.
   module MatchDataDestructuring
     def deconstruct
       to_a
