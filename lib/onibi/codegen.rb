@@ -250,7 +250,7 @@ module Onibi
         escaped_value = value.dump
         length = value.length
         <<~RUBY
-          def self.__onibi_search(input, position, capture)
+          def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
             return false unless input[position, #{length}] == #{escaped_value}
 
@@ -448,7 +448,7 @@ module Onibi
         collect_groups(ast)
         body = emit_node(ast, "position")
         <<~RUBY
-          def self.__onibi_search(input, position, capture)
+          def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
             captures = []
             result = #{body}
@@ -522,7 +522,8 @@ module Onibi
           predicate = "!(#{predicate})" if node.kind == :not_word_boundary
           return "(#{predicate} ? #{cursor} : nil)"
         end
-        return cursor.to_s if %i[start_match match_reset].include?(node.kind)
+        return "(#{cursor} == search_origin ? #{cursor} : nil)" if node.kind == :start_match
+        return cursor.to_s if node.kind == :match_reset
 
         if %i[digit not_digit space not_space word not_word horizontal_space not_horizontal_space].include?(node.kind)
           predicate = "Onibi::CharacterPredicates.escape_matches?(#{node.kind.inspect}, input[#{cursor}])"
@@ -531,7 +532,7 @@ module Onibi
 
         if node.kind == :linebreak
           predicate = "Onibi::CharacterPredicates.linebreak?(input[#{cursor}])"
-          return "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+          return "(input[#{cursor}, 2] == \"\\r\\n\" ? #{cursor} + 2 : (#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil))"
         end
 
         "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
@@ -583,7 +584,7 @@ module Onibi
       def search(input, position, capture:)
         candidate = position
         while candidate <= input.length
-          result = compiled_module.__send__(entrypoint, input, candidate, capture)
+          result = compiled_module.__send__(entrypoint, input, candidate, capture, position)
           return result if result
 
           candidate += 1
