@@ -248,7 +248,7 @@ Keep legacy as the production default. Route the complete public API suite, incl
 
 ## Phase 5 — Pre-cutover whole-product validation
 
-### CODEGEN-020 — Complete security, fuzz, and property gates
+### CODEGEN-020 [Complete] — Complete security, fuzz, and property gates
 
 Fuzz lexer/parser/codegen boundaries with hostile source strings and bounded random AST/input pairs while codegen remains explicitly selected. Add source-policy checks and memory/stack invariants. Reduce failures to regressions.
 

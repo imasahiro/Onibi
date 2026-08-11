@@ -212,6 +212,8 @@ module Onibi
       def compile(source, filename: "(onibi-generated)")
         raise TypeError, "generated source must be a String" unless source.is_a?(String)
 
+        Security.validate_source!(source)
+
         module_object = Module.new
         module_object.module_eval(source, filename, 1)
         return module_object if module_object.respond_to?(SourceCompiler::ENTRYPOINT)
@@ -577,6 +579,17 @@ module Onibi
         return true if @steps <= @limit && (!@deadline || Process.clock_gettime(Process::CLOCK_MONOTONIC) < @deadline)
 
         raise Regexp::TimeoutError, "regexp match timeout"
+      end
+    end
+
+    module Security
+      FORBIDDEN_SOURCE = /RubyVM|InstructionSequence|`|\beval\b|\bsystem\b/.freeze
+
+      def self.validate_source!(source, max_bytes: 1_000_000)
+        raise CodegenError, "generated source exceeds source_bytes limit" if source.bytesize > max_bytes
+        raise CodegenError, "generated source contains forbidden operation" if source.match?(FORBIDDEN_SOURCE)
+
+        source
       end
     end
   end
