@@ -123,7 +123,11 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      return codegen_match(input, position) if self.class.codegen_default
+      if self.class.codegen_default
+        generated_match = codegen_match(input, position)
+        dfa_specialization
+        return generated_match
+      end
 
       return legacy_match(input, position)
     end

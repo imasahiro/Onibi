@@ -20,6 +20,17 @@ module Onibi
           position + length
         end
       end
+
+      def class_candidates(input, position, source, ignorecase)
+        result = []
+        character = input[position]
+        result << position + 1 if character && ClassPredicates.matches?(source, character, ignorecase: ignorecase)
+        if ignorecase && source.include?("ß")
+          folded = input[position, 2]
+          result << position + 2 if folded && folded.upcase == "SS"
+        end
+        result
+      end
     end
 
     Width = Struct.new(:minimum, :maximum, :finite, :nullable, keyword_init: true) do
@@ -364,8 +375,12 @@ module Onibi
       end
 
       def emit_absence(node, cursor)
-        body = emit_node(node.body, cursor)
-        "(#{body}.nil? ? #{cursor} : nil)"
+        probe = fresh_cursor
+        occurrence = fresh_cursor
+        body = emit_node(node.body, probe)
+        <<~EXPRESSION.strip
+          (begin #{probe} = 0; #{occurrence} = nil; while #{probe} < input.length; candidate = #{body}; if candidate && candidate > #{cursor}; #{occurrence} = #{probe} >= #{cursor} ? candidate - 1 : candidate; break; end; #{probe} += 1; end; #{occurrence} || input.length; end)
+        EXPRESSION
       end
     end
 
@@ -404,8 +419,8 @@ module Onibi
         ignorecase = @options.include?("ignorecase")
         value = node.value.dump
         value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
-        predicate = "Onibi::ClassPredicates.matches?(#{value}, input[#{cursor}], ignorecase: #{ignorecase})"
-        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+        candidates = "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{value}, #{ignorecase})"
+        "(#{candidates}.first || nil)"
       end
 
       def emit_property(node, cursor)
