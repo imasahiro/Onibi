@@ -55,6 +55,11 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     assert_includes document, "timeout/resource control の v1 scope"
     assert_includes document, "### REGEXP-012 [Complete]"
     assert_includes document, "MatchData integration の v1 scope"
+  end
+
+  def test_coverage_document_records_scan_gsub_scope
+    document = File.read(DOCUMENT_PATH)
+
     assert_includes document, "### REGEXP-013 [Complete]"
     assert_includes document, "Onibi::Regexp#scan / #gsub"
   end

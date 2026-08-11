@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Provides opt-in scan and gsub operations for Onibi::Regexp.
   module RegexpScanGsub
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
@@ -15,21 +16,15 @@ module Onibi
       values
     end
 
-    def gsub(input, replacement = UNDEFINED_REPLACEMENT)
-      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
-      if replacement.equal?(UNDEFINED_REPLACEMENT) && !block_given?
-        raise ArgumentError, "wrong number of arguments (given 1, expected 2)"
-      end
-
-      replacement = replacement.to_str if replacement.respond_to?(:to_str)
-      validate_replacement_type!(replacement) unless block_given? || replacement.equal?(UNDEFINED_REPLACEMENT)
+    def gsub(input, replacement = UNDEFINED_REPLACEMENT, &block)
+      validate_gsub_input!(input)
+      replacement = normalize_replacement(replacement, block_given?)
       result = String.new(encoding: input.encoding)
       cursor = 0
 
       each_match(input) do |match|
         result << input[cursor...match.begin(0)]
-        result << replacement_for(match, input, replacement) { yield match[0] } if block_given?
-        result << replacement_for(match, input, replacement) unless block_given?
+        result << replacement_for(match, input, replacement, &block)
         cursor = match.end(0)
       end
       result << input[cursor..] if cursor < input.length
@@ -56,14 +51,32 @@ module Onibi
       match.length == 1 ? match[0] : match.captures
     end
 
+    def validate_gsub_input!(input)
+      return if input.is_a?(String)
+
+      raise TypeError, "no implicit conversion of #{input.class} into String"
+    end
+
+    def normalize_replacement(replacement, with_block)
+      if replacement.equal?(UNDEFINED_REPLACEMENT)
+        raise ArgumentError, "wrong number of arguments (given 1, expected 2)" unless with_block
+
+        return replacement
+      end
+
+      replacement = replacement.to_str if replacement.respond_to?(:to_str)
+      validate_replacement_type!(replacement) unless with_block
+      replacement
+    end
+
     def validate_replacement_type!(replacement)
       return if replacement.is_a?(String)
 
       raise TypeError, "no implicit conversion of #{replacement.class} into String"
     end
 
-    def replacement_for(match, input, replacement)
-      return String(yield) if block_given?
+    def replacement_for(match, input, replacement, &block)
+      return String(block.call(match[0])) if block
 
       expand_replacement(match, input, replacement)
     end
@@ -72,18 +85,18 @@ module Onibi
       result = String.new
       index = 0
       while index < replacement.length
-        character = replacement[index]
-        unless character == "\\"
-          result << character
-          index += 1
-          next
-        end
-
-        token, consumed = replacement_token(replacement, index + 1)
-        result << replacement_value(token, match, input)
-        index += consumed + 1
+        piece, consumed = replacement_piece(replacement, index, match, input)
+        result << piece
+        index += consumed
       end
       result
+    end
+
+    def replacement_piece(replacement, index, match, input)
+      return [replacement[index], 1] unless replacement[index] == "\\"
+
+      token, consumed = replacement_token(replacement, index + 1)
+      [replacement_value(token, match, input), consumed + 1]
     end
 
     def replacement_token(replacement, index)
@@ -98,14 +111,19 @@ module Onibi
     end
 
     def replacement_value(token, match, input)
-      return match[0] if token == "0" || token == "&"
-      return "\\" if token == "\\"
-      return input[0...match.begin(0)] if token == "`"
-      return input[match.end(0)..] || "" if token == "'"
-      return match.captures.compact.last.to_s if token == "+"
-      return match[token[2...-1]] if token.start_with?("k<")
+      case token
+      when "0", "&" then match[0]
+      when "\\" then "\\"
+      when "`" then input[0...match.begin(0)]
+      when "'" then input[match.end(0)..] || ""
+      when "+" then match.captures.compact.last.to_s
+      else named_or_numbered_replacement(token, match)
+      end
+    end
 
-      return match[token.to_i].to_s if token >= "0" && token <= "9"
+    def named_or_numbered_replacement(token, match)
+      return match[token[2...-1]] if token.start_with?("k<")
+      return match[token.to_i].to_s if ("0".."9").include?(token)
 
       "\\#{token}"
     end

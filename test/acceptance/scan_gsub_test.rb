@@ -41,6 +41,9 @@ class ScanGsubTest < Minitest::Test
       assert_equal expected, Onibi::Regexp.new(pattern).gsub(input, replacement), pattern
     end
 
+  end
+
+  def test_gsub_matches_mri_replacement_context_tokens
     replacement = "\\1-\\2-\\+-\\&-\\0-\\`-\\'-\\\\"
     expected = "a".gsub(/(a)(b)?/, replacement)
 
