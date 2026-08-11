@@ -264,7 +264,7 @@ Stress concurrent calls on a shared regexp and probe object-graph shareability o
 
 **Dependencies:** CODEGEN-019.
 
-### CODEGEN-022 — Complete the migration encoding matrix
+### CODEGEN-022 [Complete] — Complete the migration encoding matrix
 
 Implement `InputView`, case-fold, compatibility, invalid-sequence, character-offset, and byte-offset behavior for every encoding in the recorded migration baseline: UTF-8, US-ASCII, ASCII-8BIT, EUC-JP, and Windows-31J. Record remaining Onigumo encodings as the canonical v1 expansion goal rather than silently claiming them.
 
