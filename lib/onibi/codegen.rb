@@ -279,8 +279,9 @@ module Onibi
         return emit_node(node.body, cursor) unless node.capture
 
         result = fresh_cursor
+        previous_capture = fresh_cursor
         <<~EXPRESSION.strip
-          (begin captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures[#{node.number - 1}] = nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end)
+          (begin #{previous_capture} = captures[#{node.number - 1}]; captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures[#{node.number - 1}] = #{previous_capture}; nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end)
         EXPRESSION
       end
     end
@@ -321,12 +322,18 @@ module Onibi
         counter = fresh_cursor
         result = fresh_cursor
         previous = fresh_cursor
-        maximum = node.maximum || "input.length + 1"
+        maximum = quantifier_maximum(node)
         body = emit_node(node.expression, result)
         greedy_exit = node.mode == :lazy ? "break if #{counter} >= #{node.minimum}" : ""
         <<~EXPRESSION.strip
           (begin #{result} = #{cursor}; #{counter} = 0; while #{counter} < #{maximum}; #{previous} = #{result}; #{result} = #{body}; if #{result}.nil?; #{result} = #{previous}; break; end; #{counter} += 1; break if #{result} == #{previous}; #{greedy_exit}; end; #{counter} >= #{node.minimum} ? #{result} : nil; end)
         EXPRESSION
+      end
+
+      def quantifier_maximum(node)
+        return [node.maximum - 1, node.minimum].max if node.mode == :possessive && node.maximum
+
+        node.maximum || "input.length + 1"
       end
     end
 
@@ -678,7 +685,7 @@ module Onibi
 
     # Validates generated source before it reaches the Ruby parser.
     module Security
-      FORBIDDEN_SOURCE = /RubyVM|InstructionSequence|`|\beval\b|\bsystem\b/.freeze
+      FORBIDDEN_SOURCE = /RubyVM|InstructionSequence|`|\beval\b|\bsystem\b/
 
       def self.validate_source!(source, max_bytes: 1_000_000)
         raise CodegenError, "generated source exceeds source_bytes limit" if source.bytesize > max_bytes
