@@ -1,0 +1,38 @@
+cases:
+  - { feature: literals, name: literal-search, encoding: ascii, pattern: "needle", input: "prefix-needle-suffix" }
+  - { feature: dot, name: wildcard, encoding: ascii, pattern: "a.c", input: "prefix-abc-suffix" }
+  - { feature: character_classes, name: range, encoding: ascii, pattern: "[a-z]+[0-9]+", input: "token-abc123-end" }
+  - { feature: character_classes, name: intersection, encoding: ascii, pattern: "[a-z&&[^aeiou]]+", input: "aei-bcdfg-ou" }
+  - { feature: shorthand_classes, name: word-space-digit, encoding: ascii, pattern: "\\w+\\s+\\d+", input: "item 2026" }
+  - { feature: posix_classes, name: alpha-digit, encoding: ascii, pattern: "[[:alpha:]]+[[:digit:]]+", input: "item2026" }
+  - { feature: anchors, name: string-anchors, encoding: ascii, pattern: "\\A[a-z]+\\z", input: "anchored" }
+  - { feature: boundaries, name: word-boundary, encoding: ascii, pattern: "\\bcat\\b", input: "a cat naps" }
+  - { feature: alternation, name: alternatives, encoding: ascii, pattern: "cat|dog|fox", input: "the quick fox" }
+  - { feature: greedy_quantifier, name: greedy-star, encoding: ascii, pattern: "a.*z", input: "a-middle-middle-z" }
+  - { feature: greedy_quantifier, name: bounded-repeat, encoding: ascii, pattern: "a{4,12}", input: "baaaaaaaac" }
+  - { feature: lazy_quantifier, name: lazy-star, encoding: ascii, pattern: "a.*?z", input: "a-first-z-second-z" }
+  - { feature: possessive_quantifier, name: possessive-plus, encoding: ascii, pattern: "a++b", input: "aaaaab" }
+  - { feature: captures, name: numbered-captures, encoding: ascii, pattern: "([a-z]+)-([0-9]+)", input: "item-2026" }
+  - { feature: named_captures, name: named-capture, encoding: ascii, pattern: "(?<word>[a-z]+)-(?<id>[0-9]+)", input: "item-2026" }
+  - { feature: backreference, name: numbered-backreference, encoding: ascii, pattern: "([a-z]+)-\\1", input: "echo-echo" }
+  - { feature: lookahead, name: positive-lookahead, encoding: ascii, pattern: "[a-z]+(?=-[0-9]+)", input: "item-2026" }
+  - { feature: lookahead, name: negative-lookahead, encoding: ascii, pattern: "cat(?!fish)", input: "a cat naps" }
+  - { feature: lookbehind, name: positive-lookbehind, encoding: ascii, pattern: "(?<=pre)fix", input: "prefix" }
+  - { feature: lookbehind, name: negative-lookbehind, encoding: ascii, pattern: "(?<!un)happy", input: "very happy" }
+  - { feature: atomic_group, name: atomic-alternation, encoding: ascii, pattern: "(?>a|ab)b", input: "ab" }
+  - { feature: conditional, name: capture-conditional, encoding: ascii, pattern: "(a)?(?(1)b|c)", input: "ab" }
+  - { feature: subexpression_call, name: named-call, encoding: ascii, pattern: "(?<pair>ab)\\g<pair>", input: "abab" }
+  - { feature: absence_operator, name: forbidden-text, encoding: ascii, pattern: "(?~END)", input: "payloadEND" }
+  - { feature: match_reset, name: reset-prefix, encoding: ascii, pattern: "prefix\\Ksuffix", input: "prefixsuffix" }
+  - { feature: options, name: ignore-case, encoding: ascii, pattern: "case", input: "CASE", options: [ignorecase] }
+  - { feature: options, name: multiline-dot, encoding: ascii, pattern: "a.b", input: "a\nb", options: [multiline] }
+  - { feature: options, name: extended-mode, encoding: ascii, pattern: "a b # ignored\n c", input: "abc", options: [extended] }
+  - { feature: unicode_properties, name: ascii-property, encoding: ascii, pattern: "\\p{Alpha}+", input: "letters" }
+  - { feature: literals, name: unicode-literal, encoding: utf8, pattern: "こんにちは", input: "挨拶はこんにちはです" }
+  - { feature: character_classes, name: unicode-range, encoding: utf8, pattern: "[ぁ-ん]+", input: "文字列ひらがな終端" }
+  - { feature: greedy_quantifier, name: unicode-repeat, encoding: utf8, pattern: "(?:日本語)+", input: "開始日本語日本語終了" }
+  - { feature: captures, name: unicode-capture, encoding: utf8, pattern: "(こんにちは)(世界)", input: "挨拶こんにちは世界です" }
+  - { feature: options, name: unicode-ignore-case, encoding: utf8, pattern: "école", input: "ÉCOLE", options: [ignorecase] }
+  - { feature: unicode_properties, name: hiragana-property, encoding: utf8, pattern: "\\p{Hiragana}+", input: "漢字ひらがな漢字" }
+  - { feature: unicode_properties, name: letter-property, encoding: utf8, pattern: "\\p{Letter}+", input: "123日本語456" }
+  - { feature: posix_classes, name: unicode-word, encoding: utf8, pattern: "[[:word:]]+", input: "記号-日本語_2026-終端" }

@@ -76,7 +76,27 @@ String/Symbol implicit regexp integration, regex-literal encoding modes, JSON
 extensions, or comprehensive ReDoS controls. These are outside the v1 opt-in
 contract; see the [design document](docs/onibi-design.md) for the full scope.
 
-## Regex Redux benchmark
+## Benchmarks
+
+Run pairwise `benchmark-ips` microbenchmarks for Ruby `Regexp` and Onibi. The
+checked-in corpus covers ASCII and UTF-8 patterns across literals, character
+classes, anchors, quantifiers, captures, references, lookarounds, advanced
+groups, options, and Unicode properties:
+
+```sh
+bundle exec ruby benchmark/regexp_features.rb --list
+bundle exec ruby benchmark/regexp_features.rb --feature character_classes
+bundle exec ruby benchmark/regexp_features.rb --encoding utf8 --operation all
+```
+
+The default operation is warm `match?`. Use `--operation compile` to isolate
+compilation, `--operation first_match` to compile and immediately match, or
+`--operation all` to run all three. Measurement defaults to 1 second with a
+0.5 second warmup per Ruby/Onibi pair; `--time` and `--warmup` override those
+values. Each fixture is also an acceptance test that checks Ruby and Onibi
+produce the same boolean result before it is used as regression data.
+
+### Regex Redux
 
 Run the benchmark workload with either regular expression implementation:
 
