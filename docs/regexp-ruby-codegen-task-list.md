@@ -256,7 +256,7 @@ Fuzz lexer/parser/codegen boundaries with hostile source strings and bounded ran
 
 **Dependencies:** CODEGEN-019.
 
-### CODEGEN-021 — Validate concurrency, Ractor contract, and supported hosts
+### CODEGEN-021 [Complete] — Validate concurrency, Ractor contract, and supported hosts
 
 Stress concurrent calls on a shared regexp and probe object-graph shareability on Ruby 4.0. Select either shared-regexp Ractor support or documented per-Ractor construction based on evidence. Re-run source compilation and the complete generated smoke corpus on MRI, JRuby, TruffleRuby, and the CODEGEN-004-selected mruby build.
 
