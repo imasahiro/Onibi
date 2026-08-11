@@ -119,7 +119,7 @@ form and compares source, options, formatting, equality, and exceptions with MRI
 timeout and class-default changes produce the expected result through copy and override
 cases.
 
-### V1-006 — Complete MatchData observable values and error compatibility
+### V1-006 — Complete MatchData observable values and error compatibility [Complete]
 
 - Priority: P1
 - Dependencies: V1-003, V1-004, V1-005

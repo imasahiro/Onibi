@@ -9,13 +9,10 @@ class V1MatchDataContractTest < Minitest::Test
     expected = ::Regexp.new(source).match(input)
     actual = Onibi::Regexp.new(source).match(input)
 
-    assert_equal expected.to_a, actual.to_a
-    assert_equal expected.captures, actual.captures
-    assert_equal expected.names, actual.names
-    assert_equal expected.named_captures, actual.named_captures
+    %i[to_a captures names named_captures pre_match post_match].each do |method|
+      assert_equal expected.public_send(method), actual.public_send(method)
+    end
     expected.length.times { |index| assert_equal expected.offset(index), actual.offset(index) }
-    assert_equal expected.pre_match, actual.pre_match
-    assert_equal expected.post_match, actual.post_match
   end
 
   def test_duplicate_named_captures_resolve_like_mri
