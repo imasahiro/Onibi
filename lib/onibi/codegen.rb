@@ -329,6 +329,17 @@ module Onibi
     module QuantifierEmitter
       private
 
+      def emit_quantifier_with_remainder(node, remainder, cursor)
+        variables = Array.new(7) { fresh_cursor }
+        counter, result, previous, candidates, candidate, final, original = variables
+        body = emit_node(node.expression, result)
+        suffix = emit_sequence_parts(remainder, "#{candidate}[0]")
+        candidate_order = node.mode == :lazy ? candidates : "#{candidates}.reverse_each"
+        <<~EXPRESSION.strip
+          (begin #{original} = captures.map { |item| item&.dup }; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, captures.map { |item| item&.dup }] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, captures.map { |item| item&.dup }] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| captures.replace(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; captures.replace(#{original}) if #{final}.nil?; #{final}; end)
+        EXPRESSION
+      end
+
       def emit_quantifier(node, cursor)
         counter = fresh_cursor
         result = fresh_cursor
@@ -508,7 +519,7 @@ module Onibi
         <<~RUBY
           def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
-            captures = []
+            captures = Array.new(#{capture_count})
             match_start = position
             result = #{body}
             result.nil? ? false : (capture ? [match_start, result, captures] : true)
@@ -525,6 +536,10 @@ module Onibi
         @groups[value.number] = value if value.is_a?(AST::Group) && value.number
         @groups[value.name] = value if value.is_a?(AST::Group) && value.name
         value.each { |child| collect_groups(child) }
+      end
+
+      def capture_count
+        @groups.keys.grep(Integer).max || 0
       end
 
       def emit_node(node, cursor)
@@ -555,11 +570,17 @@ module Onibi
 
       def emit_sequence_parts(parts, cursor)
         return cursor if parts.empty?
+        return emit_quantifier_with_remainder(parts.first, parts.drop(1), cursor) if backtracking_quantifier?(parts)
 
         next_cursor = fresh_cursor
         expression = emit_node(parts.first, cursor)
         remainder = emit_sequence_parts(parts.drop(1), next_cursor)
         "(#{next_cursor} = #{expression}; #{next_cursor}.nil? ? nil : #{remainder})"
+      end
+
+      def backtracking_quantifier?(parts)
+        parts.length > 1 && parts.first.is_a?(AST::Quantifier) &&
+          !%i[possessive possessive_bounded].include?(parts.first.mode)
       end
 
       def emit_alternation(node, cursor)

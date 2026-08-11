@@ -18,4 +18,18 @@ class RubyCodegenQuantifierTest < Minitest::Test
 
     assert_equal true, program.search("", 0, capture: false)
   end
+
+  def test_greedy_quantifier_backtracks_for_a_following_literal
+    ast = Onibi::Parser.new("a.*z").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_equal true, program.search("a-middle-z", 0, capture: false)
+  end
+
+  def test_zero_repeat_keeps_the_unmatched_capture_slot
+    ast = Onibi::Parser.new("(a)?c").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_equal [0, 1, [nil]], program.search("c", 0, capture: true)
+  end
 end
