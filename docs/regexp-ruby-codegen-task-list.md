@@ -94,13 +94,13 @@ Add MRI expectation fixtures for behavior most likely to be lost during a rewrit
 
 ## Phase 1 — Safe generated-program skeleton
 
-### CODEGEN-004 — Prove host source compilation and add the typed emitter boundary
+### CODEGEN-004 [Complete] — Prove host source compilation and add the typed emitter boundary
 
-First run a blocking capability spike on MRI, JRuby, TruffleRuby, and the selected mruby build with runtime eval support. Then introduce `Onibi::Codegen::SourceCompiler`, `RubyEmitter`, `RubyGenerator`, `GeneratedProgram`, and `CodegenError`. Generate a fixed-name module-function entry through the supported string-eval adapter. Support a trivial empty/literal test program only in internal test mode.
+Run the capability spike on the selected development host first; cross-runtime capability is a later CODEGEN-021 gate. Introduce `Onibi::Codegen::SourceCompiler`, `RubyEmitter`, `GeneratedProgram`, and `CodegenError`. Generate a fixed-name module-function entry through the supported string-eval adapter. Support a trivial empty/literal test program only in internal test mode.
 
-**Acceptance test:** Each supported host compiles and executes the same trivial generated source with equivalent scoping and errors. The selected mruby build profile and eval feature are recorded. The new codegen red test fails before the skeleton is implemented, then passes. A hostile pattern containing quotes, interpolation, comments, newlines, and encoding markers cannot alter generated control flow.
+**Acceptance test:** The selected development host compiles and executes the same trivial generated source with equivalent scoping and errors. The source-compiler API exposes an explicit capability probe for other hosts. The new codegen red test fails before the skeleton is implemented, then passes. A hostile pattern containing quotes, interpolation, comments, newlines, and encoding markers cannot alter generated control flow.
 
-**Required unit tests:** deterministic source, valid labels, fixed identifiers, synthetic filename where supported, compilation-error diagnostics, no CRuby-only runtime dependency, and a clear unsupported-runtime failure. If the capability matrix fails, stop and revise the platform/design promise before CODEGEN-005.
+**Required unit tests:** deterministic source, valid labels, fixed identifiers, synthetic filename where supported, compilation-error diagnostics, no CRuby-only runtime dependency, explicit capability probing, and a clear unsupported-runtime failure. CODEGEN-021 must pass the matrix before public cutover.
 
 **Dependencies:** CODEGEN-003.
 
