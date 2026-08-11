@@ -6,6 +6,21 @@ module Onibi
   end
 
   module Codegen
+    module Casefold
+      module_function
+
+      def literal_candidates(input, position, value)
+        maximum = [value.length * 2, value.length].max
+        (value.length..maximum).filter_map do |length|
+          candidate = input[position, length]
+          next unless candidate
+          next unless candidate.downcase == value.downcase || candidate.upcase == value.upcase
+
+          position + length
+        end
+      end
+    end
+
     Width = Struct.new(:minimum, :maximum, :finite, :nullable, keyword_init: true) do
       def initialize(**kwargs)
         super
@@ -418,7 +433,7 @@ module Onibi
             return false unless input.is_a?(String)
             captures = []
             result = #{body}
-            result.nil? ? false : (capture ? [position, result, captures.compact] : true)
+            result.nil? ? false : (capture ? [position, result, captures] : true)
           end
         RUBY
       end
@@ -444,11 +459,15 @@ module Onibi
       def emit_literal(node, cursor)
         value = node.value.dump
         comparison = if @options.include?("ignorecase")
-                       "input[#{cursor}, #{node.value.length}].casecmp?(#{value})"
+                       "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{value}).first"
                      else
                        "input[#{cursor}, #{node.value.length}] == #{value}"
                      end
-        "(#{comparison} ? #{cursor} + #{node.value.length} : nil)"
+        if @options.include?("ignorecase")
+          "(#{comparison} || nil)"
+        else
+          "(#{comparison} ? #{cursor} + #{node.value.length} : nil)"
+        end
       end
 
       def emit_sequence(node, cursor)
@@ -473,7 +492,7 @@ module Onibi
       end
 
       def emit_any(node, cursor)
-        condition = node.value == :dot && !@options.include?("multiline") ? "input[#{cursor}] != \"\\n\"" : "true"
+        condition = node.value == "." && !@options.include?("multiline") ? "input[#{cursor}] != \"\\n\"" : "true"
         "(#{cursor} < input.length && #{condition} ? #{cursor} + 1 : nil)"
       end
 
@@ -495,15 +514,31 @@ module Onibi
         end
         return cursor.to_s if %i[start_match match_reset].include?(node.kind)
 
+        if %i[digit not_digit space not_space word not_word horizontal_space not_horizontal_space].include?(node.kind)
+          predicate = "Onibi::CharacterPredicates.escape_matches?(#{node.kind.inspect}, input[#{cursor}])"
+          return "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+        end
+
+        if node.kind == :linebreak
+          predicate = "Onibi::CharacterPredicates.linebreak?(input[#{cursor}])"
+          return "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+        end
+
         "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
       end
 
       def emit_option_group(node, cursor)
         scoped_options = @options.dup
-        scoped_options << "ignorecase" if node.ignorecase
-        scoped_options << "multiline" if node.multiline
-        scoped_options << "extended" if node.extended
+        scoped_options = toggle_option(scoped_options, "ignorecase", node.ignorecase)
+        scoped_options = toggle_option(scoped_options, "multiline", node.multiline)
+        scoped_options = toggle_option(scoped_options, "extended", node.extended)
         AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
+      end
+
+      def toggle_option(options, name, value)
+        return options unless value == true || value == false
+
+        value ? (options | [name]) : (options - [name])
       end
 
       def emit_atomic_group(node, cursor)
@@ -536,7 +571,14 @@ module Onibi
       end
 
       def search(input, position, capture:)
-        compiled_module.__send__(entrypoint, input, position, capture)
+        candidate = position
+        while candidate <= input.length
+          result = compiled_module.__send__(entrypoint, input, candidate, capture)
+          return result if result
+
+          candidate += 1
+        end
+        false
       end
     end
 
@@ -550,7 +592,8 @@ module Onibi
         full_match = characters[start...finish].join
         captures = capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
         offsets = [[start, finish]] + capture_offsets
-        MatchData.new(full_match, captures, offsets, names, MatchData::Context.new(input, regexp))
+        normalized_names = names.transform_values { |value| Array(value).last }
+        MatchData.new(full_match, captures, offsets, normalized_names, MatchData::Context.new(input, regexp))
       end
     end
 
