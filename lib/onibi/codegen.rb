@@ -6,6 +6,7 @@ module Onibi
   end
 
   module Codegen
+    # Computes Ruby-compatible simple and full-fold literal candidates.
     module Casefold
       module_function
 
@@ -392,6 +393,23 @@ module Onibi
       end
     end
 
+    # Emits character class and Unicode property predicates.
+    module PredicateEmitter
+      private
+
+      def emit_class(node, cursor)
+        ignorecase = @options.include?("ignorecase")
+        predicate = "Onibi::ClassPredicates.matches?(#{node.value.dump}, input[#{cursor}], ignorecase: #{ignorecase})"
+        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_property(node, cursor)
+        predicate = "Onibi::UnicodeProperties.matches?(#{node.name.dump}, input[#{cursor}])"
+        predicate = "!(#{predicate})" if node.negated
+        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
@@ -399,6 +417,7 @@ module Onibi
       include QuantifierEmitter
       include NonRegularEmitter
       include AnchorEmitter
+      include PredicateEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -495,16 +514,6 @@ module Onibi
       def emit_any(node, cursor)
         condition = node.value == "." && !@options.include?("multiline") ? "input[#{cursor}] != \"\\n\"" : "true"
         "(#{cursor} < input.length && #{condition} ? #{cursor} + 1 : nil)"
-      end
-
-      def emit_class(node, cursor)
-        predicate = "Onibi::ClassPredicates.matches?(#{node.value.dump}, input[#{cursor}])"
-        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
-      end
-
-      def emit_property(node, cursor)
-        predicate = "Onibi::UnicodeProperties.matches?(#{node.name.dump}, input[#{cursor}])"
-        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
       end
 
       def emit_escape(node, cursor)
