@@ -224,11 +224,20 @@ The required lifecycle is:
 4. Run the relevant tests, the complete test suite, lint, format, and package checks.
 5. Commit the atomic change locally with a concise message.
 6. Push the branch to GitHub and open a pull request.
-7. Wait for CI and required status checks to pass.
-8. Merge the pull request with GitHub auto-merge using squash merge.
+7. Wait until every CI and status check has completed successfully; pending,
+   queued, skipped unexpectedly, cancelled, or failing checks are not green.
+8. Only after all checks are green, enable GitHub auto-merge and merge the pull
+   request with squash merge. Do not enable auto-merge while any check is still
+   running, because a repository may merge before a non-required check reports
+   its result.
 9. Remove the feature worktree after the pull request has merged.
 
-Do not commit directly on `main`, push directly to `main`, or merge a pull request while required CI checks are failing. A pull request may contain multiple commits only when they are all part of the same atomic change; the final merge must be a squash merge.
+Do not commit directly on `main`, push directly to `main`, enable auto-merge
+before all CI is green, or merge a pull request while any CI or status check is
+incomplete or unsuccessful. Treat every configured PR check as a merge gate,
+even when GitHub branch protection does not mark it as required. A pull request
+may contain multiple commits only when they are all part of the same atomic
+change; the final merge must be a squash merge.
 
 Before opening a GitHub pull request, run:
 
