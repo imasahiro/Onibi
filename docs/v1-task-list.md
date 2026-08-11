@@ -166,7 +166,7 @@ Acceptance test: A fixed-seed smoke fuzz run reproduces the same case count and 
 intentional mutant produces a differential failure with its seed. All recorded regression
 seeds run from the normal test suite.
 
-### V1-009 — Publish the compatibility report, limitations, and usage documentation
+### V1-009 — Publish the compatibility report, limitations, and usage documentation [Complete]
 
 - Priority: P1
 - Dependencies: V1-001 through V1-008
