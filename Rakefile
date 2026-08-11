@@ -10,3 +10,13 @@ require "rubocop/rake_task"
 RuboCop::RakeTask.new
 
 task default: %i[test rubocop]
+
+namespace :test do
+  task :property do
+    sh "ruby -Itest test/acceptance/v1_fuzz_test.rb"
+  end
+
+  task :fuzz do
+    sh "ruby fuzz/run_v1_fuzz.rb"
+  end
+end
