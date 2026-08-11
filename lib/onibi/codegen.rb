@@ -629,7 +629,13 @@ module Onibi
       end
 
       def self.ast(ast, options: [], optimizations: [:swar])
-        prefilter = Experimental::Swar::LiteralAlternation.build(ast, options) if optimizations.include?(:swar)
+        if optimizations.include?(:swar)
+          prefilter = Experimental::Swar::LiteralAlternation.build(
+            ast, options,
+            allow_long_literals: optimizations.include?(:swar_long_literals),
+            allow_single_character: optimizations.include?(:swar_single_character)
+          )
+        end
         new(RubyGenerator.ast(ast, options: options), prefilter: prefilter)
       end
 
@@ -646,10 +652,13 @@ module Onibi
       end
 
       def search(input, position, capture:)
-        candidates = @prefilter&.candidate_positions(input, position)
-        return search_candidates(input, position, capture, candidates) if candidates
+        return baseline_search(input, position, capture) unless @prefilter&.profitable?(input, position)
 
-        baseline_search(input, position, capture)
+        initial = execute(input, position, capture, position)
+        return initial if initial
+
+        candidates = @prefilter.candidate_positions(input, position + 1)
+        search_candidates(input, position, capture, candidates)
       end
 
       private

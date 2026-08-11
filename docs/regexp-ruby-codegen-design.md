@@ -391,13 +391,20 @@ Allowed early optimizations include:
 
 An optimization is accepted only when it reduces a measured workload without an unacceptable compile-time, source-size, or memory regression. YJIT/ZJIT improvements are a benefit, not a correctness dependency.
 
-The experimental SWAR prefilter applies only to whole-regexp alternations of two
-or more non-empty ASCII literals. It packs literal positions into native-word
+The experimental SWAR prefilter applies by default only to whole-regexp
+alternations of two or more ASCII literals whose lengths are between two bytes
+and one native word. It packs literal positions into native-word
 Shift-And buckets separated by zero guard bits and masks every state transition
-back to the native word width. The prefilter supplies ordered candidate start
-positions to the same generated matcher; unsupported AST shapes, ignorecase,
-and non-ASCII inputs retain the baseline candidate loop. Tests can disable this
-optimization internally, but it is not a user-facing backend selection.
+back to the native word width. Search probes the initial position directly and
+uses the bitmap prefilter only when at least one native word of input remains.
+The prefilter supplies ordered candidate start positions to the same generated
+matcher; longer literals, unsupported AST shapes, ignorecase, non-ASCII input,
+and short remaining input retain the baseline candidate loop. Tests and
+benchmarks can disable SWAR or opt into single-character or long-literal prefix
+filtering internally, but none is a user-facing backend selection. The default
+policy is benchmark-driven: one-character literals improve long late matches
+but regress the common early-match path even after the guards, while
+long-literal prefix filtering regresses the measured late workload.
 
 ## Testing strategy
 

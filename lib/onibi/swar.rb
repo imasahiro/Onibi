@@ -7,6 +7,7 @@ module Onibi
     module Swar
       WORD_BITS = 1.size * 8
       WORD_MASK = (1 << WORD_BITS) - 1
+      MINIMUM_INPUT_BYTES = WORD_BITS
 
       Bucket = Struct.new(:width, :masks, :start_bits, :accepts, keyword_init: true) do
         def initialize(**arguments)
@@ -42,12 +43,16 @@ module Onibi
           candidates.uniq.sort
         end
 
+        def profitable?(input, position)
+          eligible_input?(input, position) && input.bytesize - position >= MINIMUM_INPUT_BYTES
+        end
+
         private
 
         def build_buckets(patterns)
           validate_patterns!(patterns)
           builders = []
-          patterns.uniq.each do |pattern|
+          filter_patterns(patterns).each do |pattern|
             builder = builders.last
             builder = nil unless builder&.fits?(pattern.bytesize)
             builders << (builder = BucketBuilder.new) unless builder
@@ -58,9 +63,13 @@ module Onibi
 
         def validate_patterns!(patterns)
           valid = patterns.is_a?(Array) && patterns.length >= 2 && patterns.all? do |pattern|
-            pattern.is_a?(String) && !pattern.empty? && pattern.ascii_only? && pattern.bytesize <= WORD_BITS
+            pattern.is_a?(String) && !pattern.empty? && pattern.ascii_only?
           end
           raise ArgumentError, "SWAR patterns must be two or more non-empty ASCII literals" unless valid
+        end
+
+        def filter_patterns(patterns)
+          patterns.map { |pattern| pattern.byteslice(0, WORD_BITS) }.uniq
         end
 
         def eligible_input?(input, position)
@@ -126,16 +135,27 @@ module Onibi
       module LiteralAlternation
         module_function
 
-        def build(ast, options)
-          return if options.include?("ignorecase")
-          return unless ast.is_a?(AST::Alternation)
-
-          patterns = ast.branches.map { |branch| literal_value(branch) }
-          return if patterns.any?(&:nil?) || patterns.uniq.length < 2
+        def build(ast, options, allow_long_literals: false, allow_single_character: false)
+          patterns = eligible_patterns(ast, options)
+          return unless patterns
+          return unless eligible_lengths?(patterns, allow_long_literals, allow_single_character)
 
           MultiLiteralPrefilter.new(patterns)
         rescue ArgumentError
           nil
+        end
+
+        def eligible_patterns(ast, options)
+          return if options.include?("ignorecase") || !ast.is_a?(AST::Alternation)
+
+          patterns = ast.branches.map { |branch| literal_value(branch) }
+          patterns if patterns.none?(&:nil?) && patterns.uniq.length >= 2
+        end
+
+        def eligible_lengths?(patterns, allow_long_literals, allow_single_character)
+          minimum = allow_single_character ? 1 : 2
+          maximum = allow_long_literals ? Float::INFINITY : WORD_BITS
+          patterns.all? { |pattern| pattern.bytesize.between?(minimum, maximum) }
         end
 
         def literal_value(branch)
