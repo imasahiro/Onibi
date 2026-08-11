@@ -154,7 +154,7 @@ Compile `^`, `$`, `\A`, `\Z`, `\z`, `\G`, word boundaries, and nested positive/n
 
 **Dependencies:** CODEGEN-008.
 
-### CODEGEN-010 — Lower greedy, lazy, bounded, and empty-body quantifiers
+### CODEGEN-010 [Complete] — Lower greedy, lazy, bounded, and empty-body quantifiers
 
 Generate counter-driven entry/body/exit labels. Implement zero-progress guards and avoid source unrolling for large bounds.
 

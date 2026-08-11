@@ -264,7 +264,8 @@ module Onibi
         AST::Property => :emit_property,
         AST::Escape => :emit_escape,
         AST::Anchor => :emit_anchor,
-        AST::OptionGroup => :emit_option_group
+        AST::OptionGroup => :emit_option_group,
+        AST::Quantifier => :emit_quantifier
       }.freeze
 
       def initialize(options)
@@ -286,6 +287,8 @@ module Onibi
       private
 
       def emit_node(node, cursor)
+        return emit_node(node.body, cursor) if node.is_a?(AST::Group)
+
         handler = NODE_EMITTERS[node.class]
         raise CodegenError, "unsupported regular AST node #{node.class}" unless handler
 
@@ -369,6 +372,18 @@ module Onibi
         scoped_options << "multiline" if node.multiline
         scoped_options << "extended" if node.extended
         AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
+      end
+
+      def emit_quantifier(node, cursor)
+        counter = fresh_cursor
+        result = fresh_cursor
+        previous = fresh_cursor
+        maximum = node.maximum || "input.length + 1"
+        body = emit_node(node.expression, result)
+        greedy_exit = node.mode == :lazy ? "break if #{counter} >= #{node.minimum}" : ""
+        <<~EXPRESSION.strip
+          (begin #{result} = #{cursor}; #{counter} = 0; while #{counter} < #{maximum}; #{previous} = #{result}; #{result} = #{body}; if #{result}.nil?; #{result} = #{previous}; break; end; #{counter} += 1; break if #{result} == #{previous}; #{greedy_exit}; end; #{counter} >= #{node.minimum} ? #{result} : nil; end)
+        EXPRESSION
       end
 
       def line_start_predicate(cursor)
