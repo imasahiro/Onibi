@@ -31,6 +31,26 @@ compiled = Onibi::Regexp.compile("cat", ["ignorecase"])
 compiled.match?("A CAT")
 ```
 
+## Regex Redux benchmark
+
+Run the benchmark workload with either regular expression implementation:
+
+```sh
+ruby regex-redux.rb --engine=ruby < fasta-500.txt
+ruby regex-redux.rb --engine=onibi < fasta-500.txt
+```
+
+To compare elapsed time for both implementations, use the standard-library
+benchmark runner. Increase `--iterations` for more stable measurements:
+
+```sh
+ruby benchmark/regex_redux_benchmark.rb --iterations=5
+ruby benchmark/regex_redux_benchmark.rb --engine=onibi --iterations=5
+```
+
+The benchmark runner uses `fasta-500.txt` by default and accepts a different
+input path as its final argument.
+
 ## Development
 
 ```sh
