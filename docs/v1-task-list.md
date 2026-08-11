@@ -52,7 +52,7 @@ argument shape, keywords, block behavior, target class, and status. It compares 
 inventory with MRI introspection and reports the exact difference. An excluded API cannot
 be removed without a recorded reason.
 
-### V1-002 — Extend the differential harness to the v1 API
+### V1-002 — Extend the differential harness to the v1 API [Complete]
 
 - Priority: P0
 - Dependencies: V1-001
