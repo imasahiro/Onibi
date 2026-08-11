@@ -262,7 +262,7 @@ module Onibi
 
         result = fresh_cursor
         <<~EXPRESSION.strip
-          (begin captures[#{node.number}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? nil : (captures[#{node.number}][1] = #{result}; #{result}); end)
+          (begin captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures[#{node.number - 1}] = nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end)
         EXPRESSION
       end
     end
@@ -330,7 +330,9 @@ module Onibi
         AST::Quantifier => :emit_quantifier,
         AST::Group => :emit_group,
         AST::AtomicGroup => :emit_atomic_group,
-        AST::Assertion => :emit_assertion
+        AST::Assertion => :emit_assertion,
+        AST::Backreference => :emit_backreference,
+        AST::Conditional => :emit_conditional
       }.freeze
 
       def initialize(options)
@@ -440,6 +442,18 @@ module Onibi
 
       def emit_atomic_group(node, cursor)
         emit_node(node.body, cursor)
+      end
+
+      def emit_backreference(node, cursor)
+        index = node.identifier.to_i - 1
+        "(captures[#{index}] ? (input[#{cursor}, captures[#{index}][1] - captures[#{index}][0]] == input[captures[#{index}][0], captures[#{index}][1] - captures[#{index}][0]] ? #{cursor} + captures[#{index}][1] - captures[#{index}][0] : nil) : nil)"
+      end
+
+      def emit_conditional(node, cursor)
+        condition = Array(node.condition).first.to_i - 1
+        yes_branch = emit_node(node.yes_branch, cursor)
+        no_branch = emit_node(node.no_branch, cursor)
+        "(captures[#{condition}] ? #{yes_branch} : #{no_branch})"
       end
 
       def line_start_predicate(cursor)

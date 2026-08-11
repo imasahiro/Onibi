@@ -194,7 +194,7 @@ Implement cut-stack semantics that remove only checkpoints created within the co
 
 **Dependencies:** CODEGEN-012.
 
-### CODEGEN-014 — Lower backreferences and conditionals
+### CODEGEN-014 [Complete] — Lower backreferences and conditionals
 
 Compile numbered/named/relative references and capture-participation or assertion conditionals. Preserve option and encoding semantics for referenced text.
 
