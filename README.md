@@ -40,16 +40,17 @@ ruby regex-redux.rb --engine=ruby < fasta-500.txt
 ruby regex-redux.rb --engine=onibi < fasta-500.txt
 ```
 
-To compare elapsed time for both implementations, use the standard-library
-benchmark runner. Increase `--iterations` for more stable measurements:
+To compare elapsed time for both implementations, run the Minitest benchmark
+methods. They use the checked-in `fasta-500.txt` fixture and a small range so
+the regular test suite remains practical:
 
 ```sh
-ruby benchmark/regex_redux_benchmark.rb --iterations=5
-ruby benchmark/regex_redux_benchmark.rb --engine=onibi --iterations=5
+ruby -Itest test/benchmark/regex_redux_test.rb -n /bench_/
 ```
 
-The benchmark runner uses `fasta-500.txt` by default and accepts a different
-input path as its final argument.
+The output prints separate `bench_ruby` and `bench_onibi` timings for direct
+comparison. The same benchmark methods also run as part of the full Minitest
+suite.
 
 ## Development
 
