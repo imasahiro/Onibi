@@ -68,7 +68,7 @@ regexp.match?("aaa")
 
 Encoding behavior is explicit for string patterns and includes ASCII-compatible
 cross-encoding matches plus UTF-8 Unicode case folding. See the
-[encoding matrix](fixtures/regexp_encoding_matrix.yml) and the
+[encoding matrix](fixtures/encoding/matrix.yml) and the
 [v1 compatibility report](docs/v1-compatibility-report.yml).
 
 Known MRI differences: Onibi does not replace MRI's global match variables,
@@ -81,8 +81,8 @@ contract; see the [design document](docs/onibi-design.md) for the full scope.
 Run the benchmark workload with either regular expression implementation:
 
 ```sh
-ruby benchmark/regex-redux.rb --engine=ruby  < benchmark/fasta-500.txt
-ruby benchmark/regex-redux.rb --engine=onibi < benchmark/fasta-500.txt
+ruby benchmark/regex_redux.rb --engine=ruby  < benchmark/fasta-500.txt
+ruby benchmark/regex_redux.rb --engine=onibi < benchmark/fasta-500.txt
 ```
 
 To compare elapsed time for both implementations, run the Minitest benchmark
@@ -90,7 +90,7 @@ methods. They use the checked-in `fasta-500.txt` fixture and a small range so
 the regular test suite remains practical:
 
 ```sh
-ruby -Itest test/benchmark/regex_redux_test.rb -n /bench_/
+ruby -Itest test/features/matching/regex_redux_benchmark_test.rb -n /bench_/
 ```
 
 The output prints separate `bench_ruby` and `bench_onibi` timings for direct

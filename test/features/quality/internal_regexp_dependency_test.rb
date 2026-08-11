@@ -3,7 +3,7 @@
 require "test_helper"
 
 class InternalRegexpDependencyTest < Minitest::Test
-  LIBRARY_PATH = File.expand_path("../../lib", __dir__)
+  LIBRARY_PATH = File.join(PROJECT_ROOT, "lib")
 
   def test_library_matching_does_not_use_mri_regexp_operators
     source = Dir[File.join(LIBRARY_PATH, "**", "*.rb")].map { |file| File.read(file) }.join

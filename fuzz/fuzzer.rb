@@ -5,7 +5,7 @@ require_relative "../test/support/differential_harness"
 require "yaml"
 
 ## Generates small, reproducible MRI-vs-Onibi differential cases.
-module V1Fuzzer
+module Fuzzer
   PATTERNS = ["a", "a+", "ab", "(?<word>a+)", "a|b", "a?", "[ab]+", "."].freeze
   INPUTS = ["", "a", "A", "ab", "aaa", "bbb", "x"].freeze
   OPTIONS = [0, Onibi::Regexp::IGNORECASE].freeze
@@ -58,7 +58,7 @@ module V1Fuzzer
       "Re-run with:",
       "",
       "```sh",
-      "ONIBI_FUZZ_SEED=#{result.fetch(:seed)} ONIBI_FUZZ_CASES=#{result.fetch(:cases)} ruby fuzz/run_v1_fuzz.rb",
+      "ONIBI_FUZZ_SEED=#{result.fetch(:seed)} ONIBI_FUZZ_CASES=#{result.fetch(:cases)} ruby fuzz/run.rb",
       "```"
     ]
   end

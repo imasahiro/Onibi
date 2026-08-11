@@ -3,12 +3,12 @@
 require "test_helper"
 require "yaml"
 
-class V1EncodingContractTest < Minitest::Test
-  MATRIX_PATH = File.expand_path("../../fixtures/regexp_encoding_matrix.yml", __dir__)
+class EncodingContractTest < Minitest::Test
+  MATRIX = :encoding
   REQUIRED_ENCODINGS = %w[ASCII-8BIT EUC-JP US-ASCII UTF-8 Windows-31J].freeze
 
   def test_matrix_covers_ascii_compatible_pairs_including_us_ascii
-    matrix = YAML.safe_load(File.read(MATRIX_PATH))
+    matrix = TestFixtures.load(MATRIX)
     ascii_pairs = matrix.fetch("cases").select do |fixture|
       fixture.fetch("pattern") == "a" && fixture.fetch("input") == "a"
     end

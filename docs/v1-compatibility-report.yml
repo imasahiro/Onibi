@@ -2,7 +2,7 @@ schema_version: 1
 baseline:
   version: Ruby 4.0.6
   source_revision: 03b6d3f8898a28604fe6cb00eae3226b821168f
-  inventory_source: ../fixtures/v1_api_inventory.yml
+  inventory_source: ../fixtures/api/inventory.yml
 classification_counts:
   supported: 61
   partial: 0

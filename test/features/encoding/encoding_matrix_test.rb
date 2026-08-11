@@ -4,11 +4,11 @@ require "test_helper"
 require "yaml"
 
 class EncodingMatrixTest < Minitest::Test
-  MATRIX_PATH = File.expand_path("../../fixtures/regexp_encoding_matrix.yml", __dir__)
+  MATRIX = :encoding
   REQUIRED_ENCODINGS = %w[ASCII-8BIT EUC-JP US-ASCII UTF-8 Windows-31J].freeze
 
   def test_encoding_matrix_covers_the_supported_baseline
-    matrix = YAML.safe_load(File.read(MATRIX_PATH))
+    matrix = TestFixtures.load(MATRIX)
 
     assert_equal REQUIRED_ENCODINGS.sort, matrix.fetch("encodings").sort
     assert_equal REQUIRED_ENCODINGS.length**2, ascii_pair_cases(matrix).length
@@ -16,7 +16,7 @@ class EncodingMatrixTest < Minitest::Test
   end
 
   def test_encoding_matrix_matches_mri
-    matrix = YAML.safe_load(File.read(MATRIX_PATH))
+    matrix = TestFixtures.load(MATRIX)
 
     matrix.fetch("cases").each do |fixture|
       pattern = fixture.fetch("pattern").encode(fixture.fetch("pattern_encoding"))

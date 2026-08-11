@@ -3,7 +3,7 @@
 require "minitest/benchmark"
 require "stringio"
 require "test_helper"
-require_relative "../../benchmark/regex-redux"
+require_relative "../../../benchmark/regex_redux"
 
 class RegexReduxTest < Minitest::Test
   INPUT = ">ONE\nAGGG TAAA\n"
@@ -47,7 +47,7 @@ class RegexReduxTest < Minitest::Test
   end
 
   def test_each_engine_produces_the_expected_fixture_result
-    input = File.read(File.expand_path("../../benchmark/fasta-500.txt", __dir__))
+    input = File.read(File.join(PROJECT_ROOT, "benchmark", "fasta-500.txt"))
 
     %i[ruby onibi].each do |engine|
       result = RegexRedux.new(StringIO.new(input), engine: engine).to_s
@@ -65,7 +65,7 @@ class RegexReduxTest < Minitest::Test
   end
 
   def test_script_does_not_use_threads_or_forked_pattern_count
-    source = File.read(File.expand_path("../../benchmark/regex-redux.rb", __dir__))
+    source = File.read(File.join(PROJECT_ROOT, "benchmark", "regex_redux.rb"))
 
     refute_includes source, "Thread"
     refute_includes source, "forked_pattern_count"
@@ -74,7 +74,7 @@ class RegexReduxTest < Minitest::Test
 end
 
 class RegexReduxBenchmark < Minitest::Benchmark
-  INPUT = File.read(File.expand_path("../../benchmark/fasta-500.txt", __dir__))
+  INPUT = File.read(File.join(PROJECT_ROOT, "benchmark", "fasta-500.txt"))
 
   def self.bench_range
     [1, 2]

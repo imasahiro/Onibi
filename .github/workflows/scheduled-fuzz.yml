@@ -34,7 +34,7 @@ jobs:
           ONIBI_FUZZ_CASES: "1000"
         run: |
           set +e
-          bundle exec ruby fuzz/run_v1_fuzz.rb > fuzz-report.md
+          bundle exec ruby fuzz/run.rb > fuzz-report.md
           status=$?
           set -e
 

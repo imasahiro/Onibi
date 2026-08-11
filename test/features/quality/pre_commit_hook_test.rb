@@ -40,10 +40,10 @@ class PreCommitHookTest < Minitest::Test
   end
 
   def hook_path
-    File.expand_path("../../.githooks/pre-commit", __dir__)
+    File.join(PROJECT_ROOT, ".githooks", "pre-commit")
   end
 
   def rubocop_config_path
-    File.expand_path("../../.rubocop.yml", __dir__)
+    File.join(PROJECT_ROOT, ".rubocop.yml")
   end
 end

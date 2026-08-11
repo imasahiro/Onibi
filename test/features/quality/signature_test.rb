@@ -3,7 +3,7 @@
 require "test_helper"
 
 class SignatureTest < Minitest::Test
-  SIGNATURE_PATH = File.expand_path("../../sig/onibi.rbs", __dir__)
+  SIGNATURE_PATH = File.join(PROJECT_ROOT, "sig", "onibi.rbs")
 
   # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def test_signature_describes_the_public_api
