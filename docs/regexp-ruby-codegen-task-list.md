@@ -202,7 +202,7 @@ Compile numbered/named/relative references and capture-participation or assertio
 
 **Dependencies:** CODEGEN-013.
 
-### CODEGEN-015 — Lower subexpression calls, recursion, and absence
+### CODEGEN-015 [Complete] — Lower subexpression calls, recursion, and absence
 
 Resolve group targets in analysis and execute them with persistent activation/return frames and budgets, retaining internal call choices across logical return. Compile the absence operator using the design's absent-stopper, capture, backtracking, and empty-stopper rules.
 

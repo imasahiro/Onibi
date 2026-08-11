@@ -312,11 +312,76 @@ module Onibi
       end
     end
 
+    # Emits backreferences, conditionals, calls, and absence regions.
+    module NonRegularEmitter
+      private
+
+      def emit_backreference(node, cursor)
+        index = node.identifier.to_i - 1
+        length = "captures[#{index}][1] - captures[#{index}][0]"
+        source = "input[captures[#{index}][0], #{length}]"
+        target = "input[#{cursor}, #{length}]"
+        "(captures[#{index}] ? (#{target} == #{source} ? #{cursor} + #{length} : nil) : nil)"
+      end
+
+      def emit_conditional(node, cursor)
+        condition = Array(node.condition).first.to_i - 1
+        yes_branch = emit_node(node.yes_branch, cursor)
+        no_branch = emit_node(node.no_branch, cursor)
+        "(captures[#{condition}] ? #{yes_branch} : #{no_branch})"
+      end
+
+      def emit_subexpression_call(node, cursor)
+        group = @groups[node.identifier]
+        raise CodegenError, "unresolved subexpression call #{node.identifier}" unless group
+
+        emit_node(group.body, cursor)
+      end
+
+      def emit_absence(node, cursor)
+        body = emit_node(node.body, cursor)
+        "(#{body}.nil? ? #{cursor} : nil)"
+      end
+    end
+
+    # Emits anchors and line-boundary predicates.
+    module AnchorEmitter
+      private
+
+      def emit_anchor(node, cursor)
+        predicate = case node.kind
+                    when :anchor_absolute_start then "#{cursor} == 0"
+                    when :anchor_absolute_end then "#{cursor} == input.length"
+                    when :anchor_start then line_start_predicate(cursor)
+                    when :anchor_end then line_end_predicate(cursor)
+                    when :anchor_before_final_newline
+                      "#{cursor} == input.length || (#{cursor} == input.length - 1 && " \
+                        "input[#{cursor}] == \"\\n\")"
+                    else "false"
+                    end
+        "(#{predicate} ? #{cursor} : nil)"
+      end
+
+      def line_start_predicate(cursor)
+        return "#{cursor} == 0" unless @options.include?("multiline")
+
+        "#{cursor} == 0 || input[#{cursor} - 1] == \"\\n\""
+      end
+
+      def line_end_predicate(cursor)
+        return "#{cursor} == input.length" unless @options.include?("multiline")
+
+        "#{cursor} == input.length || input[#{cursor}] == \"\\n\""
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
       include AssertionEmitter
       include QuantifierEmitter
+      include NonRegularEmitter
+      include AnchorEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -332,15 +397,19 @@ module Onibi
         AST::AtomicGroup => :emit_atomic_group,
         AST::Assertion => :emit_assertion,
         AST::Backreference => :emit_backreference,
-        AST::Conditional => :emit_conditional
+        AST::Conditional => :emit_conditional,
+        AST::SubexpressionCall => :emit_subexpression_call,
+        AST::Absence => :emit_absence
       }.freeze
 
       def initialize(options)
         @options = options
         @counter = 0
+        @groups = {}
       end
 
       def emit(ast)
+        collect_groups(ast)
         body = emit_node(ast, "position")
         <<~RUBY
           def self.__onibi_search(input, position, capture)
@@ -353,6 +422,15 @@ module Onibi
       end
 
       private
+
+      def collect_groups(value)
+        return value.each { |item| collect_groups(item) } if value.is_a?(Array)
+        return unless value.is_a?(Struct)
+
+        @groups[value.number] = value if value.is_a?(AST::Group) && value.number
+        @groups[value.name] = value if value.is_a?(AST::Group) && value.name
+        value.each { |child| collect_groups(child) }
+      end
 
       def emit_node(node, cursor)
         handler = NODE_EMITTERS[node.class]
@@ -418,20 +496,6 @@ module Onibi
         "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
       end
 
-      def emit_anchor(node, cursor)
-        predicate = case node.kind
-                    when :anchor_absolute_start then "#{cursor} == 0"
-                    when :anchor_absolute_end then "#{cursor} == input.length"
-                    when :anchor_start then line_start_predicate(cursor)
-                    when :anchor_end then line_end_predicate(cursor)
-                    when :anchor_before_final_newline
-                      "#{cursor} == input.length || (#{cursor} == input.length - 1 && " \
-                        "input[#{cursor}] == \"\\n\")"
-                    else "false"
-                    end
-        "(#{predicate} ? #{cursor} : nil)"
-      end
-
       def emit_option_group(node, cursor)
         scoped_options = @options.dup
         scoped_options << "ignorecase" if node.ignorecase
@@ -442,30 +506,6 @@ module Onibi
 
       def emit_atomic_group(node, cursor)
         emit_node(node.body, cursor)
-      end
-
-      def emit_backreference(node, cursor)
-        index = node.identifier.to_i - 1
-        "(captures[#{index}] ? (input[#{cursor}, captures[#{index}][1] - captures[#{index}][0]] == input[captures[#{index}][0], captures[#{index}][1] - captures[#{index}][0]] ? #{cursor} + captures[#{index}][1] - captures[#{index}][0] : nil) : nil)"
-      end
-
-      def emit_conditional(node, cursor)
-        condition = Array(node.condition).first.to_i - 1
-        yes_branch = emit_node(node.yes_branch, cursor)
-        no_branch = emit_node(node.no_branch, cursor)
-        "(captures[#{condition}] ? #{yes_branch} : #{no_branch})"
-      end
-
-      def line_start_predicate(cursor)
-        return "#{cursor} == 0" unless @options.include?("multiline")
-
-        "#{cursor} == 0 || input[#{cursor} - 1] == \"\\n\""
-      end
-
-      def line_end_predicate(cursor)
-        return "#{cursor} == input.length" unless @options.include?("multiline")
-
-        "#{cursor} == input.length || input[#{cursor}] == \"\\n\""
       end
 
       def fresh_cursor
