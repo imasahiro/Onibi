@@ -212,7 +212,7 @@ Resolve group targets in analysis and execute them with persistent activation/re
 
 ## Phase 4 — Public integration and hardening
 
-### CODEGEN-016 — Integrate the generated result with `Onibi::MatchData`
+### CODEGEN-016 [Complete] — Integrate the generated result with `Onibi::MatchData`
 
 Adapt the internal offset result to the existing `MatchData` builder, including byte offsets, names, pre/post match, values, and regexp/input references. Generated code remains unaware of public objects.
 

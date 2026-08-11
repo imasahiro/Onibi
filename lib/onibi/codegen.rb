@@ -537,5 +537,19 @@ module Onibi
         compiled_module.__send__(entrypoint, input, position, capture)
       end
     end
+
+    # Converts generated offsets into the existing public MatchData shape.
+    class MatchAdapter
+      def self.build(result, input, regexp, names = {})
+        return nil unless result
+
+        start, finish, capture_offsets = result
+        characters = input.chars
+        full_match = characters[start...finish].join
+        captures = capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
+        offsets = [[start, finish]] + capture_offsets
+        MatchData.new(full_match, captures, offsets, names, MatchData::Context.new(input, regexp))
+      end
+    end
   end
 end
