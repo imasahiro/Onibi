@@ -272,7 +272,7 @@ Implement `InputView`, case-fold, compatibility, invalid-sequence, character-off
 
 **Dependencies:** CODEGEN-019.
 
-### CODEGEN-023 — Benchmark and optimize the single control graph
+### CODEGEN-023 [Complete] — Benchmark and optimize the single control graph
 
 Record compile time, source bytes, allocations, first/warm throughput, memory, steps, and pathological scaling while codegen remains explicitly selected. Add only transformations that preserve unoptimized-codegen and MRI equivalence.
 
