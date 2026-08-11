@@ -384,11 +384,20 @@ Allowed early optimizations include:
 - literal-run comparison;
 - anchored search elimination;
 - first-character and required-literal skipping;
+- experimental multi-literal candidate skipping with fixed-width SWAR bitmaps;
 - ASCII byte fast path;
 - capture liveness for `match?`;
 - reducing redundant checkpoints and capture-trail writes.
 
 An optimization is accepted only when it reduces a measured workload without an unacceptable compile-time, source-size, or memory regression. YJIT/ZJIT improvements are a benefit, not a correctness dependency.
+
+The experimental SWAR prefilter applies only to whole-regexp alternations of two
+or more non-empty ASCII literals. It packs literal positions into native-word
+Shift-And buckets separated by zero guard bits and masks every state transition
+back to the native word width. The prefilter supplies ordered candidate start
+positions to the same generated matcher; unsupported AST shapes, ignorecase,
+and non-ASCII inputs retain the baseline candidate loop. Tests can disable this
+optimization internally, but it is not a user-facing backend selection.
 
 ## Testing strategy
 
