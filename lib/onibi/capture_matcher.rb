@@ -31,7 +31,7 @@ module Onibi
         @match_reset_position = nil
         captures = Array.new(@capture_count)
         results = match_results(@ast, characters, start, captures)
-        result = (lazy_pattern? ? results.min_by(&:first) : results.max_by(&:first))
+        result = lazy_pattern? ? results.min_by(&:first) : results.first
         return [@match_reset_position || start, result[0], result[1]] if result
       end
 
@@ -91,7 +91,9 @@ module Onibi
 
     def quantifier_results_for(node, position, all)
       results = all.select { |finish, _state| finish >= position + node.minimum }
+      return [] if node.mode == :possessive && results.empty?
       return [results.max_by(&:first)] if node.mode == :possessive
+      return results.reverse if node.mode == :greedy
 
       results
     end

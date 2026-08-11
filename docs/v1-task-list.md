@@ -69,7 +69,7 @@ nil/false, type, range, syntax, and encoding errors. MRI and Onibi normalized re
 match, and a mismatch report contains fixture ID, pattern, options, input, expected, and
 actual values.
 
-### V1-003 — Close the remaining syntax and execution-semantics gaps
+### V1-003 — Close the remaining syntax and execution-semantics gaps [Complete]
 
 - Priority: P0
 - Dependencies: V1-002
