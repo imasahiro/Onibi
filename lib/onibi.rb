@@ -109,6 +109,7 @@ module Onibi
 
       validate_encoding!(input)
       return codegen_match?(input, position) if self.class.codegen_default
+
       start_position = normalize_match_position(input, position)
       return false if start_position.negative? || start_position > input.length
 
@@ -123,6 +124,11 @@ module Onibi
 
       validate_encoding!(input)
       return codegen_match(input, position) if self.class.codegen_default
+
+      return legacy_match(input, position)
+    end
+
+    def legacy_match(input, position)
       start_position = normalize_match_position(input, position)
       return nil if start_position.negative? || start_position > input.length
 
@@ -169,12 +175,14 @@ module Onibi
 
     # Experimental generated matcher surface used during migration validation.
     def codegen_match?(input, position = 0)
-      codegen_program.search(input, normalize_match_position(input, position), capture: false) == true
+      with_timeout do
+        codegen_program.search(input, normalize_match_position(input, position), capture: false) == true
+      end
     end
 
     def codegen_match(input, position = 0)
       start = normalize_match_position(input, position)
-      result = codegen_program.search(input, start, capture: true)
+      result = with_timeout { codegen_program.search(input, start, capture: true) }
       Codegen::MatchAdapter.build(result, input, self, named_captures)
     end
 
