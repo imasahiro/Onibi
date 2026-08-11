@@ -1,6 +1,7 @@
 name: Ruby
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -28,8 +29,25 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run the default task
-        run: bundle exec rake
+      - name: Run MRI baseline and acceptance suites
+        run: bundle exec rake test
+      - name: Run RuboCop
+        run: bundle exec rubocop
+      - name: Build gem
+        run: bundle exec rake build
+      - name: Install and smoke test gem
+        run: |
+          gem_home="$(mktemp -d)"
+          trap 'rm -rf "$gem_home"' EXIT
+          GEM_HOME="$gem_home" GEM_PATH="$gem_home" gem install --local pkg/onibi-*.gem --no-document
+          GEM_HOME="$gem_home" GEM_PATH="$gem_home" ruby -e '
+            require "onibi"
+            regexp = Onibi::Regexp.new("(?<word>a+)")
+            match = regexp.match("xxaaa")
+            abort unless match && match["word"] == "aaa"
+            abort unless regexp.scan("baacaa").flatten == ["aa", "aa"]
+            abort unless regexp.gsub("baacaa", "x") == "bxcx"
+          '
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
