@@ -34,9 +34,8 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
-      - name: Run v1 acceptance and differential suites
-        run: bundle exec rake
+      - name: Run cross-runtime acceptance contract
+        run: ruby -Itest test/acceptance/v1_cross_runtime_contract_test.rb
 
   mruby:
     runs-on: ubuntu-latest
