@@ -1,0 +1,411 @@
+---
+schema_version: 1
+error_categories:
+- type_error
+- range_error
+- syntax_error
+- encoding_error
+fixtures:
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: allocate
+  status: excluded
+  cases: &1
+  - success
+  - nil
+  - 'false'
+  - type_error
+  - range_error
+  - syntax_error
+  - encoding_error
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: attached_object
+  status: excluded
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: compile
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: escape
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: last_match
+  status: excluded
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: linear_time?
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: new
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: quote
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: subclasses
+  status: excluded
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: superclass
+  status: excluded
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: timeout
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: timeout=
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: try_convert
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: union
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: class_method
+    name: yaml_tag
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: "=="
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: "==="
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: "=~"
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: casefold?
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: encoding
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: eql?
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: fixed_encoding?
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: hash
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: inspect
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: match
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: match?
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: named_captures
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: names
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: options
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: source
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: timeout
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: to_s
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: instance_method
+    name: "~"
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: EXTENDED
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: FIXEDENCODING
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: IGNORECASE
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: MULTILINE
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: NOENCODING
+  status: supported
+  cases: *1
+- inventory:
+    target: Regexp
+    kind: constant
+    name: TimeoutError
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: "=="
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: "[]"
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: begin
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: bytebegin
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: byteend
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: byteoffset
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: captures
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: deconstruct
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: deconstruct_keys
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: end
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: eql?
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: hash
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: inspect
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: length
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: match
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: match_length
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: named_captures
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: names
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: offset
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: post_match
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: pre_match
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: regexp
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: size
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: string
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: to_a
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: to_s
+  status: supported
+  cases: *1
+- inventory:
+    target: MatchData
+    kind: instance_method
+    name: values_at
+  status: supported
+  cases: *1
