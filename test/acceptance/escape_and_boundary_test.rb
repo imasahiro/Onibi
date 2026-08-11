@@ -19,11 +19,10 @@ class EscapeAndBoundaryTest < Minitest::Test
   end
 
   def test_hex_and_non_hex_shorthand_classes
-    assert Onibi::Regexp.new("\\h").match?("a")
-    assert Onibi::Regexp.new("\\h").match?("F")
+    { "\\h" => %w[a F], "\\H" => %W[g \n] }.each do |source, inputs|
+      inputs.each { |input| assert Onibi::Regexp.new(source).match?(input) }
+    end
     refute Onibi::Regexp.new("\\h").match?("g")
-    assert Onibi::Regexp.new("\\H").match?("g")
-    assert Onibi::Regexp.new("\\H").match?("\n")
     refute Onibi::Regexp.new("\\H").match?("F")
   end
 

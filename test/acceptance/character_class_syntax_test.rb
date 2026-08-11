@@ -47,12 +47,12 @@ class CharacterClassSyntaxTest < Minitest::Test
   end
 
   def test_meta_escapes_inside_ascii8bit_character_classes
-    literal = Onibi::Regexp.new("[\\M-a]".b)
-    control = Onibi::Regexp.new("[\\M-\\C-A]".b)
-    hex = Onibi::Regexp.new("[\\M-\\x41]".b)
-
-    assert literal.match?([0xe1].pack("C*").b)
-    assert control.match?([0x81].pack("C*").b)
-    assert hex.match?([0xc1].pack("C*").b)
+    [
+      ["[\\M-a]", 0xe1],
+      ["[\\M-\\C-A]", 0x81],
+      ["[\\M-\\x41]", 0xc1]
+    ].each do |source, byte|
+      assert Onibi::Regexp.new(source.b).match?([byte].pack("C*").b)
+    end
   end
 end

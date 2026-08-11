@@ -11,50 +11,52 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     "今後の実行タスク",
     "REGEXP-001"
   ].freeze
+  REQUIRED_CONTENT = [
+    "https://docs.ruby-lang.org/en/4.0/Regexp.html",
+    "https://docs.ruby-lang.org/en/4.0/MatchData.html",
+    "position 引数",
+    "compiled pattern の ignorecase",
+    "scoped multiline",
+    "positive scoped extended mode / negative scoped extended mode",
+    "compiled pattern の multiline / extended scope",
+    "non-ASCII pattern の implicit FIXEDENCODING",
+    "Unicode property pattern の source encoding",
+    "negative scoped extended mode",
+    "scoped combined i/m/x modes",
+    "Ruby mode flag order",
+    "common control-character escapes",
+    "hex and Unicode escapes",
+    "character class escape decoder",
+    "caret control escapes",
+    "`Regexp.new` の options ではなく regex literal",
+    "global match variables は設計スコープ外",
+    "public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較",
+    "MatchData メソッド一覧を網羅",
+    "危険パターンの安全性を differential/property test",
+    "DFA memory budget",
+    "String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal",
+    "ASCII-compatible pattern/input の全 4×4 encoding matrix",
+    "mode の on/off scope と comment/whitespace の parse/match を MRI と比較",
+    "constructor options の boolean/string/symbol flags",
+    "`Regexp.union` の単一 Array 入力",
+    "character class の acceptance corpus を MRI と比較",
+    "Unicode/POSIX property の acceptance corpus を MRI と比較",
+    "counting range suffix（`{min,max}+`）を受理し、MRI の greedy 相当 semantics と比較",
+    "advanced syntax の acceptance corpus を MRI と比較",
+    "### REGEXP-008 [Complete]",
+    "全 encoding semantics のうち v1 で検証する範囲",
+    "### REGEXP-010 [Complete]",
+    "`Regexp.last_match` は global match state を導入しない v1 non-goal",
+    "### REGEXP-011 [Complete]",
+    "timeout/resource control の v1 scope",
+    "### REGEXP-012 [Complete]",
+    "MatchData integration の v1 scope"
+  ].freeze
 
   def test_coverage_document_records_ruby_features_and_follow_up_tasks
     document = File.read(DOCUMENT_PATH)
 
-    REQUIRED_SECTIONS.each { |section| assert_includes document, section }
-    assert_includes document, "https://docs.ruby-lang.org/en/4.0/Regexp.html"
-    assert_includes document, "https://docs.ruby-lang.org/en/4.0/MatchData.html"
-    assert_includes document, "position 引数"
-    assert_includes document, "compiled pattern の ignorecase"
-    assert_includes document, "scoped multiline"
-    assert_includes document, "positive scoped extended mode / negative scoped extended mode"
-    assert_includes document, "compiled pattern の multiline / extended scope"
-    assert_includes document, "non-ASCII pattern の implicit FIXEDENCODING"
-    assert_includes document, "Unicode property pattern の source encoding"
-    assert_includes document, "negative scoped extended mode"
-    assert_includes document, "scoped combined i/m/x modes"
-    assert_includes document, "Ruby mode flag order"
-    assert_includes document, "common control-character escapes"
-    assert_includes document, "hex and Unicode escapes"
-    assert_includes document, "character class escape decoder"
-    assert_includes document, "caret control escapes"
-    assert_includes document, "`Regexp.new` の options ではなく regex literal"
-    assert_includes document, "global match variables は設計スコープ外"
-    assert_includes document, "public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較"
-    assert_includes document, "MatchData メソッド一覧を網羅"
-    assert_includes document, "危険パターンの安全性を differential/property test"
-    assert_includes document, "DFA memory budget"
-    assert_includes document, "String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal"
-    assert_includes document, "ASCII-compatible pattern/input の全 4×4 encoding matrix"
-    assert_includes document, "mode の on/off scope と comment/whitespace の parse/match を MRI と比較"
-    assert_includes document, "constructor options の boolean/string/symbol flags"
-    assert_includes document, "`Regexp.union` の単一 Array 入力"
-    assert_includes document, "character class の acceptance corpus を MRI と比較"
-    assert_includes document, "Unicode/POSIX property の acceptance corpus を MRI と比較"
-    assert_includes document, "counting range suffix（`{min,max}+`）を受理し、MRI の greedy 相当 semantics と比較"
-    assert_includes document, "advanced syntax の acceptance corpus を MRI と比較"
-    assert_includes document, "### REGEXP-008 [Complete]"
-    assert_includes document, "全 encoding semantics のうち v1 で検証する範囲"
-    assert_includes document, "### REGEXP-010 [Complete]"
-    assert_includes document, "`Regexp.last_match` は global match state を導入しない v1 non-goal"
-    assert_includes document, "### REGEXP-011 [Complete]"
-    assert_includes document, "timeout/resource control の v1 scope"
-    assert_includes document, "### REGEXP-012 [Complete]"
-    assert_includes document, "MatchData integration の v1 scope"
+    (REQUIRED_SECTIONS + REQUIRED_CONTENT).each { |content| assert_includes document, content }
   end
 
   def test_coverage_document_records_scan_gsub_scope

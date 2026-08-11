@@ -3,6 +3,16 @@
 require "test_helper"
 
 class InlineModifierTest < Minitest::Test
+  MODIFIER_SCOPE_CASES = [
+    ["(?i:cat)dog", 0, "CATdog"],
+    ["(?-i:cat)dog", Regexp::IGNORECASE, "CATdog"],
+    ["a(?m:.)b", 0, "a\nb"],
+    ["(?-m:a.)", Regexp::MULTILINE, "a\n"],
+    ["(?x:a b # comment\n c)", 0, "abc"],
+    ["(?-x:a b#c )", Regexp::EXTENDED, "a b#c "],
+    ["(?imx:a . # comment\n)", 0, "A\n"],
+    ["(?-imx:a .)", Regexp::IGNORECASE | Regexp::MULTILINE | Regexp::EXTENDED, "A\n"]
+  ].freeze
   def test_inline_ignorecase_modifier_applies_to_the_remaining_pattern
     assert Onibi::Regexp.new("(?i)cat").match?("CAT")
   end
@@ -80,18 +90,7 @@ class InlineModifierTest < Minitest::Test
   end
 
   def test_supported_modifier_scopes_match_mri
-    cases = [
-      ["(?i:cat)dog", 0, "CATdog"],
-      ["(?-i:cat)dog", Regexp::IGNORECASE, "CATdog"],
-      ["a(?m:.)b", 0, "a\nb"],
-      ["(?-m:a.)", Regexp::MULTILINE, "a\n"],
-      ["(?x:a b # comment\n c)", 0, "abc"],
-      ["(?-x:a b#c )", Regexp::EXTENDED, "a b#c "],
-      ["(?imx:a . # comment\n)", 0, "A\n"],
-      ["(?-imx:a .)", Regexp::IGNORECASE | Regexp::MULTILINE | Regexp::EXTENDED, "A\n"]
-    ]
-
-    cases.each do |source, options, input|
+    MODIFIER_SCOPE_CASES.each do |source, options, input|
       mri_options = Regexp.new(source, options)
       onibi_options = option_names(options)
 

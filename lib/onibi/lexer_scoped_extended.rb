@@ -90,23 +90,29 @@ module Onibi
       index = opening
       while index < source.length
         character = source[index]
-        if character == "\\"
-          index += 2
-          next
-        end
-        if character == "["
-          in_class = true
-        elsif character == "]"
-          in_class = false
-        elsif !in_class && character == "("
-          depth += 1
-        elsif !in_class && character == ")"
-          depth -= 1
-          return index if depth.zero?
-        end
-        index += 1
+        next_index, depth, in_class, closing = group_state(character, index, depth, in_class)
+        return index if closing
+
+        index = next_index
       end
       nil
+    end
+
+    def group_state(character, index, depth, in_class)
+      case character
+      when "\\"
+        [index + 2, depth, in_class, false]
+      when "["
+        [index + 1, depth, true, false]
+      when "]"
+        [index + 1, depth, false, false]
+      when "("
+        in_class ? [index + 1, depth, in_class, false] : [index + 1, depth + 1, in_class, false]
+      when ")"
+        in_class ? [index + 1, depth, in_class, false] : [index + 1, depth - 1, in_class, depth == 1]
+      else
+        [index + 1, depth, in_class, false]
+      end
     end
 
     def extended_whitespace?(character)
