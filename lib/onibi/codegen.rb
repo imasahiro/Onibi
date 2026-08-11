@@ -458,6 +458,7 @@ module Onibi
 
       def emit_literal(node, cursor)
         value = node.value.dump
+        value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
         comparison = if @options.include?("ignorecase")
                        "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{value}).first"
                      else
