@@ -19,6 +19,14 @@ module Onibi
     def gsub(input, replacement = UNDEFINED_REPLACEMENT, &block)
       validate_gsub_input!(input)
       replacement = normalize_replacement(replacement, block_given?)
+      result, cursor = replace_matches(input, replacement, block)
+      result << input[cursor..] if cursor < input.length
+      result
+    end
+
+    private
+
+    def replace_matches(input, replacement, block)
       result = String.new(encoding: input.encoding)
       cursor = 0
       each_match(input) do |match|
@@ -26,11 +34,8 @@ module Onibi
         result << replacement_for(match, input, replacement, &block)
         cursor = match.end(0)
       end
-      result << input[cursor..] if cursor < input.length
-      result
+      [result, cursor]
     end
-
-    private
 
     def each_match(input)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)

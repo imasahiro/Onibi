@@ -40,7 +40,6 @@ class ScanGsubTest < Minitest::Test
 
       assert_equal expected, Onibi::Regexp.new(pattern).gsub(input, replacement), pattern
     end
-
   end
 
   def test_gsub_matches_mri_replacement_context_tokens
@@ -51,20 +50,11 @@ class ScanGsubTest < Minitest::Test
   end
 
   def test_gsub_yields_mri_compatible_match_strings
-    expected = []
-    "x=10 y=20".gsub(/(\w+)=(\d+)/) do |value|
-      expected << value
-      value.upcase
-    end
-
-    actual = []
-    result = Onibi::Regexp.new("(\\w+)=(\\d+)").gsub("x=10 y=20") do |value|
-      actual << value
-      value.upcase
-    end
+    expected, expected_result = upcase_matches("x=10 y=20", /(\w+)=(\d+)/)
+    actual, result = upcase_matches("x=10 y=20", Onibi::Regexp.new("(\\w+)=(\\d+)"))
 
     assert_equal expected, actual
-    assert_equal "X=10 Y=20", result
+    assert_equal expected_result, result
   end
 
   def test_gsub_matches_mri_for_empty_matches_and_block_coercion
@@ -80,5 +70,21 @@ class ScanGsubTest < Minitest::Test
     mri_error = assert_raises(TypeError) { "a".gsub(/a/, nil) }
     assert_equal mri_error.class, error.class
     assert_match(/String/, error.message)
+  end
+
+  private
+
+  def upcase_matches(input, regexp)
+    values = []
+    replacement = proc do |value|
+      values << value
+      value.upcase
+    end
+    result = if regexp.is_a?(::Regexp)
+               input.gsub(regexp, &replacement)
+             else
+               regexp.gsub(input, &replacement)
+             end
+    [values, result]
   end
 end
