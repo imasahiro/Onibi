@@ -342,7 +342,9 @@ module Onibi
       end
 
       def quantifier_maximum(node)
-        return [node.maximum - 1, node.minimum].max if node.mode == :possessive && node.maximum
+        if %i[possessive possessive_bounded].include?(node.mode) && node.maximum
+          return [node.maximum - 1, node.minimum].max
+        end
 
         node.maximum || "input.length + 1"
       end

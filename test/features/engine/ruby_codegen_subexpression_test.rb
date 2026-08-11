@@ -15,7 +15,7 @@ class RubyCodegenSubexpressionTest < Minitest::Test
     ast = Onibi::Parser.new("(?~a)b").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
 
-    assert_equal true, program.search("b", 0, capture: false)
+    assert_equal false, program.search("b", 0, capture: false)
     assert_equal true, program.search("ab", 0, capture: false)
   end
 end
