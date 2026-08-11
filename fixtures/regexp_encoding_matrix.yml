@@ -1,6 +1,7 @@
 encodings:
   - ASCII-8BIT
   - EUC-JP
+  - US-ASCII
   - UTF-8
   - Windows-31J
 cases:
@@ -137,3 +138,66 @@ cases:
     input_encoding: UTF-8
     options: []
     outcome: no_match
+  - name: US-ASCII pattern and ASCII-8BIT input
+    pattern: a
+    pattern_encoding: US-ASCII
+    input: a
+    input_encoding: ASCII-8BIT
+    options: []
+    outcome: match
+  - name: US-ASCII pattern and EUC-JP input
+    pattern: a
+    pattern_encoding: US-ASCII
+    input: a
+    input_encoding: EUC-JP
+    options: []
+    outcome: match
+  - name: US-ASCII pattern and US-ASCII input
+    pattern: a
+    pattern_encoding: US-ASCII
+    input: a
+    input_encoding: US-ASCII
+    options: []
+    outcome: match
+  - name: US-ASCII pattern and UTF-8 input
+    pattern: a
+    pattern_encoding: US-ASCII
+    input: a
+    input_encoding: UTF-8
+    options: []
+    outcome: match
+  - name: US-ASCII pattern and Windows-31J input
+    pattern: a
+    pattern_encoding: US-ASCII
+    input: a
+    input_encoding: Windows-31J
+    options: []
+    outcome: match
+  - name: ASCII-8BIT pattern and US-ASCII input
+    pattern: a
+    pattern_encoding: ASCII-8BIT
+    input: a
+    input_encoding: US-ASCII
+    options: []
+    outcome: match
+  - name: EUC-JP pattern and US-ASCII input
+    pattern: a
+    pattern_encoding: EUC-JP
+    input: a
+    input_encoding: US-ASCII
+    options: []
+    outcome: match
+  - name: UTF-8 pattern and US-ASCII input
+    pattern: a
+    pattern_encoding: UTF-8
+    input: a
+    input_encoding: US-ASCII
+    options: []
+    outcome: match
+  - name: Windows-31J pattern and US-ASCII input
+    pattern: a
+    pattern_encoding: Windows-31J
+    input: a
+    input_encoding: US-ASCII
+    options: []
+    outcome: match

@@ -5,7 +5,7 @@ require "yaml"
 
 class EncodingMatrixTest < Minitest::Test
   MATRIX_PATH = File.expand_path("../../fixtures/regexp_encoding_matrix.yml", __dir__)
-  REQUIRED_ENCODINGS = %w[ASCII-8BIT EUC-JP UTF-8 Windows-31J].freeze
+  REQUIRED_ENCODINGS = %w[ASCII-8BIT EUC-JP US-ASCII UTF-8 Windows-31J].freeze
 
   def test_encoding_matrix_covers_the_supported_baseline
     matrix = YAML.safe_load(File.read(MATRIX_PATH))

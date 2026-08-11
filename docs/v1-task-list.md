@@ -86,7 +86,7 @@ Acceptance test: test/acceptance/v1_syntax_differential_test.rb compares match s
 captures, and offsets for the cases above before and after DFA warm-up. Invalid syntax
 fixtures also compare the exception class and normalized error category.
 
-### V1-004 — Complete the encoding matrix and case folding contract
+### V1-004 — Complete the encoding matrix and case folding contract [Complete]
 
 - Priority: P0
 - Dependencies: V1-002, V1-003
