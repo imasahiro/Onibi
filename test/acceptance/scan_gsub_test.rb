@@ -67,8 +67,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_gsub_rejects_an_explicit_nil_replacement_like_mri
     error = assert_raises(TypeError) { Onibi::Regexp.new("a").gsub("a", nil) }
-    mri_error = assert_raises(TypeError) { "a".gsub(/a/, nil) }
-    assert_equal mri_error.class, error.class
     assert_match(/String/, error.message)
   end
 
