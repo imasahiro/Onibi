@@ -100,7 +100,8 @@
 | class utility | Regexp.linear_time? | ◐ | String/MRI Regexp/Onibi Regexpを受け取り、backreference、subexpression call、lookaround、atomic groupを含むpatternを保守的にfalse判定する基本APIを実装。nested quantifierや実行器依存の厳密判定は未対応。 |
 | class utility | Regexp.timeout、Regexp.timeout= | ◐ | class-level timeoutのget/setとNumeric validationを実装。Ractor/global state・完全なerror compatibilityは未対応。 |
 | serialization | as_json、json_create、to_json | ❌ | JSON 拡張との連携は未実装。 |
-| integration | String#match、scan、gsub、sub | 対象外 | Core MVP/v1 の non-goal。Onibi を明示的に呼び出す API を優先する。 |
+| integration | Onibi::Regexp#scan / #gsub | ✅ | Onibi の opt-in API として、capture 配列、block、空マッチ進行、文字列置換、named/numeric backreference を実装し、MRI の String#scan / #gsub と比較検証済み。 |
+| integration | String#match、scan、gsub、sub | 対象外 | Core MVP/v1 の non-goal。String/Symbol の implicit integration は変更せず、Onibi::Regexp を明示的に呼び出す。 |
 
 ### MatchData API
 
@@ -330,6 +331,17 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal とし、v2 の MRI integration shape 判断時に解除を再検討する。
 - [x] acceptance: Ruby 4.0.6 MatchData メソッド一覧を網羅する。
 - MatchData integration の v1 scope は Onibi::Regexp が明示的に返す MatchData API とし、String/Symbol 側の implicit match/scan/gsub/sub integration は v2 に延期する。
+
+### REGEXP-013 [Complete] — Onibi::Regexp の scan / gsub API を追加する
+
+- Priority: P1
+- Dependencies: REGEXP-001, REGEXP-012
+- [x] `Onibi::Regexp#scan` の no-block 配列、capture 配列、block 戻り値を MRI の `String#scan` と比較する。
+- [x] `Onibi::Regexp#scan` の空マッチ進行を実装する。
+- [x] `Onibi::Regexp#gsub` の文字列置換、numeric/named backreference、特殊 replacement token を実装する。
+- [x] `Onibi::Regexp#gsub` の block replacement と戻り値 coercion を実装する。
+- [x] `scan` / `gsub` の入力・replacement error と既存 match API の regression を検証する。
+- Onibi の v1 opt-in 方針を維持し、String/Symbol の implicit integration は対象外とする。
 
 ## 参照資料
 
