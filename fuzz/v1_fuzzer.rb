@@ -2,6 +2,7 @@
 
 require_relative "../lib/onibi"
 require_relative "../test/support/differential_harness"
+require "yaml"
 
 ## Generates small, reproducible MRI-vs-Onibi differential cases.
 module V1Fuzzer
@@ -34,5 +35,42 @@ module V1Fuzzer
       input: INPUTS.fetch(random.rand(INPUTS.length)),
       operation: :match?
     }
+  end
+
+  def report(result)
+    lines = report_header(result)
+
+    result.fetch(:failures).each do |failure|
+      lines.concat(report_failure(failure))
+    end
+
+    lines.join("\n")
+  end
+
+  def report_header(result)
+    [
+      "# Onibi fuzz report",
+      "",
+      "- Seed: `#{result.fetch(:seed)}`",
+      "- Cases: `#{result.fetch(:cases)}`",
+      "- Mismatches: `#{result.fetch(:mismatches)}`",
+      "",
+      "Re-run with:",
+      "",
+      "```sh",
+      "ONIBI_FUZZ_SEED=#{result.fetch(:seed)} ONIBI_FUZZ_CASES=#{result.fetch(:cases)} ruby fuzz/run_v1_fuzz.rb",
+      "```"
+    ]
+  end
+
+  def report_failure(failure)
+    [
+      "",
+      "## Case #{failure.fetch(:case)}",
+      "",
+      "```yaml",
+      YAML.dump(failure),
+      "```"
+    ]
   end
 end

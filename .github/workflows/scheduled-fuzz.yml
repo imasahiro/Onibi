@@ -1,0 +1,56 @@
+name: Scheduled fuzz
+
+on:
+  schedule:
+    # 00:30 JST every day.
+    - cron: "30 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: scheduled-fuzz
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0.6"
+          bundler-cache: true
+      - name: Run fuzz suite
+        id: fuzz
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONIBI_FUZZ_SEED: ${{ github.run_id }}
+          ONIBI_FUZZ_CASES: "1000"
+        run: |
+          set +e
+          bundle exec ruby fuzz/run_v1_fuzz.rb > fuzz-report.md
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+
+          seed=$(sed -n 's/^- Seed: `\(.*\)`$/\1/p' fuzz-report.md)
+          title="[fuzz] differential failure (seed ${seed})"
+          existing=$(gh issue list --state open --search "${title} in:title" --json title \
+            --jq ".[] | select(.title == \"${title}\") | .title")
+
+          if [ -z "$existing" ]; then
+            gh issue create --title "$title" --body-file fuzz-report.md
+          else
+            echo "Open issue already exists for seed ${seed}: ${existing}"
+          fi
+
+          exit "$status"
