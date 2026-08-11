@@ -47,7 +47,7 @@ class RegexReduxTest < Minitest::Test
   end
 
   def test_each_engine_produces_the_expected_fixture_result
-    input = File.read(File.expand_path("../../fasta-500.txt", __dir__))
+    input = File.read(File.expand_path("../../benchmark/fasta-500.txt", __dir__))
 
     %i[ruby onibi].each do |engine|
       result = RegexRedux.new(StringIO.new(input), engine: engine).to_s
@@ -74,7 +74,7 @@ class RegexReduxTest < Minitest::Test
 end
 
 class RegexReduxBenchmark < Minitest::Benchmark
-  INPUT = File.read(File.expand_path("../../fasta-500.txt", __dir__))
+  INPUT = File.read(File.expand_path("../../benchmark/fasta-500.txt", __dir__))
 
   def self.bench_range
     [1, 2]
