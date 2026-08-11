@@ -393,18 +393,20 @@ An optimization is accepted only when it reduces a measured workload without an 
 
 The experimental SWAR prefilter applies by default only to whole-regexp
 alternations of two or more ASCII literals whose lengths are between two bytes
-and one native word. It packs literal positions into native-word
+and one less than a native word. It packs literal positions into native-word
 Shift-And buckets separated by zero guard bits and masks every state transition
 back to the native word width. Search probes the initial position directly and
 uses the bitmap prefilter only when at least one native word of input remains.
 The prefilter supplies ordered candidate start positions to the same generated
-matcher; longer literals, unsupported AST shapes, ignorecase, non-ASCII input,
+matcher; native-word-sized or longer literals, unsupported AST shapes,
+ignorecase, non-ASCII input,
 and short remaining input retain the baseline candidate loop. Tests and
 benchmarks can disable SWAR or opt into single-character or long-literal prefix
 filtering internally, but none is a user-facing backend selection. The default
 policy is benchmark-driven: one-character literals improve long late matches
 but regress the common early-match path even after the guards, while
-long-literal prefix filtering regresses the measured late workload.
+native-word-sized and longer prefix filtering regresses the measured late
+workloads.
 
 ## Testing strategy
 

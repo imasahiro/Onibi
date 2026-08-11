@@ -154,7 +154,7 @@ module Onibi
 
         def eligible_lengths?(patterns, allow_long_literals, allow_single_character)
           minimum = allow_single_character ? 1 : 2
-          maximum = allow_long_literals ? Float::INFINITY : WORD_BITS
+          maximum = allow_long_literals ? Float::INFINITY : WORD_BITS - 1
           patterns.all? { |pattern| pattern.bytesize.between?(minimum, maximum) }
         end
 

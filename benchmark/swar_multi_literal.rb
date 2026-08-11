@@ -9,6 +9,7 @@ require "onibi"
 module SwarMultiLiteralBenchmark
   BenchmarkCase = Struct.new(:pattern, :input, :expected, :optimizations, keyword_init: true)
   WORD_BITS = Onibi::Experimental::Swar::WORD_BITS
+  WORD_LITERALS = ["a" * WORD_BITS, "b" * WORD_BITS, "c" * WORD_BITS].freeze
   LONG_LITERALS = ["a" * (WORD_BITS + 1), "b" * (WORD_BITS + 2), "c" * (WORD_BITS + 3)].freeze
   CASES = {
     regular_late: BenchmarkCase.new(
@@ -23,6 +24,14 @@ module SwarMultiLiteralBenchmark
     one_character_late: BenchmarkCase.new(
       pattern: "a|b|c|d|e|f|g|h", input: "#{"x" * 2_000}h", expected: true,
       optimizations: %i[swar swar_single_character]
+    ),
+    word_width_early: BenchmarkCase.new(
+      pattern: WORD_LITERALS.join("|"), input: WORD_LITERALS.first, expected: true,
+      optimizations: %i[swar swar_long_literals]
+    ),
+    word_width_late: BenchmarkCase.new(
+      pattern: WORD_LITERALS.join("|"), input: "#{"x" * 2_000}#{WORD_LITERALS.last}", expected: true,
+      optimizations: %i[swar swar_long_literals]
     ),
     over_word_early: BenchmarkCase.new(
       pattern: LONG_LITERALS.join("|"), input: LONG_LITERALS.first, expected: true,

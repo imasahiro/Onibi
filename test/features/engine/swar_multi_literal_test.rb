@@ -43,6 +43,16 @@ class SwarMultiLiteralTest < Minitest::Test
     assert experimental_program.search(input, 0, capture: false)
   end
 
+  def test_word_width_literals_require_explicit_internal_optimization
+    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    ast = Onibi::Parser.new("#{"a" * word_bits}|#{"b" * word_bits}").parse
+    default_program = Onibi::Codegen::GeneratedProgram.ast(ast)
+    experimental_program = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: %i[swar swar_long_literals])
+
+    refute default_program.swar?
+    assert experimental_program.swar?
+  end
+
   def test_public_long_literal_alternation_agrees_with_mri
     patterns, input = long_literal_fixture
     expected = ::Regexp.new(patterns.join("|")).match(input)
