@@ -91,7 +91,7 @@ class RegexReduxBenchmark < Minitest::Benchmark
   private
 
   def benchmark_engine(engine)
-    validation = proc { |_range, times| assert times.all? { |time| time >= 0 } }
+    validation = proc { |_range, times| assert(times.all? { |time| time >= 0 }) }
 
     assert_performance(validation) do |iterations|
       iterations.times do
