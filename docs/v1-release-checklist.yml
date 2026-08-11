@@ -1,0 +1,14 @@
+schema_version: 1
+required_statuses:
+  - Ruby 4.0.6
+  - Cross-runtime
+  - RuboCop
+  - gem build
+  - clean gem install
+  - installed-gem smoke
+benchmarks:
+  throughput_gate: false
+workflow:
+  merge: squash
+  auto_merge: true
+  tag: after_merge

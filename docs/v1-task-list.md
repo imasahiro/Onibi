@@ -183,6 +183,7 @@ unsupported API marked as supported causes the test to fail.
 
 ### V1-010 — Pass the v1 release gates with a clean package
 
+- Status: [Complete]
 - Priority: P0
 - Dependencies: V1-005, V1-006, V1-007, V1-008, V1-009
 - Verify zero runtime dependencies and the absence of C extensions, FFI, and external
