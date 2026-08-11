@@ -30,8 +30,6 @@ module Onibi
                    | (*String patterns) -> Regexp
                    | (*(::Regexp | String) patterns) -> Regexp
     def self.linear_time?: (String | ::Regexp | Regexp pattern) -> bool
-    def self.dfa_memory_budget: () -> Integer
-    def self.dfa_memory_budget=: (Integer value) -> Integer
     def self.timeout: () -> Float?
     def self.timeout=: (Numeric? value) -> Float?
 

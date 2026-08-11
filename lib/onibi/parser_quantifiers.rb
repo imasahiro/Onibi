@@ -11,7 +11,7 @@ module Onibi
       value = consume.value
       mode, base = quantifier_mode(value)
       kind, minimum, maximum = quantifier_bounds(base)
-      mode = :greedy if mode == :possessive && kind == :bounded
+      mode = :possessive_bounded if mode == :possessive && kind == :bounded
 
       AST::Quantifier.new(atom, kind, minimum, maximum, mode)
     end

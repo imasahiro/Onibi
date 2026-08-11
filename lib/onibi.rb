@@ -26,36 +26,20 @@ require_relative "onibi/character_predicates"
 require_relative "onibi/class_predicates"
 require_relative "onibi/class_predicates_posix"
 require_relative "onibi/ast"
+require_relative "onibi/input_view"
+require_relative "onibi/invocation_state"
+require_relative "onibi/codegen"
 require_relative "parser_widths"
 require_relative "parser_assertions"
 require_relative "onibi/parser_quantifiers"
 require_relative "onibi/parser_option_groups"
 require_relative "onibi/parser"
 require_relative "onibi/parser_tokens"
-require_relative "onibi/bytecode"
-require_relative "onibi/alternation_compiler"
-require_relative "onibi/compiler_references"
-require_relative "onibi/compiler_quantifiers"
-require_relative "onibi/compiler"
-require_relative "onibi/virtual_machine_anchors"
-require_relative "onibi/virtual_machine"
-require_relative "onibi/matching_result"
-require_relative "onibi/ast_matcher_dispatch"
-require_relative "onibi/option_group_matchers"
-require_relative "onibi/ast_matcher"
-require_relative "onibi/capture_matcher_dispatch"
-require_relative "onibi/capture_matcher_atoms"
-require_relative "onibi/capture_matcher_subexpressions"
-require_relative "onibi/capture_matcher_absence"
-require_relative "onibi/capture_matcher_linebreaks"
-require_relative "onibi/capture_matcher"
 require_relative "onibi/capture_name_collector"
 require_relative "onibi/backreference_lexer"
 require_relative "onibi/match_data_destructuring"
 require_relative "onibi/match_data_offsets"
 require_relative "onibi/match_data"
-require_relative "onibi/dfa"
-require_relative "onibi/regexp_matching"
 
 module Onibi
   class Error < StandardError; end
@@ -70,7 +54,6 @@ module Onibi
     include RegexpObjectSemantics
     include RegexpTimeout
     include RegexpScanGsub
-    include RegexpMatching
 
     IGNORECASE = 1
     EXTENDED = 2
@@ -81,11 +64,6 @@ module Onibi
     class TimeoutError < RegexpError
     end
 
-    @dfa_memory_budget = 1
-    class << self
-      attr_accessor :dfa_memory_budget
-    end
-
     def self.compile(pattern, options = nil, timeout: nil)
       new(pattern, options, timeout: timeout)
     end
@@ -94,36 +72,23 @@ module Onibi
       pattern, options, timeout = normalize_constructor_pattern(pattern, options, timeout)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
-      @ast = Parser.new(pattern, normalized_options).parse
-      @bytecode = Compiler.new(@ast).compile
+      tokens = validate_pattern_syntax!(pattern, normalized_options)
+      @ast = Parser.new(tokens).parse
+      @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding).analyze(@ast)
     end
 
     def match?(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      start_position = normalize_match_position(input, position)
-      return false if start_position.negative? || start_position > input.length
-
-      result = with_timeout { matching_result(input, start_position) }
-
-      dfa_specialization
-      result
+      codegen_match?(input, position)
     end
 
     def match(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      start_position = normalize_match_position(input, position)
-      return nil if start_position.negative? || start_position > input.length
-
-      details = with_timeout { match_details(input, start_position) }
-      dfa_specialization
-      return nil unless details
-
-      context = MatchData::Context.new(input, self)
-      MatchData.new(*match_data_arguments(details, input), CaptureNameCollector.call(@ast), context)
+      codegen_match(input, position)
     end
 
     define_method([61, 126].pack("C*")) do |input|
@@ -159,11 +124,55 @@ module Onibi
       capture_names.keys
     end
 
+    # Experimental generated matcher surface used during migration validation.
+    def codegen_match?(input, position = 0)
+      with_timeout do
+        codegen_program.search(input, normalize_match_position(input, position), capture: false) == true
+      end
+    end
+
+    def codegen_match(input, position = 0)
+      start = normalize_match_position(input, position)
+      result = with_timeout { codegen_program.search(input, start, capture: true) }
+      Codegen::MatchAdapter.build(result, input, self, named_captures)
+    end
+
+    def codegen_scan(input)
+      matches = []
+      position = 0
+      while position <= input.length
+        match = codegen_match(input, position)
+        if match
+          matches << match
+          position = [match.end(0), position + 1].max
+        else
+          position += 1
+        end
+      end
+      matches
+    end
+
     def named_captures
       CaptureNameCollector.indices(@ast)
     end
 
     private
+
+    def capture_names
+      @capture_names ||= CaptureNameCollector.call(@ast)
+    end
+
+    def normalize_match_position(input, position)
+      position = position.to_int if position.respond_to?(:to_int)
+      raise TypeError, "no implicit conversion of #{position.class} into Integer" unless position.is_a?(Integer)
+
+      position += input.length if position.negative?
+      position
+    end
+
+    def codegen_program
+      @codegen_program ||= Codegen::GeneratedProgram.ast(@ast, options: @options)
+    end
 
     def validate_pattern_type!(pattern)
       return if pattern.is_a?(String)

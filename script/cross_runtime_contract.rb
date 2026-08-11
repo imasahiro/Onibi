@@ -9,23 +9,13 @@ def assert_equal(expected, actual, label)
   abort "#{label}: expected #{expected.inspect}, got #{actual.inspect}"
 end
 
-def with_budget(budget)
-  original = Onibi::Regexp.dfa_memory_budget
-  Onibi::Regexp.dfa_memory_budget = budget
-  yield
-ensure
-  Onibi::Regexp.dfa_memory_budget = original
+def observation
+  regexp = Onibi::Regexp.new("(?<word>a+)(?<suffix>b)?")
+  3.times { regexp.match("xxaaab") }
+  match = regexp.match("xxaaab")
+  [match.to_a, match.offset(0), match.offset(1), match.offset(2), regexp.match?("xxaaab")]
 end
 
-def observation_for(budget)
-  with_budget(budget) do
-    regexp = Onibi::Regexp.new("(?<word>a+)(?<suffix>b)?")
-    3.times { regexp.match("xxaaab") }
-    match = regexp.match("xxaaab")
-    [match.to_a, match.offset(0), match.offset(1), match.offset(2), regexp.match?("xxaaab")]
-  end
-end
-
-assert_equal observation_for(0), observation_for(1), "specialization results"
-with_budget(0) { abort "exception contract" unless Onibi::Regexp.new("a").match?("a") }
-with_budget(1) { abort "exception contract" unless Onibi::Regexp.new("a").match?("a") }
+assert_equal [%w[aaab aaa b], [2, 6], [2, 5], [5, 6], true], observation,
+             "generated matcher results"
+abort "exception contract" unless Onibi::Regexp.new("a").match?("a")

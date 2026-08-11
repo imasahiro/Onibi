@@ -28,8 +28,6 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "(::Regexp pattern, ?timeout: Numeric?) -> Regexp"
     assert_includes signature, "(::Regexp pattern, ?timeout: Numeric?) -> void"
     assert_includes signature, "def options: () -> Integer"
-    assert_includes signature, "def self.dfa_memory_budget: () -> Integer"
-    assert_includes signature, "def self.dfa_memory_budget=: (Integer value) -> Integer"
     assert_includes signature, "def self.timeout: () -> Float?"
     assert_includes signature, "def self.timeout=: (Numeric? value) -> Float?"
     assert_includes signature, "def self.linear_time?:"

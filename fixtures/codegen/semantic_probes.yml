@@ -1,0 +1,89 @@
+---
+- name: full_casefold_literal
+  pattern: ß
+  options: 1
+  input: SS
+  expected:
+    match: SS
+    captures: []
+    offsets:
+    - [0, 2]
+- name: full_casefold_lookbehind
+  pattern: (?<=[ß])x
+  options: 1
+  input: ssx
+  expected:
+    match: x
+    captures: []
+    offsets:
+    - [2, 3]
+- name: positive_assertion_is_atomic
+  pattern: (?=(a|aa))\1b
+  options: 0
+  input: aab
+  expected:
+    match: ab
+    captures:
+    - a
+    offsets:
+    - [1, 3]
+    - [1, 2]
+- name: subexpression_call_can_reenter
+  pattern: (?<x>a|ab)c\g<x>d
+  options: 0
+  input: acabd
+  expected:
+    match: acabd
+    captures:
+    - ab
+    offsets:
+    - [0, 5]
+    - [2, 4]
+- name: g_origin_rejects_later_candidate
+  pattern: \Ga
+  options: 0
+  input: ba
+  position: 0
+  expected:
+    match:
+    captures:
+    offsets:
+- name: g_origin_accepts_requested_position
+  pattern: \Ga
+  options: 0
+  input: ba
+  position: 1
+  expected:
+    match: a
+    captures: []
+    offsets:
+    - [1, 2]
+- name: absence_stopper_prefix
+  pattern: (?~real)
+  options: 0
+  input: surrealist
+  expected:
+    match: surrea
+    captures: []
+    offsets:
+    - [0, 6]
+- name: absence_stopper_capture
+  pattern: (?~(a))
+  options: 0
+  input: ba
+  expected:
+    match: b
+    captures:
+    - a
+    offsets:
+    - [0, 1]
+    - [1, 2]
+- name: absence_empty_stopper
+  pattern: (?~)
+  options: 0
+  input: abc
+  expected:
+    match: ""
+    captures: []
+    offsets:
+    - [3, 3]
