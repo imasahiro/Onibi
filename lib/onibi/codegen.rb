@@ -247,6 +247,101 @@ module Onibi
       def self.literal(value)
         RubyEmitter.literal(value)
       end
+
+      def self.ast(ast, options: [])
+        AstEmitter.new(options).emit(ast)
+      end
+    end
+
+    # Emits direct Ruby control flow for regular consuming AST nodes.
+    class AstEmitter
+      def initialize(options)
+        @options = options
+        @counter = 0
+      end
+
+      def emit(ast)
+        body = emit_node(ast, "position")
+        <<~RUBY
+          def self.__onibi_search(input, position, capture)
+            return false unless input.is_a?(String)
+            result = #{body}
+            result.nil? ? false : (capture ? [position, result, []] : true)
+          end
+        RUBY
+      end
+
+      private
+
+      def emit_node(node, cursor)
+        case node
+        when AST::Literal then emit_literal(node, cursor)
+        when AST::Sequence then emit_sequence(node, cursor)
+        when AST::Alternation then emit_alternation(node, cursor)
+        when AST::Any then emit_any(node, cursor)
+        when AST::CharacterClass then emit_class(node, cursor)
+        when AST::Property then emit_property(node, cursor)
+        when AST::Escape then emit_escape(node, cursor)
+        else raise CodegenError, "unsupported regular AST node #{node.class}"
+        end
+      end
+
+      def emit_literal(node, cursor)
+        value = node.value.dump
+        comparison = if @options.include?("ignorecase")
+                       "input[#{cursor}, #{node.value.length}].casecmp?(#{value})"
+                     else
+                       "input[#{cursor}, #{node.value.length}] == #{value}"
+                     end
+        "(#{comparison} ? #{cursor} + #{node.value.length} : nil)"
+      end
+
+      def emit_sequence(node, cursor)
+        emit_sequence_parts(node.parts, cursor)
+      end
+
+      def emit_sequence_parts(parts, cursor)
+        return cursor if parts.empty?
+
+        next_cursor = fresh_cursor
+        expression = emit_node(parts.first, cursor)
+        remainder = emit_sequence_parts(parts.drop(1), next_cursor)
+        "(#{next_cursor} = #{expression}; #{next_cursor}.nil? ? nil : #{remainder})"
+      end
+
+      def emit_alternation(node, cursor)
+        branches = node.branches.map do |branch|
+          expression = emit_node(branch, cursor)
+          "(branch = #{expression}; branch.nil? ? nil : branch)"
+        end
+        "(#{branches.join(" || ")})"
+      end
+
+      def emit_any(node, cursor)
+        condition = node.value == :dot && !@options.include?("multiline") ? "input[#{cursor}] != \"\\n\"" : "true"
+        "(#{cursor} < input.length && #{condition} ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_class(node, cursor)
+        predicate = "Onibi::ClassPredicates.matches?(#{node.value.dump}, input[#{cursor}])"
+        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_property(node, cursor)
+        predicate = "Onibi::UnicodeProperties.matches?(#{node.name.dump}, input[#{cursor}])"
+        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_escape(node, cursor)
+        return cursor.to_s if %i[word_boundary not_word_boundary start_match match_reset].include?(node.kind)
+
+        "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
+      end
+
+      def fresh_cursor
+        @counter += 1
+        "cursor_#{@counter}"
+      end
     end
 
     # Owns one immutable generated module for one regexp compilation.
@@ -255,6 +350,10 @@ module Onibi
 
       def self.literal(value)
         new(RubyEmitter.literal(value))
+      end
+
+      def self.ast(ast, options: [])
+        new(RubyGenerator.ast(ast, options: options))
       end
 
       def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)")

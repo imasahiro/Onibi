@@ -136,7 +136,7 @@ Add invocation-local cursor and immutable search origin, capture trail, backtrac
 
 ## Phase 2 — Regular syntax on the one control program
 
-### CODEGEN-008 — Lower literals, sequence, alternation, dot, classes, escapes, and properties
+### CODEGEN-008 [Complete] — Lower literals, sequence, alternation, dot, classes, escapes, and properties
 
 Compile the core consuming AST nodes and structural sequence/alternation nodes. Consuming atoms return ordered candidate end cursors so full case folding and `\R` are not forced into a one-character model. Reuse character predicate helpers only as leaf operations.
 
