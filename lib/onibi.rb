@@ -85,8 +85,9 @@ module Onibi
     end
 
     @dfa_memory_budget = 1
+    @codegen_default = false
     class << self
-      attr_accessor :dfa_memory_budget
+      attr_accessor :dfa_memory_budget, :codegen_default
     end
 
     def self.compile(pattern, options = nil, timeout: nil)
@@ -107,6 +108,7 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      return codegen_match?(input, position) if self.class.codegen_default
       start_position = normalize_match_position(input, position)
       return false if start_position.negative? || start_position > input.length
 
@@ -120,6 +122,7 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      return codegen_match(input, position) if self.class.codegen_default
       start_position = normalize_match_position(input, position)
       return nil if start_position.negative? || start_position > input.length
 

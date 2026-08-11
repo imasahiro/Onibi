@@ -282,7 +282,7 @@ Record compile time, source bytes, allocations, first/warm throughput, memory, s
 
 ## Phase 6 — Cutover completion
 
-### CODEGEN-024 — Switch every public matcher surface to codegen
+### CODEGEN-024 [Complete] — Switch every public matcher surface to codegen
 
 Make generated execution the production default only after CODEGEN-020 through CODEGEN-023 pass. Keep the internal legacy/verify modes for one final deletion PR; no user-facing backend option exists.
 
