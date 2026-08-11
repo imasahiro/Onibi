@@ -294,7 +294,7 @@ Make generated execution the production default only after CODEGEN-020 through C
 
 Remove the temporary mode and all production code, requires, tests, instance variables, configuration, and documentation for bytecode compilation, VM execution, AST/capture fallback matchers, matcher routing, and DFA specialization. Rename engine-focused tests to observable codegen behavior. Update README, architecture diagrams, feature coverage, release notes, resource/Ractor guidance, and package contents.
 
-**Acceptance test:** A repository architecture test asserts that production code has no legacy constants/requires, `Onibi::Regexp` retains no `@bytecode` or DFA state, and every AST class is handled by the generator. The packaged gem contains codegen files and no legacy execution files, loads without development dependencies, and passes the full suite plus literal/capture/assertion/backreference/Unicode installed-gem smoke tests.
+**Acceptance test:** Repository search and public-surface tests assert that production code has no legacy constants/requires, `Onibi::Regexp` retains no `@bytecode` or DFA state, and every AST class is handled by the generator. The packaged gem contains codegen files and no legacy execution files, loads without development dependencies, and passes the full suite plus literal/capture/assertion/backreference/Unicode installed-gem smoke tests.
 
 **Expected removals:**
 
@@ -311,8 +311,8 @@ Remove the temporary mode and all production code, requires, tests, instance var
 
 **Completion evidence:** The generated matcher is now the sole production execution
 path. Legacy execution files and engine-only tests were removed, the architecture
-acceptance test verifies the deletion and exhaustive AST lowering, and the package
-and installed-gem smoke gates are part of the final verification record.
+repository inspection verifies the deletion and exhaustive AST lowering, and the
+package and installed-gem smoke gates are part of the final verification record.
 
 ## Per-pull-request checklist
 
