@@ -1,0 +1,52 @@
+name: Cross-runtime
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ruby-implementations:
+    runs-on: ubuntu-latest
+    name: ${{ matrix.name }} ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MRI
+            version: 4.0.6
+            ruby: 4.0.6
+          - name: JRuby
+            version: 10.1.0.0
+            ruby: jruby-10.1.0.0
+          - name: TruffleRuby
+            version: 34.0.0
+            ruby: truffleruby-34.0.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - name: Run cross-runtime acceptance contract
+        run: ruby script/cross_runtime_contract.rb
+
+  mruby:
+    runs-on: ubuntu-latest
+    name: mruby 3.3.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build mruby
+        run: |
+          git clone --depth 1 --branch 3.3.0 https://github.com/mruby/mruby.git .mruby
+          make -C .mruby -j2
+      - name: Run mruby runtime smoke
+        run: .mruby/bin/mruby -e 'abort unless MRUBY_VERSION == "3.3.0"'

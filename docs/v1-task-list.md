@@ -137,7 +137,7 @@ repeated, unmatched, named, and multibyte captures. Unknown names, out-of-range 
 and invalid types raise the same exception class; character and byte positions match
 independently.
 
-### V1-007 — Establish the cross-runtime execution contract
+### V1-007 — Establish the cross-runtime execution contract [Complete]
 
 - Priority: P1
 - Dependencies: V1-003, V1-004
