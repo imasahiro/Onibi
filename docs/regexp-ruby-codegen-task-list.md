@@ -176,7 +176,7 @@ Compile numbered/named group begin/end writes and `\K`. Return the internal capt
 
 ## Phase 3 — Non-regular and control features
 
-### CODEGEN-012 — Lower lookahead and lookbehind
+### CODEGEN-012 [Complete] — Lower lookahead and lookbehind
 
 Compile assertions through explicit atomic assertion boundaries. Positive assertions commit the selected captures but discard internal choice points; negative assertions exhaust internal choices and restore all state. Use option/encoding-aware width sets for lookbehind.
 

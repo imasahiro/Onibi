@@ -267,9 +267,56 @@ module Onibi
       end
     end
 
+    # Emits lookahead and fixed-width lookbehind assertions.
+    module AssertionEmitter
+      private
+
+      def emit_assertion(node, cursor)
+        if %i[positive negative].include?(node.kind)
+          body = emit_node(node.body, cursor)
+          matched = node.kind == :positive ? "!#{body}.nil?" : "#{body}.nil?"
+          return "(#{matched} ? #{cursor} : nil)"
+        end
+
+        width = fixed_width(node.body)
+        start = "#{cursor} - #{width}"
+        body = emit_node(node.body, start)
+        matched = "#{start} >= 0 && #{body} == #{cursor}"
+        matched = "!(#{matched})" if node.kind == :negative_lookbehind
+        "(#{matched} ? #{cursor} : nil)"
+      end
+
+      def fixed_width(node)
+        case node
+        when AST::Literal then node.value.length
+        when AST::Sequence then node.parts.sum { |part| fixed_width(part) }
+        else raise CodegenError, "lookbehind requires fixed-width generated body"
+        end
+      end
+    end
+
+    # Emits counter-driven quantifier loops.
+    module QuantifierEmitter
+      private
+
+      def emit_quantifier(node, cursor)
+        counter = fresh_cursor
+        result = fresh_cursor
+        previous = fresh_cursor
+        maximum = node.maximum || "input.length + 1"
+        body = emit_node(node.expression, result)
+        greedy_exit = node.mode == :lazy ? "break if #{counter} >= #{node.minimum}" : ""
+        <<~EXPRESSION.strip
+          (begin #{result} = #{cursor}; #{counter} = 0; while #{counter} < #{maximum}; #{previous} = #{result}; #{result} = #{body}; if #{result}.nil?; #{result} = #{previous}; break; end; #{counter} += 1; break if #{result} == #{previous}; #{greedy_exit}; end; #{counter} >= #{node.minimum} ? #{result} : nil; end)
+        EXPRESSION
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
+      include AssertionEmitter
+      include QuantifierEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -281,7 +328,8 @@ module Onibi
         AST::Anchor => :emit_anchor,
         AST::OptionGroup => :emit_option_group,
         AST::Quantifier => :emit_quantifier,
-        AST::Group => :emit_group
+        AST::Group => :emit_group,
+        AST::Assertion => :emit_assertion
       }.freeze
 
       def initialize(options)
@@ -387,18 +435,6 @@ module Onibi
         scoped_options << "multiline" if node.multiline
         scoped_options << "extended" if node.extended
         AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
-      end
-
-      def emit_quantifier(node, cursor)
-        counter = fresh_cursor
-        result = fresh_cursor
-        previous = fresh_cursor
-        maximum = node.maximum || "input.length + 1"
-        body = emit_node(node.expression, result)
-        greedy_exit = node.mode == :lazy ? "break if #{counter} >= #{node.minimum}" : ""
-        <<~EXPRESSION.strip
-          (begin #{result} = #{cursor}; #{counter} = 0; while #{counter} < #{maximum}; #{previous} = #{result}; #{result} = #{body}; if #{result}.nil?; #{result} = #{previous}; break; end; #{counter} += 1; break if #{result} == #{previous}; #{greedy_exit}; end; #{counter} >= #{node.minimum} ? #{result} : nil; end)
-        EXPRESSION
       end
 
       def line_start_predicate(cursor)
