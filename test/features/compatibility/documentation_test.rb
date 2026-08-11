@@ -3,10 +3,10 @@
 require "test_helper"
 require "yaml"
 
-class V1DocumentationTest < Minitest::Test
-  INVENTORY_PATH = File.expand_path("../../fixtures/v1_api_inventory.yml", __dir__)
-  REPORT_PATH = File.expand_path("../../docs/v1-compatibility-report.yml", __dir__)
-  README_PATH = File.expand_path("../../README.md", __dir__)
+class DocumentationTest < Minitest::Test
+  INVENTORY_PATH = File.join(FIXTURES_ROOT, "api", "inventory.yml")
+  REPORT_PATH = File.join(PROJECT_ROOT, "docs", "v1-compatibility-report.yml")
+  README_PATH = File.join(PROJECT_ROOT, "README.md")
 
   def test_compatibility_report_classifies_each_inventory_item_once
     inventory = load_inventory

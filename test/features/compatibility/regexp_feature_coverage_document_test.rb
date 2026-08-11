@@ -3,7 +3,7 @@
 require "test_helper"
 
 class RegexpFeatureCoverageDocumentTest < Minitest::Test
-  DOCUMENT_PATH = File.expand_path("../../docs/regexp-feature-coverage.md", __dir__)
+  DOCUMENT_PATH = File.join(PROJECT_ROOT, "docs", "regexp-feature-coverage.md")
 
   REQUIRED_SECTIONS = [
     "Ruby 4.0.6 の機能一覧",

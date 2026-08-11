@@ -3,15 +3,15 @@
 require "yaml"
 
 require "test_helper"
-require_relative "../support/differential_harness"
+require_relative "../../support/differential_harness"
 
-class V1DifferentialHarnessTest < Minitest::Test
-  MATRIX_PATH = File.expand_path("../../fixtures/v1_differential.yml", __dir__)
-  INVENTORY_PATH = File.expand_path("../../fixtures/v1_api_inventory.yml", __dir__)
+class DifferentialContractTest < Minitest::Test
+  MATRIX = :api_differential
+  INVENTORY = :api_inventory
 
   def setup
-    @matrix = YAML.load_file(MATRIX_PATH, aliases: true)
-    @inventory = YAML.load_file(INVENTORY_PATH)
+    @matrix = TestFixtures.load(MATRIX)
+    @inventory = TestFixtures.load(INVENTORY)
   end
 
   def test_normalizes_match_metadata_and_records_error_call_sites

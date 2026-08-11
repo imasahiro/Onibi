@@ -4,14 +4,14 @@ require "yaml"
 
 require "test_helper"
 
-class V1ApiInventoryTest < Minitest::Test
-  INVENTORY_PATH = File.expand_path("../../fixtures/v1_api_inventory.yml", __dir__)
-  BASELINE_PATH = File.expand_path("../../docs/v1-baseline.yml", __dir__)
+class ApiInventoryTest < Minitest::Test
+  INVENTORY = :api_inventory
+  BASELINE_PATH = File.join(PROJECT_ROOT, "docs", "v1-baseline.yml")
   REQUIRED_ENTRY_KEYS = %w[aliases arguments block keywords kind name reason status target].freeze
   VALID_STATUSES = %w[supported partial unsupported excluded].freeze
 
   def setup
-    @inventory = YAML.load_file(INVENTORY_PATH)
+    @inventory = TestFixtures.load(INVENTORY)
     @baseline = YAML.load_file(BASELINE_PATH)
   end
 

@@ -3,8 +3,8 @@
 require "test_helper"
 require "yaml"
 
-class CoreMvpCorpusTest < Minitest::Test
-  CORPUS_PATH = File.expand_path("../../fixtures/core_mvp.yml", __dir__)
+class SyntaxCorpusTest < Minitest::Test
+  CORPUS = :syntax
 
   SUPPORTED_FEATURES = %w[
     anchors
@@ -26,7 +26,7 @@ class CoreMvpCorpusTest < Minitest::Test
   }.freeze
 
   def test_corpus_cases_have_a_complete_shape
-    corpus = YAML.safe_load(File.read(CORPUS_PATH))
+    corpus = TestFixtures.load(CORPUS)
 
     assert_equal SUPPORTED_FEATURES.sort, corpus.fetch("supported_features").sort
     assert_no_supported_unsupported_overlap(corpus)
@@ -34,7 +34,7 @@ class CoreMvpCorpusTest < Minitest::Test
   end
 
   def test_unsupported_features_are_explicitly_recorded
-    corpus = YAML.safe_load(File.read(CORPUS_PATH))
+    corpus = TestFixtures.load(CORPUS)
 
     assert_equal %w[
       backreferences

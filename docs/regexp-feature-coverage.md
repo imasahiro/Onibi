@@ -231,7 +231,7 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] Unicode property pattern の source encoding と implicit `FIXEDENCODING` introspection を追加する。
 - [x] /u、/e、/s は `Regexp.new` の options ではなく regex literal の表記であることを確認し、Onibi の文字列 pattern API の対象外として明記する。
 - [x] ASCII-compatible pattern/input の全 4×4 encoding matrix と encoding mode の発生条件を整理する。非 ASCII pattern の互換性は個別の Unicode/property・fixed encoding テストで扱い、literal の /u、/e、/s は対象外とする。
-- [x] acceptance: Ruby 4.0.6 の代表的な encoding matrix を `fixtures/regexp_encoding_matrix.yml` に fixture 化する。
+- [x] acceptance: Ruby 4.0.6 の代表的な encoding matrix を `fixtures/encoding/matrix.yml` に fixture 化する。
 - 全 encoding semantics のうち v1 で検証する範囲は、ASCII-compatible 4×4 matrix、非 ASCII/property/fixed encoding の代表ケース、および literal encoding mode の対象外判断とする。
 
 ### REGEXP-009 [Complete] — mode と source preprocessing を実装する

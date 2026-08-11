@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-class V1MatchDataContractTest < Minitest::Test
+class MatchDataContractTest < Minitest::Test
   def test_nested_repeated_unmatched_and_multibyte_captures_match_mri
     source = "(?<outer>(?<inner>é))(?<repeat>a)+(?<missing>b)?"
     input = "ééaa"

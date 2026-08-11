@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require_relative "../support/differential_harness"
+require_relative "../../support/differential_harness"
 
 class DifferentialHarnessTest < Minitest::Test
   CASES = [

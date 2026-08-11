@@ -2,16 +2,16 @@
 
 require "test_helper"
 require "yaml"
-require_relative "../../fuzz/v1_fuzzer"
+require_relative "../../../fuzz/fuzzer"
 
-class V1FuzzTest < Minitest::Test
-  CORPUS_PATH = File.expand_path("../../fuzz/v1_seed_corpus.yml", __dir__)
-  WORKFLOW_PATH = File.expand_path("../../.github/workflows/scheduled-fuzz.yml", __dir__)
+class FuzzTest < Minitest::Test
+  CORPUS_PATH = File.join(PROJECT_ROOT, "fuzz", "seed_corpus.yml")
+  WORKFLOW_PATH = File.join(PROJECT_ROOT, ".github", "workflows", "scheduled-fuzz.yml")
 
   def test_fixed_seed_smoke_is_reproducible
     seed = YAML.safe_load(File.read(CORPUS_PATH)).fetch("seeds").first
-    first = V1Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
-    second = V1Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
+    first = Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
+    second = Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
 
     assert_equal seed.fetch("cases"), first.fetch(:cases)
     assert_equal 0, first.fetch(:mismatches)
@@ -25,7 +25,7 @@ class V1FuzzTest < Minitest::Test
       end
     end
 
-    result = V1Fuzzer.run(seed: 20_260_811, cases: 8, onibi_class: mutant)
+    result = Fuzzer.run(seed: 20_260_811, cases: 8, onibi_class: mutant)
 
     assert_operator result.fetch(:mismatches), :>, 0
     assert_equal 20_260_811, result.fetch(:seed)
@@ -33,7 +33,7 @@ class V1FuzzTest < Minitest::Test
   end
 
   def test_failure_report_contains_reproduction_details
-    report = V1Fuzzer.report(failure_result)
+    report = Fuzzer.report(failure_result)
 
     assert_includes report, "Seed: `123`"
     assert_includes report, "Case 2"

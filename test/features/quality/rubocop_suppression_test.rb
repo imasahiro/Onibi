@@ -3,7 +3,7 @@
 require "test_helper"
 
 class RuboCopSuppressionTest < Minitest::Test
-  LIBRARY_PATH = File.expand_path("../../lib", __dir__)
+  LIBRARY_PATH = File.join(PROJECT_ROOT, "lib")
 
   def test_library_code_contains_no_rubocop_suppression_directives
     library_files = Dir[File.join(LIBRARY_PATH, "**", "*.rb")]

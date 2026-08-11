@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-class V1SyntaxDifferentialTest < Minitest::Test
+class SyntaxDifferentialContractTest < Minitest::Test
   CAPTURE_CASES = [
     ["alternation capture priority", "(a|aa)", 0, "aa"],
     ["repeated capture priority", "(a*)(a*)", 0, "aaa"],

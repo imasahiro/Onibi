@@ -160,7 +160,7 @@ complete suite. Run an individual differential file directly when narrowing a
 failure, for example:
 
 ```sh
-bundle exec ruby -Itest test/acceptance/core_mvp_differential_test.rb
+bundle exec ruby -Itest test/features/syntax/syntax_differential_corpus_test.rb
 ```
 
 Run property and fuzz tests when available:
@@ -239,7 +239,7 @@ bundle exec rake build
 ```
 
 For benchmark work, keep executable benchmarks under `benchmark/`, keep
-benchmark tests under `test/benchmark/`, and provide an explicit engine
+benchmark tests under `test/features/`, and provide an explicit engine
 selection when comparing MRI with Onibi. Benchmark refactors must retain a
 deterministic test that verifies the engines produce equivalent fixture output;
 performance numbers alone are not a correctness result.

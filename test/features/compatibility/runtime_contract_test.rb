@@ -3,8 +3,8 @@
 require "test_helper"
 require "yaml"
 
-class V1CrossRuntimeContractTest < Minitest::Test
-  RUNTIMES_PATH = File.expand_path("../../docs/v1-runtimes.yml", __dir__)
+class RuntimeContractTest < Minitest::Test
+  RUNTIMES_PATH = File.join(PROJECT_ROOT, "docs", "v1-runtimes.yml")
   REQUIRED_RUNTIMES = %w[mri jruby truffleruby mruby].freeze
 
   def test_v1_runtime_matrix_pins_every_target

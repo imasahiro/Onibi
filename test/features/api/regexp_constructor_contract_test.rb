@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-class V1ConstructorContractTest < Minitest::Test
+class RegexpConstructorContractTest < Minitest::Test
   def test_constructor_option_forms_match_mri_observations
     [[nil, 0], [Onibi::Regexp::IGNORECASE, ::Regexp::IGNORECASE],
      [true, ::Regexp::IGNORECASE], [false, 0], ["i", ::Regexp::IGNORECASE],

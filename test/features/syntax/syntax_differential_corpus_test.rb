@@ -2,14 +2,14 @@
 
 require "test_helper"
 require "yaml"
-require_relative "../support/differential_harness"
+require_relative "../../support/differential_harness"
 
-class CoreMvpDifferentialTest < Minitest::Test
-  CORPUS_PATH = File.expand_path("../../fixtures/core_mvp.yml", __dir__)
+class SyntaxDifferentialCorpusTest < Minitest::Test
+  CORPUS = :syntax
 
   # rubocop:disable Metrics/AbcSize
   def test_every_core_mvp_fixture_matches_mri
-    corpus = YAML.safe_load(File.read(CORPUS_PATH))
+    corpus = TestFixtures.load(CORPUS)
     fixtures = corpus.fetch("cases").map { |fixture| normalize_fixture(fixture) }
     results = fixtures.map { |fixture| DifferentialHarness.compare(fixture) }
 

@@ -35,7 +35,7 @@ class PackageTest < Minitest::Test
   private
 
   def run_command(*command)
-    Open3.capture3(*command, chdir: File.expand_path("../..", __dir__))
+    Open3.capture3(*command, chdir: PROJECT_ROOT)
   end
 
   def build_package(directory)

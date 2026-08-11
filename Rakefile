@@ -13,10 +13,10 @@ task default: %i[test rubocop]
 
 namespace :test do
   task :property do
-    sh "ruby -Itest test/acceptance/v1_fuzz_test.rb"
+    sh "ruby -Itest test/features/compatibility/fuzz_test.rb"
   end
 
   task :fuzz do
-    sh "ruby fuzz/run_v1_fuzz.rb"
+    sh "ruby fuzz/run.rb"
   end
 end

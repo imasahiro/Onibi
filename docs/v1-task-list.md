@@ -82,7 +82,7 @@ actual values.
 - Preserve MRI's greedy, leftmost-first, capture-priority, and unmatched-capture choices
   in both tagged NFA execution and warmed-up DFA execution.
 
-Acceptance test: test/acceptance/v1_syntax_differential_test.rb compares match spans,
+Acceptance test: test/features/syntax/syntax_differential_contract_test.rb compares match spans,
 captures, and offsets for the cases above before and after DFA warm-up. Invalid syntax
 fixtures also compare the exception class and normalized error category.
 
@@ -97,7 +97,7 @@ fixtures also compare the exception class and normalized error category.
 - Define Unicode folding for literals, classes, properties, and ignorecase, including when
   incompatible input returns false versus raising Encoding::CompatibilityError.
 
-Acceptance test: Every case in fixtures/regexp_encoding_matrix.yml runs against MRI and
+Acceptance test: Every case in fixtures/encoding/matrix.yml runs against MRI and
 Onibi. Match results, captures, source encoding, encoding, fixed_encoding?, and exceptions
 match. Removing or skipping a matrix case fails the acceptance test.
 
