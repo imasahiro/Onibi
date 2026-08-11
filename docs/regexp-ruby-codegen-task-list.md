@@ -84,7 +84,7 @@ Create a versioned fixture manifest covering every currently supported AST node 
 
 **Dependencies:** CODEGEN-001.
 
-### CODEGEN-003 — Specify hard semantic probes
+### CODEGEN-003 [Complete] — Specify hard semantic probes
 
 Add MRI expectation fixtures for behavior most likely to be lost during a rewrite: alternation/capture priority, empty quantified bodies, full case-fold width, captures and choice points in assertions/calls, atomic cuts, possessive and lazy repetition, unmatched backreferences, quantified subexpression recursion, conditionals, absence, `\G`, `\K`, `\R`, start positions, and timeout timing.
 
