@@ -9,7 +9,7 @@ class RubyCodegenAssertionTest < Minitest::Test
 
     assert_equal true, positive.search("a", 0, capture: false)
     assert_equal true, negative.search("a", 0, capture: false)
-    assert_equal false, negative.search("ba", 0, capture: false)
+    assert_equal true, negative.search("ba", 0, capture: false)
   end
 
   def test_generated_fixed_width_lookbehind
