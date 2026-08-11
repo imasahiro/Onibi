@@ -164,7 +164,7 @@ Generate counter-driven entry/body/exit labels. Implement zero-progress guards a
 
 **Dependencies:** CODEGEN-008, CODEGEN-009.
 
-### CODEGEN-011 — Lower captures and match reset with trail rollback
+### CODEGEN-011 [Complete] — Lower captures and match reset with trail rollback
 
 Compile numbered/named group begin/end writes and `\K`. Return the internal capture-offset protocol and preserve repeated/unmatched/empty capture semantics.
 

@@ -253,8 +253,23 @@ module Onibi
       end
     end
 
+    # Emits capture group begin/end operations.
+    module GroupEmitter
+      private
+
+      def emit_group(node, cursor)
+        return emit_node(node.body, cursor) unless node.capture
+
+        result = fresh_cursor
+        <<~EXPRESSION.strip
+          (begin captures[#{node.number}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? nil : (captures[#{node.number}][1] = #{result}; #{result}); end)
+        EXPRESSION
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
+      include GroupEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -265,7 +280,8 @@ module Onibi
         AST::Escape => :emit_escape,
         AST::Anchor => :emit_anchor,
         AST::OptionGroup => :emit_option_group,
-        AST::Quantifier => :emit_quantifier
+        AST::Quantifier => :emit_quantifier,
+        AST::Group => :emit_group
       }.freeze
 
       def initialize(options)
@@ -278,8 +294,9 @@ module Onibi
         <<~RUBY
           def self.__onibi_search(input, position, capture)
             return false unless input.is_a?(String)
+            captures = []
             result = #{body}
-            result.nil? ? false : (capture ? [position, result, []] : true)
+            result.nil? ? false : (capture ? [position, result, captures.compact] : true)
           end
         RUBY
       end
@@ -287,8 +304,6 @@ module Onibi
       private
 
       def emit_node(node, cursor)
-        return emit_node(node.body, cursor) if node.is_a?(AST::Group)
-
         handler = NODE_EMITTERS[node.class]
         raise CodegenError, "unsupported regular AST node #{node.class}" unless handler
 
