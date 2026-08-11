@@ -56,8 +56,6 @@ module Onibi
     end
 
     def normalize_inline_modifier(pattern, options)
-      return [pattern[4...-1], options | ["ignorecase"]] if whole_scoped_ignorecase?(pattern)
-
       modifier = INLINE_MODIFIERS.find { |prefix, _option, _enabled| pattern.start_with?(prefix) }
       return apply_inline_modifier(pattern, options, modifier) if modifier
 
@@ -102,10 +100,6 @@ module Onibi
     def valid_inline_modifier_names?(enabled, disabled)
       names = enabled + disabled
       !names.empty? && names.all? { |name| INLINE_OPTION_NAMES.key?(name) } && (enabled & disabled).empty?
-    end
-
-    def whole_scoped_ignorecase?(pattern)
-      pattern.start_with?("(?i:") && pattern.end_with?(")")
     end
 
     def store_pattern_options(pattern, normalized_options, _options)
