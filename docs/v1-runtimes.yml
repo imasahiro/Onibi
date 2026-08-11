@@ -1,0 +1,19 @@
+schema: 1
+baseline: MRI 4.0.6
+runtimes:
+  - name: mri
+    version: 4.0.6
+    command: ruby
+    ci: ruby/setup-ruby@v1
+  - name: jruby
+    version: 10.1.0.0
+    command: jruby
+    ci: ruby/setup-ruby@v1
+  - name: truffleruby
+    version: 34.0.0
+    command: truffleruby
+    ci: ruby/setup-ruby@v1
+  - name: mruby
+    version: 3.3.0
+    command: mruby
+    ci: source-build
