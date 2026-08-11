@@ -228,7 +228,7 @@ Route `match?`, `===`, and boolean internal callers through the same generated c
 
 **Dependencies:** CODEGEN-016.
 
-### CODEGEN-018 — Add timeout, interrupts, and deterministic resource accounting
+### CODEGEN-018 [Complete] — Add timeout, interrupts, and deterministic resource accounting
 
 Wire deadline/step checks and the exact source/AST/table/backtrack/call/repeat/trail ceilings from the design into construction and matching. Retain the existing outer timeout wrapper until cooperative checks meet the compatibility gate.
 

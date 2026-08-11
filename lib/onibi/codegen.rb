@@ -562,5 +562,22 @@ module Onibi
         @program.search(input, position, capture: false) == true
       end
     end
+
+    class ExecutionBudget
+      attr_reader :steps
+
+      def initialize(limit: 1_000_000, deadline: nil)
+        @limit = limit
+        @deadline = deadline
+        @steps = 0
+      end
+
+      def consume!(amount = 1)
+        @steps += amount
+        return true if @steps <= @limit && (!@deadline || Process.clock_gettime(Process::CLOCK_MONOTONIC) < @deadline)
+
+        raise Regexp::TimeoutError, "regexp match timeout"
+      end
+    end
   end
 end
