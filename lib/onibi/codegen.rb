@@ -551,5 +551,16 @@ module Onibi
         MatchData.new(full_match, captures, offsets, names, MatchData::Context.new(input, regexp))
       end
     end
+
+    # Experimental boolean surface backed by the same generated program.
+    class BooleanMatcher
+      def initialize(ast, options: [])
+        @program = GeneratedProgram.ast(ast, options: options)
+      end
+
+      def match?(input, position = 0)
+        @program.search(input, position, capture: false) == true
+      end
+    end
   end
 end

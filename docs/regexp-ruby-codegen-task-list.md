@@ -220,7 +220,7 @@ Adapt the internal offset result to the existing `MatchData` builder, including 
 
 **Dependencies:** CODEGEN-015.
 
-### CODEGEN-017 — Integrate `match?` without a second matcher
+### CODEGEN-017 [Complete] — Integrate `match?` without a second matcher
 
 Route `match?`, `===`, and boolean internal callers through the same generated control program with `capture: false`. Retain semantic captures needed by backreferences/conditionals and skip only proven-dead result construction.
 
