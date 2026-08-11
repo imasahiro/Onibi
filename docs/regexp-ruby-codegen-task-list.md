@@ -238,7 +238,7 @@ Wire deadline/step checks and the exact source/AST/table/backtrack/call/repeat/t
 
 **Dependencies:** CODEGEN-017.
 
-### CODEGEN-019 — Validate repeated-match and all public surfaces in explicit codegen mode
+### CODEGEN-019 [Complete] — Validate repeated-match and all public surfaces in explicit codegen mode
 
 Keep legacy as the production default. Route the complete public API suite, including `scan`, `gsub`, replacement, `=~`, `===`, and empty-match iteration, through an explicitly selected codegen test mode. Add `verify` mode for normalized result/exception comparison; it reports a minimized context without changing the generated result.
 

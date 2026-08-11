@@ -164,11 +164,41 @@ module Onibi
       capture_names.keys
     end
 
+    # Experimental generated matcher surface used during migration validation.
+    def codegen_match?(input, position = 0)
+      codegen_program.search(input, normalize_match_position(input, position), capture: false) == true
+    end
+
+    def codegen_match(input, position = 0)
+      start = normalize_match_position(input, position)
+      result = codegen_program.search(input, start, capture: true)
+      Codegen::MatchAdapter.build(result, input, self, named_captures)
+    end
+
+    def codegen_scan(input)
+      matches = []
+      position = 0
+      while position <= input.length
+        match = codegen_match(input, position)
+        if match
+          matches << match
+          position = [match.end(0), position + 1].max
+        else
+          position += 1
+        end
+      end
+      matches
+    end
+
     def named_captures
       CaptureNameCollector.indices(@ast)
     end
 
     private
+
+    def codegen_program
+      @codegen_program ||= Codegen::GeneratedProgram.ast(@ast, options: @options)
+    end
 
     def validate_pattern_type!(pattern)
       return if pattern.is_a?(String)
