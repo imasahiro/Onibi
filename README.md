@@ -31,6 +31,51 @@ compiled = Onibi::Regexp.compile("cat", ["ignorecase"])
 compiled.match?("A CAT")
 ```
 
+### v1 API examples
+
+The v1 constructor, matching, and API are opt-in: use `Onibi::Regexp` explicitly and keep MRI's `Regexp`
+available in the same process.
+
+```ruby
+require "onibi"
+
+regexp = Onibi::Regexp.new("(?<word>a+)", Onibi::Regexp::IGNORECASE)
+match = regexp.match("xxAAA")
+match["word"]
+match.captures
+match.offset("word")
+match.pre_match
+match.post_match
+```
+
+The utility and integration APIs are available on the same class:
+
+```ruby
+regexp.scan("a1 a2") { |match| match }
+regexp.gsub("a1 a2", "b")
+regexp.encoding
+Onibi::Regexp.escape("a+b")
+Onibi::Regexp.union("cat", "dog")
+```
+
+Timeouts may be set per instance or through the class default:
+
+```ruby
+Onibi::Regexp.timeout = 0.25
+regexp = Onibi::Regexp.new("a+", timeout: 0.1)
+regexp.match?("aaa")
+```
+
+Encoding behavior is explicit for string patterns and includes ASCII-compatible
+cross-encoding matches plus UTF-8 Unicode case folding. See the
+[encoding matrix](fixtures/regexp_encoding_matrix.yml) and the
+[v1 compatibility report](docs/v1-compatibility-report.yml).
+
+Known MRI differences: Onibi does not replace MRI's global match variables,
+String/Symbol implicit regexp integration, regex-literal encoding modes, JSON
+extensions, or comprehensive ReDoS controls. These are outside the v1 opt-in
+contract; see the [design document](docs/onibi-design.md) for the full scope.
+
 ## Regex Redux benchmark
 
 Run the benchmark workload with either regular expression implementation:

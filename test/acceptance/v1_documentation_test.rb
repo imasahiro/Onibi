@@ -11,12 +11,17 @@ class V1DocumentationTest < Minitest::Test
   def test_compatibility_report_classifies_each_inventory_item_once
     inventory = YAML.safe_load(File.read(INVENTORY_PATH)).fetch("entries")
     report = YAML.safe_load(File.read(REPORT_PATH))
-    entries = report.fetch("entries")
+    source = File.expand_path(report.fetch("baseline").fetch("inventory_source"), File.dirname(REPORT_PATH))
+    entries = YAML.safe_load(File.read(source)).fetch("entries")
 
     inventory_keys = inventory.map { |entry| inventory_key(entry) }.sort
     report_keys = entries.map { |entry| inventory_key(entry) }.sort
 
     assert_equal inventory_keys, report_keys
+    counts = %w[supported partial excluded unsupported].to_h { |status| [status, 0] }
+    inventory.each { |entry| counts[entry.fetch("status")] += 1 }
+    assert_equal counts,
+                 report.fetch("classification_counts")
     assert entries.all? { |entry| %w[supported partial excluded unsupported].include?(entry.fetch("status")) }
     refute_empty report.fetch("baseline").fetch("version")
     refute_empty report.fetch("baseline").fetch("source_revision")
