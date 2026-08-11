@@ -33,7 +33,7 @@ class RegexpFeatureCoverageDocumentTest < Minitest::Test
     "public API inventory は MRI 4.0.6 の実装可能な全メソッドを比較",
     "MatchData メソッド一覧を網羅",
     "危険パターンの安全性を differential/property test",
-    "DFA memory budget",
+    "generated Ruby source size と explicit backtrack/call/capture-trail budget",
     "String/Symbol の match、match?、scan、gsub、sub 統合は v1 non-goal",
     "ASCII-compatible pattern/input の全 4×4 encoding matrix",
     "mode の on/off scope と comment/whitespace の parse/match を MRI と比較",

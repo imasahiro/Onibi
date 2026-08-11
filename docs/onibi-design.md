@@ -5,6 +5,7 @@
 - **Status:** Draft
 - **Author:** TBD
 - **Created:** 2026-08-09
+- **Last architecture revision:** 2026-08-11
 - **Current baseline:** MRI Ruby 4.0.6
 - **License:** Apache License 2.0
 - **Repository:** Onibi
@@ -26,8 +27,8 @@ Onibi is initially intended for regexp-engine research and experimentation, and 
 - Deliver a small Core MVP centered on `Regexp.new`, `Regexp.compile`, `Regexp#match`, and `Regexp#match?`.
 - Reach API, semantic, and error compatibility for the documented `Regexp` and `MatchData` APIs in v1.
 - Use Ruby 4.0.6 as the current MRI baseline and update the baseline at the beginning of the next milestone when a newer stable Ruby is selected.
-- Use a single bytecode VM with Thompson-NFA execution and runtime DFA specialization.
-- Preserve a bounded DFA cache per `Onibi::Regexp` instance.
+- Use AST-to-Ruby code generation as the single production matcher architecture.
+- Keep generated programs immutable and keep all mutable execution state invocation-local.
 - Develop every feature using TDD, beginning with a failing test.
 - Build toward MRI Onigumo replacement in v2 and future JRuby replacement work in v3.
 
@@ -63,7 +64,7 @@ Onibi is initially intended for regexp-engine research and experimentation, and 
 - Support the documented `Regexp` and `MatchData` APIs in the latest stable Ruby baseline.
 - Achieve observable semantic compatibility and error compatibility.
 - Support all encodings supported by Onigumo in the selected Ruby baseline.
-- Add JRuby, TruffleRuby, and mruby support using their latest stable versions.
+- Add JRuby, TruffleRuby, and a selected mruby build with runtime source-evaluation support using their latest stable versions.
 - Run property-based and fuzz tests during the latter part of v1.
 
 ### `2.0.0`: MRI replacement compatibility
@@ -105,7 +106,7 @@ The following are not required for the Core MVP and are implemented or completed
 
 ### Research and experimentation
 
-An engineer creates an `Onibi::Regexp`, runs it against strings, inspects the resulting `Onibi::MatchData`, and experiments with parser, bytecode, NFA, and DFA behavior without modifying the Ruby VM.
+An engineer creates an `Onibi::Regexp`, runs it against strings, inspects the resulting `Onibi::MatchData`, and experiments with parser, AST analysis, and generated Ruby behavior without modifying the Ruby VM.
 
 ### Differential validation
 
@@ -122,20 +123,29 @@ pattern + options
         |
       Lexer
         |
+   Token stream
+        |
+ syntactic nesting guard
+        |
       Parser
         |
        AST
         |
-  Thompson-NFA bytecode
+ Semantic analysis
         |
-   Single Bytecode VM
+ Ruby source generation
+        |
+ capability-gated source compilation
+        |
+ immutable generated matcher
         |--------------------------|
-  NFA execution          Lazy DFA specialization
+      match?                    match
         |                          |
-        |       mutable dispatch pointer
-        |<-------------------------|
-        |
-   MatchData builder
+        +--- same control program-+
+                   |
+             offset result
+                   |
+            MatchData builder
         |
   Onibi::MatchData
 ```
@@ -143,25 +153,17 @@ pattern + options
 ### Compilation and execution
 
 1. The lexer tokenizes the pattern.
-2. The parser validates syntax and builds an AST.
-3. The AST is compiled into Thompson-NFA bytecode.
-4. The single bytecode VM begins with NFA execution.
-5. At runtime, the VM lazily specializes frequently used state transitions into DFA bytecode sequences when possible.
-6. A mutable dispatch pointer in the bytecode points to the specialized DFA sequence. The generated sequence is fully built before publication.
-7. Patterns or states that cannot be specialized continue through NFA execution in the same VM.
-8. Capture transitions carry tags so that tagged DFA and tagged NFA execution can preserve Ruby-compatible capture semantics.
-9. The match-data builder creates the public `Onibi::MatchData` result.
+2. An iterative token-stream guard rejects syntactic nesting above 256 before recursive descent; the parser then validates syntax and builds an AST from the guarded tokens.
+3. Semantic analysis computes capture tables, subexpression targets, option/encoding-aware width sets, nullability, option scopes, and deterministic labels.
+4. The AST-to-Ruby code generator emits one regexp-specialized control program.
+5. Portable Ruby compilation creates an immutable generated program eagerly during `Onibi::Regexp` construction.
+6. The generated program performs leftmost-first prioritized backtracking with invocation-local explicit stacks and capture rollback state. It does not use recursive Ruby matcher calls.
+7. `match?` and `match` enter the same generated control graph. Boolean matching may omit only result work and captures proven irrelevant to matching semantics.
+8. A successful matcher returns character-offset capture spans. The match-data builder creates the public `Onibi::MatchData` result and derives byte offsets as required.
 
-The implementation should prefer DFA specialization for performance, but correctness and compatibility take priority over specialization. DFA state explosion is bounded by a per-instance memory budget. Once the budget is reached, further specialization stops and the VM continues with NFA execution.
+The production matcher does not construct or execute NFA, DFA, or bytecode forms and does not route patterns to fallback matchers. Character predicates, Unicode tables, encoding conversion, timeout checks, and MatchData construction may remain shared leaf services, but they do not interpret the AST or select matching algorithms.
 
-### Specialization cache
-
-- Cache scope: one `Onibi::Regexp` instance.
-- State creation: lazy, based on states actually reached during matching.
-- Generated DFA sequences: immutable after publication.
-- Dispatch update: replace the mutable pointer only after generation is complete.
-- Concurrent specialization: duplicate generation and last-write-wins are acceptable in the initial design; specialization races may cause some performance degradation but must not change observable results.
-- Cache eviction: not required for the initial implementation. When the budget is reached, stop adding specializations and use NFA execution.
+Generated source is deterministic and linear in AST size, never contains raw regexp text as Ruby syntax, and is compiled through a capability-tested host adapter. The selected mruby profile must provide runtime source evaluation; a minimal build without it is outside the v1 runtime matrix. All mutable matching state is local to an invocation, so concurrent calls on the same compiled regexp cannot corrupt one another. Detailed semantics, security boundaries, migration gates, and rejected alternatives are defined in [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md).
 
 ## Interfaces
 
@@ -202,7 +204,7 @@ v1 requires equality of observable behavior through the documented public API, i
 - Documented `source`, `options`, and `inspect` output.
 - Documented block behavior and match state.
 
-Internal AST, NFA, DFA, allocation count, cache layout, and VM stack behavior are not compatibility requirements.
+Internal AST, generated labels/source, explicit-stack layout, allocation count, and compiler optimizations are not compatibility requirements.
 
 ### Error compatibility
 
@@ -237,7 +239,7 @@ The `main` branch is protected from direct pushes.
 
 ### Test layers
 
-- Unit tests for lexer, parser, AST, bytecode, NFA, lazy DFA, and match-data construction.
+- Unit tests for lexer, parser, AST analysis, Ruby code generation, generated control-flow invariants, encoding views, and match-data construction.
 - Integration tests for `Onibi::Regexp` and `Onibi::MatchData`.
 - Differential tests against the MRI baseline.
 - Regression tests for every fixed defect.
@@ -269,7 +271,7 @@ The `main` branch is protected from direct pushes.
 - FFI: forbidden.
 - Development dependencies may include Minitest, Rake, RuboCop, and libraries used for benchmarking or fuzzing.
 - MVP target: MRI.
-- v1 target: the latest stable MRI, JRuby, TruffleRuby, and mruby versions available when the milestone begins.
+- v1 target: the latest stable MRI, JRuby, TruffleRuby, and source-eval-capable mruby build selected when the milestone begins.
 - MRI is the authoritative concurrency and compatibility target for MVP. Other Ruby implementations receive explicit CI coverage in v1, but VM-specific internals are not part of Onibi's API contract.
 
 ## Performance and monitoring
@@ -278,15 +280,15 @@ Performance benchmarks are regression tests, not MVP or v1 release gates. The be
 
 - compile, first-match, and warm-match costs;
 - ordinary and pathological patterns;
-- cached DFA and NFA execution;
+- unoptimized and optimized generated control programs;
 - input sizes and scaling behavior;
-- throughput, allocations, peak DFA memory, compile time, and fallback rate.
+- throughput, allocations, generated source size, peak explicit-stack/trail memory, and compile time.
 
 The initial directional target is roughly 0.5x Ruby `Regexp` throughput, but no fixed throughput threshold blocks v1. At v2, Onibi and the MRI/Onigumo baseline will be compared using the same corpus.
 
 ## Security and resource limits
 
-The initial design has a mandatory DFA memory budget and avoids relying on unbounded DFA construction. Comprehensive ReDoS mitigation, CPU timeouts, input limits, pattern limits, step budgets, and operational observability are deferred to v2. Known limits and unsafe cases must be documented during v1 rather than hidden.
+AST-to-Ruby code generation does not eliminate ReDoS. Generated source is bounded linearly by AST size, numeric quantifiers are not unrolled, regexp text is never emitted as executable Ruby, and matching uses explicit step, deadline, backtrack, capture-trail, and call-stack accounting. The existing public timeout remains a required compatibility boundary. Comprehensive operational limit tuning remains v2 work, and known unsafe cases must be documented during v1 rather than hidden.
 
 ## Licensing and third-party material
 
@@ -302,16 +304,15 @@ Onibi is distributed under Apache License 2.0. The project may use Ruby and Onig
    - Identify the complete set of encodings supported by Onigumo in the selected MRI baseline.
    - Add representative and edge-case differential tests.
 
-3. **Tagged capture semantics**
-   - Define the precise priority and merge rules when multiple NFA paths become one DFA state.
-   - Validate greedy, alternation, named-capture, and unmatched-capture behavior against MRI.
+3. **Capture rollback and priority semantics**
+   - Validate trail rollback and checkpoint ordering for greedy, lazy, possessive, alternation, named-capture, assertion, and unmatched-capture behavior against MRI.
 
 4. **Non-regular syntax**
-   - Determine how backreferences and other non-regular features will be represented in the single bytecode VM.
-   - Decide whether a future specialized interpreter is required beyond tagged NFA execution.
+   - Complete generated explicit-stack semantics for backreferences, subexpression recursion, conditionals, and absence.
+   - Keep these features in the same generated control program rather than adding a specialized interpreter.
 
-5. **DFA pointer update semantics outside MRI**
-   - Validate the last-write-wins specialization strategy on JRuby, TruffleRuby, and mruby during v1.
+5. **Generated program portability and Ractor behavior**
+   - Validate the host source-compiler adapter, concurrent invocation, and the selected shared-regexp or per-Ractor construction contract on MRI, JRuby, TruffleRuby, and the selected mruby build during v1.
 
 6. **MRI integration shape**
    - At v2, decide whether the integration remains in the `onibi` gem or is split after measuring code size, build complexity, ABI concerns, and maintenance cost.
@@ -323,8 +324,9 @@ Onibi is distributed under Apache License 2.0. The project may use Ruby and Onig
 
 - **Global monkey patch in MVP:** rejected because it would make VM and gem compatibility failures difficult to isolate.
 - **Immediate VM-level replacement:** deferred to v2 because it would expand the MVP beyond a pure Ruby research and validation gem.
-- **Separate DFA and NFA engines:** rejected for the initial design in favor of one adaptive bytecode VM with runtime specialization.
-- **Immutable DFA sidecar only:** not selected as the primary dispatch model because the design intentionally uses mutable specialization pointers similar to threaded interpreters and method caches. Generated code remains immutable after publication.
+- **NFA/DFA execution or NFA/DFA-to-Ruby generation:** rejected because maintaining automata, capture-aware variants, backend selection, and fallback paths conflicts with the single-matcher maintenance objective.
+- **Permanent reference VM:** permitted only as a test oracle during the bounded migration and rejected in the final production architecture because it would preserve duplicate semantics.
+- **CRuby instruction-sequence generation:** rejected as a production dependency because Onibi targets portable Ruby implementations; it may be used only in optional diagnostics.
 - **Performance as a v1 gate:** rejected because v1 prioritizes API, semantic, and error compatibility; performance is initially regression data.
 - **Runtime C extension or FFI:** rejected to preserve the pure Ruby implementation and zero runtime dependencies.
 
