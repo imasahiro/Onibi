@@ -52,7 +52,10 @@ class ScanGsubTest < Minitest::Test
 
   def test_gsub_yields_mri_compatible_match_strings
     expected = []
-    "x=10 y=20".gsub(/(\w+)=(\d+)/) { |value| expected << value; value.upcase }
+    "x=10 y=20".gsub(/(\w+)=(\d+)/) do |value|
+      expected << value
+      value.upcase
+    end
 
     actual = []
     result = Onibi::Regexp.new("(\\w+)=(\\d+)").gsub("x=10 y=20") do |value|

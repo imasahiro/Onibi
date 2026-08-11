@@ -21,7 +21,6 @@ module Onibi
       replacement = normalize_replacement(replacement, block_given?)
       result = String.new(encoding: input.encoding)
       cursor = 0
-
       each_match(input) do |match|
         result << input[cursor...match.begin(0)]
         result << replacement_for(match, input, replacement, &block)
