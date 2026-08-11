@@ -39,7 +39,7 @@ class V1ApiInventoryTest < Minitest::Test
     assert_equal RUBY_VERSION, @baseline.fetch("ruby_version")
     assert_equal RUBY_REVISION.to_s, @baseline.fetch("ruby_revision").to_s
     assert_equal RUBY_ENGINE, @baseline.fetch("engine")
-    assert_equal RUBY_PLATFORM, @baseline.fetch("platform")
+    assert_includes @baseline.fetch("platforms"), RUBY_PLATFORM
     assert_equal "MRI", @baseline.fetch("implementation")
     assert_baseline_metadata
   end
