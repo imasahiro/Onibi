@@ -421,7 +421,7 @@ module Onibi
           return "(#{predicate} ? #{cursor} : nil)"
         end
         return "(#{cursor} == search_origin ? #{cursor} : nil)" if node.kind == :start_match
-        return cursor.to_s if node.kind == :match_reset
+        return "(match_start = #{cursor})" if node.kind == :match_reset
         return emit_character_escape(node, cursor) if character_escape?(node.kind)
         return emit_linebreak(cursor) if node.kind == :linebreak
 
@@ -439,7 +439,9 @@ module Onibi
 
       def emit_linebreak(cursor)
         predicate = "Onibi::CharacterPredicates.linebreak?(input[#{cursor}])"
-        "(input[#{cursor}, 2] == \"\\r\\n\" ? #{cursor} + 2 : (#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil))"
+        prefix = "(input[#{cursor}, 2] == \"\\r\\n\" ? #{cursor} + 2 : ("
+        suffix = "#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil))"
+        "#{prefix}#{suffix}"
       end
     end
 
@@ -485,8 +487,9 @@ module Onibi
           def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
             captures = []
+            match_start = position
             result = #{body}
-            result.nil? ? false : (capture ? [position, result, captures] : true)
+            result.nil? ? false : (capture ? [match_start, result, captures] : true)
           end
         RUBY
       end
@@ -559,7 +562,7 @@ module Onibi
       end
 
       def toggle_option(options, name, value)
-        return options unless value == true || value == false
+        return options unless [true, false].include?(value)
 
         value ? (options | [name]) : (options - [name])
       end
@@ -598,8 +601,8 @@ module Onibi
         while candidate <= input.length
           result = begin
             compiled_module.__send__(entrypoint, input, candidate, capture, position)
-          rescue ArgumentError => error
-            raise unless error.message.include?("wrong number of arguments")
+          rescue ArgumentError => e
+            raise unless e.message.include?("wrong number of arguments")
 
             compiled_module.__send__(entrypoint, input, candidate, capture)
           end
@@ -616,15 +619,31 @@ module Onibi
       def self.build(result, input, regexp, names = {})
         return nil unless result
 
-        start, finish, capture_offsets = result
-        characters = input.chars
-        full_match = characters[start...finish].join
-        captures = capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
-        offsets = [[start, finish]] + capture_offsets
-        normalized_names = names.transform_values do |value|
-          Array(value).reverse_each.find { |index| capture_offsets[index - 1] } || Array(value).last
+        new(result, input, regexp, names).build
+      end
+
+      def initialize(result, input, regexp, names)
+        @start, @finish, @capture_offsets = result
+        @input = input
+        @regexp = regexp
+        @names = names
+      end
+
+      def build
+        characters = @input.chars
+        full_match = characters[@start...@finish].join
+        captures = @capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
+        offsets = [[@start, @finish]] + @capture_offsets
+        names = normalized_names
+        MatchData.new(full_match, captures, offsets, names, MatchData::Context.new(@input, @regexp))
+      end
+
+      private
+
+      def normalized_names
+        @names.transform_values do |value|
+          Array(value).reverse_each.find { |index| @capture_offsets[index - 1] } || Array(value).last
         end
-        MatchData.new(full_match, captures, offsets, normalized_names, MatchData::Context.new(input, regexp))
       end
     end
 
@@ -639,6 +658,7 @@ module Onibi
       end
     end
 
+    # Counts generated execution steps and raises deterministic timeout errors.
     class ExecutionBudget
       attr_reader :steps
 
@@ -656,6 +676,7 @@ module Onibi
       end
     end
 
+    # Validates generated source before it reaches the Ruby parser.
     module Security
       FORBIDDEN_SOURCE = /RubyVM|InstructionSequence|`|\beval\b|\bsystem\b/.freeze
 
