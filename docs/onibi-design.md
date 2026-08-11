@@ -36,6 +36,7 @@ Onibi is initially intended for regexp-engine research and experimentation, and 
 - Replacing Ruby's built-in `Regexp` globally in the MVP or v1.
 - Monkey-patching `Regexp`, `String`, or other core classes in the MVP or v1.
 - Supporting `String`'s implicit regexp integration in the MVP or v1. This includes `String#match`, `scan`, `gsub`, and `sub` using Onibi automatically.
+- Adding `String`'s implicit integration remains out of scope; the v1 opt-in API may expose equivalent operations on `Onibi::Regexp` directly.
 - Making performance a v1 release gate.
 - Providing complete ReDoS and resource-exhaustion protection in v1.
 - Supporting Ruby versions other than the selected latest stable baseline as a compatibility guarantee.
@@ -335,4 +336,3 @@ Onibi is distributed under Apache License 2.0. The project may use Ruby and Onig
 - [Onigmo 6.2.0 reference commit](https://github.com/k-takata/Onigmo/commit/9e0f7ceee0c5182d2e930334ca9d298e69d389d9)
 - [Ruby 4.0.6 release](https://github.com/ruby/ruby/releases/tag/v4.0.6)
 - [Ruby source repository](https://github.com/ruby/ruby/)
-
