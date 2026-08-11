@@ -11,15 +11,8 @@ module Onibi
       source = string.is_a?(Symbol) ? string.to_s : String.try_convert(string)
       raise TypeError, "no implicit conversion of #{string.class} into String" unless source
 
-      special = "\\.^$*+?{}[]()|-# "
       escaped = source.each_char.each_with_object(source.dup.clear) do |character, result|
-        control = ESCAPED_CONTROL_CHARACTERS[character]
-        if control
-          result << control
-          next
-        end
-        result << "\\" if special.include?(character)
-        result << character
+        result << escaped_character(character)
       end
       source.ascii_only? ? escaped.force_encoding(Encoding::US_ASCII) : escaped
     end
@@ -74,10 +67,29 @@ module Onibi
       compiled = patterns.select { |pattern| compiled_pattern?(pattern) }
       return 0 if compiled.length < patterns.length
       return 0 if compiled.empty?
-      return Onibi::Regexp::NOENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::NOENCODING).positive? }
-      return Onibi::Regexp::FIXEDENCODING if compiled.any? { |pattern| (pattern.options & Onibi::Regexp::FIXEDENCODING).positive? }
+
+      compiled_encoding_option(compiled)
+    end
+
+    def escaped_character(character)
+      control = ESCAPED_CONTROL_CHARACTERS[character]
+      return control if control
+
+      special = "\\.^$*+?{}[]()|-# "
+      special.include?(character) ? "\\#{character}" : character
+    end
+
+    def compiled_encoding_option(compiled)
+      return Onibi::Regexp::NOENCODING if compiled.any? { |pattern| option_set?(pattern, Onibi::Regexp::NOENCODING) }
+      if compiled.any? { |pattern| option_set?(pattern, Onibi::Regexp::FIXEDENCODING) }
+        return Onibi::Regexp::FIXEDENCODING
+      end
 
       0
+    end
+
+    def option_set?(pattern, option)
+      (pattern.options & option).positive?
     end
 
     def non_ascii_pattern?(pattern)

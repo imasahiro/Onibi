@@ -36,8 +36,8 @@ compiled.match?("A CAT")
 Run the benchmark workload with either regular expression implementation:
 
 ```sh
-ruby regex-redux.rb --engine=ruby < fasta-500.txt
-ruby regex-redux.rb --engine=onibi < fasta-500.txt
+ruby benchmark/regex-redux.rb --engine=ruby  < benchmark/fasta-500.txt
+ruby benchmark/regex-redux.rb --engine=onibi < benchmark/fasta-500.txt
 ```
 
 To compare elapsed time for both implementations, run the Minitest benchmark

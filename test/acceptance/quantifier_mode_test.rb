@@ -25,7 +25,7 @@ class QuantifierModeTest < Minitest::Test
 
     assert regexp.match?("aaa")
     assert regexp.match?("aaaa")
-    ["aaa", "aaaa"].each do |input|
+    %w[aaa aaaa].each do |input|
       assert_equal Regexp.new("a{1,3}+a").match?(input), regexp.match?(input)
     end
   end

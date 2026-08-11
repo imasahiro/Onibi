@@ -53,7 +53,7 @@ class InlineModifierTest < Minitest::Test
 
   def test_scoped_combined_ignorecase_and_multiline_modifiers
     regexp = Onibi::Regexp.new("(?im:a.)")
-    disabled = Onibi::Regexp.new("(?-im:a.)", ["ignorecase", "multiline"])
+    disabled = Onibi::Regexp.new("(?-im:a.)", %w[ignorecase multiline])
     extended = Onibi::Regexp.new("(?imx: a # scoped comment\n)")
 
     assert regexp.match?("A\n")

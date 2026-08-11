@@ -8,9 +8,11 @@ module Onibi
     end
 
     def deconstruct_keys(keys)
-      return @names.each_with_object({}) do |(name, index), result|
-        result[name.to_sym] = self[index]
-      end unless keys
+      unless keys
+        return @names.each_with_object({}) do |(name, index), result|
+          result[name.to_sym] = self[index]
+        end
+      end
 
       keys.each_with_object({}) do |key, result|
         raise TypeError, "wrong argument type #{key.class} (expected Symbol)" unless key.is_a?(Symbol)

@@ -73,12 +73,13 @@ module Onibi
       escaped = @source[index + 1]
       raise RegexpError, "trailing escape" if escaped.nil?
 
-      special = special_escape_token(index, escaped)
-      return special if special
+      return special_escape_token(index, escaped) if special_escape_token(index, escaped)
+      return character_escape_token(index, escaped) if character_escape_token(index, escaped)
 
-      character_escape = character_escape_token(index, escaped)
-      return character_escape if character_escape
+      escaped_literal_token(index, escaped)
+    end
 
+    def escaped_literal_token(index, escaped)
       character = ESCAPED_CHARACTERS[escaped]
       return [Token.new(:literal, character, index), index + 2] if character
 

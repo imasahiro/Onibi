@@ -14,6 +14,12 @@ Every change must be developed using test-driven development:
 
 Do not add production code without a corresponding test. Every bug fix must include a regression test. Fuzz and property-test failures must be reduced to deterministic regression tests when practical.
 
+Changes to public behavior must include an acceptance test. Differential behavior
+against MRI must be covered when the feature has an MRI equivalent; unit tests
+may support the acceptance test but do not replace it. A task is not complete
+until its focused tests, the complete suite, and the applicable differential
+tests pass.
+
 ## Repository structure
 
 The project should use this high-level layout:
@@ -75,6 +81,29 @@ Install development dependencies:
 bundle install
 ```
 
+Run Ruby, Bundler, RuboCop, Rake, and `gem` from the same Ruby installation.
+Before running the gates, verify `ruby -v`, `command -v ruby`, and
+`bundle -v`; do not allow `/usr/bin/bundle` or another system Ruby to resolve
+the project's dependencies. On machines with multiple Ruby installations,
+select the intended Ruby first, for example:
+
+```sh
+export PATH="/opt/homebrew/opt/ruby/bin:$PATH"
+```
+
+Bundler's local `.bundle/` directory can contain native extensions compiled
+against a different Ruby installation. It is ignored by Git and must not be
+shared between Ruby installations or worktrees. After changing Ruby
+installations, rebuild the local dependencies with:
+
+```sh
+bundle pristine
+bundle install
+```
+
+If a native-extension load error remains, remove only the affected local
+`.bundle/` directory and run `bundle install` again under the selected Ruby.
+
 Build the gem:
 
 ```sh
@@ -119,10 +148,19 @@ Run one test by name:
 bundle exec ruby -Itest test/unit/regexp_test.rb -n '/matches literal/'
 ```
 
-Run differential tests against the current MRI baseline:
+Run the complete suite, including the MRI differential acceptance tests:
 
 ```sh
-bundle exec rake test:differential
+bundle exec rake test
+```
+
+The current Rakefile does not define a separate `test:differential` task;
+differential coverage lives in the acceptance tests and runs as part of the
+complete suite. Run an individual differential file directly when narrowing a
+failure, for example:
+
+```sh
+bundle exec ruby -Itest test/acceptance/core_mvp_differential_test.rb
 ```
 
 Run property and fuzz tests when available:
@@ -145,6 +183,16 @@ bundle exec rubocop -A
 
 Use `rubocop -A` only on the intended changed files. Review all automatic changes before staging them.
 
+Formatting and linting are separate gates: first apply autocorrection to the
+intended changed files, then run the non-mutating lint command. Do not use
+autocorrection across the whole repository as part of an unrelated change.
+Production code must not hide offenses with `rubocop:disable`; fix the code or
+update the shared configuration with a narrowly justified rule. Existing
+repository offenses must be tracked as baseline work, but changed files and
+new code must not introduce additional offenses. Acceptance-test metric
+exceptions, when necessary for a readable scenario, must remain narrow and
+must not weaken library-code linting.
+
 Install the repository pre-commit hook configuration:
 
 ```sh
@@ -157,6 +205,10 @@ The pre-commit hook must:
 2. Apply RuboCop formatting to those files.
 3. Run RuboCop lint checks.
 4. Stop the commit if formatting changed a file, so the developer can review and re-stage it.
+
+Run the hook and all quality gates with the same selected Ruby/Bundler
+environment. A hook failure caused by a Ruby-path mismatch is an environment
+failure to fix, not a reason to bypass the hook.
 
 ## Feature branches and worktrees
 
@@ -182,10 +234,15 @@ Before opening a GitHub pull request, run:
 
 ```sh
 bundle exec rake test
-bundle exec rake test:differential
 bundle exec rubocop
 bundle exec rake build
 ```
+
+For benchmark work, keep executable benchmarks under `benchmark/`, keep
+benchmark tests under `test/benchmark/`, and provide an explicit engine
+selection when comparing MRI with Onibi. Benchmark refactors must retain a
+deterministic test that verifies the engines produce equivalent fixture output;
+performance numbers alone are not a correctness result.
 
 All changes enter `main` through a GitHub pull request. Direct pushes to `main` are not part of the workflow. Enable GitHub auto-merge with squash merge after the required checks pass.
 

@@ -5,27 +5,47 @@ module Onibi
   module MatchingResult
     module_function
 
-    def call(ast, bytecode, pattern, options, input, start_position = 0)
-      literal_result = literal_casefold_result(pattern, options, input, start_position)
+    Context = Struct.new(:ast, :bytecode, :pattern, :options, :input, :start_position)
+
+    def call(context)
+      literal_result = literal_casefold_result(context.pattern, context.options, context.input, context.start_position)
       return literal_result unless literal_result.nil?
 
-      specialized_result = specialized_result(ast, pattern, options, input, start_position)
+      specialized_result = specialized_result(context)
       return specialized_result unless specialized_result.nil?
 
-      default_result(bytecode, ast, pattern, options, input, start_position)
+      default_result(context)
     end
 
-    def specialized_result(ast, pattern, options, input, start_position)
-      return !CaptureMatcher.new(ast, options).match_details(input, start_position).nil? if capture_matcher_required?(pattern)
-      return AstMatcher.new(ast, options).match?(input, start_position) if ast_matcher_required?(pattern)
+    def specialized_result(context)
+      return capture_result(context) if capture_matcher_required?(context.pattern)
+      return ast_result(context) if ast_matcher_required?(context.pattern)
 
       nil
     end
 
-    def default_result(bytecode, ast, pattern, options, input, start_position)
-      result = VirtualMachine.new(bytecode, options).match?(input, start_position)
-      result ||= (pattern.include?("|") || pattern.include?("(")) && AstMatcher.new(ast, options).match?(input, start_position)
+    def capture_result(context)
+      !CaptureMatcher.new(context.ast, context.options).match_details(
+        context.input, context.start_position
+      ).nil?
+    end
+
+    def ast_result(context)
+      AstMatcher.new(context.ast, context.options).match?(context.input, context.start_position)
+    end
+
+    def default_result(context)
+      result = VirtualMachine.new(context.bytecode, context.options).match?(
+        context.input, context.start_position
+      )
+      result ||= complex_pattern?(context.pattern) && AstMatcher.new(context.ast, context.options).match?(
+        context.input, context.start_position
+      )
       result
+    end
+
+    def complex_pattern?(pattern)
+      pattern.include?("|") || pattern.include?("(")
     end
 
     def literal_casefold_result(pattern, options, input, start_position)

@@ -7,6 +7,12 @@ module Onibi
 
     def matches?(source, character, ignorecase: false)
       character = character.chr(source.encoding) if character.is_a?(Integer)
+      match_source(source, character, ignorecase)
+    rescue RangeError
+      false
+    end
+
+    def match_source(source, character, ignorecase)
       posix = POSIX_PROPERTIES[source]
       return UnicodeProperties.matches?(posix, character) if posix
 
@@ -14,11 +20,8 @@ module Onibi
       return intersection_matches?(intersection, character, ignorecase) if intersection
 
       negated = source.start_with?("^")
-      content = negated ? source[1..] : source
-      result = union_matches?(content, character, ignorecase)
+      result = union_matches?(negated ? source[1..] : source, character, ignorecase)
       negated ? !result : result
-    rescue RangeError
-      false
     end
 
     def intersection_matches?(intersection, character, ignorecase)
@@ -55,20 +58,28 @@ module Onibi
     end
 
     def atom(source, index)
-      if source[index] == "["
-        ending = nested_end(source, index)
-        return [[:nested, source[(index + 1)...ending]], ending + 1]
-      end
-      if source[index] == "\\"
-        property, ending = property_escape(source, index)
-        return [property, ending] if property
+      return nested_atom(source, index) if source[index] == "["
+      return escaped_atom(source, index) if source[index] == "\\"
 
-        decoded, ending = literal_escape(source, index)
-        return [[:literal, decoded], ending] if decoded
+      literal_atom(source, index)
+    end
 
-        return [[:escaped, source[index + 1]], index + 2]
-      end
+    def nested_atom(source, index)
+      ending = nested_end(source, index)
+      [[:nested, source[(index + 1)...ending]], ending + 1]
+    end
 
+    def escaped_atom(source, index)
+      property, ending = property_escape(source, index)
+      return [property, ending] if property
+
+      decoded, ending = literal_escape(source, index)
+      return [[:literal, decoded], ending] if decoded
+
+      [[:escaped, source[index + 1]], index + 2]
+    end
+
+    def literal_atom(source, index)
       [[:literal, source[index]], index + 1]
     end
 
@@ -140,13 +151,16 @@ module Onibi
       raise RegexpError, "invalid Unicode property" unless ending
 
       name = source[(index + 3)...ending]
-      negated = kind == "P"
-      if name.start_with?("^")
-        name = name[1..]
-        negated = !negated
-      end
+      name, negated = property_name_and_polarity(name, kind)
       UnicodeProperties.validate!(name)
       [[:property, [name, negated]], ending + 1]
+    end
+
+    def property_name_and_polarity(name, kind)
+      negated = kind == "P"
+      return [name, negated] unless name.start_with?("^")
+
+      [name[1..], !negated]
     end
 
     def escaped_matches?(value, character)
@@ -157,7 +171,7 @@ module Onibi
 
     def literal_escape(source, index)
       escaped = source[index + 1]
-      simple = {"a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v"}[escaped]
+      simple = { "a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v" }[escaped]
       return [simple, index + 2] if simple
       return decode_control_escape(source, index) if %w[c C].include?(escaped)
       return decode_meta_escape(source, index) if escaped == "M"
@@ -190,16 +204,25 @@ module Onibi
       return [source[index], index + 1] unless source[index] == "\\"
 
       escaped = source[index + 1]
-      if escaped == "C"
-        character_index = source[index + 2] == "-" ? index + 3 : index + 2
-        character = source[character_index]
-        return [(character.ord & 0x1f).chr, character_index + 1] if character
-      elsif escaped == "x"
-        digits = source[(index + 2), 2]
-        return [digits.to_i(16).chr, index + 4] if digits && digits.length == 2 && digits.each_char.all? { |digit| hex_digit?(digit) }
-      end
+      return meta_control_character(source, index) if escaped == "C"
+      return meta_hex_character(source, index) if escaped == "x"
 
-      nil
+      [nil, nil]
+    end
+
+    def meta_control_character(source, index)
+      character_index = source[index + 2] == "-" ? index + 3 : index + 2
+      character = source[character_index]
+      return [nil, nil] unless character
+
+      [(character.ord & 0x1f).chr, character_index + 1]
+    end
+
+    def meta_hex_character(source, index)
+      digits = source[(index + 2), 2]
+      return [nil, nil] unless hex_sequence?(digits, 2)
+
+      [digits.to_i(16).chr, index + 4]
     end
 
     def decode_hex_escape(source, index)
@@ -215,32 +238,45 @@ module Onibi
     end
 
     def decode_unicode_escape(source, index)
-      if source[index + 2] == "{"
-        ending = source.index("}", index + 3)
-        raise RegexpError, "invalid Unicode escape" unless ending
+      return unicode_codepoint_escape(source, index) if source[index + 2] == "{"
 
-        values = source[(index + 3)...ending].split.map { |digits| unicode_codepoint(digits) }
-        raise RegexpError, "invalid Unicode escape" if values.empty?
-
-        return [values.map { |value| value.chr(source.encoding) }.join, ending + 1]
-      end
-
-      digits = source[(index + 2), 4]
-      raise RegexpError, "invalid Unicode escape" unless digits && digits.length == 4 && digits.each_char.all? { |digit| hex_digit?(digit) }
-
-      [digits.to_i(16).chr(source.encoding), index + 6]
+      unicode_character_escape(source, index)
     rescue RangeError, EncodingError
       raise RegexpError, "invalid Unicode escape"
     end
 
+    def unicode_codepoint_escape(source, index)
+      ending = source.index("}", index + 3)
+      raise RegexpError, "invalid Unicode escape" unless ending
+
+      values = source[(index + 3)...ending].split.map { |digits| unicode_codepoint(digits) }
+      raise RegexpError, "invalid Unicode escape" if values.empty?
+
+      [values.map { |value| value.chr(source.encoding) }.join, ending + 1]
+    end
+
+    def unicode_character_escape(source, index)
+      digits = source[(index + 2), 4]
+      raise RegexpError, "invalid Unicode escape" unless hex_sequence?(digits, 4)
+
+      [digits.to_i(16).chr(source.encoding), index + 6]
+    end
+
     def unicode_codepoint(digits)
-      raise RegexpError, "invalid Unicode escape" if digits.empty? || digits.length > 6 || !digits.each_char.all? { |digit| hex_digit?(digit) }
+      unless digits&.length&.between?(1, 6) && digits.each_char.all? { |digit| hex_digit?(digit) }
+        raise RegexpError,
+              "invalid Unicode escape"
+      end
 
       digits.to_i(16)
     end
 
     def hex_digit?(character)
-      character && (character >= "0" && character <= "9" || character >= "a" && character <= "f" || character >= "A" && character <= "F")
+      character&.match?(/[0-9a-f]/i)
+    end
+
+    def hex_sequence?(digits, length)
+      digits && digits.length == length && digits.each_char.all? { |digit| hex_digit?(digit) }
     end
 
     def escape_kind(value)

@@ -3,6 +3,7 @@
 $LOAD_PATH.unshift File.expand_path("lib", __dir__)
 require "onibi"
 
+# Runs the regex-redux benchmark workload with Ruby or Onibi.
 class RegexRedux
   MATCHERS = [
     "agggtaaa|tttaccct",
@@ -24,6 +25,7 @@ class RegexRedux
     ["\\|[^|][^|]*\\|", "-"]
   ].freeze
 
+  # Adapts Ruby's regexp implementation to the benchmark interface.
   class RubyEngine
     def compile(pattern)
       ::Regexp.new(pattern)
@@ -42,6 +44,7 @@ class RegexRedux
     end
   end
 
+  # Adapts Onibi's regexp implementation to the benchmark interface.
   class OnibiEngine
     def compile(pattern)
       Onibi::Regexp.new(pattern)
@@ -96,6 +99,10 @@ class RegexRedux
   end
 
   def self.engine_name(arguments)
+    engine_argument(arguments)
+  end
+
+  def self.engine_argument(arguments)
     arguments.each_with_index do |argument, index|
       case argument
       when "--ruby"
@@ -122,12 +129,11 @@ class RegexRedux
   end
 
   def to_s
-    "%s\n\n%d\n%d\n%d" % [
-      @match_results.join("\n"),
-      @original_size,
-      @clean_size,
-      @final_size
-    ]
+    format(
+      "%<results>s\n\n%<original>d\n%<clean>d\n%<final>d",
+      results: @match_results.join("\n"), original: @original_size,
+      clean: @clean_size, final: @final_size
+    )
   end
 
   private
@@ -156,5 +162,5 @@ end
 
 if $PROGRAM_NAME == __FILE__
   engine = RegexRedux.engine_name(ARGV)
-  puts RegexRedux.new(STDIN, engine: engine)
+  puts RegexRedux.new($stdin, engine: engine)
 end

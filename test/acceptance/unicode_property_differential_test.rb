@@ -39,7 +39,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   end
 
   def outcome(regexp_class, pattern, input)
-    regexp_class.new(pattern).match?(input) ? true : false
+    regexp_class.new(pattern).match?(input) || false
   rescue StandardError
     :error
   end

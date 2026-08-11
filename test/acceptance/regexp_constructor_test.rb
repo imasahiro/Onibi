@@ -24,7 +24,7 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal 0, Onibi::Regexp.new("cat", false).options
     assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", "i").options
     assert_equal Onibi::Regexp::IGNORECASE | Onibi::Regexp::MULTILINE | Onibi::Regexp::EXTENDED,
-      Onibi::Regexp.new("cat", "imx").options
+                 Onibi::Regexp.new("cat", "imx").options
     assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", :i).options
   end
 
@@ -55,7 +55,7 @@ class RegexpConstructorTest < Minitest::Test
   def test_names_and_named_captures_describe_named_groups
     regexp = Onibi::Regexp.new("(?<animal>cat)(?<sound>meow)?")
 
-    assert_equal ["animal", "sound"], regexp.names
+    assert_equal %w[animal sound], regexp.names
     assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
   end
 

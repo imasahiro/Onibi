@@ -6,3 +6,7 @@ Style/StringLiterals:
 
 Style/StringLiteralsInInterpolation:
   EnforcedStyle: double_quotes
+
+Naming/FileName:
+  Exclude:
+    - "benchmark/regex-redux.rb"

@@ -32,13 +32,21 @@ module Onibi
       return [@source[index], index + 1] unless @source[index] == "\\"
 
       escaped = @source[index + 1]
-      if escaped == "C" && @source[index + 2] == "-" && @source[index + 3]
-        return [(@source[index + 3].ord & 0x1f).chr, index + 4]
-      end
-      return unless escaped == "x"
+      return meta_control_character(index) if escaped == "C"
+      return meta_hex_character(index) if escaped == "x"
 
+      nil
+    end
+
+    def meta_control_character(index)
+      return unless @source[index + 2] == "-" && @source[index + 3]
+
+      [(@source[index + 3].ord & 0x1f).chr, index + 4]
+    end
+
+    def meta_hex_character(index)
       digits = @source[(index + 2), 2]
-      return unless digits && digits.length == 2 && digits.each_char.all? { |digit| hex_digit?(digit) }
+      return unless hex_sequence?(digits, 2)
 
       [digits.to_i(16).chr, index + 4]
     end
@@ -65,24 +73,33 @@ module Onibi
     end
 
     def unicode_escape_token(index)
-      if @source[index + 2] == "{"
-        ending = @source.index("}", index + 3)
-        raise RegexpError, "invalid Unicode escape" unless ending
+      return unicode_codepoint_token(index) if @source[index + 2] == "{"
 
-        values = @source[(index + 3)...ending].split.map { |digits| codepoint_character(unicode_codepoint(digits)) }
-        raise RegexpError, "invalid Unicode escape" if values.empty?
+      unicode_character_token(index)
+    end
 
-        return [Lexer::Token.new(:literal, values.join, index), ending + 1]
-      end
+    def unicode_codepoint_token(index)
+      ending = @source.index("}", index + 3)
+      raise RegexpError, "invalid Unicode escape" unless ending
 
+      values = @source[(index + 3)...ending].split.map { |digits| codepoint_character(unicode_codepoint(digits)) }
+      raise RegexpError, "invalid Unicode escape" if values.empty?
+
+      [Lexer::Token.new(:literal, values.join, index), ending + 1]
+    end
+
+    def unicode_character_token(index)
       digits = @source[(index + 2), 4]
-      raise RegexpError, "invalid Unicode escape" unless digits && digits.length == 4 && digits.each_char.all? { |digit| hex_digit?(digit) }
+      raise RegexpError, "invalid Unicode escape" unless hex_sequence?(digits, 4)
 
       [Lexer::Token.new(:literal, codepoint_character(digits.to_i(16)), index), index + 6]
     end
 
     def unicode_codepoint(digits)
-      raise RegexpError, "invalid Unicode escape" if digits.empty? || digits.length > 6 || !digits.each_char.all? { |digit| hex_digit?(digit) }
+      unless digits&.length&.between?(1, 6) && digits.each_char.all? { |digit| hex_digit?(digit) }
+        raise RegexpError,
+              "invalid Unicode escape"
+      end
 
       digits.to_i(16)
     end
@@ -94,7 +111,11 @@ module Onibi
     end
 
     def hex_digit?(character)
-      character && (character >= "0" && character <= "9" || character >= "a" && character <= "f" || character >= "A" && character <= "F")
+      character&.match?(/[0-9a-f]/i)
+    end
+
+    def hex_sequence?(digits, length)
+      digits && digits.length == length && digits.each_char.all? { |digit| hex_digit?(digit) }
     end
 
     def special_escape_token(index, escaped)

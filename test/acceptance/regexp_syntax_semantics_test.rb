@@ -4,7 +4,8 @@ require "test_helper"
 
 class RegexpSyntaxSemanticsTest < Minitest::Test
   def test_common_control_character_escapes_match_their_literal_characters
-    {"n" => "\n", "r" => "\r", "t" => "\t", "f" => "\f", "v" => "\v", "a" => "\a", "e" => "\e"}.each do |escape, character|
+    { "n" => "\n", "r" => "\r", "t" => "\t", "f" => "\f", "v" => "\v", "a" => "\a",
+      "e" => "\e" }.each do |escape, character|
       assert Onibi::Regexp.new("\\#{escape}").match?(character), escape
     end
   end

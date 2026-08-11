@@ -180,7 +180,8 @@ module Onibi
     end
 
     def matching_result(input, start_position = 0)
-      MatchingResult.call(@ast, @bytecode, @pattern, @options, input, start_position)
+      context = MatchingResult::Context.new(@ast, @bytecode, @pattern, @options, input, start_position)
+      MatchingResult.call(context)
     end
 
     def validate_pattern_syntax!(pattern, options)

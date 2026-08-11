@@ -34,13 +34,17 @@ module Onibi
       return [] if options.nil? || options == false
       return normalize_flag_options(options) if options.is_a?(String) || options.is_a?(Symbol)
 
-      normalized_options = options
-      valid_options = normalized_options.is_a?(Array) && normalized_options.all? do |option|
-        %w[ignorecase multiline extended].include?(option)
-      end
-      raise ArgumentError, "invalid options" unless valid_options
+      normalize_array_options(options)
+    end
 
-      normalized_options
+    def normalize_array_options(options)
+      return options if options.is_a?(Array) && options.all? { |option| valid_option?(option) }
+
+      raise ArgumentError, "invalid options"
+    end
+
+    def valid_option?(option)
+      %w[ignorecase multiline extended].include?(option)
     end
 
     def normalize_flag_options(options)

@@ -13,15 +13,20 @@ module Onibi
       specification, ending = scoped_option_spec(index)
       enabled, disabled = specification.split("-", -1)
       disabled ||= ""
-      states = %w[i m x].map do |modifier|
-        if enabled.include?(modifier)
-          true
-        elsif disabled.include?(modifier)
-          false
-        end
-      end
+      states = option_group_states(enabled, disabled)
 
       [Lexer::Token.new(:open_option_group, states, index), ending + 1]
+    end
+
+    def option_group_states(enabled, disabled)
+      %w[i m x].map { |modifier| option_state(modifier, enabled, disabled) }
+    end
+
+    def option_state(modifier, enabled, disabled)
+      return true if enabled.include?(modifier)
+      return false if disabled.include?(modifier)
+
+      nil
     end
 
     def scoped_option_spec(index)
@@ -31,14 +36,19 @@ module Onibi
       return unless ending
 
       specification = @source[(index + 2)...ending]
-      enabled, disabled = specification.split("-", -1)
-      enabled ||= ""
-      disabled ||= ""
-      return if enabled.empty? && disabled.empty?
-      return unless (enabled + disabled).chars.all? { |modifier| %w[i m x].include?(modifier) }
-      return unless (enabled.chars & disabled.chars).empty?
+      return unless valid_scoped_option_spec?(specification)
 
       [specification, ending]
+    end
+
+    def valid_scoped_option_spec?(specification)
+      enabled, disabled = specification.split("-", -1)
+      enabled = enabled.to_s
+      disabled = disabled.to_s
+      return false if enabled.empty? && disabled.empty?
+      return false unless (enabled + disabled).chars.all? { |modifier| %w[i m x].include?(modifier) }
+
+      (enabled.chars & disabled.chars).empty?
     end
   end
 end

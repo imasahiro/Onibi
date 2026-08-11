@@ -24,8 +24,8 @@ class MatchDataIndexTest < Minitest::Test
   def test_match_values_at_normalizes_negative_range_bounds
     match = Onibi::Regexp.new("(a)(b)").match("ab")
 
-    assert_equal ["a", "b"], match.values_at(1..-1)
-    assert_equal ["ab", "a", "b"], match.values_at(-3..-1)
+    assert_equal %w[a b], match.values_at(1..-1)
+    assert_equal %w[ab a b], match.values_at(-3..-1)
     assert_raises(RangeError) { match.values_at(-4..-1) }
   end
 end

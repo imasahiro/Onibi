@@ -3,7 +3,7 @@
 require "minitest/benchmark"
 require "stringio"
 require "test_helper"
-require_relative "../../regex-redux"
+require_relative "../../benchmark/regex-redux"
 
 class RegexReduxTest < Minitest::Test
   INPUT = ">ONE\nAGGG TAAA\n"
@@ -65,7 +65,7 @@ class RegexReduxTest < Minitest::Test
   end
 
   def test_script_does_not_use_threads_or_forked_pattern_count
-    source = File.read(File.expand_path("../../regex-redux.rb", __dir__))
+    source = File.read(File.expand_path("../../benchmark/regex-redux.rb", __dir__))
 
     refute_includes source, "Thread"
     refute_includes source, "forked_pattern_count"
