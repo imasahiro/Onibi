@@ -186,7 +186,7 @@ Compile assertions through explicit atomic assertion boundaries. Positive assert
 
 **Dependencies:** CODEGEN-011.
 
-### CODEGEN-013 — Lower atomic groups and possessive quantifiers
+### CODEGEN-013 [Complete] — Lower atomic groups and possessive quantifiers
 
 Implement cut-stack semantics that remove only checkpoints created within the committed region.
 

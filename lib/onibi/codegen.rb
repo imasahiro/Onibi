@@ -329,6 +329,7 @@ module Onibi
         AST::OptionGroup => :emit_option_group,
         AST::Quantifier => :emit_quantifier,
         AST::Group => :emit_group,
+        AST::AtomicGroup => :emit_atomic_group,
         AST::Assertion => :emit_assertion
       }.freeze
 
@@ -435,6 +436,10 @@ module Onibi
         scoped_options << "multiline" if node.multiline
         scoped_options << "extended" if node.extended
         AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
+      end
+
+      def emit_atomic_group(node, cursor)
+        emit_node(node.body, cursor)
       end
 
       def line_start_predicate(cursor)
