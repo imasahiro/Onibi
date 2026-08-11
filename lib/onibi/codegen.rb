@@ -410,6 +410,39 @@ module Onibi
       end
     end
 
+    # Emits escape predicates and variable-width linebreaks.
+    module EscapeEmitter
+      private
+
+      def emit_escape(node, cursor)
+        if %i[word_boundary not_word_boundary].include?(node.kind)
+          predicate = "Onibi::CharacterPredicates.word_boundary?(input.chars, #{cursor})"
+          predicate = "!(#{predicate})" if node.kind == :not_word_boundary
+          return "(#{predicate} ? #{cursor} : nil)"
+        end
+        return "(#{cursor} == search_origin ? #{cursor} : nil)" if node.kind == :start_match
+        return cursor.to_s if node.kind == :match_reset
+        return emit_character_escape(node, cursor) if character_escape?(node.kind)
+        return emit_linebreak(cursor) if node.kind == :linebreak
+
+        "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
+      end
+
+      def character_escape?(kind)
+        %i[digit not_digit space not_space word not_word horizontal_space not_horizontal_space].include?(kind)
+      end
+
+      def emit_character_escape(node, cursor)
+        predicate = "Onibi::CharacterPredicates.escape_matches?(#{node.kind.inspect}, input[#{cursor}])"
+        "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_linebreak(cursor)
+        predicate = "Onibi::CharacterPredicates.linebreak?(input[#{cursor}])"
+        "(input[#{cursor}, 2] == \"\\r\\n\" ? #{cursor} + 2 : (#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil))"
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
@@ -418,6 +451,7 @@ module Onibi
       include NonRegularEmitter
       include AnchorEmitter
       include PredicateEmitter
+      include EscapeEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -516,28 +550,6 @@ module Onibi
         "(#{cursor} < input.length && #{condition} ? #{cursor} + 1 : nil)"
       end
 
-      def emit_escape(node, cursor)
-        if %i[word_boundary not_word_boundary].include?(node.kind)
-          predicate = "Onibi::CharacterPredicates.word_boundary?(input.chars, #{cursor})"
-          predicate = "!(#{predicate})" if node.kind == :not_word_boundary
-          return "(#{predicate} ? #{cursor} : nil)"
-        end
-        return "(#{cursor} == search_origin ? #{cursor} : nil)" if node.kind == :start_match
-        return cursor.to_s if node.kind == :match_reset
-
-        if %i[digit not_digit space not_space word not_word horizontal_space not_horizontal_space].include?(node.kind)
-          predicate = "Onibi::CharacterPredicates.escape_matches?(#{node.kind.inspect}, input[#{cursor}])"
-          return "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
-        end
-
-        if node.kind == :linebreak
-          predicate = "Onibi::CharacterPredicates.linebreak?(input[#{cursor}])"
-          return "(input[#{cursor}, 2] == \"\\r\\n\" ? #{cursor} + 2 : (#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil))"
-        end
-
-        "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
-      end
-
       def emit_option_group(node, cursor)
         scoped_options = @options.dup
         scoped_options = toggle_option(scoped_options, "ignorecase", node.ignorecase)
@@ -584,7 +596,13 @@ module Onibi
       def search(input, position, capture:)
         candidate = position
         while candidate <= input.length
-          result = compiled_module.__send__(entrypoint, input, candidate, capture, position)
+          result = begin
+            compiled_module.__send__(entrypoint, input, candidate, capture, position)
+          rescue ArgumentError => error
+            raise unless error.message.include?("wrong number of arguments")
+
+            compiled_module.__send__(entrypoint, input, candidate, capture)
+          end
           return result if result
 
           candidate += 1
@@ -603,7 +621,9 @@ module Onibi
         full_match = characters[start...finish].join
         captures = capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
         offsets = [[start, finish]] + capture_offsets
-        normalized_names = names.transform_values { |value| Array(value).last }
+        normalized_names = names.transform_values do |value|
+          Array(value).reverse_each.find { |index| capture_offsets[index - 1] } || Array(value).last
+        end
         MatchData.new(full_match, captures, offsets, normalized_names, MatchData::Context.new(input, regexp))
       end
     end
