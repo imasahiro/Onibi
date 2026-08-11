@@ -36,7 +36,7 @@ regression test or corpus record.
 
 ## Tasks
 
-### V1-001 — Freeze the Ruby baseline and public API inventory
+### V1-001 — Freeze the Ruby baseline and public API inventory [Complete]
 
 - Priority: P0
 - Dependencies: None

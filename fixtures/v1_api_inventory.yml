@@ -1,0 +1,664 @@
+---
+schema_version: 1
+baseline: Ruby 4.0.6
+entries:
+- target: Regexp
+  kind: class_method
+  name: allocate
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: excluded
+  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
+    is outside the v1 contract.'
+- target: Regexp
+  kind: class_method
+  name: attached_object
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: excluded
+  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
+    is outside the v1 contract.'
+- target: Regexp
+  kind: class_method
+  name: compile
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: escape
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: last_match
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: excluded
+  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
+    is outside the v1 contract.'
+- target: Regexp
+  kind: class_method
+  name: linear_time?
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: new
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: quote
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases:
+  - escape
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: subclasses
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: excluded
+  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
+    is outside the v1 contract.'
+- target: Regexp
+  kind: class_method
+  name: superclass
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: excluded
+  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
+    is outside the v1 contract.'
+- target: Regexp
+  kind: class_method
+  name: timeout
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: timeout=
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: try_convert
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: union
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: class_method
+  name: yaml_tag
+  arguments:
+  - kind: req
+    name: url
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: "=="
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: "==="
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: "=~"
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: casefold?
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: encoding
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: eql?
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: fixed_encoding?
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: hash
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: inspect
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: match
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: match?
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: named_captures
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: names
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: options
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: source
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: timeout
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: to_s
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: instance_method
+  name: "~"
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: EXTENDED
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: FIXEDENCODING
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: IGNORECASE
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: MULTILINE
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: NOENCODING
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: Regexp
+  kind: constant
+  name: TimeoutError
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: "=="
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: "[]"
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: begin
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: bytebegin
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: byteend
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: byteoffset
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: captures
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: deconstruct
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: deconstruct_keys
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: end
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: eql?
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: hash
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: inspect
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: length
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: match
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: match_length
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: named_captures
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: names
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: offset
+  arguments:
+  - kind: req
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: post_match
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: pre_match
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: regexp
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: size
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: string
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: to_a
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: to_s
+  arguments: []
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
+- target: MatchData
+  kind: instance_method
+  name: values_at
+  arguments:
+  - kind: rest
+    name: ''
+  keywords: []
+  block: false
+  aliases: []
+  status: supported
+  reason: Implemented by the Onibi public API.
