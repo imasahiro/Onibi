@@ -70,7 +70,7 @@ Add the completed design, this task list, and the canonical `onibi-design.md` up
 
 **Dependencies:** None.
 
-### CODEGEN-002 — Freeze the semantic and performance baseline
+### CODEGEN-002 [Complete] — Freeze the semantic and performance baseline
 
 Create a versioned fixture manifest covering every currently supported AST node and public matching surface. Record current results, known MRI differences, construction/warm-match timings, allocations, and representative pathological scaling without treating current Onibi as the correctness oracle.
 

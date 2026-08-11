@@ -1,0 +1,92 @@
+---
+schema_version: 1
+ruby_version: "4.0.6"
+recorded_on: "2026-08-11"
+engine: "Onibi legacy matcher before AST-to-Ruby cutover"
+syntax_fixture: fixtures/syntax/core.yml
+ast_nodes:
+- Absence
+- Alternation
+- Anchor
+- Any
+- Assertion
+- AtomicGroup
+- Backreference
+- CharacterClass
+- Conditional
+- Escape
+- Group
+- Literal
+- OptionGroup
+- Property
+- Quantifier
+- Sequence
+- SubexpressionCall
+public_surfaces:
+- Onibi::Regexp#match
+- Onibi::Regexp#match?
+- Onibi::Regexp#=~
+- Onibi::Regexp#===
+- Onibi::Regexp#~
+- Onibi::Regexp#scan
+- Onibi::Regexp#gsub
+encodings:
+- utf8
+- ascii8bit
+- euc_jp
+- windows_31j
+benchmark_workloads:
+- literal_short
+- literal_long_mismatch
+- alternation_capture
+- greedy_repetition
+- assertion
+- backreference
+- unicode_casefold
+- pathological_mismatch
+benchmark_method:
+  iterations: 1000
+  reports: compile_time, first_match, warm_match, allocations, peak_memory
+baseline_observation:
+  status: captured_with_known_legacy_failures
+  notes: >-
+    Compile/first/warm timing and allocation reports are collected by the benchmark
+    harness before each codegen phase. The legacy matcher currently raises an
+    internal transition error for some complex workloads; these are recorded as
+    migration targets rather than hidden or treated as codegen regressions.
+known_legacy_differences:
+- workload: alternation_capture
+  observed: legacy matcher may raise an internal transition error
+- workload: assertion
+  observed: legacy matcher uses AST fallback semantics
+- workload: backreference
+  observed: legacy matcher uses capture-specific semantics
+- workload: pathological_mismatch
+  observed: legacy matcher has no deterministic resource accounting
+benchmark_cases:
+  literal_short:
+    pattern: cat
+    input: catnap
+  literal_long_mismatch:
+    pattern: a+b
+    input: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
+  alternation_capture:
+    pattern: (a|aa)(b|bb)
+    input: aabb
+  greedy_repetition:
+    pattern: (a*)b
+    input: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+  assertion:
+    pattern: (?=a)a
+    input: a
+  backreference:
+    pattern: (a)\1
+    input: aa
+  unicode_casefold:
+    pattern: ß
+    options:
+    - ignorecase
+    input: SS
+  pathological_mismatch:
+    pattern: (a*)*b
+    input: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaac
