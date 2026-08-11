@@ -381,7 +381,7 @@ module Onibi
         occurrence = fresh_cursor
         body = emit_node(node.body, probe)
         <<~EXPRESSION.strip
-          (begin #{probe} = 0; #{occurrence} = nil; while #{probe} < input.length; candidate = #{body}; if candidate && candidate > #{cursor}; #{occurrence} = #{probe} >= #{cursor} ? candidate - 1 : candidate; break; end; #{probe} += 1; end; #{occurrence} || input.length; end)
+          (begin #{probe} = 0; #{occurrence} = nil; seen = false; while #{probe} < input.length; candidate = #{body}; if candidate; seen = true; if candidate > #{cursor}; #{occurrence} = #{probe} >= #{cursor} ? candidate - 1 : candidate; break; end; end; #{probe} += 1; end; #{occurrence} || (seen ? #{cursor} : input.length); end)
         EXPRESSION
       end
     end
