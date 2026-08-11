@@ -42,6 +42,10 @@ module Onibi
                   | (Regexp pattern, ?timeout: Numeric?) -> void
     def match?: (String input, ?Numeric position) -> bool
     def match: (String input, ?Numeric position) -> MatchData?
+    def scan: (String input) { (String | Array[String?]) -> untyped } -> String | Array[String | Array[String?]]
+             | (String input) -> Array[String | Array[String?]]
+    def gsub: (String input, String replacement) -> String
+             | (String input) { (String) -> String } -> String
     def timeout: () -> Float?
     def =~: (String input) -> Integer?
     def ===: (String input) -> bool

@@ -6,7 +6,7 @@ class RegexpApiInventoryTest < Minitest::Test
   CLASS_METHODS = %i[compile escape quote try_convert union linear_time? timeout timeout=].freeze
   INSTANCE_METHODS = %i[
     match match? =~ === ~ casefold? encoding fixed_encoding? options source names named_captures
-    timeout to_s inspect == eql? hash
+    timeout scan gsub to_s inspect == eql? hash
   ].freeze
 
   def test_supported_regexp_api_inventory_is_present

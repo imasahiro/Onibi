@@ -40,6 +40,11 @@ class ScanGsubTest < Minitest::Test
 
       assert_equal expected, Onibi::Regexp.new(pattern).gsub(input, replacement), pattern
     end
+
+    replacement = "\\1-\\2-\\+-\\&-\\0-\\`-\\'-\\\\"
+    expected = "a".gsub(/(a)(b)?/, replacement)
+
+    assert_equal expected, Onibi::Regexp.new("(a)(b)?").gsub("a", replacement)
   end
 
   def test_gsub_yields_mri_compatible_match_strings
@@ -54,5 +59,20 @@ class ScanGsubTest < Minitest::Test
 
     assert_equal expected, actual
     assert_equal "X=10 Y=20", result
+  end
+
+  def test_gsub_matches_mri_for_empty_matches_and_block_coercion
+    expected = "ab".gsub(//) { nil }
+    actual = Onibi::Regexp.new("").gsub("ab") { nil }
+
+    assert_equal expected, actual
+    assert_equal "1", Onibi::Regexp.new("a").gsub("a") { 1 }
+  end
+
+  def test_gsub_rejects_an_explicit_nil_replacement_like_mri
+    error = assert_raises(TypeError) { Onibi::Regexp.new("a").gsub("a", nil) }
+    mri_error = assert_raises(TypeError) { "a".gsub(/a/, nil) }
+    assert_equal mri_error.class, error.class
+    assert_match(/String/, error.message)
   end
 end
