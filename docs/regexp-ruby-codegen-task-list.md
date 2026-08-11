@@ -146,7 +146,7 @@ Compile the core consuming AST nodes and structural sequence/alternation nodes. 
 
 **Dependencies:** CODEGEN-007.
 
-### CODEGEN-009 — Lower anchors, boundaries, and option scopes
+### CODEGEN-009 [Complete] — Lower anchors, boundaries, and option scopes
 
 Compile `^`, `$`, `\A`, `\Z`, `\z`, `\G`, word boundaries, and nested positive/negative i/m/x option groups. Extended mode remains a lexer/parser concern.
 

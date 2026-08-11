@@ -255,6 +255,18 @@ module Onibi
 
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
+      NODE_EMITTERS = {
+        AST::Literal => :emit_literal,
+        AST::Sequence => :emit_sequence,
+        AST::Alternation => :emit_alternation,
+        AST::Any => :emit_any,
+        AST::CharacterClass => :emit_class,
+        AST::Property => :emit_property,
+        AST::Escape => :emit_escape,
+        AST::Anchor => :emit_anchor,
+        AST::OptionGroup => :emit_option_group
+      }.freeze
+
       def initialize(options)
         @options = options
         @counter = 0
@@ -274,16 +286,10 @@ module Onibi
       private
 
       def emit_node(node, cursor)
-        case node
-        when AST::Literal then emit_literal(node, cursor)
-        when AST::Sequence then emit_sequence(node, cursor)
-        when AST::Alternation then emit_alternation(node, cursor)
-        when AST::Any then emit_any(node, cursor)
-        when AST::CharacterClass then emit_class(node, cursor)
-        when AST::Property then emit_property(node, cursor)
-        when AST::Escape then emit_escape(node, cursor)
-        else raise CodegenError, "unsupported regular AST node #{node.class}"
-        end
+        handler = NODE_EMITTERS[node.class]
+        raise CodegenError, "unsupported regular AST node #{node.class}" unless handler
+
+        send(handler, node, cursor)
       end
 
       def emit_literal(node, cursor)
@@ -333,9 +339,48 @@ module Onibi
       end
 
       def emit_escape(node, cursor)
-        return cursor.to_s if %i[word_boundary not_word_boundary start_match match_reset].include?(node.kind)
+        if %i[word_boundary not_word_boundary].include?(node.kind)
+          predicate = "Onibi::CharacterPredicates.word_boundary?(input.chars, #{cursor})"
+          predicate = "!(#{predicate})" if node.kind == :not_word_boundary
+          return "(#{predicate} ? #{cursor} : nil)"
+        end
+        return cursor.to_s if %i[start_match match_reset].include?(node.kind)
 
         "(#{cursor} < input.length ? #{cursor} + 1 : nil)"
+      end
+
+      def emit_anchor(node, cursor)
+        predicate = case node.kind
+                    when :anchor_absolute_start then "#{cursor} == 0"
+                    when :anchor_absolute_end then "#{cursor} == input.length"
+                    when :anchor_start then line_start_predicate(cursor)
+                    when :anchor_end then line_end_predicate(cursor)
+                    when :anchor_before_final_newline
+                      "#{cursor} == input.length || (#{cursor} == input.length - 1 && " \
+                        "input[#{cursor}] == \"\\n\")"
+                    else "false"
+                    end
+        "(#{predicate} ? #{cursor} : nil)"
+      end
+
+      def emit_option_group(node, cursor)
+        scoped_options = @options.dup
+        scoped_options << "ignorecase" if node.ignorecase
+        scoped_options << "multiline" if node.multiline
+        scoped_options << "extended" if node.extended
+        AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
+      end
+
+      def line_start_predicate(cursor)
+        return "#{cursor} == 0" unless @options.include?("multiline")
+
+        "#{cursor} == 0 || input[#{cursor} - 1] == \"\\n\""
+      end
+
+      def line_end_predicate(cursor)
+        return "#{cursor} == input.length" unless @options.include?("multiline")
+
+        "#{cursor} == input.length || input[#{cursor}] == \"\\n\""
       end
 
       def fresh_cursor
