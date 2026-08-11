@@ -11,9 +11,7 @@ class V1ConstructorContractTest < Minitest::Test
       actual = option.nil? ? Onibi::Regexp.new("cat") : Onibi::Regexp.new("cat", option)
 
       assert_equal expected_options, actual.options, option.inspect
-      assert_equal expected.source, actual.source, option.inspect
-      assert_equal expected.to_s, actual.to_s, option.inspect
-      assert_equal expected.inspect, actual.inspect, option.inspect
+      assert_regexp_observations(expected, actual, option.inspect)
     end
   end
 
@@ -22,10 +20,8 @@ class V1ConstructorContractTest < Minitest::Test
       expected = ::Regexp.new(source)
       actual = Onibi::Regexp.new(source)
 
-      assert_equal expected.source, actual.source, source
-      assert_equal expected.options, actual.options, source
+      assert_regexp_observations(expected, actual, source)
       assert_equal expected.casefold?, actual.casefold?, source
-      assert_equal expected.encoding, actual.encoding, source
       assert_equal expected.fixed_encoding?, actual.fixed_encoding?, source
     end
   end
@@ -35,5 +31,14 @@ class V1ConstructorContractTest < Minitest::Test
       assert_equal ::Regexp.escape(literal), Onibi::Regexp.escape(literal), literal
       assert_equal ::Regexp.quote(literal), Onibi::Regexp.quote(literal), literal
     end
+  end
+
+  private
+
+  def assert_regexp_observations(expected, actual, label)
+    assert_equal expected.source, actual.source, label
+    assert_equal expected.to_s, actual.to_s, label
+    assert_equal expected.inspect, actual.inspect, label
+    assert_equal expected.encoding, actual.encoding, label
   end
 end
