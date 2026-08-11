@@ -18,31 +18,33 @@ class V1CrossRuntimeContractTest < Minitest::Test
   end
 
   def test_specialization_modes_preserve_public_match_results
-    source = "(?<word>a+)(?<suffix>b)?"
-    input = "xxaaab"
-    observations = [0, 1].map do |budget|
-      original = Onibi::Regexp.dfa_memory_budget
-      Onibi::Regexp.dfa_memory_budget = budget
-      regexp = Onibi::Regexp.new(source)
-      3.times { regexp.match(input) }
-      match = regexp.match(input)
-      [match.to_a, match.offset(0), match.offset(1), match.offset(2), regexp.match?(input)]
-    ensure
-      Onibi::Regexp.dfa_memory_budget = original
-    end
-
-    assert_equal observations.first, observations.last
+    assert_equal observation_for(0), observation_for(1)
   end
 
   def test_specialization_modes_preserve_exception_results
-    [0, 1].each do |budget|
-      original = Onibi::Regexp.dfa_memory_budget
-      Onibi::Regexp.dfa_memory_budget = budget
-      regexp = Onibi::Regexp.new("(?<word>a+)")
+    [0, 1].each { |budget| assert_type_error_for_budget(budget) }
+  end
 
-      assert_raises(TypeError) { regexp.match?(Object.new) }
-    ensure
-      Onibi::Regexp.dfa_memory_budget = original
+  private
+
+  def observation_for(budget)
+    with_budget(budget) do
+      regexp = Onibi::Regexp.new("(?<word>a+)(?<suffix>b)?")
+      3.times { regexp.match("xxaaab") }
+      match = regexp.match("xxaaab")
+      [match.to_a, match.offset(0), match.offset(1), match.offset(2), regexp.match?("xxaaab")]
     end
+  end
+
+  def assert_type_error_for_budget(budget)
+    with_budget(budget) { assert_raises(TypeError) { Onibi::Regexp.new("a").match?(Object.new) } }
+  end
+
+  def with_budget(budget)
+    original = Onibi::Regexp.dfa_memory_budget
+    Onibi::Regexp.dfa_memory_budget = budget
+    yield
+  ensure
+    Onibi::Regexp.dfa_memory_budget = original
   end
 end
