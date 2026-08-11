@@ -35,7 +35,7 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
       - name: Run cross-runtime acceptance contract
-        run: ruby -Itest test/acceptance/v1_cross_runtime_contract_test.rb
+        run: ruby script/cross_runtime_contract.rb
 
   mruby:
     runs-on: ubuntu-latest
