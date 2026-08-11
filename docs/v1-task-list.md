@@ -151,7 +151,7 @@ Acceptance test: Each CI job completes the v1 corpus, encoding corpus, and packa
 test. With specialization disabled, at the budget limit, and after warm-up, match, capture,
 offset, and exception results remain identical.
 
-### V1-008 — Add reproducible property-based/fuzz testing and regression management
+### V1-008 — Add reproducible property-based/fuzz testing and regression management [Complete]
 
 - Priority: P1
 - Dependencies: V1-002, V1-003, V1-004

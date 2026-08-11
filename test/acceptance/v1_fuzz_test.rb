@@ -1,14 +1,18 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "yaml"
 require_relative "../../fuzz/v1_fuzzer"
 
 class V1FuzzTest < Minitest::Test
-  def test_fixed_seed_smoke_is_reproducible
-    first = V1Fuzzer.run(seed: 20260811, cases: 32)
-    second = V1Fuzzer.run(seed: 20260811, cases: 32)
+  CORPUS_PATH = File.expand_path("../../fuzz/v1_seed_corpus.yml", __dir__)
 
-    assert_equal 32, first.fetch(:cases)
+  def test_fixed_seed_smoke_is_reproducible
+    seed = YAML.safe_load(File.read(CORPUS_PATH)).fetch("seeds").first
+    first = V1Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
+    second = V1Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
+
+    assert_equal seed.fetch("cases"), first.fetch(:cases)
     assert_equal 0, first.fetch(:mismatches)
     assert_equal first, second
   end
