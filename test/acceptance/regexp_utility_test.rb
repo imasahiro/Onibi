@@ -3,6 +3,9 @@
 require "test_helper"
 
 class RegexpUtilityTest < Minitest::Test
+  UNSAFE_PATTERNS = [
+    "(?<word>a)\\k<word>", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?>a|ab)", "(?~a)"
+  ].freeze
   def test_escape_quotes_regexp_metacharacters
     assert_equal "a\\.b\\[c\\]\\ \\(x\\)\\\\", Onibi::Regexp.escape("a.b[c] (x)\\")
   end
@@ -128,17 +131,7 @@ class RegexpUtilityTest < Minitest::Test
   end
 
   def test_linear_time_rejects_each_supported_non_linear_syntax_family
-    unsafe_patterns = [
-      "(?<word>a)\\k<word>",
-      "(?=a)b",
-      "(?!a)b",
-      "(?<=a)b",
-      "(?<!a)b",
-      "(?>a|ab)",
-      "(?~a)"
-    ]
-
-    unsafe_patterns.each do |pattern|
+    UNSAFE_PATTERNS.each do |pattern|
       refute Onibi::Regexp.linear_time?(pattern), "expected #{pattern} to be unsafe"
     end
   end

@@ -70,16 +70,24 @@ class RegexRedux
       position = 0
 
       while (match = regexp.match(input, position))
-        start = match.begin(0)
-        finish = match.end(0)
-        result << input[cursor...start] << replacement
-        cursor = finish
-        position = finish > position ? finish : position + 1
+        cursor, position = replace_match(result, input, [cursor, position], match, replacement)
         break if position > input.length
       end
 
       result << input[cursor..] if cursor < input.length
       result
+    end
+
+    def next_position(finish, position)
+      finish > position ? finish : position + 1
+    end
+
+    def replace_match(result, input, state, match, replacement)
+      cursor, position = state
+      start = match.begin(0)
+      finish = match.end(0)
+      result << input[cursor...start] << replacement
+      [finish, next_position(finish, position)]
     end
 
     def source(regexp)
@@ -104,19 +112,20 @@ class RegexRedux
 
   def self.engine_argument(arguments)
     arguments.each_with_index do |argument, index|
-      case argument
-      when "--ruby"
-        return :ruby
-      when "--onibi"
-        return :onibi
-      when "--engine"
-        return arguments.fetch(index + 1).to_sym
-      else
-        return argument.delete_prefix("--engine=").to_sym if argument.start_with?("--engine=")
-      end
+      engine = parse_engine_argument(argument, arguments, index)
+      return engine if engine
     end
 
     :ruby
+  end
+
+  def self.parse_engine_argument(argument, arguments, index)
+    return :ruby if argument == "--ruby"
+    return :onibi if argument == "--onibi"
+    return arguments.fetch(index + 1).to_sym if argument == "--engine"
+    return argument.delete_prefix("--engine=").to_sym if argument.start_with?("--engine=")
+
+    nil
   end
 
   def initialize(io, engine: :ruby)

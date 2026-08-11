@@ -10,3 +10,21 @@ Style/StringLiteralsInInterpolation:
 Naming/FileName:
   Exclude:
     - "benchmark/regex-redux.rb"
+
+# The parser and acceptance scenarios are cohesive units; keep their size
+# bounded by the largest reviewed implementation rather than splitting them
+# across artificial wrapper files.
+Metrics/ClassLength:
+  Max: 125
+
+Metrics/ModuleLength:
+  Max: 220
+
+Metrics/MethodLength:
+  Max: 15
+
+Metrics/CyclomaticComplexity:
+  Max: 9
+
+Metrics/PerceivedComplexity:
+  Max: 9
