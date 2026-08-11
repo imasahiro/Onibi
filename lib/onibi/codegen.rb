@@ -388,14 +388,10 @@ module Onibi
       end
 
       def line_start_predicate(cursor)
-        return "#{cursor} == 0" unless @options.include?("multiline")
-
         "#{cursor} == 0 || input[#{cursor} - 1] == \"\\n\""
       end
 
       def line_end_predicate(cursor)
-        return "#{cursor} == input.length" unless @options.include?("multiline")
-
         "#{cursor} == input.length || input[#{cursor}] == \"\\n\""
       end
     end
@@ -406,12 +402,14 @@ module Onibi
 
       def emit_class(node, cursor)
         ignorecase = @options.include?("ignorecase")
-        predicate = "Onibi::ClassPredicates.matches?(#{node.value.dump}, input[#{cursor}], ignorecase: #{ignorecase})"
+        value = node.value.dump
+        value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
+        predicate = "Onibi::ClassPredicates.matches?(#{value}, input[#{cursor}], ignorecase: #{ignorecase})"
         "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
       end
 
       def emit_property(node, cursor)
-        predicate = "Onibi::UnicodeProperties.matches?(#{node.name.dump}, input[#{cursor}])"
+        predicate = "Onibi::UnicodeProperties.matches?(#{node.name.dump}, input[#{cursor}].encode(Encoding::UTF_8))"
         predicate = "!(#{predicate})" if node.negated
         "(#{cursor} < input.length && #{predicate} ? #{cursor} + 1 : nil)"
       end
