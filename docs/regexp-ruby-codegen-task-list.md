@@ -114,7 +114,7 @@ First add an iterative token-stream nesting guard before recursive descent and m
 
 **Dependencies:** CODEGEN-004.
 
-### CODEGEN-006 — Add `InputView` and offset conversion
+### CODEGEN-006 [Complete] — Add `InputView` and offset conversion
 
 Implement the correctness-first character cursor and character-to-byte boundary mapping for UTF-8, ASCII-8BIT, and the currently supported invalid-byte cases. Keep encoding compatibility validation at the public boundary.
 
