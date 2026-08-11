@@ -3,6 +3,7 @@
 require_relative "../lib/onibi"
 require_relative "../test/support/differential_harness"
 
+## Generates small, reproducible MRI-vs-Onibi differential cases.
 module V1Fuzzer
   PATTERNS = ["a", "a+", "ab", "(?<word>a+)", "a|b", "a?", "[ab]+", "."].freeze
   INPUTS = ["", "a", "A", "ab", "aaa", "bbb", "x"].freeze

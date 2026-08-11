@@ -24,10 +24,10 @@ class V1FuzzTest < Minitest::Test
       end
     end
 
-    result = V1Fuzzer.run(seed: 20260811, cases: 8, onibi_class: mutant)
+    result = V1Fuzzer.run(seed: 20_260_811, cases: 8, onibi_class: mutant)
 
     assert_operator result.fetch(:mismatches), :>, 0
-    assert_equal 20260811, result.fetch(:seed)
-    assert result.fetch(:failures).all? { |failure| failure.fetch(:seed) == 20260811 }
+    assert_equal 20_260_811, result.fetch(:seed)
+    assert(result.fetch(:failures).all? { |failure| failure.fetch(:seed) == 20_260_811 })
   end
 end
