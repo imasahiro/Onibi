@@ -31,11 +31,9 @@ module Onibi
     private
 
     def group_names(node, mode = :single)
-      return { node.name => [node.number] } if mode == :indices && node.name
-
-      return collect_indices(node.body) if mode == :indices
-
-      node.name ? { node.name => node.number } : collect(node.body)
+      names = mode == :indices ? collect_indices(node.body) : collect(node.body)
+      names[node.name] = mode == :indices ? [node.number] : node.number if node.name
+      names.sort_by { |_name, index| Array(index).first }.to_h
     end
 
     def sequence_names(node, mode = :single)
@@ -57,7 +55,9 @@ module Onibi
     end
 
     def merge_names(nodes)
-      nodes.reduce({}) { |names, child| names.merge(collect(child)) }
+      nodes.each_with_object({}) do |child, names|
+        collect(child).each { |name, index| names[name] ||= index }
+      end
     end
 
     def merge_indices(nodes)

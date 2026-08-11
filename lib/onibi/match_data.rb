@@ -72,7 +72,7 @@ module Onibi
     end
 
     def inspect
-      details = @names.map { |name, index| "#{name}:#{self[index].inspect}" }
+      details = inspect_names.map { |name, index| "#{name}:#{self[index].inspect}" }
       suffix = details.empty? ? "" : " #{details.join(" ")}"
       "#<MatchData #{self[0].inspect}#{suffix}>"
     end
@@ -93,6 +93,12 @@ module Onibi
 
     def match_identity
       [@values, @offsets, @string, @regexp]
+    end
+
+    def inspect_names
+      return @names.flat_map { |name, index| [[name, index]] } unless @regexp
+
+      @regexp.named_captures.flat_map { |name, indices| indices.map { |index| [name, index] } }
     end
 
     def range_values(range)
