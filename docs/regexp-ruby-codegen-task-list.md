@@ -104,7 +104,7 @@ Run the capability spike on the selected development host first; cross-runtime c
 
 **Dependencies:** CODEGEN-003.
 
-### CODEGEN-005 — Guard parser nesting, then implement analyzer metadata
+### CODEGEN-005 [Complete] — Guard parser nesting, then implement analyzer metadata
 
 First add an iterative token-stream nesting guard before recursive descent and make the parser consume that validated token stream. Then add an exhaustive AST dispatch table and analysis result for capture tables, group-call targets, option/encoding-aware finite width sets, nullability, option scopes, liveness inputs, and stable labels. Freeze the result recursively.
 

@@ -13,7 +13,7 @@ module Onibi
       open_positive_lookbehind open_negative_lookbehind
     ].freeze
     def initialize(source, options = [])
-      @tokens = Lexer.new(source, options).tokens
+      @tokens = source.is_a?(Array) ? source : Lexer.new(source, options).tokens
       @index = 0
       @group_number = 0
     end

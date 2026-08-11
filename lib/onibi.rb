@@ -95,7 +95,9 @@ module Onibi
       pattern, options, timeout = normalize_constructor_pattern(pattern, options, timeout)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
-      @ast = Parser.new(pattern, normalized_options).parse
+      tokens = validate_pattern_syntax!(pattern, normalized_options)
+      @ast = Parser.new(tokens).parse
+      @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding).analyze(@ast)
       @bytecode = Compiler.new(@ast).compile
     end
 

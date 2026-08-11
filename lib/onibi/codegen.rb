@@ -6,6 +6,193 @@ module Onibi
   end
 
   module Codegen
+    Width = Struct.new(:minimum, :maximum, :finite, :nullable, keyword_init: true) do
+      def initialize(**kwargs)
+        super
+        freeze
+      end
+    end
+
+    Analysis = Struct.new(
+      :captures, :named_captures, :subexpression_calls, :widths, :labels, :options, :encoding,
+      keyword_init: true
+    )
+
+    # Recursively freezes compiler metadata before publication.
+    module DeepFreezer
+      private
+
+      def deep_freeze(value)
+        case value
+        when Struct then value.each { |item| deep_freeze(item) }
+        when Hash
+          value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
+        when Array then value.each { |item| deep_freeze(item) }
+        end
+        value.freeze
+      end
+    end
+
+    # Computes immutable facts consumed by source emitters.
+    class Analyzer
+      include DeepFreezer
+      NODE_TYPES = [
+        AST::Literal, AST::CharacterClass, AST::Escape, AST::Property, AST::Backreference,
+        AST::Assertion, AST::Any, AST::Anchor, AST::Sequence, AST::Alternation, AST::Group,
+        AST::OptionGroup, AST::AtomicGroup, AST::Conditional, AST::SubexpressionCall,
+        AST::Absence, AST::Quantifier
+      ].freeze
+
+      def initialize(options = [], encoding = Encoding::UTF_8)
+        @options = options.dup.freeze
+        @encoding = encoding
+        @captures = []
+        @named_captures = {}
+        @calls = []
+        @widths = {}.compare_by_identity
+        @labels = {}.compare_by_identity
+        @next_label = 0
+      end
+
+      def analyze(ast)
+        visit(ast)
+        result = Analysis.new(
+          captures: @captures,
+          named_captures: @named_captures,
+          subexpression_calls: @calls,
+          widths: @widths,
+          labels: @labels,
+          options: @options,
+          encoding: @encoding
+        )
+        deep_freeze(result)
+      end
+
+      private
+
+      def visit(node)
+        handler = "visit_#{node_type_name(node).downcase}"
+        raise CodegenError, "unsupported AST node #{node.class}" unless NODE_TYPES.include?(node.class)
+
+        assign_label(node)
+        width = send(handler, node)
+        @widths[node] = width
+        width
+      end
+
+      def node_type_name(node)
+        node.class.name.to_s.split("::").last.to_s
+      end
+
+      def assign_label(node)
+        @labels[node] = @next_label
+        @next_label += 1
+      end
+
+      def visit_literal(node)
+        scalar_width(node.value.length)
+      end
+
+      def visit_characterclass(_node) = scalar_width(1)
+
+      def visit_escape(node)
+        return zero_width if %i[word_boundary not_word_boundary start_match match_reset].include?(node.kind)
+
+        scalar_width(1)
+      end
+
+      def visit_property(_node) = scalar_width(1)
+      def visit_backreference(_node) = variable_width
+      def visit_any(_node) = scalar_width(1)
+      def visit_anchor(_node) = zero_width
+
+      def visit_subexpressioncall(node)
+        @calls << node
+        variable_width
+      end
+
+      def visit_assertion(node)
+        visit(node.body)
+        zero_width
+      end
+
+      def visit_group(node)
+        @captures << node.number if node.capture
+        @named_captures[node.name] = node.number if node.name
+        visit(node.body)
+      end
+
+      def visit_atomicgroup(node) = visit(node.body)
+      def visit_absence(node) = visit(node.body) && zero_width
+
+      def visit_optiongroup(node)
+        visit(node.body)
+      end
+
+      def visit_conditional(node)
+        yes = visit(node.yes_branch)
+        no = visit(node.no_branch)
+        merge(yes, no)
+      end
+
+      def visit_sequence(node)
+        widths = node.parts.map { |part| visit(part) }
+        sequence_width(widths)
+      end
+
+      def sequence_width(widths)
+        finite = finite_sequence_width(widths)
+        maximum = unbounded_width?(widths) ? nil : widths.sum(&:maximum)
+        Width.new(minimum: widths.sum(&:minimum), maximum: maximum, finite: finite, nullable: widths.all?(&:nullable))
+      end
+
+      def finite_sequence_width(widths)
+        return nil unless widths.all?(&:finite)
+
+        widths.flat_map { |width| width.finite || [width.minimum] }.uniq
+      end
+
+      def unbounded_width?(widths)
+        widths.any? { |width| width.maximum.nil? }
+      end
+
+      def visit_alternation(node)
+        widths = node.branches.map { |branch| visit(branch) }
+        merge(*widths)
+      end
+
+      def visit_quantifier(node)
+        body = visit(node.expression)
+        minimum = body.minimum * node.minimum
+        maximum = node.maximum.nil? || body.maximum.nil? ? nil : body.maximum * node.maximum
+        Width.new(minimum: minimum, maximum: maximum, finite: nil, nullable: node.minimum.zero? || body.nullable)
+      end
+
+      def scalar_width(value)
+        Width.new(minimum: value, maximum: value, finite: [value], nullable: value.zero?)
+      end
+
+      def zero_width
+        scalar_width(0)
+      end
+
+      def variable_width
+        Width.new(minimum: 0, maximum: nil, finite: nil, nullable: true)
+      end
+
+      def merge(*widths)
+        Width.new(
+          minimum: widths.map(&:minimum).min,
+          maximum: widths.any? { |width| width.maximum.nil? } ? nil : widths.map(&:maximum).max,
+          finite: widths.all?(&:finite) ? widths.flat_map(&:finite).uniq.sort : nil,
+          nullable: widths.any?(&:nullable)
+        )
+      end
+    end
+
     # Compiles generated Ruby source without depending on CRuby instruction sequences.
     class SourceCompiler
       ENTRYPOINT = :__onibi_search
