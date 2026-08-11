@@ -54,10 +54,12 @@ class PackageTest < Minitest::Test
   end
 
   def run_smoke(gem_home)
-    environment = { "GEM_HOME" => gem_home, "GEM_PATH" => gem_home }
-    command = [RbConfig.ruby, "-e", 'require "onibi"; abort unless Onibi::Regexp.new("a").match?("a")']
+    command = [
+      "env", "-i", "GEM_HOME=#{gem_home}", "GEM_PATH=#{gem_home}",
+      RbConfig.ruby, "-e", 'require "onibi"; abort unless Onibi::Regexp.new("a").match?("a")'
+    ]
 
-    run_command(environment, *command)
+    run_command(*command)
   end
 
   def build_output(result)
