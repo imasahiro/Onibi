@@ -78,11 +78,13 @@ class ScanGsubTest < Minitest::Test
       values << value
       value.upcase
     end
-    result = if regexp.is_a?(::Regexp)
-               input.gsub(regexp, &replacement)
-             else
-               regexp.gsub(input, &replacement)
-             end
+    result = invoke_gsub(input, regexp, replacement)
     [values, result]
+  end
+
+  def invoke_gsub(input, regexp, replacement)
+    return input.gsub(regexp, &replacement) if regexp.is_a?(::Regexp)
+
+    regexp.gsub(input, &replacement)
   end
 end

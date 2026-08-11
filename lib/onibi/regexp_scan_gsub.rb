@@ -79,6 +79,5 @@ module Onibi
 
       raise TypeError, "no implicit conversion of #{replacement.class} into String"
     end
-
   end
 end
