@@ -290,7 +290,7 @@ Make generated execution the production default only after CODEGEN-020 through C
 
 **Dependencies:** CODEGEN-020, CODEGEN-021, CODEGEN-022, CODEGEN-023.
 
-### CODEGEN-025 — Remove the legacy VM, NFA, and DFA paths and finalize release docs
+### CODEGEN-025 [Complete] — Remove the legacy VM, NFA, and DFA paths and finalize release docs
 
 Remove the temporary mode and all production code, requires, tests, instance variables, configuration, and documentation for bytecode compilation, VM execution, AST/capture fallback matchers, matcher routing, and DFA specialization. Rename engine-focused tests to observable codegen behavior. Update README, architecture diagrams, feature coverage, release notes, resource/Ractor guidance, and package contents.
 
@@ -308,6 +308,11 @@ Remove the temporary mode and all production code, requires, tests, instance var
 - `test/features/engine/bytecode_test.rb`, `nfa_vm_test.rb`, and `dfa_*` tests after their public guarantees are relocated
 
 **Dependencies:** CODEGEN-024.
+
+**Completion evidence:** The generated matcher is now the sole production execution
+path. Legacy execution files and engine-only tests were removed, the architecture
+acceptance test verifies the deletion and exhaustive AST lowering, and the package
+and installed-gem smoke gates are part of the final verification record.
 
 ## Per-pull-request checklist
 

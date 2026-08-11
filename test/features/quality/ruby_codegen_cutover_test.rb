@@ -3,14 +3,11 @@
 require_relative "../../test_helper"
 
 class RubyCodegenCutoverTest < Minitest::Test
-  def test_public_match_surfaces_can_switch_to_generated_program
-    previous = Onibi::Regexp.codegen_default
-    Onibi::Regexp.codegen_default = true
+  def test_public_match_surfaces_use_the_generated_program
     regexp = Onibi::Regexp.new("(a)b")
 
     assert regexp.match?("ab")
     assert_equal ["ab", "a"], regexp.match("ab").to_a
-  ensure
-    Onibi::Regexp.codegen_default = previous
+    refute Onibi::Regexp.respond_to?(:codegen_default)
   end
 end
