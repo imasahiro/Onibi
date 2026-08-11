@@ -74,7 +74,7 @@ module Onibi
     end
 
     def group_capture_count(node)
-      node.capture ? [node.number, capture_count(node.body)].max : capture_count(node.body)
+      (node.capture ? 1 : 0) + capture_count(node.body)
     end
 
     def sequence_capture_count(node)
@@ -86,7 +86,7 @@ module Onibi
     end
 
     def parts_capture_count(parts)
-      parts.map { |part| capture_count(part) }.max || 0
+      parts.sum { |part| capture_count(part) }
     end
 
     def quantifier_results_for(node, position, all)

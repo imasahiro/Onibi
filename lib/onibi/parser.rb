@@ -74,9 +74,9 @@ module Onibi
     def parse_capture_group(opening)
       capture = opening.type != :open_non_capture
       @group_number += 1 if capture
+      number = capture ? @group_number : nil
       body = parse_alternation
       expect(:close_group)
-      number = capture ? @group_number : nil
       name = opening.type == :open_named_group ? opening.value : nil
       AST::Group.new(body, number, capture, name)
     end
