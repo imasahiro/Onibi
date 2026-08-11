@@ -16,6 +16,9 @@ module Onibi
     end
 
     def to_s
+      scoped = source.match(/\A\(\?([imx]+):(.+)\)\z/m)
+      return scoped_to_s(scoped[1], scoped[2]) if scoped && @options.empty?
+
       enabled = regexp_mode_flags.select { |name, _flag| @options.include?(name.to_s) }.map(&:last).join
       disabled = regexp_mode_flags.reject { |name, _flag| @options.include?(name.to_s) }.map(&:last).join
       suffix = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
@@ -30,6 +33,11 @@ module Onibi
     end
 
     private
+
+    def scoped_to_s(enabled, scoped_source)
+      disabled = %w[m i x].reject { |flag| enabled.include?(flag) }.join
+      "(?#{enabled}-#{disabled}:#{scoped_source})"
+    end
 
     def regexp_mode_flags
       { multiline: "m", ignorecase: "i", extended: "x" }

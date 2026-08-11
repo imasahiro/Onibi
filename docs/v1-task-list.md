@@ -101,7 +101,7 @@ Acceptance test: Every case in fixtures/regexp_encoding_matrix.yml runs against 
 Onibi. Match results, captures, source encoding, encoding, fixed_encoding?, and exceptions
 match. Removing or skipping a matrix case fails the acceptance test.
 
-### V1-005 — Complete constructor, mode, introspection, and utility contracts
+### V1-005 — Complete constructor, mode, introspection, and utility contracts [Complete]
 
 - Priority: P1
 - Dependencies: V1-002, V1-004
