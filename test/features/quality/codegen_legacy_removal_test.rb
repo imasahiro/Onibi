@@ -40,10 +40,14 @@ class CodegenLegacyRemovalTest < Minitest::Test
 
   def test_regexp_has_no_legacy_matcher_state
     source = File.read(File.join(PROJECT_ROOT, "lib", "onibi.rb"))
+    script = File.read(File.join(PROJECT_ROOT, "script", "cross_runtime_contract.rb"))
+    signature = File.read(File.join(PROJECT_ROOT, "sig", "onibi.rbs"))
 
     refute_includes source, "@bytecode"
     refute_includes source, "dfa_specialization"
     refute_includes source, "RegexpMatching"
     refute_includes source, "codegen_default"
+    refute_includes script, "dfa_memory_budget"
+    refute_includes signature, "dfa_memory_budget"
   end
 end
