@@ -6,21 +6,38 @@ module Onibi
     private
 
     def literal_results(node, characters, position, captures)
-      value = node.value.chars
-      expected = @ignorecase ? value.map(&:downcase) : value
-      actual = characters[position, value.length]
-      actual = actual.map(&:downcase) if @ignorecase && actual
-      actual == expected ? [[position + value.length, captures]] : []
+      value = node.value
+      return literal_case_sensitive_results(value, characters, position, captures) unless @ignorecase
+
+      expected = value.downcase(:fold)
+      maximum = [value.length, expected.length].max * 3
+      (1..maximum).filter_map do |length|
+        actual = characters[position, length]&.join
+        [position + length, captures] if actual && actual.downcase(:fold) == expected
+      end
     end
 
     def class_results(node, characters, position, captures)
-      return [] unless position < characters.length && class_matches?(node.value, characters[position])
+      return [] unless position < characters.length
 
-      [[position + 1, captures]]
+      maximum = full_casefold_class?(node.value) ? 3 : 1
+      (1..maximum).filter_map do |length|
+        candidate = characters[position, length]&.join
+        [position + length, captures] if candidate && class_matches?(node.value, candidate)
+      end
+    end
+
+    def literal_case_sensitive_results(value, characters, position, captures)
+      actual = characters[position, value.length]
+      actual == value.chars ? [[position + value.length, captures]] : []
+    end
+
+    def full_casefold_class?(source)
+      source.each_char.any? { |character| character.downcase(:fold).length > 1 }
     end
 
     def class_matches?(source, character)
-      ClassPredicates.matches?(source, character)
+      ClassPredicates.matches?(source, character, ignorecase: @ignorecase)
     end
 
     def escape_results(node, characters, position, captures)
