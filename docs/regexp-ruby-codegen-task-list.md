@@ -124,7 +124,7 @@ Implement the correctness-first character cursor and character-to-byte boundary 
 
 **Dependencies:** CODEGEN-005.
 
-### CODEGEN-007 — Implement invocation state, checkpoints, and rollback
+### CODEGEN-007 [Complete] — Implement invocation state, checkpoints, and rollback
 
 Add invocation-local cursor and immutable search origin, capture trail, backtrack stack, and persistent call/repeat/cut arenas with restorable top pointers and call activation IDs. Emit label-loop restoration without recursive matcher calls.
 
