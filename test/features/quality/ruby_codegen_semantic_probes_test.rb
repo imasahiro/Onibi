@@ -22,12 +22,13 @@ class RubyCodegenSemanticProbesTest < Minitest::Test
   def test_probe_manifest_contains_each_high_risk_semantic_case
     probes = YAML.load_file(PROBES_PATH)
 
-    assert_equal REQUIRED_PROBES, probes.map { |probe| probe.fetch("name") }
+    assert_equal(REQUIRED_PROBES, probes.map { |probe| probe.fetch("name") })
     probes.each { |probe| assert_mri_observation(probe) }
   end
 
   private
 
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def assert_mri_observation(probe)
     regexp = Regexp.new(probe.fetch("pattern"), probe.fetch("options", 0))
     match = regexp.match(probe.fetch("input"), probe.fetch("position", 0))
@@ -47,4 +48,5 @@ class RubyCodegenSemanticProbesTest < Minitest::Test
       assert_equal expected_offsets, offsets, probe.fetch("name")
     end
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end

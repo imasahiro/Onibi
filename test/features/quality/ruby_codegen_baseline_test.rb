@@ -39,6 +39,7 @@ class RubyCodegenBaselineTest < Minitest::Test
     assert_equal %w[ascii8bit euc_jp utf8 windows_31j], manifest.fetch("encodings").sort
   end
 
+  # rubocop:disable Metrics/AbcSize
   def test_manifest_references_existing_core_fixture_corpus
     manifest = YAML.load_file(MANIFEST_PATH)
     fixture_path = File.expand_path(manifest.fetch("syntax_fixture"), PROJECT_ROOT)
@@ -53,6 +54,7 @@ class RubyCodegenBaselineTest < Minitest::Test
       assert fixture.key?("feature"), fixture.inspect
     end
   end
+  # rubocop:enable Metrics/AbcSize
 
   private
 

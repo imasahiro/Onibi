@@ -7,7 +7,7 @@ class RubyCodegenCutoverTest < Minitest::Test
     regexp = Onibi::Regexp.new("(a)b")
 
     assert regexp.match?("ab")
-    assert_equal ["ab", "a"], regexp.match("ab").to_a
+    assert_equal %w[ab a], regexp.match("ab").to_a
     refute Onibi::Regexp.respond_to?(:codegen_default)
   end
 end

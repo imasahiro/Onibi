@@ -7,7 +7,7 @@ class InputViewTest < Minitest::Test
     view = Onibi::InputView.new("aあb")
 
     assert_equal 3, view.character_length
-    assert_equal [0, 1, 4, 5], ((0..3).map { |index| view.byte_offset(index) })
+    assert_equal([0, 1, 4, 5], (0..3).map { |index| view.byte_offset(index) })
     assert_equal 2, view.character_index(4)
     assert_equal "あ", view.slice(1, 1)
   end
@@ -17,7 +17,7 @@ class InputViewTest < Minitest::Test
     view = Onibi::InputView.new(input)
 
     assert_equal 2, view.character_length
-    assert_equal [0, 1, 2], ((0..2).map { |index| view.byte_offset(index) })
+    assert_equal([0, 1, 2], (0..2).map { |index| view.byte_offset(index) })
     assert_equal "", Onibi::InputView.new("").slice(0, 0)
     assert_equal "\xFF\x00".b, view.slice(0)
     assert_equal "\xFF\x00".b, input

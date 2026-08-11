@@ -8,6 +8,6 @@ class RubyCodegenPublicSurfaceTest < Minitest::Test
 
     assert regexp.codegen_match?("aaa")
     assert_equal "aaa", regexp.codegen_match("aaa").to_s
-    assert_equal ["aaa", "a"], regexp.codegen_scan("baaab a".delete(" ")).map(&:to_s)
+    assert_equal %w[aaa a], regexp.codegen_scan("baaab a".delete(" ")).map(&:to_s)
   end
 end

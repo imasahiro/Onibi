@@ -11,7 +11,7 @@ class RubyCodegenMatchAdapterTest < Minitest::Test
     match = Onibi::Codegen::MatchAdapter.build(result, "ab", regexp, "word" => 2)
 
     assert_equal "ab", match[0]
-    assert_equal ["a", "b"], match.captures
+    assert_equal %w[a b], match.captures
     assert_equal [[0, 2], [0, 1], [1, 2]], [match.offset(0), match.offset(1), match.offset(2)]
   end
 end

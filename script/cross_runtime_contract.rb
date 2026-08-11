@@ -16,6 +16,6 @@ def observation
   [match.to_a, match.offset(0), match.offset(1), match.offset(2), regexp.match?("xxaaab")]
 end
 
-assert_equal [["aaab", "aaa", "b"], [2, 6], [2, 5], [5, 6], true], observation,
+assert_equal [%w[aaab aaa b], [2, 6], [2, 5], [5, 6], true], observation,
              "generated matcher results"
 abort "exception contract" unless Onibi::Regexp.new("a").match?("a")
