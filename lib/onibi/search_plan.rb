@@ -114,12 +114,12 @@ module Onibi
       def regular_run
         return unless regular_run_shape?
 
-        left, right = @ast.parts.map { |node| node.expression.value }
-        RegularRun.new(left, right) if disjoint_ascii_classes?(left, right)
+        sources = @ast.parts.map { |node| node.expression.value }
+        RegularRun.new(sources) if sources.each_cons(2).all? { |left, right| disjoint_ascii_classes?(left, right) }
       end
 
       def regular_run_shape?
-        @analysis.options.empty? && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2 &&
+        @analysis.options.empty? && @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2 &&
           @ast.parts.all? { |node| simple_plus_class?(node) }
       end
 
@@ -206,11 +206,10 @@ module Onibi
 
     # One-pass scanner for two disjoint greedy character-class runs.
     class RegularRun
-      attr_reader :left_source, :right_source
+      attr_reader :sources
 
-      def initialize(left_source, right_source)
-        @left_source = left_source.dup.freeze
-        @right_source = right_source.dup.freeze
+      def initialize(sources)
+        @sources = sources.map(&:dup).map(&:freeze).freeze
         freeze
       end
 
@@ -219,18 +218,17 @@ module Onibi
 
         start = position
         while start < input.length
-          unless matches?(left_source, input[start])
+          unless matches?(sources.first, input[start])
             start += 1
             next
           end
 
-          left_end = consume(left_source, input, start)
-          return result(start, consume(right_source, input, left_end), capture) if
-            matches?(right_source, input[left_end])
+          finish = match_sources(input, start)
+          return result(start, finish, capture) if finish
 
           # With disjoint classes, every start inside this left run reaches the
           # same failed boundary. Jumping to the boundary removes suffix rescans.
-          start = left_end
+          start = consume(sources.first, input, start)
         end
         false
       end
@@ -240,6 +238,17 @@ module Onibi
       def consume(source, input, cursor)
         cursor += 1 while cursor < input.length && matches?(source, input[cursor])
         cursor
+      end
+
+      def match_sources(input, start)
+        finish = start
+        matched = sources.all? do |source|
+          next false unless matches?(source, input[finish])
+
+          finish = consume(source, input, finish)
+          true
+        end
+        matched ? finish : nil
       end
 
       def matches?(source, character)
