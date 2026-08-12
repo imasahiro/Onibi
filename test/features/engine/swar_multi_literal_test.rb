@@ -104,6 +104,17 @@ class SwarMultiLiteralTest < Minitest::Test
     assert experimental_program.search("#{"x" * 100}d", 0, capture: false)
   end
 
+  def test_opt_in_long_literal_prefilter_uses_string_index_candidates
+    width = Onibi::Experimental::Swar::WORD_BITS
+    input = IndexTrackingString.new("x" * 64 + "a" * width)
+    source = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(
+      ["a" * width, "b" * width], default_policy: false
+    )
+
+    assert_equal [64], source.candidate_positions(input, 0)
+    assert_operator input.index_calls, :>, 0
+  end
+
   def test_default_policy_matrix_is_conservative_at_literal_boundaries
     word_bits = Onibi::Experimental::Swar::WORD_BITS
     policy = Onibi::Experimental::Swar::LiteralAlternation
@@ -237,6 +248,20 @@ class SwarMultiLiteralTest < Minitest::Test
   class GetbyteForbiddenString < String
     def getbyte(_index)
       raise "singleton class search must not call getbyte"
+    end
+  end
+
+  class IndexTrackingString < String
+    attr_reader :index_calls
+
+    def initialize(value)
+      super
+      @index_calls = 0
+    end
+
+    def index(*arguments)
+      @index_calls += 1
+      super
     end
   end
 
