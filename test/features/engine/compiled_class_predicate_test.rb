@@ -33,4 +33,14 @@ class CompiledClassPredicateTest < Minitest::Test
     assert_equal 1, Onibi::Codegen::Casefold.class_candidates("a", 0, "a-z", false)
     assert_nil Onibi::Codegen::Casefold.class_candidates("1", 0, "a-z", false)
   end
+
+  def test_generated_class_predicate_uses_compiled_table_leaf
+    ast = Onibi::Parser.new("[a-z]").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "ClassPredicates.compiled"
+    refute_includes program.source, "ClassPredicates.matches?"
+    predicate = Onibi::ClassPredicates.compiled("a-z")
+    assert_equal 1, Onibi::Codegen::Casefold.class_candidates("a", 0, predicate, false)
+  end
 end

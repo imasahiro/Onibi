@@ -13,6 +13,8 @@ module Onibi
 
     # Immutable ASCII lookup table with source-backed fallback for other input.
     class Compiled
+      attr_reader :source
+
       def initialize(source, ignorecase)
         @source = source.dup.freeze
         @ignorecase = ignorecase
