@@ -15,6 +15,25 @@ class SearchPlanTest < Minitest::Test
     assert_empty plan.candidate_positions("xneedle", 1)
   end
 
+  def test_line_anchor_projects_candidates_to_line_starts
+    regexp = Onibi::Regexp.new("^foo")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert plan.line_anchor
+    assert_equal :line_anchored, plan.search_mode
+    assert_equal [0, 4], plan.candidate_positions("foo\nfoo", 0)
+    assert_equal [4], plan.candidate_positions("foo\nfoo", 1)
+  end
+
+  def test_line_anchor_candidate_restriction_matches_mri
+    pattern = "^foo"
+    input = "xxfoo\nbar\nfoo"
+    regexp = Onibi::Regexp.new(pattern)
+    expected = ::Regexp.new(pattern)
+
+    assert_equal expected.match?(input), regexp.match?(input)
+  end
+
   def test_start_match_projects_candidates_to_the_search_origin
     regexp = Onibi::Regexp.new("\\Gfoo")
     plan = regexp.send(:codegen_program).search_plan
