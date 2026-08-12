@@ -18,4 +18,21 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
     refute_includes program.source, "Array.new(0)"
     assert program.search("aaa", 0, capture: false)
   end
+
+  def test_boolean_program_lazily_allocates_captures_when_group_is_not_live
+    ast = Onibi::Parser.new("(a+)").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "capture ?Array.new(1):nil"
+    assert program.search("aaa", 0, capture: false)
+  end
+
+  def test_boolean_program_keeps_capture_state_for_backreferences
+    ast = Onibi::Parser.new("(a)\\1").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "captures=Array.new(1)"
+    assert program.search("aa", 0, capture: false)
+    refute program.search("ab", 0, capture: false)
+  end
 end
