@@ -219,7 +219,7 @@ module Onibi
 
     # Immutable ASCII lookup table with source-backed fallback for other input.
     class Compiled
-      attr_reader :source, :metadata
+      attr_reader :source, :metadata, :ascii_table
 
       def initialize(source, ignorecase)
         @source = source.dup.freeze
@@ -228,6 +228,7 @@ module Onibi
         @ascii = Array.new(256) do |codepoint|
           ClassPredicates.match_source(@source, codepoint.chr(Encoding::ASCII_8BIT), @ignorecase)
         end.freeze
+        @ascii_table = @ascii
         freeze
       end
 
