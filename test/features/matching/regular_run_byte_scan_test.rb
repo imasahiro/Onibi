@@ -24,4 +24,29 @@ class RegularRunByteScanTest < Minitest::Test
 
     assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
   end
+
+  def test_regular_run_supports_literal_and_class_components
+    pattern = "ab[a-z]+[0-9]+"
+    input = "xxabfoo123!"
+
+    assert_equal ::Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    assert Onibi::Regexp.new(pattern).send(:codegen_program).search_plan.regular_run
+  end
+
+  def test_regular_run_supports_class_followed_by_literal
+    pattern = "[0-9]+END"
+    input = "xxabcEND!"
+
+    assert_equal ::Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    assert Onibi::Regexp.new(pattern).send(:codegen_program).search_plan.regular_run
+  end
+
+  def test_regular_run_supports_common_prefix_alternation
+    pattern = "foo[a-z]+|foo[0-9]+"
+    input = "xxfooabc!"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal ::Regexp.new(pattern).match(input).to_s, regexp.match(input).to_s
+    assert regexp.send(:codegen_program).search_plan.regular_run
+  end
 end
