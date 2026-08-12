@@ -1252,7 +1252,7 @@ module Onibi
         initial = execute(input, position, capture, position)
         return initial if initial
 
-        search_candidates(input, position, capture, source.candidate_positions(input, position + 1))
+        search_candidates(input, position, capture, source, position + 1)
       end
 
       def baseline_search(input, position, capture)
@@ -1266,8 +1266,8 @@ module Onibi
         false
       end
 
-      def search_candidates(input, position, capture, candidates)
-        candidates.each do |candidate|
+      def search_candidates(input, position, capture, source, candidate_position)
+        source.each_candidate(input, candidate_position) do |candidate|
           result = execute(input, candidate, capture, position)
           return result if result
         end
