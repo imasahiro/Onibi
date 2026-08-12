@@ -425,15 +425,55 @@ module Onibi
       end
 
       def regular_run
-        return unless regular_run_shape?
+        return unless @analysis.options.empty? && @analysis.captures.empty?
 
-        sources = @ast.parts.map { |node| node.expression.value }
-        RegularRun.new(sources) if sources.each_cons(2).all? { |left, right| disjoint_ascii_classes?(left, right) }
+        if @ast.is_a?(AST::Alternation)
+          runs = @ast.branches.map { |branch| regular_sequence_run(branch) }
+          return RegularRun::Alternation.new(runs) if runs.all?
+        end
+        regular_sequence_run(@ast)
       end
 
       def regular_run_shape?
         @analysis.options.empty? && @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2 &&
           @ast.parts.all? { |node| simple_plus_class?(node) }
+      end
+
+      def regular_sequence_run(node)
+        parts = node.is_a?(AST::Sequence) ? node.parts : [node]
+        components = parts.filter_map { |part| regular_component(part) }
+        return if components.length != parts.length || components.empty?
+
+        class_sources = components.filter_map { |component| component[:source] }
+        return if class_sources.length > 1 && !class_sources.each_cons(2).all? do |left, right|
+          disjoint_ascii_classes?(left, right)
+        end
+
+        overlapping_boundary = components.each_cons(2).any? do |left, right|
+          left[:kind] == :class && right[:kind] == :literal && !disjoint_literal_component?(left, right)
+        end
+        return if overlapping_boundary
+
+        RegularRun.new(components)
+      end
+
+      def disjoint_literal_component?(class_component, literal_component)
+        literal_component[:value].each_char.none? do |character|
+          ClassPredicates.matches?(class_component[:source], character)
+        end
+      end
+
+      def regular_component(node)
+        if node.is_a?(AST::Literal) && !node.value.empty? && node.value.ascii_only?
+          return { kind: :literal, value: node.value.freeze, minimum: 1, maximum: 1 }
+        end
+        return unless node.is_a?(AST::Quantifier) && node.mode == :greedy
+        return unless node.expression.is_a?(AST::CharacterClass)
+        return unless node.minimum.positive? && node.expression.value.ascii_only?
+
+        return unless node.maximum.nil?
+
+        { kind: :class, source: node.expression.value.freeze, minimum: node.minimum, maximum: nil }
       end
 
       def simple_plus_class?(node)
@@ -526,8 +566,22 @@ module Onibi
       attr_reader :sources, :predicates, :scanners
 
       def initialize(sources)
-        @sources = sources.map(&:dup).map(&:freeze).freeze
-        @scanners = @sources.map { |source| Experimental::Swar::ClassRun.new(source) }.freeze
+        components = if sources.first.is_a?(Hash)
+                       sources
+                     else
+                       sources.map do |source|
+                         { kind: :class, source: source, minimum: 1, maximum: nil }
+                       end
+                     end
+        @components = components.map(&:freeze).freeze
+        @sources = @components.filter_map { |component| component[:source]&.dup&.freeze }.freeze
+        @scanners = @components.filter_map do |component|
+          component[:kind] == :class ? Experimental::Swar::ClassRun.new(component[:source]) : nil
+        end.freeze
+        @component_scanners = @components.map do |component|
+          component[:kind] == :class ? Experimental::Swar::ClassRun.new(component[:source]) : nil
+        end.freeze
+        @scanner_by_component = @components.zip(@component_scanners).to_h.freeze
         @predicates = @scanners.map(&:predicate).freeze
         freeze
       end
@@ -537,7 +591,7 @@ module Onibi
 
         start = position
         while start < input.length
-          unless matches_at?(scanners.first, input, start)
+          unless component_matches_at?(@components.first, input, start)
             start += 1
             next
           end
@@ -547,7 +601,7 @@ module Onibi
 
           # With disjoint classes, every start inside this left run reaches the
           # same failed boundary. Jumping to the boundary removes suffix rescans.
-          start = consume(scanners.first, input, start)
+          start = consume_component(@components.first, input, start) || start + 1
         end
         false
       end
@@ -560,11 +614,9 @@ module Onibi
 
       def match_sources(input, start)
         finish = start
-        matched = scanners.all? do |scanner|
-          next false unless matches_at?(scanner, input, finish)
-
-          finish = consume(scanner, input, finish)
-          true
+        matched = @components.all? do |component|
+          finish = consume_component(component, input, finish)
+          finish
         end
         matched ? finish : nil
       end
@@ -573,8 +625,57 @@ module Onibi
         scanner.matches_byte?(input.getbyte(cursor))
       end
 
+      def component_matches_at?(component, input, cursor)
+        return input.byteslice(cursor, component[:value].bytesize) == component[:value] if component[:kind] == :literal
+
+        scanner = @scanner_by_component.fetch(component)
+        matches_at?(scanner, input, cursor)
+      end
+
+      def consume_component(component, input, cursor)
+        return cursor + component[:value].bytesize if component[:kind] == :literal &&
+                                                      input.byteslice(cursor,
+                                                                      component[:value].bytesize) == component[:value]
+        return nil unless component_matches_at?(component, input, cursor)
+
+        scanner = @scanner_by_component.fetch(component)
+        finish = scanner.scan_end(input, cursor)
+        minimum_end = cursor + component[:minimum]
+        return nil if finish < minimum_end
+
+        maximum = component[:maximum]
+        maximum ? [finish, cursor + maximum].min : finish
+      end
+
       def result(start, finish, capture)
         capture ? [start, finish, []] : true
+      end
+
+      # Preserves leftmost-first semantics across independently scanned branches.
+      class Alternation
+        def initialize(runs)
+          @runs = runs.freeze
+          freeze
+        end
+
+        def search(input, position, capture:)
+          best = nil
+          @runs.each do |run|
+            result = run.search(input, position, capture: true)
+            next unless result
+
+            best = result if best.nil? || result_start(result) < result_start(best)
+          end
+          return false unless best
+
+          capture ? best : true
+        end
+
+        private
+
+        def result_start(result)
+          result.is_a?(Array) ? result[0] : 0
+        end
       end
     end
   end

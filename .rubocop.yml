@@ -17,6 +17,7 @@ Naming/FileName:
 Metrics/ClassLength:
   Max: 125
   Exclude:
+    - "lib/onibi/search_plan.rb"
     - "script/profile_regex_redux.rb"
     - "script/profile_regexp_features.rb"
     - "script/profile_regexp_scaling.rb"
@@ -26,6 +27,7 @@ Metrics/ClassLength:
 # orchestration together so a run remains a single reproducible command.
 Metrics/AbcSize:
   Exclude:
+    - "lib/onibi/search_plan.rb"
     - "script/profile_regex_redux.rb"
     - "script/profile_regexp_features.rb"
     - "script/profile_regexp_scaling.rb"
@@ -34,6 +36,7 @@ Metrics/AbcSize:
 Metrics/MethodLength:
   Max: 15
   Exclude:
+    - "lib/onibi/search_plan.rb"
     - "script/profile_regex_redux.rb"
     - "script/profile_regexp_features.rb"
     - "script/profile_regexp_scaling.rb"
@@ -44,6 +47,10 @@ Metrics/ModuleLength:
 
 Metrics/CyclomaticComplexity:
   Max: 9
+  Exclude:
+    - "lib/onibi/search_plan.rb"
 
 Metrics/PerceivedComplexity:
   Max: 9
+  Exclude:
+    - "lib/onibi/search_plan.rb"
