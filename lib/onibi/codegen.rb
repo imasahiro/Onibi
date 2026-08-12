@@ -628,32 +628,66 @@ module Onibi
         new(RubyEmitter.literal(value))
       end
 
-      def self.ast(ast, options: [])
-        new(RubyGenerator.ast(ast, options: options))
+      def self.ast(ast, options: [], optimizations: [:swar])
+        if optimizations.include?(:swar)
+          prefilter = Experimental::Swar::LiteralAlternation.build(
+            ast, options,
+            allow_long_literals: optimizations.include?(:swar_long_literals),
+            allow_single_character: optimizations.include?(:swar_single_character)
+          )
+        end
+        new(RubyGenerator.ast(ast, options: options), prefilter: prefilter)
       end
 
-      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)")
+      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil)
         @source = source.dup.freeze
+        @prefilter = prefilter
         @compiled_module = compiler.compile(@source, filename: filename)
         @entrypoint = SourceCompiler::ENTRYPOINT
         freeze
       end
 
+      def swar?
+        !@prefilter.nil?
+      end
+
       def search(input, position, capture:)
+        return baseline_search(input, position, capture) unless @prefilter&.profitable?(input, position)
+
+        initial = execute(input, position, capture, position)
+        return initial if initial
+
+        candidates = @prefilter.candidate_positions(input, position + 1)
+        search_candidates(input, position, capture, candidates)
+      end
+
+      private
+
+      def baseline_search(input, position, capture)
         candidate = position
         while candidate <= input.length
-          result = begin
-            compiled_module.__send__(entrypoint, input, candidate, capture, position)
-          rescue ArgumentError => e
-            raise unless e.message.include?("wrong number of arguments")
-
-            compiled_module.__send__(entrypoint, input, candidate, capture)
-          end
+          result = execute(input, candidate, capture, position)
           return result if result
 
           candidate += 1
         end
         false
+      end
+
+      def search_candidates(input, position, capture, candidates)
+        candidates.each do |candidate|
+          result = execute(input, candidate, capture, position)
+          return result if result
+        end
+        false
+      end
+
+      def execute(input, candidate, capture, search_origin)
+        compiled_module.__send__(entrypoint, input, candidate, capture, search_origin)
+      rescue ArgumentError => e
+        raise unless e.message.include?("wrong number of arguments")
+
+        compiled_module.__send__(entrypoint, input, candidate, capture)
       end
     end
 
