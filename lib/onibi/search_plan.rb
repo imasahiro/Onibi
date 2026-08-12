@@ -147,6 +147,45 @@ module Onibi
       end
     end
 
+    # Builds a conservative first-set source for a nullable ASCII class prefix.
+    module NullablePrefixFacts
+      module_function
+
+      def build(ast, options)
+        return unless eligible?(ast, options)
+
+        quantifier, literal = prefix_nodes(ast)
+        predicate = ClassPredicates.compiled(quantifier.expression.value)
+        bytes = (0..255).select do |byte|
+          predicate.matches?(byte.chr(Encoding::ASCII_8BIT))
+        end
+        bytes << literal.value.getbyte(0)
+        Experimental::Swar::ByteSetPrefilter.new(bytes)
+      end
+
+      def eligible?(ast, options)
+        return false unless options.empty? && ast.is_a?(AST::Sequence)
+
+        quantifier = ast.parts.first
+        literal = ast.parts[1]
+        nullable_class?(quantifier) && ascii_literal?(literal) &&
+          ClassPrefilterFacts.ascii_literal_class?(quantifier.expression.value)
+      end
+
+      def nullable_class?(node)
+        node.is_a?(AST::Quantifier) && node.minimum.zero? && node.maximum != 0 &&
+          node.expression.is_a?(AST::CharacterClass)
+      end
+
+      def ascii_literal?(node)
+        node.is_a?(AST::Literal) && node.value.ascii_only? && !node.value.empty?
+      end
+
+      def prefix_nodes(ast)
+        [ast.parts.first, ast.parts[1]]
+      end
+    end
+
     # Extracts conservative facts from an analyzed AST.
     class SearchPlanFacts
       def initialize(ast, analysis)
@@ -158,13 +197,14 @@ module Onibi
         anchor_start, first = leading_node(@ast)
         literal = literal_value(first)
         required_literals = candidate_literals
-        class_prefilter = leading_class_prefilter
-        build_facts(anchor_start, first, literal, required_literals, class_prefilter)
+        nullable_prefilter = NullablePrefixFacts.build(@ast, @analysis.options)
+        class_prefilter = leading_class_prefilter || nullable_prefilter
+        build_facts(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
       end
 
       private
 
-      def build_facts(anchor_start, first, literal, required_literals, class_prefilter)
+      def build_facts(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
         minimum_width = @analysis.widths.fetch(@ast).minimum
         {
           anchor_start: anchor_start,
@@ -173,8 +213,8 @@ module Onibi
           first_set: literal ? [literal[0]].freeze : nil,
           required_literal: literal&.dup&.freeze,
           required_literals: required_literals,
-          nullable_prefix: !anchor_start && first.nil?,
-          search_mode: search_mode(anchor_start, literal, required_literals, class_prefilter),
+          nullable_prefix: !anchor_start && literal.nil?,
+          search_mode: search_mode(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter),
           regular_run: regular_run,
           class_prefilter: class_prefilter
         }
@@ -193,8 +233,9 @@ module Onibi
         node.value
       end
 
-      def search_mode(anchor_start, literal, required_literals, class_prefilter)
+      def search_mode(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
         return :anchored if anchor_start
+        return :first_set if nullable_prefilter
         return :class_prefilter if class_prefilter
         return :literal_set_skip if required_literals
         return :literal_skip if literal

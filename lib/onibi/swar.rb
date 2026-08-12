@@ -211,6 +211,44 @@ module Onibi
         end
       end
 
+      # Ordered candidate source for a conservative union of ASCII first-set bytes.
+      class ByteSetPrefilter
+        include Codegen::CandidateSource
+
+        attr_reader :table
+
+        def initialize(bytes)
+          @table = Array.new(256, false)
+          bytes.each { |byte| @table[byte] = true }
+          @table.freeze
+          freeze
+        end
+
+        def eligible?(input, position)
+          input.is_a?(String) && (input.ascii_only? || input.encoding == Encoding::ASCII_8BIT) &&
+            position.is_a?(Integer) && position >= 0
+        end
+
+        def preserves_order?
+          true
+        end
+
+        def candidate_positions(input, position)
+          candidates = []
+          each_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
+        end
+
+        def each_candidate(input, position, &block)
+          return enum_for(__method__, input, position) unless block
+          return unless eligible?(input, position)
+
+          position.upto(input.bytesize - 1) do |index|
+            block.call(index) if table[input.getbyte(index)]
+          end
+        end
+      end
+
       # Native-word bitmap run scanner for a single ASCII class quantifier.
       class ClassRun
         attr_reader :predicate
