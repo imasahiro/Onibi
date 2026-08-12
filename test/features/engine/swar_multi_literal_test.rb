@@ -104,6 +104,29 @@ class SwarMultiLiteralTest < Minitest::Test
     assert experimental_program.search("#{"x" * 100}d", 0, capture: false)
   end
 
+  def test_default_policy_matrix_is_conservative_at_literal_boundaries
+    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    policy = Onibi::Experimental::Swar::LiteralAlternation
+
+    assert_equal :default, policy.policy_for(%w[cat dog])
+    assert_equal :opt_in, policy.policy_for(%w[a b])
+    assert_equal :opt_in, policy.policy_for(["a" * word_bits, "b" * word_bits])
+    assert_equal :opt_in, policy.policy_for(["a" * (word_bits + 1), "b" * (word_bits + 1)])
+  end
+
+  def test_default_policy_matrix_matches_mri_for_early_late_and_no_match
+    pattern = "sherlock|watson|moriarty|adler"
+    inputs = ["sherlock followed", "#{"elementary-" * 100}moriarty", "#{"elementary-" * 100}nobody"]
+    regexp = Onibi::Regexp.new(pattern)
+    expected = ::Regexp.new(pattern)
+
+    inputs.each do |input|
+      actual = regexp.match(input)
+      oracle = expected.match(input)
+      assert_equal [oracle&.[](0), oracle&.offset(0)], [actual&.[](0), actual&.offset(0)]
+    end
+  end
+
   def test_swar_and_baseline_codegen_have_identical_results
     ast = Onibi::Parser.new("aa|ab|cab|dab").parse
     swar = Onibi::Codegen::GeneratedProgram.ast(ast)
