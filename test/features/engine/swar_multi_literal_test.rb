@@ -134,6 +134,12 @@ class SwarMultiLiteralTest < Minitest::Test
     assert source.preserves_order?
   end
 
+  def test_class_prefilter_candidate_positions_do_not_require_callback_scanning
+    source = DirectCandidateClassPrefilter.new("a-z")
+
+    assert_equal [1, 3, 4], source.candidate_positions("1a2bc", 0)
+  end
+
   def test_singleton_class_prefilter_uses_string_search_without_getbyte
     source = Onibi::Experimental::Swar::ClassPrefilter.new("a")
     input = GetbyteForbiddenString.new("xxaaxa")
@@ -201,6 +207,12 @@ class SwarMultiLiteralTest < Minitest::Test
   class GetbyteForbiddenString < String
     def getbyte(_index)
       raise "singleton class search must not call getbyte"
+    end
+  end
+
+  class DirectCandidateClassPrefilter < Onibi::Experimental::Swar::ClassPrefilter
+    def each_candidate(*_arguments)
+      raise "candidate_positions should use its direct scan"
     end
   end
 end
