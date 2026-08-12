@@ -272,7 +272,7 @@ module Onibi
         end
 
         def search(input, position, capture:)
-          return unless byte_scan_input?(input)
+          return character_search(input, position, capture: capture) unless byte_scan_input?(input)
 
           cursor = profitable?(input, position) ? scan_words(input, position) : position
           cursor = scan_tail(input, cursor)
@@ -299,6 +299,21 @@ module Onibi
             cursor += WORD_BYTES
           end
           cursor
+        end
+
+        def character_search(input, position, capture:)
+          return unless input.is_a?(String) && position.is_a?(Integer) && position >= 0
+
+          cursor = position
+          input.each_char.with_index do |character, index|
+            next if index < position
+            break unless @predicate.matches?(character)
+
+            cursor = index + 1
+          end
+          return false if cursor == position
+
+          capture ? [position, cursor, []] : true
         end
 
         def scan_tail(input, cursor)
