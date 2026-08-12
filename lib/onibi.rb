@@ -77,7 +77,7 @@ module Onibi
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
-      @ast = Parser.new(tokens).parse
+      @ast = Codegen::BranchPruner.prune(Parser.new(tokens).parse, normalized_options)
       @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding).analyze(@ast)
     end
 
