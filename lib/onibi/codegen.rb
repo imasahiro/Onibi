@@ -78,7 +78,7 @@ module Onibi
       def values = characters
     end
     AnchorFacts = Struct.new(:kind, :node, keyword_init: true)
-    ComponentPlan = Struct.new(:kind, :region, :matcher, :preserves_order, keyword_init: true)
+    ComponentPlan = Struct.new(:kind, :region, :matcher, :activation, :preserves_order, keyword_init: true)
     ANALYZER_NODE_TYPES = [
       AST::Literal, AST::CharacterClass, AST::Escape, AST::Property, AST::Backreference,
       AST::Assertion, AST::Any, AST::Anchor, AST::Sequence, AST::Alternation, AST::Group,
@@ -158,7 +158,8 @@ module Onibi
         record_suffix(run)
         record_first_set(value, branch)
         @component_plans << ComponentPlan.new(
-          kind: kind, region: branch, matcher: :literal, preserves_order: true
+          kind: kind, region: branch, matcher: :literal, activation: :candidate_start,
+          preserves_order: true
         )
       end
 
@@ -198,8 +199,8 @@ module Onibi
         record_suffix(run) if at_end
         record_first_set(value, parts.first) if at_start
         @component_plans << ComponentPlan.new(
-          kind: sequence_component_kind(at_start, at_end),
-          region: sequence, matcher: :literal, preserves_order: true
+          kind: sequence_component_kind(at_start, at_end), region: sequence, matcher: :literal,
+          activation: at_start ? :candidate_start : :component_progress, preserves_order: true
         )
       end
 

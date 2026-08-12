@@ -47,6 +47,14 @@ class CodegenAnalyzerTest < Minitest::Test
     assert_equal %i[prefix_literal suffix_literal], analysis.component_plans.map(&:kind)
   end
 
+  def test_analysis_records_component_activation_conditions
+    sequence = analyze("fix.*tail")
+    alternation = analyze("cat|dog")
+
+    assert_equal %i[candidate_start component_progress], sequence.component_plans.map(&:activation)
+    assert_equal %i[candidate_start candidate_start], alternation.component_plans.map(&:activation)
+  end
+
   def test_analysis_component_metadata_is_immutable
     analysis = analyze("cat|dog")
 
