@@ -153,7 +153,9 @@ class RegexpConstructorTest < Minitest::Test
   end
 
   def test_timeout_raises_regexp_timeout_error
-    regexp = Onibi::Regexp.new("z", timeout: 0.001)
+    # Use a stateful miss so the timeout contract remains exercised even when
+    # the search planner can skip a direct literal with String#index.
+    regexp = Onibi::Regexp.new("(a+)z", timeout: 0.001)
 
     error = assert_raises(Onibi::Regexp::TimeoutError) do
       regexp.match?("a" * 1_000_000)
