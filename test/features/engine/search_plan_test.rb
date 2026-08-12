@@ -13,6 +13,15 @@ class SearchPlanTest < Minitest::Test
     assert_empty plan.candidate_positions("xneedle", 1)
   end
 
+  def test_absolute_end_projects_candidate_to_input_end
+    regexp = Onibi::Regexp.new("foo\\z")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert plan.anchor_end
+    assert_equal [2], plan.candidate_positions("xxfoo", 0)
+    assert_equal [3], plan.candidate_positions("foo-no", 0)
+  end
+
   def test_search_plan_implements_candidate_source_protocol
     plan = Onibi::Regexp.new("needle").send(:codegen_program).search_plan
 

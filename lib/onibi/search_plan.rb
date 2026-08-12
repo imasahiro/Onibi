@@ -35,6 +35,7 @@ module Onibi
 
         maximum = input.length - minimum_width
         return if maximum < position
+        return anchored_end_candidate(input, position, &block) if anchor_end
 
         yield_candidates(input, position, maximum, &block)
       end
@@ -50,11 +51,30 @@ module Onibi
           yield position if position.zero?
           return
         end
-        return class_candidates(input, position, maximum, &block) if class_prefilter
-        return literal_set_candidates(input, position, maximum, &block) if required_literals
-        return literal_candidates(input, position, maximum, &block) if required_literal
+        if anchor_end
+          candidate = input.length - minimum_width
+          yield candidate if candidate >= position
+          return
+        end
+        return yield_special_candidates(input, position, maximum, &block) if special_candidates?
 
         position.upto(maximum, &block)
+      end
+
+      def special_candidates?
+        class_prefilter || required_literals || required_literal
+      end
+
+      def yield_special_candidates(input, position, maximum, &block)
+        return class_candidates(input, position, maximum, &block) if class_prefilter
+        return literal_set_candidates(input, position, maximum, &block) if required_literals
+
+        literal_candidates(input, position, maximum, &block)
+      end
+
+      def anchored_end_candidate(input, position)
+        candidate = input.length - minimum_width
+        yield candidate if candidate >= position
       end
 
       def anchored_candidates(position)
@@ -148,7 +168,7 @@ module Onibi
         minimum_width = @analysis.widths.fetch(@ast).minimum
         {
           anchor_start: anchor_start,
-          anchor_end: false,
+          anchor_end: trailing_anchor?,
           minimum_width: minimum_width,
           first_set: literal ? [literal[0]].freeze : nil,
           required_literal: literal&.dup&.freeze,
@@ -158,6 +178,12 @@ module Onibi
           regular_run: regular_run,
           class_prefilter: class_prefilter
         }
+      end
+
+      def trailing_anchor?
+        node = @ast.is_a?(AST::Sequence) ? @ast.parts.last : @ast
+        width = @analysis.widths.fetch(@ast)
+        node.is_a?(AST::Anchor) && node.kind == :anchor_absolute_end && width.maximum == width.minimum
       end
 
       def literal_value(node)
