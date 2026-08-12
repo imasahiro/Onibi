@@ -27,6 +27,8 @@ module Onibi
       return simple_quantifier_bounds(value) unless value.start_with?("{")
 
       bounds = value[1...-1].split(",", -1)
+      raise RegexpError, "invalid quantifier" if bounds.empty?
+
       minimum = bounds.first.empty? ? 0 : Integer(bounds.first)
       maximum = bounded_maximum(bounds, minimum)
       raise RegexpError, "invalid quantifier" if maximum && maximum < minimum
