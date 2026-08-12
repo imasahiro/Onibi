@@ -145,6 +145,14 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 3, 8], plan.candidate_positions("--afoo--foo", 0)
   end
 
+  def test_nullable_literal_prefix_uses_a_conservative_first_set
+    regexp = Onibi::Regexp.new("a?foo")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal :first_set, plan.search_mode
+    assert_equal [2, 7, 8], plan.candidate_positions("--foo--afoo", 0)
+  end
+
   def test_regular_run_precompiles_class_predicates
     plan = Onibi::Regexp.new("[a-z]+[0-9]+").send(:codegen_program).search_plan
 

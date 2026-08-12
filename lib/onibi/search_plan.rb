@@ -185,7 +185,7 @@ module Onibi
       end
     end
 
-    # Builds a conservative first-set source for a nullable ASCII class prefix.
+    # Builds a conservative first-set source for a nullable one-byte prefix.
     module NullablePrefixFacts
       module_function
 
@@ -193,10 +193,7 @@ module Onibi
         return unless eligible?(ast, options)
 
         quantifier, literal = prefix_nodes(ast)
-        predicate = ClassPredicates.compiled(quantifier.expression.value)
-        bytes = (0..255).select do |byte|
-          predicate.matches?(byte.chr(Encoding::ASCII_8BIT))
-        end
+        bytes = prefix_bytes(quantifier)
         bytes << literal.value.getbyte(0)
         Experimental::Swar::ByteSetPrefilter.new(bytes)
       end
@@ -206,13 +203,12 @@ module Onibi
 
         quantifier = ast.parts.first
         literal = ast.parts[1]
-        nullable_class?(quantifier) && ascii_literal?(literal) &&
-          ClassPrefilterFacts.ascii_literal_class?(quantifier.expression.value)
+        nullable_prefix?(quantifier) && ascii_literal?(literal) && prefix_bytes(quantifier)
       end
 
-      def nullable_class?(node)
+      def nullable_prefix?(node)
         node.is_a?(AST::Quantifier) && node.minimum.zero? && node.maximum != 0 &&
-          node.expression.is_a?(AST::CharacterClass)
+          (node.expression.is_a?(AST::Literal) || node.expression.is_a?(AST::CharacterClass))
       end
 
       def ascii_literal?(node)
@@ -221,6 +217,27 @@ module Onibi
 
       def prefix_nodes(ast)
         [ast.parts.first, ast.parts[1]]
+      end
+
+      def prefix_bytes(quantifier)
+        expression = quantifier.expression
+        return literal_prefix_bytes(expression) if expression.is_a?(AST::Literal)
+        return class_prefix_bytes(expression) if expression.is_a?(AST::CharacterClass)
+
+        nil
+      end
+
+      def literal_prefix_bytes(expression)
+        return unless expression.value.bytesize == 1 && expression.value.ascii_only?
+
+        [expression.value.getbyte(0)]
+      end
+
+      def class_prefix_bytes(expression)
+        return unless ClassPrefilterFacts.ascii_literal_class?(expression.value)
+
+        predicate = ClassPredicates.compiled(expression.value)
+        0.upto(255).select { |byte| predicate.matches_byte?(byte) }
       end
     end
 
