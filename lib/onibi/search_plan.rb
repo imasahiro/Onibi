@@ -2,14 +2,31 @@
 
 module Onibi
   module Codegen
+    # Emits ordered line-start candidates for a `^` anchored search plan.
+    module LineAnchorCandidates
+      private
+
+      def line_anchor_candidates(input, position, maximum)
+        candidate = position
+        yield candidate if candidate <= maximum && (candidate.zero? || input[candidate - 1] == "\n")
+        while (newline = input.index("\n", candidate))
+          candidate = newline + 1
+          break if candidate > maximum
+
+          yield candidate
+        end
+      end
+    end
+
     # Conservative candidate-start facts consumed by GeneratedProgram#search.
     SearchPlan = Struct.new(
-      :anchor_start, :origin_start, :anchor_end, :minimum_width, :first_set, :required_literal,
+      :anchor_start, :origin_start, :line_anchor, :anchor_end, :minimum_width, :first_set, :required_literal,
       :required_literals, :required_literal_source,
       :nullable_prefix, :search_mode, :regular_run, :class_prefilter, :candidate_source,
       keyword_init: true
     ) do
       include CandidateSource
+      include LineAnchorCandidates
 
       def with_candidate_source(source)
         self.class.new(**to_h, candidate_source: source).freeze
@@ -40,6 +57,7 @@ module Onibi
         maximum = input.length - minimum_width
         return if maximum < position
         return origin_candidate(input, position, &block) if origin_start
+        return line_anchor_candidates(input, position, maximum, &block) if line_anchor
         return anchored_end_candidate(input, position, &block) if anchor_end
 
         yield_candidates(input, position, maximum, &block)
@@ -248,6 +266,7 @@ module Onibi
       def call(facts)
         return :anchored if facts[:anchor_start]
         return :origin_anchored if facts[:origin_start]
+        return :line_anchored if facts[:line_anchor]
         return :first_set if facts[:nullable_prefilter]
         return :class_prefilter if facts[:class_prefilter]
         return :literal_set_skip if facts[:required_literals]
@@ -280,6 +299,17 @@ module Onibi
       end
     end
 
+    # Detects a fixed-width absolute end anchor.
+    module TrailingAnchorFacts
+      module_function
+
+      def call(ast, widths)
+        node = ast.is_a?(AST::Sequence) ? ast.parts.last : ast
+        width = widths.fetch(ast)
+        node.is_a?(AST::Anchor) && node.kind == :anchor_absolute_end && width.maximum == width.minimum
+      end
+    end
+
     # Extracts conservative facts from an analyzed AST.
     class SearchPlanFacts
       def initialize(ast, analysis)
@@ -288,7 +318,7 @@ module Onibi
       end
 
       def call
-        anchor_start, first = leading_node(@ast)
+        anchor_start, first, line_anchor = leading_node(@ast)
         origin_start = OriginStartFacts.call(@ast)
         literal = literal_value(first)
         required_literals = candidate_literals
@@ -296,7 +326,7 @@ module Onibi
         first_set_prefilter = AlternationFirstSetFacts.build(@ast, @analysis.options)
         class_prefilter = leading_class_prefilter || first_set_prefilter || nullable_prefilter
         build_facts(
-          anchor_start: anchor_start, origin_start: origin_start, literal: literal,
+          anchor_start: anchor_start, origin_start: origin_start, line_anchor: line_anchor, literal: literal,
           required_literals: required_literals, class_prefilter: class_prefilter,
           nullable_prefilter: nullable_prefilter
         )
@@ -308,7 +338,8 @@ module Onibi
         {
           anchor_start: facts[:anchor_start],
           origin_start: facts[:origin_start],
-          anchor_end: trailing_anchor?,
+          line_anchor: facts[:line_anchor],
+          anchor_end: TrailingAnchorFacts.call(@ast, @analysis.widths),
           minimum_width: @analysis.widths.fetch(@ast).minimum,
           **search_metadata(facts)
         }
@@ -326,12 +357,6 @@ module Onibi
           regular_run: regular_run,
           class_prefilter: facts[:class_prefilter]
         }
-      end
-
-      def trailing_anchor?
-        node = @ast.is_a?(AST::Sequence) ? @ast.parts.last : @ast
-        width = @analysis.widths.fetch(@ast)
-        node.is_a?(AST::Anchor) && node.kind == :anchor_absolute_end && width.maximum == width.minimum
       end
 
       def literal_value(node)
@@ -374,9 +399,9 @@ module Onibi
       def leading_node(node)
         case node
         when AST::Sequence then leading_sequence(node.parts)
-        when AST::Anchor then [node.kind == :anchor_absolute_start, nil]
-        when AST::Literal then [false, node]
-        else [false, nil]
+        when AST::Anchor then [node.kind == :anchor_absolute_start, nil, node.kind == :anchor_start]
+        when AST::Literal then [false, node, false]
+        else [false, nil, false]
         end
       end
 
@@ -415,18 +440,18 @@ module Onibi
       end
 
       def leading_sequence(parts)
-        return [false, nil] if parts.empty?
+        return [false, nil, false] if parts.empty?
 
         if parts.first.is_a?(AST::Anchor)
-          anchor = parts.first.kind == :anchor_absolute_start
-          return [anchor, literal_prefix(parts, 1)] if anchor && parts[1].is_a?(AST::Literal)
+          anchor = parts.first.kind
+          prefix = literal_prefix(parts, 1) if parts[1].is_a?(AST::Literal)
 
-          return [anchor, nil]
+          return [anchor == :anchor_absolute_start, prefix, anchor == :anchor_start]
         end
 
-        return [false, literal_prefix(parts, 0)] if parts.first.is_a?(AST::Literal)
+        return [false, literal_prefix(parts, 0), false] if parts.first.is_a?(AST::Literal)
 
-        [false, nil]
+        [false, nil, false]
       end
 
       def literal_prefix(parts, index)
