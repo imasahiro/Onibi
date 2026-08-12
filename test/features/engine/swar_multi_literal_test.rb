@@ -23,6 +23,12 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal [2, 11], prefilter.candidate_positions("xxalphabet-beta", 0)
   end
 
+  def test_prefilter_resets_shift_and_states_for_non_first_bytes
+    prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[alpha beta])
+
+    assert_equal [4096], prefilter.candidate_positions("#{"x" * 4096}alpha", 0)
+  end
+
   def test_prefilter_scans_without_materializing_an_input_byte_array
     input = ByteArrayForbiddenString.new("xxalpha-beta")
     prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[alpha beta])
