@@ -5,7 +5,7 @@ require "json"
 require "optparse"
 require "stringio"
 
-ROOT = File.expand_path("..", __dir__)
+ROOT = File.expand_path(ENV.fetch("ONIBI_ROOT", File.join(__dir__, "..")))
 $LOAD_PATH.unshift File.join(ROOT, "lib")
 $LOAD_PATH.unshift File.join(ROOT, "benchmark")
 require "onibi"

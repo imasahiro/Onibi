@@ -12,10 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out base revision
+      - name: Check out pull request revision
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Set up Ruby
@@ -24,22 +23,22 @@ jobs:
           ruby-version: '4.0.6'
           bundler-cache: true
 
-      - name: Benchmark base revision
-        run: bundle exec ruby script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-before.json
-
-      - name: Check out pull request revision
+      - name: Check out base revision
         uses: actions/checkout@v6
         with:
-          path: head
-          ref: ${{ github.event.pull_request.head.sha }}
+          path: base
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
+      - name: Benchmark base revision
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-before.json
+
       - name: Benchmark pull request revision
-        run: bundle exec ruby head/script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-after.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-after.json
 
       - name: Render benchmark comment
         run: |
-          bundle exec ruby head/script/benchmark_report.rb \
+          bundle exec ruby script/benchmark_report.rb \
             --compare /tmp/onibi-benchmark-before.json,/tmp/onibi-benchmark-after.json \
             --markdown-output /tmp/onibi-benchmark-comment.md
 
