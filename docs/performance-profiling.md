@@ -81,6 +81,12 @@ separate to avoid attributing lifecycle costs to the wrong component.
 
 ## Measurements on current `main`
 
+The numeric measurements below are a diagnostic snapshot, not a permanent
+performance baseline. The matcher has continued to receive search-plan,
+one-pass, compiled-predicate, offset/materialization, and boolean-path
+optimizations. Re-run the profiling commands and record the commit SHA before
+using these values for a new performance claim or regression decision.
+
 The following values were collected with Ruby 4.0.6 and the harness above.
 TracePoint was disabled for timing/allocation runs.
 

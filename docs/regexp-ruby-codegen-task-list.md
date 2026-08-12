@@ -2,7 +2,16 @@
 
 ## Purpose
 
-This plan migrates Onibi from the bytecode VM, AST fallback, capture matcher, and DFA specialization seams to the single generated-matcher architecture defined in [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md).
+> **Completed implementation record:** All CODEGEN tasks in this document are
+> complete. The task list is retained as an auditable history of the migration
+> from the bytecode VM, AST fallback, capture matcher, and DFA specialization
+> seams to the single generated-matcher architecture defined in
+> [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md).
+
+This document is no longer a queue of currently available implementation tasks.
+New work should begin with a focused acceptance test against the current
+generated-Ruby pipeline and should update the canonical design or feature
+coverage documents when the architecture changes.
 
 The list is ordered to keep every pull request reviewable and keep `main` working. Temporary dual execution exists only in test/benchmark builds and has an explicit deletion task. No task introduces a user-facing backend option.
 
