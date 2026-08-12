@@ -126,6 +126,13 @@ class SwarMultiLiteralTest < Minitest::Test
     refute Onibi::Codegen::GeneratedProgram.ast(nonliteral_ast).swar?
   end
 
+  def test_class_run_swar_returns_run_end_for_ascii_class
+    run = Onibi::Experimental::Swar::ClassRun.new("a-z")
+
+    assert_equal [0, 3, []], run.search("abc123", 0, capture: true)
+    assert_equal false, run.search("123", 0, capture: false)
+  end
+
   def test_default_policy_keeps_single_and_word_width_literals_opt_in
     word_bits = Onibi::Experimental::Swar::WORD_BITS
 
