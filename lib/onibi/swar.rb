@@ -268,7 +268,7 @@ module Onibi
           return false unless position.is_a?(Integer) && position >= 0 && position <= input.bytesize
 
           remaining = input.bytesize - position
-          remaining >= MIN_SCAN_BYTES && @match_count.between?(8, 248)
+          remaining >= MIN_SCAN_BYTES && @match_count.between?(8, 255)
         end
 
         def search(input, position, capture:)
