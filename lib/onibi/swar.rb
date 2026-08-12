@@ -264,7 +264,7 @@ module Onibi
         end
 
         def profitable?(input, position)
-          return false unless input.is_a?(String) && input.ascii_only?
+          return false unless byte_scan_input?(input)
           return false unless position.is_a?(Integer) && position >= 0 && position <= input.bytesize
 
           remaining = input.bytesize - position
@@ -272,7 +272,7 @@ module Onibi
         end
 
         def search(input, position, capture:)
-          return unless input.ascii_only?
+          return unless byte_scan_input?(input)
 
           cursor = profitable?(input, position) ? scan_words(input, position) : position
           cursor = scan_tail(input, cursor)
@@ -282,6 +282,10 @@ module Onibi
         end
 
         private
+
+        def byte_scan_input?(input)
+          input.is_a?(String) && (input.ascii_only? || input.encoding == Encoding::ASCII_8BIT)
+        end
 
         def scan_words(input, cursor)
           full_mask = (1 << WORD_BYTES) - 1

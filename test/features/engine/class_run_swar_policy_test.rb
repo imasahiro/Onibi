@@ -18,4 +18,12 @@ class ClassRunSwarPolicyTest < Minitest::Test
     assert run.profitable?(input, 0)
     assert_equal [0, 128, []], run.search(input, 0, capture: true)
   end
+
+  def test_ascii8bit_input_uses_byte_semantics
+    run = Onibi::Experimental::Swar::ClassRun.new("^,\\n")
+    input = "#{"\xFF" * 128},tail".b
+
+    assert run.profitable?(input, 0)
+    assert_equal [0, 128, []], run.search(input, 0, capture: true)
+  end
 end
