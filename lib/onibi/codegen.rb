@@ -987,8 +987,17 @@ module Onibi
             allow_single_character: optimizations.include?(:swar_single_character)
           )
         end
-        new(RubyGenerator.ast(ast, options: options),
-            prefilter: prefilter, search_plan: SearchPlan.from(ast, analysis))
+        search_plan = SearchPlan.from(ast, analysis)
+        candidate_source = candidate_source_for(optimizations, prefilter, search_plan)
+        search_plan = search_plan.with_candidate_source(candidate_source) if candidate_source
+        new(RubyGenerator.ast(ast, options: options), prefilter: prefilter,
+                                                      search_plan: search_plan)
+      end
+
+      def self.candidate_source_for(optimizations, prefilter, search_plan)
+        return unless optimizations.include?(:candidate_intersection) && prefilter
+
+        CandidateSource::Intersection.new([prefilter, search_plan])
       end
 
       def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil,
@@ -998,6 +1007,7 @@ module Onibi
         @source = source.dup.freeze
         @prefilter = prefilter
         @search_plan = search_plan.freeze
+        @candidate_source = search_plan.candidate_source
         @compiled_module = compiler.compile(@source, filename: filename)
         @entrypoint = SourceCompiler::ENTRYPOINT
         freeze
@@ -1017,6 +1027,9 @@ module Onibi
           return result unless result.nil?
         end
 
+        if @candidate_source&.eligible?(input, position)
+          return search_with_candidates(input, position, capture, @candidate_source)
+        end
         return search_with_plan(input, position, capture) unless @prefilter&.eligible?(input, position)
 
         initial = execute(input, position, capture, position)
@@ -1050,6 +1063,13 @@ module Onibi
           break if result
         end
         result || false
+      end
+
+      def search_with_candidates(input, position, capture, source)
+        initial = execute(input, position, capture, position)
+        return initial if initial
+
+        search_candidates(input, position, capture, source.candidate_positions(input, position + 1))
       end
 
       def baseline_search(input, position, capture)

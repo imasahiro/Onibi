@@ -6,10 +6,14 @@ module Onibi
     SearchPlan = Struct.new(
       :anchor_start, :anchor_end, :minimum_width, :first_set, :required_literal,
       :required_literals,
-      :nullable_prefix, :search_mode, :regular_run, :class_prefilter,
+      :nullable_prefix, :search_mode, :regular_run, :class_prefilter, :candidate_source,
       keyword_init: true
     ) do
       include CandidateSource
+
+      def with_candidate_source(source)
+        self.class.new(**to_h, candidate_source: source).freeze
+      end
 
       def self.from(ast, analysis)
         new(**SearchPlanFacts.new(ast, analysis).call)
