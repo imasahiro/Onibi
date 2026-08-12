@@ -43,4 +43,12 @@ class CompiledClassPredicateTest < Minitest::Test
     predicate = Onibi::ClassPredicates.compiled("a-z")
     assert_equal 1, Onibi::Codegen::Casefold.class_candidates("a", 0, predicate, false)
   end
+
+  def test_generated_program_hoists_repeated_class_predicates
+    ast = Onibi::Parser.new("[a-z]+[a-z]+[0-9]").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_equal 2, program.source.scan("ClassPredicates.compiled").length
+    assert_includes program.source, "ONIBI_CLASS_PREDICATES"
+  end
 end

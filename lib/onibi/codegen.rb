@@ -642,9 +642,13 @@ module Onibi
 
       def emit_class(node, cursor)
         ignorecase = @options.include?("ignorecase")
-        value = node.value.dump
-        value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
-        predicate = "Onibi::ClassPredicates.compiled(#{value}, ignorecase: #{ignorecase})"
+        key = [node.value, ignorecase]
+        index = @predicate_registry.index(key)
+        unless index
+          @predicate_registry << key
+          index = @predicate_registry.length - 1
+        end
+        predicate = "ONIBI_CLASS_PREDICATES.fetch(#{index})"
         "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
       end
 
@@ -703,6 +707,32 @@ module Onibi
       end
     end
 
+    # Emits one immutable compiled predicate table per generated module.
+    module PredicateTableSetup
+      private
+
+      def predicate_setup
+        return if @predicate_registry.empty?
+
+        entries = @predicate_registry.map do |source, ignorecase|
+          value = source.dump
+          value = "#{value}.b" if source.encoding == Encoding::ASCII_8BIT
+          "Onibi::ClassPredicates.compiled(#{value}, ignorecase: #{ignorecase})"
+        end
+        "ONIBI_CLASS_PREDICATES = [#{entries.join(", ")}].freeze"
+      end
+    end
+
+    # Supplies deterministic cursor names to generated expressions.
+    module CursorFactory
+      private
+
+      def fresh_cursor
+        @counter += 1
+        "cursor_#{@counter}"
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
@@ -712,6 +742,8 @@ module Onibi
       include AnchorEmitter
       include PredicateEmitter
       include EscapeEmitter
+      include PredicateTableSetup
+      include CursorFactory
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -731,9 +763,10 @@ module Onibi
         AST::SubexpressionCall => :emit_subexpression_call,
         AST::Absence => :emit_absence
       }.freeze
-      def initialize(options)
+      def initialize(options, predicate_registry = nil)
         @options = options
         @counter = 0
+        @predicate_registry = predicate_registry || []
       end
 
       def emit(ast)
@@ -741,7 +774,9 @@ module Onibi
         collect_groups(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
+        setup = predicate_setup
         <<~RUBY
+          #{setup}
           def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
             #{captures}
@@ -835,7 +870,7 @@ module Onibi
         scoped_options = toggle_option(scoped_options, "ignorecase", node.ignorecase)
         scoped_options = toggle_option(scoped_options, "multiline", node.multiline)
         scoped_options = toggle_option(scoped_options, "extended", node.extended)
-        AstEmitter.new(scoped_options).send(:emit_node, node.body, cursor)
+        AstEmitter.new(scoped_options, @predicate_registry).send(:emit_node, node.body, cursor)
       end
 
       def toggle_option(options, name, value)
@@ -846,11 +881,6 @@ module Onibi
 
       def emit_atomic_group(node, cursor)
         emit_node(node.body, cursor)
-      end
-
-      def fresh_cursor
-        @counter += 1
-        "cursor_#{@counter}"
       end
     end
 
