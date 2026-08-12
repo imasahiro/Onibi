@@ -40,4 +40,13 @@ class SearchPlanTest < Minitest::Test
       assert_equal expected.match?(input, position), regexp.match?(input, position)
     end
   end
+
+  def test_disjoint_class_quantifiers_use_a_regular_run
+    regexp = Onibi::Regexp.new("[a-z]+[0-9]+")
+    program = regexp.send(:codegen_program)
+
+    assert program.search_plan.regular_run
+    assert_equal ::Regexp.new("[a-z]+[0-9]+").match?("abc123"), regexp.match?("abc123")
+    assert_equal ::Regexp.new("[a-z]+[0-9]+").match?("abc"), regexp.match?("abc")
+  end
 end

@@ -644,7 +644,7 @@ module Onibi
       def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil,
                      search_plan: SearchPlan.new(anchor_start: false, anchor_end: false, minimum_width: 0,
                                                  first_set: nil, required_literal: nil, nullable_prefix: true,
-                                                 search_mode: :scan))
+                                                 search_mode: :scan, regular_run: nil))
         @source = source.dup.freeze
         @prefilter = prefilter
         @search_plan = search_plan.freeze
@@ -658,6 +658,11 @@ module Onibi
       end
 
       def search(input, position, capture:)
+        if search_plan.regular_run
+          result = search_plan.regular_run.search(input, position, capture: capture)
+          return result unless result.nil?
+        end
+
         return search_with_plan(input, position, capture) unless @prefilter&.profitable?(input, position)
 
         initial = execute(input, position, capture, position)
