@@ -40,8 +40,32 @@ module Onibi
       end
     end
 
+    LiteralAtom = Struct.new(:value, :ascii, :fixed_width, :casefold, keyword_init: true) do
+      def ascii? = ascii
+      def fixed_width? = fixed_width
+      def casefold? = casefold
+    end
+
+    LiteralRun = Struct.new(:value, :node, keyword_init: true)
+    RequiredLiteral = Struct.new(:value, :node, keyword_init: true)
+    PrefixLiteral = Struct.new(:value, :node, keyword_init: true)
+    SuffixLiteral = Struct.new(:value, :node, keyword_init: true)
+    FirstSet = Struct.new(:characters, :node, keyword_init: true) do
+      def values = characters
+    end
+    AnchorFacts = Struct.new(:kind, :node, keyword_init: true)
+    ComponentPlan = Struct.new(:kind, :region, :matcher, :preserves_order, keyword_init: true)
+    ANALYZER_NODE_TYPES = [
+      AST::Literal, AST::CharacterClass, AST::Escape, AST::Property, AST::Backreference,
+      AST::Assertion, AST::Any, AST::Anchor, AST::Sequence, AST::Alternation, AST::Group,
+      AST::OptionGroup, AST::AtomicGroup, AST::Conditional, AST::SubexpressionCall,
+      AST::Absence, AST::Quantifier
+    ].freeze
+
     Analysis = Struct.new(
       :captures, :named_captures, :subexpression_calls, :widths, :labels, :options, :encoding,
+      :literal_atoms, :literal_runs, :required_literals, :prefix_literals, :suffix_literals,
+      :first_sets, :anchor_facts, :component_plans,
       keyword_init: true
     )
 
@@ -63,15 +87,189 @@ module Onibi
       end
     end
 
+    # Extracts conservative literal components without changing execution.
+    module ComponentExtraction
+      private
+
+      def initialize_component_metadata
+        @literal_atoms = []
+        @literal_runs = []
+        @required_literals = []
+        @prefix_literals = []
+        @suffix_literals = []
+        @first_sets = []
+        @anchor_facts = []
+        @component_plans = []
+      end
+
+      def component_metadata
+        {
+          literal_atoms: @literal_atoms, literal_runs: @literal_runs,
+          required_literals: @required_literals, prefix_literals: @prefix_literals,
+          suffix_literals: @suffix_literals, first_sets: @first_sets,
+          anchor_facts: @anchor_facts, component_plans: @component_plans
+        }
+      end
+
+      def extract_components(node)
+        case node
+        when AST::Alternation
+          node.branches.each { |branch| extract_branch_literals(branch, :literal_alternation) }
+        when AST::Sequence
+          extract_sequence_components(node)
+        else
+          node_children(node).each { |child| extract_components(child) }
+        end
+      end
+
+      def extract_branch_literals(branch, kind)
+        value = literal_sequence_value(branch)
+        return unless value
+
+        record_atom_metadata(value)
+        run = record_literal_run(value, branch)
+        return unless component_eligible?(value)
+
+        record_prefix(run)
+        record_suffix(run)
+        record_first_set(value, branch)
+        @component_plans << ComponentPlan.new(
+          kind: kind, region: branch, matcher: :literal, preserves_order: true
+        )
+      end
+
+      def extract_sequence_components(node)
+        literal_parts = []
+        literal_start = nil
+        node.parts.each_with_index do |part, index|
+          literal_start, literal_parts = process_sequence_part(
+            node, part, index, literal_parts, literal_start
+          )
+        end
+        record_sequence_run(literal_parts, node, literal_start, node.parts.length) unless literal_parts.empty?
+        record_sequence_requirements(node)
+      end
+
+      def process_sequence_part(node, part, index, literal_parts, literal_start)
+        return [literal_start || index, literal_parts + [part]] if part.is_a?(AST::Literal)
+
+        record_sequence_run(literal_parts, node, literal_start, index) unless literal_parts.empty?
+        record_anchor(part) if part.is_a?(AST::Anchor)
+        extract_components(part)
+        [nil, []]
+      end
+
+      def record_anchor(node)
+        @anchor_facts << AnchorFacts.new(kind: node.kind, node: node)
+      end
+
+      def record_sequence_run(parts, sequence, start_index, end_index)
+        value = parts.map(&:value).join
+        run = record_literal_run(value, parts.first)
+        record_atom_metadata(value)
+        return unless component_eligible?(value)
+
+        at_start, at_end = sequence_run_boundaries(sequence, start_index, end_index)
+        record_prefix(run) if at_start
+        record_suffix(run) if at_end
+        record_first_set(value, parts.first) if at_start
+        @component_plans << ComponentPlan.new(
+          kind: sequence_component_kind(at_start, at_end),
+          region: sequence, matcher: :literal, preserves_order: true
+        )
+      end
+
+      def sequence_run_boundaries(sequence, start_index, end_index)
+        [
+          sequence.parts.take(start_index).none? { |part| part.is_a?(AST::Literal) },
+          sequence.parts.drop(end_index).none? { |part| part.is_a?(AST::Literal) }
+        ]
+      end
+
+      def sequence_component_kind(at_start, at_end)
+        return :anchored_literal if at_start && at_end
+        return :prefix_literal if at_start
+        return :suffix_literal if at_end
+
+        :literal_run
+      end
+
+      def record_sequence_requirements(sequence)
+        literal_parts = []
+        sequence.parts.each do |part|
+          if part.is_a?(AST::Literal)
+            literal_parts << part
+            next
+          end
+
+          record_required_literal(literal_parts) unless literal_parts.empty?
+          literal_parts = []
+        end
+        record_required_literal(literal_parts) unless literal_parts.empty?
+      end
+
+      def record_required_literal(parts)
+        value = parts.map(&:value).join
+        return unless component_eligible?(value)
+
+        @required_literals << RequiredLiteral.new(value: value, node: parts.first)
+      end
+
+      def record_literal_run(value, node)
+        run = LiteralRun.new(value: value, node: node)
+        @literal_runs << run
+        run
+      end
+
+      def record_atom_metadata(value)
+        value.each_char do |character|
+          @literal_atoms << LiteralAtom.new(
+            value: character,
+            ascii: character.ascii_only?,
+            fixed_width: true,
+            casefold: @options.include?("ignorecase")
+          )
+        end
+      end
+
+      def record_prefix(run)
+        @prefix_literals << PrefixLiteral.new(value: run.value, node: run.node)
+      end
+
+      def record_suffix(run)
+        @suffix_literals << SuffixLiteral.new(value: run.value, node: run.node)
+      end
+
+      def record_first_set(value, node)
+        @first_sets << FirstSet.new(characters: [value[0]], node: node)
+      end
+
+      def component_eligible?(value)
+        !@options.include?("ignorecase") && value.ascii_only?
+      end
+
+      def literal_sequence_value(node)
+        return node.value if node.is_a?(AST::Literal)
+        return unless node.is_a?(AST::Sequence)
+        return unless node.parts.all? { |part| part.is_a?(AST::Literal) }
+
+        node.parts.map(&:value).join
+      end
+
+      def node_children(node)
+        return [] unless node.is_a?(Struct)
+
+        node.each_with_object([]) do |child, children|
+          children << child if child.is_a?(Struct)
+          children.concat(child.select { |item| item.is_a?(Struct) }) if child.is_a?(Array)
+        end
+      end
+    end
+
     # Computes immutable facts consumed by source emitters.
     class Analyzer
       include DeepFreezer
-      NODE_TYPES = [
-        AST::Literal, AST::CharacterClass, AST::Escape, AST::Property, AST::Backreference,
-        AST::Assertion, AST::Any, AST::Anchor, AST::Sequence, AST::Alternation, AST::Group,
-        AST::OptionGroup, AST::AtomicGroup, AST::Conditional, AST::SubexpressionCall,
-        AST::Absence, AST::Quantifier
-      ].freeze
+      include ComponentExtraction
 
       def initialize(options = [], encoding = Encoding::UTF_8)
         @options = options.dup.freeze
@@ -82,10 +280,12 @@ module Onibi
         @widths = {}.compare_by_identity
         @labels = {}.compare_by_identity
         @next_label = 0
+        initialize_component_metadata
       end
 
       def analyze(ast)
         visit(ast)
+        extract_components(ast)
         result = Analysis.new(
           captures: @captures,
           named_captures: @named_captures,
@@ -93,7 +293,8 @@ module Onibi
           widths: @widths,
           labels: @labels,
           options: @options,
-          encoding: @encoding
+          encoding: @encoding,
+          **component_metadata
         )
         deep_freeze(result)
       end
@@ -102,7 +303,7 @@ module Onibi
 
       def visit(node)
         handler = "visit_#{node_type_name(node).downcase}"
-        raise CodegenError, "unsupported AST node #{node.class}" unless NODE_TYPES.include?(node.class)
+        raise CodegenError, "unsupported AST node #{node.class}" unless ANALYZER_NODE_TYPES.include?(node.class)
 
         assign_label(node)
         width = send(handler, node)
