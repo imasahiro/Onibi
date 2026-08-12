@@ -26,6 +26,13 @@ class RubyCodegenQuantifierTest < Minitest::Test
     assert_equal true, program.search("a-middle-z", 0, capture: false)
   end
 
+  def test_capture_free_backtracking_quantifier_does_not_snapshot_captures
+    ast = Onibi::Parser.new("a.*z").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    refute_includes program.source, "captures.map"
+  end
+
   def test_zero_repeat_keeps_the_unmatched_capture_slot
     ast = Onibi::Parser.new("(a)?c").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
