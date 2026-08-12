@@ -20,6 +20,14 @@ class CompiledClassPredicateTest < Minitest::Test
     assert folded.matches?("A")
   end
 
+  def test_compiled_predicate_uses_a_256_byte_ascii_table
+    predicate = Onibi::ClassPredicates.compiled("\\x80-\\xFF".b)
+
+    assert_equal 256, predicate.ascii_table_length
+    assert predicate.matches?("\xFF".b)
+    refute predicate.matches?("\x7F".b)
+  end
+
   def test_regexp_matching_remains_mri_equivalent
     pattern = "[a-z&&[^aeiou]]+"
     input = "rhythms 123"
