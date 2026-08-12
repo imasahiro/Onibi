@@ -40,31 +40,45 @@ The project should use this high-level layout:
 │   ├── onibi.rb
 │   └── onibi/
 │       ├── regexp.rb
-│       ├── match_data.rb
-│       ├── lexer.rb
 │       ├── parser.rb
 │       ├── ast.rb
-│       ├── bytecode.rb
-│       ├── virtual_machine.rb
-│       ├── nfa.rb
-│       ├── dfa.rb
+│       ├── codegen/
+│       ├── match_data*.rb
+│       ├── lexer*.rb
 │       └── errors.rb
 ├── test/
 │   ├── test_helper.rb
-│   ├── unit/
-│   ├── integration/
-│   ├── differential/
-│   ├── regression/
+│   ├── features/
+│   │   ├── api/
+│   │   ├── captures/
+│   │   ├── compatibility/
+│   │   ├── encoding/
+│   │   ├── engine/
+│   │   ├── matching/
+│   │   ├── quality/
+│   │   └── syntax/
 │   └── support/
+├── fixtures/
+│   ├── api/
+│   ├── codegen/
+│   ├── encoding/
+│   └── syntax/
 ├── benchmark/
 ├── fuzz/
 ├── script/
-│   └── ...
+│   ├── cross_runtime_contract.rb
+│   └── profile_*.rb
 └── .githooks/
     └── pre-commit
 ```
 
-Keep the public API small and explicit. Internal parser, AST, bytecode, VM, NFA, and DFA classes are implementation details unless the design document explicitly promotes an interface.
+Keep the public API small and explicit. The production matcher is the
+generated-Ruby codegen pipeline described in
+[`docs/regexp-ruby-codegen-design.md`](docs/regexp-ruby-codegen-design.md).
+Parser, AST, codegen, predicate, timeout, and MatchData helpers are internal
+unless the design document explicitly promotes an interface. NFA, DFA,
+bytecode, and VM references in the historical MVP/v1 task lists are historical
+records, not current production architecture.
 
 ## Dependencies
 
@@ -136,16 +150,16 @@ Run the complete test suite:
 bundle exec rake test
 ```
 
-Run a single test file:
+Run a single feature test file:
 
 ```sh
-bundle exec ruby -Itest test/unit/regexp_test.rb
+bundle exec ruby -Itest test/features/api/match_api_test.rb
 ```
 
 Run one test by name:
 
 ```sh
-bundle exec ruby -Itest test/unit/regexp_test.rb -n '/matches literal/'
+bundle exec ruby -Itest test/features/api/match_api_test.rb -n '/matches literal/'
 ```
 
 Run the complete suite, including the MRI differential acceptance tests:
@@ -210,6 +224,27 @@ Run the hook and all quality gates with the same selected Ruby/Bundler
 environment. A hook failure caused by a Ruby-path mismatch is an environment
 failure to fix, not a reason to bypass the hook.
 
+## Architecture and performance guardrails
+
+The generated-Ruby pipeline is the sole production matcher:
+
+```text
+Regexp source -> Token stream -> AST -> generated Ruby matcher -> offset result
+```
+
+Do not add a second production backend, user-facing engine toggle, pattern-text
+router, or silent semantic fallback. NFA, DFA, bytecode, and VM references in
+historical task lists describe superseded implementation work. New matcher
+optimizations must preserve the same control graph semantics and include MRI
+differential coverage for the affected syntax and public API.
+
+Performance work must report the commit SHA, Ruby/runtime configuration, input
+corpus, iteration counts, and allocation results. Separate cold construction,
+first match, warm `match?`, `match`, `scan`, and `gsub` measurements; do not
+present a lifecycle-mismatched comparison as a regression or improvement.
+Correctness, differential tests, and package gates take priority over a faster
+benchmark result.
+
 ## Feature branches and worktrees
 
 Every change must be delivered as an atomic Git change: one coherent feature, bug fix, scaffold change, or documentation change per commit. Do not combine unrelated changes in one commit.
@@ -247,11 +282,28 @@ bundle exec rubocop
 bundle exec rake build
 ```
 
-For benchmark work, keep executable benchmarks under `benchmark/`, keep
-benchmark tests under `test/features/`, and provide an explicit engine
-selection when comparing MRI with Onibi. Benchmark refactors must retain a
-deterministic test that verifies the engines produce equivalent fixture output;
-performance numbers alone are not a correctness result.
+When the changed files affect runtime loading or packaging, also run the
+installed-gem smoke test in an isolated `GEM_HOME`. When they affect generated
+matching or runtime compatibility, run the cross-runtime contract directly:
+
+```sh
+bundle exec ruby script/cross_runtime_contract.rb
+```
+
+The pull request must include the result of every configured workflow,
+including cross-runtime and coverage artifacts. A scheduled fuzz workflow is a
+continuous safety net, not a substitute for turning a reproducible failure
+into a deterministic regression test.
+
+For benchmark work, keep executable benchmarks under `benchmark/`, profiling
+tools under `script/`, and benchmark tests under
+`test/features/matching/`. Use the checked-in `benchmark-ips` dependency for
+feature microbenchmarks and provide an explicit engine selection when
+comparing MRI with Onibi. Benchmark refactors must retain a deterministic test
+that verifies the engines produce equivalent fixture output; performance
+numbers alone are not a correctness result. Separate cold compilation/codegen
+cost, first match, warm matching, `match`, `scan`, and `gsub` measurements so
+the benchmark does not compare different lifecycle phases accidentally.
 
 All changes enter `main` through a GitHub pull request. Direct pushes to `main` are not part of the workflow. Enable GitHub auto-merge with squash merge after the required checks pass.
 

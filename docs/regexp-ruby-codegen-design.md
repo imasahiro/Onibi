@@ -2,7 +2,7 @@
 
 ## Metadata
 
-- **Status:** Accepted for implementation
+- **Status:** Accepted and implemented
 - **Owner:** Onibi maintainers
 - **Created:** 2026-08-11
 - **Compatibility baseline:** MRI Ruby 4.0.6
@@ -18,13 +18,24 @@ Regexp source -> Token stream -> AST -> generated Ruby matcher
 
 The generated Ruby matcher is the only production execution engine. It performs prioritized backtracking with explicit Ruby data structures, rather than using the Ruby call stack, and returns character-offset capture spans to the existing `Onibi::MatchData` builder. `Onibi::Regexp#match?` and `#match` enter the same generated control program with different result requirements.
 
-The implementation will not build Thompson NFA bytecode, determinize an NFA, retain a DFA cache, or dispatch between VM, AST, capture, NFA, and DFA matchers after migration. During migration only, the current implementation remains available as a test oracle behind an internal flag. It is deleted after the code-generated path passes the exit gates in this document.
+The implementation does not build Thompson NFA bytecode, determinize an NFA,
+retain a DFA cache, or dispatch between VM, AST, capture, NFA, and DFA
+matchers. The migration and legacy-path deletion gates described below are
+complete; the generated Ruby matcher is now the sole production execution
+engine. Historical migration details remain in this document to explain the
+architecture decision and its deletion criteria.
 
 This is a single generated-matcher architecture. Shared character, encoding, timeout, and `MatchData` helpers are runtime services, not alternative matching engines.
 
 ## Context
 
-The current repository does not have one effective matcher. `Compiler` emits Thompson-like bytecode, `VirtualMachine` executes part of the regular syntax, `AstMatcher` handles features the VM does not complete, and `CaptureMatcher` independently implements capture-producing matching. `MatchingResult` chooses among those paths using pattern-text heuristics. `DfaSpecialization` currently stores metadata but creates another architectural seam and corresponding tests.
+The pre-migration repository did not have one effective matcher. `Compiler`
+emitted Thompson-like bytecode, `VirtualMachine` executed part of the regular
+syntax, `AstMatcher` handled features the VM did not complete, and
+`CaptureMatcher` independently implemented capture-producing matching.
+`MatchingResult` selected among those paths using pattern-text heuristics.
+Those legacy paths were removed by the completed cutover task; the current
+repository uses the generated-Ruby pipeline described above.
 
 This arrangement has three costs:
 
@@ -44,7 +55,8 @@ The attached draft proposed generating Ruby from NFA and DFA forms. That would i
 - Keep `match?` free of public result allocation while retaining captures required by backreferences, conditionals, or subexpression semantics.
 - Keep the public `Onibi::Regexp` and `Onibi::MatchData` APIs unchanged.
 - Remain pure Ruby with zero runtime dependencies and no C extension, FFI, or CRuby-only requirement.
-- Delete the legacy bytecode, VM, AST matcher, capture matcher, and DFA paths after a bounded migration.
+- Keep the legacy bytecode, VM, AST matcher, capture matcher, and DFA paths out
+  of production; their deletion was completed as part of the cutover.
 
 ## Non-goals
 
@@ -461,13 +473,18 @@ Performance data guides optimization but does not excuse semantic differences.
 
 Migration is deliberately one-way and bounded:
 
-1. Freeze the current MRI differential corpus and record the legacy baseline.
+1. Freeze the MRI differential corpus and record the legacy baseline.
 2. Add the generator and run it only in tests for a literal subset.
 3. Extend the same generated control program feature by feature.
 4. Add internal `legacy`, `codegen`, and `verify` modes for test and benchmark comparison. User-facing backend selection is prohibited.
 5. While codegen is still explicitly selected, run `match?`, `match`, `scan`, `gsub`, the full encoding matrix, property/fuzz and injection corpora, concurrency/Ractor contract, package gates, cross-runtime source-compilation/execution tests, and benchmark guardrails.
 6. Switch all public matching defaults only after every pre-cutover gate passes.
-7. Remove the internal mode, routing heuristics, and every legacy execution file in one final atomic change.
+7. Remove the internal mode, routing heuristics, and every legacy execution file
+   in one final atomic change. **Completed.**
+
+The migration is complete. The remaining sections in this document are the
+design record and audit criteria, not a statement that a legacy production
+backend is still present.
 
 Deletion is allowed only when:
 
