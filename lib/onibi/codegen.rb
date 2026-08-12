@@ -22,14 +22,14 @@ module Onibi
       end
 
       def class_candidates(input, position, source, ignorecase)
-        result = []
         character = input[position]
-        result << position + 1 if character && ClassPredicates.matches?(source, character, ignorecase: ignorecase)
+        return position + 1 if character && ClassPredicates.matches?(source, character, ignorecase: ignorecase)
+
         if ignorecase && source.include?("ß")
           folded = input[position, 2]
-          result << position + 2 if folded && folded.upcase == "SS"
+          return position + 2 if folded && folded.upcase == "SS"
         end
-        result
+        nil
       end
     end
 
@@ -438,8 +438,7 @@ module Onibi
         ignorecase = @options.include?("ignorecase")
         value = node.value.dump
         value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
-        candidates = "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{value}, #{ignorecase})"
-        "(#{candidates}.first || nil)"
+        "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{value}, #{ignorecase})"
       end
 
       def emit_property(node, cursor)
