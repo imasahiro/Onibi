@@ -52,6 +52,7 @@ class SearchPlanTest < Minitest::Test
     plan = regexp.send(:codegen_program).search_plan
 
     assert_equal [["cat", 0], ["dog", 0], ["fox", 0]], plan.required_literals
+    assert_instance_of Onibi::Codegen::CandidateSource::Union, plan.required_literal_source
     assert_equal [2, 8], plan.candidate_positions("xxdog---fox", 0)
   end
 
