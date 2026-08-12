@@ -51,43 +51,11 @@ class RegexRedux
     end
 
     def count(regexp, input)
-      count = 0
-      position = 0
-
-      while (match = regexp.match(input, position))
-        count += 1
-        finish = match.end(0)
-        position = finish > position ? finish : position + 1
-        break if position > input.length
-      end
-
-      count
+      regexp.scan(input).length
     end
 
     def replace(input, regexp, replacement)
-      result = +""
-      cursor = 0
-      position = 0
-
-      while (match = regexp.match(input, position))
-        cursor, position = replace_match(result, input, [cursor, position], match, replacement)
-        break if position > input.length
-      end
-
-      result << input[cursor..] if cursor < input.length
-      result
-    end
-
-    def next_position(finish, position)
-      finish > position ? finish : position + 1
-    end
-
-    def replace_match(result, input, state, match, replacement)
-      cursor, position = state
-      start = match.begin(0)
-      finish = match.end(0)
-      result << input[cursor...start] << replacement
-      [finish, next_position(finish, position)]
+      regexp.gsub(input, replacement)
     end
 
     def source(regexp)
