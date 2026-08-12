@@ -4,7 +4,7 @@ module Onibi
   module Codegen
     # Conservative candidate-start facts consumed by GeneratedProgram#search.
     SearchPlan = Struct.new(
-      :anchor_start, :anchor_end, :minimum_width, :first_set, :required_literal,
+      :anchor_start, :origin_start, :anchor_end, :minimum_width, :first_set, :required_literal,
       :required_literals, :required_literal_source,
       :nullable_prefix, :search_mode, :regular_run, :class_prefilter, :candidate_source,
       keyword_init: true
@@ -39,6 +39,7 @@ module Onibi
 
         maximum = input.length - minimum_width
         return if maximum < position
+        return origin_candidate(input, position, &block) if origin_start
         return anchored_end_candidate(input, position, &block) if anchor_end
 
         yield_candidates(input, position, maximum, &block)
@@ -83,6 +84,12 @@ module Onibi
       def anchored_end_candidate(input, position)
         candidate = input.length - minimum_width
         yield candidate if candidate >= position
+      end
+
+      def origin_candidate(input, position)
+        return if anchor_end && position + minimum_width != input.length
+
+        yield position
       end
 
       def literal_candidates(input, position, maximum)
@@ -217,6 +224,32 @@ module Onibi
       end
     end
 
+    # Selects the candidate search strategy from immutable analysis facts.
+    module SearchModeFacts
+      module_function
+
+      def call(facts)
+        return :anchored if facts[:anchor_start]
+        return :origin_anchored if facts[:origin_start]
+        return :first_set if facts[:nullable_prefilter]
+        return :class_prefilter if facts[:class_prefilter]
+        return :literal_set_skip if facts[:required_literals]
+        return :literal_skip if facts[:literal]
+
+        :scan
+      end
+    end
+
+    # Detects a leading \G/search-origin assertion.
+    module OriginStartFacts
+      module_function
+
+      def call(ast)
+        node = ast.is_a?(AST::Sequence) ? ast.parts.first : ast
+        node.is_a?(AST::Escape) && node.kind == :start_match
+      end
+    end
+
     # Builds an immutable union source for analyzed required literals.
     module RequiredLiteralSourceFacts
       module_function
@@ -239,30 +272,42 @@ module Onibi
 
       def call
         anchor_start, first = leading_node(@ast)
+        origin_start = OriginStartFacts.call(@ast)
         literal = literal_value(first)
         required_literals = candidate_literals
         nullable_prefilter = NullablePrefixFacts.build(@ast, @analysis.options)
         first_set_prefilter = AlternationFirstSetFacts.build(@ast, @analysis.options)
         class_prefilter = leading_class_prefilter || first_set_prefilter || nullable_prefilter
-        build_facts(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
+        build_facts(
+          anchor_start: anchor_start, origin_start: origin_start, literal: literal,
+          required_literals: required_literals, class_prefilter: class_prefilter,
+          nullable_prefilter: nullable_prefilter
+        )
       end
 
       private
 
-      def build_facts(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
-        minimum_width = @analysis.widths.fetch(@ast).minimum
+      def build_facts(facts)
         {
-          anchor_start: anchor_start,
+          anchor_start: facts[:anchor_start],
+          origin_start: facts[:origin_start],
           anchor_end: trailing_anchor?,
-          minimum_width: minimum_width,
+          minimum_width: @analysis.widths.fetch(@ast).minimum,
+          **search_metadata(facts)
+        }
+      end
+
+      def search_metadata(facts)
+        literal = facts[:literal]
+        {
           first_set: literal ? [literal[0]].freeze : nil,
           required_literal: literal&.dup&.freeze,
-          required_literals: required_literals,
-          required_literal_source: RequiredLiteralSourceFacts.build(required_literals),
-          nullable_prefix: !anchor_start && literal.nil?,
-          search_mode: search_mode(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter),
+          required_literals: facts[:required_literals],
+          required_literal_source: RequiredLiteralSourceFacts.build(facts[:required_literals]),
+          nullable_prefix: !facts[:anchor_start] && !literal,
+          search_mode: SearchModeFacts.call(facts),
           regular_run: regular_run,
-          class_prefilter: class_prefilter
+          class_prefilter: facts[:class_prefilter]
         }
       end
 
@@ -277,16 +322,6 @@ module Onibi
         return if @analysis.options.include?("ignorecase") || node.value.empty?
 
         node.value
-      end
-
-      def search_mode(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
-        return :anchored if anchor_start
-        return :first_set if nullable_prefilter
-        return :class_prefilter if class_prefilter
-        return :literal_set_skip if required_literals
-        return :literal_skip if literal
-
-        :scan
       end
 
       def leading_class_prefilter

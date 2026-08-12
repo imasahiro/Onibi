@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/ClassLength
+
 require_relative "../../test_helper"
 
 class SearchPlanTest < Minitest::Test
@@ -11,6 +13,34 @@ class SearchPlanTest < Minitest::Test
     assert_equal :anchored, plan.search_mode
     assert_equal [0], plan.candidate_positions("xneedle", 0)
     assert_empty plan.candidate_positions("xneedle", 1)
+  end
+
+  def test_start_match_projects_candidates_to_the_search_origin
+    regexp = Onibi::Regexp.new("\\Gfoo")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert plan.origin_start
+    assert_equal :origin_anchored, plan.search_mode
+    assert_equal [0], plan.candidate_positions("xxfoo", 0)
+    assert_equal [2], plan.candidate_positions("xxfoo", 2)
+  end
+
+  def test_start_match_candidate_restriction_matches_mri
+    regexp = Onibi::Regexp.new("\\Gfoo")
+    expected = ::Regexp.new("\\Gfoo")
+    input = "xxfoo"
+
+    [0, 2].each do |position|
+      assert_equal expected.match?(input, position), regexp.match?(input, position)
+    end
+  end
+
+  def test_start_match_combined_with_end_anchor_keeps_both_constraints
+    regexp = Onibi::Regexp.new("\\Gfoo\\z")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_empty plan.candidate_positions("xxfoo", 0)
+    assert_equal [2], plan.candidate_positions("xxfoo", 2)
   end
 
   def test_absolute_end_projects_candidate_to_input_end
@@ -171,3 +201,5 @@ class SearchPlanTest < Minitest::Test
     def candidate_positions(_input, _position) = @candidates
   end
 end
+
+# rubocop:enable Metrics/ClassLength
