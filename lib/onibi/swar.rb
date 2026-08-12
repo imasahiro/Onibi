@@ -232,9 +232,11 @@ module Onibi
         attr_reader :table
 
         def initialize(bytes)
+          bytes = bytes.uniq.freeze
           @table = Array.new(256, false)
           bytes.each { |byte| @table[byte] = true }
           @table.freeze
+          @single_byte = bytes.one? ? bytes.first.chr(Encoding::ASCII_8BIT).freeze : nil
           freeze
         end
 
@@ -257,8 +259,18 @@ module Onibi
           return enum_for(__method__, input, position) unless block
           return unless eligible?(input, position)
 
+          return each_singleton_candidate(input, position, &block) if @single_byte
+
           position.upto(input.bytesize - 1) do |index|
             block.call(index) if table[input.getbyte(index)]
+          end
+        end
+
+        def each_singleton_candidate(input, position)
+          cursor = position
+          while (found = input.index(@single_byte, cursor))
+            yield found
+            cursor = found + 1
           end
         end
       end
