@@ -22,6 +22,16 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal [2, 11], prefilter.candidate_positions("xxalphabet-beta", 0)
   end
 
+  def test_swar_prefilter_implements_candidate_source_protocol
+    source = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[alpha beta])
+
+    input = "#{"x" * Onibi::Experimental::Swar::MINIMUM_INPUT_BYTES}alpha"
+
+    assert source.eligible?(input, 0)
+    assert_equal [Onibi::Experimental::Swar::MINIMUM_INPUT_BYTES], source.candidate_positions(input, 0)
+    assert source.preserves_order?
+  end
+
   def test_prefilter_splits_patterns_without_exceeding_the_word_width
     patterns = 20.times.map { |index| format("p%02d", index) }
     prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(patterns)

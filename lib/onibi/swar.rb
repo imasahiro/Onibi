@@ -21,6 +21,8 @@ module Onibi
       # Packs literal positions into native-word Shift-And buckets. A zero guard bit
       # separates adjacent patterns, preventing state from crossing lanes.
       class MultiLiteralPrefilter
+        include Codegen::CandidateSource
+
         attr_reader :buckets
 
         def initialize(patterns)
@@ -41,6 +43,14 @@ module Onibi
             scan_byte(byte, position + relative_index, states, candidates)
           end
           candidates.uniq.sort
+        end
+
+        def eligible?(input, position)
+          profitable?(input, position)
+        end
+
+        def preserves_order?
+          true
         end
 
         def profitable?(input, position)
