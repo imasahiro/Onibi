@@ -296,7 +296,7 @@ module Onibi
         result = fresh_cursor
         previous_capture = fresh_cursor
         <<~EXPRESSION.strip
-          (begin #{previous_capture} = captures[#{node.number - 1}]; captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures[#{node.number - 1}] = #{previous_capture}; nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end)
+          (begin #{previous_capture} = captures && captures[#{node.number - 1}]; captures && (captures[#{node.number - 1}] = [#{cursor}, nil]); #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures && (captures[#{node.number - 1}] = #{previous_capture}); nil) : (captures && (captures[#{node.number - 1}][1] = #{result}); #{result}); end)
         EXPRESSION
       end
     end
@@ -483,6 +483,19 @@ module Onibi
       end
     end
 
+    # Determines whether generated boolean execution needs capture state.
+    module CaptureLiveness
+      module_function
+
+      def required?(value)
+        return value.any? { |child| required?(child) } if value.is_a?(Array)
+        return true if [AST::Backreference, AST::Conditional, AST::SubexpressionCall].include?(value.class)
+        return false unless value.is_a?(Struct)
+
+        value.any? { |child| required?(child) }
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
@@ -511,14 +524,13 @@ module Onibi
         AST::SubexpressionCall => :emit_subexpression_call,
         AST::Absence => :emit_absence
       }.freeze
-
       def initialize(options)
         @options = options
         @counter = 0
-        @groups = {}
       end
 
       def emit(ast)
+        @backreferences = CaptureLiveness.required?(ast)
         collect_groups(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
@@ -538,7 +550,7 @@ module Onibi
       def capture_setup
         return "captures = nil" if capture_count.zero?
 
-        "captures = Array.new(#{capture_count})"
+        @backreferences ? "captures=Array.new(#{capture_count})" : "captures=capture ?Array.new(#{capture_count}):nil"
       end
 
       def capture_result = capture_count.zero? ? "[]" : "captures"
@@ -547,14 +559,15 @@ module Onibi
         return value.each { |item| collect_groups(item) } if value.is_a?(Array)
         return unless value.is_a?(Struct)
 
-        @groups[value.number] = value if value.is_a?(AST::Group) && value.number
-        @groups[value.name] = value if value.is_a?(AST::Group) && value.name
+        @groups ||= {}
+        if value.is_a?(AST::Group)
+          @groups[value.number] = value if value.number
+          @groups[value.name] = value if value.name
+        end
         value.each { |child| collect_groups(child) }
       end
 
-      def capture_count
-        @groups.keys.grep(Integer).max || 0
-      end
+      def capture_count = @groups.keys.grep(Integer).max || 0
 
       def emit_node(node, cursor)
         handler = NODE_EMITTERS[node.class]
