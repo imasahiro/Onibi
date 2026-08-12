@@ -190,11 +190,14 @@ module Onibi
 
         attr_reader :predicate, :table
 
+        MAX_SPARSE_BYTES = 4
+
         def initialize(source, ignorecase: false)
           @predicate = ClassPredicates.compiled(source, ignorecase: ignorecase)
           @table = @predicate.ascii_table
           matches = @table.each_index.select { |byte| @table[byte] }
           @single_byte = matches.one? ? matches.first.chr(Encoding::ASCII_8BIT).freeze : nil
+          @sparse_bytes = matches.length.between?(2, MAX_SPARSE_BYTES) ? matches.freeze : nil
           freeze
         end
 
@@ -209,7 +212,12 @@ module Onibi
         def candidate_positions(input, position)
           return [] unless eligible?(input, position)
           return singleton_candidate_positions(input, position) if @single_byte
+          return sparse_candidate_positions(input, position) if sparse_profitable?(input, position)
 
+          table_candidate_positions(input, position)
+        end
+
+        def table_candidate_positions(input, position)
           candidates = []
           cursor = position
           while cursor < input.bytesize
@@ -229,6 +237,7 @@ module Onibi
           return enum_for(__method__, input, position) unless block
           return unless eligible?(input, position)
           return each_singleton_candidate(input, position, &block) if @single_byte
+          return each_sparse_candidate(input, position, &block) if sparse_profitable?(input, position)
 
           cursor = position
           while cursor < input.bytesize
@@ -271,6 +280,35 @@ module Onibi
           candidates = []
           each_singleton_candidate(input, position) { |candidate| candidates << candidate }
           candidates
+        end
+
+        def each_sparse_candidate(input, position, &block)
+          candidates = @sparse_bytes.flat_map do |byte|
+            cursor = position
+            member = byte.chr(Encoding::ASCII_8BIT)
+            starts = []
+            while (found = input.index(member, cursor))
+              starts << found
+              cursor = found + 1
+            end
+            starts
+          end.sort.uniq
+          candidates.each(&block)
+        end
+
+        def sparse_candidate_positions(input, position)
+          candidates = []
+          each_sparse_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
+        end
+
+        def sparse_profitable?(input, position)
+          return false unless @sparse_bytes
+
+          limit = [position + 64, input.bytesize].min
+          matches = 0
+          position.upto(limit - 1) { |index| matches += 1 if @table[input.getbyte(index)] }
+          matches <= (limit - position) / 8
         end
       end
 
