@@ -28,8 +28,10 @@ module Onibi
         DEFAULT_LOOKAHEAD_BYTES = 64
 
         def initialize(patterns, default_policy: true)
+          validate_patterns!(patterns)
           @patterns = patterns.map(&:dup).freeze
           @default_policy = default_policy
+          @first_byte_table = build_first_byte_table(patterns)
           @buckets = build_buckets(patterns).freeze
           freeze
         end
@@ -43,9 +45,14 @@ module Onibi
 
           candidates = []
           states = Array.new(buckets.length, 0)
+          active = false
           index = position
           while index < input.bytesize
-            scan_byte(input.getbyte(index), index, states, candidates)
+            byte = input.getbyte(index)
+            if active || @first_byte_table[byte]
+              scan_byte(byte, index, states, candidates)
+              active = states.any? { |state| !state.zero? }
+            end
             index += 1
           end
           candidates.uniq.sort
@@ -73,7 +80,6 @@ module Onibi
         private
 
         def build_buckets(patterns)
-          validate_patterns!(patterns)
           builders = []
           filter_patterns(patterns).each do |pattern|
             builder = builders.last
@@ -82,6 +88,12 @@ module Onibi
             builder.add(pattern)
           end
           builders.map(&:build)
+        end
+
+        def build_first_byte_table(patterns)
+          table = Array.new(256, false)
+          filter_patterns(patterns).each { |pattern| table[pattern.getbyte(0)] = true }
+          table.freeze
         end
 
         def validate_patterns!(patterns)
