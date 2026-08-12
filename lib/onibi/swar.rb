@@ -190,8 +190,21 @@ module Onibi
         end
 
         def candidate_positions(input, position)
+          return [] unless eligible?(input, position)
+          return singleton_candidate_positions(input, position) if @single_byte
+
           candidates = []
-          each_candidate(input, position) { |candidate| candidates << candidate }
+          cursor = position
+          while cursor < input.bytesize
+            limit = [cursor + WORD_BITS / 8, input.bytesize].min
+            mask = match_mask(input, cursor, limit)
+            while mask != 0
+              bit = mask & -mask
+              candidates << cursor + bit.bit_length - 1
+              mask ^= bit
+            end
+            cursor = limit
+          end
           candidates
         end
 
@@ -221,8 +234,10 @@ module Onibi
 
         def match_mask(input, cursor, limit)
           mask = 0
-          cursor.upto(limit - 1) do |index|
+          index = cursor
+          while index < limit
             mask |= 1 << (index - cursor) if @table[input.getbyte(index)]
+            index += 1
           end
           mask
         end
@@ -233,6 +248,12 @@ module Onibi
             yield found
             cursor = found + 1
           end
+        end
+
+        def singleton_candidate_positions(input, position)
+          candidates = []
+          each_singleton_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
         end
       end
 
