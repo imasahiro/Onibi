@@ -407,7 +407,10 @@ The experimental SWAR prefilter applies by default only to whole-regexp
 alternations of two or more ASCII literals whose lengths are between two bytes
 and one less than a native word. It packs literal positions into native-word
 Shift-And buckets separated by zero guard bits and masks every state transition
-back to the native word width. Search probes the initial position directly and
+back to `SWAR_STATE_BITS`, a fixnum-safe width derived as `1.size * 8 - 3`.
+The extra headroom is required because `state << 1` is evaluated before the
+mask; using the full Ruby VALUE width can allocate a heap Integer on MRI.
+Search probes the initial position directly and
 uses the bitmap prefilter only when at least one native word of input remains.
 The prefilter supplies ordered candidate start positions to the same generated
 matcher; native-word-sized or longer literals, unsupported AST shapes,

@@ -6,8 +6,12 @@ module Onibi
     # Integer cannot leak bits between logical machine words.
     module Swar
       WORD_BITS = 1.size * 8
-      WORD_MASK = (1 << WORD_BITS) - 1
-      MINIMUM_INPUT_BYTES = WORD_BITS
+      # Keep Shift-And state transitions inside MRI's immediate integer payload.
+      # The left shift happens before masking, so full VALUE width can spill to
+      # a heap Integer for one transition.
+      SWAR_STATE_BITS = WORD_BITS - 3
+      WORD_MASK = (1 << SWAR_STATE_BITS) - 1
+      MINIMUM_INPUT_BYTES = SWAR_STATE_BITS
 
       Bucket = Struct.new(:width, :masks, :start_bits, :accepts, keyword_init: true) do
         def initialize(**arguments)
@@ -121,7 +125,7 @@ module Onibi
         end
 
         def filter_patterns(patterns)
-          patterns.map { |pattern| pattern.byteslice(0, WORD_BITS) }.uniq
+          patterns.map { |pattern| pattern.byteslice(0, SWAR_STATE_BITS) }.uniq
         end
 
         def eligible_input?(input, position)
@@ -158,7 +162,7 @@ module Onibi
           end
 
           def fits?(length)
-            width + 1 + length <= WORD_BITS
+            width + 1 + length <= SWAR_STATE_BITS
           end
 
           def add(pattern)
@@ -476,7 +480,7 @@ module Onibi
           return :unsupported unless valid_policy_patterns?(patterns)
 
           lengths = patterns.map(&:bytesize)
-          if lengths.all? { |length| length >= 2 && length < WORD_BITS }
+          if lengths.all? { |length| length >= 2 && length < SWAR_STATE_BITS }
             :default
           else
             :opt_in
@@ -510,7 +514,7 @@ module Onibi
 
         def eligible_lengths?(patterns, allow_long_literals, allow_single_character)
           minimum = allow_single_character ? 1 : 2
-          maximum = allow_long_literals ? Float::INFINITY : WORD_BITS - 1
+          maximum = allow_long_literals ? Float::INFINITY : SWAR_STATE_BITS - 1
           patterns.all? { |pattern| pattern.bytesize.between?(minimum, maximum) }
         end
 

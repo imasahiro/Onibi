@@ -4,6 +4,13 @@ require_relative "../../test_helper"
 
 # rubocop:disable Metrics/ClassLength
 class SwarMultiLiteralTest < Minitest::Test
+  def test_swar_state_width_stays_inside_fixnum_payload
+    assert_equal Onibi::Experimental::Swar::WORD_BITS - 3,
+                 Onibi::Experimental::Swar::SWAR_STATE_BITS
+    assert_operator Onibi::Experimental::Swar::SWAR_STATE_BITS, :<,
+                    Onibi::Experimental::Swar::WORD_BITS
+  end
+
   def test_public_matching_uses_swar_for_literal_alternation_and_agrees_with_mri
     pattern = "sherlock|watson|moriarty|adler"
     input = "elementary, watson; sherlock followed"
@@ -51,8 +58,8 @@ class SwarMultiLiteralTest < Minitest::Test
     prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(patterns)
 
     assert_operator prefilter.bucket_count, :>, 1
-    assert(prefilter.buckets.all? { |bucket| bucket.width <= Onibi::Experimental::Swar::WORD_BITS })
-    assert_equal Onibi::Experimental::Swar::WORD_BITS, Onibi::Experimental::Swar::WORD_MASK.bit_length
+    assert(prefilter.buckets.all? { |bucket| bucket.width <= Onibi::Experimental::Swar::SWAR_STATE_BITS })
+    assert_equal Onibi::Experimental::Swar::SWAR_STATE_BITS, Onibi::Experimental::Swar::WORD_MASK.bit_length
     assert_equal [3, 7], prefilter.candidate_positions("xx-p19-p00", 0)
   end
 
@@ -68,7 +75,7 @@ class SwarMultiLiteralTest < Minitest::Test
   end
 
   def test_word_width_literals_require_explicit_internal_optimization
-    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    word_bits = Onibi::Experimental::Swar::SWAR_STATE_BITS
     ast = Onibi::Parser.new("#{"a" * word_bits}|#{"b" * word_bits}").parse
     default_program = Onibi::Codegen::GeneratedProgram.ast(ast)
     experimental_program = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: %i[swar swar_long_literals])
@@ -105,7 +112,7 @@ class SwarMultiLiteralTest < Minitest::Test
   end
 
   def test_opt_in_long_literal_prefilter_uses_string_index_candidates
-    width = Onibi::Experimental::Swar::WORD_BITS
+    width = Onibi::Experimental::Swar::SWAR_STATE_BITS
     input = IndexTrackingString.new("x" * 64 + "a" * width)
     source = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(
       ["a" * width, "b" * width], default_policy: false
@@ -116,7 +123,7 @@ class SwarMultiLiteralTest < Minitest::Test
   end
 
   def test_default_policy_matrix_is_conservative_at_literal_boundaries
-    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    word_bits = Onibi::Experimental::Swar::SWAR_STATE_BITS
     policy = Onibi::Experimental::Swar::LiteralAlternation
 
     assert_equal :default, policy.policy_for(%w[cat dog])
@@ -219,7 +226,7 @@ class SwarMultiLiteralTest < Minitest::Test
   end
 
   def test_default_policy_keeps_single_and_word_width_literals_opt_in
-    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    word_bits = Onibi::Experimental::Swar::SWAR_STATE_BITS
 
     assert_equal :default, Onibi::Experimental::Swar::LiteralAlternation.policy_for(%w[aa bb])
     assert_equal :opt_in, Onibi::Experimental::Swar::LiteralAlternation.policy_for(%w[a b])
@@ -242,7 +249,7 @@ class SwarMultiLiteralTest < Minitest::Test
   private
 
   def long_literal_fixture
-    word_bits = Onibi::Experimental::Swar::WORD_BITS
+    word_bits = Onibi::Experimental::Swar::SWAR_STATE_BITS
     patterns = ["a" * (word_bits + 1), "b" * (word_bits + 2)]
     [patterns, "xx#{patterns.last}"]
   end
