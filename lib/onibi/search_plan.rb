@@ -277,10 +277,11 @@ module Onibi
 
     # One-pass scanner for two disjoint greedy character-class runs.
     class RegularRun
-      attr_reader :sources
+      attr_reader :sources, :predicates
 
       def initialize(sources)
         @sources = sources.map(&:dup).map(&:freeze).freeze
+        @predicates = @sources.map { |source| ClassPredicates.compiled(source) }.freeze
         freeze
       end
 
@@ -289,7 +290,7 @@ module Onibi
 
         start = position
         while start < input.length
-          unless matches?(sources.first, input[start])
+          unless matches?(predicates.first, input[start])
             start += 1
             next
           end
@@ -299,31 +300,31 @@ module Onibi
 
           # With disjoint classes, every start inside this left run reaches the
           # same failed boundary. Jumping to the boundary removes suffix rescans.
-          start = consume(sources.first, input, start)
+          start = consume(predicates.first, input, start)
         end
         false
       end
 
       private
 
-      def consume(source, input, cursor)
-        cursor += 1 while cursor < input.length && matches?(source, input[cursor])
+      def consume(predicate, input, cursor)
+        cursor += 1 while cursor < input.length && matches?(predicate, input[cursor])
         cursor
       end
 
       def match_sources(input, start)
         finish = start
-        matched = sources.all? do |source|
-          next false unless matches?(source, input[finish])
+        matched = predicates.all? do |predicate|
+          next false unless matches?(predicate, input[finish])
 
-          finish = consume(source, input, finish)
+          finish = consume(predicate, input, finish)
           true
         end
         matched ? finish : nil
       end
 
-      def matches?(source, character)
-        character && ClassPredicates.matches?(source, character)
+      def matches?(predicate, character)
+        character && predicate.matches?(character)
       end
 
       def result(start, finish, capture)
