@@ -55,6 +55,16 @@ class CandidateSourceTest < Minitest::Test
     assert_equal [2, 3, 5], source.candidate_positions(input, 0)
   end
 
+  def test_byte_set_stream_does_not_materialize_candidates
+    source = Class.new(Onibi::Experimental::Swar::ByteSetPrefilter) do
+      def candidate_positions(*)
+        raise "candidate_positions must not be called"
+      end
+    end.new(["a".ord, "b".ord, "c".ord])
+
+    assert_equal [1, 3, 4], source.each_candidate("1a2bc", 0).to_a
+  end
+
   def test_each_candidate_can_stream_without_candidate_positions
     source = Class.new do
       include Onibi::Codegen::CandidateSource
@@ -75,30 +85,31 @@ class CandidateSourceTest < Minitest::Test
   end
 
   def test_union_streams_candidates_from_each_source
-    source_class = Class.new do
-      include Onibi::Codegen::CandidateSource
-
-      def initialize(candidates)
-        @candidates = candidates
-      end
-
-      def candidate_positions(*)
-        raise "candidate_positions must not be called"
-      end
-
-      def eligible?(_input, _position) = true
-
-      def each_candidate(input, position, &block)
-        return enum_for(__method__, input, position) unless block_given?
-
-        @candidates.each(&block)
-      end
-    end
     source = Onibi::Codegen::CandidateSource::Union.new(
-      [source_class.new([1, 5]), source_class.new([2, 5])]
+      [StreamingSource.new([1, 5]), StreamingSource.new([2, 5])]
     )
 
     assert_equal [1, 2, 5], source.each_candidate("input", 0).to_a
+  end
+
+  class StreamingSource
+    include Onibi::Codegen::CandidateSource
+
+    def initialize(candidates)
+      @candidates = candidates
+    end
+
+    def candidate_positions(*)
+      raise "candidate_positions must not be called"
+    end
+
+    def eligible?(_input, _position) = true
+
+    def each_candidate(input, position, &block)
+      return enum_for(__method__, input, position) unless block_given?
+
+      @candidates.each(&block)
+    end
   end
 
   class CountingSource
