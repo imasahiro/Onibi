@@ -427,10 +427,13 @@ module Onibi
       def regular_run
         return unless @analysis.options.empty? && @analysis.captures.empty?
 
-        if @ast.is_a?(AST::Alternation)
-          runs = @ast.branches.map { |branch| regular_sequence_run(branch) }
-          return RegularRun::Alternation.new(runs) if runs.all?
-        end
+        # Alternation already has a shared first-set candidate path. Running
+        # one RegularRun per branch rescans the input once per branch and is
+        # slower than the generated matcher for the common short-branch case.
+        # Keep RegularRun limited to sequences until a shared alternation
+        # scanner is available.
+        return if @ast.is_a?(AST::Alternation)
+
         regular_sequence_run(@ast)
       end
 
@@ -443,6 +446,7 @@ module Onibi
         parts = node.is_a?(AST::Sequence) ? node.parts : [node]
         components = parts.filter_map { |part| regular_component(part) }
         return if components.length != parts.length || components.empty?
+        return unless components.any? { |component| component[:kind] == :class }
 
         class_sources = components.filter_map { |component| component[:source] }
         return if class_sources.length > 1 && !class_sources.each_cons(2).all? do |left, right|
@@ -573,15 +577,13 @@ module Onibi
                          { kind: :class, source: source, minimum: 1, maximum: nil }
                        end
                      end
-        @components = components.map(&:freeze).freeze
+        @components = components.map do |component|
+          scanner = component[:kind] == :class ? Experimental::Swar::ClassRun.new(component[:source]) : nil
+          bytes = component[:kind] == :literal ? component[:value].bytes.freeze : nil
+          component.merge(scanner: scanner, bytes: bytes).freeze
+        end.freeze
         @sources = @components.filter_map { |component| component[:source]&.dup&.freeze }.freeze
-        @scanners = @components.filter_map do |component|
-          component[:kind] == :class ? Experimental::Swar::ClassRun.new(component[:source]) : nil
-        end.freeze
-        @component_scanners = @components.map do |component|
-          component[:kind] == :class ? Experimental::Swar::ClassRun.new(component[:source]) : nil
-        end.freeze
-        @scanner_by_component = @components.zip(@component_scanners).to_h.freeze
+        @scanners = @components.filter_map { |component| component[:scanner] }.freeze
         @predicates = @scanners.map(&:predicate).freeze
         freeze
       end
@@ -626,25 +628,31 @@ module Onibi
       end
 
       def component_matches_at?(component, input, cursor)
-        return input.byteslice(cursor, component[:value].bytesize) == component[:value] if component[:kind] == :literal
+        return literal_matches_at?(component[:bytes], input, cursor) if component[:kind] == :literal
 
-        scanner = @scanner_by_component.fetch(component)
-        matches_at?(scanner, input, cursor)
+        matches_at?(component[:scanner], input, cursor)
       end
 
       def consume_component(component, input, cursor)
-        return cursor + component[:value].bytesize if component[:kind] == :literal &&
-                                                      input.byteslice(cursor,
-                                                                      component[:value].bytesize) == component[:value]
+        if component[:kind] == :literal
+          return cursor + component[:value].bytesize if literal_matches_at?(component[:bytes], input, cursor)
+
+          return nil
+        end
         return nil unless component_matches_at?(component, input, cursor)
 
-        scanner = @scanner_by_component.fetch(component)
-        finish = scanner.scan_end(input, cursor)
+        finish = component[:scanner].scan_end(input, cursor)
         minimum_end = cursor + component[:minimum]
         return nil if finish < minimum_end
 
         maximum = component[:maximum]
         maximum ? [finish, cursor + maximum].min : finish
+      end
+
+      def literal_matches_at?(bytes, input, cursor)
+        return false if cursor.negative? || cursor + bytes.length > input.bytesize
+
+        bytes.each_with_index.all? { |byte, offset| input.getbyte(cursor + offset) == byte }
       end
 
       def result(start, finish, capture)
