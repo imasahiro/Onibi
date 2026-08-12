@@ -8,7 +8,10 @@ FIXTURES_ROOT = File.join(PROJECT_ROOT, "fixtures")
 require "simplecov"
 
 SimpleCov.start do
+  track_files "lib/**/*.rb"
   add_filter "/test/"
+  add_filter "/benchmark/"
+  add_filter "/fuzz/"
 end
 
 require "onibi"
