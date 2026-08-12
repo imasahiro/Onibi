@@ -30,6 +30,30 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 9], plan.candidate_positions("xxneedle-needle", 0)
   end
 
+  def test_alternation_literals_skip_nonmatching_entrypoints
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal [["cat", 0], ["dog", 0], ["fox", 0]], plan.required_literals
+    assert_equal [2, 8], plan.candidate_positions("xxdog---fox", 0)
+  end
+
+  def test_alternation_literal_class_branches_use_literal_prefixes
+    regexp = Onibi::Regexp.new("cat[0-9]|dog[0-9]")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal [["cat", 0], ["dog", 0]], plan.required_literals
+    assert_equal [2, 9], plan.candidate_positions("xxcat7---dog2", 0)
+  end
+
+  def test_class_literal_sequence_indexes_suffix_and_projects_start
+    regexp = Onibi::Regexp.new("[a-z]foo")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal [["foo", 1]], plan.required_literals
+    assert_equal [2], plan.candidate_positions("xxafoo", 0)
+  end
+
   def test_search_plan_matches_mri_for_explicit_positions
     pattern = "\\Aneedle"
     input = "needle needle"
