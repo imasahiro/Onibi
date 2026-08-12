@@ -2,6 +2,8 @@ name: Benchmark comparison
 
 on:
   pull_request:
+    paths:
+      - lib/**
 
 permissions:
   contents: read
@@ -31,10 +33,10 @@ jobs:
           persist-credentials: false
 
       - name: Benchmark base revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-before.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-before.json
 
       - name: Benchmark pull request revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 0.25 --warmup 0.15 --output /tmp/onibi-benchmark-after.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-after.json
 
       - name: Render benchmark comment
         run: |
@@ -74,3 +76,8 @@ jobs:
                 body
               });
             }
+      - name: Fail on benchmark regression above 10 percent
+        run: |
+          bundle exec ruby script/benchmark_report.rb \
+            --compare /tmp/onibi-benchmark-before.json,/tmp/onibi-benchmark-after.json \
+            --max-regression 0.10
