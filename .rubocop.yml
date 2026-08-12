@@ -16,12 +16,31 @@ Naming/FileName:
 # across artificial wrapper files.
 Metrics/ClassLength:
   Max: 125
+  Exclude:
+    - "script/profile_regex_redux.rb"
+    - "script/profile_regexp_features.rb"
+    - "script/profile_regexp_scaling.rb"
+    - "script/profile_compile_stages.rb"
 
-Metrics/ModuleLength:
-  Max: 220
+# The profiling harness intentionally keeps measurement, reporting, and CLI
+# orchestration together so a run remains a single reproducible command.
+Metrics/AbcSize:
+  Exclude:
+    - "script/profile_regex_redux.rb"
+    - "script/profile_regexp_features.rb"
+    - "script/profile_regexp_scaling.rb"
+    - "script/profile_compile_stages.rb"
 
 Metrics/MethodLength:
   Max: 15
+  Exclude:
+    - "script/profile_regex_redux.rb"
+    - "script/profile_regexp_features.rb"
+    - "script/profile_regexp_scaling.rb"
+    - "script/profile_compile_stages.rb"
+
+Metrics/ModuleLength:
+  Max: 220
 
 Metrics/CyclomaticComplexity:
   Max: 9
