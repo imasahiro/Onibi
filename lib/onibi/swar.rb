@@ -318,6 +318,9 @@ module Onibi
           @predicate = ClassPredicates.compiled(source)
           @table = @predicate.ascii_table
           @match_count = @table.count(true)
+          stop_bytes = @table.each_index.reject { |byte| @table[byte] }
+          @stop_byte = stop_bytes.one? ? stop_bytes.first : nil
+          @stop_byte_ascii = @stop_byte&.chr(Encoding::ASCII_8BIT)&.freeze
           freeze
         end
 
@@ -346,6 +349,8 @@ module Onibi
         def scan_end(input, position)
           return position unless byte_scan_input?(input)
           return position unless position.is_a?(Integer) && position >= 0 && position <= input.bytesize
+
+          return delimiter_scan_end(input, position) if @stop_byte
 
           cursor = word_scan_profitable?(input, position) ? scan_words(input, position) : position
           scan_tail(input, cursor)
@@ -393,8 +398,15 @@ module Onibi
         end
 
         def scan_tail(input, cursor)
+          return delimiter_scan_end(input, cursor) if @stop_byte
+
           cursor += 1 while cursor < input.bytesize && @table[input.getbyte(cursor)]
           cursor
+        end
+
+        def delimiter_scan_end(input, cursor)
+          delimiter = input.encoding == Encoding::ASCII_8BIT ? @stop_byte_ascii : @stop_byte.chr(input.encoding)
+          input.index(delimiter, cursor) || input.bytesize
         end
       end
 
