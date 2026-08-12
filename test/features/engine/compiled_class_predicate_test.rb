@@ -28,4 +28,9 @@ class CompiledClassPredicateTest < Minitest::Test
     actual = Onibi::Regexp.new(pattern).match(input)
     assert_equal [expected&.[](0), expected&.offset(0)], [actual&.[](0), actual&.offset(0)]
   end
+
+  def test_generated_class_predicate_returns_cursor_without_candidate_array
+    assert_equal 1, Onibi::Codegen::Casefold.class_candidates("a", 0, "a-z", false)
+    assert_nil Onibi::Codegen::Casefold.class_candidates("1", 0, "a-z", false)
+  end
 end
