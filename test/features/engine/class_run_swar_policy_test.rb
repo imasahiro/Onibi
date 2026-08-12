@@ -26,4 +26,11 @@ class ClassRunSwarPolicyTest < Minitest::Test
     assert run.profitable?(input, 0)
     assert_equal [0, 128, []], run.search(input, 0, capture: true)
   end
+
+  def test_utf8_input_uses_logical_character_fallback
+    run = Onibi::Experimental::Swar::ClassRun.new("a-z")
+
+    refute run.profitable?("abcé", 0)
+    assert_equal [0, 3, []], run.search("abcé", 0, capture: true)
+  end
 end

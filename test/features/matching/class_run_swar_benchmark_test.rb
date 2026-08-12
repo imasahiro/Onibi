@@ -29,4 +29,13 @@ class ClassRunSwarBenchmarkTest < Minitest::Test
 
     assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
   end
+
+  def test_utf8_class_run_matches_mri
+    pattern = "[a-z]+"
+    input = "#{"abc" * 64}é"
+    expected = ::Regexp.new(pattern).match(input)
+    actual = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
+  end
 end
