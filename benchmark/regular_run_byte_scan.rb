@@ -3,19 +3,19 @@
 require "benchmark/ips"
 require_relative "../lib/onibi"
 
-input = ("abc123" * 128).freeze
-predicates = %w[a-z 0-9].map { |source| Onibi::ClassPredicates.compiled(source) }
-run = Onibi::Codegen::RegularRun.new(%w[a-z 0-9])
+input = "#{"abc123" * 128},".freeze
+predicates = ["^,", ","].map { |source| Onibi::ClassPredicates.compiled(source) }
+run = Onibi::Codegen::RegularRun.new(["^,", ","])
 
 # rubocop:disable Metrics/BlockNesting
-character_index_scan = lambda do
+legacy_regular_run = lambda do
   cursor = 0
   while cursor < input.length
-    if predicates[0].matches?(input[cursor])
+    if predicates[0].matches_byte?(input.getbyte(cursor))
       finish = cursor
-      finish += 1 while finish < input.length && predicates[0].matches?(input[finish])
-      if predicates[1].matches?(input[finish])
-        finish += 1 while finish < input.length && predicates[1].matches?(input[finish])
+      finish += 1 while finish < input.length && predicates[0].matches_byte?(input.getbyte(finish))
+      if predicates[1].matches_byte?(input.getbyte(finish))
+        finish += 1 while finish < input.length && predicates[1].matches_byte?(input.getbyte(finish))
         break
       end
       cursor = finish
@@ -28,7 +28,7 @@ end
 
 Benchmark.ips do |x|
   x.config(time: 1, warmup: 0.5)
-  x.report("character-index regular scan", &character_index_scan)
-  x.report("byte-table regular scan") { run.search(input, 0, capture: false) }
+  x.report("legacy byte scan", &legacy_regular_run)
+  x.report("word-SWAR regular scan") { run.search(input, 0, capture: false) }
   x.compare!
 end
