@@ -540,6 +540,12 @@ module Onibi
       private
 
       def emit_quantifier_with_remainder(node, remainder, cursor)
+        return emit_capture_free_quantifier_with_remainder(node, remainder, cursor) if capture_count.zero?
+
+        emit_captureful_quantifier_with_remainder(node, remainder, cursor)
+      end
+
+      def emit_captureful_quantifier_with_remainder(node, remainder, cursor)
         variables = Array.new(7) { fresh_cursor }
         counter, result, previous, candidates, candidate, final, original = variables
         body = emit_node(node.expression, result)
@@ -549,6 +555,17 @@ module Onibi
         restore = "captures&.replace"
         <<~EXPRESSION.strip
           (begin #{original} = #{snapshot}; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{restore}(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; #{restore}(#{original}) if #{final}.nil?; #{final}; end)
+        EXPRESSION
+      end
+
+      def emit_capture_free_quantifier_with_remainder(node, remainder, cursor)
+        variables = Array.new(6) { fresh_cursor }
+        counter, result, previous, candidates, candidate, final = variables
+        body = emit_node(node.expression, result)
+        suffix = emit_sequence_parts(remainder, candidate)
+        candidate_order = node.mode == :lazy ? candidates : "#{candidates}.reverse_each"
+        <<~EXPRESSION.strip
+          (begin #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << #{result} if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << #{result} if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{final} = #{suffix}; break unless #{final}.nil?; end; #{final}; end)
         EXPRESSION
       end
 
