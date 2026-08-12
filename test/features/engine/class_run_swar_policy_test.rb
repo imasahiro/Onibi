@@ -33,4 +33,26 @@ class ClassRunSwarPolicyTest < Minitest::Test
     refute run.profitable?("abcé", 0)
     assert_equal [0, 3, []], run.search("abcé", 0, capture: true)
   end
+
+  def test_utf8_search_slices_at_explicit_character_position
+    input = ClassRunPositionTrackingString.new("ééabc!")
+    run = Onibi::Experimental::Swar::ClassRun.new("a-z")
+
+    assert_equal [2, 5, []], run.search(input, 2, capture: true)
+    assert(input.slices.any? { |arguments| arguments.first.is_a?(Range) && arguments.first.begin == 2 })
+  end
+
+  class ClassRunPositionTrackingString < String
+    attr_reader :slices
+
+    def initialize(value)
+      super
+      @slices = []
+    end
+
+    def [](*arguments)
+      @slices << arguments
+      super
+    end
+  end
 end
