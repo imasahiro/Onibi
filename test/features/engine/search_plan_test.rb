@@ -81,6 +81,24 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 9], plan.candidate_positions("xxcat7---dog2", 0)
   end
 
+  def test_mixed_literal_and_class_alternation_uses_an_ascii_first_set
+    regexp = Onibi::Regexp.new("a|[b]")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal :class_prefilter, plan.search_mode
+    assert_equal [2, 5], plan.candidate_positions("--b--a", 0)
+    assert plan.preserves_order?
+  end
+
+  def test_ascii_first_set_falls_back_for_non_ascii_input
+    regexp = Onibi::Regexp.new("a|[b]")
+    input = "--あ--b"
+    expected = ::Regexp.new("a|[b]").match(input)
+    actual = regexp.match(input)
+
+    assert_equal [expected&.[](0), expected&.offset(0)], [actual&.[](0), actual&.offset(0)]
+  end
+
   def test_class_literal_sequence_indexes_suffix_and_projects_start
     regexp = Onibi::Regexp.new("[a-z]foo")
     plan = regexp.send(:codegen_program).search_plan
