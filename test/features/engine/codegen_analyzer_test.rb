@@ -69,6 +69,15 @@ class CodegenAnalyzerTest < Minitest::Test
     assert_empty unicode.component_plans
   end
 
+  def test_analysis_excludes_non_ascii_literals_from_casefold_components
+    analysis = analyze("é", ["ignorecase"])
+
+    atom = analysis.literal_atoms.first
+    assert_equal false, atom.ascii?
+    refute atom.casefold?
+    assert_empty analysis.component_plans
+  end
+
   def test_analysis_records_sequence_runs_as_required_literals
     analysis = analyze("pre[a-z]fix")
 

@@ -291,12 +291,14 @@ module Onibi
       end
 
       def record_atom_metadata(value)
+        casefold = @options.include?("ignorecase")
         value.each_char do |character|
+          ascii = character.ascii_only?
           @literal_atoms << LiteralAtom.new(
             value: character,
-            ascii: character.ascii_only?,
+            ascii: ascii,
             fixed_width: true,
-            casefold: @options.include?("ignorecase")
+            casefold: casefold && ascii
           )
         end
       end
