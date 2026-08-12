@@ -310,6 +310,58 @@ module Onibi
       end
     end
 
+    # Finds a literal suffix whose start is at a fixed consuming offset.
+    module FixedWidthSuffixFacts
+      module_function
+
+      ELIGIBLE_NODES = [AST::Literal, AST::CharacterClass, AST::Any, AST::Escape, AST::Property].freeze
+
+      def call(ast, widths, options)
+        return unless eligible?(ast, options)
+
+        parts = ast.parts
+        suffix_start = literal_suffix_start(parts)
+        return unless suffix_start&.positive?
+        return unless fixed_prefix?(parts, suffix_start, widths)
+
+        suffix = literal_value(parts, suffix_start)
+        return if suffix.empty?
+
+        [[suffix, prefix_width(parts, suffix_start, widths)]]
+      end
+
+      def eligible?(ast, options)
+        options.empty? && ast.is_a?(AST::Sequence)
+      end
+
+      def fixed_prefix?(parts, suffix_start, widths)
+        parts[0...suffix_start].all? { |part| fixed_width_consuming?(part, widths) }
+      end
+
+      def prefix_width(parts, suffix_start, widths)
+        parts[0...suffix_start].sum { |part| widths.fetch(part).minimum }
+      end
+
+      def literal_suffix_start(parts)
+        return unless parts.last.is_a?(AST::Literal)
+
+        start = parts.length - 1
+        start -= 1 while start.positive? && parts[start - 1].is_a?(AST::Literal)
+        start
+      end
+
+      def literal_value(parts, start)
+        parts[start..].map(&:value).join
+      end
+
+      def fixed_width_consuming?(node, widths)
+        return false unless ELIGIBLE_NODES.include?(node.class)
+
+        width = widths.fetch(node)
+        width.minimum.positive? && width.minimum == width.maximum
+      end
+    end
+
     # Extracts conservative facts from an analyzed AST.
     class SearchPlanFacts
       def initialize(ast, analysis)
@@ -406,7 +458,11 @@ module Onibi
       end
 
       def candidate_literals
-        literals = @ast.is_a?(AST::Alternation) ? alternation_literals : class_literal_suffix
+        literals = if @ast.is_a?(AST::Alternation)
+                     alternation_literals
+                   else
+                     class_literal_suffix || FixedWidthSuffixFacts.call(@ast, @analysis.widths, @analysis.options)
+                   end
         return if literals.nil? || literals.empty?
 
         literals.uniq { |literal, offset| [literal, offset] }

@@ -96,6 +96,21 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 9], plan.candidate_positions("xxneedle-needle", 0)
   end
 
+  def test_fixed_width_prefix_projects_suffix_literal_candidates
+    regexp = Onibi::Regexp.new(".[a-z]foo")
+    plan = regexp.send(:codegen_program).search_plan
+
+    assert_equal [["foo", 2]], plan.required_literals
+    assert_equal [0, 6], plan.candidate_positions("xAfoo\nyBfoo", 0)
+  end
+
+  def test_fixed_width_suffix_filter_matches_mri
+    pattern = ".[a-z]foo"
+    input = "prefix xAfoo\nqBfoo"
+
+    assert_equal ::Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+  end
+
   def test_alternation_literals_skip_nonmatching_entrypoints
     regexp = Onibi::Regexp.new("cat|dog|fox")
     plan = regexp.send(:codegen_program).search_plan
