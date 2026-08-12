@@ -30,4 +30,68 @@ class CodegenAnalyzerTest < Minitest::Test
 
     assert_match(/unsupported AST node/, error.message)
   end
+
+  def test_analysis_extracts_literal_component_metadata
+    analysis = analyze("cat|dog")
+
+    assert_literal_component_metadata(analysis)
+  end
+
+  def test_analysis_extracts_sequence_run_and_anchor_facts
+    analysis = analyze("\\Apre[a-z]fix\\z")
+
+    assert_equal %w[pre fix], analysis.literal_runs.map(&:value)
+    assert_equal ["pre"], analysis.prefix_literals.map(&:value)
+    assert_equal ["fix"], analysis.suffix_literals.map(&:value)
+    assert_equal %i[anchor_absolute_start anchor_absolute_end], analysis.anchor_facts.map(&:kind)
+    assert_equal %i[prefix_literal suffix_literal], analysis.component_plans.map(&:kind)
+  end
+
+  def test_analysis_component_metadata_is_immutable
+    analysis = analyze("cat|dog")
+
+    assert_component_metadata_frozen(analysis)
+  end
+
+  def test_analysis_keeps_unsupported_string_shapes_on_baseline
+    ignorecase = analyze("cat|dog", ["ignorecase"])
+    unicode = analyze("café")
+
+    assert_empty ignorecase.component_plans
+    assert_empty unicode.component_plans
+  end
+
+  def test_analysis_records_sequence_runs_as_required_literals
+    analysis = analyze("pre[a-z]fix")
+
+    assert_equal %w[pre fix], analysis.required_literals.map(&:value)
+  end
+
+  private
+
+  def assert_literal_component_metadata(analysis)
+    assert_equal %w[c a t d o g], analysis.literal_atoms.map(&:value)
+    assert_equal %w[cat dog], analysis.literal_runs.map(&:value)
+    assert_empty analysis.required_literals
+    assert_equal %w[cat dog], analysis.prefix_literals.map(&:value)
+    assert_equal %w[cat dog], analysis.suffix_literals.map(&:value)
+    assert_component_sets(analysis)
+  end
+
+  def assert_component_sets(analysis)
+    assert_equal %w[c d], analysis.first_sets.map(&:values).flatten
+    assert_empty analysis.anchor_facts
+    assert_equal %i[literal_alternation literal_alternation], analysis.component_plans.map(&:kind)
+  end
+
+  def assert_component_metadata_frozen(analysis)
+    assert analysis.literal_atoms.frozen?
+    assert analysis.literal_atoms.all?(&:frozen?)
+    assert(analysis.literal_atoms.all? { |atom| atom.ascii? && atom.fixed_width? && !atom.casefold? })
+    assert analysis.component_plans.all?(&:frozen?)
+  end
+
+  def analyze(pattern, options = [])
+    Onibi::Codegen::Analyzer.new(options, Encoding::UTF_8).analyze(Onibi::Parser.new(pattern).parse)
+  end
 end
