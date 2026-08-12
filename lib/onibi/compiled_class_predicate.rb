@@ -6,7 +6,8 @@ module Onibi
     module_function
 
     Normalized = Struct.new(
-      :kind, :negative, :literals, :ranges, :ascii_applicable, :encoding,
+      :kind, :negative, :literals, :ranges, :ascii_applicable, :ascii_bitmap,
+      :ascii_bitmap_bits, :encoding,
       keyword_init: true
     )
     ScanAtom = Struct.new(:index, :value, :range_end)
@@ -38,16 +39,22 @@ module Onibi
 
         literals, ranges, ascii = scan(body, source.encoding.ascii_compatible?)
 
+        build_metadata(source, negative, literals, ranges, ascii)
+      rescue StandardError
+        unknown(source, negative)
+      end
+
+      def build_metadata(source, negative, literals, ranges, ascii)
         Normalized.new(
           kind: :ascii,
           negative: negative,
           literals: literals.uniq.freeze,
           ranges: ranges.freeze,
           ascii_applicable: ascii,
+          ascii_bitmap: ascii ? bitmap_for(literals, ranges, negative) : nil,
+          ascii_bitmap_bits: ascii ? 256 : nil,
           encoding: source.encoding
         ).freeze
-      rescue StandardError
-        unknown(source, negative)
       end
 
       def scan(body, ascii)
@@ -88,8 +95,18 @@ module Onibi
           literals: [].freeze,
           ranges: [].freeze,
           ascii_applicable: false,
+          ascii_bitmap: nil,
+          ascii_bitmap_bits: nil,
           encoding: source.encoding
         ).freeze
+      end
+
+      def bitmap_for(literals, ranges, negative)
+        bitmap = literals.reduce(0) { |mask, literal| mask | (1 << literal.ord) }
+        ranges.each do |first, last|
+          first.ord.upto(last.ord) { |codepoint| bitmap |= 1 << codepoint }
+        end
+        negative ? (((1 << 256) - 1) ^ bitmap) : bitmap
       end
     end
 
