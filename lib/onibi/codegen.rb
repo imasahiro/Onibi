@@ -289,6 +289,10 @@ module Onibi
       def emit_group(node, cursor)
         return emit_node(node.body, cursor) unless node.capture
 
+        tracked_group(node, cursor)
+      end
+
+      def tracked_group(node, cursor)
         result = fresh_cursor
         previous_capture = fresh_cursor
         <<~EXPRESSION.strip
@@ -335,8 +339,10 @@ module Onibi
         body = emit_node(node.expression, result)
         suffix = emit_sequence_parts(remainder, "#{candidate}[0]")
         candidate_order = node.mode == :lazy ? candidates : "#{candidates}.reverse_each"
+        snapshot = "captures ? captures.map { |item| item&.dup } : nil"
+        restore = "captures&.replace"
         <<~EXPRESSION.strip
-          (begin #{original} = captures.map { |item| item&.dup }; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, captures.map { |item| item&.dup }] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, captures.map { |item| item&.dup }] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| captures.replace(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; captures.replace(#{original}) if #{final}.nil?; #{final}; end)
+          (begin #{original} = #{snapshot}; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{restore}(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; #{restore}(#{original}) if #{final}.nil?; #{final}; end)
         EXPRESSION
       end
 
@@ -516,18 +522,27 @@ module Onibi
       def emit(ast)
         collect_groups(ast)
         body = emit_node(ast, "position")
+        captures = capture_setup
         <<~RUBY
           def self.__onibi_search(input, position, capture, search_origin = position)
             return false unless input.is_a?(String)
-            captures = Array.new(#{capture_count})
+            #{captures}
             match_start = position
             result = #{body}
-            result.nil? ? false : (capture ? [match_start, result, captures] : true)
+            result.nil? ? false : (capture ? [match_start, result, #{capture_result}] : true)
           end
         RUBY
       end
 
       private
+
+      def capture_setup
+        return "captures = nil" if capture_count.zero?
+
+        "captures = Array.new(#{capture_count})"
+      end
+
+      def capture_result = capture_count.zero? ? "[]" : "captures"
 
       def collect_groups(value)
         return value.each { |item| collect_groups(item) } if value.is_a?(Array)
