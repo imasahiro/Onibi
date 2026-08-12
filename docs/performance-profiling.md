@@ -216,6 +216,14 @@ generated YARV method.
 
 ## Current conclusion
 
+The implementation work is split into independently executable design packages:
+
+- [search-plan design](design-search-plan.md)
+- [one-pass execution design](design-one-pass-execution.md)
+- [offset iterator design](design-offset-iterator.md)
+- [compiled character predicates design](design-compiled-class-predicates.md)
+- [boolean match path design](design-boolean-match-path.md)
+
 The dominant issue is a **design problem amplified by inefficient code**:
 
 - The design routes `gsub`/replacement through repeated full `match` calls and
