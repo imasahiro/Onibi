@@ -829,13 +829,27 @@ module Onibi
       end
 
       def register(key)
-        return @indices[key] if @indices.key?(key)
+        source = key.fetch(0)
+        ignorecase = key.fetch(1) == true
+        canonical = canonical_key(source, ignorecase)
+        return @indices[canonical] if @indices.key?(canonical)
 
         index = @entries.length
-        normalized = [key.fetch(0).dup.freeze, key.fetch(1) == true].freeze
-        @indices[normalized] = index
+        normalized = [source.dup.freeze, ignorecase].freeze
+        @indices[canonical] = index
         @entries << normalized
         index
+      end
+
+      private
+
+      def canonical_key(source, ignorecase)
+        return [source, ignorecase].freeze if ignorecase
+
+        metadata = Onibi::ClassPredicates.compiled(source, ignorecase: false).metadata
+        return [source, false].freeze unless metadata.kind == :ascii && metadata.ascii_applicable
+
+        [:ascii_bitmap, metadata.ascii_bitmap, source.encoding].freeze
       end
     end
 
