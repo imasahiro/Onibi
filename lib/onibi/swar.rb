@@ -171,7 +171,7 @@ module Onibi
       class ClassPrefilter
         include Codegen::CandidateSource
 
-        attr_reader :predicate
+        attr_reader :predicate, :table
 
         def initialize(source, ignorecase: false)
           @predicate = ClassPredicates.compiled(source, ignorecase: ignorecase)
@@ -309,14 +309,14 @@ module Onibi
 
       # Native-word bitmap run scanner for a single ASCII class quantifier.
       class ClassRun
-        attr_reader :predicate
+        attr_reader :predicate, :table
 
         WORD_BYTES = WORD_BITS / 8
         MIN_SCAN_BYTES = WORD_BYTES * 2
 
         def initialize(source)
           @predicate = ClassPredicates.compiled(source)
-          @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          @table = @predicate.ascii_table
           @match_count = @table.count(true)
           freeze
         end

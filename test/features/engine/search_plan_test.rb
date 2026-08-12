@@ -87,6 +87,13 @@ class SearchPlanTest < Minitest::Test
     assert plan.regular_run.predicates.all?(&:frozen?)
   end
 
+  def test_class_run_reuses_compiled_predicate_ascii_table
+    run = Onibi::Experimental::Swar::ClassRun.new("a-z")
+
+    assert_same run.predicate.ascii_table, run.table
+    assert_predicate run.table, :frozen?
+  end
+
   def test_search_plan_matches_mri_for_explicit_positions
     pattern = "\\Aneedle"
     input = "needle needle"
