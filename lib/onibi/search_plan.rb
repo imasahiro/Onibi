@@ -5,6 +5,7 @@ module Onibi
     # Conservative candidate-start facts consumed by GeneratedProgram#search.
     SearchPlan = Struct.new(
       :anchor_start, :anchor_end, :minimum_width, :first_set, :required_literal,
+      :required_literals,
       :nullable_prefix, :search_mode, :regular_run,
       keyword_init: true
     ) do
@@ -25,6 +26,7 @@ module Onibi
         maximum = input.length - minimum_width
         return if maximum < position
         return anchored_candidates(position, &block) if anchor_start
+        return literal_set_candidates(input, position, maximum, &block) if required_literals
         return literal_candidates(input, position, maximum, &block) if required_literal
 
         position.upto(maximum, &block)
@@ -49,6 +51,22 @@ module Onibi
           candidate = found + 1
         end
       end
+
+      def literal_set_candidates(input, position, maximum, &block)
+        candidates = required_literals.flat_map do |literal, offset|
+          candidate = position
+          starts = []
+          while (found = input.index(literal, candidate))
+            break if found > maximum + offset
+
+            start = found - offset
+            starts << start if start >= position && start <= maximum
+            candidate = found + 1
+          end
+          starts
+        end
+        candidates.uniq.sort.each { |candidate| block.call(candidate) }
+      end
     end
 
     # Extracts conservative facts from an analyzed AST.
@@ -61,6 +79,7 @@ module Onibi
       def call
         anchor_start, first = leading_node(@ast)
         literal = literal_value(first)
+        required_literals = candidate_literals
         minimum_width = @analysis.widths.fetch(@ast).minimum
         {
           anchor_start: anchor_start,
@@ -68,8 +87,9 @@ module Onibi
           minimum_width: minimum_width,
           first_set: literal ? [literal[0]].freeze : nil,
           required_literal: literal&.dup&.freeze,
+          required_literals: required_literals,
           nullable_prefix: !anchor_start && first.nil?,
-          search_mode: search_mode(anchor_start, literal),
+          search_mode: search_mode(anchor_start, literal, required_literals),
           regular_run: regular_run
         }
       end
@@ -83,8 +103,9 @@ module Onibi
         node.value
       end
 
-      def search_mode(anchor_start, literal)
+      def search_mode(anchor_start, literal, required_literals)
         return :anchored if anchor_start
+        return :literal_set_skip if required_literals
         return :literal_skip if literal
 
         :scan
@@ -121,6 +142,40 @@ module Onibi
         when AST::Literal then [false, node]
         else [false, nil]
         end
+      end
+
+      def candidate_literals
+        literals = @ast.is_a?(AST::Alternation) ? alternation_literals : class_literal_suffix
+        return if literals.nil? || literals.empty?
+
+        literals.uniq { |literal, offset| [literal, offset] }
+                .map { |literal, offset| [literal.dup.freeze, offset].freeze }.freeze
+      end
+
+      def alternation_literals
+        prefixes = @ast.branches.map { |branch| branch_literal_prefix(branch) }
+        prefixes if prefixes.all?
+      end
+
+      def branch_literal_prefix(branch)
+        parts = branch.is_a?(AST::Sequence) ? branch.parts : [branch]
+        return unless parts.first.is_a?(AST::Literal)
+        return if @analysis.options.include?("ignorecase")
+
+        literal = literal_prefix(parts, 0)
+        return if literal.value.empty?
+
+        [literal.value, 0]
+      end
+
+      def class_literal_suffix
+        return unless @analysis.options.empty? && @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2
+        return unless @ast.parts[0].is_a?(AST::CharacterClass) && @ast.parts[1].is_a?(AST::Literal)
+
+        literal = literal_prefix(@ast.parts, 1).value
+        return if literal.empty?
+
+        [[literal, 1]]
       end
 
       def leading_sequence(parts)
