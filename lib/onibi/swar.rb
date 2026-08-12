@@ -211,6 +211,50 @@ module Onibi
         end
       end
 
+      # Native-word bitmap run scanner for a single ASCII class quantifier.
+      class ClassRun
+        attr_reader :predicate
+
+        WORD_BYTES = WORD_BITS / 8
+
+        def initialize(source)
+          @predicate = ClassPredicates.compiled(source)
+          @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          freeze
+        end
+
+        def search(input, position, capture:)
+          return unless input.ascii_only?
+
+          cursor = scan_words(input, position)
+          cursor = scan_tail(input, cursor)
+          return false if cursor == position
+
+          capture ? [position, cursor, []] : true
+        end
+
+        private
+
+        def scan_words(input, cursor)
+          full_mask = (1 << WORD_BYTES) - 1
+          while cursor + WORD_BYTES <= input.bytesize
+            mask = 0
+            cursor.upto(cursor + WORD_BYTES - 1) do |index|
+              mask |= 1 << (index - cursor) if @table[input.getbyte(index)]
+            end
+            break unless mask == full_mask
+
+            cursor += WORD_BYTES
+          end
+          cursor
+        end
+
+        def scan_tail(input, cursor)
+          cursor += 1 while cursor < input.bytesize && @table[input.getbyte(cursor)]
+          cursor
+        end
+      end
+
       # Extracts a safe prefilter only for a whole-regexp literal alternation.
       module LiteralAlternation
         module_function
