@@ -43,8 +43,10 @@ module Onibi
 
           candidates = []
           states = Array.new(buckets.length, 0)
-          input.bytes.drop(position).each_with_index do |byte, relative_index|
-            scan_byte(byte, position + relative_index, states, candidates)
+          index = position
+          while index < input.bytesize
+            scan_byte(input.getbyte(index), index, states, candidates)
+            index += 1
           end
           candidates.uniq.sort
         end

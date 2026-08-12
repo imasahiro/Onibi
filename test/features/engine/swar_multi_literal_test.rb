@@ -23,6 +23,13 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal [2, 11], prefilter.candidate_positions("xxalphabet-beta", 0)
   end
 
+  def test_prefilter_scans_without_materializing_an_input_byte_array
+    input = ByteArrayForbiddenString.new("xxalpha-beta")
+    prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[alpha beta])
+
+    assert_equal [2, 8], prefilter.candidate_positions(input, 0)
+  end
+
   def test_swar_prefilter_implements_candidate_source_protocol
     source = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[alpha beta])
 
@@ -170,6 +177,12 @@ class SwarMultiLiteralTest < Minitest::Test
     word_bits = Onibi::Experimental::Swar::WORD_BITS
     patterns = ["a" * (word_bits + 1), "b" * (word_bits + 2)]
     [patterns, "xx#{patterns.last}"]
+  end
+
+  class ByteArrayForbiddenString < String
+    def bytes
+      raise "candidate scan must not materialize bytes"
+    end
   end
 end
 # rubocop:enable Metrics/ClassLength
