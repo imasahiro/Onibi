@@ -19,6 +19,14 @@ class ClassRunSwarPolicyTest < Minitest::Test
     assert_equal [0, 128, []], run.search(input, 0, capture: true)
   end
 
+  def test_dense_negated_class_uses_c_string_search_for_delimiters
+    run = Onibi::Experimental::Swar::ClassRun.new("^,")
+    input = ClassRunIndexTrackingString.new("a" * 128)
+
+    assert_equal 128, run.scan_end(input, 0)
+    assert_operator input.index_calls, :>, 0
+  end
+
   def test_ascii8bit_input_uses_byte_semantics
     run = Onibi::Experimental::Swar::ClassRun.new("^,\\n")
     input = "#{"\xFF" * 128},tail".b
@@ -52,6 +60,20 @@ class ClassRunSwarPolicyTest < Minitest::Test
 
     def [](*arguments)
       @slices << arguments
+      super
+    end
+  end
+
+  class ClassRunIndexTrackingString < String
+    attr_reader :index_calls
+
+    def initialize(value)
+      super
+      @index_calls = 0
+    end
+
+    def index(*arguments)
+      @index_calls += 1
       super
     end
   end
