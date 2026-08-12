@@ -110,6 +110,27 @@ module Onibi
       end
     end
 
+    # Process-local immutable table identity registry used by generated code.
+    module TableRegistry
+      module_function
+
+      def register(source, ignorecase: false)
+        key = [source, ignorecase == true].freeze
+        @keys ||= {}
+        @tables ||= []
+        return @keys[key] if @keys.key?(key)
+
+        index = @tables.length
+        @keys[key] = index
+        @tables << ClassPredicates.compiled(source, ignorecase: ignorecase == true)
+        index
+      end
+
+      def fetch(index)
+        @tables.fetch(index)
+      end
+    end
+
     def compiled(source, ignorecase: false)
       cache = (@compiled_cache ||= {})
       key = [source, ignorecase == true].freeze
