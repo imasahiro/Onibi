@@ -42,7 +42,12 @@ module Onibi
 
         def candidate_positions(input, position)
           return unless eligible_input?(input, position)
+          return indexed_candidates(input, position) unless @default_policy
 
+          scan_candidates(input, position)
+        end
+
+        def scan_candidates(input, position)
           candidates = []
           states = Array.new(buckets.length, 0)
           active = false
@@ -56,6 +61,18 @@ module Onibi
             index += 1
           end
           candidates.uniq.sort
+        end
+
+        def indexed_candidates(input, position)
+          patterns.filter_map do |pattern|
+            cursor = position
+            starts = []
+            while (found = input.index(pattern, cursor))
+              starts << found
+              cursor = found + 1
+            end
+            starts
+          end.flatten.uniq.sort
         end
 
         def eligible?(input, position)
