@@ -757,15 +757,18 @@ module Onibi
       end
 
       def build
-        characters = @input.chars
-        full_match = characters[@start...@finish].join
-        captures = @capture_offsets.map { |offset| offset && characters[offset[0]...offset[1]].join }
+        full_match = slice(@start, @finish)
+        captures = @capture_offsets.map { |offset| offset && slice(offset[0], offset[1]) }
         offsets = [[@start, @finish]] + @capture_offsets
         names = normalized_names
         MatchData.new(full_match, captures, offsets, names, MatchData::Context.new(@input, @regexp))
       end
 
       private
+
+      def slice(start, finish)
+        @input[start...finish]
+      end
 
       def normalized_names
         @names.transform_values do |value|
