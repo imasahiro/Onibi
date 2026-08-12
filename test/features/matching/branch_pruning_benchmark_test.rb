@@ -29,4 +29,15 @@ class BranchPruningBenchmarkTest < Minitest::Test
     assert_equal 1, program.source.scan('input[position, 6] == "watson"').length
     assert_equal 1, program.source.scan('input[position, 8] == "sherlock"').length
   end
+
+  def test_unconditionally_failing_negative_assertion_branch_is_pruned
+    pattern = "a|(?!)|b"
+    ast = Onibi::Parser.new(pattern).parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: [])
+    actual = Onibi::Regexp.new(pattern).match("b followed")
+    expected = ::Regexp.new(pattern).match("b followed")
+
+    assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
+    refute_includes program.source, "position.nil? ? position"
+  end
 end

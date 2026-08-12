@@ -906,14 +906,28 @@ module Onibi
       end
 
       def eligible?(ast, options)
-        options.empty? && ast.is_a?(AST::Alternation) && ast.branches.all? { |branch| literal_branch?(branch) }
+        options.empty? && ast.is_a?(AST::Alternation) && ast.branches.all? { |branch| prunable_branch?(branch) }
       end
 
       def unique_branches(branches)
         seen = {}
-        branches.select do |branch|
+        viable = branches.reject { |branch| impossible_branch?(branch) }
+        return [branches.first] if viable.empty?
+
+        viable.select do |branch|
           value = branch.parts.map(&:value).join
           seen[value] ? false : (seen[value] = true)
+        end
+      end
+
+      def prunable_branch?(branch)
+        literal_branch?(branch) || impossible_branch?(branch)
+      end
+
+      def impossible_branch?(branch)
+        branch.is_a?(AST::Sequence) && branch.parts.any? do |part|
+          part.is_a?(AST::Assertion) && part.kind == :negative &&
+            part.body.is_a?(AST::Sequence) && part.body.parts.empty?
         end
       end
 
