@@ -6,7 +6,7 @@ module Onibi
     SearchPlan = Struct.new(
       :anchor_start, :anchor_end, :minimum_width, :first_set, :required_literal,
       :required_literals,
-      :nullable_prefix, :search_mode, :regular_run,
+      :nullable_prefix, :search_mode, :regular_run, :class_prefilter,
       keyword_init: true
     ) do
       include CandidateSource
@@ -35,17 +35,26 @@ module Onibi
 
         maximum = input.length - minimum_width
         return if maximum < position
-        return anchored_candidates(position, &block) if anchor_start
-        return literal_set_candidates(input, position, maximum, &block) if required_literals
-        return literal_candidates(input, position, maximum, &block) if required_literal
 
-        position.upto(maximum, &block)
+        yield_candidates(input, position, maximum, &block)
       end
 
       private
 
       def valid_position?(input, position)
         position >= 0 && position <= input.length
+      end
+
+      def yield_candidates(input, position, maximum, &block)
+        if anchor_start
+          yield position if position.zero?
+          return
+        end
+        return class_candidates(input, position, maximum, &block) if class_prefilter
+        return literal_set_candidates(input, position, maximum, &block) if required_literals
+        return literal_candidates(input, position, maximum, &block) if required_literal
+
+        position.upto(maximum, &block)
       end
 
       def anchored_candidates(position)
@@ -60,6 +69,19 @@ module Onibi
           yield found
           candidate = found + 1
         end
+      end
+
+      def class_candidates(input, position, maximum)
+        candidates = class_candidate_positions(input, position)
+        candidates.each do |candidate|
+          yield candidate if candidate <= maximum
+        end
+      end
+
+      def class_candidate_positions(input, position)
+        return class_prefilter.each_candidate(input, position) if class_prefilter.respond_to?(:each_candidate)
+
+        class_prefilter.candidate_positions(input, position)
       end
 
       def literal_set_candidates(input, position, maximum, &block)
@@ -79,6 +101,32 @@ module Onibi
       end
     end
 
+    # Builds conservative ASCII character-class candidate sources.
+    module ClassPrefilterFacts
+      module_function
+
+      def build(ast)
+        node = leading_node(ast)
+        return unless node && ascii_literal_class?(node.value)
+
+        Experimental::Swar::ClassPrefilter.new(node.value)
+      end
+
+      def leading_node(ast)
+        return ast if ast.is_a?(AST::CharacterClass)
+        return unless ast.is_a?(AST::Sequence)
+        return unless ast.parts.first.is_a?(AST::CharacterClass)
+        return if ast.parts[1].is_a?(AST::Literal)
+
+        ast.parts.first
+      end
+
+      def ascii_literal_class?(source)
+        source.ascii_only? && !source.start_with?("^") && !source.include?("\\") &&
+          !source.include?("&&") && !source.include?(":")
+      end
+    end
+
     # Extracts conservative facts from an analyzed AST.
     class SearchPlanFacts
       def initialize(ast, analysis)
@@ -90,6 +138,13 @@ module Onibi
         anchor_start, first = leading_node(@ast)
         literal = literal_value(first)
         required_literals = candidate_literals
+        class_prefilter = leading_class_prefilter
+        build_facts(anchor_start, first, literal, required_literals, class_prefilter)
+      end
+
+      private
+
+      def build_facts(anchor_start, first, literal, required_literals, class_prefilter)
         minimum_width = @analysis.widths.fetch(@ast).minimum
         {
           anchor_start: anchor_start,
@@ -99,12 +154,11 @@ module Onibi
           required_literal: literal&.dup&.freeze,
           required_literals: required_literals,
           nullable_prefix: !anchor_start && first.nil?,
-          search_mode: search_mode(anchor_start, literal, required_literals),
-          regular_run: regular_run
+          search_mode: search_mode(anchor_start, literal, required_literals, class_prefilter),
+          regular_run: regular_run,
+          class_prefilter: class_prefilter
         }
       end
-
-      private
 
       def literal_value(node)
         return unless node.is_a?(AST::Literal)
@@ -113,12 +167,19 @@ module Onibi
         node.value
       end
 
-      def search_mode(anchor_start, literal, required_literals)
+      def search_mode(anchor_start, literal, required_literals, class_prefilter)
         return :anchored if anchor_start
+        return :class_prefilter if class_prefilter
         return :literal_set_skip if required_literals
         return :literal_skip if literal
 
         :scan
+      end
+
+      def leading_class_prefilter
+        return if @analysis.options.include?("ignorecase")
+
+        ClassPrefilterFacts.build(@ast)
       end
 
       def regular_run
