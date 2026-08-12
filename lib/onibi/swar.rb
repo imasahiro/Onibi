@@ -305,11 +305,13 @@ module Onibi
           return unless input.is_a?(String) && position.is_a?(Integer) && position >= 0
 
           cursor = position
-          input.each_char.with_index do |character, index|
-            next if index < position
+          suffix = input[position..]
+          return false unless suffix
+
+          suffix.each_char.with_index do |character, index|
             break unless @predicate.matches?(character)
 
-            cursor = index + 1
+            cursor = position + index + 1
           end
           return false if cursor == position
 
