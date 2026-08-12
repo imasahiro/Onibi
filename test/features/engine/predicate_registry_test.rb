@@ -27,4 +27,11 @@ class PredicateRegistryTest < Minitest::Test
     assert_equal ::Regexp.new("[a-c][abc]").match?("ab"), program.search("ab", 0, capture: false)
     assert_equal 1, program.source.scan("TableRegistry.fetch").length
   end
+
+  def test_generated_matcher_binds_predicate_to_a_direct_constant
+    program = Onibi::Codegen::GeneratedProgram.ast(Onibi::Parser.new("[a-z]").parse)
+
+    assert_includes program.source, "ONIBI_CLASS_PREDICATE_0"
+    refute_includes program.source, "ONIBI_CLASS_PREDICATES.fetch"
+  end
 end

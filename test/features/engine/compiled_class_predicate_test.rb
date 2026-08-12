@@ -116,7 +116,7 @@ class CompiledClassPredicateTest < Minitest::Test
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
 
     assert_equal 2, program.source.scan("TableRegistry.fetch").length
-    assert_includes program.source, "ONIBI_CLASS_PREDICATES"
+    assert_includes program.source, "ONIBI_CLASS_PREDICATE_0"
   end
 end
 
