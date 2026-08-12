@@ -884,6 +884,34 @@ module Onibi
       end
     end
 
+    # Removes duplicate whole-regexp literal branches while preserving order.
+    module BranchPruner
+      module_function
+
+      def prune(ast, options)
+        return ast unless eligible?(ast, options)
+
+        branches = unique_branches(ast.branches)
+        branches.length == ast.branches.length ? ast : AST::Alternation.new(branches)
+      end
+
+      def eligible?(ast, options)
+        options.empty? && ast.is_a?(AST::Alternation) && ast.branches.all? { |branch| literal_branch?(branch) }
+      end
+
+      def unique_branches(branches)
+        seen = {}
+        branches.select do |branch|
+          value = branch.parts.map(&:value).join
+          seen[value] ? false : (seen[value] = true)
+        end
+      end
+
+      def literal_branch?(branch)
+        branch.is_a?(AST::Sequence) && branch.parts.all? { |part| part.is_a?(AST::Literal) }
+      end
+    end
+
     # Owns one immutable generated module for one regexp compilation.
     class GeneratedProgram
       attr_reader :compiled_module, :entrypoint, :source, :search_plan
@@ -893,6 +921,7 @@ module Onibi
       end
 
       def self.ast(ast, options: [], optimizations: [:swar], analysis: nil)
+        ast = BranchPruner.prune(ast, options) unless analysis
         analysis ||= Analyzer.new(options).analyze(ast)
         if optimizations.include?(:swar)
           prefilter = Experimental::Swar::LiteralAlternation.build(
