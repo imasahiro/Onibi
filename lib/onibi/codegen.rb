@@ -22,12 +22,27 @@ module Onibi
       end
 
       def class_candidates(input, position, source, ignorecase)
+        predicate = compiled_predicate(source, ignorecase)
+        return byte_class_candidate(input, position, predicate) if !ignorecase && byte_input?(input)
+
+        character_class_candidate(input, position, predicate, ignorecase)
+      end
+
+      def compiled_predicate(source, ignorecase)
+        return source if source.is_a?(ClassPredicates::Compiled)
+
+        ClassPredicates.compiled(source, ignorecase: ignorecase)
+      end
+
+      def byte_class_candidate(input, position, predicate)
+        byte = input.getbyte(position)
+        return position + 1 if byte && predicate.matches_byte?(byte)
+
+        nil
+      end
+
+      def character_class_candidate(input, position, predicate, ignorecase)
         character = input[position]
-        predicate = if source.is_a?(ClassPredicates::Compiled)
-                      source
-                    else
-                      ClassPredicates.compiled(source, ignorecase: ignorecase)
-                    end
         return position + 1 if character && predicate.matches?(character)
 
         if ignorecase && predicate.source.include?("ß")
@@ -35,6 +50,10 @@ module Onibi
           return position + 2 if folded && folded.upcase == "SS"
         end
         nil
+      end
+
+      def byte_input?(input)
+        input.is_a?(String) && (input.ascii_only? || input.encoding == Encoding::ASCII_8BIT)
       end
     end
 
