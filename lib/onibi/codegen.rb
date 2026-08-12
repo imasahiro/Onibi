@@ -733,6 +733,29 @@ module Onibi
       end
     end
 
+    # Emits literal leaves and coalesced straight-line literal runs.
+    module LiteralRunEmitter
+      private
+
+      def emit_literal(node, cursor)
+        value = node.is_a?(Array) ? node.map(&:value).join : node.value
+        dumped = value.dump
+        dumped = "#{dumped}.b" if value.encoding == Encoding::ASCII_8BIT
+        comparison = if @options.include?("ignorecase")
+                       "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{dumped}).first"
+                     else
+                       "input[#{cursor}, #{value.length}] == #{dumped}"
+                     end
+        return "(#{comparison} || nil)" if @options.include?("ignorecase")
+
+        "(#{comparison} ? #{cursor} + #{value.length} : nil)"
+      end
+
+      def literal_run?(parts)
+        parts.length > 1 && parts.all? { |part| part.is_a?(AST::Literal) }
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
       include GroupEmitter
@@ -744,6 +767,7 @@ module Onibi
       include EscapeEmitter
       include PredicateTableSetup
       include CursorFactory
+      include LiteralRunEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -818,21 +842,6 @@ module Onibi
         send(handler, node, cursor)
       end
 
-      def emit_literal(node, cursor)
-        value = node.value.dump
-        value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
-        comparison = if @options.include?("ignorecase")
-                       "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{value}).first"
-                     else
-                       "input[#{cursor}, #{node.value.length}] == #{value}"
-                     end
-        if @options.include?("ignorecase")
-          "(#{comparison} || nil)"
-        else
-          "(#{comparison} ? #{cursor} + #{node.value.length} : nil)"
-        end
-      end
-
       def emit_sequence(node, cursor)
         emit_sequence_parts(node.parts, cursor)
       end
@@ -840,6 +849,8 @@ module Onibi
       def emit_sequence_parts(parts, cursor)
         return cursor if parts.empty?
         return emit_quantifier_with_remainder(parts.first, parts.drop(1), cursor) if backtracking_quantifier?(parts)
+
+        return emit_literal(parts.take_while { |part| part.is_a?(AST::Literal) }, cursor) if literal_run?(parts)
 
         next_cursor = fresh_cursor
         expression = emit_node(parts.first, cursor)
