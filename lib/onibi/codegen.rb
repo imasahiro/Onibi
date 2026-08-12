@@ -622,13 +622,14 @@ module Onibi
 
     # Owns one immutable generated module for one regexp compilation.
     class GeneratedProgram
-      attr_reader :compiled_module, :entrypoint, :source
+      attr_reader :compiled_module, :entrypoint, :source, :search_plan
 
       def self.literal(value)
         new(RubyEmitter.literal(value))
       end
 
-      def self.ast(ast, options: [], optimizations: [:swar])
+      def self.ast(ast, options: [], optimizations: [:swar], analysis: nil)
+        analysis ||= Analyzer.new(options).analyze(ast)
         if optimizations.include?(:swar)
           prefilter = Experimental::Swar::LiteralAlternation.build(
             ast, options,
@@ -636,12 +637,17 @@ module Onibi
             allow_single_character: optimizations.include?(:swar_single_character)
           )
         end
-        new(RubyGenerator.ast(ast, options: options), prefilter: prefilter)
+        new(RubyGenerator.ast(ast, options: options),
+            prefilter: prefilter, search_plan: SearchPlan.from(ast, analysis))
       end
 
-      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil)
+      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil,
+                     search_plan: SearchPlan.new(anchor_start: false, anchor_end: false, minimum_width: 0,
+                                                 first_set: nil, required_literal: nil, nullable_prefix: true,
+                                                 search_mode: :scan))
         @source = source.dup.freeze
         @prefilter = prefilter
+        @search_plan = search_plan.freeze
         @compiled_module = compiler.compile(@source, filename: filename)
         @entrypoint = SourceCompiler::ENTRYPOINT
         freeze
@@ -652,7 +658,7 @@ module Onibi
       end
 
       def search(input, position, capture:)
-        return baseline_search(input, position, capture) unless @prefilter&.profitable?(input, position)
+        return search_with_plan(input, position, capture) unless @prefilter&.profitable?(input, position)
 
         initial = execute(input, position, capture, position)
         return initial if initial
@@ -662,6 +668,15 @@ module Onibi
       end
 
       private
+
+      def search_with_plan(input, position, capture)
+        result = nil
+        @search_plan.each_candidate(input, position) do |candidate|
+          result = execute(input, candidate, capture, position)
+          break if result
+        end
+        result || false
+      end
 
       def baseline_search(input, position, capture)
         candidate = position

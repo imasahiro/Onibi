@@ -30,6 +30,7 @@ require_relative "onibi/input_view"
 require_relative "onibi/invocation_state"
 require_relative "onibi/swar"
 require_relative "onibi/codegen"
+require_relative "onibi/search_plan"
 require_relative "parser_widths"
 require_relative "parser_assertions"
 require_relative "onibi/parser_quantifiers"
@@ -172,7 +173,7 @@ module Onibi
     end
 
     def codegen_program
-      @codegen_program ||= Codegen::GeneratedProgram.ast(@ast, options: @options)
+      @codegen_program ||= Codegen::GeneratedProgram.ast(@ast, options: @options, analysis: @analysis)
     end
 
     def validate_pattern_type!(pattern)
