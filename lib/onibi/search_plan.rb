@@ -134,7 +134,7 @@ module Onibi
       end
 
       def literal_set_candidates(input, position, maximum, &block)
-        required_literal_source.candidate_positions(input, position).each do |candidate|
+        required_literal_source.each_candidate(input, position) do |candidate|
           block.call(candidate) if candidate <= maximum
         end
       end

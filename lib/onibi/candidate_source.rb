@@ -12,6 +12,15 @@ module Onibi
         raise NotImplementedError
       end
 
+      # Streams candidates without requiring a materialized result array.
+      # Implementations with an efficient scanner should override this method;
+      # the fallback preserves compatibility for small/custom sources.
+      def each_candidate(input, position, &block)
+        return enum_for(__method__, input, position) unless block_given?
+
+        candidate_positions(input, position).each(&block)
+      end
+
       def preserves_order?
         true
       end
@@ -35,16 +44,25 @@ module Onibi
 
         def candidate_positions(input, position)
           return [] unless eligible?(input, position)
+          return sources.first.candidate_positions(input, position) if sources.length == 1
 
-          candidates = unique_ordered(sources.first.candidate_positions(input, position))
-          return [] if candidates.empty?
-
-          sources.drop(1).each do |source|
-            allowed = source.candidate_positions(input, position).to_h { |candidate| [candidate, true] }
-            candidates.select! { |candidate| allowed[candidate] }
-            return [] if candidates.empty?
-          end
+          candidates = []
+          each_candidate(input, position) { |candidate| candidates << candidate }
           candidates
+        end
+
+        def each_candidate(input, position, &block)
+          return enum_for(__method__, input, position) unless block_given?
+          return unless eligible?(input, position)
+
+          first_stream = sources.first.each_candidate(input, position).to_enum
+          candidate = next_value(first_stream)
+          return unless candidate
+
+          other_streams = sources.drop(1).map do |source|
+            source.each_candidate(input, position).to_enum
+          end
+          emit_intersection(first_stream, other_streams, candidate, &block)
         end
 
         def preserves_order?
@@ -53,14 +71,29 @@ module Onibi
 
         private
 
-        def unique_ordered(candidates)
-          seen = {}
-          candidates.each_with_object([]) do |candidate, result|
-            next if seen[candidate]
-
-            seen[candidate] = true
-            result << candidate
+        def emit_intersection(first_stream, other_streams, candidate)
+          others = other_streams.map { |stream| next_value(stream) }
+          previous = nil
+          while candidate
+            yield candidate if matching_candidate?(candidate, other_streams, others) && candidate != previous
+            previous = candidate
+            candidate = next_value(first_stream)
           end
+        end
+
+        def matching_candidate?(candidate, streams, current)
+          current.each_with_index do |value, index|
+            value = next_value(streams[index]) while value && value < candidate
+            current[index] = value
+            return false unless value == candidate
+          end
+          true
+        end
+
+        def next_value(stream)
+          stream.next
+        rescue StopIteration
+          nil
         end
       end
 
@@ -82,12 +115,19 @@ module Onibi
         end
 
         def candidate_positions(input, position)
-          streams = sources.filter_map do |source|
-            next unless source.eligible?(input, position)
+          return [] unless eligible?(input, position)
+          return sources.first.candidate_positions(input, position) if sources.length == 1
 
-            source.candidate_positions(input, position)
-          end
-          merge_streams(streams)
+          candidates = []
+          each_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
+        end
+
+        def each_candidate(input, position, &block)
+          return enum_for(__method__, input, position) unless block_given?
+
+          streams = eligible_streams(input, position)
+          merge_streams(streams, &block)
         end
 
         def preserves_order?
@@ -97,10 +137,35 @@ module Onibi
         private
 
         def merge_streams(streams)
-          return [] if streams.empty?
-          return streams.first if streams.length == 1
+          current = streams.map { |stream| next_value(stream) }
+          previous = nil
+          loop do
+            available = current.compact
+            break if available.empty?
 
-          streams.flatten.uniq.sort!
+            candidate = available.min
+            yield candidate if candidate != previous
+            previous = candidate
+            advance_streams(current, streams, candidate)
+          end
+        end
+
+        def advance_streams(current, streams, candidate)
+          current.each_with_index do |value, index|
+            current[index] = next_value(streams[index]) if value == candidate
+          end
+        end
+
+        def eligible_streams(input, position)
+          sources.filter_map do |source|
+            source.each_candidate(input, position).to_enum if source.eligible?(input, position)
+          end
+        end
+
+        def next_value(stream)
+          stream.next
+        rescue StopIteration
+          nil
         end
       end
 
@@ -131,6 +196,18 @@ module Onibi
             cursor = found + 1
           end
           starts
+        end
+
+        def each_candidate(input, position)
+          return enum_for(__method__, input, position) unless block_given?
+          return unless eligible?(input, position)
+
+          cursor = position
+          while (found = input.index(value, cursor))
+            start = found - offset
+            yield start if start >= position
+            cursor = found + 1
+          end
         end
 
         def preserves_order?
