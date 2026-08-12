@@ -407,8 +407,37 @@ module Onibi
           nullable_prefix: !facts[:anchor_start] && !literal,
           search_mode: SearchModeFacts.call(facts),
           regular_run: regular_run,
-          class_prefilter: facts[:class_prefilter]
+          class_prefilter: facts[:class_prefilter],
+          candidate_source: bounded_literal_chain
         }
+      end
+
+      def bounded_literal_chain
+        return unless @analysis.options.empty? && @ast.is_a?(AST::Sequence)
+
+        gap_index = @ast.parts.index { |part| bounded_regular_gap?(part) }
+        return unless gap_index
+        return if @ast.parts.count { |part| bounded_regular_gap?(part) } != 1
+
+        left = literal_value_for(@ast.parts[0...gap_index])
+        right = literal_value_for(@ast.parts[(gap_index + 1)..])
+        return unless left && right && left.ascii_only? && right.ascii_only?
+
+        gap = @ast.parts[gap_index]
+        CandidateSource::BoundedLiteralChain.new(
+          left, right, minimum_gap: gap.minimum, maximum_gap: gap.maximum
+        )
+      end
+
+      def bounded_regular_gap?(node)
+        node.is_a?(AST::Quantifier) && node.maximum &&
+          [AST::Any, AST::CharacterClass].any? { |type| node.expression.is_a?(type) }
+      end
+
+      def literal_value_for(parts)
+        return if parts.empty? || parts.any? { |part| !part.is_a?(AST::Literal) }
+
+        parts.map(&:value).join
       end
 
       def literal_value(node)

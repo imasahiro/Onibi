@@ -214,6 +214,64 @@ module Onibi
           true
         end
       end
+
+      # Coordinates two literal event streams separated by a bounded gap.
+      class BoundedLiteralChain
+        include CandidateSource
+
+        attr_reader :left, :right, :minimum_gap, :maximum_gap
+
+        def initialize(left, right, minimum_gap:, maximum_gap:)
+          raise ArgumentError, "literals must not be empty" if left.empty? || right.empty?
+          raise ArgumentError, "invalid gap bounds" if minimum_gap.negative? || maximum_gap < minimum_gap
+
+          @left = left.dup.freeze
+          @right = right.dup.freeze
+          @minimum_gap = minimum_gap
+          @maximum_gap = maximum_gap
+          freeze
+        end
+
+        def eligible?(input, position)
+          input.is_a?(String) && input.ascii_only? && position.is_a?(Integer) && position >= 0
+        end
+
+        def candidate_positions(input, position)
+          candidates = []
+          each_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
+        end
+
+        def each_candidate(input, position, &block)
+          return enum_for(__method__, input, position) unless block
+          return unless eligible?(input, position)
+
+          scan_candidates(input, position, &block)
+        end
+
+        private
+
+        def scan_candidates(input, position)
+          left_cursor = position
+          right_event = nil
+          while (left_event = input.index(left, left_cursor))
+            earliest = gap_boundary(left_event, minimum_gap)
+            right_event = next_right_event(input, right_event, earliest)
+            yield left_event if right_event && right_event <= gap_boundary(left_event, maximum_gap)
+            left_cursor = left_event + 1
+          end
+        end
+
+        def gap_boundary(left_event, gap)
+          left_event + left.bytesize + gap
+        end
+
+        def next_right_event(input, current, earliest)
+          return current if current && current >= earliest
+
+          input.index(right, earliest)
+        end
+      end
     end
   end
 end
