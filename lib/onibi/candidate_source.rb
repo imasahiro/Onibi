@@ -37,9 +37,12 @@ module Onibi
           return [] unless eligible?(input, position)
 
           candidates = unique_ordered(sources.first.candidate_positions(input, position))
+          return [] if candidates.empty?
+
           sources.drop(1).each do |source|
             allowed = source.candidate_positions(input, position).to_h { |candidate| [candidate, true] }
             candidates.select! { |candidate| allowed[candidate] }
+            return [] if candidates.empty?
           end
           candidates
         end
