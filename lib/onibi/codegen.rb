@@ -660,11 +660,7 @@ module Onibi
       def emit_class(node, cursor)
         ignorecase = @options.include?("ignorecase")
         key = [node.value, ignorecase]
-        index = @predicate_registry.index(key)
-        unless index
-          @predicate_registry << key
-          index = @predicate_registry.length - 1
-        end
+        index = @predicate_registry.register(key)
         predicate = "ONIBI_CLASS_PREDICATES.fetch(#{index})"
         "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
       end
@@ -711,6 +707,26 @@ module Onibi
       end
     end
 
+    # Deduplicates generated predicate keys with constant-time lookup.
+    class PredicateRegistry
+      attr_reader :entries
+
+      def initialize
+        @entries = []
+        @indices = {}
+      end
+
+      def register(key)
+        return @indices[key] if @indices.key?(key)
+
+        index = @entries.length
+        normalized = [key.fetch(0).dup.freeze, key.fetch(1) == true].freeze
+        @indices[normalized] = index
+        @entries << normalized
+        index
+      end
+    end
+
     # Determines whether generated boolean execution needs capture state.
     module CaptureLiveness
       module_function
@@ -729,9 +745,9 @@ module Onibi
       private
 
       def predicate_setup
-        return if @predicate_registry.empty?
+        return if @predicate_registry.entries.empty?
 
-        entries = @predicate_registry.map do |source, ignorecase|
+        entries = @predicate_registry.entries.map do |source, ignorecase|
           index = Onibi::ClassPredicates::TableRegistry.register(source, ignorecase: ignorecase)
           "Onibi::ClassPredicates::TableRegistry.fetch(#{index})"
         end
@@ -806,7 +822,7 @@ module Onibi
       def initialize(options, predicate_registry = nil)
         @options = options
         @counter = 0
-        @predicate_registry = predicate_registry || []
+        @predicate_registry = predicate_registry || PredicateRegistry.new
       end
 
       def emit(ast)
