@@ -281,10 +281,26 @@ module Onibi
           capture ? [position, cursor, []] : true
         end
 
+        def matches_byte?(byte)
+          byte.is_a?(Integer) && @table[byte]
+        end
+
+        def scan_end(input, position)
+          return position unless byte_scan_input?(input)
+          return position unless position.is_a?(Integer) && position >= 0 && position <= input.bytesize
+
+          cursor = word_scan_profitable?(input, position) ? scan_words(input, position) : position
+          scan_tail(input, cursor)
+        end
+
         private
 
         def byte_scan_input?(input)
           input.is_a?(String) && (input.ascii_only? || input.encoding == Encoding::ASCII_8BIT)
+        end
+
+        def word_scan_profitable?(input, position)
+          profitable?(input, position) && @match_count >= 64
         end
 
         def scan_words(input, cursor)

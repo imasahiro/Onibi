@@ -348,11 +348,12 @@ module Onibi
 
     # One-pass scanner for two disjoint greedy character-class runs.
     class RegularRun
-      attr_reader :sources, :predicates
+      attr_reader :sources, :predicates, :scanners
 
       def initialize(sources)
         @sources = sources.map(&:dup).map(&:freeze).freeze
-        @predicates = @sources.map { |source| ClassPredicates.compiled(source) }.freeze
+        @scanners = @sources.map { |source| Experimental::Swar::ClassRun.new(source) }.freeze
+        @predicates = @scanners.map(&:predicate).freeze
         freeze
       end
 
@@ -361,7 +362,7 @@ module Onibi
 
         start = position
         while start < input.length
-          unless matches_at?(predicates.first, input, start)
+          unless matches_at?(scanners.first, input, start)
             start += 1
             next
           end
@@ -371,31 +372,30 @@ module Onibi
 
           # With disjoint classes, every start inside this left run reaches the
           # same failed boundary. Jumping to the boundary removes suffix rescans.
-          start = consume(predicates.first, input, start)
+          start = consume(scanners.first, input, start)
         end
         false
       end
 
       private
 
-      def consume(predicate, input, cursor)
-        cursor += 1 while cursor < input.length && matches_at?(predicate, input, cursor)
-        cursor
+      def consume(scanner, input, cursor)
+        scanner.scan_end(input, cursor)
       end
 
       def match_sources(input, start)
         finish = start
-        matched = predicates.all? do |predicate|
-          next false unless matches_at?(predicate, input, finish)
+        matched = scanners.all? do |scanner|
+          next false unless matches_at?(scanner, input, finish)
 
-          finish = consume(predicate, input, finish)
+          finish = consume(scanner, input, finish)
           true
         end
         matched ? finish : nil
       end
 
-      def matches_at?(predicate, input, cursor)
-        predicate.matches_byte?(input.getbyte(cursor))
+      def matches_at?(scanner, input, cursor)
+        scanner.matches_byte?(input.getbyte(cursor))
       end
 
       def result(start, finish, capture)
