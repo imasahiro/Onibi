@@ -78,6 +78,13 @@ class CompiledClassPredicateTest < Minitest::Test
     assert_nil Onibi::Codegen::Casefold.class_candidates("1", 0, "a-z", false)
   end
 
+  def test_ascii_class_helper_uses_the_byte_table_without_slicing
+    predicate = Onibi::ClassPredicates.compiled("a-z")
+    input = CharacterSliceForbiddenString.new("abc")
+
+    assert_equal 1, Onibi::Codegen::Casefold.class_candidates(input, 0, predicate, false)
+  end
+
   def test_generated_class_predicate_uses_compiled_table_leaf
     ast = Onibi::Parser.new("[a-z]").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
@@ -102,5 +109,13 @@ class CompiledClassPredicateTest < Minitest::Test
 
     assert_equal 2, program.source.scan("TableRegistry.fetch").length
     assert_includes program.source, "ONIBI_CLASS_PREDICATES"
+  end
+end
+
+class CharacterSliceForbiddenString < String
+  def [](index, *arguments)
+    raise "ASCII class helper must not slice input" if index.is_a?(Integer)
+
+    super
   end
 end
