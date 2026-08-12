@@ -21,6 +21,15 @@ class CompiledClassPredicateTest < Minitest::Test
     assert_raises(FrozenError) { metadata.literals << "z" }
   end
 
+  def test_normalized_metadata_exposes_ascii_negative_flag
+    positive = Onibi::ClassPredicates.compiled("a-c").metadata
+    negative = Onibi::ClassPredicates.compiled("^a-c").metadata
+
+    refute positive.ascii_negative
+    assert negative.ascii_negative
+    assert negative.frozen?
+  end
+
   def test_normalizer_keeps_intersections_and_properties_as_composite
     intersection = Onibi::ClassPredicates.compiled("a-z&&[^aeiou]").metadata
     property = Onibi::ClassPredicates.compiled("\\p{Letter}").metadata

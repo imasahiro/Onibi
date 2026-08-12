@@ -6,7 +6,7 @@ module Onibi
     module_function
 
     Normalized = Struct.new(
-      :kind, :negative, :literals, :ranges, :ascii_applicable, :ascii_bitmap,
+      :kind, :negative, :ascii_negative, :literals, :ranges, :ascii_applicable, :ascii_bitmap,
       :ascii_bitmap_bits, :leaves, :unicode_property, :posix_property,
       :ignorecase_expansion, :encoding_applicability, :encoding,
       keyword_init: true
@@ -56,6 +56,7 @@ module Onibi
         {
           kind: :ascii,
           negative: negative,
+          ascii_negative: negative,
           literals: literals.uniq.freeze,
           ranges: ranges.freeze,
           ascii_applicable: ascii,
@@ -126,6 +127,7 @@ module Onibi
         kind, leaves, unicode_property, posix_property = composite_parts(source, body)
         Normalized.new(
           kind: kind, negative: negative, literals: [].freeze, ranges: [].freeze,
+          ascii_negative: false,
           ascii_applicable: false, ascii_bitmap: nil, ascii_bitmap_bits: nil,
           leaves: leaves, unicode_property: unicode_property, posix_property: posix_property,
           ignorecase_expansion: expansion_mode(source, ignorecase),
