@@ -9,6 +9,8 @@ module Onibi
       :nullable_prefix, :search_mode, :regular_run,
       keyword_init: true
     ) do
+      include CandidateSource
+
       def self.from(ast, analysis)
         new(**SearchPlanFacts.new(ast, analysis).call)
       end
@@ -17,6 +19,14 @@ module Onibi
         positions = []
         each_candidate(input, position) { |candidate| positions << candidate }
         positions
+      end
+
+      def eligible?(input, position)
+        input.is_a?(String) && valid_position?(input, position)
+      end
+
+      def preserves_order?
+        true
       end
 
       def each_candidate(input, position, &block)

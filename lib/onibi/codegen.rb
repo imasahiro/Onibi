@@ -891,7 +891,7 @@ module Onibi
           return result unless result.nil?
         end
 
-        return search_with_plan(input, position, capture) unless @prefilter&.profitable?(input, position)
+        return search_with_plan(input, position, capture) unless @prefilter&.eligible?(input, position)
 
         initial = execute(input, position, capture, position)
         return initial if initial

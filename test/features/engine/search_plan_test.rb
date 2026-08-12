@@ -13,6 +13,14 @@ class SearchPlanTest < Minitest::Test
     assert_empty plan.candidate_positions("xneedle", 1)
   end
 
+  def test_search_plan_implements_candidate_source_protocol
+    plan = Onibi::Regexp.new("needle").send(:codegen_program).search_plan
+
+    assert plan.eligible?("xxneedle", 0)
+    assert_equal [2], plan.candidate_positions("xxneedle", 0)
+    assert plan.preserves_order?
+  end
+
   def test_minimum_width_limits_candidates
     regexp = Onibi::Regexp.new("needle")
     plan = regexp.send(:codegen_program).search_plan
