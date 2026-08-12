@@ -6,6 +6,50 @@ module Onibi
   end
 
   module Codegen
+    # Removes statically impossible branches without changing branch order.
+    module ImpossibleBranchPruner
+      module_function
+
+      def prune(ast, options)
+        return ast unless options.empty? && ast.is_a?(AST::Alternation)
+
+        branches = unique_literals(remove_impossible(ast.branches))
+        branches.empty? || branches.length == ast.branches.length ? ast : AST::Alternation.new(branches)
+      end
+
+      def remove_impossible(branches)
+        branches.reject { |branch| impossible?(branch) }
+      end
+
+      def unique_literals(branches)
+        seen = {}
+        branches.select do |branch|
+          value = literal_value(branch)
+          next true unless value
+          next false if seen[value]
+
+          seen[value] = true
+        end
+      end
+
+      def impossible?(branch)
+        branch.is_a?(AST::Sequence) && branch.parts.any? do |part|
+          part.is_a?(AST::Assertion) && part.kind == :negative && empty_sequence?(part.body)
+        end
+      end
+
+      def empty_sequence?(node)
+        node.is_a?(AST::Sequence) && node.parts.empty?
+      end
+
+      def literal_value(branch)
+        return unless branch.is_a?(AST::Sequence)
+        return unless branch.parts.all? { |part| part.is_a?(AST::Literal) }
+
+        branch.parts.map(&:value).join
+      end
+    end
+
     # Computes Ruby-compatible simple and full-fold literal candidates.
     module Casefold
       module_function
@@ -1131,7 +1175,7 @@ module Onibi
       end
 
       def self.ast(ast, options: [], optimizations: [:swar], analysis: nil)
-        ast = BranchPruner.prune(ast, options) unless analysis
+        ast = ImpossibleBranchPruner.prune(ast, options) unless analysis
         analysis ||= Analyzer.new(options).analyze(ast)
         if optimizations.include?(:swar)
           prefilter = Experimental::Swar::LiteralAlternation.build(
