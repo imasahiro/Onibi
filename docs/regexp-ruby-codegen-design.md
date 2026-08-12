@@ -396,32 +396,12 @@ Allowed early optimizations include:
 - literal-run comparison;
 - anchored search elimination;
 - first-character and required-literal skipping;
-- experimental multi-literal candidate skipping with fixed-width SWAR bitmaps;
 - ASCII byte fast path;
 - capture liveness for `match?`;
 - reducing redundant checkpoints and capture-trail writes.
 
 An optimization is accepted only when it reduces a measured workload without an unacceptable compile-time, source-size, or memory regression. YJIT/ZJIT improvements are a benefit, not a correctness dependency.
 
-The experimental SWAR prefilter applies by default only to whole-regexp
-alternations of two or more ASCII literals whose lengths are between two bytes
-and one less than a native word. It packs literal positions into native-word
-Shift-And buckets separated by zero guard bits and masks every state transition
-back to `SWAR_STATE_BITS`, a fixnum-safe width derived as `1.size * 8 - 3`.
-The extra headroom is required because `state << 1` is evaluated before the
-mask; using the full Ruby VALUE width can allocate a heap Integer on MRI.
-Search probes the initial position directly and
-uses the bitmap prefilter only when at least one native word of input remains.
-The prefilter supplies ordered candidate start positions to the same generated
-matcher; native-word-sized or longer literals, unsupported AST shapes,
-ignorecase, non-ASCII input,
-and short remaining input retain the baseline candidate loop. Tests and
-benchmarks can disable SWAR or opt into single-character or long-literal prefix
-filtering internally, but none is a user-facing backend selection. The default
-policy is benchmark-driven: one-character literals improve long late matches
-but regress the common early-match path even after the guards, while
-native-word-sized and longer prefix filtering regresses the measured late
-workloads.
 
 ## Testing strategy
 
