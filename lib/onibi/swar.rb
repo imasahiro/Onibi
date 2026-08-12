@@ -141,6 +141,65 @@ module Onibi
         end
       end
 
+      # Scans ASCII input in native-word chunks and emits matching positions
+      # from one immutable character-class bitmap.
+      class ClassPrefilter
+        include Codegen::CandidateSource
+
+        attr_reader :predicate
+
+        def initialize(source, ignorecase: false)
+          @predicate = ClassPredicates.compiled(source, ignorecase: ignorecase)
+          @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          freeze
+        end
+
+        def eligible?(input, position)
+          input.is_a?(String) && input.ascii_only? && position.is_a?(Integer) && position >= 0
+        end
+
+        def preserves_order?
+          true
+        end
+
+        def candidate_positions(input, position)
+          candidates = []
+          each_candidate(input, position) { |candidate| candidates << candidate }
+          candidates
+        end
+
+        def each_candidate(input, position, &block)
+          return enum_for(__method__, input, position) unless block
+          return unless eligible?(input, position)
+
+          cursor = position
+          while cursor < input.bytesize
+            limit = [cursor + WORD_BITS / 8, input.bytesize].min
+            emit_mask_matches(input, cursor, limit, &block)
+            cursor = limit
+          end
+        end
+
+        private
+
+        def emit_mask_matches(input, cursor, limit, &block)
+          mask = match_mask(input, cursor, limit)
+          while mask != 0
+            bit = mask & -mask
+            block.call(cursor + bit.bit_length - 1)
+            mask ^= bit
+          end
+        end
+
+        def match_mask(input, cursor, limit)
+          mask = 0
+          cursor.upto(limit - 1) do |index|
+            mask |= 1 << (index - cursor) if @table[input.getbyte(index)]
+          end
+          mask
+        end
+      end
+
       # Extracts a safe prefilter only for a whole-regexp literal alternation.
       module LiteralAlternation
         module_function

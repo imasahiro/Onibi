@@ -104,6 +104,20 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_character_class_prefilter_produces_ordered_candidate_positions
+    source = Onibi::Experimental::Swar::ClassPrefilter.new("a-z")
+
+    assert_equal [1, 3, 4], source.candidate_positions("1a2bc", 0)
+    assert source.preserves_order?
+  end
+
+  def test_leading_character_class_uses_class_prefilter_in_search_plan
+    regexp = Onibi::Regexp.new("[a-z]\\d+")
+
+    assert_equal :class_prefilter, regexp.send(:codegen_program).search_plan.search_mode
+    assert_equal "a2", regexp.match("--a2--").to_s
+  end
+
   def test_ineligible_patterns_keep_the_baseline_search
     ignorecase_ast = Onibi::Parser.new("cat|dog").parse
     nonliteral_ast = Onibi::Parser.new("cat|d.g").parse
