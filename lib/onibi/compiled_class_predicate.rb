@@ -7,7 +7,8 @@ module Onibi
 
     Normalized = Struct.new(
       :kind, :negative, :literals, :ranges, :ascii_applicable, :ascii_bitmap,
-      :ascii_bitmap_bits, :encoding,
+      :ascii_bitmap_bits, :leaves, :unicode_property, :posix_property,
+      :ignorecase_expansion, :encoding_applicability, :encoding,
       keyword_init: true
     )
     ScanAtom = Struct.new(:index, :value, :range_end)
@@ -32,20 +33,27 @@ module Onibi
     module Normalizer
       module_function
 
-      def normalize(source)
+      def normalize(source, ignorecase: false)
         negative = source.start_with?("^")
         body = negative ? source[1..] : source
-        return unknown(source, negative) if composite_source?(body)
+        return composite_metadata(source, negative, body, ignorecase) if composite_source?(body)
 
-        literals, ranges, ascii = scan(body, source.encoding.ascii_compatible?)
+        scan_result = scan(body, source.encoding.ascii_compatible?)
 
-        build_metadata(source, negative, literals, ranges, ascii)
+        build_metadata(source, negative, scan_result, ignorecase)
       rescue StandardError
         unknown(source, negative)
       end
 
-      def build_metadata(source, negative, literals, ranges, ascii)
-        Normalized.new(
+      def build_metadata(source, negative, scan_result, ignorecase)
+        Normalized.new(**simple_metadata_fields(source, negative, scan_result, ignorecase)).freeze
+      end
+
+      def simple_metadata_fields(source, negative, scan_result, ignorecase)
+        literals = scan_result[0]
+        ranges = scan_result[1]
+        ascii = scan_result[2]
+        {
           kind: :ascii,
           negative: negative,
           literals: literals.uniq.freeze,
@@ -53,8 +61,16 @@ module Onibi
           ascii_applicable: ascii,
           ascii_bitmap: ascii ? bitmap_for(literals, ranges, negative) : nil,
           ascii_bitmap_bits: ascii ? 256 : nil,
-          encoding: source.encoding
-        ).freeze
+          **metadata_common(source, ignorecase)
+        }
+      end
+
+      def metadata_common(source, ignorecase)
+        {
+          leaves: nil, unicode_property: nil, posix_property: nil,
+          ignorecase_expansion: expansion_mode(source, ignorecase),
+          encoding_applicability: encoding_applicability(source), encoding: source.encoding
+        }
       end
 
       def scan(body, ascii)
@@ -97,8 +113,50 @@ module Onibi
           ascii_applicable: false,
           ascii_bitmap: nil,
           ascii_bitmap_bits: nil,
+          leaves: [].freeze,
+          unicode_property: nil,
+          posix_property: nil,
+          ignorecase_expansion: expansion_mode(source, false),
+          encoding_applicability: encoding_applicability(source),
           encoding: source.encoding
         ).freeze
+      end
+
+      def composite_metadata(source, negative, body, ignorecase)
+        kind, leaves, unicode_property, posix_property = composite_parts(source, body)
+        Normalized.new(
+          kind: kind, negative: negative, literals: [].freeze, ranges: [].freeze,
+          ascii_applicable: false, ascii_bitmap: nil, ascii_bitmap_bits: nil,
+          leaves: leaves, unicode_property: unicode_property, posix_property: posix_property,
+          ignorecase_expansion: expansion_mode(source, ignorecase),
+          encoding_applicability: encoding_applicability(source), encoding: source.encoding
+        ).freeze
+      end
+
+      def composite_parts(source, body)
+        intersection = ClassPredicates.split_intersection(body)
+        return [:intersection, intersection.map(&:freeze).freeze, nil, nil] if intersection
+
+        posix = POSIX_PROPERTIES[source]
+        return [:posix, [source].freeze, nil, posix] if posix
+
+        property = body[/\\p\{([^}]+)\}/, 1]
+        return [:unicode_property, [body].freeze, property, nil] if property
+
+        [:composite, [body].freeze, nil, nil]
+      end
+
+      def expansion_mode(source, ignorecase)
+        return :none unless ignorecase
+
+        source.include?("ß") ? :full_fold : :simple_casefold
+      end
+
+      def encoding_applicability(source)
+        return :ascii_8bit if source.encoding == Encoding::ASCII_8BIT
+        return :ascii_compatible if source.encoding.ascii_compatible?
+
+        :unicode
       end
 
       def bitmap_for(literals, ranges, negative)
@@ -144,7 +202,7 @@ module Onibi
       def initialize(source, ignorecase)
         @source = source.dup.freeze
         @ignorecase = ignorecase
-        @metadata = Normalizer.normalize(@source)
+        @metadata = Normalizer.normalize(@source, ignorecase: @ignorecase)
         @ascii = Array.new(256) do |codepoint|
           ClassPredicates.match_source(@source, codepoint.chr(Encoding::ASCII_8BIT), @ignorecase)
         end.freeze
