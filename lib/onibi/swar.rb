@@ -6,22 +6,6 @@ module Onibi
     # Integer cannot leak bits between logical machine words.
     module Swar
       WORD_BITS = 1.size * 8
-      # Keep Shift-And state transitions inside MRI's immediate integer payload.
-      # The left shift happens before masking, so full VALUE width can spill to
-      # a heap Integer for one transition.
-      SWAR_STATE_BITS = WORD_BITS - 3
-      WORD_MASK = (1 << SWAR_STATE_BITS) - 1
-      MINIMUM_INPUT_BYTES = SWAR_STATE_BITS
-
-      Bucket = Struct.new(:width, :masks, :start_bits, :accepts, keyword_init: true) do
-        def initialize(**arguments)
-          super
-          masks.freeze
-          accepts.freeze
-          freeze
-        end
-      end
-
       # Scans ASCII input in native-word chunks and emits matching positions
       # from one immutable character-class bitmap.
       class ClassPrefilter
@@ -301,62 +285,6 @@ module Onibi
         def delimiter_scan_end(input, cursor)
           delimiter = input.encoding == Encoding::ASCII_8BIT ? @stop_byte_ascii : @stop_byte.chr(input.encoding)
           input.index(delimiter, cursor) || input.bytesize
-        end
-      end
-
-      # Extracts a safe prefilter only for a whole-regexp literal alternation.
-      module LiteralAlternation
-        module_function
-
-        # Default SWAR policy is deliberately conservative. Single-byte and
-        # native-word-or-longer literals remain explicit internal opt-ins until
-        # their early/late/no-match behavior is measured independently.
-        def policy_for(patterns)
-          return :unsupported unless valid_policy_patterns?(patterns)
-
-          lengths = patterns.map(&:bytesize)
-          if lengths.all? { |length| length >= 2 && length < SWAR_STATE_BITS }
-            :default
-          else
-            :opt_in
-          end
-        end
-
-        def valid_policy_patterns?(patterns)
-          patterns.is_a?(Array) && patterns.length >= 2 && patterns.all? do |pattern|
-            pattern.is_a?(String) && !pattern.empty? && pattern.ascii_only?
-          end
-        end
-
-        def build(ast, options, allow_long_literals: false, allow_single_character: false)
-          patterns = eligible_patterns(ast, options)
-          return unless patterns
-          return unless eligible_lengths?(patterns, allow_long_literals, allow_single_character)
-
-          nil
-        rescue ArgumentError
-          nil
-        end
-
-        def eligible_patterns(ast, options)
-          return if options.include?("ignorecase") || !ast.is_a?(AST::Alternation)
-
-          patterns = ast.branches.map { |branch| literal_value(branch) }
-          patterns if patterns.none?(&:nil?) && patterns.uniq.length >= 2
-        end
-
-        def eligible_lengths?(patterns, allow_long_literals, allow_single_character)
-          minimum = allow_single_character ? 1 : 2
-          maximum = allow_long_literals ? Float::INFINITY : SWAR_STATE_BITS - 1
-          patterns.all? { |pattern| pattern.bytesize.between?(minimum, maximum) }
-        end
-
-        def literal_value(branch)
-          return unless branch.is_a?(AST::Sequence)
-          return unless branch.parts.all? { |part| part.is_a?(AST::Literal) }
-
-          value = branch.parts.map(&:value).join
-          value unless value.empty?
         end
       end
     end

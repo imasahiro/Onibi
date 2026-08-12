@@ -7,11 +7,15 @@ class SwarMultiLiteralTest < Minitest::Test
     refute Onibi::Experimental::Swar.const_defined?(:MultiLiteralPrefilter, false)
   end
 
+  def test_literal_alternation_prefilter_is_removed
+    refute Onibi::Experimental::Swar.const_defined?(:LiteralAlternation, false)
+  end
+
   def test_literal_alternation_falls_back_to_the_regular_search_plan
     ast = Onibi::Parser.new("sherlock|watson|moriarty").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
 
-    refute program.swar?
+    refute program.respond_to?(:swar?)
     assert program.search("#{"x" * 100}moriarty", 0, capture: false)
   end
 
