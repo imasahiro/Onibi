@@ -8,12 +8,12 @@ module Onibi
 
     def scan(input)
       if block_given?
-        each_match(input) { |match| yield scan_value(match) }
+        scan_results(input) { |result| yield scan_value_from_result(result, input) }
         return input
       end
 
       values = []
-      each_match(input) { |match| values << scan_value(match) }
+      scan_results(input) { |result| values << scan_value_from_result(result, input) }
       values
     end
 
@@ -28,6 +28,8 @@ module Onibi
     private
 
     def replace_matches(input, replacement, block)
+      return replace_literal_matches(input, replacement) if !block && replacement.index("\\").nil?
+
       result = String.new(encoding: input.encoding)
       cursor = 0
       each_match(input) do |match|
@@ -38,22 +40,39 @@ module Onibi
       [result, cursor]
     end
 
-    def each_match(input)
+    def replace_literal_matches(input, replacement)
+      result = String.new(encoding: input.encoding)
+      cursor = 0
+      codegen_each_result(input) do |raw|
+        result << input[cursor...raw[0]]
+        result << replacement
+        cursor = raw[1]
+      end
+      [result, cursor]
+    end
+
+    def scan_results(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      position = 0
-      while position <= input.length
-        match = self.match(input, position)
-        break unless match
+      codegen_each_result(input, &block)
+    end
 
-        yield match
-        next_position = match.end(0)
-        position = next_position == position ? position + 1 : next_position
-      end
+    def each_match(input, &block)
+      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
+      codegen_each_match(input, &block)
     end
 
     def scan_value(match)
       match.length == 1 ? match[0] : match.captures
+    end
+
+    def scan_value_from_result(result, input)
+      captures = result[2]
+      return input[result[0]...result[1]] if captures.empty?
+
+      match = Codegen::MatchAdapter.build(result, input, self, named_captures)
+      scan_value(match)
     end
 
     def validate_gsub_input!(input)

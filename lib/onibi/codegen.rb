@@ -672,6 +672,21 @@ module Onibi
         search_candidates(input, position, capture, candidates)
       end
 
+      # Lazily yields raw offset results without constructing MatchData.
+      def each_match(input, position = 0, capture: true)
+        return enum_for(__method__, input, position, capture: capture) unless block_given?
+
+        cursor = position
+        while cursor <= input.length
+          result = search(input, cursor, capture: capture)
+          break unless result
+
+          yield result
+          finish = capture ? result[1] : cursor + 1
+          cursor = finish == cursor ? cursor + 1 : finish
+        end
+      end
+
       private
 
       def search_with_plan(input, position, capture)

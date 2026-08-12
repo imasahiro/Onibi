@@ -154,6 +154,20 @@ module Onibi
       matches
     end
 
+    def codegen_each_match(input, &block)
+      return enum_for(__method__, input) unless block
+
+      codegen_each_result(input) do |result|
+        block.call(Codegen::MatchAdapter.build(result, input, self, named_captures))
+      end
+    end
+
+    def codegen_each_result(input, &block)
+      return enum_for(__method__, input) unless block
+
+      codegen_program.each_match(input, 0, capture: true) { |result| block.call(result) }
+    end
+
     def named_captures
       CaptureNameCollector.indices(@ast)
     end
