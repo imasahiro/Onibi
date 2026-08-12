@@ -64,12 +64,41 @@ class RegexReduxTest < Minitest::Test
     assert_equal :onibi, RegexRedux.engine_name(["--engine", "onibi"])
   end
 
+  def test_onibi_adapter_uses_public_scan_and_gsub_apis
+    regexp = PublicApiRegexpSpy.new
+    engine = RegexRedux::OnibiEngine.new
+
+    assert_equal 2, engine.count(regexp, "input")
+    assert_equal "replaced", engine.replace("input", regexp, "replacement")
+    assert_equal ["input"], regexp.scan_inputs
+    assert_equal [%w[input replacement]], regexp.gsub_arguments
+  end
+
   def test_script_does_not_use_threads_or_forked_pattern_count
     source = File.read(File.join(PROJECT_ROOT, "benchmark", "regex_redux.rb"))
 
     refute_includes source, "Thread"
     refute_includes source, "forked_pattern_count"
     refute_includes source, "Process.fork"
+  end
+
+  class PublicApiRegexpSpy
+    attr_reader :scan_inputs, :gsub_arguments
+
+    def initialize
+      @scan_inputs = []
+      @gsub_arguments = []
+    end
+
+    def scan(input)
+      @scan_inputs << input
+      %w[first second]
+    end
+
+    def gsub(input, replacement)
+      @gsub_arguments << [input, replacement]
+      "replaced"
+    end
   end
 end
 
