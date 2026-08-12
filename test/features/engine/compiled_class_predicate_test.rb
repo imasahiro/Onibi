@@ -25,8 +25,8 @@ class CompiledClassPredicateTest < Minitest::Test
     intersection = Onibi::ClassPredicates.compiled("a-z&&[^aeiou]").metadata
     property = Onibi::ClassPredicates.compiled("\\p{Letter}").metadata
 
-    assert_equal :composite, intersection.kind
-    assert_equal :composite, property.kind
+    assert_equal :intersection, intersection.kind
+    assert_equal :unicode_property, property.kind
     refute intersection.ascii_applicable
     refute property.ascii_applicable
   end
