@@ -5,7 +5,7 @@ module Onibi
     # Conservative candidate-start facts consumed by GeneratedProgram#search.
     SearchPlan = Struct.new(
       :anchor_start, :anchor_end, :minimum_width, :first_set, :required_literal,
-      :required_literals,
+      :required_literals, :required_literal_source,
       :nullable_prefix, :search_mode, :regular_run, :class_prefilter, :candidate_source,
       keyword_init: true
     ) do
@@ -71,7 +71,7 @@ module Onibi
 
       def yield_special_candidates(input, position, maximum, &block)
         return class_candidates(input, position, maximum, &block) if class_prefilter
-        return literal_set_candidates(input, position, maximum, &block) if required_literals
+        return literal_set_candidates(input, position, maximum, &block) if required_literal_source
 
         literal_candidates(input, position, maximum, &block)
       end
@@ -79,10 +79,6 @@ module Onibi
       def anchored_end_candidate(input, position)
         candidate = input.length - minimum_width
         yield candidate if candidate >= position
-      end
-
-      def anchored_candidates(position)
-        yield position if position.zero?
       end
 
       def literal_candidates(input, position, maximum)
@@ -109,19 +105,9 @@ module Onibi
       end
 
       def literal_set_candidates(input, position, maximum, &block)
-        candidates = required_literals.flat_map do |literal, offset|
-          candidate = position
-          starts = []
-          while (found = input.index(literal, candidate))
-            break if found > maximum + offset
-
-            start = found - offset
-            starts << start if start >= position && start <= maximum
-            candidate = found + 1
-          end
-          starts
+        required_literal_source.candidate_positions(input, position).each do |candidate|
+          block.call(candidate) if candidate <= maximum
         end
-        candidates.uniq.sort.each { |candidate| block.call(candidate) }
       end
     end
 
@@ -190,6 +176,19 @@ module Onibi
       end
     end
 
+    # Builds an immutable union source for analyzed required literals.
+    module RequiredLiteralSourceFacts
+      module_function
+
+      def build(literals)
+        return unless literals
+
+        CandidateSource::Union.new(
+          literals.map { |value, offset| CandidateSource::Literal.new(value, offset: offset) }
+        )
+      end
+    end
+
     # Extracts conservative facts from an analyzed AST.
     class SearchPlanFacts
       def initialize(ast, analysis)
@@ -217,6 +216,7 @@ module Onibi
           first_set: literal ? [literal[0]].freeze : nil,
           required_literal: literal&.dup&.freeze,
           required_literals: required_literals,
+          required_literal_source: RequiredLiteralSourceFacts.build(required_literals),
           nullable_prefix: !anchor_start && literal.nil?,
           search_mode: search_mode(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter),
           regular_run: regular_run,
