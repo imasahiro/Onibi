@@ -18,4 +18,12 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
     refute_includes program.source, "Array.new(0)"
     assert program.search("aaa", 0, capture: false)
   end
+
+  def test_boolean_execution_skips_capture_array_for_capturing_pattern
+    ast = Onibi::Parser.new("(a+)").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "capture ? Array.new(1) : nil"
+    assert program.search("aaa", 0, capture: false)
+  end
 end

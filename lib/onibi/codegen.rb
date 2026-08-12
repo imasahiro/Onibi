@@ -295,8 +295,9 @@ module Onibi
       def tracked_group(node, cursor)
         result = fresh_cursor
         previous_capture = fresh_cursor
+        body = emit_node(node.body, cursor)
         <<~EXPRESSION.strip
-          (begin #{previous_capture} = captures[#{node.number - 1}]; captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures[#{node.number - 1}] = #{previous_capture}; nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end)
+          ((capture || #{@backreferences}) ? (begin #{previous_capture} = captures[#{node.number - 1}]; captures[#{node.number - 1}] = [#{cursor}, nil]; #{result} = #{body}; #{result}.nil? ? (captures[#{node.number - 1}] = #{previous_capture}; nil) : (captures[#{node.number - 1}][1] = #{result}; #{result}); end) : (#{body}))
         EXPRESSION
       end
     end
@@ -484,7 +485,8 @@ module Onibi
     end
 
     # Emits direct Ruby control flow for regular consuming AST nodes.
-    class AstEmitter
+    # The emitter keeps capture liveness beside generated-node emission.
+    class AstEmitter # rubocop:disable Metrics/ClassLength
       include GroupEmitter
       include AssertionEmitter
       include QuantifierEmitter
@@ -516,6 +518,7 @@ module Onibi
         @options = options
         @counter = 0
         @groups = {}
+        @backreferences = false
       end
 
       def emit(ast)
@@ -538,18 +541,26 @@ module Onibi
       def capture_setup
         return "captures = nil" if capture_count.zero?
 
-        "captures = Array.new(#{capture_count})"
+        return "captures = Array.new(#{capture_count})" if @backreferences
+
+        "captures = capture ? Array.new(#{capture_count}) : nil"
       end
 
       def capture_result = capture_count.zero? ? "[]" : "captures"
 
-      def collect_groups(value)
+      def collect_groups(value) # rubocop:disable Metrics/AbcSize
         return value.each { |item| collect_groups(item) } if value.is_a?(Array)
         return unless value.is_a?(Struct)
+
+        mark_backreference(value)
 
         @groups[value.number] = value if value.is_a?(AST::Group) && value.number
         @groups[value.name] = value if value.is_a?(AST::Group) && value.name
         value.each { |child| collect_groups(child) }
+      end
+
+      def mark_backreference(value)
+        @backreferences ||= value.is_a?(AST::Backreference) # rubocop:disable Naming/MemoizedInstanceVariableName
       end
 
       def capture_count
