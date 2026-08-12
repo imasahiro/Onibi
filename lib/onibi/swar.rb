@@ -176,6 +176,8 @@ module Onibi
         def initialize(source, ignorecase: false)
           @predicate = ClassPredicates.compiled(source, ignorecase: ignorecase)
           @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          matches = @table.each_index.select { |byte| @table[byte] }
+          @single_byte = matches.one? ? matches.first.chr(Encoding::ASCII_8BIT).freeze : nil
           freeze
         end
 
@@ -196,6 +198,7 @@ module Onibi
         def each_candidate(input, position, &block)
           return enum_for(__method__, input, position) unless block
           return unless eligible?(input, position)
+          return each_singleton_candidate(input, position, &block) if @single_byte
 
           cursor = position
           while cursor < input.bytesize
@@ -222,6 +225,14 @@ module Onibi
             mask |= 1 << (index - cursor) if @table[input.getbyte(index)]
           end
           mask
+        end
+
+        def each_singleton_candidate(input, position)
+          cursor = position
+          while (found = input.index(@single_byte, cursor))
+            yield found
+            cursor = found + 1
+          end
         end
       end
 

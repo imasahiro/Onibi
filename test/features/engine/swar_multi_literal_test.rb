@@ -134,6 +134,13 @@ class SwarMultiLiteralTest < Minitest::Test
     assert source.preserves_order?
   end
 
+  def test_singleton_class_prefilter_uses_string_search_without_getbyte
+    source = Onibi::Experimental::Swar::ClassPrefilter.new("a")
+    input = GetbyteForbiddenString.new("xxaaxa")
+
+    assert_equal [2, 3, 5], source.candidate_positions(input, 0)
+  end
+
   def test_leading_character_class_uses_class_prefilter_in_search_plan
     regexp = Onibi::Regexp.new("[a-z]\\d+")
 
@@ -188,6 +195,12 @@ class SwarMultiLiteralTest < Minitest::Test
   class ByteArrayForbiddenString < String
     def bytes
       raise "candidate scan must not materialize bytes"
+    end
+  end
+
+  class GetbyteForbiddenString < String
+    def getbyte(_index)
+      raise "singleton class search must not call getbyte"
     end
   end
 end
