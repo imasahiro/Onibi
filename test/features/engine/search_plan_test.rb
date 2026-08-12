@@ -56,6 +56,23 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 8], plan.candidate_positions("xxdog---fox", 0)
   end
 
+  def test_candidate_union_merges_two_ordered_component_streams
+    source = Onibi::Codegen::CandidateSource::Union.new([
+                                                          StaticCandidateSource.new([1, 4, 8]),
+                                                          StaticCandidateSource.new([2, 4, 7])
+                                                        ])
+
+    assert_equal [1, 2, 4, 7, 8], source.candidate_positions("", 0)
+    assert source.preserves_order?
+  end
+
+  def test_candidate_union_returns_a_single_component_stream_unchanged
+    candidates = [1, 4, 8].freeze
+    source = Onibi::Codegen::CandidateSource::Union.new([StaticCandidateSource.new(candidates)])
+
+    assert_same candidates, source.candidate_positions("", 0)
+  end
+
   def test_alternation_literal_class_branches_use_literal_prefixes
     regexp = Onibi::Regexp.new("cat[0-9]|dog[0-9]")
     plan = regexp.send(:codegen_program).search_plan
@@ -122,5 +139,17 @@ class SearchPlanTest < Minitest::Test
     %w[abc123XYZ abc123 abcXYZ].each do |input|
       assert_equal ::Regexp.new("[a-z]+[0-9]+[A-Z]+").match?(input), regexp.match?(input)
     end
+  end
+
+  class StaticCandidateSource
+    include Onibi::Codegen::CandidateSource
+
+    def initialize(candidates)
+      @candidates = candidates.freeze
+    end
+
+    def eligible?(_input, _position) = true
+
+    def candidate_positions(_input, _position) = @candidates
   end
 end
