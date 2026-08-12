@@ -11,6 +11,26 @@ class CompiledClassPredicateTest < Minitest::Test
     refute predicate.matches?("7")
   end
 
+  def test_compiled_predicate_exposes_immutable_normalized_metadata
+    metadata = Onibi::ClassPredicates.compiled("a-cx").metadata
+
+    assert_equal :ascii, metadata.kind
+    assert_equal ["x"], metadata.literals
+    assert_equal [%w[a c]], metadata.ranges
+    assert metadata.ascii_applicable
+    assert_raises(FrozenError) { metadata.literals << "z" }
+  end
+
+  def test_normalizer_keeps_intersections_and_properties_as_composite
+    intersection = Onibi::ClassPredicates.compiled("a-z&&[^aeiou]").metadata
+    property = Onibi::ClassPredicates.compiled("\\p{Letter}").metadata
+
+    assert_equal :composite, intersection.kind
+    assert_equal :composite, property.kind
+    refute intersection.ascii_applicable
+    refute property.ascii_applicable
+  end
+
   def test_compiled_predicate_preserves_intersection_and_ignorecase
     intersection = Onibi::ClassPredicates.compiled("a-z&&[^aeiou]")
     folded = Onibi::ClassPredicates.compiled("a", ignorecase: true)
