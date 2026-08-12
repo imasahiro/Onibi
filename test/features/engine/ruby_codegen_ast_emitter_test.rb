@@ -34,4 +34,12 @@ class RubyCodegenAstEmitterTest < Minitest::Test
 
     assert_operator source.length, :<, 40 * 400
   end
+
+  def test_straight_line_literals_are_coalesced_into_one_comparison
+    ast = Onibi::Parser.new("abcdefgh").parse
+    source = Onibi::Codegen::RubyGenerator.ast(ast)
+
+    assert_equal 1, source.scan("input[position,").length
+    assert_includes source, '== "abcdefgh"'
+  end
 end

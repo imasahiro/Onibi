@@ -15,7 +15,7 @@ class BranchPruningBenchmarkTest < Minitest::Test
     pruned = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: [])
 
     assert_equal baseline.search(input, 0, capture: true), pruned.search(input, 0, capture: true)
-    assert_equal 1, pruned.source.scan('input[position, 1] == "w"').length
+    assert_equal 1, pruned.source.scan('input[position, 6] == "watson"').length
   end
 
   def test_duplicate_literal_branches_are_pruned_without_changing_result # rubocop:disable Metrics/AbcSize
@@ -26,7 +26,7 @@ class BranchPruningBenchmarkTest < Minitest::Test
     actual = Onibi::Regexp.new(pattern).match("sherlock followed")
 
     assert_equal expected[0], actual[0]
-    assert_equal 1, program.source.scan('input[position, 1] == "w"').length
-    assert_equal 1, program.source.scan('input[position, 1] == "s"').length
+    assert_equal 1, program.source.scan('input[position, 6] == "watson"').length
+    assert_equal 1, program.source.scan('input[position, 8] == "sherlock"').length
   end
 end
