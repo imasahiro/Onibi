@@ -18,6 +18,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_repeated_operations_use_the_internal_offset_iterator
+    regexp = Onibi::Regexp.new("a+")
+    regexp.define_singleton_method(:match) { |_input, _position = 0| raise "public match called" }
+
+    assert_equal %w[aaa aa], regexp.scan("baaacaa")
+    assert_equal "b<aaa>c<aa>", regexp.gsub("baaacaa", "<\\0>")
+  end
+
   def test_scan_yields_mri_compatible_values_and_returns_input
     pattern = Onibi::Regexp.new("(\\w+)=(\\d+)")
     expected = []
