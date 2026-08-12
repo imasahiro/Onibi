@@ -70,7 +70,11 @@ module Onibi
       end
 
       def yield_special_candidates(input, position, maximum, &block)
-        return class_candidates(input, position, maximum, &block) if class_prefilter
+        if class_prefilter
+          return class_candidates(input, position, maximum, &block) if class_prefilter.eligible?(input, position)
+
+          return position.upto(maximum, &block)
+        end
         return literal_set_candidates(input, position, maximum, &block) if required_literal_source
 
         literal_candidates(input, position, maximum, &block)
@@ -134,6 +138,43 @@ module Onibi
       def ascii_literal_class?(source)
         source.ascii_only? && !source.start_with?("^") && !source.include?("\\") &&
           !source.include?("&&") && !source.include?(":")
+      end
+    end
+
+    # Builds a conservative first-byte source for simple ASCII alternation branches.
+    module AlternationFirstSetFacts
+      module_function
+
+      def build(ast, options)
+        return unless options.empty? && ast.is_a?(AST::Alternation)
+
+        bytes = ast.branches.map { |branch| branch_bytes(branch) }
+        return unless bytes.all?
+
+        Experimental::Swar::ByteSetPrefilter.new(bytes.flatten)
+      end
+
+      def branch_bytes(branch)
+        node = branch.is_a?(AST::Sequence) ? branch.parts.first : branch
+        return literal_bytes(node) if node.is_a?(AST::Literal)
+        return class_bytes(node) if node.is_a?(AST::CharacterClass)
+
+        nil
+      end
+
+      def literal_bytes(node)
+        return unless node.value.bytesize == 1 && node.value.ascii_only?
+
+        [node.value.getbyte(0)]
+      end
+
+      def class_bytes(node)
+        return unless node.value.ascii_only?
+
+        metadata = ClassPredicates.compiled(node.value).metadata
+        return unless metadata.ascii_applicable
+
+        0.upto(255).select { |byte| ((metadata.ascii_bitmap >> byte) & 1) == 1 }
       end
     end
 
@@ -201,7 +242,8 @@ module Onibi
         literal = literal_value(first)
         required_literals = candidate_literals
         nullable_prefilter = NullablePrefixFacts.build(@ast, @analysis.options)
-        class_prefilter = leading_class_prefilter || nullable_prefilter
+        first_set_prefilter = AlternationFirstSetFacts.build(@ast, @analysis.options)
+        class_prefilter = leading_class_prefilter || first_set_prefilter || nullable_prefilter
         build_facts(anchor_start, literal, required_literals, class_prefilter, nullable_prefilter)
       end
 
