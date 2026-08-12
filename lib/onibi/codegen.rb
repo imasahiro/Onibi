@@ -586,9 +586,19 @@ module Onibi
       private
 
       def emit_quantifier_with_remainder(node, remainder, cursor)
-        return emit_capture_free_quantifier_with_remainder(node, remainder, cursor) if capture_count.zero?
+        return emit_capture_free_quantifier_with_remainder(node, remainder, cursor) if
+          capture_count.zero? || !capture_writes?(node.expression) && remainder.none? { |part| capture_writes?(part) }
 
         emit_captureful_quantifier_with_remainder(node, remainder, cursor)
+      end
+
+      def capture_writes?(node)
+        return true if node.is_a?(AST::SubexpressionCall)
+        return node.capture || capture_writes?(node.body) if node.is_a?(AST::Group)
+        return node.any? { |child| capture_writes?(child) } if node.is_a?(Array)
+        return node.any? { |child| capture_writes?(child) } if node.is_a?(Struct)
+
+        false
       end
 
       def emit_captureful_quantifier_with_remainder(node, remainder, cursor)
