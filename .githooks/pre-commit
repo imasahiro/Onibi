@@ -2,7 +2,10 @@
 
 set -euo pipefail
 
-mapfile -t ruby_files < <(git diff --cached --name-only --diff-filter=ACMR -- '*.rb')
+ruby_files=()
+while IFS= read -r -d '' ruby_file; do
+  ruby_files+=("$ruby_file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.rb')
 
 if [ "${#ruby_files[@]}" -eq 0 ]; then
   exit 0
