@@ -140,6 +140,13 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal [1, 3, 4], source.candidate_positions("1a2bc", 0)
   end
 
+  def test_class_prefilter_reuses_compiled_predicate_ascii_table
+    source = Onibi::Experimental::Swar::ClassPrefilter.new("a-z")
+
+    assert_same source.predicate.ascii_table, source.table
+    assert_predicate source.table, :frozen?
+  end
+
   def test_singleton_class_prefilter_uses_string_search_without_getbyte
     source = Onibi::Experimental::Swar::ClassPrefilter.new("a")
     input = GetbyteForbiddenString.new("xxaaxa")

@@ -175,7 +175,7 @@ module Onibi
 
         def initialize(source, ignorecase: false)
           @predicate = ClassPredicates.compiled(source, ignorecase: ignorecase)
-          @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          @table = @predicate.ascii_table
           matches = @table.each_index.select { |byte| @table[byte] }
           @single_byte = matches.one? ? matches.first.chr(Encoding::ASCII_8BIT).freeze : nil
           freeze
