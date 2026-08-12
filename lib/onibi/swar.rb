@@ -216,17 +216,27 @@ module Onibi
         attr_reader :predicate
 
         WORD_BYTES = WORD_BITS / 8
+        MIN_SCAN_BYTES = WORD_BYTES * 2
 
         def initialize(source)
           @predicate = ClassPredicates.compiled(source)
           @table = Array.new(256) { |byte| @predicate.matches?(byte.chr(Encoding::ASCII_8BIT)) }.freeze
+          @match_count = @table.count(true)
           freeze
+        end
+
+        def profitable?(input, position)
+          return false unless input.is_a?(String) && input.ascii_only?
+          return false unless position.is_a?(Integer) && position >= 0 && position <= input.bytesize
+
+          remaining = input.bytesize - position
+          remaining >= MIN_SCAN_BYTES && @match_count.between?(8, 248)
         end
 
         def search(input, position, capture:)
           return unless input.ascii_only?
 
-          cursor = scan_words(input, position)
+          cursor = profitable?(input, position) ? scan_words(input, position) : position
           cursor = scan_tail(input, cursor)
           return false if cursor == position
 
