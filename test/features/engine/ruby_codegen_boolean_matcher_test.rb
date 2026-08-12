@@ -10,4 +10,12 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
     assert matcher.match?("aaa")
     refute matcher.match?("bbb")
   end
+
+  def test_captureless_boolean_program_does_not_allocate_capture_array
+    ast = Onibi::Parser.new("a+").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    refute_includes program.source, "Array.new(0)"
+    assert program.search("aaa", 0, capture: false)
+  end
 end
