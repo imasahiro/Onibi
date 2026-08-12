@@ -2,6 +2,7 @@
 
 require_relative "../../test_helper"
 
+# rubocop:disable Metrics/ClassLength
 class SwarMultiLiteralTest < Minitest::Test
   def test_public_matching_uses_swar_for_literal_alternation_and_agrees_with_mri
     pattern = "sherlock|watson|moriarty|adler"
@@ -104,6 +105,15 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_opt_in_candidate_intersection_preserves_match_order
+    ast = Onibi::Parser.new("alpha|beta|gamma").parse
+    integrated = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: %i[swar candidate_intersection])
+    baseline = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: [])
+    input = "xxbeta--gamma"
+
+    assert_equal baseline.search(input, 0, capture: true), integrated.search(input, 0, capture: true)
+  end
+
   def test_character_class_prefilter_produces_ordered_candidate_positions
     source = Onibi::Experimental::Swar::ClassPrefilter.new("a-z")
 
@@ -162,3 +172,4 @@ class SwarMultiLiteralTest < Minitest::Test
     [patterns, "xx#{patterns.last}"]
   end
 end
+# rubocop:enable Metrics/ClassLength
