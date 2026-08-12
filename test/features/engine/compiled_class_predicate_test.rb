@@ -95,6 +95,14 @@ class CompiledClassPredicateTest < Minitest::Test
     assert_equal 1, Onibi::Codegen::Casefold.class_candidates("a", 0, predicate, false)
   end
 
+  def test_generated_ascii_class_uses_direct_byte_table_on_byte_inputs
+    ast = Onibi::Parser.new("[a-z]").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "ascii_table"
+    assert_includes program.source, "getbyte"
+  end
+
   def test_generated_class_predicate_references_a_registered_table_id
     ast = Onibi::Parser.new("[a-z]").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)

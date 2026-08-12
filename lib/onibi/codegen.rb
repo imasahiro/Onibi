@@ -718,7 +718,17 @@ module Onibi
         key = [node.value, ignorecase]
         index = @predicate_registry.register(key)
         predicate = "ONIBI_CLASS_PREDICATES.fetch(#{index})"
+        return emit_ascii_class(predicate, cursor) if !ignorecase && node.value.ascii_only?
+
         "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
+      end
+
+      def emit_ascii_class(predicate, cursor)
+        table = "#{predicate}.ascii_table"
+        byte_match = "#{cursor} < input.length && #{table}[input.getbyte(#{cursor})]"
+        fast = "(#{byte_match} ? #{cursor} + 1 : nil)"
+        fallback = "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, false)"
+        "((input.ascii_only? || input.encoding == Encoding::ASCII_8BIT) ? #{fast} : #{fallback})"
       end
 
       def emit_property(node, cursor)
