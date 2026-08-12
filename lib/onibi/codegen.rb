@@ -891,6 +891,10 @@ module Onibi
         !@prefilter.nil?
       end
 
+      def prefilter_profitable?(input, position)
+        @prefilter&.profitable?(input, position) == true
+      end
+
       def search(input, position, capture:)
         if search_plan.regular_run
           result = search_plan.regular_run.search(input, position, capture: capture)

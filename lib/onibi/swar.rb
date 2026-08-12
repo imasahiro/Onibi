@@ -23,9 +23,13 @@ module Onibi
       class MultiLiteralPrefilter
         include Codegen::CandidateSource
 
-        attr_reader :buckets
+        attr_reader :buckets, :patterns
 
-        def initialize(patterns)
+        DEFAULT_LOOKAHEAD_BYTES = 64
+
+        def initialize(patterns, default_policy: true)
+          @patterns = patterns.map(&:dup).freeze
+          @default_policy = default_policy
           @buckets = build_buckets(patterns).freeze
           freeze
         end
@@ -54,7 +58,14 @@ module Onibi
         end
 
         def profitable?(input, position)
-          eligible_input?(input, position) && input.bytesize - position >= MINIMUM_INPUT_BYTES
+          return false unless eligible_input?(input, position)
+          return false if input.bytesize - position < MINIMUM_INPUT_BYTES
+          return true unless @default_policy
+
+          window_length = DEFAULT_LOOKAHEAD_BYTES + patterns.map(&:bytesize).max
+          window = input.byteslice(position, window_length)
+          earliest = patterns.filter_map { |pattern| window.index(pattern) }.min
+          earliest && earliest <= DEFAULT_LOOKAHEAD_BYTES
         end
 
         private
@@ -204,12 +215,34 @@ module Onibi
       module LiteralAlternation
         module_function
 
+        # Default SWAR policy is deliberately conservative. Single-byte and
+        # native-word-or-longer literals remain explicit internal opt-ins until
+        # their early/late/no-match behavior is measured independently.
+        def policy_for(patterns)
+          return :unsupported unless valid_policy_patterns?(patterns)
+
+          lengths = patterns.map(&:bytesize)
+          if lengths.all? { |length| length >= 2 && length < WORD_BITS }
+            :default
+          else
+            :opt_in
+          end
+        end
+
+        def valid_policy_patterns?(patterns)
+          patterns.is_a?(Array) && patterns.length >= 2 && patterns.all? do |pattern|
+            pattern.is_a?(String) && !pattern.empty? && pattern.ascii_only?
+          end
+        end
+
         def build(ast, options, allow_long_literals: false, allow_single_character: false)
           patterns = eligible_patterns(ast, options)
           return unless patterns
           return unless eligible_lengths?(patterns, allow_long_literals, allow_single_character)
 
-          MultiLiteralPrefilter.new(patterns)
+          MultiLiteralPrefilter.new(
+            patterns, default_policy: !allow_long_literals && !allow_single_character
+          )
         rescue ArgumentError
           nil
         end

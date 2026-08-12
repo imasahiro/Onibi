@@ -126,6 +126,27 @@ class SwarMultiLiteralTest < Minitest::Test
     refute Onibi::Codegen::GeneratedProgram.ast(nonliteral_ast).swar?
   end
 
+  def test_default_policy_keeps_single_and_word_width_literals_opt_in
+    word_bits = Onibi::Experimental::Swar::WORD_BITS
+
+    assert_equal :default, Onibi::Experimental::Swar::LiteralAlternation.policy_for(%w[aa bb])
+    assert_equal :opt_in, Onibi::Experimental::Swar::LiteralAlternation.policy_for(%w[a b])
+    assert_equal :opt_in, Onibi::Experimental::Swar::LiteralAlternation.policy_for(["a" * word_bits, "b" * word_bits])
+    assert_equal :opt_in,
+                 Onibi::Experimental::Swar::LiteralAlternation.policy_for(["a" * (word_bits + 1),
+                                                                           "b" * (word_bits + 1)])
+  end
+
+  def test_default_policy_falls_back_for_late_and_no_match_inputs
+    ast = Onibi::Parser.new("sherlock|watson|moriarty").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert program.search("sherlock", 0, capture: false)
+    assert program.search("#{"x" * 500}moriarty", 0, capture: false)
+    refute program.search("#{"x" * 500}nobody", 0, capture: false)
+    assert_equal false, program.prefilter_profitable?("#{"x" * 500}moriarty", 0)
+  end
+
   private
 
   def long_literal_fixture
