@@ -23,9 +23,14 @@ module Onibi
 
       def class_candidates(input, position, source, ignorecase)
         character = input[position]
-        return position + 1 if character && ClassPredicates.matches?(source, character, ignorecase: ignorecase)
+        predicate = if source.is_a?(ClassPredicates::Compiled)
+                      source
+                    else
+                      ClassPredicates.compiled(source, ignorecase: ignorecase)
+                    end
+        return position + 1 if character && predicate.matches?(character)
 
-        if ignorecase && source.include?("ß")
+        if ignorecase && predicate.source.include?("ß")
           folded = input[position, 2]
           return position + 2 if folded && folded.upcase == "SS"
         end
@@ -639,7 +644,8 @@ module Onibi
         ignorecase = @options.include?("ignorecase")
         value = node.value.dump
         value = "#{value}.b" if node.value.encoding == Encoding::ASCII_8BIT
-        "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{value}, #{ignorecase})"
+        predicate = "Onibi::ClassPredicates.compiled(#{value}, ignorecase: #{ignorecase})"
+        "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
       end
 
       def emit_property(node, cursor)
