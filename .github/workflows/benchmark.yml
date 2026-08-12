@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - lib/**
+      - benchmark/**
+      - script/**
+      - .github/workflows/benchmark.yml
 
 permissions:
   contents: read
@@ -12,7 +15,7 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out pull request revision
         uses: actions/checkout@v6
@@ -33,10 +36,10 @@ jobs:
           persist-credentials: false
 
       - name: Benchmark base revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-before.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 0.5 --warmup 0.25 --output /tmp/onibi-benchmark-before.json
 
       - name: Benchmark pull request revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-after.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 0.5 --warmup 0.25 --output /tmp/onibi-benchmark-after.json
 
       - name: Render benchmark comment
         run: |

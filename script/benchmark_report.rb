@@ -123,18 +123,62 @@ module BenchmarkReport
     end
   end
 
+  # Detects meaningful slowdowns in Onibi results. Ruby entries remain
+  # informational; only entries ending in /onibi are regression gates.
+  class RegressionChecker
+    def initialize(before, after, threshold: 0.10)
+      @before = before
+      @after = after
+      @threshold = threshold
+    end
+
+    def regressions
+      @before.filter_map do |name, before_result|
+        next unless name.end_with?("/onibi")
+
+        after_result = @after[name]
+        next unless after_result
+
+        ratio = after_result.fetch("ips") / before_result.fetch("ips")
+        next unless ratio < (1.0 - @threshold)
+
+        { name: name, before: before_result.fetch("ips"), after: after_result.fetch("ips"), ratio: ratio }
+      end
+    end
+
+    def assert_clean!
+      failures = regressions
+      return if failures.empty?
+
+      details = failures.map do |failure|
+        format("%<name>s: %<ratio>.2fx (%<before>.2f -> %<after>.2f i/s)", **failure)
+      end
+      raise "benchmark regression exceeds #{@threshold * 100}%:\n#{details.join("\n")}"
+    end
+  end
+
   # Provides the benchmark and comparison command-line interfaces.
   class CLI
     def self.run(arguments)
       options = parse_options(arguments)
-      return render_comparison(options) if options[:compare]
+      if options[:compare]
+        check_regressions(options)
+        return render_comparison(options)
+      end
 
       data = { "results" => Runner.new(time: options[:time], warmup: options[:warmup]).run }
       write(options[:output], JSON.pretty_generate(data))
     end
 
+    def self.check_regressions(options)
+      return unless options[:max_regression]
+
+      before, after = load_comparison(options)
+      RegressionChecker.new(before, after, threshold: options[:max_regression]).assert_clean!
+    end
+
     def self.parse_options(arguments)
-      options = { output: nil, time: 1.0, warmup: 0.5, compare: nil, markdown_output: nil }
+      options = { output: nil, time: 1.0, warmup: 0.5, compare: nil, markdown_output: nil, max_regression: nil }
       OptionParser.new do |parser|
         add_output_options(parser, options)
         add_comparison_options(parser, options)
@@ -150,6 +194,7 @@ module BenchmarkReport
 
     def self.add_comparison_options(parser, options)
       parser.on("--compare BEFORE,AFTER") { |value| options[:compare] = value.split(",", 2) }
+      parser.on("--max-regression FRACTION", Float) { |value| options[:max_regression] = value }
     end
 
     def self.add_timing_options(parser, options)
@@ -158,8 +203,12 @@ module BenchmarkReport
     end
 
     def self.render_comparison(options)
-      before, after = options[:compare].map { |path| JSON.parse(File.read(path)).fetch("results") }
+      before, after = load_comparison(options)
       write(options[:markdown_output], Markdown.new(before, after).render)
+    end
+
+    def self.load_comparison(options)
+      options[:compare].map { |path| JSON.parse(File.read(path)).fetch("results") }
     end
 
     def self.write(path, content)

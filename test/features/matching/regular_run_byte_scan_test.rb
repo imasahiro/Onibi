@@ -41,12 +41,18 @@ class RegularRunByteScanTest < Minitest::Test
     assert Onibi::Regexp.new(pattern).send(:codegen_program).search_plan.regular_run
   end
 
-  def test_regular_run_supports_common_prefix_alternation
+  def test_common_prefix_alternation_uses_shared_candidate_path
     pattern = "foo[a-z]+|foo[0-9]+"
     input = "xxfooabc!"
     regexp = Onibi::Regexp.new(pattern)
 
     assert_equal ::Regexp.new(pattern).match(input).to_s, regexp.match(input).to_s
-    assert regexp.send(:codegen_program).search_plan.regular_run
+    refute regexp.send(:codegen_program).search_plan.regular_run
+  end
+
+  def test_single_literal_does_not_use_regular_run
+    regexp = Onibi::Regexp.new("needle")
+
+    refute regexp.send(:codegen_program).search_plan.regular_run
   end
 end
