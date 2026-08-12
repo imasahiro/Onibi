@@ -507,6 +507,32 @@ module Onibi
       end
     end
 
+    # Deduplicates repeated case-sensitive literal values in generated source.
+    class LiteralRegistry
+      attr_reader :entries
+
+      def initialize
+        @counts = Hash.new(0)
+        @entries = []
+        @indices = {}
+      end
+
+      def count(value)
+        @counts[value] += 1
+      end
+
+      def register(value)
+        return unless @counts[value] > 1 && value.bytesize >= 16
+        return @indices[value] if @indices.key?(value)
+
+        index = @entries.length
+        normalized = value.dup.freeze
+        @indices[normalized] = index
+        @entries << normalized
+        index
+      end
+    end
+
     # Emits capture group begin/end operations.
     module GroupEmitter
       private
@@ -774,6 +800,24 @@ module Onibi
       end
     end
 
+    # Emits the shared literal constant used by generated source.
+    module LiteralTableSetup
+      private
+
+      def literal_setup
+        return if @literal_registry.entries.empty?
+
+        values = @literal_registry.entries.map do |value|
+          dumped = value.dump
+          dumped = "#{dumped}.b" if value.encoding == Encoding::ASCII_8BIT
+          dumped
+        end
+        return "ONIBI_LITERAL_VALUES = #{values.first}" if values.one?
+
+        "ONIBI_LITERAL_VALUES = [#{values.join(", ")}].freeze"
+      end
+    end
+
     # Supplies deterministic cursor names to generated expressions.
     module CursorFactory
       private
@@ -790,20 +834,105 @@ module Onibi
 
       def emit_literal(node, cursor)
         value = node.is_a?(Array) ? node.map(&:value).join : node.value
-        dumped = value.dump
-        dumped = "#{dumped}.b" if value.encoding == Encoding::ASCII_8BIT
-        comparison = if @options.include?("ignorecase")
-                       "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{dumped}).first"
-                     else
-                       "input[#{cursor}, #{value.length}] == #{dumped}"
-                     end
+        comparison = literal_comparison(value, cursor)
         return "(#{comparison} || nil)" if @options.include?("ignorecase")
 
         "(#{comparison} ? #{cursor} + #{value.length} : nil)"
       end
 
+      def literal_comparison(value, cursor)
+        dumped = value.dump
+        dumped = "#{dumped}.b" if value.encoding == Encoding::ASCII_8BIT
+        if @options.include?("ignorecase")
+          return "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{dumped}).first"
+        end
+
+        "input[#{cursor}, #{value.length}] == #{literal_reference(value, dumped)}"
+      end
+
+      def literal_reference(value, dumped)
+        index = @literal_registry.register(value)
+        return dumped unless index
+        return "ONIBI_LITERAL_VALUES" if @literal_registry.entries.length == 1
+
+        "ONIBI_LITERAL_VALUES.fetch(#{index})"
+      end
+
       def literal_run?(parts)
         parts.length > 1 && parts.all? { |part| part.is_a?(AST::Literal) }
+      end
+    end
+
+    # Collects repeated literal runs before source emission.
+    module LiteralRegistryCollector
+      private
+
+      def collect_literals(value)
+        case value
+        when Array then value.each { |item| collect_literals(item) }
+        when AST::Sequence then collect_sequence_literals(value.parts)
+        when AST::Literal then @literal_registry.count(value.value)
+        when Struct then value.each { |child| collect_literals(child) }
+        end
+      end
+
+      def collect_sequence_literals(parts)
+        index = 0
+        while index < parts.length
+          unless parts[index].is_a?(AST::Literal)
+            collect_literals(parts[index])
+            index += 1
+            next
+          end
+
+          ending = index
+          ending += 1 while ending < parts.length && parts[ending].is_a?(AST::Literal)
+          @literal_registry.count(parts[index...ending].map(&:value).join) if ending - index > 1
+          index = ending
+        end
+      end
+    end
+
+    # Emits literal prefixes before the remaining sequence body.
+    module SequenceEmitter
+      private
+
+      def emit_sequence(node, cursor)
+        emit_sequence_parts(node.parts, cursor)
+      end
+
+      def emit_sequence_parts(parts, cursor)
+        return cursor if parts.empty?
+        return emit_quantifier_with_remainder(parts.first, parts.drop(1), cursor) if backtracking_quantifier?(parts)
+
+        prefix = literal_prefix(parts)
+        return emit_literal(prefix, cursor) if prefix.length == parts.length && literal_run?(parts)
+        return emit_literal_prefix(prefix, parts.drop(prefix.length), cursor) unless prefix.empty?
+
+        emit_sequence_remainder(parts, cursor)
+      end
+
+      def emit_sequence_remainder(parts, cursor)
+        next_cursor = fresh_cursor
+        expression = emit_node(parts.first, cursor)
+        remainder = emit_sequence_parts(parts.drop(1), next_cursor)
+        "(#{next_cursor} = #{expression}; #{next_cursor}.nil? ? nil : #{remainder})"
+      end
+
+      def literal_prefix(parts)
+        parts.take_while { |part| part.is_a?(AST::Literal) }
+      end
+
+      def emit_literal_prefix(prefix, remainder, cursor)
+        next_cursor = fresh_cursor
+        expression = emit_literal(prefix, cursor)
+        rest = emit_sequence_parts(remainder, next_cursor)
+        "(#{next_cursor} = #{expression}; #{next_cursor}.nil? ? nil : #{rest})"
+      end
+
+      def backtracking_quantifier?(parts)
+        parts.length > 1 && parts.first.is_a?(AST::Quantifier) &&
+          !%i[possessive possessive_bounded].include?(parts.first.mode)
       end
     end
 
@@ -817,8 +946,11 @@ module Onibi
       include PredicateEmitter
       include EscapeEmitter
       include PredicateTableSetup
+      include LiteralTableSetup
       include CursorFactory
       include LiteralRunEmitter
+      include LiteralRegistryCollector
+      include SequenceEmitter
       NODE_EMITTERS = {
         AST::Literal => :emit_literal,
         AST::Sequence => :emit_sequence,
@@ -838,18 +970,20 @@ module Onibi
         AST::SubexpressionCall => :emit_subexpression_call,
         AST::Absence => :emit_absence
       }.freeze
-      def initialize(options, predicate_registry = nil)
+      def initialize(options, predicate_registry = nil, literal_registry = nil)
         @options = options
         @counter = 0
         @predicate_registry = predicate_registry || PredicateRegistry.new
+        @literal_registry = literal_registry || LiteralRegistry.new
       end
 
       def emit(ast)
         @backreferences = CaptureLiveness.required?(ast)
         collect_groups(ast)
+        collect_literals(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
-        setup = predicate_setup
+        setup = [predicate_setup, literal_setup].compact.join("\n")
         <<~RUBY
           #{setup}
           def self.__onibi_search(input, position, capture, search_origin = position)
@@ -893,27 +1027,6 @@ module Onibi
         send(handler, node, cursor)
       end
 
-      def emit_sequence(node, cursor)
-        emit_sequence_parts(node.parts, cursor)
-      end
-
-      def emit_sequence_parts(parts, cursor)
-        return cursor if parts.empty?
-        return emit_quantifier_with_remainder(parts.first, parts.drop(1), cursor) if backtracking_quantifier?(parts)
-
-        return emit_literal(parts.take_while { |part| part.is_a?(AST::Literal) }, cursor) if literal_run?(parts)
-
-        next_cursor = fresh_cursor
-        expression = emit_node(parts.first, cursor)
-        remainder = emit_sequence_parts(parts.drop(1), next_cursor)
-        "(#{next_cursor} = #{expression}; #{next_cursor}.nil? ? nil : #{remainder})"
-      end
-
-      def backtracking_quantifier?(parts)
-        parts.length > 1 && parts.first.is_a?(AST::Quantifier) &&
-          !%i[possessive possessive_bounded].include?(parts.first.mode)
-      end
-
       def emit_alternation(node, cursor)
         branches = node.branches.map do |branch|
           expression = emit_node(branch, cursor)
@@ -932,7 +1045,7 @@ module Onibi
         scoped_options = toggle_option(scoped_options, "ignorecase", node.ignorecase)
         scoped_options = toggle_option(scoped_options, "multiline", node.multiline)
         scoped_options = toggle_option(scoped_options, "extended", node.extended)
-        AstEmitter.new(scoped_options, @predicate_registry).send(:emit_node, node.body, cursor)
+        AstEmitter.new(scoped_options, @predicate_registry, @literal_registry).send(:emit_node, node.body, cursor)
       end
 
       def toggle_option(options, name, value)

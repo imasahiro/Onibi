@@ -42,4 +42,14 @@ class RubyCodegenAstEmitterTest < Minitest::Test
     assert_equal 1, source.scan("input[position,").length
     assert_includes source, '== "abcdefgh"'
   end
+
+  def test_generated_source_shares_repeated_fixed_literals
+    prefix = "abcdefghij" * 2
+    ast = Onibi::Parser.new("#{prefix}[a]|#{prefix}[b]").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast, optimizations: [])
+
+    assert_includes program.source, "ONIBI_LITERAL_VALUES"
+    assert_equal 1, program.source.scan(prefix.dump).length
+    assert_equal 2, program.source.scan("== ONIBI_LITERAL_VALUES").length
+  end
 end
