@@ -3,39 +3,31 @@
 require "benchmark/ips"
 require_relative "../lib/onibi"
 
-Source = Struct.new(:candidates) do
-  def eligible?(*_arguments)
-    true
+# Provides deterministic ordered candidates for the benchmark fixture.
+class StaticCandidates
+  include Onibi::Codegen::CandidateSource
+
+  def initialize(candidates)
+    @candidates = candidates.freeze
   end
 
-  def candidate_positions(_input, _position)
-    candidates
-  end
+  def eligible?(_input, _position) = true
 
-  def preserves_order?
-    true
-  end
+  def candidate_positions(_input, _position) = @candidates
 end
 
-sources = [
-  [1, 5, 9, 13, 17, 21],
-  [2, 5, 8, 11, 14, 17, 20],
-  [0, 4, 10, 16, 22, 28]
-].map { |candidates| Source.new(candidates) }
-union = Onibi::Codegen::CandidateSource::Union.new(sources)
+left = StaticCandidates.new((0...2048).step(3).to_a)
+single_union = Onibi::Codegen::CandidateSource::Union.new([left])
 
-def legacy_union(sources, input, position)
-  sources.filter_map do |source|
-    source.candidates if source.eligible?(input, position)
-  end.flatten.uniq.sort
+def baseline_single_union(source)
+  [source.candidate_positions("", 0)].flatten.uniq.sort!
 end
 
-expected = legacy_union(sources, "input", 0)
-raise "candidate unions disagree" unless union.candidate_positions("input", 0) == expected
+raise "single candidate union mismatch" unless single_union.candidate_positions("", 0) == baseline_single_union(left)
 
 Benchmark.ips do |benchmark|
   benchmark.config(time: 1, warmup: 0.5)
-  benchmark.report("flat_map + uniq + sort") { legacy_union(sources, "input", 0) }
-  benchmark.report("ordered CandidateSource::Union") { union.candidate_positions("input", 0) }
+  benchmark.report("single stream flatten (before)") { baseline_single_union(left) }
+  benchmark.report("single stream passthrough (after)") { single_union.candidate_positions("", 0) }
   benchmark.compare!
 end

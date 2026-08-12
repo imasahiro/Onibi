@@ -97,6 +97,9 @@ module Onibi
         private
 
         def merge_streams(streams)
+          return [] if streams.empty?
+          return streams.first if streams.length == 1
+
           streams.flatten.uniq.sort!
         end
       end
