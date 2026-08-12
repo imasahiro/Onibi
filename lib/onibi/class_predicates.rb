@@ -6,10 +6,7 @@ module Onibi
     module_function
 
     def matches?(source, character, ignorecase: false)
-      character = character.chr(source.encoding) if character.is_a?(Integer)
-      match_source(source, character, ignorecase)
-    rescue RangeError
-      false
+      compiled(source, ignorecase: ignorecase).matches?(character)
     end
 
     def match_source(source, character, ignorecase)
