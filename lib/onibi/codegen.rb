@@ -715,9 +715,8 @@ module Onibi
         return if @predicate_registry.empty?
 
         entries = @predicate_registry.map do |source, ignorecase|
-          value = source.dump
-          value = "#{value}.b" if source.encoding == Encoding::ASCII_8BIT
-          "Onibi::ClassPredicates.compiled(#{value}, ignorecase: #{ignorecase})"
+          index = Onibi::ClassPredicates::TableRegistry.register(source, ignorecase: ignorecase)
+          "Onibi::ClassPredicates::TableRegistry.fetch(#{index})"
         end
         "ONIBI_CLASS_PREDICATES = [#{entries.join(", ")}].freeze"
       end
