@@ -30,6 +30,13 @@ class CandidateSourceTest < Minitest::Test
     assert_equal 0, second.calls
   end
 
+  def test_singleton_byte_set_uses_string_search_without_getbyte
+    source = Onibi::Experimental::Swar::ByteSetPrefilter.new(["a".ord])
+    input = GetbyteForbiddenString.new("xxaaxa")
+
+    assert_equal [2, 3, 5], source.candidate_positions(input, 0)
+  end
+
   class CountingSource
     include Onibi::Codegen::CandidateSource
     attr_reader :calls
@@ -44,6 +51,12 @@ class CandidateSourceTest < Minitest::Test
     def candidate_positions(_input, _position)
       @calls += 1
       @candidates
+    end
+  end
+
+  class GetbyteForbiddenString < String
+    def getbyte(_index)
+      raise "singleton byte search must not call getbyte"
     end
   end
 end
