@@ -297,7 +297,7 @@ module Onibi
           @literal_atoms << LiteralAtom.new(
             value: character,
             ascii: ascii,
-            fixed_width: true,
+            fixed_width: !casefold || ascii,
             casefold: casefold && ascii
           )
         end

@@ -75,6 +75,7 @@ class CodegenAnalyzerTest < Minitest::Test
     atom = analysis.literal_atoms.first
     assert_equal false, atom.ascii?
     refute atom.casefold?
+    refute atom.fixed_width?
     assert_empty analysis.component_plans
   end
 
