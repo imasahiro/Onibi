@@ -763,7 +763,7 @@ module Onibi
         ignorecase = @options.include?("ignorecase")
         key = [node.value, ignorecase]
         index = @predicate_registry.register(key)
-        predicate = "ONIBI_CLASS_PREDICATES.fetch(#{index})"
+        predicate = "ONIBI_CLASS_PREDICATE_#{index}"
         return emit_ascii_class(predicate, cursor) if !ignorecase && node.value.ascii_only?
 
         "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
@@ -873,11 +873,11 @@ module Onibi
       def predicate_setup
         return if @predicate_registry.entries.empty?
 
-        entries = @predicate_registry.entries.map do |source, ignorecase|
-          index = Onibi::ClassPredicates::TableRegistry.register(source, ignorecase: ignorecase)
-          "Onibi::ClassPredicates::TableRegistry.fetch(#{index})"
+        entries = @predicate_registry.entries.each_with_index.map do |(source, ignorecase), index|
+          table_index = Onibi::ClassPredicates::TableRegistry.register(source, ignorecase: ignorecase)
+          "ONIBI_CLASS_PREDICATE_#{index} = Onibi::ClassPredicates::TableRegistry.fetch(#{table_index})"
         end
-        "ONIBI_CLASS_PREDICATES = [#{entries.join(", ")}].freeze"
+        entries.join("\n")
       end
     end
 
