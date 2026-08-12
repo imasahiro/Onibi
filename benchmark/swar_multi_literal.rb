@@ -46,6 +46,17 @@ module SwarMultiLiteralBenchmark
     over_word_late: BenchmarkCase.new(
       pattern: LONG_LITERALS.join("|"), input: "#{"x" * 2_000}#{LONG_LITERALS.last}", expected: true,
       optimizations: %i[swar swar_long_literals]
+    ),
+    regular_no_match: BenchmarkCase.new(
+      pattern: REGULAR_PATTERN, input: "#{"elementary-" * 220}nobody", expected: false
+    ),
+    one_character_no_match: BenchmarkCase.new(
+      pattern: "a|b|c|d|e|f|g|h", input: "#{"x" * 2_000}z", expected: false,
+      optimizations: %i[swar swar_single_character]
+    ),
+    word_width_no_match: BenchmarkCase.new(
+      pattern: WORD_LITERALS.join("|"), input: "#{"x" * 2_000}z", expected: false,
+      optimizations: %i[swar swar_long_literals]
     )
   }.freeze
 
@@ -96,4 +107,8 @@ module SwarMultiLiteralBenchmark
   end
 end
 
-SwarMultiLiteralBenchmark.run if $PROGRAM_NAME == __FILE__
+if $PROGRAM_NAME == __FILE__
+  time = ENV.fetch("BENCH_TIME", "2").to_f
+  warmup = ENV.fetch("BENCH_WARMUP", "1").to_f
+  SwarMultiLiteralBenchmark.run(time: time, warmup: warmup)
+end

@@ -7,6 +7,9 @@ class SwarMultiLiteralBenchmarkTest < Minitest::Test
   def test_suite_includes_regular_literal_early_and_late_matches
     assert_includes SwarMultiLiteralBenchmark::CASES, :regular_early
     assert_includes SwarMultiLiteralBenchmark::CASES, :regular_late
+    assert_includes SwarMultiLiteralBenchmark::CASES, :regular_no_match
+    assert_includes SwarMultiLiteralBenchmark::CASES, :one_character_no_match
+    assert_includes SwarMultiLiteralBenchmark::CASES, :word_width_no_match
   end
 
   def test_swar_and_baseline_benchmark_outputs_are_equivalent
