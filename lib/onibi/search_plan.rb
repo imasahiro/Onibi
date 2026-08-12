@@ -316,7 +316,7 @@ module Onibi
 
         start = position
         while start < input.length
-          unless matches?(predicates.first, input[start])
+          unless matches_at?(predicates.first, input, start)
             start += 1
             next
           end
@@ -334,14 +334,14 @@ module Onibi
       private
 
       def consume(predicate, input, cursor)
-        cursor += 1 while cursor < input.length && matches?(predicate, input[cursor])
+        cursor += 1 while cursor < input.length && matches_at?(predicate, input, cursor)
         cursor
       end
 
       def match_sources(input, start)
         finish = start
         matched = predicates.all? do |predicate|
-          next false unless matches?(predicate, input[finish])
+          next false unless matches_at?(predicate, input, finish)
 
           finish = consume(predicate, input, finish)
           true
@@ -349,8 +349,8 @@ module Onibi
         matched ? finish : nil
       end
 
-      def matches?(predicate, character)
-        character && predicate.matches?(character)
+      def matches_at?(predicate, input, cursor)
+        predicate.matches_byte?(input.getbyte(cursor))
       end
 
       def result(start, finish, capture)

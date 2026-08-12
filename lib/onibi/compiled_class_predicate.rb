@@ -28,6 +28,10 @@ module Onibi
         @ascii.length
       end
 
+      def matches_byte?(byte)
+        byte.is_a?(Integer) && byte.between?(0, 255) && @ascii[byte]
+      end
+
       def matches?(character)
         character = character.chr(@source.encoding) if character.is_a?(Integer)
         return false unless character
