@@ -1173,13 +1173,9 @@ module Onibi
         if @candidate_source&.eligible?(input, position)
           return search_with_candidates(input, position, capture, @candidate_source)
         end
-        return search_with_plan(input, position, capture) unless @prefilter&.eligible?(input, position)
+        return search_with_plan(input, position, capture) unless @prefilter
 
-        initial = execute(input, position, capture, position)
-        return initial if initial
-
-        candidates = @prefilter.candidate_positions(input, position + 1)
-        search_candidates(input, position, capture, candidates)
+        search_with_prefilter(input, position, capture)
       end
 
       # Lazily yields raw offset results without constructing MatchData.
@@ -1198,6 +1194,15 @@ module Onibi
       end
 
       private
+
+      def search_with_prefilter(input, position, capture)
+        initial = execute(input, position, capture, position)
+        return initial if initial
+        return search_with_plan(input, position + 1, capture) unless @prefilter.eligible?(input, position)
+
+        candidates = @prefilter.candidate_positions(input, position + 1)
+        search_candidates(input, position, capture, candidates)
+      end
 
       def search_with_plan(input, position, capture)
         result = nil

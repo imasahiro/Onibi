@@ -91,14 +91,23 @@ module Onibi
           return false unless eligible_input?(input, position)
           return false if input.bytesize - position < MINIMUM_INPUT_BYTES
           return true unless @default_policy
+          return false if origin_match?(input, position)
 
-          window_length = DEFAULT_LOOKAHEAD_BYTES + patterns.map(&:bytesize).max
-          window = input.byteslice(position, window_length)
-          earliest = patterns.filter_map { |pattern| window.index(pattern) }.min
-          earliest && earliest <= DEFAULT_LOOKAHEAD_BYTES
+          earliest = earliest_match(input, position)
+          earliest&.positive? && earliest <= DEFAULT_LOOKAHEAD_BYTES
         end
 
         private
+
+        def origin_match?(input, position)
+          position.zero? && input.start_with?(*patterns)
+        end
+
+        def earliest_match(input, position)
+          window_length = DEFAULT_LOOKAHEAD_BYTES + patterns.map(&:bytesize).max
+          window = input.byteslice(position, window_length)
+          patterns.filter_map { |pattern| window.index(pattern) }.min
+        end
 
         def build_buckets(patterns)
           builders = []

@@ -101,6 +101,12 @@ class SwarMultiLiteralTest < Minitest::Test
     assert prefilter.profitable?("#{"x" * (minimum - 1)}a", 0)
   end
 
+  def test_origin_match_is_not_profitable_for_default_swar_search
+    prefilter = Onibi::Experimental::Swar::MultiLiteralPrefilter.new(%w[sherlock watson])
+
+    refute prefilter.profitable?("sherlock#{"elementary-" * 8}", 0)
+  end
+
   def test_single_character_swar_requires_explicit_internal_optimization
     ast = Onibi::Parser.new("a|b|c|d").parse
     default_program = Onibi::Codegen::GeneratedProgram.ast(ast)
