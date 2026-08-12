@@ -188,6 +188,14 @@ class SwarMultiLiteralTest < Minitest::Test
     assert_equal [2, 3, 5], source.candidate_positions(input, 0)
   end
 
+  def test_sparse_class_prefilter_uses_string_search_for_each_member
+    source = Onibi::Experimental::Swar::ClassPrefilter.new("abc")
+    input = IndexTrackingString.new("#{"x" * 128}abc")
+
+    assert_equal [128, 129, 130], source.candidate_positions(input, 0)
+    assert_operator input.index_calls, :>, 0
+  end
+
   def test_leading_character_class_uses_class_prefilter_in_search_plan
     regexp = Onibi::Regexp.new("[a-z]\\d+")
 
