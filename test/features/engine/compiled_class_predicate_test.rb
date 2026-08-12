@@ -28,6 +28,13 @@ class CompiledClassPredicateTest < Minitest::Test
     refute predicate.matches?("\x7F".b)
   end
 
+  def test_compiled_predicate_matches_ascii_bytes_without_character_allocation
+    predicate = Onibi::ClassPredicates.compiled("a-z")
+
+    assert predicate.matches_byte?("m".ord)
+    refute predicate.matches_byte?("7".ord)
+  end
+
   def test_regexp_matching_remains_mri_equivalent
     pattern = "[a-z&&[^aeiou]]+"
     input = "rhythms 123"
