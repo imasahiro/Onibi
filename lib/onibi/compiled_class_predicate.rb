@@ -125,14 +125,34 @@ module Onibi
 
       def composite_metadata(source, negative, body, ignorecase)
         kind, leaves, unicode_property, posix_property = composite_parts(source, body)
+        bitmap = intersection_bitmap(leaves, ignorecase) if kind == :intersection
         Normalized.new(
           kind: kind, negative: negative, literals: [].freeze, ranges: [].freeze,
           ascii_negative: false,
-          ascii_applicable: false, ascii_bitmap: nil, ascii_bitmap_bits: nil,
+          ascii_applicable: !bitmap.nil?, ascii_bitmap: bitmap, ascii_bitmap_bits: bitmap && 256,
           leaves: leaves, unicode_property: unicode_property, posix_property: posix_property,
           ignorecase_expansion: expansion_mode(source, ignorecase),
           encoding_applicability: encoding_applicability(source), encoding: source.encoding
         ).freeze
+      end
+
+      def intersection_bitmap(leaves, ignorecase)
+        return if ignorecase
+
+        metadata = leaves.map { |leaf| ascii_leaf_metadata(leaf) }
+        return unless metadata.all?
+
+        metadata.reduce((1 << 256) - 1) { |bitmap, item| bitmap & item.ascii_bitmap }
+      end
+
+      def ascii_leaf_metadata(leaf)
+        leaf = leaf[1...-1] if leaf.start_with?("[") && leaf.end_with?("]")
+        return if leaf.include?("[") || leaf.include?("\\p") || POSIX_PROPERTIES.key?(leaf)
+
+        normalized = normalize(leaf, ignorecase: false)
+        return unless normalized.kind == :ascii && normalized.ascii_applicable
+
+        normalized
       end
 
       def composite_parts(source, body)

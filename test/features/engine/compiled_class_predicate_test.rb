@@ -36,7 +36,7 @@ class CompiledClassPredicateTest < Minitest::Test
 
     assert_equal :intersection, intersection.kind
     assert_equal :unicode_property, property.kind
-    refute intersection.ascii_applicable
+    assert intersection.ascii_applicable
     refute property.ascii_applicable
   end
 
