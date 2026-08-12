@@ -62,6 +62,13 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2], plan.candidate_positions("xxafoo", 0)
   end
 
+  def test_regular_run_precompiles_class_predicates
+    plan = Onibi::Regexp.new("[a-z]+[0-9]+").send(:codegen_program).search_plan
+
+    assert plan.regular_run
+    assert plan.regular_run.predicates.all?(&:frozen?)
+  end
+
   def test_search_plan_matches_mri_for_explicit_positions
     pattern = "\\Aneedle"
     input = "needle needle"
