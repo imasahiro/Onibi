@@ -18,16 +18,23 @@ module Onibi
       def initialize(source, ignorecase)
         @source = source.dup.freeze
         @ignorecase = ignorecase
-        @ascii = Array.new(128) do |codepoint|
-          ClassPredicates.match_source(@source, codepoint.chr(Encoding::ASCII), @ignorecase)
+        @ascii = Array.new(256) do |codepoint|
+          ClassPredicates.match_source(@source, codepoint.chr(Encoding::ASCII_8BIT), @ignorecase)
         end.freeze
         freeze
+      end
+
+      def ascii_table_length
+        @ascii.length
       end
 
       def matches?(character)
         character = character.chr(@source.encoding) if character.is_a?(Integer)
         return false unless character
-        return @ascii[character.ord] if character.length == 1 && character.ord < 128
+        if character.length == 1 && character.ord < 256 &&
+           (character.encoding == Encoding::ASCII_8BIT || character.ord < 128)
+          return @ascii[character.ord]
+        end
 
         ClassPredicates.match_source(@source, character, @ignorecase)
       rescue RangeError
