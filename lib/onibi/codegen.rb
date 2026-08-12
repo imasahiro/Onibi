@@ -1190,48 +1190,23 @@ module Onibi
         new(RubyEmitter.literal(value))
       end
 
-      def self.ast(ast, options: [], optimizations: [:swar], analysis: nil)
+      def self.ast(ast, options: [], analysis: nil, **_options)
         ast = ImpossibleBranchPruner.prune(ast, options) unless analysis
         analysis ||= Analyzer.new(options).analyze(ast)
-        if optimizations.include?(:swar)
-          prefilter = Experimental::Swar::LiteralAlternation.build(
-            ast, options,
-            allow_long_literals: optimizations.include?(:swar_long_literals),
-            allow_single_character: optimizations.include?(:swar_single_character)
-          )
-        end
         search_plan = SearchPlan.from(ast, analysis)
-        candidate_source = candidate_source_for(optimizations, prefilter, search_plan)
-        search_plan = search_plan.with_candidate_source(candidate_source) if candidate_source
-        new(RubyGenerator.ast(ast, options: options), prefilter: prefilter,
-                                                      search_plan: search_plan)
+        new(RubyGenerator.ast(ast, options: options), search_plan: search_plan)
       end
 
-      def self.candidate_source_for(optimizations, prefilter, search_plan)
-        return unless optimizations.include?(:candidate_intersection) && prefilter
-
-        CandidateSource::Intersection.new([prefilter, search_plan])
-      end
-
-      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)", prefilter: nil,
+      def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)",
                      search_plan: SearchPlan.new(anchor_start: false, anchor_end: false, minimum_width: 0,
                                                  first_set: nil, required_literal: nil, nullable_prefix: true,
                                                  search_mode: :scan, regular_run: nil))
         @source = source.dup.freeze
-        @prefilter = prefilter
         @search_plan = search_plan.freeze
         @candidate_source = search_plan.candidate_source
         @compiled_module = compiler.compile(@source, filename: filename)
         @entrypoint = SourceCompiler::ENTRYPOINT
         freeze
-      end
-
-      def swar?
-        !@prefilter.nil?
-      end
-
-      def prefilter_profitable?(input, position)
-        @prefilter&.profitable?(input, position) == true
       end
 
       def search(input, position, capture:)
@@ -1243,9 +1218,8 @@ module Onibi
         if @candidate_source&.eligible?(input, position)
           return search_with_candidates(input, position, capture, @candidate_source)
         end
-        return search_with_plan(input, position, capture) unless @prefilter
 
-        search_with_prefilter(input, position, capture)
+        search_with_plan(input, position, capture)
       end
 
       # Lazily yields raw offset results without constructing MatchData.
@@ -1264,15 +1238,6 @@ module Onibi
       end
 
       private
-
-      def search_with_prefilter(input, position, capture)
-        initial = execute(input, position, capture, position)
-        return initial if initial
-        return search_with_plan(input, position + 1, capture) unless @prefilter.eligible?(input, position)
-
-        candidates = @prefilter.candidate_positions(input, position + 1)
-        search_candidates(input, position, capture, candidates)
-      end
 
       def search_with_plan(input, position, capture)
         result = nil
