@@ -51,6 +51,15 @@ class RubyCodegenQuantifierTest < Minitest::Test
     assert_equal [0, 6], program.search("fooaaz", 0, capture: true)[0, 2]
   end
 
+  def test_single_capture_quantifier_snapshots_only_checkpoint_fields
+    regexp = Onibi::Regexp.new("(a)+b\\1")
+    program = regexp.send(:codegen_program)
+
+    refute_includes program.source, "captures.map"
+    assert regexp.match?("aabaa")
+    refute regexp.match?("aabbb")
+  end
+
   def test_zero_repeat_keeps_the_unmatched_capture_slot
     ast = Onibi::Parser.new("(a)?c").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)

@@ -722,15 +722,24 @@ module Onibi
 
       def emit_captureful_quantifier_with_remainder(node, remainder, cursor)
         variables = Array.new(7) { fresh_cursor }
+        captureful_quantifier_expression(node, remainder, cursor, variables)
+      end
+
+      def captureful_quantifier_expression(node, remainder, cursor, variables)
         counter, result, previous, candidates, candidate, final, original = variables
         body = emit_node(node.expression, result)
         suffix = emit_sequence_parts(remainder, "#{candidate}[0]")
         candidate_order = node.mode == :lazy ? candidates : "#{candidates}.reverse_each"
-        snapshot = "captures ? captures.map { |item| item&.dup } : nil"
         restore = "captures&.replace"
         <<~EXPRESSION.strip
-          (begin #{original} = #{snapshot}; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, #{snapshot}] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{restore}(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; #{restore}(#{original}) if #{final}.nil?; #{final}; end)
+          (begin #{original} = #{checkpoint_snapshot}; #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << [#{result}, #{checkpoint_snapshot}] if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << [#{result}, #{checkpoint_snapshot}] if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{restore}(#{candidate}[1]); #{final} = #{suffix}; break unless #{final}.nil?; end; #{restore}(#{original}) if #{final}.nil?; #{final}; end)
         EXPRESSION
+      end
+
+      def checkpoint_snapshot
+        return "captures ? [captures[0]&.dup] : nil" if capture_count == 1
+
+        "captures ? captures.map { |item| item&.dup } : nil"
       end
 
       def emit_capture_free_quantifier_with_remainder(node, remainder, cursor)
