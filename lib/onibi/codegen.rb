@@ -855,14 +855,19 @@ module Onibi
         key = [node.value, ignorecase]
         index = @predicate_registry.register(key)
         predicate = "ONIBI_CLASS_PREDICATE_#{index}"
-        return emit_ascii_class(predicate, cursor) if !ignorecase && node.value.ascii_only?
+        return emit_ascii_class(predicate, cursor, bounds_checked: @root_bounds_checked) if
+          !ignorecase && node.value.ascii_only?
 
         "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, #{ignorecase})"
       end
 
-      def emit_ascii_class(predicate, cursor)
+      def emit_ascii_class(predicate, cursor, bounds_checked: false)
         table = "#{predicate}.ascii_table"
-        byte_match = "#{cursor} < input.length && #{table}[input.getbyte(#{cursor})]"
+        byte_match = if bounds_checked
+                       "#{table}[input.getbyte(#{cursor})]"
+                     else
+                       "#{cursor} < input.length && #{table}[input.getbyte(#{cursor})]"
+                     end
         fast = "(#{byte_match} ? #{cursor} + 1 : nil)"
         fallback = "Onibi::Codegen::Casefold.class_candidates(input, #{cursor}, #{predicate}, false)"
         "((input.ascii_only? || input.encoding == Encoding::ASCII_8BIT) ? #{fast} : #{fallback})"
@@ -1100,6 +1105,16 @@ module Onibi
       end
     end
 
+    # Identifies root nodes whose candidate bounds make byte reads safe.
+    module BoundsCheck
+      module_function
+
+      def bounded_root_class?(ast)
+        node = ast.is_a?(AST::Sequence) && ast.parts.one? ? ast.parts.first : ast
+        node.is_a?(AST::CharacterClass) && node.value.ascii_only?
+      end
+    end
+
     # Collects repeated literal runs before source emission.
     module LiteralRegistryCollector
       private
@@ -1261,6 +1276,7 @@ module Onibi
 
       def emit(ast)
         prepare_capture_analysis(ast)
+        @root_bounds_checked = BoundsCheck.bounded_root_class?(ast)
         collect_literals(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
@@ -1322,13 +1338,9 @@ module Onibi
         @scalar_capture_number = scalar_capture_number(ast)
       end
 
-      def dead_boolean_capture?(node)
-        @backreferences && node.number > @semantic_capture_count
-      end
+      def dead_boolean_capture?(node) = @backreferences && node.number > @semantic_capture_count
 
-      def scalar_capture?(node)
-        node.number == @scalar_capture_number
-      end
+      def scalar_capture?(node) = node.number == @scalar_capture_number
 
       def emit_node(node, cursor)
         handler = NODE_EMITTERS[node.class]
