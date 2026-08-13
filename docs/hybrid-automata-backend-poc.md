@@ -125,11 +125,11 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   every `a` creates a candidate event; disabling string matching improves the
   result from 0.81x to 1.78x codegen in this low-selectivity corpus after static
   DFA materialization.
-- Compilation is currently 2.2x-3.9x slower than codegen for non-trivial cases;
-  HFA-to-Ruby adds another source-compilation cost.
-  Most cost comes from constructing 256-byte reach masks in Ruby. Cacheable
-  normalized predicates and direct literal construction should be addressed
-  before treating this as the default engine.
+- HFA-to-Ruby still adds a source-compilation cost. The reach-mask construction
+  now uses a single nested loop over state tables; this reduced the
+  `dfa_dense_hit` compile median from about 647 us to 406 us in the current
+  run (Ruby codegen was 430 us). Static-DFA materialization still contributes
+  to first-match cost.
 
 ## Recommended next experiment
 

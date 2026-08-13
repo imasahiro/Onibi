@@ -70,11 +70,14 @@ module Onibi
       end
 
       def build_reach_masks
-        Array.new(256) do |byte|
-          @state_tables.each_with_index.reduce(0) do |mask, (table, index)|
-            table[byte] ? mask | (1 << index) : mask
+        reach = Array.new(256, 0)
+        @state_tables.each_with_index do |table, index|
+          bit = 1 << index
+          256.times do |byte|
+            reach[byte] |= bit if table[byte]
           end
-        end.freeze
+        end
+        reach.freeze
       end
 
       def build_span_masks
