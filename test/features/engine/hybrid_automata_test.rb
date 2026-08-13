@@ -94,6 +94,7 @@ class HybridAutomataTest < Minitest::Test
     assert_nil program.prefix_literal
     assert program.match?("aabcbcz")
     refute program.match?("abcbx")
+    refute program.match?(format("%<prefix>sax%<suffix>s", prefix: "x" * 64, suffix: "x" * 8))
   end
 
   def test_small_single_span_uses_static_dfa_in_ruby_lowering
@@ -104,6 +105,7 @@ class HybridAutomataTest < Minitest::Test
     assert_includes ruby.source, "__onibi_static_jump"
     assert ruby.match?("aabcbcz")
     refute ruby.match?("abcbx")
+    assert ruby.match?(format("%saabcbcz", "x" * 64))
   end
 
   def test_dfa_cache_respects_its_state_limit
