@@ -400,12 +400,19 @@ module Onibi
         def call(ast, **_context) = ast
       end
 
+      # Records that straight-line CFG regions are lowered once and reused lazily.
+      class OnePassRegionLowering < Pass
+        def name = :one_pass_region_lowering
+
+        def call(ast, **_context) = ast
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
                           RedundantPredicateElimination, BranchThreading, AutoPossessification,
                           DeadCheckpointElimination, LoopIdiomRecognition, PureFailureMemoization,
-                          StateDominance, LiteralCoalescing].freeze
+                          StateDominance, OnePassRegionLowering, LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
@@ -416,12 +423,13 @@ module Onibi
         LOOP_IDIOM = LoopIdiomRecognition.new.freeze
         PURE_FAILURE = PureFailureMemoization.new.freeze
         STATE_DOMINANCE = StateDominance.new.freeze
+        ONE_PASS_REGION = OnePassRegionLowering.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
           @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING,
                             AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, LOOP_IDIOM, PURE_FAILURE,
-                            STATE_DOMINANCE, COALESCING])
+                            STATE_DOMINANCE, ONE_PASS_REGION, COALESCING])
         end
 
         def self.for(selection)
