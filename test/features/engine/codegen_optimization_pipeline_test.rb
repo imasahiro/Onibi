@@ -42,6 +42,23 @@ class CodegenOptimizationPipelineTest < Minitest::Test
     assert_equal cfg.blocks.map(&:effect_summary).flat_map(&:effects).uniq.sort,
                  cfg.effect_summary.effects.sort
   end
+
+  def test_analyzer_publishes_capture_liveness_for_boolean_execution
+    analysis = Onibi::Codegen::Analyzer.new.analyze(Onibi::Parser.new("(a)(b)\\1").parse)
+
+    assert_equal [1, 2], analysis.capture_liveness.groups
+    assert_equal [1], analysis.capture_liveness.semantic
+    assert_equal [2], analysis.capture_liveness.dead_in_boolean
+    assert_equal({ 1 => 0 }, analysis.capture_liveness.index_map)
+  end
+
+  def test_capture_liveness_keeps_all_captures_observable_for_match_results
+    facts = Onibi::Codegen::Analyzer.new.analyze(Onibi::Parser.new("(a)(b)").parse).capture_liveness
+
+    assert_equal [1, 2], facts.observable
+    assert_empty facts.semantic
+    assert_equal [1, 2], facts.dead_in_boolean
+  end
   # rubocop:enable Metrics/AbcSize
 
   def test_pipeline_can_disable_optimizations_without_disabling_cfg_construction
