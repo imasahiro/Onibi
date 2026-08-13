@@ -109,6 +109,12 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   costs increase because the table is materialized before execution. HFA Ruby
   now stores the generated transition and accepting tables as module constants,
   avoiding table-array allocation on every warm call.
+- When a single-byte first-set is sparse, the static DFA now delegates only
+  state-zero stretches to `String#index`; dense candidate streams stay on the
+  original byte loop. On a 32 KiB input with one late `a` candidate,
+  bytecode HFA reached about 580,000 scans/s and HFA Ruby 710,000 scans/s,
+  versus 640,000 for Ruby codegen. The Ruby-lowered HFA wins this sparse
+  candidate case; bytecode remains within measurement variance of codegen.
 - String matching is essential for sparse inputs. Removing it drops the prefix
   case from about 35,000 to 171 scans/s. The HFA now carries the prefix event
   into a precomputed post-prefix automaton state, so it matches or slightly

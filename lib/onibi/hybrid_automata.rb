@@ -336,6 +336,18 @@ module Onibi
       def static_match?(input, position, static)
         rows, accepting = static
         limit = input.bytesize
+        first_byte = static_first_byte
+        if first_byte
+          candidate = static_jump_candidate(input, position, first_byte)
+          return false unless candidate
+
+          return static_match_with_jumps(input, candidate, static, first_byte) if candidate != :dense
+        end
+
+        static_match_scan(input, position, limit, rows, accepting)
+      end
+
+      def static_match_scan(input, position, limit, rows, accepting)
         state = 0
         while position < limit
           state = rows[state][input.getbyte(position)]
@@ -344,6 +356,45 @@ module Onibi
           position += 1
         end
         false
+      end
+
+      def static_match_with_jumps(input, position, static, first_byte)
+        rows, accepting = static
+        limit = input.bytesize
+        state = 0
+        while position < limit
+          state = rows[state][input.getbyte(position)]
+          return true if accepting[state]
+
+          position += 1
+          next unless state.zero?
+
+          candidate = static_jump_candidate(input, position, first_byte)
+          return false unless candidate
+
+          return static_match_scan(input, candidate, limit, rows, accepting) if candidate == :dense
+
+          position = candidate
+        end
+        false
+      end
+
+      def static_first_byte
+        return @static_first_byte if @static_first_byte_attempted
+
+        @static_first_byte_attempted = true
+        bytes = 256.times.reject { |byte| (@first_mask & @reach_masks[byte]).zero? }
+        @static_first_byte = bytes.one? ? bytes.first.chr : nil
+      end
+
+      def static_jump_candidate(input, position, first_byte)
+        candidate = input.index(first_byte, position)
+        return unless candidate
+
+        next_candidate = input.index(first_byte, candidate + 1)
+        return :dense if next_candidate && next_candidate - candidate < 16
+
+        candidate
       end
 
       def static_dfa_data
@@ -404,12 +455,7 @@ module Onibi
         @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
         @prefix_literal = automaton.prefix_literal
         @exact_literal = automaton.exact_literal
-        @dfa_enabled = dfa
-        @dfa_state_limit = dfa_state_limit
-        @dfa_rows = {}
-        @static_dfa_attempted = false
-        @static_dfa_data = nil
-        @input_ir = input_ir
+        initialize_runtime_options(dfa, dfa_state_limit, input_ir)
       end
 
       def engine_kind = :hybrid
@@ -446,6 +492,17 @@ module Onibi
       end
 
       private
+
+      def initialize_runtime_options(dfa, dfa_state_limit, input_ir)
+        @dfa_enabled = dfa
+        @dfa_state_limit = dfa_state_limit
+        @dfa_rows = {}
+        @static_dfa_attempted = false
+        @static_dfa_data = nil
+        @static_first_byte_attempted = false
+        @static_first_byte = nil
+        @input_ir = input_ir
+      end
 
       def match_from_position(input, position)
         return false if position.negative? || position > input.bytesize
@@ -614,14 +671,7 @@ module Onibi
         STATIC_ROWS = %<rows>s
         STATIC_ACCEPTING = %<accepting>s
 
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-
+        def self.__onibi_static_scan(input, position)
           rows = STATIC_ROWS
           accepting = STATIC_ACCEPTING
           limit = input.bytesize
@@ -632,6 +682,46 @@ module Onibi
             position += 1
           end
           false
+        end
+
+        def self.__onibi_static_jump(input, position, first_byte)
+          rows = STATIC_ROWS
+          accepting = STATIC_ACCEPTING
+          limit = input.bytesize
+          state = 0
+          while position < limit
+            state = rows[state][input.getbyte(position)]
+            return true if accepting[state]
+            position += 1
+            next unless state.zero?
+
+            candidate = input.index(first_byte, position)
+            return false unless candidate
+            next_candidate = input.index(first_byte, candidate + 1)
+            return __onibi_static_scan(input, candidate) if next_candidate && next_candidate - candidate < 16
+            position = candidate
+          end
+          false
+        end
+
+        def self.__onibi_search(input, position = 0)
+          return false unless input.is_a?(String) && input.ascii_only?
+          position = position.to_int if position.respond_to?(:to_int)
+          return false unless position.is_a?(Integer)
+          position += input.bytesize if position.negative?
+          return false if position.negative? || position > input.bytesize
+          return true if %<nullable>s
+
+          first_byte = %<first_byte>s
+          if first_byte
+            candidate = input.index(first_byte, position)
+            if candidate
+              next_candidate = input.index(first_byte, candidate + 1)
+              return __onibi_static_jump(input, candidate, first_byte) if next_candidate.nil? ||
+                                                                          next_candidate - candidate >= 16
+            end
+          end
+          __onibi_static_scan(input, position)
         end
       RUBY
 
@@ -730,7 +820,9 @@ module Onibi
         return unless static
 
         rows, accepting = static
-        format(STATIC_DFA_TEMPLATE, data.merge(rows: rows.inspect, accepting: accepting.inspect))
+        first_byte = program.send(:static_first_byte)
+        format(STATIC_DFA_TEMPLATE,
+               data.merge(rows: rows.inspect, accepting: accepting.inspect, first_byte: first_byte.inspect))
       end
 
       def single_span_values(data)

@@ -101,6 +101,7 @@ class HybridAutomataTest < Minitest::Test
 
     assert_includes ruby.source, "accepting ="
     assert_includes ruby.source, "STATIC_ROWS ="
+    assert_includes ruby.source, "__onibi_static_jump"
     assert ruby.match?("aabcbcz")
     refute ruby.match?("abcbx")
   end
