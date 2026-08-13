@@ -375,6 +375,16 @@ module Onibi
         @prefix_literal && @span_entries.length >= 8
       end
 
+      def eager_static_dfa?
+        @dfa_enabled && @prefix_literal.nil? && @span_entries.length >= 8
+      end
+
+      def materialize_eager_static_dfa
+        @static_dfa_attempted = true
+        static = build_static_dfa
+        @static_dfa_data = static if static && static[0].length <= @dfa_state_limit
+      end
+
       def static_match?(input, position, static)
         rows, accepting, accepting_state = static
         limit = input.bytesize
@@ -621,6 +631,7 @@ module Onibi
         @static_first_byte_attempted = false
         @static_first_byte = nil
         @input_ir = input_ir
+        materialize_eager_static_dfa if eager_static_dfa?
       end
 
       def match_from_position(input, position)

@@ -163,6 +163,12 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   events (less than 64 bytes apart) retain the static suffix DFA. On the
   sparse-prefix fixture first-match returned to about 35 us and warm throughput
   remained about 43.8k scans/s (roughly codegen parity).
+- Dense unprefixed static-DFA tables are now materialized during HFA compile,
+  moving about 2.8 ms from first match into compile. `dfa_dense_hit` first
+  match fell from roughly 4.6 ms to 1.8 ms while warm throughput stayed near
+  560 scans/s; the compile+first total is approximately unchanged, so this is
+  useful for first-match-heavy workloads but not a reduction in total cold
+  lifecycle cost.
 
 ## Recommended next experiment
 

@@ -18,7 +18,6 @@ class HybridAutomataTest < Minitest::Test
   def test_hybrid_automaton_can_be_lowered_to_ruby_without_delegating_to_codegen
     program = compile("(?:ab|ac)+z")
     ruby = program.ruby_program
-
     assert_equal :hybrid_ruby, ruby.engine_kind
     assert_includes ruby.source, "__hfa_transition"
     refute_includes ruby.source, "GeneratedProgram"
@@ -43,7 +42,6 @@ class HybridAutomataTest < Minitest::Test
       "", "abc", "xxdogyy", "a123z", "color", "colour", "abababc",
       "aaab", "x---y", "BEGIN1234END", "aaaEND", "99X", "no match", "x\ny"
     ]
-
     patterns.product(inputs).each do |pattern, input|
       expected = ::Regexp.new(pattern).match?(input)
       program = compile(pattern)
@@ -108,7 +106,6 @@ class HybridAutomataTest < Minitest::Test
 
   def test_dfa_cache_respects_its_state_limit
     program = Onibi::HybridAutomata.compile("(?:ab|ac|ba|bc)+z", dfa_state_limit: 2)
-
     program.match?("abacbabcabacx")
     assert_operator program.dfa_state_count, :<=, 2
   end
@@ -116,7 +113,7 @@ class HybridAutomataTest < Minitest::Test
   def test_large_unprefixed_hfa_uses_bounded_static_dfa
     program = compile("(?:ab|ac|ad|ba|bc|bd)+z")
     ruby = program.ruby_program
-    assert_includes ruby.source, "STATIC_ROWS ="
+    assert program.instance_variable_get(:@static_dfa_data) && ruby.source.include?("STATIC_ROWS =")
     assert_includes ruby.source, "return true if state =="
     assert_equal([true, false], %w[abacadbabcbdz abacadbabcbdx].map { |input| ruby.match?(input) })
   end
@@ -124,7 +121,6 @@ class HybridAutomataTest < Minitest::Test
   def test_ruby_lowering_preserves_ablation_configuration
     program = Onibi::HybridAutomata.compile("needle", dfa: false, string_matching: false)
     ruby = program.ruby_program
-
     assert_equal program.components, ruby.components
     assert_equal program.match?("xneedle"), ruby.match?("xneedle")
     assert_equal program.match?("xneedles"), ruby.match?("xneedles")
@@ -138,7 +134,6 @@ class HybridAutomataTest < Minitest::Test
 
   def test_rejects_non_ascii_inputs_in_the_poc
     program = compile("[a-z]+")
-
     assert_raises(Onibi::HybridAutomata::UnsupportedInput) { program.match?("café") }
   end
 
