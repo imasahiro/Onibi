@@ -10,10 +10,10 @@
 
 ## Decision summary
 
-Onibi will replace its matcher pipeline with:
+Onibi uses this matcher pipeline:
 
 ```text
-Regexp source -> Token stream -> AST -> generated Ruby matcher
+Regexp source -> Token stream -> AST -> optimization passes -> CFG -> generated Ruby matcher
 ```
 
 The generated Ruby matcher is the only production execution engine. It performs prioritized backtracking with explicit Ruby data structures, rather than using the Ruby call stack, and returns character-offset capture spans to the existing `Onibi::MatchData` builder. `Onibi::Regexp#match?` and `#match` enter the same generated control program with different result requirements.
@@ -43,7 +43,7 @@ This arrangement has three costs:
 - routing by pattern spelling can diverge from the parsed semantics;
 - capture priority, backtracking, options, and encoding behavior are duplicated.
 
-The attached draft proposed generating Ruby from NFA and DFA forms. That would improve dispatch cost but preserve NFA, DFA, capture-aware variants, backend selection, and fallback behavior. It therefore does not solve the maintenance problem motivating this change. This design instead makes the parsed AST the last regexp-specific representation before Ruby source.
+The attached draft proposed generating Ruby from NFA and DFA forms. That would improve dispatch cost but preserve NFA, DFA, capture-aware variants, backend selection, and fallback behavior. It therefore does not solve the maintenance problem motivating this change. This design instead uses one non-executable CFG compiler IR between the parsed structure and Ruby source. The staged AST-to-CFG migration and pass contract are defined in [`cfg-optimization-pipeline.md`](cfg-optimization-pipeline.md).
 
 ## Goals
 
@@ -94,7 +94,11 @@ pattern + options
         |
        AST
         |
+ early optimization passes
+        |
   Semantic analysis
+        |
+ late passes + optimized AST + lazy CFG
         |  capture table, group targets, width sets,
         |  nullability, option scopes, first-set hints
         v
@@ -117,7 +121,7 @@ pattern + options
                      MatchData builder
 ```
 
-Semantic analysis is a compiler pass over the AST, not a separately executable IR or matcher. Its results are immutable metadata used while emitting Ruby and, where needed, frozen predicate tables passed to the generated program.
+Semantic analysis is a compiler phase over the optimized structure, not a separately executable matcher. Its results are immutable metadata used while emitting Ruby and, where needed, frozen predicate tables passed to the generated program. During the staged migration, Ruby emission consumes the optimized AST paired with the CFG; the CFG remains compile-time data and is never interpreted at match time.
 
 ## Components
 
@@ -145,7 +149,7 @@ The analyzer must not decide matches. Every fact it computes has unit tests and 
 
 ### `Onibi::Codegen::RubyGenerator`
 
-The generator lowers the analyzed AST into a closed set of Ruby templates. Each AST node compiler emits labels, cursor operations, state updates, and branches into one method body. The initial emitter uses a label loop because it represents arbitrary cycles without recursive Ruby calls:
+The generator lowers the analyzed compilation unit into a closed set of Ruby templates. During CFG migration, typed CFG operations retain their optimized AST operands so the established node emitters remain the semantic baseline. Each node compiler emits labels, cursor operations, state updates, and branches into one method body. The initial emitter uses a label loop because it represents arbitrary cycles without recursive Ruby calls:
 
 ```ruby
 label = 0
@@ -388,7 +392,7 @@ Development-only diagnostics expose a pattern digest, compiler version, source b
 
 ## Optimization policy
 
-The label-loop generator is the correctness baseline. Optimizations are compiler transformations on the same generated control graph, not additional engines. Each optimization must be independently disableable in tests and must differentially agree with unoptimized code generation and MRI.
+The generated matcher is the correctness baseline. Optimizations are ordered compiler passes on one compilation unit and control graph, not additional engines. Each optimization must be independently disableable in tests, publish an audit name, and differentially agree with an empty pass pipeline and MRI. CFG operations expose semantic effects so transformations cannot cross capture, assertion, call, cut, repeat, or ordered-choice barriers without proof.
 
 Allowed early optimizations include:
 
@@ -531,7 +535,7 @@ Rejected because Onibi must remain an independent pure Ruby regexp implementatio
 The redesign is complete when the public and differential suites pass with this sole pipeline:
 
 ```text
-Regexp source -> Token stream -> AST -> generated Ruby matcher -> offset result
+Regexp source -> Token stream -> AST -> optimization passes -> CFG -> generated Ruby matcher -> offset result
 ```
 
 At that point the gem contains no executable NFA, DFA, bytecode VM, AST-walking matcher, capture-specific matcher, or runtime matcher-selection heuristic. One AST-node lowering implementation defines matching behavior, and every future syntax change begins with an MRI differential acceptance test for that implementation.

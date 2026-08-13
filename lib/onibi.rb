@@ -68,16 +68,14 @@ module Onibi
     class TimeoutError < RegexpError
     end
 
-    def self.compile(pattern, options = nil, timeout: nil)
-      new(pattern, options, timeout: timeout)
-    end
+    def self.compile(pattern, options = nil, timeout: nil) = new(pattern, options, timeout: timeout)
 
     def initialize(pattern, options = nil, timeout: nil)
       pattern, options, timeout = normalize_constructor_pattern(pattern, options, timeout)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
-      @ast = Codegen::BranchPruner.prune(Parser.new(tokens).parse, normalized_options)
+      @ast = Codegen::Optimization.prepare(Parser.new(tokens).parse, normalized_options)
       @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding).analyze(@ast)
     end
 
@@ -189,7 +187,7 @@ module Onibi
     end
 
     def codegen_program
-      @codegen_program ||= Codegen::GeneratedProgram.ast(@ast, options: @options, analysis: @analysis)
+      @codegen_program ||= Codegen::GeneratedProgram.prepared(@ast, options: @options, analysis: @analysis)
     end
 
     def validate_pattern_type!(pattern)

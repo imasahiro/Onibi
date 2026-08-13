@@ -1,55 +1,15 @@
 # frozen_string_literal: true
 
+# Pure-Ruby regexp compiler and generated matcher namespace.
 module Onibi
   # Raised when generated Ruby cannot be compiled or violates the codegen boundary.
   class CodegenError < StandardError
   end
 
+  require_relative "codegen/cfg"
+  require_relative "codegen/optimization"
+
   module Codegen
-    # Removes statically impossible branches without changing branch order.
-    module ImpossibleBranchPruner
-      module_function
-
-      def prune(ast, options)
-        return ast unless options.empty? && ast.is_a?(AST::Alternation)
-
-        branches = unique_literals(remove_impossible(ast.branches))
-        branches.empty? || branches.length == ast.branches.length ? ast : AST::Alternation.new(branches)
-      end
-
-      def remove_impossible(branches)
-        branches.reject { |branch| impossible?(branch) }
-      end
-
-      def unique_literals(branches)
-        seen = {}
-        branches.select do |branch|
-          value = literal_value(branch)
-          next true unless value
-          next false if seen[value]
-
-          seen[value] = true
-        end
-      end
-
-      def impossible?(branch)
-        branch.is_a?(AST::Sequence) && branch.parts.any? do |part|
-          part.is_a?(AST::Assertion) && part.kind == :negative && empty_sequence?(part.body)
-        end
-      end
-
-      def empty_sequence?(node)
-        node.is_a?(AST::Sequence) && node.parts.empty?
-      end
-
-      def literal_value(branch)
-        return unless branch.is_a?(AST::Sequence)
-        return unless branch.parts.all? { |part| part.is_a?(AST::Literal) }
-
-        branch.parts.map(&:value).join
-      end
-    end
-
     # Computes Ruby-compatible simple and full-fold literal candidates.
     module Casefold
       module_function
@@ -552,6 +512,12 @@ module Onibi
       def self.ast(ast, options: [])
         AstEmitter.new(options).emit(ast)
       end
+
+      def self.compilation(unit)
+        raise TypeError, "expected an optimization compilation unit" unless unit.is_a?(Optimization::CompilationUnit)
+
+        ast(unit.ast, options: unit.options)
+      end
     end
 
     # Deduplicates repeated case-sensitive literal values in generated source.
@@ -968,7 +934,7 @@ module Onibi
 
           ending = index
           ending += 1 while ending < parts.length && parts[ending].is_a?(AST::Literal)
-          @literal_registry.count(parts[index...ending].map(&:value).join) if ending - index > 1
+          @literal_registry.count(parts[index...ending].map(&:value).join)
           index = ending
         end
       end
@@ -1140,74 +1106,47 @@ module Onibi
       end
     end
 
-    # Removes duplicate whole-regexp literal branches while preserving order.
-    module BranchPruner
-      module_function
-
-      def prune(ast, options)
-        return ast unless eligible?(ast, options)
-
-        branches = unique_branches(ast.branches)
-        branches.length == ast.branches.length ? ast : AST::Alternation.new(branches)
-      end
-
-      def eligible?(ast, options)
-        options.empty? && ast.is_a?(AST::Alternation) && ast.branches.all? { |branch| prunable_branch?(branch) }
-      end
-
-      def unique_branches(branches)
-        seen = {}
-        viable = branches.reject { |branch| impossible_branch?(branch) }
-        return [branches.first] if viable.empty?
-
-        viable.select do |branch|
-          value = branch.parts.map(&:value).join
-          seen[value] ? false : (seen[value] = true)
-        end
-      end
-
-      def prunable_branch?(branch)
-        literal_branch?(branch) || impossible_branch?(branch)
-      end
-
-      def impossible_branch?(branch)
-        branch.is_a?(AST::Sequence) && branch.parts.any? do |part|
-          part.is_a?(AST::Assertion) && part.kind == :negative &&
-            part.body.is_a?(AST::Sequence) && part.body.parts.empty?
-        end
-      end
-
-      def literal_branch?(branch)
-        branch.is_a?(AST::Sequence) && branch.parts.all? { |part| part.is_a?(AST::Literal) }
-      end
-    end
-
     # Owns one immutable generated module for one regexp compilation.
     class GeneratedProgram
-      attr_reader :compiled_module, :entrypoint, :source, :search_plan
+      attr_reader :compiled_module, :entrypoint, :source, :search_plan, :optimization_passes
 
       def self.literal(value)
         new(RubyEmitter.literal(value))
       end
 
-      def self.ast(ast, options: [], analysis: nil, **_options)
-        ast = ImpossibleBranchPruner.prune(ast, options) unless analysis
-        analysis ||= Analyzer.new(options).analyze(ast)
-        search_plan = SearchPlan.from(ast, analysis)
-        new(RubyGenerator.ast(ast, options: options), search_plan: search_plan)
+      def self.ast(ast, options: [], analysis: nil, optimizations: nil)
+        encoding = analysis&.encoding || Encoding::UTF_8
+        pipeline = analysis ? Optimization::Pipeline.new([]) : Optimization::Pipeline.for(optimizations)
+        unit = pipeline.call(ast, options: options, encoding: encoding)
+        compilation(unit, analysis: analysis)
+      end
+
+      def self.prepared(ast, options:, analysis:)
+        unit = Optimization.compile_prepared(ast, options, analysis.encoding)
+        compilation(unit, analysis: analysis, search_ast: ast)
+      end
+
+      def self.compilation(unit, analysis: nil, search_ast: unit.ast)
+        analysis ||= Analyzer.new(unit.options, unit.encoding).analyze(unit.ast)
+        search_plan = SearchPlan.from(search_ast, analysis)
+        new(RubyGenerator.compilation(unit), search_plan: search_plan, compilation: unit)
       end
 
       def initialize(source, compiler: SourceCompiler.new, filename: "(onibi-generated)",
                      search_plan: SearchPlan.new(anchor_start: false, anchor_end: false, minimum_width: 0,
                                                  first_set: nil, required_literal: nil, nullable_prefix: true,
-                                                 search_mode: :scan, regular_run: nil))
+                                                 search_mode: :scan, regular_run: nil), compilation: nil)
         @source = source.dup.freeze
         @search_plan = search_plan.freeze
+        @compilation = compilation
+        @optimization_passes = compilation ? compilation.applied_passes : [].freeze
         @candidate_source = search_plan.candidate_source
         @compiled_module = compiler.compile(@source, filename: filename)
         @entrypoint = SourceCompiler::ENTRYPOINT
         freeze
       end
+
+      def cfg = @compilation&.cfg
 
       def search(input, position, capture:)
         if search_plan.regular_run
