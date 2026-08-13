@@ -17,7 +17,9 @@ CASES = [
            "#{"x" * SIZE}BEGIN123END"),
   Case.new("dfa_dense_hit", "(?:ab|ac|ad|ba|bc|bd)+z",
            "#{"abacadbabcbd" * (SIZE / 12)}z"),
-  Case.new("low_selectivity_miss", "a[bc]{4}z", "abcbx" * (SIZE / 5))
+  Case.new("low_selectivity_miss", "a[bc]{4}z", "abcbx" * (SIZE / 5)),
+  Case.new("static_sparse_late", "a[bc]{4}z",
+           "#{"x" * [SIZE - 8, 0].max}a#{"x" * 7}")
 ].freeze
 CASES_TO_RUN = CASES.select do |kase|
   filter = ENV["ONIBI_BENCH_CASE"]
