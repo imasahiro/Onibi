@@ -579,6 +579,9 @@ module Onibi
       RUBY
 
       STATIC_DFA_TEMPLATE = <<~'RUBY'
+        STATIC_ROWS = %<rows>s
+        STATIC_ACCEPTING = %<accepting>s
+
         def self.__onibi_search(input, position = 0)
           return false unless input.is_a?(String) && input.ascii_only?
           position = position.to_int if position.respond_to?(:to_int)
@@ -587,8 +590,8 @@ module Onibi
           return false if position.negative? || position > input.bytesize
           return true if %<nullable>s
 
-          rows = %<rows>s
-          accepting = %<accepting>s
+          rows = STATIC_ROWS
+          accepting = STATIC_ACCEPTING
           limit = input.bytesize
           state = 0
           while position < limit

@@ -99,7 +99,9 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
 - Small single-span graphs now use a compile-time static DFA table. In the
   low-selectivity case this raises warm throughput from 221/s to 486/s for the
   bytecode HFA and from 197/s to 480/s for HFA Ruby; compile and first-match
-  costs increase because the table is materialized before execution.
+  costs increase because the table is materialized before execution. HFA Ruby
+  now stores the generated transition and accepting tables as module constants,
+  avoiding table-array allocation on every warm call.
 - String matching is essential for sparse inputs. Removing it drops the prefix
   case from about 35,000 to 171 scans/s. The full hybrid only ties codegen here
   because the current generated matcher already has a literal candidate source.

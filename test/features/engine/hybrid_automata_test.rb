@@ -100,6 +100,7 @@ class HybridAutomataTest < Minitest::Test
     ruby = compile("a[bc]{4}z").ruby_program
 
     assert_includes ruby.source, "accepting ="
+    assert_includes ruby.source, "STATIC_ROWS ="
     assert ruby.match?("aabcbcz")
     refute ruby.match?("abcbx")
   end
