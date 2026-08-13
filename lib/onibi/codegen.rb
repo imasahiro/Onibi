@@ -1078,6 +1078,12 @@ module Onibi
           return "Onibi::Codegen::Casefold.literal_candidates(input, #{cursor}, #{dumped}).first"
         end
 
+        if value.length == 1 && value.ascii_only?
+          byte = value.getbyte(0)
+          return "((input.ascii_only? || input.encoding == Encoding::ASCII_8BIT) ? " \
+                 "input.getbyte(#{cursor}) == #{byte} : input[#{cursor}, 1] == #{literal_reference(value, dumped)})"
+        end
+
         "input[#{cursor}, #{value.length}] == #{literal_reference(value, dumped)}"
       end
 
