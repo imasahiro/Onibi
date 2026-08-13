@@ -25,6 +25,11 @@ program = Onibi::HybridAutomata.compile("BEGIN(?:[a-z]+|[0-9]{2,4})END")
 program.match?(input)
 ```
 
+`compile` first runs the current `Optimization::CompilationUnit` pipeline and
+passes its CFG through the HFA regular-subset validator. Callers that already
+hold a unit can use `HybridAutomata.compile_unit(unit)`; no generated-Ruby
+matcher is selected as a fallback.
+
 Supported in the PoC: ASCII literals, concatenation, alternation, character
 classes, `.`, common character escapes, greedy/lazy quantifiers, bounded
 quantifiers up to 64, and non-capturing groups. The compiled automaton is capped
