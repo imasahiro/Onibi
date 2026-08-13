@@ -347,11 +347,50 @@ module Onibi
         end
       end
 
+      # Recognizes terminal literal loops that have no suffix to backtrack into.
+      class LoopIdiomRecognition < Pass
+        def name = :loop_idiom_recognition
+
+        def call(ast, **context)
+          return ast unless context.fetch(:options).empty?
+
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.map { |part| transform(part) }
+          tail = parts.last
+          if terminal_loop?(tail)
+            parts[-1] = AST::Quantifier.new(tail.expression, tail.kind, tail.minimum, tail.maximum, :possessive)
+          end
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+
+        def terminal_loop?(node)
+          node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy &&
+            node.expression.is_a?(AST::Literal)
+        end
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
                           RedundantPredicateElimination, BranchThreading, AutoPossessification,
-                          DeadCheckpointElimination, LiteralCoalescing].freeze
+                          DeadCheckpointElimination, LoopIdiomRecognition, LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
@@ -359,11 +398,12 @@ module Onibi
         BRANCH_THREADING = BranchThreading.new.freeze
         AUTO_POSSESSIFICATION = AutoPossessification.new.freeze
         DEAD_CHECKPOINT = DeadCheckpointElimination.new.freeze
+        LOOP_IDIOM = LoopIdiomRecognition.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
           @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING,
-                            AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, COALESCING])
+                            AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, LOOP_IDIOM, COALESCING])
         end
 
         def self.for(selection)
