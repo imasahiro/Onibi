@@ -633,6 +633,9 @@ module Onibi
       def emit_group(node, cursor)
         return emit_node(node.body, cursor) unless node.capture
 
+        return "(capture ? #{tracked_group(node, cursor)} : #{emit_node(node.body, cursor)})" if
+          dead_boolean_capture?(node)
+
         tracked_group(node, cursor)
       end
 
@@ -937,6 +940,38 @@ module Onibi
 
         value.any? { |child| required?(child) }
       end
+
+      def semantic_count(value, groups)
+        references(value).filter_map { |reference| capture_number(reference, groups) }.max || 0
+      end
+
+      def references(value)
+        direct_references(value) + children(value).flat_map { |child| references(child) }
+      end
+
+      def direct_references(value)
+        case value
+        when AST::Backreference, AST::SubexpressionCall
+          [value.identifier]
+        when AST::Conditional
+          Array(value.condition).flatten.grep(Symbol) + Array(value.condition).flatten.grep(Integer)
+        else
+          []
+        end
+      end
+
+      def children(value)
+        return value if value.is_a?(Array)
+        return value.to_a if value.is_a?(Struct)
+
+        []
+      end
+
+      def capture_number(reference, groups)
+        return reference if reference.is_a?(Integer)
+
+        groups[reference]&.number
+      end
     end
 
     # Emits one immutable compiled predicate table per generated module.
@@ -1134,6 +1169,7 @@ module Onibi
       def emit(ast)
         @backreferences = CaptureLiveness.required?(ast)
         collect_groups(ast)
+        @semantic_capture_count = CaptureLiveness.semantic_count(ast, @groups)
         collect_literals(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
@@ -1154,8 +1190,10 @@ module Onibi
 
       def capture_setup
         return "captures = nil" if capture_count.zero?
+        return "captures=capture ?Array.new(#{capture_count}):nil" unless @backreferences
+        return "captures=Array.new(#{capture_count})" if @semantic_capture_count == capture_count
 
-        @backreferences ? "captures=Array.new(#{capture_count})" : "captures=capture ?Array.new(#{capture_count}):nil"
+        "captures=capture ? Array.new(#{capture_count}) : Array.new(#{@semantic_capture_count})"
       end
 
       def capture_result = capture_count.zero? ? "[]" : "captures"
@@ -1173,6 +1211,10 @@ module Onibi
       end
 
       def capture_count = @groups.keys.grep(Integer).max || 0
+
+      def dead_boolean_capture?(node)
+        @backreferences && node.number > @semantic_capture_count
+      end
 
       def emit_node(node, cursor)
         handler = NODE_EMITTERS[node.class]

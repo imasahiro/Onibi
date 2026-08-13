@@ -35,4 +35,22 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
     assert program.search("aa", 0, capture: false)
     refute program.search("ab", 0, capture: false)
   end
+
+  def test_boolean_program_eliminates_dead_trailing_capture_state
+    ast = Onibi::Parser.new("(a)(b)\\1").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "capture ? Array.new(2) : Array.new(1)"
+    assert_match(/capture \? \(begin.*captures\[1\]/m, program.source)
+    assert program.search("aba", 0, capture: false)
+  end
+
+  def test_dead_capture_elimination_preserves_match_captures
+    regexp = Onibi::Regexp.new("(a)(b)\\1")
+
+    match = regexp.match("aba")
+
+    assert_equal "a", match[1]
+    assert_equal "b", match[2]
+  end
 end
