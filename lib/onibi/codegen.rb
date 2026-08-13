@@ -68,6 +68,80 @@ module Onibi
       end
     end
 
+    BoundaryFacts = Struct.new(:first_nodes, :last_nodes, :follow, :nullable, :width, keyword_init: true) do
+      def first = first_nodes
+      def last = last_nodes
+    end
+
+    # Computes ordered boundary relations while Analyzer visits each AST node.
+    module BoundaryAnalysis
+      module_function
+
+      def record(node, width, boundaries, follow)
+        boundary = case node
+                   when AST::Sequence then sequence(node, boundaries, follow, width)
+                   when AST::Alternation then merge(node.branches, boundaries, width)
+                   when AST::Quantifier then repeated(node, boundaries, follow, width)
+                   when AST::Group, AST::OptionGroup, AST::AtomicGroup, AST::Assertion, AST::Absence
+                     boundaries.fetch(node.body)
+                   when AST::Conditional then merge([node.yes_branch, node.no_branch], boundaries, width)
+                   else leaf(node, width)
+                   end
+        boundaries[node] = boundary
+      end
+
+      def root(ast, boundaries, follow)
+        boundary = boundaries.fetch(ast)
+        BoundaryFacts.new(first_nodes: boundary.first, last_nodes: boundary.last, follow: follow,
+                          nullable: boundary.nullable, width: boundary.width)
+      end
+
+      def leaf(node, width)
+        values = width.minimum.zero? ? [] : [node]
+        Boundary.new(first_nodes: values, last_nodes: values, nullable: width.nullable, width: width)
+      end
+
+      def sequence(node, boundaries, follow, width)
+        parts = node.parts
+        parts.each_cons(2) do |left, right|
+          successors = parts.drop_while { |part| part != right }
+          add_follow(boundaries.fetch(left).last, first_through(successors, boundaries), follow)
+        end
+        first = first_through(parts, boundaries)
+        last = first_through(parts.reverse, boundaries)
+        Boundary.new(first_nodes: first, last_nodes: last, nullable: width.nullable, width: width)
+      end
+
+      def repeated(node, boundaries, follow, width)
+        body = boundaries.fetch(node.expression)
+        add_follow(body.last, body.first, follow) if node.maximum.nil? || node.maximum > 1
+        Boundary.new(first_nodes: body.first, last_nodes: body.last, nullable: width.nullable, width: width)
+      end
+
+      def merge(nodes, boundaries, width)
+        Boundary.new(first_nodes: nodes.flat_map { |node| boundaries.fetch(node).first }.uniq,
+                     last_nodes: nodes.flat_map { |node| boundaries.fetch(node).last }.uniq,
+                     nullable: width.nullable, width: width)
+      end
+
+      def first_through(nodes, boundaries)
+        nodes.each_with_object([]) do |node, result|
+          boundary = boundaries.fetch(node)
+          result.concat(boundary.first)
+          break result unless boundary.nullable
+        end.uniq
+      end
+
+      def add_follow(from, to, follow)
+        from.each { |node| follow[node].concat(to).uniq }
+      end
+
+      Boundary = Struct.new(:first_nodes, :last_nodes, :nullable, :width, keyword_init: true) do
+        def first = first_nodes
+        def last = last_nodes
+      end
+    end
+
     LiteralAtom = Struct.new(:value, :ascii, :fixed_width, :casefold, keyword_init: true) do
       def ascii? = ascii
       def fixed_width? = fixed_width
@@ -93,7 +167,7 @@ module Onibi
     Analysis = Struct.new(
       :captures, :named_captures, :subexpression_calls, :widths, :labels, :options, :encoding,
       :literal_atoms, :literal_runs, :required_literals, :prefix_literals, :suffix_literals,
-      :first_sets, :anchor_facts, :component_plans, :capture_liveness,
+      :first_sets, :anchor_facts, :component_plans, :capture_liveness, :boundary_facts,
       keyword_init: true
     )
 
@@ -119,7 +193,9 @@ module Onibi
     module ComponentExtraction
       private
 
-      def initialize_component_metadata
+      def initialize_component_metadata(boundary_analysis: true)
+        @boundary_analysis = boundary_analysis
+        @capture_references = []
         @literal_atoms = []
         @literal_runs = []
         @required_literals = []
@@ -301,18 +377,17 @@ module Onibi
     class Analyzer
       include DeepFreezer
       include ComponentExtraction
-
-      def initialize(options = [], encoding = Encoding::UTF_8)
+      def initialize(options = [], encoding = Encoding::UTF_8, boundary_analysis: true)
         @options = options.dup.freeze
         @encoding = encoding
         @captures = []
         @named_captures = {}
         @calls = []
-        @capture_references = []
-        @widths = {}.compare_by_identity
-        @labels = {}.compare_by_identity
+        @boundaries = {}.compare_by_identity
+        @follow = Hash.new { |hash, key| hash[key] = [] }.compare_by_identity
+        @widths, @labels = [{}, {}].map(&:compare_by_identity)
         @next_label = 0
-        initialize_component_metadata
+        initialize_component_metadata(boundary_analysis: boundary_analysis)
       end
 
       def analyze(ast)
@@ -325,8 +400,8 @@ module Onibi
           labels: @labels,
           options: @options,
           encoding: @encoding,
-          capture_liveness: CaptureLiveness.from(groups: @captures, names: @named_captures,
-                                                 references: @capture_references),
+          capture_liveness: CaptureLiveness.from(@captures, @named_captures, @capture_references),
+          boundary_facts: @boundary_analysis ? BoundaryAnalysis.root(ast, @boundaries, @follow) : nil,
           **component_metadata
         )
         deep_freeze(result)
@@ -341,6 +416,7 @@ module Onibi
         assign_label(node)
         width = send(handler, node)
         @widths[node] = width
+        BoundaryAnalysis.record(node, width, @boundaries, @follow) if @boundary_analysis
         width
       end
 
@@ -842,7 +918,7 @@ module Onibi
         value
       end
 
-      def from(groups:, names:, references:)
+      def from(groups, names, references)
         normalized_groups = groups.uniq.sort.freeze
         return EMPTY if normalized_groups.empty?
 
@@ -1158,7 +1234,8 @@ module Onibi
       end
 
       def self.compilation(unit, analysis: nil, search_ast: unit.ast)
-        analysis ||= Analyzer.new(unit.options, unit.encoding).analyze(unit.ast)
+        analysis ||= Analyzer.new(unit.options, unit.encoding,
+                                  boundary_analysis: false).analyze(unit.ast)
         search_plan = SearchPlan.from(search_ast, analysis)
         new(RubyGenerator.compilation(unit), search_plan: search_plan, compilation: unit)
       end

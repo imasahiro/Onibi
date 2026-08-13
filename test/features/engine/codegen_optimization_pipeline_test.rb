@@ -59,6 +59,30 @@ class CodegenOptimizationPipelineTest < Minitest::Test
     assert_empty facts.semantic
     assert_equal [1, 2], facts.dead_in_boolean
   end
+
+  def test_analyzer_publishes_first_last_and_follow_for_sequence_boundaries
+    ast = Onibi::Parser.new("abc").parse
+    analysis = Onibi::Codegen::Analyzer.new.analyze(ast)
+    parts = ast.parts
+    facts = analysis.boundary_facts
+
+    assert_equal ["a"], facts.first.map(&:value)
+    assert_equal ["c"], facts.last.map(&:value)
+    assert_equal [parts[1]], facts.follow.fetch(parts[0])
+    assert_equal [parts[2]], facts.follow.fetch(parts[1])
+    refute facts.nullable
+  end
+
+  def test_boundary_facts_preserve_nullable_and_width_information
+    ast = Onibi::Parser.new("a*").parse
+    analysis = Onibi::Codegen::Analyzer.new.analyze(ast)
+
+    assert analysis.boundary_facts.nullable
+    assert_equal 0, analysis.boundary_facts.width.minimum
+    assert_nil analysis.boundary_facts.width.maximum
+    assert_nil analysis.widths.fetch(ast).finite
+  end
+
   # rubocop:enable Metrics/AbcSize
 
   def test_pipeline_can_disable_optimizations_without_disabling_cfg_construction
