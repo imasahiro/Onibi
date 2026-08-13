@@ -208,18 +208,74 @@ module Onibi
         end
       end
 
+      # Hoists a common literal prefix out of side-effect-free alternatives.
+      class BranchThreading < Pass
+        def name = :branch_threading
+
+        def call(ast, **_context)
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.map { |part| transform(part) }
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          threaded = thread(branches)
+          threaded || (branches == alternation.branches ? alternation : AST::Alternation.new(branches))
+        end
+
+        def thread(branches)
+          return unless branches.length > 1 && branches.all? { |branch| threadable?(branch) }
+
+          parts = branches.map(&:parts)
+          return unless parts.all? { |items| items.length <= 2 }
+
+          prefix = common_prefix(parts)
+          return unless prefix
+
+          suffixes = parts.map { |items| AST::Sequence.new(items.drop(1)) }
+          AST::Sequence.new([prefix, AST::Alternation.new(suffixes)])
+        end
+
+        def common_prefix(parts)
+          prefix = parts.first.first
+          return unless prefix.is_a?(AST::Literal)
+          return unless parts.all? { |items| items.first == prefix }
+
+          prefix
+        end
+
+        def threadable?(branch)
+          branch.is_a?(AST::Sequence) && !branch.parts.empty? &&
+            branch.parts.none? { |part| part.is_a?(AST::Group) && part.capture }
+        end
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
-                          LiteralCoalescing, RedundantPredicateElimination].freeze
+                          RedundantPredicateElimination, BranchThreading, LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
         REDUNDANT_PREDICATE = RedundantPredicateElimination.new.freeze
+        BRANCH_THREADING = BranchThreading.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
-          @default ||= new([IMPOSSIBLE, DUPLICATE, COALESCING, REDUNDANT_PREDICATE])
+          @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING, COALESCING])
         end
 
         def self.for(selection)
