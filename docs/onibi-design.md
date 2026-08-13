@@ -131,7 +131,11 @@ pattern + options
         |
        AST
         |
+ early optimization passes
+        |
  Semantic analysis
+        |
+ late passes + lazy compiler CFG
         |
  Ruby source generation
         |
@@ -154,12 +158,14 @@ pattern + options
 
 1. The lexer tokenizes the pattern.
 2. An iterative token-stream guard rejects syntactic nesting above 256 before recursive descent; the parser then validates syntax and builds an AST from the guarded tokens.
-3. Semantic analysis computes capture tables, subexpression targets, option/encoding-aware width sets, nullability, option scopes, and deterministic labels.
-4. The AST-to-Ruby code generator emits one regexp-specialized control program.
-5. Portable Ruby compilation creates an immutable generated program eagerly during `Onibi::Regexp` construction.
-6. The generated program performs leftmost-first prioritized backtracking with invocation-local explicit stacks and capture rollback state. It does not use recursive Ruby matcher calls.
-7. `match?` and `match` enter the same generated control graph. Boolean matching may omit only result work and captures proven irrelevant to matching semantics.
-8. A successful matcher returns character-offset capture spans. The match-data builder creates the public `Onibi::MatchData` result and derives byte offsets as required.
+3. Early ordered compiler passes perform shape changes needed before semantic analysis.
+4. Semantic analysis computes capture tables, subexpression targets, option/encoding-aware width sets, nullability, option scopes, and deterministic labels.
+5. Late normalization creates the compilation unit; its immutable CFG with explicit branch priority and semantic effects is materialized lazily when a CFG consumer requests it.
+6. The Ruby code generator emits one regexp-specialized control program from the compilation unit. During the staged CFG migration it consumes the optimized AST paired with the CFG.
+7. Portable Ruby compilation creates an immutable generated program on first use and memoizes it.
+8. The generated program performs leftmost-first prioritized backtracking with invocation-local explicit stacks and capture rollback state. It does not use recursive Ruby matcher calls.
+9. `match?` and `match` enter the same generated control graph. Boolean matching may omit only result work and captures proven irrelevant to matching semantics.
+10. A successful matcher returns character-offset capture spans. The match-data builder creates the public `Onibi::MatchData` result and derives byte offsets as required.
 
 The production matcher does not construct or execute NFA, DFA, or bytecode forms and does not route patterns to fallback matchers. Character predicates, Unicode tables, encoding conversion, timeout checks, and MatchData construction may remain shared leaf services, but they do not interpret the AST or select matching algorithms.
 

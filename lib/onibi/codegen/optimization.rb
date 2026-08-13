@@ -1,0 +1,212 @@
+# frozen_string_literal: true
+
+module Onibi
+  module Codegen
+    # Compiler passes that transform parsed structure before CFG publication.
+    module Optimization
+      module_function
+
+      def compile(ast, options, encoding)
+        Pipeline.default.call(ast, options: options, encoding: encoding)
+      end
+
+      def prepare(ast, options)
+        return ast unless ast.is_a?(AST::Alternation)
+
+        ast = Pipeline::IMPOSSIBLE.call(ast, options: options)
+        Pipeline::DUPLICATE.call(ast, options: options)
+      end
+
+      def compile_prepared(ast, options, encoding)
+        optimized = Pipeline::COALESCING.call(ast)
+        CompilationUnit.new(
+          ast: optimized,
+          cfg: DeferredGraph.new(CFG::Lowerer.new, optimized),
+          options: options,
+          encoding: encoding,
+          applied_passes: Pipeline::DEFAULT_PASS_NAMES
+        )
+      end
+
+      # Resolves the graph once so ordinary construction avoids diagnostic IR costs.
+      class DeferredGraph
+        def initialize(lowerer, ast)
+          @lowerer = lowerer
+          @ast = ast
+        end
+
+        def resolve
+          @resolve ||= @lowerer.call(@ast)
+        end
+      end
+
+      CompilationUnit = Struct.new(:ast, :graph_source, :options, :encoding, :applied_passes, keyword_init: true) do
+        def initialize(ast:, cfg:, options:, encoding:, applied_passes:)
+          normalized_options = options.frozen? ? options : options.dup.freeze
+          normalized_passes = applied_passes.frozen? ? applied_passes : applied_passes.dup.freeze
+          super(ast: ast, graph_source: cfg, options: normalized_options, encoding: encoding,
+                applied_passes: normalized_passes)
+          freeze
+        end
+
+        def cfg = graph_source.resolve
+      end
+
+      # Abstract transformation contract.
+      class Pass
+        def call(_ast, options:, encoding:)
+          raise NotImplementedError
+        end
+      end
+
+      # Removes alternatives that can be proven to fail without consuming input.
+      class ImpossibleBranchElimination < Pass
+        def name = :impossible_branch_elimination
+
+        def call(ast, **context)
+          options = context.fetch(:options)
+          return ast unless options.empty? && ast.is_a?(AST::Alternation)
+
+          branches = ast.branches.reject { |branch| impossible?(branch) }
+          return ast.branches.first if branches.empty?
+          return ast if branches.length == ast.branches.length
+
+          collapse(branches)
+        end
+
+        private
+
+        def impossible?(branch)
+          branch.is_a?(AST::Sequence) && branch.parts.any? do |part|
+            part.is_a?(AST::Assertion) && part.kind == :negative &&
+              part.body.is_a?(AST::Sequence) && part.body.parts.empty?
+          end
+        end
+
+        def collapse(branches)
+          branches.one? ? branches.first : AST::Alternation.new(branches)
+        end
+      end
+
+      # Retains the first of equivalent literal alternatives.
+      class DuplicateLiteralBranchElimination < Pass
+        def name = :duplicate_literal_branch_elimination
+
+        def call(ast, **context)
+          options = context.fetch(:options)
+          return ast unless options.empty? && ast.is_a?(AST::Alternation)
+
+          branches = unique_literal_branches(ast.branches)
+          return ast if branches.length == ast.branches.length
+
+          branches.one? ? branches.first : AST::Alternation.new(branches)
+        end
+
+        private
+
+        def unique_literal_branches(branches)
+          seen = {}
+          branches.select do |branch|
+            value = literal_value(branch)
+            value.nil? || !seen.key?(value) && (seen[value] = true)
+          end
+        end
+
+        def literal_value(branch)
+          return unless branch.is_a?(AST::Sequence)
+          return unless branch.parts.all? { |part| part.is_a?(AST::Literal) }
+
+          branch.parts.map(&:value).join
+        end
+      end
+
+      # Combines adjacent literals into the comparison unit already used by emission.
+      class LiteralCoalescing < Pass
+        def name = :literal_coalescing
+
+        def call(ast, **_context)
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = coalesce_literals(sequence.parts)
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+
+        def coalesce_literals(values)
+          values.each_with_object([]) do |value, result|
+            if mergeable_literal?(result.last, value)
+              result[-1] = AST::Literal.new(result.last.value + value.value)
+            else
+              result << value
+            end
+          end
+        end
+
+        def mergeable_literal?(left, right)
+          left.is_a?(AST::Literal) && right.is_a?(AST::Literal) &&
+            left.value.encoding == right.value.encoding
+        end
+      end
+
+      # Runs an explicit ordered set of transforms and then publishes the CFG.
+      class Pipeline
+        DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination, LiteralCoalescing].freeze
+        IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
+        DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
+        COALESCING = LiteralCoalescing.new.freeze
+        DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
+
+        def self.default
+          @default ||= new([IMPOSSIBLE, DUPLICATE, COALESCING])
+        end
+
+        def self.for(selection)
+          return default if selection.nil? || selection.empty?
+
+          new(selection.map { |item| item.respond_to?(:call) ? item : pass_for(item) })
+        end
+
+        def self.pass_for(name)
+          klass = DEFAULT_PASSES.find { |candidate| candidate.new.name == name }
+          raise ArgumentError, "unknown optimization pass #{name.inspect}" unless klass
+
+          klass.new
+        end
+
+        def initialize(passes, lowerer: CFG::Lowerer.new)
+          @passes = passes.freeze
+          @pass_names = @passes.map(&:name).freeze
+          @lowerer = lowerer
+        end
+
+        def call(ast, options:, encoding:)
+          optimized = @passes.reduce(ast) do |current, pass|
+            pass.call(current, options: options, encoding: encoding)
+          end
+          CompilationUnit.new(
+            ast: optimized,
+            cfg: DeferredGraph.new(@lowerer, optimized),
+            options: options,
+            encoding: encoding,
+            applied_passes: @pass_names
+          )
+        end
+      end
+    end
+  end
+end

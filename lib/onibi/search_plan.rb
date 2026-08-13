@@ -188,7 +188,7 @@ module Onibi
       end
 
       def literal_bytes(node)
-        return unless node.value.bytesize == 1 && node.value.ascii_only?
+        return unless node.value.ascii_only? && !node.value.empty?
 
         [node.value.getbyte(0)]
       end
