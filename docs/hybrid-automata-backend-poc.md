@@ -141,12 +141,17 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   `dfa_dense_hit` compile median from about 647 us to 406 us in the current
   run (Ruby codegen was 430 us). Static-DFA materialization still contributes
   to first-match cost.
+- Two additional static-DFA micro-optimizations were measured and rejected:
+  packed byte-string rows reduced `dfa_dense_hit` from about 558 to 474
+  scans/s, while a single accepting-state comparison reduced it to about 512
+  scans/s. The current array-row/boolean-accepting representation is retained
+  because it is faster on Ruby 4.0.6.
 
 ## Recommended next experiment
 
 Keep a single `HybridProgram`, but add a compile-time event cost model using
 literal length, expected byte frequency, and maximum verification distance.
-Then add compact DFA state IDs and flat transition storage instead of a Ruby
-Hash of 256-entry rows. Only after that should the surface grow to offsets/SOM
-tracking, captures, UTF-8 character classes, and finally replace
+Then investigate state-specialized Ruby source (without adding a branch to the
+hot generic loop) and compact DFA state IDs. Only after that should the surface
+grow to offsets/SOM tracking, captures, UTF-8 character classes, and finally replace
 `Onibi::Regexp#codegen_program` for the supported semantic region.
