@@ -394,17 +394,28 @@ module Onibi
       def static_prefix_search(input, position)
         return unless static_prefix_eligible?
 
+        prefix = @prefix_literal
+        candidate, dense = prefix_density(input, position, prefix)
+        return false unless candidate
+        return unless dense
+
         static = static_prefix_dfa_data
         return unless static && static[0].length <= @dfa_state_limit
 
-        prefix = @prefix_literal
-        candidate = input.index(prefix, position)
         while candidate
           return true if static_prefix_match?(input, candidate + prefix.bytesize, static)
 
           candidate = input.index(prefix, candidate + 1)
         end
         false
+      end
+
+      def prefix_density(input, position, prefix)
+        candidate = input.index(prefix, position)
+        return [nil, false] unless candidate
+
+        next_candidate = input.index(prefix, candidate + 1)
+        [candidate, next_candidate && next_candidate - candidate < 64]
       end
 
       def static_prefix_match?(input, position, static)

@@ -157,6 +157,12 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   487 scans/s versus 114 for Ruby codegen (4.27x); the bytecode HFA reached
   about 473 scans/s. The sparse-prefix path remains on the existing event
   runtime.
+- Prefix static-DFA selection now samples the first two prefix events before
+  materializing the table. A single or widely separated event falls back to
+  the existing prefix runtime, avoiding a first-match table build; dense
+  events (less than 64 bytes apart) retain the static suffix DFA. On the
+  sparse-prefix fixture first-match returned to about 35 us and warm throughput
+  remained about 43.8k scans/s (roughly codegen parity).
 
 ## Recommended next experiment
 
