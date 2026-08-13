@@ -744,13 +744,37 @@ module Onibi
 
       def emit_capture_free_quantifier_with_remainder(node, remainder, cursor)
         variables = Array.new(6) { fresh_cursor }
+        capture_free_quantifier_expression(node, remainder, cursor, variables)
+      end
+
+      def capture_free_quantifier_expression(node, remainder, cursor, variables)
         counter, result, previous, candidates, candidate, final = variables
-        body = emit_node(node.expression, result)
+        failure_cache, attempt = memoization_state(node.expression)
+        body = memoized_body(node.expression, result, failure_cache, attempt)
         suffix = emit_sequence_parts(remainder, candidate)
         candidate_order = node.mode == :lazy ? candidates : "#{candidates}.reverse_each"
         <<~EXPRESSION.strip
-          (begin #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << #{result} if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << #{result} if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{final} = #{suffix}; break unless #{final}.nil?; end; #{final}; end)
+          (begin #{failure_cache ? "#{failure_cache} = {} ;" : ""} #{result} = #{cursor}; #{counter} = 0; #{candidates} = []; #{candidates} << #{result} if #{counter} >= #{node.minimum}; while #{counter} < #{quantifier_maximum(node)}; #{previous} = #{result}; #{result} = #{body}; break if #{result}.nil?; #{counter} += 1; #{candidates} << #{result} if #{counter} >= #{node.minimum}; break if #{result} == #{previous}; end; #{final} = nil; #{candidate_order}.each do |#{candidate}| #{final} = #{suffix}; break unless #{final}.nil?; end; #{final}; end)
         EXPRESSION
+      end
+
+      def memoization_state(expression)
+        return [nil, nil] unless memoizable_failure_region?(expression)
+
+        ["failure_cache", fresh_cursor]
+      end
+
+      def memoizable_failure_region?(node)
+        node = node.body if node.is_a?(AST::Group) && !node.capture
+        node.is_a?(AST::Alternation) && node.branches.length > 1 && !capture_writes?(node)
+      end
+
+      def memoized_body(node, result, failure_cache, attempt)
+        body = emit_node(node, result)
+        return body unless failure_cache
+
+        "(#{failure_cache}.key?(#{result}) ? nil : (#{attempt} = #{body}; " \
+          "#{attempt}.nil? ? (#{failure_cache}[#{result}] = true; nil) : #{attempt}))"
       end
 
       def emit_quantifier(node, cursor)
