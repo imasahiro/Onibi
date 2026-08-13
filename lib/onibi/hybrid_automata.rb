@@ -369,7 +369,7 @@ module Onibi
       end
 
       def static_match?(input, position, static)
-        rows, accepting = static
+        rows, accepting, accepting_state = static
         limit = input.bytesize
         first_byte = static_first_byte
         if first_byte
@@ -379,7 +379,20 @@ module Onibi
           return static_match_with_jumps(input, candidate, static, first_byte) if candidate != :dense
         end
 
+        return static_match_scan_single(input, position, limit, rows, accepting_state) if accepting_state && !first_byte
+
         static_match_scan(input, position, limit, rows, accepting)
+      end
+
+      def static_match_scan_single(input, position, limit, rows, accepting_state)
+        state = 0
+        while position < limit
+          state = rows[state][input.getbyte(position)]
+          return true if state == accepting_state
+
+          position += 1
+        end
+        false
       end
 
       def static_match_scan(input, position, limit, rows, accepting)
@@ -448,7 +461,8 @@ module Onibi
           return nil unless rows[state]
         end
         accepting = masks.map { |mask| (mask & @accept_mask) != 0 }.freeze
-        [rows.freeze, accepting].freeze
+        accepting_state = accepting.one? ? accepting.index(true) : nil
+        [rows.freeze, accepting, accepting_state].freeze
       end
 
       def static_row(mask, ids, masks)
@@ -723,7 +737,7 @@ module Onibi
           state = 0
           while position < limit
             state = rows[state][input.getbyte(position)]
-            return true if accepting[state]
+            return true if %<accept_check>s
             position += 1
           end
           false
@@ -865,10 +879,12 @@ module Onibi
         return unless static
         return unless static[0].length <= raw[:limit]
 
-        rows, accepting = static
+        rows, accepting, accepting_state = static
         first_byte = program.send(:static_first_byte)
+        accept_check = accepting_state ? "state == #{accepting_state}" : "accepting[state]"
         format(STATIC_DFA_TEMPLATE,
-               data.merge(rows: rows.inspect, accepting: accepting.inspect, first_byte: first_byte.inspect))
+               data.merge(rows: rows.inspect, accepting: accepting.inspect,
+                          accept_check: accept_check, first_byte: first_byte.inspect))
       end
 
       def single_span_values(data)

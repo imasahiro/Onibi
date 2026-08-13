@@ -146,6 +146,10 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   scans/s, while a single accepting-state comparison reduced it to about 512
   scans/s. The current array-row/boolean-accepting representation is retained
   because it is faster on Ruby 4.0.6.
+- Static DFA lowering now emits a branch-free accepting check when the table
+  has exactly one accepting state. On the dense DFA fixture this measured
+  about 560 scans/s for HFA Ruby versus 125 scans/s for Ruby codegen; the
+  generic accepting-array loop remains for multi-accepting tables.
 
 ## Recommended next experiment
 

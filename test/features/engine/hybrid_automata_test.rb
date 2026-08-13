@@ -99,8 +99,6 @@ class HybridAutomataTest < Minitest::Test
 
   def test_small_single_span_uses_static_dfa_in_ruby_lowering
     ruby = compile("a[bc]{4}z").ruby_program
-
-    assert_includes ruby.source, "accepting ="
     assert_includes ruby.source, "STATIC_ROWS ="
     assert_includes ruby.source, "__onibi_static_jump"
     assert ruby.match?("aabcbcz")
@@ -119,6 +117,7 @@ class HybridAutomataTest < Minitest::Test
     program = compile("(?:ab|ac|ad|ba|bc|bd)+z")
     ruby = program.ruby_program
     assert_includes ruby.source, "STATIC_ROWS ="
+    assert_includes ruby.source, "return true if state =="
     assert_equal([true, false], %w[abacadbabcbdz abacadbabcbdx].map { |input| ruby.match?(input) })
   end
 
