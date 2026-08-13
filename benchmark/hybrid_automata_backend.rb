@@ -15,6 +15,8 @@ CASES = [
   Case.new("literal_sparse_miss", "needle", "x" * SIZE),
   Case.new("prefix_sparse_late", "BEGIN(?:[a-z]+|[0-9]{2,4})END",
            "#{"x" * SIZE}BEGIN123END"),
+  Case.new("prefix_dense_dfa", "BEGIN(?:ab|ac|ad|ba|bc|bd)+z",
+           "#{"BEGINabacadbabcbdx" * [SIZE / 18, 1].max}BEGINabacadbabcbdz"),
   Case.new("dfa_dense_hit", "(?:ab|ac|ad|ba|bc|bd)+z",
            "#{"abacadbabcbd" * (SIZE / 12)}z"),
   Case.new("low_selectivity_miss", "a[bc]{4}z", "abcbx" * (SIZE / 5)),

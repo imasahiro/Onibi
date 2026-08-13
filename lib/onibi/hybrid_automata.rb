@@ -355,7 +355,10 @@ module Onibi
       private
 
       def static_search(input, position)
-        return unless @dfa_enabled && static_eligible?
+        return unless @dfa_enabled
+
+        return static_prefix_search(input, position) if @prefix_literal
+        return unless static_eligible?
 
         static = static_dfa_data
         return unless static && static[0].length <= @dfa_state_limit
@@ -366,6 +369,10 @@ module Onibi
 
       def static_eligible?
         @single_span || (@prefix_literal.nil? && @span_entries.length >= 8)
+      end
+
+      def static_prefix_eligible?
+        @prefix_literal && @span_entries.length >= 8
       end
 
       def static_match?(input, position, static)
@@ -382,6 +389,37 @@ module Onibi
         return static_match_scan_single(input, position, limit, rows, accepting_state) if accepting_state && !first_byte
 
         static_match_scan(input, position, limit, rows, accepting)
+      end
+
+      def static_prefix_search(input, position)
+        return unless static_prefix_eligible?
+
+        static = static_prefix_dfa_data
+        return unless static && static[0].length <= @dfa_state_limit
+
+        prefix = @prefix_literal
+        candidate = input.index(prefix, position)
+        while candidate
+          return true if static_prefix_match?(input, candidate + prefix.bytesize, static)
+
+          candidate = input.index(prefix, candidate + 1)
+        end
+        false
+      end
+
+      def static_prefix_match?(input, position, static)
+        rows, accepting, accepting_state, dead_state = static
+        return true if accepting[0]
+
+        state = 0
+        while position < input.bytesize
+          state = rows[state][input.getbyte(position)]
+          return true if accepting_state ? state == accepting_state : accepting[state]
+          break if state == dead_state
+
+          position += 1
+        end
+        false
       end
 
       def static_match_scan_single(input, position, limit, rows, accepting_state)
@@ -452,23 +490,30 @@ module Onibi
         @static_dfa_data = build_static_dfa
       end
 
-      def build_static_dfa
-        masks = [0]
-        ids = { 0 => 0 }
+      def static_prefix_dfa_data
+        return @static_prefix_dfa_data if @static_prefix_dfa_attempted
+
+        @static_prefix_dfa_attempted = true
+        @static_prefix_dfa_data = build_static_dfa(prefix_active, inject_start: false)
+      end
+
+      def build_static_dfa(initial_mask = 0, inject_start: true)
+        masks = [initial_mask]
+        ids = { initial_mask => 0 }
         rows = []
         masks.each_with_index do |mask, state|
-          rows[state] = static_row(mask, ids, masks)
+          rows[state] = static_row(mask, ids, masks, inject_start)
           return nil unless rows[state]
         end
         accepting = masks.map { |mask| (mask & @accept_mask) != 0 }.freeze
         accepting_state = accepting.one? ? accepting.index(true) : nil
-        [rows.freeze, accepting, accepting_state].freeze
+        [rows.freeze, accepting, accepting_state, ids[0]].freeze
       end
 
-      def static_row(mask, ids, masks)
+      def static_row(mask, ids, masks, inject_start)
         row = Array.new(256)
         256.times do |byte|
-          result = nfa_transition(mask, byte, true)
+          result = nfa_transition(mask, byte, inject_start)
           id = ids[result] || add_static_state(ids, masks, result)
           break unless id
 
@@ -684,6 +729,60 @@ module Onibi
       end
     end
 
+    module SourceTemplates
+      PREFIX_STATIC_DFA_TEMPLATE = <<~'RUBY'
+        STATIC_PREFIX_ROWS = %<rows>s
+        STATIC_PREFIX_ACCEPTING = %<accepting>s
+        STATIC_PREFIX_DEAD_STATE = %<dead_state>s
+
+        def self.__onibi_static_prefix_scan(input, position)
+          rows = STATIC_PREFIX_ROWS
+          accepting = STATIC_PREFIX_ACCEPTING
+          return true if accepting[0]
+          state = 0
+          while position < input.bytesize
+            state = rows[state][input.getbyte(position)]
+            return true if %<accept_check>s
+            break if state == STATIC_PREFIX_DEAD_STATE
+            position += 1
+          end
+          false
+        end
+
+        def self.__onibi_search(input, position = 0)
+          return false unless input.is_a?(String) && input.ascii_only?
+          position = position.to_int if position.respond_to?(:to_int)
+          return false unless position.is_a?(Integer)
+          position += input.bytesize if position.negative?
+          return false if position.negative? || position > input.bytesize
+          return true if %<nullable>s
+
+          candidate = input.index(%<prefix>s, position)
+          while candidate
+            return true if __onibi_static_prefix_scan(input, candidate + %<prefix_length>s)
+            candidate = input.index(%<prefix>s, candidate + 1)
+          end
+          false
+        end
+      RUBY
+    end
+
+    # Emits the prefix-suffix static DFA lowering.
+    module PrefixStaticSource
+      module_function
+
+      def emit(program, raw, data)
+        static = program.send(:static_prefix_dfa_data)
+        return unless static && static[0].length <= raw[:limit]
+
+        rows, accepting, accepting_state, dead_state = static
+        accept_check = accepting_state ? "state == #{accepting_state}" : "accepting[state]"
+        format(SourceTemplates::PREFIX_STATIC_DFA_TEMPLATE,
+               data.merge(rows: rows.inspect, accepting: accepting.inspect,
+                          accept_check: accept_check, dead_state: dead_state.inspect))
+      end
+    end
+
     # Emits the HFA state machine as standalone Ruby source.
     module SourceEmitter
       module_function
@@ -701,12 +800,10 @@ module Onibi
             candidate = input.index(%<exact_first>s, position)
             return false unless candidate
             return !input.index(%<exact>s, position).nil? if input.getbyte(candidate + 1) == %<exact_first>s.getbyte(0)
-
             next_candidate = input.index(%<exact_first>s, candidate + 1)
             return !input.index(%<exact>s, position).nil? if next_candidate && next_candidate - candidate < 16
             return !input.index(%<exact>s, candidate).nil?
           end
-
           candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
             while candidate && candidate <= input.bytesize
             active = 0
@@ -731,8 +828,7 @@ module Onibi
         STATIC_ACCEPTING = %<accepting>s
 
         def self.__onibi_static_scan(input, position)
-          rows = STATIC_ROWS
-          accepting = STATIC_ACCEPTING
+          rows = STATIC_ROWS; accepting = STATIC_ACCEPTING
           limit = input.bytesize
           state = 0
           while position < limit
@@ -744,8 +840,7 @@ module Onibi
         end
 
         def self.__onibi_static_jump(input, position, first_byte)
-          rows = STATIC_ROWS
-          accepting = STATIC_ACCEPTING
+          rows = STATIC_ROWS; accepting = STATIC_ACCEPTING
           limit = input.bytesize
           state = 0
           while position < limit
@@ -873,11 +968,15 @@ module Onibi
       end
 
       def static_source(program, raw, data)
+        return PrefixStaticSource.emit(program, raw, data) if raw[:static_prefix] && raw[:dfa]
         return unless raw[:static] && raw[:dfa] && !raw[:exact]
 
+        static_dfa_source(program, raw, data)
+      end
+
+      def static_dfa_source(program, raw, data)
         static = program.send(:static_dfa_data)
-        return unless static
-        return unless static[0].length <= raw[:limit]
+        return unless static && static[0].length <= raw[:limit]
 
         rows, accepting, accepting_state = static
         first_byte = program.send(:static_first_byte)
@@ -912,6 +1011,7 @@ module Onibi
           spans: program.instance_variable_get(:@span_masks),
           **prefix_source_data(program),
           static: program.send(:static_eligible?),
+          static_prefix: program.send(:static_prefix_eligible?),
           **literal_source_data(program),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
           limit: program.instance_variable_get(:@dfa_state_limit),

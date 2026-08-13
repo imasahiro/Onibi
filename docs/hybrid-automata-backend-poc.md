@@ -150,6 +150,13 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   has exactly one accepting state. On the dense DFA fixture this measured
   about 560 scans/s for HFA Ruby versus 125 scans/s for Ruby codegen; the
   generic accepting-array loop remains for multi-accepting tables.
+- Prefix events now have their own suffix static DFA seeded from the
+  post-prefix NFA state. The suffix table tracks its dead-state ID so failed
+  candidates stop immediately instead of scanning through the rest of the
+  input. On the new 32 KiB `prefix_dense_dfa` fixture, HFA Ruby reached about
+  487 scans/s versus 114 for Ruby codegen (4.27x); the bytecode HFA reached
+  about 473 scans/s. The sparse-prefix path remains on the existing event
+  runtime.
 
 ## Recommended next experiment
 
