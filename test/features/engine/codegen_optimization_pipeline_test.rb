@@ -8,7 +8,7 @@ class CodegenOptimizationPipelineTest < Minitest::Test
 
     unit = Onibi::Codegen::Optimization::Pipeline.default.call(ast, options: [], encoding: Encoding::UTF_8)
 
-    assert_equal 9, unit.applied_passes.length
+    assert_equal 10, unit.applied_passes.length
     assert_optimized_literal(unit)
   end
 

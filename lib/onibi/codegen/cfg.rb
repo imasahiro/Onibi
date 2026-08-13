@@ -68,15 +68,57 @@ module Onibi
         end
       end
 
-      Graph = Struct.new(:entry, :exit, :blocks, :effect_summary, keyword_init: true) do
-        def initialize(entry:, exit:, blocks:, effect_summary: nil)
+      Graph = Struct.new(:entry, :exit, :blocks, :effect_summary, :dominators, keyword_init: true) do
+        def initialize(entry:, exit:, blocks:, effect_summary: nil, dominators: nil)
           super(entry: entry, exit: exit, blocks: blocks.freeze,
-                effect_summary: effect_summary || EffectSummary.from_operations(blocks.flat_map(&:operations)))
+                effect_summary: effect_summary || EffectSummary.from_operations(blocks.flat_map(&:operations)),
+                dominators: dominators || Dominance.compute(entry, blocks))
           freeze
         end
 
         def operations
           blocks.flat_map(&:operations).freeze
+        end
+      end
+
+      # Computes immutable dominator sets for ordered CFG blocks.
+      module Dominance
+        module_function
+
+        def compute(entry, blocks)
+          predecessors = blocks.to_h { |block| [block.id, []] }
+          add_predecessors(blocks, predecessors)
+          all = blocks.map(&:id)
+          result = blocks.to_h { |block| [block.id, block.id == entry ? [entry] : all.dup] }
+          iterate(entry, blocks, predecessors, all, result)
+          result.transform_values { |ids| ids.to_a.sort.freeze }.freeze
+        end
+
+        def add_predecessors(blocks, predecessors)
+          blocks.each { |block| block.successors.each { |edge| predecessors.fetch(edge.target) << block.id } }
+        end
+
+        def iterate(entry, blocks, predecessors, all, result)
+          loop do
+            changed = blocks.map { |block| update_block(block, entry, predecessors, all, result) }.any?
+            break unless changed
+          end
+        end
+
+        def update_block(block, entry, predecessors, all, result)
+          return false if block.id == entry
+
+          incoming = predecessors.fetch(block.id)
+          return false if incoming.empty?
+
+          next_set = intersect_dominators(incoming, all, result) | [block.id]
+          changed = next_set != result[block.id]
+          result[block.id] = next_set
+          changed
+        end
+
+        def intersect_dominators(incoming, all, result)
+          incoming.map { |id| result.fetch(id) }.reduce(all.dup) { |set, ids| set & ids }
         end
       end
 
