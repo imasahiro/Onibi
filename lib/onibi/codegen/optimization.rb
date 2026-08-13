@@ -263,19 +263,67 @@ module Onibi
         end
       end
 
+      # Converts a literal quantifier to possessive when the following literal is disjoint.
+      class AutoPossessification < Pass
+        def name = :auto_possessification
+
+        def call(ast, **context)
+          return ast unless context.fetch(:options).empty?
+
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.map { |part| transform(part) }
+          possessive_parts(parts)
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def possessive_parts(parts)
+          parts.each_cons(2).with_index do |(left, right), index|
+            next unless disjoint_quantifier?(left, right)
+
+            parts[index] = AST::Quantifier.new(left.expression, left.kind, left.minimum,
+                                               left.maximum, :possessive)
+          end
+        end
+
+        def disjoint_quantifier?(left, right)
+          left.is_a?(AST::Quantifier) && right.is_a?(AST::Literal) && left.mode == :greedy &&
+            left.expression.is_a?(AST::Literal) && left.expression.value != right.value
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
-                          RedundantPredicateElimination, BranchThreading, LiteralCoalescing].freeze
+                          RedundantPredicateElimination, BranchThreading, AutoPossessification,
+                          LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
         REDUNDANT_PREDICATE = RedundantPredicateElimination.new.freeze
         BRANCH_THREADING = BranchThreading.new.freeze
+        AUTO_POSSESSIFICATION = AutoPossessification.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
-          @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING, COALESCING])
+          @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING,
+                            AUTO_POSSESSIFICATION, COALESCING])
         end
 
         def self.for(selection)
