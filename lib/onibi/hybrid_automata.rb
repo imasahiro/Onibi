@@ -300,9 +300,7 @@ module Onibi
         @input_ir = input_ir
       end
 
-      def engine_kind
-        :hybrid
-      end
+      def engine_kind = :hybrid
 
       def components
         components = [:bit_parallel_nfa]
@@ -320,9 +318,7 @@ module Onibi
         instructions.freeze
       end
 
-      def dfa_state_count
-        @dfa_rows.length
-      end
+      def dfa_state_count = @dfa_rows.length
 
       def ruby_program
         RubyProgram.from_program(self)
