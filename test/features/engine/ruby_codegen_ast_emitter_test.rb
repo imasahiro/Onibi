@@ -52,4 +52,12 @@ class RubyCodegenAstEmitterTest < Minitest::Test
     assert_equal 1, program.source.scan(prefix.dump).length
     assert_equal 2, program.source.scan("== ONIBI_LITERAL_VALUES").length
   end
+
+  def test_ascii_single_literal_is_inlined_as_a_byte_comparison
+    program = Onibi::Codegen::GeneratedProgram.ast(Onibi::Parser.new("a").parse)
+
+    assert_includes program.source, "getbyte"
+    assert program.search("a", 0, capture: false)
+    refute program.search("b", 0, capture: false)
+  end
 end
