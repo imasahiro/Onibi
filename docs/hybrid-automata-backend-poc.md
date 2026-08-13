@@ -61,7 +61,7 @@ ablation variants still use the same program: `no_dfa` disables promotion,
 
 The original recorded throughput run used commit `b3ed436` (Ruby 4.0.6 arm64,
 32,768 bytes, 7 lifecycle samples, 0.15 seconds warm time). The latest runtime
-policy run uses commit `WORKTREE` (same Ruby/input, 3 lifecycle samples, 0.1
+policy run uses commit `e7a18ae` (same Ruby/input, 3 lifecycle samples, 0.1
 seconds warm time). A separate allocation
 run used the same corpus shapes at 4,096 bytes and 100 warm calls per engine;
 representative objects/call were: `dfa_dense_hit` hybrid 0.1, hybrid Ruby 0.4,
