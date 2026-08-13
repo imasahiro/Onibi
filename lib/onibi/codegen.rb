@@ -691,10 +691,24 @@ module Onibi
       private
 
       def emit_quantifier_with_remainder(node, remainder, cursor)
+        return emit_optional_with_remainder(node, remainder, cursor) if optional_quantifier?(node)
         return emit_capture_free_quantifier_with_remainder(node, remainder, cursor) if
           capture_count.zero? || !capture_writes?(node.expression) && remainder.none? { |part| capture_writes?(part) }
 
         emit_captureful_quantifier_with_remainder(node, remainder, cursor)
+      end
+
+      def optional_quantifier?(node)
+        node.kind == :"?" && node.minimum.zero? && node.maximum == 1 && !capture_writes?(node.expression)
+      end
+
+      def emit_optional_with_remainder(node, remainder, cursor)
+        optional_cursor = fresh_cursor
+        suffix = emit_sequence_parts(remainder, optional_cursor)
+        fallback = emit_sequence_parts(remainder, cursor)
+        attempted = emit_node(node.expression, cursor)
+        "(#{optional_cursor} = #{attempted}; #{optional_cursor}.nil? ? #{fallback} : " \
+          "(#{optional_cursor} = #{suffix}; #{optional_cursor}.nil? ? #{fallback} : #{optional_cursor}))"
       end
 
       def capture_writes?(node)
@@ -1140,6 +1154,7 @@ module Onibi
 
       def backtracking_quantifier?(parts)
         parts.length > 1 && parts.first.is_a?(AST::Quantifier) &&
+          parts.first.minimum != parts.first.maximum &&
           !%i[possessive possessive_bounded].include?(parts.first.mode)
       end
     end

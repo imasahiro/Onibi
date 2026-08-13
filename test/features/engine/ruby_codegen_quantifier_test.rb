@@ -33,6 +33,16 @@ class RubyCodegenQuantifierTest < Minitest::Test
     refute_includes program.source, "captures.map"
   end
 
+  def test_fixed_count_quantifier_does_not_allocate_candidate_array
+    ast = Onibi::Parser.new("a?z").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    refute_includes program.source, "candidates = []"
+    assert program.search("az", 0, capture: false)
+    assert program.search("z", 0, capture: false)
+    refute program.search("aaX", 0, capture: false)
+  end
+
   def test_quantifier_without_capture_writes_does_not_snapshot_outer_captures
     ast = Onibi::Parser.new("(?<outer>foo)(?:a)+z").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
