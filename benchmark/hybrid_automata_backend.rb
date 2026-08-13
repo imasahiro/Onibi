@@ -8,6 +8,8 @@ Adapter = Data.define(:name, :build)
 SIZE = Integer(ENV.fetch("ONIBI_BENCH_SIZE", 262_144))
 DURATION = Float(ENV.fetch("ONIBI_BENCH_TIME", "0.5"))
 SAMPLES = Integer(ENV.fetch("ONIBI_BENCH_SAMPLES", 31))
+ALLOCATIONS = Integer(ENV.fetch("ONIBI_BENCH_ALLOCATIONS", "0")) == 1
+ALLOCATION_ITERATIONS = Integer(ENV.fetch("ONIBI_BENCH_ALLOCATION_ITERATIONS", 1_000))
 
 CASES = [
   Case.new("literal_sparse_miss", "needle", "x" * SIZE),
@@ -91,6 +93,14 @@ def warm_ips(adapter, kase)
   iterations / (monotonic - started)
 end
 
+def allocations_per_call(adapter, kase)
+  matcher = adapter.build.call(kase.pattern)
+  GC.start
+  before = GC.stat(:total_allocated_objects)
+  ALLOCATION_ITERATIONS.times { matcher.call(kase.input) }
+  (GC.stat(:total_allocated_objects) - before).fdiv(ALLOCATION_ITERATIONS)
+end
+
 puts "Ruby: #{RUBY_DESCRIPTION}"
 puts "Input target: #{SIZE} bytes; warm sample: #{DURATION}s; lifecycle samples: #{SAMPLES}"
 puts
@@ -111,5 +121,19 @@ CASES.each do |kase|
     puts format("| %<case_name>s | %<engine>s | %<compile>.1f | %<first>.1f | %<ips>.1f | %<ratio>.2fx |",
                 case_name: kase.name, engine: name, compile: compile, first: first,
                 ips: ips, ratio: ips / codegen_ips)
+  end
+end
+
+if ALLOCATIONS
+  puts
+  puts "Allocations per call (#{ALLOCATION_ITERATIONS} warm calls)"
+  puts "| case | engine | objects/call |"
+  puts "|---|---:|---:|"
+  CASES.each do |kase|
+    ADAPTERS.each do |adapter|
+      puts format("| %<case>s | %<engine>s | %<objects>.1f |",
+                  case: kase.name, engine: adapter.name,
+                  objects: allocations_per_call(adapter, kase))
+    end
   end
 end
