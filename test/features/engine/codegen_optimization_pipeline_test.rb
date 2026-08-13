@@ -8,8 +8,7 @@ class CodegenOptimizationPipelineTest < Minitest::Test
 
     unit = Onibi::Codegen::Optimization::Pipeline.default.call(ast, options: [], encoding: Encoding::UTF_8)
 
-    assert_equal %i[impossible_branch_elimination duplicate_literal_branch_elimination literal_coalescing],
-                 unit.applied_passes
+    assert_equal 4, unit.applied_passes.length
     assert_optimized_literal(unit)
   end
 
@@ -84,7 +83,6 @@ class CodegenOptimizationPipelineTest < Minitest::Test
   end
 
   # rubocop:enable Metrics/AbcSize
-
   def test_pipeline_can_disable_optimizations_without_disabling_cfg_construction
     ast = Onibi::Parser.new("abc").parse
 

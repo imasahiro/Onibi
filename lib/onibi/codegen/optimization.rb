@@ -163,16 +163,63 @@ module Onibi
         end
       end
 
+      # Removes adjacent identical pure assertions without changing cursor state.
+      class RedundantPredicateElimination < Pass
+        def name = :redundant_predicate_elimination
+
+        def call(ast, **_context)
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.each_with_object([]) do |part, result|
+            transformed = transform(part)
+            result << transformed unless redundant?(result.last, transformed)
+          end
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+
+        def redundant?(left, right)
+          left.is_a?(AST::Assertion) && right.is_a?(AST::Assertion) &&
+            left.kind == right.kind && left.body == right.body && pure?(left.body)
+        end
+
+        def pure?(value)
+          return value.all? { |child| pure?(child) } if value.is_a?(Array)
+          return false if value.is_a?(AST::Backreference) || value.is_a?(AST::SubexpressionCall)
+          return true unless value.is_a?(Struct)
+
+          value.each { |child| return false unless pure?(child) }
+          true
+        end
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
-        DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination, LiteralCoalescing].freeze
+        DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
+                          LiteralCoalescing, RedundantPredicateElimination].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
+        REDUNDANT_PREDICATE = RedundantPredicateElimination.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
-          @default ||= new([IMPOSSIBLE, DUPLICATE, COALESCING])
+          @default ||= new([IMPOSSIBLE, DUPLICATE, COALESCING, REDUNDANT_PREDICATE])
         end
 
         def self.for(selection)
