@@ -281,6 +281,47 @@ module Onibi
       end
     end
 
+    # Reuses string-matching prefix events as an already-consumed NFA state.
+    module PrefixRuntime
+      private
+
+      def search_prefix_events(input, position)
+        prefix = @prefix_literal
+        prefix_length = prefix.bytesize
+        active = prefix_active
+        candidate = input.index(prefix, position)
+        while candidate
+          return true unless (active & @accept_mask).zero?
+
+          return true if search_prefix_candidate(input, candidate + prefix_length, active)
+
+          candidate = input.index(prefix, candidate + 1)
+        end
+        false
+      end
+
+      def search_prefix_candidate(input, position, active)
+        while position < input.bytesize
+          active = transition(active, input.getbyte(position), false)
+          return true unless (active & @accept_mask).zero?
+          break if active.zero?
+
+          position += 1
+        end
+        false
+      end
+
+      def prefix_active
+        @prefix_active ||= begin
+          active = 0
+          @prefix_literal.bytes.each_with_index do |byte, index|
+            active = nfa_transition(active, byte, index.zero?)
+          end
+          active
+        end
+      end
+    end
+
     # Builds a compact deterministic table for small single-span automata.
     module StaticDfaRuntime
       private
@@ -351,6 +392,7 @@ module Onibi
     # Executes one fused HFA with NFA and optional lazy-DFA state.
     class Program
       include SingleSpanRuntime
+      include PrefixRuntime
       include StaticDfaRuntime
       attr_reader :prefix_literal, :input_ir
 
@@ -427,16 +469,6 @@ module Onibi
         raise TypeError, "position must be an Integer" unless position.is_a?(Integer)
 
         position.negative? ? position + input.bytesize : position
-      end
-
-      def search_prefix_events(input, position)
-        candidate = input.index(@prefix_literal, position)
-        while candidate
-          return true if search_anchored(input, candidate)
-
-          candidate = input.index(@prefix_literal, candidate + 1)
-        end
-        false
       end
 
       def search_anchored(input, position)
@@ -615,9 +647,10 @@ module Onibi
 
           candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
             while candidate && candidate <= input.bytesize
-            active = 0
-            inject_start = true
-            cursor = candidate
+            active = %<prefix_active>s
+            return true unless (active & %<accept>s) == 0
+            inject_start = false
+            cursor = candidate + %<prefix_length>s
             while cursor < input.bytesize
               active = __hfa_transition(active, input.getbyte(cursor), inject_start)
               return true unless (active & %<accept>s) == 0
@@ -724,6 +757,8 @@ module Onibi
           reach: program.instance_variable_get(:@reach_masks),
           spans: program.instance_variable_get(:@span_masks),
           prefix: program.instance_variable_get(:@prefix_literal),
+          prefix_active: program.instance_variable_get(:@prefix_literal) && program.send(:prefix_active),
+          prefix_length: program.instance_variable_get(:@prefix_literal)&.bytesize,
           exact: program.instance_variable_get(:@exact_literal),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
           limit: program.instance_variable_get(:@dfa_state_limit),

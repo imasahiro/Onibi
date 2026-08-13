@@ -87,6 +87,13 @@ codegen 5.1. Allocation and throughput runs are intentionally separate.
 |  | no string | 408 | 2,486 | 488 | **1.78x** |
 |  | Ruby codegen | 197 | 3,655 | 274 | 1.00x |
 
+The continuation run after prefix-state reuse used commit `3cabb13` plus the
+working-tree prefix optimization (Ruby 4.0.6 arm64, 32,768 bytes, 3 samples,
+0.12 seconds warm time). `prefix_sparse_late` measured 45,153 scans/s for the
+bytecode HFA, 45,453 for HFA Ruby, and 44,949 for Ruby codegen. The first-match
+cost remained 33/31/32 us respectively; the gain comes from skipping repeated
+NFA transitions over the already-indexed literal prefix.
+
 MRI is intentionally not a design baseline, but was included as a semantic and
 performance reference. It ranged from 1.31x to 79.88x the current generated
 Ruby matcher in these cases, showing the remaining distance to a native engine.
@@ -103,8 +110,10 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   now stores the generated transition and accepting tables as module constants,
   avoiding table-array allocation on every warm call.
 - String matching is essential for sparse inputs. Removing it drops the prefix
-  case from about 35,000 to 171 scans/s. The full hybrid only ties codegen here
-  because the current generated matcher already has a literal candidate source.
+  case from about 35,000 to 171 scans/s. The HFA now carries the prefix event
+  into a precomputed post-prefix automaton state, so it matches or slightly
+  exceeds codegen on the sparse-prefix corpus without reprocessing the literal
+  prefix bytes.
 - Event selectivity needs a compiler cost model. In the low-selectivity case,
   every `a` creates a candidate event; disabling string matching improves the
   result from 0.81x to 1.78x codegen in this low-selectivity corpus after static
