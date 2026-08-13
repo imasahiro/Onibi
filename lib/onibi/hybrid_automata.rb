@@ -320,15 +320,22 @@ module Onibi
 
       def dfa_state_count = @dfa_rows.length
 
-      def ruby_program
-        RubyProgram.from_program(self)
-      end
+      def ruby_program = RubyProgram.from_program(self)
 
       def match?(input, position = 0)
         raise TypeError, "input must be a String" unless input.is_a?(String)
         raise UnsupportedInput, "the PoC accepts ASCII inputs only" unless input.ascii_only?
 
+        fast = fast_literal_match(input, position)
+        return fast unless fast.nil?
+
         position = normalize_position(input, position)
+        match_from_position(input, position)
+      end
+
+      private
+
+      def match_from_position(input, position)
         return false if position.negative? || position > input.bytesize
         return true if @nullable
         return !input.index(@exact_literal, position).nil? if @exact_literal && @prefix_literal
@@ -336,7 +343,11 @@ module Onibi
         @prefix_literal ? search_prefix_events(input, position) : search_unanchored(input, position)
       end
 
-      private
+      def fast_literal_match(input, position)
+        return unless position.zero? && @exact_literal && @prefix_literal
+
+        input.include?(@exact_literal)
+      end
 
       def normalize_position(input, position)
         position = position.to_int if position.respond_to?(:to_int)
