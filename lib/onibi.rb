@@ -214,3 +214,5 @@ module Onibi
     end
   end
 end
+
+require_relative "onibi/hybrid_automata"
