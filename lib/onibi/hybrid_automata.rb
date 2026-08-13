@@ -294,8 +294,9 @@ module Onibi
 
       def static_match?(input, position, static)
         rows, accepting = static
+        limit = input.bytesize
         state = 0
-        while position < input.bytesize
+        while position < limit
           state = rows[state][input.getbyte(position)]
           return true if accepting[state]
 
@@ -588,8 +589,9 @@ module Onibi
 
           rows = %<rows>s
           accepting = %<accepting>s
+          limit = input.bytesize
           state = 0
-          while position < input.bytesize
+          while position < limit
             state = rows[state][input.getbyte(position)]
             return true if accepting[state]
             position += 1
