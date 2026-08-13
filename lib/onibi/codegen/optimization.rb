@@ -308,22 +308,62 @@ module Onibi
         end
       end
 
+      # Marks fixed-count repeats as checkpoint-free because no count can be revisited.
+      class DeadCheckpointElimination < Pass
+        def name = :dead_checkpoint_elimination
+
+        def call(ast, **context)
+          return ast unless context.fetch(:options).empty?
+
+          transform(ast)
+        end
+
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+          return transform_quantifier(value) if value.is_a?(AST::Quantifier)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.map { |part| transform(part) }
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+
+        def transform_quantifier(quantifier)
+          expression = transform(quantifier.expression)
+          return quantifier unless quantifier.minimum == quantifier.maximum
+
+          AST::Quantifier.new(expression, quantifier.kind, quantifier.minimum,
+                              quantifier.maximum, :possessive)
+        end
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
                           RedundantPredicateElimination, BranchThreading, AutoPossessification,
-                          LiteralCoalescing].freeze
+                          DeadCheckpointElimination, LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
         REDUNDANT_PREDICATE = RedundantPredicateElimination.new.freeze
         BRANCH_THREADING = BranchThreading.new.freeze
         AUTO_POSSESSIFICATION = AutoPossessification.new.freeze
+        DEAD_CHECKPOINT = DeadCheckpointElimination.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
           @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING,
-                            AUTO_POSSESSIFICATION, COALESCING])
+                            AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, COALESCING])
         end
 
         def self.for(selection)
