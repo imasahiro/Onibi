@@ -386,11 +386,19 @@ module Onibi
         end
       end
 
+      # Enables per-search failure caching for pure candidate regions.
+      class PureFailureMemoization < Pass
+        def name = :pure_failure_memoization
+
+        def call(ast, **_context) = ast
+      end
+
       # Runs an explicit ordered set of transforms and then publishes the CFG.
       class Pipeline
         DEFAULT_PASSES = [ImpossibleBranchElimination, DuplicateLiteralBranchElimination,
                           RedundantPredicateElimination, BranchThreading, AutoPossessification,
-                          DeadCheckpointElimination, LoopIdiomRecognition, LiteralCoalescing].freeze
+                          DeadCheckpointElimination, LoopIdiomRecognition, PureFailureMemoization,
+                          LiteralCoalescing].freeze
         IMPOSSIBLE = ImpossibleBranchElimination.new.freeze
         DUPLICATE = DuplicateLiteralBranchElimination.new.freeze
         COALESCING = LiteralCoalescing.new.freeze
@@ -399,11 +407,12 @@ module Onibi
         AUTO_POSSESSIFICATION = AutoPossessification.new.freeze
         DEAD_CHECKPOINT = DeadCheckpointElimination.new.freeze
         LOOP_IDIOM = LoopIdiomRecognition.new.freeze
+        PURE_FAILURE = PureFailureMemoization.new.freeze
         DEFAULT_PASS_NAMES = DEFAULT_PASSES.map { |klass| klass.new.name }.freeze
 
         def self.default
           @default ||= new([IMPOSSIBLE, DUPLICATE, REDUNDANT_PREDICATE, BRANCH_THREADING,
-                            AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, LOOP_IDIOM, COALESCING])
+                            AUTO_POSSESSIFICATION, DEAD_CHECKPOINT, LOOP_IDIOM, PURE_FAILURE, COALESCING])
         end
 
         def self.for(selection)
