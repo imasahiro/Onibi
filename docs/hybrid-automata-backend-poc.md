@@ -105,7 +105,8 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   because the current generated matcher already has a literal candidate source.
 - Event selectivity needs a compiler cost model. In the low-selectivity case,
   every `a` creates a candidate event; disabling string matching improves the
-  result from 0.64x to 0.79x codegen in this low-selectivity corpus.
+  result from 0.81x to 1.78x codegen in this low-selectivity corpus after static
+  DFA materialization.
 - Compilation is currently 2.2x-3.9x slower than codegen for non-trivial cases;
   HFA-to-Ruby adds another source-compilation cost.
   Most cost comes from constructing 256-byte reach masks in Ruby. Cacheable
