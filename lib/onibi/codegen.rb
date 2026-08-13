@@ -93,7 +93,7 @@ module Onibi
     Analysis = Struct.new(
       :captures, :named_captures, :subexpression_calls, :widths, :labels, :options, :encoding,
       :literal_atoms, :literal_runs, :required_literals, :prefix_literals, :suffix_literals,
-      :first_sets, :anchor_facts, :component_plans,
+      :first_sets, :anchor_facts, :component_plans, :capture_liveness,
       keyword_init: true
     )
 
@@ -308,6 +308,7 @@ module Onibi
         @captures = []
         @named_captures = {}
         @calls = []
+        @capture_references = []
         @widths = {}.compare_by_identity
         @labels = {}.compare_by_identity
         @next_label = 0
@@ -315,8 +316,7 @@ module Onibi
       end
 
       def analyze(ast)
-        visit(ast)
-        extract_components(ast)
+        visit(ast) && extract_components(ast)
         result = Analysis.new(
           captures: @captures,
           named_captures: @named_captures,
@@ -325,6 +325,8 @@ module Onibi
           labels: @labels,
           options: @options,
           encoding: @encoding,
+          capture_liveness: CaptureLiveness.from(groups: @captures, names: @named_captures,
+                                                 references: @capture_references),
           **component_metadata
         )
         deep_freeze(result)
@@ -364,14 +366,15 @@ module Onibi
       end
 
       def visit_property(_node) = scalar_width(1)
-      def visit_backreference(_node) = variable_width
+
+      def visit_backreference(node) = CaptureLiveness.record(@capture_references, node.identifier, variable_width)
+
       def visit_any(_node) = scalar_width(1)
       def visit_anchor(_node) = zero_width
 
-      def visit_subexpressioncall(node)
-        @calls << node
-        variable_width
-      end
+      def visit_subexpressioncall(node) = CaptureLiveness.record_call(
+        @calls, @capture_references, node, variable_width
+      )
 
       def visit_assertion(node)
         visit(node.body)
@@ -392,6 +395,7 @@ module Onibi
       end
 
       def visit_conditional(node)
+        @capture_references << node.condition if node.condition.is_a?(Integer) || node.condition.is_a?(Symbol)
         yes = visit(node.yes_branch)
         no = visit(node.no_branch)
         merge(yes, no)
@@ -821,7 +825,34 @@ module Onibi
 
     # Determines whether generated boolean execution needs capture state.
     module CaptureLiveness
+      Facts = Struct.new(:groups, :observable, :semantic, :dead_in_boolean, :index_map, keyword_init: true)
+      EMPTY = Facts.new(groups: [].freeze, observable: [].freeze, semantic: [].freeze,
+                        dead_in_boolean: [].freeze, index_map: {}.freeze).freeze
+
       module_function
+
+      def record(references, reference, value)
+        references << reference
+        value
+      end
+
+      def record_call(calls, references, node, value)
+        calls << node
+        references << node.identifier
+        value
+      end
+
+      def from(groups:, names:, references:)
+        normalized_groups = groups.uniq.sort.freeze
+        return EMPTY if normalized_groups.empty?
+
+        semantic = references.filter_map do |reference|
+          reference.is_a?(Integer) ? reference : names[reference]
+        end.uniq.sort.freeze
+        Facts.new(groups: normalized_groups, observable: normalized_groups, semantic: semantic,
+                  dead_in_boolean: (normalized_groups - semantic).freeze,
+                  index_map: semantic.each_with_index.to_h.freeze)
+      end
 
       def required?(value)
         return value.any? { |child| required?(child) } if value.is_a?(Array)
