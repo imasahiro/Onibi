@@ -82,10 +82,10 @@ codegen 5.1. Allocation and throughput runs are intentionally separate.
 |  | hybrid Ruby | 911 | 5,220 | 192 | **1.58x** |
 |  | no DFA | 747 | 39,824 | 25 | 0.21x |
 |  | Ruby codegen | 445 | 8,225 | 122 | 1.00x |
-| low-selectivity miss | hybrid | 392 | 4,601 | 221 | 0.81x |
-|  | hybrid Ruby | 498 | 5,084 | 197 | 0.72x |
-|  | no string | 389 | 4,515 | 222 | 0.81x |
-|  | Ruby codegen | 213 | 3,656 | 274 | 1.00x |
+| low-selectivity miss | hybrid | 373 | 2,451 | 486 | **1.78x** |
+|  | hybrid Ruby | 1,174 | 2,111 | 480 | **1.75x** |
+|  | no string | 408 | 2,486 | 488 | **1.78x** |
+|  | Ruby codegen | 197 | 3,655 | 274 | 1.00x |
 
 MRI is intentionally not a design baseline, but was included as a semantic and
 performance reference. It ranged from 1.31x to 79.88x the current generated
@@ -95,7 +95,11 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
 
 - The fused DFA/NFA state is valuable. On the dense case, DFA promotion raises
   throughput from 20 to 167 scans/s (8.4x) and moves the PoC from 0.19x to
-  1.60x the generated matcher.
+  1.64x the generated matcher.
+- Small single-span graphs now use a compile-time static DFA table. In the
+  low-selectivity case this raises warm throughput from 221/s to 486/s for the
+  bytecode HFA and from 197/s to 480/s for HFA Ruby; compile and first-match
+  costs increase because the table is materialized before execution.
 - String matching is essential for sparse inputs. Removing it drops the prefix
   case from about 35,000 to 171 scans/s. The full hybrid only ties codegen here
   because the current generated matcher already has a literal candidate source.

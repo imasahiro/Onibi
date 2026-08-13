@@ -281,9 +281,73 @@ module Onibi
       end
     end
 
+    # Builds a compact deterministic table for small single-span automata.
+    module StaticDfaRuntime
+      private
+
+      def static_search(input, position)
+        return unless @single_span && @dfa_enabled
+
+        static = static_dfa_data
+        static && static_match?(input, position, static)
+      end
+
+      def static_match?(input, position, static)
+        rows, accepting = static
+        state = 0
+        while position < input.bytesize
+          state = rows[state][input.getbyte(position)]
+          return true if accepting[state]
+
+          position += 1
+        end
+        false
+      end
+
+      def static_dfa_data
+        @static_dfa_data ||= build_static_dfa
+      end
+
+      def build_static_dfa
+        masks = [0]
+        ids = { 0 => 0 }
+        rows = []
+        masks.each_with_index do |mask, state|
+          rows[state] = static_row(mask, ids, masks)
+          return nil unless rows[state]
+        end
+        accepting = masks.map { |mask| (mask & @accept_mask) != 0 }.freeze
+        [rows.freeze, accepting].freeze
+      end
+
+      def static_row(mask, ids, masks)
+        row = Array.new(256)
+        256.times do |byte|
+          result = nfa_transition(mask, byte, true)
+          id = ids[result] || add_static_state(ids, masks, result)
+          break unless id
+
+          row[byte] = id
+        end
+        return unless row.none?(&:nil?)
+
+        row.freeze
+      end
+
+      def add_static_state(ids, masks, result)
+        return if masks.length >= 1024
+
+        id = masks.length
+        ids[result] = id
+        masks << result
+        id
+      end
+    end
+
     # Executes one fused HFA with NFA and optional lazy-DFA state.
     class Program
       include SingleSpanRuntime
+      include StaticDfaRuntime
       attr_reader :prefix_literal, :input_ir
 
       def initialize(automaton, dfa:, dfa_state_limit:, input_ir: :cfg)
@@ -339,6 +403,9 @@ module Onibi
         return false if position.negative? || position > input.bytesize
         return true if @nullable
         return !input.index(@exact_literal, position).nil? if @exact_literal && @prefix_literal
+
+        static = static_search(input, position)
+        return static unless static.nil?
 
         @prefix_literal ? search_prefix_events(input, position) : search_unanchored(input, position)
       end
@@ -505,6 +572,27 @@ module Onibi
         end
       RUBY
 
+      STATIC_DFA_TEMPLATE = <<~'RUBY'
+        def self.__onibi_search(input, position = 0)
+          return false unless input.is_a?(String) && input.ascii_only?
+          position = position.to_int if position.respond_to?(:to_int)
+          return false unless position.is_a?(Integer)
+          position += input.bytesize if position.negative?
+          return false if position.negative? || position > input.bytesize
+          return true if %<nullable>s
+
+          rows = %<rows>s
+          accepting = %<accepting>s
+          state = 0
+          while position < input.bytesize
+            state = rows[state][input.getbyte(position)]
+            return true if accepting[state]
+            position += 1
+          end
+          false
+        end
+      RUBY
+
       SEARCH_TEMPLATE = <<~'RUBY'
         def self.__onibi_search(input, position = 0)
           return false unless input.is_a?(String) && input.ascii_only?
@@ -583,10 +671,23 @@ module Onibi
       def emit(program)
         raw = raw_program_data(program)
         data = program_data(program)
+        static_source = static_source(program, raw, data)
+        return static_source if static_source
+
         return format(UNANCHORED_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data)) unless raw[:prefix]
         return format(SINGLE_SPAN_TEMPLATE, data.merge(single_span_values(raw))) if raw[:single_span]
 
         format(SEARCH_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data))
+      end
+
+      def static_source(program, raw, data)
+        return unless raw[:single_span] && raw[:dfa] && !raw[:exact]
+
+        static = program.send(:static_dfa_data)
+        return unless static
+
+        rows, accepting = static
+        format(STATIC_DFA_TEMPLATE, data.merge(rows: rows.inspect, accepting: accepting.inspect))
       end
 
       def single_span_values(data)
@@ -616,7 +717,8 @@ module Onibi
           exact: program.instance_variable_get(:@exact_literal),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
           limit: program.instance_variable_get(:@dfa_state_limit),
-          single_span: program.instance_variable_get(:@single_span)
+          single_span: program.instance_variable_get(:@single_span),
+          dfa: program.instance_variable_get(:@dfa_enabled)
         }
       end
     end

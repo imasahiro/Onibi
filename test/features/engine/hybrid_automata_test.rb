@@ -96,6 +96,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("abcbx")
   end
 
+  def test_small_single_span_uses_static_dfa_in_ruby_lowering
+    ruby = compile("a[bc]{4}z").ruby_program
+
+    assert_includes ruby.source, "accepting ="
+    assert ruby.match?("aabcbcz")
+    refute ruby.match?("abcbx")
+  end
+
   def test_dfa_cache_respects_its_state_limit
     program = Onibi::HybridAutomata.compile("(?:ab|ac|ba|bc)+z", dfa_state_limit: 2)
 
