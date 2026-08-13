@@ -3,6 +3,13 @@
 require_relative "../../test_helper"
 
 class CodegenAnalyzerTest < Minitest::Test
+  def test_boundary_analysis_can_be_disabled_for_runtime_codegen
+    ast = Onibi::Parser.new("abc").parse
+    analysis = Onibi::Codegen::Analyzer.new(boundary_analysis: false).analyze(ast)
+
+    assert_nil analysis.boundary_facts
+  end
+
   def test_analysis_contains_labels_captures_and_widths
     ast = Onibi::Parser.new("(?<word>a+)\\g<word>").parse
     analysis = Onibi::Codegen::Analyzer.new(["ignorecase"], Encoding::UTF_8).analyze(ast)

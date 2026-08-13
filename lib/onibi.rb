@@ -76,7 +76,8 @@ module Onibi
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
       @ast = Codegen::Optimization.prepare(Parser.new(tokens).parse, normalized_options)
-      @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding).analyze(@ast)
+      @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding,
+                                        boundary_analysis: false).analyze(@ast)
     end
 
     def match?(input, position = 0)
