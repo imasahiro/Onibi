@@ -205,10 +205,21 @@ module Onibi
 
         def lower_sequence(node)
           return empty_fragment if node.parts.empty?
+          return lower_coalesced_sequence(node) if coalescible_sequence?(node)
 
           fragments = node.parts.map { |part| lower(part) }
           connect_sequence(fragments)
           Fragment.new(entry: fragments.first.entry, exit: fragments.last.exit)
+        end
+
+        def lower_coalesced_sequence(node)
+          block = @builder.block
+          node.parts.each { |part| append_operation(block, part) }
+          Fragment.new(entry: block, exit: block)
+        end
+
+        def coalescible_sequence?(node)
+          node.parts.none? { |part| part.is_a?(AST::Sequence) || part.is_a?(AST::Alternation) }
         end
 
         def connect_sequence(fragments)
@@ -232,12 +243,16 @@ module Onibi
         end
 
         def lower_operation(node)
+          block = @builder.block
+          append_operation(block, node)
+          Fragment.new(entry: block, exit: block)
+        end
+
+        def append_operation(block, node)
           opcode = OPCODES[node.class]
           raise CodegenError, "unsupported CFG node #{node.class}" unless opcode
 
-          block = @builder.block
           @builder.append(block, opcode, operand: node, effects: EFFECTS.fetch(node.class, []))
-          Fragment.new(entry: block, exit: block)
         end
 
         def empty_fragment
