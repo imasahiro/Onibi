@@ -115,6 +115,13 @@ class HybridAutomataTest < Minitest::Test
     assert_operator program.dfa_state_count, :<=, 2
   end
 
+  def test_large_unprefixed_hfa_uses_bounded_static_dfa
+    program = compile("(?:ab|ac|ad|ba|bc|bd)+z")
+    ruby = program.ruby_program
+    assert_includes ruby.source, "STATIC_ROWS ="
+    assert_equal([true, false], %w[abacadbabcbdz abacadbabcbdx].map { |input| ruby.match?(input) })
+  end
+
   def test_ruby_lowering_preserves_ablation_configuration
     program = Onibi::HybridAutomata.compile("needle", dfa: false, string_matching: false)
     ruby = program.ruby_program

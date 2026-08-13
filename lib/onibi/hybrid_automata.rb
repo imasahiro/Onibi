@@ -355,10 +355,17 @@ module Onibi
       private
 
       def static_search(input, position)
-        return unless @single_span && @dfa_enabled
+        return unless @dfa_enabled && static_eligible?
 
         static = static_dfa_data
-        static && static_match?(input, position, static)
+        return unless static && static[0].length <= @dfa_state_limit
+
+        @dfa_rows[:static] ||= Array.new(static[0].length) unless @single_span
+        static_match?(input, position, static)
+      end
+
+      def static_eligible?
+        @single_span || (@prefix_literal.nil? && @span_entries.length >= 8)
       end
 
       def static_match?(input, position, static)
@@ -852,10 +859,11 @@ module Onibi
       end
 
       def static_source(program, raw, data)
-        return unless raw[:single_span] && raw[:dfa] && !raw[:exact]
+        return unless raw[:static] && raw[:dfa] && !raw[:exact]
 
         static = program.send(:static_dfa_data)
         return unless static
+        return unless static[0].length <= raw[:limit]
 
         rows, accepting = static
         first_byte = program.send(:static_first_byte)
@@ -886,9 +894,8 @@ module Onibi
           nullable: program.instance_variable_get(:@nullable),
           reach: program.instance_variable_get(:@reach_masks),
           spans: program.instance_variable_get(:@span_masks),
-          prefix: program.instance_variable_get(:@prefix_literal),
-          prefix_active: program.instance_variable_get(:@prefix_literal) && program.send(:prefix_active),
-          prefix_length: program.instance_variable_get(:@prefix_literal)&.bytesize,
+          **prefix_source_data(program),
+          static: program.send(:static_eligible?),
           **literal_source_data(program),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
           limit: program.instance_variable_get(:@dfa_state_limit),
@@ -900,6 +907,11 @@ module Onibi
       def literal_source_data(program)
         exact = program.instance_variable_get(:@exact_literal)
         { exact_prefilter: exact&.bytesize.to_i >= 4, exact_first: exact&.byteslice(0, 1), exact: exact }
+      end
+
+      def prefix_source_data(program)
+        prefix = program.instance_variable_get(:@prefix_literal)
+        { prefix: prefix, prefix_active: prefix && program.send(:prefix_active), prefix_length: prefix&.bytesize }
       end
     end
   end

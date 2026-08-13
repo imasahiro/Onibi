@@ -103,6 +103,11 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
 - The fused DFA/NFA state is valuable. On the dense case, DFA promotion raises
   throughput from 20 to 167 scans/s (8.4x) and moves the PoC from 0.19x to
   1.64x the generated matcher.
+- Larger unprefixed multi-span graphs now use the bounded static DFA when its
+  table fits the configured state limit. The current `dfa_dense_hit` fixture
+  reaches about 581 scans/s for bytecode HFA and 571 for HFA Ruby, versus 130
+  for Ruby codegen (4.47x and 4.39x). Ruby source compilation is more expensive
+  for this table, but its first match is still faster than codegen.
 - Small single-span graphs now use a compile-time static DFA table. In the
   low-selectivity case this raises warm throughput from 221/s to 486/s for the
   bytecode HFA and from 197/s to 480/s for HFA Ruby; compile and first-match
