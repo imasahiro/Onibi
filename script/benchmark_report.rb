@@ -33,7 +33,6 @@ module BenchmarkReport
       RegexpFeatureBenchmark::Suite.load.cases.each do |benchmark_case|
         RegexpFeatureBenchmark::Runner::OPERATIONS.each do |operation|
           report("#{benchmark_case.label}/#{operation}") do |benchmark|
-            benchmark.report("ruby") { feature_operation(benchmark_case, operation, Regexp) }
             benchmark.report("onibi") { feature_operation(benchmark_case, operation, Onibi::Regexp) }
           end
         end
@@ -54,10 +53,8 @@ module BenchmarkReport
 
     def run_regex_redux
       input = File.read(File.join(ROOT, "benchmark", "fasta-500.txt"))
-      %i[ruby onibi].each do |engine|
-        report("regex-redux/500/#{engine}") do |benchmark|
-          benchmark.report(engine.to_s) { RegexRedux.new(StringIO.new(input), engine: engine).to_s }
-        end
+      report("regex-redux/500/onibi") do |benchmark|
+        benchmark.report("onibi") { RegexRedux.new(StringIO.new(input), engine: :onibi).to_s }
       end
     end
 
@@ -123,8 +120,7 @@ module BenchmarkReport
     end
   end
 
-  # Detects meaningful slowdowns in Onibi results. Ruby entries remain
-  # informational; only entries ending in /onibi are regression gates.
+  # Detects meaningful slowdowns in Onibi results.
   class RegressionChecker
     def initialize(before, after, threshold: 0.10)
       @before = before
