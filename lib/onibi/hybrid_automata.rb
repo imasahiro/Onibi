@@ -305,7 +305,10 @@ module Onibi
       end
 
       def static_dfa_data
-        @static_dfa_data ||= build_static_dfa
+        return @static_dfa_data if @static_dfa_attempted
+
+        @static_dfa_attempted = true
+        @static_dfa_data = build_static_dfa
       end
 
       def build_static_dfa
@@ -361,6 +364,8 @@ module Onibi
         @dfa_enabled = dfa
         @dfa_state_limit = dfa_state_limit
         @dfa_rows = {}
+        @static_dfa_attempted = false
+        @static_dfa_data = nil
         @input_ir = input_ir
       end
 
