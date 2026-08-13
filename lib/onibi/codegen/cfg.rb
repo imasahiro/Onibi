@@ -4,9 +4,44 @@ module Onibi
   module Codegen
     # Immutable control-flow representation used between parsing and Ruby emission.
     module CFG
-      Operation = Struct.new(:opcode, :operand, :effects, keyword_init: true) do
-        def initialize(opcode:, operand: nil, effects: [])
-          super(opcode: opcode, operand: operand, effects: effects.dup.freeze)
+      StateToken = Struct.new(:domain, :version, keyword_init: true) do
+        def initialize(domain:, version:)
+          super
+          freeze
+        end
+      end
+
+      EffectSummary = Struct.new(:effects, :reads, :writes, keyword_init: true) do
+        def initialize(effects: [], reads: {}, writes: {})
+          normalized = ->(value) { value.uniq.freeze }
+          super(effects: normalized.call(effects), reads: freeze_tokens(reads), writes: freeze_tokens(writes))
+          freeze
+        end
+
+        def self.from_operations(operations)
+          new(effects: operations.flat_map(&:effects), reads: collect_tokens(operations, :state_in),
+              writes: collect_tokens(operations, :state_out))
+        end
+
+        private
+
+        def self.collect_tokens(operations, field)
+          operations.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |operation, result|
+            operation.public_send(field).each { |domain, token| result[domain] << token }
+          end
+        end
+
+        def freeze_tokens(tokens)
+          tokens.each_with_object({}) do |(domain, values), result|
+            result[domain] = values.uniq.freeze
+          end.freeze
+        end
+      end
+
+      Operation = Struct.new(:opcode, :operand, :effects, :state_in, :state_out, keyword_init: true) do
+        def initialize(opcode:, operand: nil, effects: [], state_in: {}, state_out: {})
+          super(opcode: opcode, operand: operand, effects: effects.dup.freeze,
+                state_in: state_in.dup.freeze, state_out: state_out.dup.freeze)
           freeze
         end
       end
@@ -25,16 +60,18 @@ module Onibi
         end
       end
 
-      Block = Struct.new(:id, :operations, :terminator, :successors, keyword_init: true) do
-        def initialize(id:, operations:, terminator:, successors:)
+      Block = Struct.new(:id, :operations, :terminator, :successors, :effect_summary, keyword_init: true) do
+        def initialize(id:, operations:, terminator:, successors:, effect_summary: nil)
           super(id: id, operations: operations.freeze, terminator: terminator, successors: successors.freeze)
+          self.effect_summary = effect_summary || EffectSummary.from_operations(operations)
           freeze
         end
       end
 
-      Graph = Struct.new(:entry, :exit, :blocks, keyword_init: true) do
-        def initialize(entry:, exit:, blocks:)
-          super(entry: entry, exit: exit, blocks: blocks.freeze)
+      Graph = Struct.new(:entry, :exit, :blocks, :effect_summary, keyword_init: true) do
+        def initialize(entry:, exit:, blocks:, effect_summary: nil)
+          super(entry: entry, exit: exit, blocks: blocks.freeze,
+                effect_summary: effect_summary || EffectSummary.from_operations(blocks.flat_map(&:operations)))
           freeze
         end
 
@@ -49,6 +86,8 @@ module Onibi
 
         def initialize
           @blocks = []
+          @state_versions = Hash.new(0)
+          @state_tokens = {}
         end
 
         def block
@@ -58,7 +97,17 @@ module Onibi
         end
 
         def append(block, opcode, operand: nil, effects: [])
-          block.operations << Operation.new(opcode: opcode, operand: operand, effects: effects)
+          reads = state_domains(effects, :reads)
+          writes = state_domains(effects, :writes)
+          state_in = reads.to_h { |domain| [domain, token_for(domain)] }
+          state_out = writes.to_h do |domain|
+            @state_versions[domain] += 1
+            token = StateToken.new(domain: domain, version: @state_versions[domain])
+            @state_tokens[domain] = token
+            [domain, token]
+          end
+          block.operations << Operation.new(opcode: opcode, operand: operand, effects: effects,
+                                            state_in: state_in, state_out: state_out)
           block
         end
 
@@ -79,6 +128,29 @@ module Onibi
                       successors: block.successors)
           end
           Graph.new(entry: entry.id, exit: exit.id, blocks: immutable)
+        end
+
+        private
+
+        EFFECT_STATE_DOMAINS = {
+          reads: {
+            capture: %i[cursor captures], assertion: %i[cursor captures checkpoints],
+            choice: %i[cursor captures], repeat: %i[cursor], cut: %i[checkpoints],
+            capture_read: %i[captures], call: %i[cursor captures]
+          },
+          writes: {
+            capture: %i[captures], assertion: %i[captures checkpoints], choice: %i[checkpoints],
+            repeat: %i[repeats checkpoints], cut: %i[cuts checkpoints], call: %i[calls checkpoints]
+          }
+        }.freeze
+
+        def state_domains(effects, direction)
+          domains = effects.flat_map { |effect| EFFECT_STATE_DOMAINS.fetch(direction).fetch(effect, %i[cursor]) }
+          domains.uniq
+        end
+
+        def token_for(domain)
+          @state_tokens[domain] ||= StateToken.new(domain: domain, version: @state_versions[domain])
         end
       end
 

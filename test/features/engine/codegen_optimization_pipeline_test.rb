@@ -21,6 +21,29 @@ class CodegenOptimizationPipelineTest < Minitest::Test
     assert cfg.blocks.all?(&:frozen?)
   end
 
+  # rubocop:disable Metrics/AbcSize
+  def test_cfg_operations_publish_explicit_state_tokens
+    cfg = Onibi::Codegen::CFG::Lowerer.new.call(Onibi::Parser.new("(?<x>a)").parse)
+    capture_operation = cfg.operations.find { |operation| operation.opcode == :match_group }
+
+    refute_empty capture_operation.state_in
+    refute_empty capture_operation.state_out
+    refute_equal capture_operation.state_in[:captures], capture_operation.state_out[:captures]
+    assert_equal :captures, capture_operation.state_out[:captures].domain
+  end
+
+  def test_cfg_regions_publish_aggregated_effect_summaries
+    cfg = Onibi::Codegen::CFG::Lowerer.new.call(Onibi::Parser.new("(?<x>a)").parse)
+    repeated_cfg = Onibi::Codegen::CFG::Lowerer.new.call(Onibi::Parser.new("a+").parse)
+
+    assert_equal :captures, cfg.effect_summary.writes.fetch(:captures).first.domain
+    assert_includes cfg.effect_summary.effects, :capture
+    assert_includes repeated_cfg.effect_summary.effects, :repeat
+    assert_equal cfg.blocks.map(&:effect_summary).flat_map(&:effects).uniq.sort,
+                 cfg.effect_summary.effects.sort
+  end
+  # rubocop:enable Metrics/AbcSize
+
   def test_pipeline_can_disable_optimizations_without_disabling_cfg_construction
     ast = Onibi::Parser.new("abc").parse
 
