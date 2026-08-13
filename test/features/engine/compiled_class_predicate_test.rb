@@ -103,6 +103,15 @@ class CompiledClassPredicateTest < Minitest::Test
     assert_includes program.source, "getbyte"
   end
 
+  def test_root_ascii_class_uses_search_plan_bounds_to_skip_cursor_check
+    ast = Onibi::Parser.new("[a-z]").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    refute_includes program.source, "position < input.length && ONIBI_CLASS_PREDICATE_0.ascii_table"
+    assert program.search("m", 0, capture: false)
+    refute program.search("1", 0, capture: false)
+  end
+
   def test_generated_class_predicate_references_a_registered_table_id
     ast = Onibi::Parser.new("[a-z]").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
