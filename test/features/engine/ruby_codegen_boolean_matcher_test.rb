@@ -31,7 +31,7 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
     ast = Onibi::Parser.new("(a)\\1").parse
     program = Onibi::Codegen::GeneratedProgram.ast(ast)
 
-    assert_includes program.source, "captures=Array.new(1)"
+    assert_includes program.source, "capture_1_start"
     assert program.search("aa", 0, capture: false)
     refute program.search("ab", 0, capture: false)
   end
@@ -52,5 +52,23 @@ class RubyCodegenBooleanMatcherTest < Minitest::Test
 
     assert_equal "a", match[1]
     assert_equal "b", match[2]
+  end
+
+  def test_boolean_program_scalar_replaces_a_single_simple_capture
+    ast = Onibi::Parser.new("(a)\\1").parse
+    program = Onibi::Codegen::GeneratedProgram.ast(ast)
+
+    assert_includes program.source, "capture_1_start"
+    refute_includes program.source, "Array.new(1)"
+    assert program.search("aa", 0, capture: false)
+    refute program.search("ab", 0, capture: false)
+  end
+
+  def test_scalar_replacement_preserves_the_capture_result
+    regexp = Onibi::Regexp.new("(a)\\1")
+
+    match = regexp.match("aa")
+
+    assert_equal "a", match[1]
   end
 end
