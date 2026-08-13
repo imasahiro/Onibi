@@ -17,4 +17,12 @@ class PureFailureMemoizationTest < Minitest::Test
     assert regexp.match?("bb")
     refute regexp.match?("ab")
   end
+
+  def test_pure_alternation_quantifier_gets_a_cursor_failure_cache
+    program = Onibi::Codegen::GeneratedProgram.ast(Onibi::Parser.new("(?:a|b)*c").parse)
+
+    assert_includes program.source, "failure_cache"
+    assert program.search("ababc", 0, capture: false)
+    refute program.search("ababd", 0, capture: false)
+  end
 end
