@@ -410,11 +410,24 @@ module Onibi
       def static_prefix_match?(input, position, static)
         rows, accepting, accepting_state, dead_state = static
         return true if accepting[0]
+        return static_prefix_match_single?(input, position, rows, accepting_state, dead_state) if accepting_state
 
         state = 0
         while position < input.bytesize
           state = rows[state][input.getbyte(position)]
-          return true if accepting_state ? state == accepting_state : accepting[state]
+          return true if accepting[state]
+          break if state == dead_state
+
+          position += 1
+        end
+        false
+      end
+
+      def static_prefix_match_single?(input, position, rows, accepting_state, dead_state)
+        state = 0
+        while position < input.bytesize
+          state = rows[state][input.getbyte(position)]
+          return true if state == accepting_state
           break if state == dead_state
 
           position += 1
