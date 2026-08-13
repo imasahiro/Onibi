@@ -88,6 +88,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("a123x")
   end
 
+  def test_avoids_low_selectivity_single_byte_prefix_events
+    program = compile("a[bc]{4}z")
+
+    assert_nil program.prefix_literal
+    assert program.match?("aabcbcz")
+    refute program.match?("abcbx")
+  end
+
   def test_dfa_cache_respects_its_state_limit
     program = Onibi::HybridAutomata.compile("(?:ab|ac|ba|bc)+z", dfa_state_limit: 2)
 

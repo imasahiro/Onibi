@@ -59,8 +59,10 @@ scan are medians of 7 runs; warm throughput is sampled for 0.15 seconds. The
 ablation variants still use the same program: `no_dfa` disables promotion,
 `no_string` disables prefix events, and `nfa_only` disables both.
 
-The recorded throughput run used commit `b3ed436` (Ruby 4.0.6 arm64, 32,768
-bytes, 7 lifecycle samples, 0.15 seconds warm time). A separate allocation
+The original recorded throughput run used commit `b3ed436` (Ruby 4.0.6 arm64,
+32,768 bytes, 7 lifecycle samples, 0.15 seconds warm time). The latest runtime
+policy run uses commit `WORKTREE` (same Ruby/input, 3 lifecycle samples, 0.1
+seconds warm time). A separate allocation
 run used the same corpus shapes at 4,096 bytes and 100 warm calls per engine;
 representative objects/call were: `dfa_dense_hit` hybrid 0.1, hybrid Ruby 0.4,
 Ruby codegen 14,339; `prefix_sparse_late` hybrid 0.0, hybrid Ruby 1.4, Ruby
@@ -68,22 +70,22 @@ codegen 5.1. Allocation and throughput runs are intentionally separate.
 
 | Case | Engine | Compile us | First scan us | Warm scans/s | vs codegen |
 |---|---:|---:|---:|---:|---:|
-| literal sparse miss | hybrid | 375 | 23 | 39,807 | 0.99x |
-|  | hybrid Ruby | 579 | 24 | 40,943 | **1.01x** |
-|  | no string | 364 | 4,852 | 165 | 0.00x |
-|  | NFA only | 392 | 9,155 | 104 | 0.00x |
-|  | Ruby codegen | 115 | 24 | 40,350 | 1.00x |
-| prefix sparse late | hybrid | 777 | 38 | 35,074 | 0.94x |
-|  | hybrid Ruby | 974 | 40 | 37,301 | 1.00x |
-|  | no DFA | 712 | 31 | 28,331 | 0.76x |
-| DFA dense hit | hybrid | 805 | 5,350 | 167 | **1.60x** |
-|  | hybrid Ruby | 947 | 6,261 | 148 | **1.42x** |
-|  | no DFA | 1,400 | 48,816 | 20 | 0.19x |
-|  | Ruby codegen | 565 | 8,714 | 104 | 1.00x |
-| low-selectivity miss | hybrid | 443 | 6,353 | 133 | 0.57x |
-|  | hybrid Ruby | 598 | 6,758 | 132 | 0.57x |
-|  | no string | 437 | 5,187 | 173 | 0.75x |
-|  | Ruby codegen | 230 | 3,918 | 232 | 1.00x |
+| literal sparse miss | hybrid | 353 | 22 | 47,897 | **1.01x** |
+|  | hybrid Ruby | 432 | 22 | 46,910 | 0.99x |
+|  | no string | 395 | 4,469 | 224 | 0.00x |
+|  | NFA only | 325 | 4,471 | 224 | 0.00x |
+|  | Ruby codegen | 110 | 22 | 47,340 | 1.00x |
+| prefix sparse late | hybrid | 773 | 40 | 43,824 | 0.98x |
+|  | hybrid Ruby | 938 | 39 | 43,522 | 0.97x |
+|  | no DFA | 654 | 28 | 36,769 | 0.82x |
+| DFA dense hit | hybrid | 671 | 4,969 | 200 | **1.64x** |
+|  | hybrid Ruby | 911 | 5,220 | 192 | **1.58x** |
+|  | no DFA | 747 | 39,824 | 25 | 0.21x |
+|  | Ruby codegen | 445 | 8,225 | 122 | 1.00x |
+| low-selectivity miss | hybrid | 392 | 4,601 | 221 | 0.81x |
+|  | hybrid Ruby | 498 | 5,084 | 197 | 0.72x |
+|  | no string | 389 | 4,515 | 222 | 0.81x |
+|  | Ruby codegen | 213 | 3,656 | 274 | 1.00x |
 
 MRI is intentionally not a design baseline, but was included as a semantic and
 performance reference. It ranged from 1.31x to 79.88x the current generated

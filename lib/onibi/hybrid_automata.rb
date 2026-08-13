@@ -86,10 +86,41 @@ module Onibi
       end
     end
 
+    # Derives literals used by the HFA candidate-event policy.
+    module PatternFacts
+      module_function
+
+      def selective_prefix(node)
+        prefix = leading_literal(node)
+        prefix if prefix && prefix.bytesize >= 2
+      end
+
+      def leading_literal(node)
+        return node.value if node.is_a?(AST::Literal)
+        return unless node.is_a?(AST::Sequence)
+
+        value = +""
+        node.parts.each do |part|
+          break unless part.is_a?(AST::Literal)
+
+          value << part.value
+        end
+        value.empty? ? nil : value.freeze
+      end
+
+      def literal_value(node)
+        return node.value if node.is_a?(AST::Literal)
+        return unless node.is_a?(AST::Sequence) && node.parts.all? { |part| part.is_a?(AST::Literal) }
+
+        node.parts.map(&:value).join.freeze
+      end
+    end
+
     # Immutable NFA topology builder. Quantifiers are expanded into position
     # states so the runtime can represent every active state in one Integer.
     class Compiler
       include GraphBuilder
+      include PatternFacts
 
       NODE_VISITORS = {
         AST::Literal => :literal_node, AST::CharacterClass => :character_class_node,
@@ -109,7 +140,7 @@ module Onibi
       def compile(unit)
         ast = unit.ast
         HybridAutomata.validate_cfg!(unit.cfg)
-        prefix = @string_matching ? leading_literal(ast) : nil
+        prefix = @string_matching ? selective_prefix(ast) : nil
         exact_literal = literal_value(ast)
         fragment = visit(ast)
         reach_masks = build_reach_masks
@@ -223,31 +254,36 @@ module Onibi
       def empty_fragment
         Fragment.new(true, 0, 0)
       end
-
-      def leading_literal(node)
-        return node.value if node.is_a?(AST::Literal)
-        return unless node.is_a?(AST::Sequence)
-
-        value = +""
-        node.parts.each do |part|
-          break unless part.is_a?(AST::Literal)
-
-          value << part.value
-        end
-        value.empty? ? nil : value.freeze
-      end
-
-      def literal_value(node)
-        return node.value if node.is_a?(AST::Literal)
-        return unless node.is_a?(AST::Sequence) && node.parts.all? { |part| part.is_a?(AST::Literal) }
-
-        node.parts.map(&:value).join.freeze
-      end
     end
 
     # A single runtime whose state is an NFA subset. Cold state/byte pairs use
     # masked bit shifts; repeated pairs become direct lazy-DFA transitions.
+    module SingleSpanRuntime
+      private
+
+      def search_unanchored_single_span(input, position)
+        span, sources = @single_span
+        active = 0
+        while position < input.bytesize
+          active = single_span_step(active, input.getbyte(position), span, sources)
+          return true unless (active & @accept_mask).zero?
+
+          position += 1
+        end
+        false
+      end
+
+      def single_span_step(active, byte, span, sources)
+        candidates = @first_mask
+        selected = active & sources
+        candidates |= span.negative? ? selected >> -span : selected << span
+        candidates & @reach_masks[byte]
+      end
+    end
+
+    # Executes one fused HFA with NFA and optional lazy-DFA state.
     class Program
+      include SingleSpanRuntime
       attr_reader :prefix_literal, :input_ir
 
       def initialize(automaton, dfa:, dfa_state_limit:, input_ir: :cfg)
@@ -255,7 +291,7 @@ module Onibi
         @accept_mask = automaton.accept_mask
         @nullable = automaton.nullable
         @reach_masks = automaton.reach_masks
-        @span_masks = automaton.span_masks
+        @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
         @prefix_literal = automaton.prefix_literal
         @exact_literal = automaton.exact_literal
         @dfa_enabled = dfa
@@ -338,6 +374,8 @@ module Onibi
       end
 
       def search_unanchored(input, position)
+        return search_unanchored_single_span(input, position) if @single_span
+
         active = 0
         while position < input.bytesize
           active = transition(active, input.getbyte(position), true)
@@ -366,11 +404,27 @@ module Onibi
       end
 
       def nfa_transition(active, byte, inject_start)
+        return @first_mask & @reach_masks[byte] if active.zero? && inject_start
+
         candidates = inject_start ? @first_mask : 0
-        @span_masks.each do |span, sources|
+        return single_span_transition(candidates, active, byte) if @single_span
+
+        @span_entries.each do |span, sources|
           selected = active & sources
           candidates |= span.negative? ? selected >> -span : selected << span
         end
+        candidates & @reach_masks[byte]
+      end
+
+      def span_data(spans)
+        entries = spans.to_a.freeze
+        [spans, entries, entries.one? ? entries.first : nil]
+      end
+
+      def single_span_transition(candidates, active, byte)
+        span, sources = @single_span
+        selected = active & sources
+        candidates |= span.negative? ? selected >> -span : selected << span
         candidates & @reach_masks[byte]
       end
     end
@@ -415,6 +469,35 @@ module Onibi
     module SourceEmitter
       module_function
 
+      SINGLE_SPAN_TEMPLATE = <<~'RUBY'
+        def self.__onibi_search(input, position = 0)
+          return false unless input.is_a?(String) && input.ascii_only?
+          position = position.to_int if position.respond_to?(:to_int)
+          return false unless position.is_a?(Integer)
+          position += input.bytesize if position.negative?
+          return false if position.negative? || position > input.bytesize
+          return true if %<nullable>s
+          return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s
+
+          candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
+            while candidate && candidate <= input.bytesize
+            active = 0
+            cursor = candidate
+            while cursor < input.bytesize
+              candidates = (%<prefix>s ? cursor == candidate : true) ? %<first>s : 0
+              selected = active & %<sources>s
+              candidates |= %<negative>s ? selected >> %<shift>s : selected << %<span>s
+              active = candidates & %<reach>s[input.getbyte(cursor)]
+              return true unless (active & %<accept>s) == 0
+              cursor += 1
+            end
+            break unless %<prefix>s
+            candidate = input.index(%<prefix>s, candidate + 1)
+          end
+          false
+        end
+      RUBY
+
       SEARCH_TEMPLATE = <<~'RUBY'
         def self.__onibi_search(input, position = 0)
           return false unless input.is_a?(String) && input.ascii_only?
@@ -426,7 +509,7 @@ module Onibi
           return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s
 
           candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
-          while candidate && candidate <= input.bytesize
+            while candidate && candidate <= input.bytesize
             active = 0
             inject_start = true
             cursor = candidate
@@ -437,7 +520,28 @@ module Onibi
               inject_start = false
               cursor += 1
             end
-            candidate = %<prefix>s ? input.index(%<prefix>s, candidate + 1) : candidate + 1
+            break unless %<prefix>s
+            candidate = input.index(%<prefix>s, candidate + 1)
+          end
+          false
+        end
+      RUBY
+
+      UNANCHORED_TEMPLATE = <<~'RUBY'
+        def self.__onibi_search(input, position = 0)
+          return false unless input.is_a?(String) && input.ascii_only?
+          position = position.to_int if position.respond_to?(:to_int)
+          return false unless position.is_a?(Integer)
+          position += input.bytesize if position.negative?
+          return false if position.negative? || position > input.bytesize
+          return true if %<nullable>s
+          return !input.index(%<exact>s, position).nil? if %<exact>s
+
+          active = 0
+          while position < input.bytesize
+            active = __hfa_transition(active, input.getbyte(position), true)
+            return true unless (active & %<accept>s) == 0
+            position += 1
           end
           false
         end
@@ -470,26 +574,43 @@ module Onibi
       RUBY
 
       def emit(program)
+        raw = raw_program_data(program)
         data = program_data(program)
+        return format(UNANCHORED_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data)) unless raw[:prefix]
+        return format(SINGLE_SPAN_TEMPLATE, data.merge(single_span_values(raw))) if raw[:single_span]
+
         format(SEARCH_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data))
       end
 
-      def program_data(program)
-        first = program.instance_variable_get(:@first_mask)
-        prefix = program.instance_variable_get(:@prefix_literal)
+      def single_span_values(data)
+        span, sources = data.fetch(:single_span)
         {
-          first: first,
+          span: span.inspect,
+          sources: sources.inspect,
+          negative: span.negative?.inspect,
+          shift: (-span).inspect
+        }
+      end
+
+      def program_data(program)
+        data = raw_program_data(program)
+        data.transform_values(&:inspect).merge(rows: data.fetch(:rows), limit: data.fetch(:limit).inspect,
+                                               single_span: data.fetch(:single_span))
+      end
+
+      def raw_program_data(program)
+        {
+          first: program.instance_variable_get(:@first_mask),
           accept: program.instance_variable_get(:@accept_mask),
           nullable: program.instance_variable_get(:@nullable),
           reach: program.instance_variable_get(:@reach_masks),
           spans: program.instance_variable_get(:@span_masks),
-          prefix: prefix,
+          prefix: program.instance_variable_get(:@prefix_literal),
           exact: program.instance_variable_get(:@exact_literal),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
-          limit: program.instance_variable_get(:@dfa_state_limit)
-        }.then do |data|
-          data.transform_values(&:inspect).merge(rows: data.fetch(:rows), limit: data.fetch(:limit).inspect)
-        end
+          limit: program.instance_variable_get(:@dfa_state_limit),
+          single_span: program.instance_variable_get(:@single_span)
+        }
       end
     end
   end

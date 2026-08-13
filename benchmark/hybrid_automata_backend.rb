@@ -19,6 +19,10 @@ CASES = [
            "#{"abacadbabcbd" * (SIZE / 12)}z"),
   Case.new("low_selectivity_miss", "a[bc]{4}z", "abcbx" * (SIZE / 5))
 ].freeze
+CASES_TO_RUN = CASES.select do |kase|
+  filter = ENV["ONIBI_BENCH_CASE"]
+  filter.nil? || kase.name == filter
+end.freeze
 
 ADAPTERS = [
   Adapter.new("hybrid", lambda do |pattern|
@@ -107,7 +111,7 @@ puts
 puts "| case | engine | compile us | first scan us | warm scans/s | vs codegen |"
 puts "|---|---:|---:|---:|---:|---:|"
 
-CASES.each do |kase|
+CASES_TO_RUN.each do |kase|
   expected = ::Regexp.new(kase.pattern).match?(kase.input)
   rows = ADAPTERS.map do |adapter|
     matcher = adapter.build.call(kase.pattern)
@@ -129,7 +133,7 @@ if ALLOCATIONS
   puts "Allocations per call (#{ALLOCATION_ITERATIONS} warm calls)"
   puts "| case | engine | objects/call |"
   puts "|---|---:|---:|"
-  CASES.each do |kase|
+  CASES_TO_RUN.each do |kase|
     ADAPTERS.each do |adapter|
       puts format("| %<case>s | %<engine>s | %<objects>.1f |",
                   case: kase.name, engine: adapter.name,
