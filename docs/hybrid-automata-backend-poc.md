@@ -121,6 +121,12 @@ Ruby matcher in these cases, showing the remaining distance to a native engine.
   into a precomputed post-prefix automaton state, so it matches or slightly
   exceeds codegen on the sparse-prefix corpus without reprocessing the literal
   prefix bytes.
+- Exact literals of at least four bytes now use the same first-byte prefilter.
+  On the `literal_sparse_miss` 32 KiB fixture this raised bytecode HFA from
+  roughly 48,000 to 995,000 scans/s and HFA Ruby to 898,000 scans/s; the
+  generated matcher measured 47,000 scans/s and MRI 73,000 scans/s. Dense
+  first-byte streams fall back to the original literal search. This is a
+  miss-path result; hit and frequent-first-byte inputs remain separate cases.
 - Event selectivity needs a compiler cost model. In the low-selectivity case,
   every `a` creates a candidate event; disabling string matching improves the
   result from 0.81x to 1.78x codegen in this low-selectivity corpus after static

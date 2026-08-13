@@ -325,6 +325,31 @@ module Onibi
       end
     end
 
+    # Uses a first-byte event to avoid full literal scans on sparse misses.
+    module LiteralRuntime
+      private
+
+      def literal_search(input, position)
+        return !input.index(@exact_literal, position).nil? if @exact_literal.bytesize < 4
+
+        first_byte = @exact_literal.byteslice(0, 1)
+        candidate = input.index(first_byte, position)
+        return false unless candidate
+
+        return !input.index(@exact_literal, position).nil? if literal_candidate_dense?(input, candidate, first_byte)
+
+        !input.index(@exact_literal, candidate).nil?
+      end
+
+      def literal_candidate_dense?(input, candidate, first_byte)
+        first_code = first_byte.getbyte(0)
+        return true if input.getbyte(candidate + 1) == first_code
+
+        next_candidate = input.index(first_byte, candidate + 1)
+        next_candidate && next_candidate - candidate < 16
+      end
+    end
+
     # Builds a compact deterministic table for small single-span automata.
     module StaticDfaRuntime
       private
@@ -447,6 +472,7 @@ module Onibi
     class Program
       include SingleSpanRuntime
       include PrefixRuntime
+      include LiteralRuntime
       include StaticDfaRuntime
       attr_reader :prefix_literal, :input_ir
 
@@ -510,7 +536,7 @@ module Onibi
       def match_from_position(input, position)
         return false if position.negative? || position > input.bytesize
         return true if @nullable
-        return !input.index(@exact_literal, position).nil? if @exact_literal && @prefix_literal
+        return literal_search(input, position) if @exact_literal && @prefix_literal
 
         static = static_search(input, position)
         return static unless static.nil?
@@ -521,7 +547,7 @@ module Onibi
       def fast_literal_match(input, position)
         return unless position.zero? && @exact_literal && @prefix_literal
 
-        input.include?(@exact_literal)
+        literal_search(input, position)
       end
 
       def normalize_position(input, position)
@@ -649,7 +675,16 @@ module Onibi
           position += input.bytesize if position.negative?
           return false if position.negative? || position > input.bytesize
           return true if %<nullable>s
-          return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s
+          return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s && !%<exact_prefilter>s
+          if %<exact>s && %<prefix>s && %<exact_prefilter>s
+            candidate = input.index(%<exact_first>s, position)
+            return false unless candidate
+            return !input.index(%<exact>s, position).nil? if input.getbyte(candidate + 1) == %<exact_first>s.getbyte(0)
+
+            next_candidate = input.index(%<exact_first>s, candidate + 1)
+            return !input.index(%<exact>s, position).nil? if next_candidate && next_candidate - candidate < 16
+            return !input.index(%<exact>s, candidate).nil?
+          end
 
           candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
             while candidate && candidate <= input.bytesize
@@ -854,12 +889,17 @@ module Onibi
           prefix: program.instance_variable_get(:@prefix_literal),
           prefix_active: program.instance_variable_get(:@prefix_literal) && program.send(:prefix_active),
           prefix_length: program.instance_variable_get(:@prefix_literal)&.bytesize,
-          exact: program.instance_variable_get(:@exact_literal),
+          **literal_source_data(program),
           rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
           limit: program.instance_variable_get(:@dfa_state_limit),
           single_span: program.instance_variable_get(:@single_span),
           dfa: program.instance_variable_get(:@dfa_enabled)
         }
+      end
+
+      def literal_source_data(program)
+        exact = program.instance_variable_get(:@exact_literal)
+        { exact_prefilter: exact&.bytesize.to_i >= 4, exact_first: exact&.byteslice(0, 1), exact: exact }
       end
     end
   end
