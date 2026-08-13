@@ -96,6 +96,16 @@ class SearchPlanTest < Minitest::Test
     assert_equal [2, 9], plan.candidate_positions("xxneedle-needle", 0)
   end
 
+  def test_bounded_literal_chain_coordinates_ordered_component_events
+    regexp = Onibi::Regexp.new("foo.{0,4}bar")
+    plan = regexp.send(:codegen_program).search_plan
+    input = "foo#{"x" * 4}bar--foo#{"x" * 5}bar--foo#{"x" * 2}bar"
+
+    assert_instance_of Onibi::Codegen::CandidateSource::BoundedLiteralChain, plan.candidate_source
+    assert_equal [0, 25], plan.candidate_source.candidate_positions(input, 0)
+    assert_equal [25], plan.candidate_source.candidate_positions(input, 1)
+  end
+
   def test_fixed_width_prefix_projects_suffix_literal_candidates
     regexp = Onibi::Regexp.new(".[a-z]foo")
     plan = regexp.send(:codegen_program).search_plan
