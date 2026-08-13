@@ -633,6 +633,7 @@ module Onibi
       def emit_group(node, cursor)
         return emit_node(node.body, cursor) unless node.capture
 
+        return scalar_tracked_group(node, cursor) if scalar_capture?(node)
         return "(capture ? #{tracked_group(node, cursor)} : #{emit_node(node.body, cursor)})" if
           dead_boolean_capture?(node)
 
@@ -644,6 +645,15 @@ module Onibi
         previous_capture = fresh_cursor
         <<~EXPRESSION.strip
           (begin #{previous_capture} = captures && captures[#{node.number - 1}]; captures && (captures[#{node.number - 1}] = [#{cursor}, nil]); #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (captures && (captures[#{node.number - 1}] = #{previous_capture}); nil) : (captures && (captures[#{node.number - 1}][1] = #{result}); #{result}); end)
+        EXPRESSION
+      end
+
+      def scalar_tracked_group(node, cursor)
+        result = fresh_cursor
+        start = "capture_#{node.number}_start"
+        finish = "capture_#{node.number}_end"
+        <<~EXPRESSION.strip
+          (begin #{start} = #{cursor}; #{result} = #{emit_node(node.body, cursor)}; #{result}.nil? ? (#{start} = nil; #{finish} = nil; nil) : (#{finish} = #{result}; #{result}); end)
         EXPRESSION
       end
     end
@@ -747,10 +757,19 @@ module Onibi
 
       def emit_backreference(node, cursor)
         index = node.identifier.to_i - 1
+        return scalar_backreference(index + 1, cursor) if @scalar_capture_number == index + 1
+
         length = "captures[#{index}][1] - captures[#{index}][0]"
         source = "input[captures[#{index}][0], #{length}]"
         target = "input[#{cursor}, #{length}]"
         "(captures[#{index}] ? (#{target} == #{source} ? #{cursor} + #{length} : nil) : nil)"
+      end
+
+      def scalar_backreference(number, cursor)
+        start = "capture_#{number}_start"
+        finish = "capture_#{number}_end"
+        length = "#{finish} - #{start}"
+        "(#{start} ? (input[#{cursor}, #{length}] == input[#{start}, #{length}] ? #{cursor} + #{length} : nil) : nil)"
       end
 
       def emit_conditional(node, cursor)
@@ -1125,8 +1144,52 @@ module Onibi
       end
     end
 
+    # Identifies the narrow control-flow shape where capture arrays can be scalarized.
+    module ScalarCaptureAnalysis
+      private
+
+      def scalar_capture_number(ast)
+        return unless @backreferences
+        return unless @groups.keys.grep(Integer).length == 1
+
+        number, group = @groups.find { |key, _value| key.is_a?(Integer) }
+        return unless group.capture && scalar_safe?(group.body)
+        return unless scalar_control_flow_free?(ast) && references_only?(ast, number)
+
+        number
+      end
+
+      def scalar_safe?(value)
+        return value.all? { |child| scalar_safe?(child) } if value.is_a?(Array)
+        return true if [AST::Literal, AST::CharacterClass, AST::Escape, AST::Any].any? { |type| value.is_a?(type) }
+        return value.parts.all? { |child| scalar_safe?(child) } if value.is_a?(AST::Sequence)
+
+        false
+      end
+
+      def references_only?(value, number)
+        return value.all? { |child| references_only?(child, number) } if value.is_a?(Array)
+        return true unless value.is_a?(Struct)
+        return value.identifier.to_i == number if value.is_a?(AST::Backreference)
+
+        value.each { |child| return false unless references_only?(child, number) }
+        true
+      end
+
+      def scalar_control_flow_free?(value)
+        return value.all? { |child| scalar_control_flow_free?(child) } if value.is_a?(Array)
+        return false if [AST::Quantifier, AST::Alternation, AST::Conditional, AST::Assertion,
+                         AST::AtomicGroup].any? { |type| value.is_a?(type) }
+        return true unless value.is_a?(Struct)
+
+        value.each { |child| return false unless scalar_control_flow_free?(child) }
+        true
+      end
+    end
+
     # Emits direct Ruby control flow for regular consuming AST nodes.
     class AstEmitter
+      include ScalarCaptureAnalysis
       include GroupEmitter
       include AssertionEmitter
       include QuantifierEmitter
@@ -1167,9 +1230,7 @@ module Onibi
       end
 
       def emit(ast)
-        @backreferences = CaptureLiveness.required?(ast)
-        collect_groups(ast)
-        @semantic_capture_count = CaptureLiveness.semantic_count(ast, @groups)
+        prepare_capture_analysis(ast)
         collect_literals(ast)
         body = emit_node(ast, "position")
         captures = capture_setup
@@ -1186,9 +1247,17 @@ module Onibi
         RUBY
       end
 
+      def prepare_capture_analysis(ast)
+        @backreferences = CaptureLiveness.required?(ast)
+        collect_groups(ast)
+        @semantic_capture_count = CaptureLiveness.semantic_count(ast, @groups)
+        prepare_scalar_capture(ast)
+      end
+
       private
 
       def capture_setup
+        return "capture_1_start = nil; capture_1_end = nil" if @scalar_capture_number
         return "captures = nil" if capture_count.zero?
         return "captures=capture ?Array.new(#{capture_count}):nil" unless @backreferences
         return "captures=Array.new(#{capture_count})" if @semantic_capture_count == capture_count
@@ -1196,7 +1265,14 @@ module Onibi
         "captures=capture ? Array.new(#{capture_count}) : Array.new(#{@semantic_capture_count})"
       end
 
-      def capture_result = capture_count.zero? ? "[]" : "captures"
+      def capture_result
+        if @scalar_capture_number
+          return "[[capture_#{@scalar_capture_number}_start, " \
+                 "capture_#{@scalar_capture_number}_end]]"
+        end
+
+        capture_count.zero? ? "[]" : "captures"
+      end
 
       def collect_groups(value)
         return value.each { |item| collect_groups(item) } if value.is_a?(Array)
@@ -1212,8 +1288,16 @@ module Onibi
 
       def capture_count = @groups.keys.grep(Integer).max || 0
 
+      def prepare_scalar_capture(ast)
+        @scalar_capture_number = scalar_capture_number(ast)
+      end
+
       def dead_boolean_capture?(node)
         @backreferences && node.number > @semantic_capture_count
+      end
+
+      def scalar_capture?(node)
+        node.number == @scalar_capture_number
       end
 
       def emit_node(node, cursor)
