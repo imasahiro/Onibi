@@ -269,6 +269,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_match_reset_scan_uses_combined_literal_search
+    regexp = Onibi::Regexp.new("prefix\\Ksuffix")
+
+    regexp.stub(:hfa_match_reset_literal_match_result, ->(*) { flunk "match-reset scan should use combined literal search" }) do
+      assert_equal ["suffix", "suffix"], regexp.scan("prefixsuffix x prefixsuffix")
+    end
+  end
+
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
     regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do

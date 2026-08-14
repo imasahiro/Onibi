@@ -4226,6 +4226,17 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && @hfa_match_reset_literal_fast
+        prefix, suffix = hfa_match_reset_literal_parts
+        combined = @hfa_match_reset_literal_fast
+        position = 0
+        while (start = input.index(combined, position))
+          match_start = start + prefix.bytesize
+          block.call([match_start, match_start + suffix.bytesize, []])
+          position = start + combined.bytesize
+        end
+        return true
+      end
       if input.ascii_only? && @hfa_bounded_literal_fast
         position = 0
         while (result = hfa_bounded_literal_match_result(input, position))
