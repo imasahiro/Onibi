@@ -552,6 +552,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_scoped_multiline_sequence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
@@ -2337,6 +2343,19 @@ module Onibi
               group.is_a?(AST::OptionGroup) && group.ignorecase && group.multiline.nil? && group.extended.nil? &&
               literal_ast_value(group.body)&.ascii_only? && parts[0].value.ascii_only? && parts[2].value.ascii_only?
       @hfa_scoped_ignorecase_sequence_safe = valid && hfa_program
+    end
+
+    def hfa_scoped_multiline_sequence_result_safe?
+      return @hfa_scoped_multiline_sequence_safe if defined?(@hfa_scoped_multiline_sequence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group = parts[1]
+      body = group.body if group.is_a?(AST::OptionGroup)
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      valid = parts.length == 3 && parts[0].is_a?(AST::Literal) && parts[2].is_a?(AST::Literal) &&
+              group.is_a?(AST::OptionGroup) && group.multiline == true && group.ignorecase.nil? && group.extended.nil? &&
+              body.is_a?(AST::Any) && parts[0].value.ascii_only? && parts[2].value.ascii_only?
+      @hfa_scoped_multiline_sequence_safe = valid && hfa_program
     end
 
     def hfa_unicode_repeated_literal_capture_result_safe?

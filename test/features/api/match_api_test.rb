@@ -1406,6 +1406,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_multiline_any_sequence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("a(?m:.)d")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "scoped multiline sequence should use HFA" }) do
+      assert_equal "a\nd", regexp.match("xxa\ndyy").to_s
+      assert_equal "aXd", regexp.match("xxaXdyy").to_s
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 
