@@ -185,6 +185,10 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
       end
+      if input.ascii_only? && hfa_literal_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return true unless hfa_literal_absence_match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
@@ -491,6 +495,12 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         start = input.index(literal, start_position)
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
+        return nil
+      end
+      if input.ascii_only? && hfa_literal_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_absence_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
         return nil
       end
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
@@ -842,6 +852,34 @@ module Onibi
       @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
         @ast.parts.first.is_a?(AST::Assertion) && @ast.parts.first.kind == :negative &&
         @ast.parts.first.body.is_a?(AST::Sequence) && @ast.parts.first.body.parts.empty?
+    end
+
+    def hfa_literal_absence_result_safe?
+      return @hfa_literal_absence_safe if defined?(@hfa_literal_absence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      body = parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
+      literal = literal_ast_value(body)
+      @hfa_literal_absence_safe = literal&.ascii_only? && literal.bytesize.positive? &&
+                                   !@options.include?("ignorecase") && hfa_program
+    end
+
+    def hfa_literal_absence_value
+      hfa_literal_absence_result_safe? && literal_ast_value(@ast.parts.first.body)
+    end
+
+    def hfa_literal_absence_match_result(input, position)
+      literal = hfa_literal_absence_value
+      search_position = 0
+      while (occurrence = input.index(literal, search_position))
+        candidate = occurrence + literal.bytesize
+        if candidate > position
+          finish = occurrence >= position ? candidate - 1 : candidate
+          return [position, finish, []]
+        end
+        search_position = occurrence + 1
+      end
+      [position, input.bytesize, []]
     end
 
     def hfa_match_result_safe?
@@ -2757,6 +2795,16 @@ module Onibi
       return enum_for(__method__, input) unless block
       return true if hfa_always_fails?
 
+      if input.ascii_only? && hfa_literal_absence_result_safe?
+        position = 0
+        while position <= input.bytesize
+          result = hfa_literal_absence_match_result(input, position)
+          block.call(result)
+          position = [result[1], position + 1].max
+        end
+        return true
+      end
+
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         folded_input = input.downcase
         literal = @hfa_ignorecase_literal_fast.downcase
@@ -3081,6 +3129,7 @@ module Onibi
                      hfa_greedy_bounded_sequence_result_safe? ||
                      hfa_scoped_extended_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
+                     hfa_literal_absence_result_safe? ||
                      hfa_linebreak_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||

@@ -559,6 +559,20 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_absence_match_and_scan_use_hfa_results
+    regexp = Onibi::Regexp.new("(?~END)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "literal absence match should use HFA" }) do
+      assert_equal "EN", regexp.match("END").to_s
+      assert_equal "xxEN", regexp.match("xxENDyy").to_s
+      assert_equal "abc", regexp.match("abc").to_s
+    end
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal absence scan should use HFA" }) do
+      assert_equal ["EN", "D", ""], regexp.scan("END")
+      assert_equal ["xxEN", "D", "yy", ""], regexp.scan("xxENDyy")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_combined_literal_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
