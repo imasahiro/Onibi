@@ -1264,7 +1264,8 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       node = parts.one? && parts.first
       source = node.value if node.is_a?(AST::CharacterClass)
-      direct = source if source && (!source.ascii_only? || source.include?("\\p") || source.include?("\\P"))
+      direct = source if source && (!source.ascii_only? || source.include?("\\p") || source.include?("\\P") ||
+                                   source.include?("\\u") || source.include?("\\M-"))
       @hfa_unicode_class_direct_spec = direct
     end
 
