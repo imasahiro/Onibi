@@ -86,11 +86,21 @@ module Onibi
       validate_encoding!(input)
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
         hfa = hfa_program
-        return with_timeout { hfa.match?(input, normalize_match_position(input, position)) } if hfa
+        if hfa
+          normalized_position = normalize_match_position(input, position)
+          return hfa.match?(input, normalized_position) if timeout_unconfigured?
+
+          return with_timeout { hfa.match?(input, normalized_position) }
+        end
       end
 
       hfa = hfa_program if input.ascii_only? && hfa_match_question_safe?
-      return with_timeout { hfa.match?(input, normalize_match_position(input, position)) } if hfa
+      if hfa
+        normalized_position = normalize_match_position(input, position)
+        return hfa.match?(input, normalized_position) if timeout_unconfigured?
+
+        return with_timeout { hfa.match?(input, normalized_position) }
+      end
 
       codegen_match?(input, position)
     end
@@ -213,6 +223,10 @@ module Onibi
 
       position += input.length if position.negative?
       position
+    end
+
+    def timeout_unconfigured?
+      @timeout.nil? && self.class.timeout.nil?
     end
 
     def codegen_program

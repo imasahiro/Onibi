@@ -273,6 +273,14 @@ class MatchApiTest < Minitest::Test
     assert_equal 1, calls
   end
 
+  def test_hfa_match_question_skips_timeout_wrapper_when_unconfigured
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:with_timeout, ->(*) { flunk "unconfigured HFA match? should skip timeout wrapper" }) do
+      assert regexp.match?("needle")
+    end
+  end
+
   def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
     regexp = Onibi::Regexp.new("é")
 
