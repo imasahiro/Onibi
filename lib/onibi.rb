@@ -944,26 +944,32 @@ module Onibi
     end
 
     def hfa_repeated_class_capture_parts
-      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
+      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 3
 
-      repeated, separator, class_group = @ast.parts
-      return unless repeated.is_a?(AST::Group) && separator.is_a?(AST::Literal) &&
-                    class_group.is_a?(AST::Group) && repeated.capture && class_group.capture
+      repeated, suffix = @ast.parts[0], @ast.parts[1..]
+      return unless repeated.is_a?(AST::Group) && repeated.capture && suffix.length.even?
 
-      [repeated, separator, class_group]
+      pairs = suffix.each_slice(2).to_a
+      return unless pairs.all? do |separator, class_group|
+        separator.is_a?(AST::Literal) && class_group.is_a?(AST::Group) && class_group.capture
+      end
+
+      [repeated, pairs]
     end
 
     def hfa_repeated_class_capture_result_safe?
       parts = hfa_repeated_class_capture_parts
       return false unless parts
 
-      repeated, _separator, class_group = parts
+      repeated, pairs = parts
       return false unless hfa_repeated_group_node?(repeated)
 
-      body = class_group.body
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
-        hfa_capture_class_table(body.expression) && hfa_program
+      pairs.all? do |_separator, class_group|
+        body = class_group.body
+        body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+        body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
+          hfa_capture_class_table(body.expression)
+      end && hfa_program
     end
 
     def hfa_repeated_group_node?(group)
@@ -977,23 +983,42 @@ module Onibi
     def hfa_repeated_class_capture_offsets(input, start, finish)
       return unless hfa_repeated_class_capture_result_safe?
 
-      repeated, separator, class_group = hfa_repeated_class_capture_parts
-      separator_position = input.index(separator.value, start)
+      repeated, pairs = hfa_repeated_class_capture_parts
+      separator_position = input.index(pairs.first.first.value, start)
       return unless separator_position && separator_position < finish
 
       repeated_body = repeated.body.parts.first
       lengths = hfa_repeated_match_lengths(repeated_body.expression.body, input, start, separator_position)
       return unless lengths&.any? && lengths.sum == separator_position - start
 
-      class_body = class_group.body.parts.first
-      table = hfa_capture_class_table(class_body.expression)
-      class_start = separator_position + separator.value.bytesize
-      cursor = class_start
-      cursor += 1 while cursor < finish && table[input.getbyte(cursor)]
-      return unless cursor == finish && cursor > class_start
+      numbers = [repeated.number, repeated.body.parts.first.expression.number] + pairs.map { |_separator, group| group.number }
+      offsets = Array.new(numbers.max)
+      offsets[repeated.number - 1] = [start, separator_position]
+      offsets[repeated.body.parts.first.expression.number - 1] =
+        [separator_position - lengths.last, separator_position]
+      cursor = separator_position
+      pairs.each_with_index do |(separator, class_group), index|
+        return unless input.byteslice(cursor, separator.value.bytesize) == separator.value
 
-      [[start, separator_position], [separator_position - lengths.last, separator_position],
-       [class_start, finish]]
+        class_start = cursor + separator.value.bytesize
+        class_finish = if (next_pair = pairs[index + 1])
+                         input.index(next_pair.first.value, class_start)
+                       else
+                         finish
+                       end
+        return unless class_finish && class_finish > class_start
+
+        class_body = class_group.body.parts.first
+        table = hfa_capture_class_table(class_body.expression)
+        cursor = class_start
+        cursor += 1 while cursor < class_finish && table[input.getbyte(cursor)]
+        return unless cursor == class_finish
+
+        offsets[class_group.number - 1] = [class_start, class_finish]
+      end
+      return unless cursor == finish
+
+      offsets
     end
 
     def hfa_repeated_unit_value(node)
