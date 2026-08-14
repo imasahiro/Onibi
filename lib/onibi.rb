@@ -1536,6 +1536,26 @@ module Onibi
       false
     end
 
+    def hfa_greedy_dot_star_literal_match_result(input, position, parts)
+      prefix, suffix, allow_newline = parts
+      candidate = input.index(prefix, position)
+      while candidate
+        suffix_position = candidate + prefix.bytesize
+        newline = allow_newline ? nil : input.index("\n", suffix_position)
+        last_suffix = nil
+        while (found = input.index(suffix, suffix_position))
+          break if newline && found >= newline
+
+          last_suffix = found
+          suffix_position = found + 1
+        end
+        return [candidate, last_suffix + suffix.bytesize, []] if last_suffix
+
+        candidate = input.index(prefix, candidate + 1)
+      end
+      nil
+    end
+
     def hfa_lazy_dot_star_literal_parts
       return @hfa_lazy_dot_star_literal_parts if defined?(@hfa_lazy_dot_star_literal_parts)
 
@@ -2403,6 +2423,14 @@ module Onibi
       if input.ascii_only? && hfa_ascii_class_run_result_safe?
         position = 0
         while (result = hfa_ascii_class_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && (parts = hfa_greedy_dot_star_literal_parts)
+        position = 0
+        while (result = hfa_greedy_dot_star_literal_match_result(input, position, parts))
           block.call(result)
           position = result[1]
         end

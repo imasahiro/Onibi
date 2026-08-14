@@ -432,7 +432,10 @@ class ScanGsubTest < Minitest::Test
   def test_star_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a.*z")
     regexp.stub(:codegen_each_result, ->(*) { flunk "star literal iteration should use HFA" }) do
-      assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
+      regexp.stub(:hfa_program, -> { flunk "greedy dot-star scan should avoid HFA program compilation" }) do
+        assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
+        assert_equal ["a1z2z"], regexp.scan("a1z2z")
+      end
     end
   end
 
