@@ -195,6 +195,11 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
 
+      if (literal = hfa_start_match_literal_fast)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return input[normalized_position, literal.length] == literal
+      end
+
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
@@ -568,6 +573,14 @@ module Onibi
                 end
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
+      end
+
+      if (literal = hfa_start_match_literal_fast)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return nil unless input[normalized_position, literal.length] == literal
+
+        start = input[0, normalized_position].bytesize
+        return hfa_match_data([start, start + literal.bytesize, []], input)
       end
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
@@ -1264,6 +1277,17 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       @hfa_start_match_result_safe = parts.first.is_a?(AST::Escape) &&
                                      parts.first.kind == :start_match && hfa_program
+    end
+
+    def hfa_start_match_literal_fast
+      return @hfa_start_match_literal if defined?(@hfa_start_match_literal)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      literal = parts[1..].map(&:value).join if parts.length > 1 && parts.first.is_a?(AST::Escape) &&
+                                                parts.first.kind == :start_match &&
+                                                parts[1..].all? { |part| part.is_a?(AST::Literal) }
+      @hfa_start_match_literal = literal if literal&.bytesize&.positive? &&
+                                                  !@options.include?("ignorecase")
     end
 
     def hfa_linebreak_match_data(result, input)
@@ -3738,6 +3762,14 @@ module Onibi
           block.call([start, finish, []])
           position = finish
         end
+        return true
+      end
+
+      if (literal = hfa_start_match_literal_fast)
+        validate_encoding!(input)
+        return true unless input[0, literal.length] == literal
+
+        block.call([0, literal.bytesize, []])
         return true
       end
 

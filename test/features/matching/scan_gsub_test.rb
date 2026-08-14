@@ -128,6 +128,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_start_match_literal_scan_uses_hfa_on_unicode_input
+    regexp = Onibi::Regexp.new("\\Gcat")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode start-match scan should use HFA" }) do
+      assert_equal ["cat"], regexp.scan("cat日本語")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do

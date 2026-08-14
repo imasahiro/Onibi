@@ -1273,6 +1273,17 @@ class MatchApiTest < Minitest::Test
     assert_equal [9, 12], match.offset(0)
   end
 
+  def test_start_match_literal_uses_hfa_on_unicode_input
+    regexp = Onibi::Regexp.new("\\Gcat")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode start-match literal should use HFA" }) do
+      regexp.stub(:codegen_match, ->(*) { flunk "Unicode start-match literal should use HFA" }) do
+        assert regexp.match?("日本語cat", 3)
+        assert_equal "cat", regexp.match("日本語cat", 3).to_s
+      end
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
