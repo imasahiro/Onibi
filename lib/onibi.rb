@@ -1353,7 +1353,7 @@ module Onibi
     def hfa_top_level_capture_match_result(input, start, finish, allow_short: false)
       offsets = Array.new(hfa_capture_count)
       cursor = start
-      hfa_top_level_capture_plan.each do |part|
+      hfa_top_level_capture_plan.each_with_index do |part, index|
         if part.is_a?(AST::Literal)
           cursor += part.value.bytesize
           next
@@ -1361,7 +1361,13 @@ module Onibi
 
         if part.is_a?(AST::Group) && part.capture
           group_start = cursor
-          cursor = hfa_consume_capture_node(part.body, input, cursor, finish, offsets)
+          group_end = hfa_top_level_capture_group_end(part, input, cursor, finish,
+                                                      hfa_top_level_capture_plan[index + 1])
+          cursor = if group_end == :unsupported
+                     hfa_consume_capture_node(part.body, input, cursor, finish, offsets)
+                   else
+                     group_end
+                   end
           return unless cursor
 
           offsets[part.number - 1] = [group_start, cursor]
@@ -1375,6 +1381,36 @@ module Onibi
       return [start, cursor, offsets] if allow_short && cursor < finish
 
       nil
+    end
+
+    def hfa_top_level_capture_group_end(group, input, cursor, finish, following)
+      return :unsupported unless input.ascii_only?
+
+      body = group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      return :unsupported unless body.is_a?(AST::Quantifier) && body.mode == :greedy &&
+                                 body.minimum.positive? && body.maximum.nil?
+
+      table = hfa_capture_class_table(body.expression)
+      return :unsupported unless table
+
+      boundary = if following.is_a?(AST::Literal) && following.value.bytesize.positive?
+                   if following.value.bytes.all? { |byte| !table[byte] }
+                     input.index(following.value, cursor)
+                   else
+                     input.rindex(following.value, finish - following.value.bytesize)
+                   end
+                 elsif following.nil?
+                   finish
+                 end
+      return :unsupported if boundary.nil?
+      return nil if boundary <= cursor
+
+      position = cursor
+      while position < boundary && table[input.getbyte(position)]
+        position += 1
+      end
+      position == boundary ? boundary : nil
     end
 
     def hfa_top_level_capture_scan_spec
@@ -1632,9 +1668,10 @@ module Onibi
       end
 
       predicate = ClassPredicates.compiled(node.expression.value)
+      table = predicate.ascii_table
       count = 0
       limit = node.maximum || finish - cursor
-      while count < limit && cursor < finish && predicate.matches_byte?(input.getbyte(cursor))
+      while count < limit && cursor < finish && table[input.getbyte(cursor)]
         cursor += 1
         count += 1
       end
@@ -5266,6 +5303,7 @@ module Onibi
     def hfa_each_result(input, &block)
       return enum_for(__method__, input) unless block
       return true if hfa_always_fails?
+      return false if hfa_capture_count.positive? && hfa_top_level_capture_plan && hfa_reverse_literal_capture_spec
 
       if hfa_empty_absence_result_safe?
         block.call([input.bytesize, input.bytesize, []])
