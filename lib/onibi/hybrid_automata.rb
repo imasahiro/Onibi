@@ -1753,9 +1753,12 @@ module Onibi
       end
 
       def first_byte_set_candidate(input, position, first_bytes)
-        first_bytes.bytes.map do |byte|
-          input.index(byte.chr(Encoding::ASCII_8BIT), position)
-        end.compact.min
+        best = nil
+        first_bytes.each_byte do |byte|
+          candidate = input.index(byte.chr(Encoding::ASCII_8BIT), position)
+          best = candidate if candidate && (best.nil? || candidate < best)
+        end
+        best
       end
     end
   end

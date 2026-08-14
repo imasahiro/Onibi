@@ -435,6 +435,13 @@ class HybridAutomataTest < Minitest::Test
     assert_equal ["c", "g", "t"], program.instance_variable_get(:@static_first_bytes).bytes.sort.map(&:chr)
   end
 
+  def test_first_byte_set_candidate_returns_earliest_match
+    program = Onibi::HybridAutomata.compile("[cgt]x|[ab]y")
+    first_bytes = "abcgt".b
+
+    assert_equal 2, program.send(:first_byte_set_candidate, "xxc", 0, first_bytes)
+  end
+
   def test_alternation_caches_required_literals_for_string_matching
     program = Onibi::HybridAutomata.compile("[cgt]gggtaaa|tttaccc[acg]")
 
