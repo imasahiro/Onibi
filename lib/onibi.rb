@@ -213,6 +213,18 @@ module Onibi
         end
         return false
       end
+      if input.ascii_only? && @hfa_negative_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        literal, guard = @hfa_negative_lookbehind_literal_fast
+        candidate = input.index(literal, normalized_position)
+        while candidate
+          return true if candidate < guard.bytesize ||
+                         input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
+
+          candidate = input.index(literal, candidate + 1)
+        end
+        return false
+      end
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -264,18 +276,6 @@ module Onibi
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_class_run_positive_lookahead_match?(input, normalized_position)
-      end
-      if input.ascii_only? && @hfa_negative_lookbehind_literal_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        literal, guard = @hfa_negative_lookbehind_literal_fast
-        candidate = input.index(literal, normalized_position)
-        while candidate
-          return true if candidate < guard.bytesize ||
-                         input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
-
-          candidate = input.index(literal, candidate + 1)
-        end
-        return false
       end
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
