@@ -46,4 +46,18 @@ class HfaStandaloneFrontendTest < Minitest::Test
       refute regexp.match?(rejected)
     end
   end
+
+  def test_hfa_handles_unicode_character_classes_without_codegen
+    {"[\\p{Hiragana}]" => "あ", "[é]" => "é"}.each do |pattern, input|
+      regexp = Onibi::Regexp.new(pattern)
+      %i[codegen_match? codegen_match codegen_each_result].each do |method|
+        regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+      end
+      regexp.define_singleton_method(:hfa_program) { raise "unexpected generic HFA program" }
+
+      assert regexp.match?(input)
+      assert_equal input, regexp.match(input).to_s
+      assert_equal [input], regexp.scan(input)
+    end
+  end
 end

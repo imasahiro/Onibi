@@ -226,6 +226,12 @@ module Onibi
         return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
       end
 
+      if (class_source = hfa_unicode_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        return !hfa_unicode_class_direct_match_result(input, byte_position, class_source).nil?
+      end
+
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -257,6 +263,14 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input[0, normalized_position].bytesize
         return !hfa_literal_alternation_match_result(input, byte_position, byte_mode: true).nil?
+      end
+
+      if (class_source = hfa_unicode_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
+        return hfa_match_data(result, input) if result
+        return nil
       end
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
@@ -617,6 +631,14 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input[0, normalized_position].bytesize
         result = hfa_literal_alternation_match_result(input, byte_position, byte_mode: true)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+
+      if (class_source = hfa_unicode_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1233,6 +1255,28 @@ module Onibi
       else
         false
       end
+    end
+
+    def hfa_unicode_class_direct_spec
+      return @hfa_unicode_class_direct_spec if defined?(@hfa_unicode_class_direct_spec)
+      return @hfa_unicode_class_direct_spec = false if @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      node = parts.one? && parts.first
+      source = node.value if node.is_a?(AST::CharacterClass)
+      direct = source if source && (!source.ascii_only? || source.include?("\\p") || source.include?("\\P"))
+      @hfa_unicode_class_direct_spec = direct
+    end
+
+    def hfa_unicode_class_direct_match_result(input, byte_position, source)
+      offset = 0
+      input.each_char do |character|
+        if offset >= byte_position && ClassPredicates.matches?(source, character)
+          return [offset, offset + character.bytesize, []]
+        end
+        offset += character.bytesize
+      end
+      nil
     end
 
     def hfa_literal_absence_result_safe?
@@ -4315,6 +4359,16 @@ module Onibi
       end
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
       return true if input.ascii_only? && hfa_ascii_input_impossible_class?
+
+      if (class_source = hfa_unicode_class_direct_spec)
+        validate_encoding!(input)
+        position = 0
+        while (result = hfa_unicode_class_direct_match_result(input, position, class_source))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
 
       if input.ascii_only? && @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
