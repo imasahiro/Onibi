@@ -123,6 +123,21 @@ The output prints separate `bench_ruby` and `bench_onibi` timings for direct
 comparison. The same benchmark methods also run as part of the full Minitest
 suite.
 
+### Application-shaped extraction workloads
+
+Run deterministic generated workloads for access logs, email addresses, URLs,
+structured logs, and identifiers:
+
+```sh
+bundle exec ruby benchmark/macro_benchmarks.rb --list
+bundle exec ruby benchmark/macro_benchmarks.rb --workload access_log --records 1000
+bundle exec ruby benchmark/macro_benchmarks.rb --records 1000 --seed 2026
+```
+
+Each workload compares Ruby's `Regexp` (Onigmo) and Onibi extraction results
+before timing. A mismatch aborts the workload. The report includes warm
+extraction throughput and a single-run time, allocation, and GC snapshot.
+
 ## Development
 
 ```sh
