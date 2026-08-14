@@ -523,6 +523,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_variable_capture_alternation_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_variable_capture_alternation_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
 
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
@@ -3226,6 +3232,45 @@ module Onibi
       [start, finish, captures]
     end
 
+    def hfa_variable_capture_alternation_spec
+      return @hfa_variable_capture_alternation_spec if defined?(@hfa_variable_capture_alternation_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      groups = parts if parts.length == 2 && parts.all? { |part| part.is_a?(AST::Group) && part.capture }
+      branches = groups&.map do |group|
+        next unless group.body.is_a?(AST::Alternation)
+
+        group.body.branches.map { |branch| literal_ast_value(branch) }
+      end
+      @hfa_variable_capture_alternation_spec = if branches&.all? && branches.all? do |values|
+                                                  values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
+                                                end
+                                                 [branches.freeze, groups.map(&:number).freeze].freeze
+                                               else
+                                                 false
+                                               end
+    end
+
+    def hfa_variable_capture_alternation_match_result(input, position)
+      branches, numbers = hfa_variable_capture_alternation_spec
+      cursor = position
+      while cursor <= input.bytesize
+        branches[0].each do |left|
+          branches[1].each do |right|
+            finish = cursor + left.bytesize + right.bytesize
+            next unless input.byteslice(cursor, finish - cursor) == left + right
+
+            captures = Array.new(numbers.max)
+            captures[numbers[0] - 1] = [cursor, cursor + left.bytesize]
+            captures[numbers[1] - 1] = [cursor + left.bytesize, finish]
+            return [cursor, finish, captures]
+          end
+        end
+        cursor += 1
+      end
+      nil
+    end
+
     def hfa_capture_component(node)
       if node.is_a?(AST::Assertion) && %i[positive positive_lookahead positive_lookbehind
                                           negative negative_lookahead negative_lookbehind].include?(node.kind)
@@ -3533,6 +3578,14 @@ module Onibi
       if hfa_variable_subexpression_capture_spec
         position = 0
         while (result = hfa_variable_subexpression_capture_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_variable_capture_alternation_spec
+        position = 0
+        while (result = hfa_variable_capture_alternation_match_result(input, position))
           block.call(result)
           position = result[1]
         end

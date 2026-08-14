@@ -1255,6 +1255,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_variable_capture_alternation_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(a|aa)(b|bb)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "variable alternation captures should use HFA result" }) do
+      first = regexp.match("abb")
+      second = regexp.match("aab")
+      assert_equal ["ab", "a", "b"], first.to_a
+      assert_equal ["aab", "aa", "b"], second.to_a
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 
