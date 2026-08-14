@@ -1144,6 +1144,21 @@ module Onibi
       false
     end
 
+    def hfa_class_run_positive_lookahead_match_result(input, position)
+      left_table, separator, right_table = hfa_class_run_positive_lookahead_tables
+      separator_position = input.index(separator, position + 1)
+      while separator_position
+        left = separator_position
+        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
+        right = separator_position + separator.bytesize
+        return [left, separator_position, []] if left < separator_position &&
+                                                 right < input.bytesize && right_table[input.getbyte(right)]
+
+        separator_position = input.index(separator, separator_position + 1)
+      end
+      nil
+    end
+
     def hfa_unicode_ignorecase_literal_result_safe?
       return @hfa_unicode_ignorecase_literal_safe if defined?(@hfa_unicode_ignorecase_literal_safe)
       literal = literal_ast_value(@ast)
@@ -2260,6 +2275,14 @@ module Onibi
       if input.ascii_only? && @hfa_match_reset_literal_fast
         position = 0
         while (result = hfa_match_reset_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
+        position = 0
+        while (result = hfa_class_run_positive_lookahead_match_result(input, position))
           block.call(result)
           position = result[1]
         end

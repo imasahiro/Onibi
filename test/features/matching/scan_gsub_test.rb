@@ -167,6 +167,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
+
+    regexp.stub(:hfa_program, -> { flunk "class-run lookahead scan should avoid HFA program compilation" }) do
+      assert_equal %w[item key], regexp.scan("item-2026 key-7")
+    end
+  end
+
   def test_literal_positive_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 
