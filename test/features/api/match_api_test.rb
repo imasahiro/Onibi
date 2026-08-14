@@ -457,6 +457,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_dot_literal_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("a.c")
+
+    regexp.stub(:hfa_dot_literal_result_safe?,
+                -> { flunk "Dot literal should use constructor dispatch metadata" }) do
+      assert regexp.match?("prefix-abc-suffix")
+    end
+  end
+
   def test_ascii_literal_match_question_uses_string_path_on_utf8_input
     regexp = Onibi::Regexp.new("needle")
 

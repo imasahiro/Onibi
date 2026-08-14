@@ -122,6 +122,12 @@ module Onibi
                            end
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                   alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
+      dot_candidate = @ast.is_a?(AST::Sequence) && @ast.parts.length == 3 &&
+                      @ast.parts[0].is_a?(AST::Literal) && @ast.parts[1].is_a?(AST::Any) &&
+                      @ast.parts[2].is_a?(AST::Literal) && @ast.parts[0].value.ascii_only? &&
+                      @ast.parts[2].value.ascii_only? && @ast.parts[0].value.bytesize == 1 &&
+                      @ast.parts[2].value.bytesize == 1 && !@options.include?("ignorecase")
+      @hfa_dot_literal_fast = hfa_dot_literal_parts if dot_candidate
       word_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
                     node = @ast.parts.first
                     node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
@@ -143,6 +149,10 @@ module Onibi
       if input.ascii_only? && @hfa_literal_alternation_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return @hfa_literal_alternation_fast.any? { |value| !input.index(value, normalized_position).nil? }
+      end
+      if input.ascii_only? && @hfa_dot_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_dot_literal_match?(input, normalized_position)
       end
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
