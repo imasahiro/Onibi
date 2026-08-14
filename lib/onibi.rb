@@ -907,17 +907,34 @@ module Onibi
       root = @ast.is_a?(AST::Sequence) ? @ast.parts.first : @ast
       body = root.body.parts.first
       value = hfa_repeated_unit_value(body.expression.body)
-      width = value.bytesize
-      return unless width.positive? && (finish - start) >= width && ((finish - start) % width).zero?
+      return unless value
 
-      [[start, finish], [finish - width, finish]]
+      unit = body.expression.body
+      lengths = hfa_repeated_match_lengths(unit, input, start, finish)
+      return unless lengths&.any? && lengths.sum == finish - start
+
+      last_start = finish - lengths.last
+      [[start, finish], [last_start, finish]]
     end
 
     def hfa_repeated_unit_value(node)
       return literal_ast_value(node) unless node.is_a?(AST::Alternation)
 
       values = node.branches.map { |branch| literal_ast_value(branch) }
-      values.all? && values.map(&:bytesize).uniq.one? ? values.first : nil
+      values.all? && values.each_cons(2).all? { |left, right| left.bytesize >= right.bytesize } ? values.first : nil
+    end
+
+    def hfa_repeated_match_lengths(node, input, start, finish)
+      cursor = start
+      lengths = []
+      while cursor < finish
+        length = hfa_nested_literal_match_length(node, input, cursor)
+        return unless length&.positive? && cursor + length <= finish
+
+        lengths << length
+        cursor += length
+      end
+      lengths if cursor == finish
     end
 
     def repeated_alternation_ast?

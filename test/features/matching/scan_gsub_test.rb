@@ -195,6 +195,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_nested_variable_repeated_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("((ab|a)+)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "nested variable repeated alternation scan should use HFA" }) do
+      assert_equal [["aba", "a"]], regexp.scan("zzaba")
+    end
+  end
+
   def test_unicode_property_run_gsub_preserves_byte_offsets
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
