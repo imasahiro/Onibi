@@ -86,7 +86,8 @@ module Onibi
       validate_encoding!(input)
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
-        return !input.index(literal, normalize_match_position(input, position)).nil?
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, start_position).nil?
       end
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
@@ -134,7 +135,8 @@ module Onibi
       validate_encoding!(input)
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
-        start = input.index(literal, normalize_match_position(input, position))
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        start = input.index(literal, start_position)
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end

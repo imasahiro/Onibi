@@ -30,6 +30,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_exact_literal_default_position_skips_position_normalization
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:normalize_match_position, ->(*) { flunk "default exact literal position should be zero" }) do
+      assert regexp.match?("prefix-needle-suffix")
+    end
+  end
+
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
