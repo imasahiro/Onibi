@@ -4,6 +4,7 @@ require "optparse"
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "onibi"
+require "onibi/codegen"
 
 # Compares the bounded-literal event coordinator with the previous literal-only search plan.
 module HybridLiteralChainBenchmark
