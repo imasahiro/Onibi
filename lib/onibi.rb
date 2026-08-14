@@ -1398,11 +1398,23 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
       group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
       group = group_index && parts[group_index]
-      body_parts = group&.body.is_a?(AST::Sequence) ? group.body.parts : []
+      body_parts = if group&.body.is_a?(AST::Sequence)
+                     group.body.parts
+                   elsif group
+                     [group.body]
+                   else
+                     []
+                   end
       run = body_parts.first
-      delimiter = body_parts[1]
+      delimiter = body_parts[1] if body_parts.length >= 2
+      trailing_zero_width = true
+      if delimiter.nil? && body_parts.length == 1
+        delimiter = parts[group_index + 1]
+      else
+        trailing_zero_width = parts[(group_index + 1)..].to_a.all? { |part| hfa_zero_width_node?(part) }
+      end
       valid = group && parts[0...group_index].all? { |part| hfa_zero_width_node?(part) } &&
-              parts[(group_index + 1)..].to_a.all? { |part| hfa_zero_width_node?(part) } &&
+              trailing_zero_width &&
               run.is_a?(AST::Quantifier) && run.mode == :greedy && run.minimum.positive? && run.maximum.nil? &&
               run.expression.is_a?(AST::CharacterClass) && delimiter.is_a?(AST::Literal) &&
               delimiter.value.bytesize.positive?

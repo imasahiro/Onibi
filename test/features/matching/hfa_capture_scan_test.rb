@@ -14,6 +14,7 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [["192.0.2.1", "10/Aug/2026:12:00:00 +0000", "GET",
                    "/api/v1/users/0?page=1&active=true", "200", "17049"]], regexp.scan(ACCESS_LOG)
     assert regexp.send(:hfa_top_level_capture_plan)
+    assert regexp.send(:hfa_reverse_literal_capture_spec)
   end
 
   def test_hfa_scan_returns_multiple_literal_captures
