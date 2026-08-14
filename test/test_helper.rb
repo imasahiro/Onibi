@@ -4,7 +4,6 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
 PROJECT_ROOT = File.expand_path("..", __dir__)
 FIXTURES_ROOT = File.join(PROJECT_ROOT, "fixtures")
-HFA_BACKEND_ONLY = true
 
 require "simplecov"
 
