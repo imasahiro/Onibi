@@ -17,4 +17,12 @@ class BackreferenceTest < Minitest::Test
     assert regexp.match?("abab")
     refute regexp.match?("abac")
   end
+
+  def test_repeated_class_backreference_match_uses_direct_hfa_result
+    regexp = Onibi::Regexp.new("([a-z]+)-\\1")
+
+    regexp.stub(:hfa_program, -> { flunk "repeated class backreference should use direct HFA result" }) do
+      assert_equal "echo-echo", regexp.match("echo-echo")[0]
+    end
+  end
 end

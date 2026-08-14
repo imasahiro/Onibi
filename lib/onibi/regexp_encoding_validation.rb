@@ -6,6 +6,8 @@ module Onibi
     private
 
     def validate_encoding!(input)
+      return if @pattern.ascii_only? && !fixed_encoding? && input.ascii_only?
+
       validate_input_encoding!(input)
       return if noencoding_input?(input)
       return if compatible_ascii_input?(input)
