@@ -132,6 +132,18 @@ module Onibi
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
+      lookahead_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
+                              run, assertion = @ast.parts
+                              guard = assertion.body if assertion.is_a?(AST::Assertion)
+                              guard_parts = guard.parts if guard.is_a?(AST::Sequence)
+                              run.is_a?(AST::Quantifier) && run.kind == :+ && run.mode == :greedy &&
+                                run.expression.is_a?(AST::CharacterClass) && assertion.is_a?(AST::Assertion) &&
+                                assertion.kind == :positive &&
+                                guard_parts&.length == 2 && guard_parts[0].is_a?(AST::Literal) &&
+                                guard_parts[1].is_a?(AST::Quantifier) && guard_parts[1].kind == :+ &&
+                                guard_parts[1].mode == :greedy && guard_parts[1].expression.is_a?(AST::CharacterClass)
+                            end
+      @hfa_class_run_positive_lookahead_fast = hfa_class_run_positive_lookahead_tables if lookahead_candidate
       @hfa_empty_absence_fast = true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
                                          @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
@@ -289,6 +301,10 @@ module Onibi
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_match_reset_literal_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_class_run_positive_lookahead_match?(input, normalized_position)
       end
       if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
