@@ -89,6 +89,10 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
       end
+      if input.ascii_only? && hfa_ascii_unicode_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_ascii_unicode_run_match?(input, normalized_position)
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
@@ -683,6 +687,37 @@ module Onibi
     def hfa_fixed_literal_capture_match?(input, position)
       literal = hfa_simple_capture_layout.map { |_kind, value, _number| value }.join
       !input.b.index(literal.b, position).nil?
+    end
+
+    def hfa_ascii_unicode_run_result_safe?
+      return @hfa_ascii_unicode_run_safe if defined?(@hfa_ascii_unicode_run_safe)
+
+      node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
+      @hfa_ascii_unicode_run_safe = if !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+                                      node.kind == :+ && node.mode == :greedy &&
+                                      node.expression.is_a?(AST::Property)
+                                     !hfa_ascii_unicode_run_table.nil?
+                                   else
+                                     false
+                                   end
+    end
+
+    def hfa_ascii_unicode_run_table
+      return @hfa_ascii_unicode_run_table if defined?(@hfa_ascii_unicode_run_table)
+
+      node = @ast.parts.first
+      @hfa_ascii_unicode_run_table = hfa_capture_class_table(node.expression)
+    end
+
+    def hfa_ascii_unicode_run_match?(input, position)
+      table = hfa_ascii_unicode_run_table
+      cursor = position
+      while cursor < input.bytesize
+        return true if table[input.getbyte(cursor)]
+
+        cursor += 1
+      end
+      false
     end
 
     def hfa_unicode_simple_capture_result_safe?

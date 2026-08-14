@@ -215,6 +215,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_unicode_property_run_match_question_uses_byte_table_path
+    regexp = Onibi::Regexp.new("\\p{Alpha}+")
+
+    regexp.stub(:hfa_program, -> { flunk "ASCII Unicode property match? should avoid program compilation" }) do
+      assert regexp.match?("prefix letters suffix")
+      refute regexp.match?("12345")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
