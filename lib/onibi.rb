@@ -406,13 +406,15 @@ module Onibi
     end
 
     def hfa_unicode_match_result_safe?
-      return false if @options.include?("ignorecase")
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
-
-      node = @ast.parts.first
-      return false unless node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy
-
-      node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Property)
+      return @hfa_unicode_match_safe if defined?(@hfa_unicode_match_safe)
+      @hfa_unicode_match_safe = if @options.include?("ignorecase") ||
+                                  !@ast.is_a?(AST::Sequence) || !@ast.parts.one?
+                                 false
+                               else
+                                 node = @ast.parts.first
+                                 node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy &&
+                                   (node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Property))
+                               end
     end
 
     def hfa_unicode_literal_result_safe?

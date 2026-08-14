@@ -346,6 +346,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_hfa_safety_analysis_is_cached
+    regexp = Onibi::Regexp.new("\\p{Letter}+")
+
+    3.times { assert regexp.match?("日本語") }
+    assert_equal true, regexp.instance_variable_get(:@hfa_unicode_match_safe)
+  end
+
   def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
     regexp = Onibi::Regexp.new("é")
 
