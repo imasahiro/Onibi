@@ -210,6 +210,13 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
+      if input.ascii_only? && @hfa_literal_assertion_fast &&
+         %i[positive negative].include?(@hfa_literal_assertion_fast[1])
+        assertion = @hfa_literal_assertion_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_assertion_match_result(input, normalized_position, assertion).nil?
+      end
+
       return false if hfa_always_fails?
 
       if hfa_empty_absence_result_safe?
@@ -406,10 +413,6 @@ module Onibi
       if input.ascii_only? && hfa_nonword_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil?
-      end
-      if input.ascii_only? && hfa_literal_assertion_result_safe?
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !hfa_literal_assertion_match_result(input, normalized_position).nil?
       end
       if input.ascii_only? && hfa_lazy_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)

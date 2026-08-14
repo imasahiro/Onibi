@@ -1388,6 +1388,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_negative_lookahead_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("cat(?!fish)")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "literal negative lookahead should skip generic failure checks" }) do
+      assert regexp.match?("a cat naps")
+    end
+  end
+
   def test_unicode_repeated_literal_rejects_ascii_input_without_codegen
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
