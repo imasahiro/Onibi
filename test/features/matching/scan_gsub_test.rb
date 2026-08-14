@@ -609,6 +609,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_variable_any_backreference_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "variable any backreference scan should use HFA" }) do
+      assert_equal [["abc"], [""]], regexp.scan("abcabc")
+      assert_equal [[""], [""], [""], [""]], regexp.scan("abc")
+    end
+  end
+
   def test_named_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
 

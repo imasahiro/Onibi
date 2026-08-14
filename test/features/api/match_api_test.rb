@@ -1183,6 +1183,18 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_variable_any_backreference_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "variable any backreference match? should use HFA" }) do
+      regexp.stub(:codegen_match, ->(*) { flunk "variable any backreference match should use HFA" }) do
+        assert regexp.match?("abcabc")
+        assert_equal ["abcabc", "abc"], regexp.match("abcabc").to_a
+        assert_equal ["aa", "a"], regexp.match("aaa").to_a
+      end
+    end
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

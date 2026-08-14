@@ -19,19 +19,19 @@ census for `match`. `hfa_iterator_safe?` repeats much of both lists for
 
 ## Known fallback patterns
 
-These patterns are regression fixtures for the remaining unsupported capture
-shapes. Each API must eventually be routed through the tagged/capturing HFA
-path; a test that stubs the corresponding codegen entrypoint must fail if a
-future change reintroduces the fallback.
+These are historical fallback fixtures. They remain acceptance tests: each API
+stubs the corresponding codegen entrypoint and fails if a future change
+reintroduces the fallback. The current inventory is empty for these shapes.
 
 | Pattern | APIs affected before the capturing-backref work | Reason |
 | --- | --- | --- |
-| `(?<x>.*)\\k<x>` | `match?`, `match`, `scan` | arbitrary-width capture must be retained and compared at runtime; no tagged HFA representation exists yet |
+| `(?<x>.*)\\k<x>` | `match?`, `match`, `scan` | arbitrary-width capture must be retained and compared at runtime |
 
-`(a*)\\1`, `(?<x>a)(?i:\\k<x>)`, and `(?>a|ab)c` were fallbacks in the original snapshot. All three are
-now covered by generalized HFA runtime paths: variable literal backreference
-matching, scoped casefold backreference matching, and atomic-literal branch
-evaluation.
+`(a*)\\1`, `(?<x>a)(?i:\\k<x>)`, `(?<x>.*)\\k<x>`, and `(?>a|ab)c` were
+fallbacks in the original snapshot. They are now covered by generalized HFA
+runtime paths: variable literal backreference matching, scoped casefold
+backreference matching, variable-width capture matching, and atomic-literal
+branch evaluation.
 
 `(?>a|ab)c` was a fallback in the original snapshot because the generic
 atomic-literal shortcut only handled branches whose remainder repeated the

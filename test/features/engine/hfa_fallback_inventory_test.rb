@@ -3,21 +3,23 @@
 require_relative "../../test_helper"
 
 class HfaFallbackInventoryTest < Minitest::Test
-  FALLBACK_CASES = [
+  HFA_CASES = [
+    ["(a*)\\1", "aaaa"],
+    ["(?<x>a)(?i:\\k<x>)", "aA"],
     ["(?<x>.*)\\k<x>", "aa"]
   ].freeze
 
-  def test_known_fallbacks_still_use_codegen_until_tagged_hfa_support_lands
-    FALLBACK_CASES.each do |pattern, input|
-      assert_codegen_fallback(pattern, input, :match?)
-      assert_codegen_fallback(pattern, input, :match)
-      assert_codegen_fallback(pattern, input, :scan)
+  def test_known_fallback_shapes_are_now_hfa_only
+    HFA_CASES.each do |pattern, input|
+      assert_hfa_only(pattern, input, :match?)
+      assert_hfa_only(pattern, input, :match)
+      assert_hfa_only(pattern, input, :scan)
     end
   end
 
   private
 
-  def assert_codegen_fallback(pattern, input, api)
+  def assert_hfa_only(pattern, input, api)
     regexp = Onibi::Regexp.new(pattern)
     method = { match?: :codegen_match?, match: :codegen_match, scan: :codegen_each_result }.fetch(api)
     called = false
@@ -28,6 +30,6 @@ class HfaFallbackInventoryTest < Minitest::Test
     end
 
     api == :match? ? regexp.match?(input) : api == :match ? regexp.match(input) : regexp.scan(input)
-    assert called, "expected #{pattern.inspect} #{api} to use its known codegen fallback"
+    refute called, "expected #{pattern.inspect} #{api} to avoid codegen fallback"
   end
 end
