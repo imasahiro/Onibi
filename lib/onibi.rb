@@ -2218,13 +2218,25 @@ module Onibi
     def hfa_each_result(input, &block)
       return enum_for(__method__, input) unless block
 
+      if input.ascii_only? && @hfa_ignorecase_literal_fast
+        folded_input = input.downcase
+        literal = @hfa_ignorecase_literal_fast.downcase
+        position = 0
+        while (start = folded_input.index(literal, position))
+          finish = start + literal.bytesize
+          block.call([start, finish, []])
+          position = finish
+        end
+        return true
+      end
+
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
                    hfa_literal_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                   hfa_ignorecase_literal_result_safe? ||
+                   @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
                    hfa_negative_lookbehind_result_safe? ||
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
@@ -2299,6 +2311,17 @@ module Onibi
         end
         return true
       end
+      if @hfa_ignorecase_literal_fast
+        folded_input = input.downcase
+        literal = @hfa_ignorecase_literal_fast.downcase
+        position = 0
+        while (start = folded_input.index(literal, position))
+          finish = start + literal.bytesize
+          block.call([start, finish, []])
+          position = finish
+        end
+        return true
+      end
 
       program = hfa_program
       return false unless program
@@ -2308,15 +2331,6 @@ module Onibi
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
           block.call(result)
           position = result[1]
-        end
-      elsif hfa_ignorecase_literal_result_safe?
-        folded_input = input.downcase
-        literal = literal_ast_value(@ast).downcase
-        position = 0
-        while (start = folded_input.index(literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
         end
       elsif hfa_unicode_repeated_literal_result_safe?
         position = 0
@@ -2371,7 +2385,8 @@ module Onibi
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                       hfa_adjacent_nested_repeated_capture_result_safe? ||
-                      hfa_unicode_repeated_literal_result_safe? || hfa_ignorecase_literal_result_safe? ||
+                     hfa_unicode_repeated_literal_result_safe? || @hfa_ignorecase_literal_fast ||
+                     hfa_ignorecase_literal_result_safe? ||
                       hfa_unicode_ignorecase_literal_result_safe? ||
                       hfa_repeated_class_capture_result_safe?
 

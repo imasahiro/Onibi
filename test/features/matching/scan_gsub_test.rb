@@ -93,6 +93,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_ascii_ignorecase_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
+
+    regexp.stub(:hfa_program, -> { flunk "ASCII ignorecase scan should avoid HFA program compilation" }) do
+      assert_equal %w[CASE case], regexp.scan("CASE x case")
+    end
+  end
+
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
     regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do
