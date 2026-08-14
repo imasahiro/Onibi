@@ -328,6 +328,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_ignorecase_literal_match_question_uses_boolean_string_path
+    regexp = Onibi::Regexp.new("école", ["ignorecase"])
+
+    regexp.stub(:hfa_program, -> { flunk "Unicode ignorecase match? should use string path" }) do
+      assert regexp.match?("xxÉCOLEyy")
+    end
+  end
+
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
