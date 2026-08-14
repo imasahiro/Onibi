@@ -744,7 +744,10 @@ module Onibi
 
       def unicode_range_match?(input)
         minimum, maximum = @unicode_range
-        input.each_codepoint.any? { |codepoint| codepoint.between?(minimum, maximum) }
+        input.each_codepoint do |codepoint|
+          return true if codepoint.between?(minimum, maximum)
+        end
+        false
       end
 
       def unicode_match_result(input, position)
