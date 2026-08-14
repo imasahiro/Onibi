@@ -379,6 +379,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_adjacent_ascii_class_runs_use_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("[a-z]+[0-9]+")
+
+    regexp.stub(:hfa_ascii_adjacent_run_result_safe?,
+                -> { flunk "adjacent class runs should use constructor dispatch metadata" }) do
+      assert regexp.match?("item2026")
+    end
+  end
+
   def test_atomic_literal_alternation_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 

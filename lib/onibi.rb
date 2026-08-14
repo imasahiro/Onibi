@@ -165,6 +165,7 @@ module Onibi
       @hfa_unicode_word_class_run_fast = word_node if word_node && !@options.include?("ignorecase")
       captured_chain_candidate = !@options.include?("ignorecase") && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
+      @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
     def match?(input, position = 0)
@@ -177,6 +178,14 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
       return true if @hfa_empty_absence_fast
+      if input.ascii_only? && @hfa_ascii_adjacent_run_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_ascii_adjacent_run_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_captured_class_run_chain_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_captured_class_run_chain_match?(input, normalized_position)
+      end
       if input.ascii_only? && @hfa_literal_alternation_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return @hfa_literal_alternation_fast.any? { |value| !input.index(value, normalized_position).nil? }
@@ -318,10 +327,6 @@ module Onibi
       if input.ascii_only? && hfa_possessive_literal_string_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
-      end
-      if input.ascii_only? && @hfa_captured_class_run_chain_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_captured_class_run_chain_match?(input, normalized_position)
       end
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1261,6 +1266,17 @@ module Onibi
            part.expression.is_a?(AST::Property))
       end
       @hfa_ascii_adjacent_run_safe = valid && !hfa_ascii_adjacent_run_tables.nil?
+    end
+
+    def hfa_ascii_adjacent_run_candidate?
+      return false if @options.include?("ignorecase")
+      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
+
+      @ast.parts.all? do |part|
+        part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
+          (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape) ||
+           part.expression.is_a?(AST::Property))
+      end
     end
 
     def hfa_ascii_adjacent_run_tables
