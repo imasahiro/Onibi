@@ -887,11 +887,8 @@ module Onibi
     end
 
     def hfa_nested_repeated_capture_result_safe?
-      root = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
-               @ast.parts.first
-             else
-               @ast
-             end
+      root, = hfa_nested_repeated_capture_parts
+      return false unless root
       return false unless root.is_a?(AST::Group) && root.capture
       body = root.body
       body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
@@ -904,17 +901,29 @@ module Onibi
     def hfa_nested_repeated_capture_offsets(input, start, finish)
       return unless hfa_nested_repeated_capture_result_safe?
 
-      root = @ast.is_a?(AST::Sequence) ? @ast.parts.first : @ast
+      root, suffix = hfa_nested_repeated_capture_parts
+      repeat_finish = finish - suffix.bytesize
+      return unless suffix.empty? || input.byteslice(repeat_finish, suffix.bytesize) == suffix
+
       body = root.body.parts.first
       value = hfa_repeated_unit_value(body.expression.body)
       return unless value
 
       unit = body.expression.body
-      lengths = hfa_repeated_match_lengths(unit, input, start, finish)
-      return unless lengths&.any? && lengths.sum == finish - start
+      lengths = hfa_repeated_match_lengths(unit, input, start, repeat_finish)
+      return unless lengths&.any? && lengths.sum == repeat_finish - start
 
-      last_start = finish - lengths.last
-      [[start, finish], [last_start, finish]]
+      last_start = repeat_finish - lengths.last
+      [[start, repeat_finish], [last_start, repeat_finish]]
+    end
+
+    def hfa_nested_repeated_capture_parts
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
+      return [parts.first, ""] if parts.length == 1 && parts.first.is_a?(AST::Group)
+      return [parts.first, parts.last.value] if parts.length == 2 && parts.first.is_a?(AST::Group) &&
+                                                 parts.last.is_a?(AST::Literal)
+
+      [nil, nil]
     end
 
     def hfa_repeated_unit_value(node)

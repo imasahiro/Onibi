@@ -578,6 +578,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_repeated_capture_with_suffix_uses_hfa_result
+    regexp = Onibi::Regexp.new("((ab)+)c")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested repeated suffix capture should use HFA result" }) do
+      match = regexp.match("zzababc")
+      assert_equal ["ababc", "abab", "ab"], match.to_a
+      assert_equal [[2, 6], [4, 6]], [match.offset(1), match.offset(2)]
+    end
+  end
+
   def test_match_exposes_capture_offsets_and_size
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 
