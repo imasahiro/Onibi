@@ -1934,6 +1934,21 @@ module Onibi
       false
     end
 
+    def hfa_unicode_word_class_run_match_result(input, position)
+      cursor = 0
+      start = nil
+      input.each_codepoint do |codepoint|
+        matched = cursor >= position && hfa_unicode_word_codepoint?(codepoint)
+        if matched
+          start ||= cursor
+        elsif start
+          return [start, cursor, []]
+        end
+        cursor += utf8_codepoint_bytesize(codepoint)
+      end
+      start && [start, cursor, []]
+    end
+
     def hfa_unicode_word_codepoint?(codepoint)
       return true if codepoint == 95 || codepoint.between?(48, 57) ||
                      codepoint.between?(65, 90) || codepoint.between?(97, 122)
@@ -2428,6 +2443,14 @@ module Onibi
       if !input.ascii_only? && hfa_unicode_property_run_result_safe?
         position = 0
         while (result = hfa_unicode_property_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if !input.ascii_only? && hfa_unicode_word_class_run_result_safe?
+        position = 0
+        while (result = hfa_unicode_word_class_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end

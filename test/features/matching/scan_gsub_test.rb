@@ -184,6 +184,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_word_class_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("[[:word:]]+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode word class run should use HFA" }) do
+      regexp.stub(:hfa_program, -> { flunk "Unicode word class run should avoid HFA program compilation" }) do
+        assert_equal %w[記号 日本語 _2026 終端], regexp.scan("記号-日本語 _2026 終端!")
+      end
+    end
+  end
+
   def test_literal_negative_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("cat(?!fish)")
 
