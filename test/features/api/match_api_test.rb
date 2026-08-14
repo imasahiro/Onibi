@@ -297,6 +297,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_class_backreference_match_question_uses_byte_string_path
+    regexp = Onibi::Regexp.new("([a-z]+)-\\1")
+
+    regexp.stub(:hfa_program, -> { flunk "class backreference match? should avoid program compilation" }) do
+      assert regexp.match?("prefix echo-echo suffix")
+      refute regexp.match?("prefix echo-ecoh suffix")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
