@@ -251,6 +251,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_match_reset_literal_match_question_uses_adjacent_string_path
+    regexp = Onibi::Regexp.new("prefix\\Ksuffix")
+
+    regexp.stub(:hfa_program, -> { flunk "match-reset literal match? should avoid program compilation" }) do
+      assert regexp.match?("xxprefixsuffixyy")
+      refute regexp.match?("xxprefix-suffixyy")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 

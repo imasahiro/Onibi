@@ -109,6 +109,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_match_reset_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_match_reset_literal_match?(input, normalized_position)
+      end
       if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -651,6 +655,35 @@ module Onibi
 
       literal = hfa_ignorecase_literal_value
       @hfa_ignorecase_literal_variants = [literal.downcase, literal.upcase].uniq.freeze
+    end
+
+    def hfa_match_reset_literal_result_safe?
+      return @hfa_match_reset_literal_safe if defined?(@hfa_match_reset_literal_safe)
+
+      prefix, suffix = hfa_match_reset_literal_parts
+      @hfa_match_reset_literal_safe = prefix&.ascii_only? && suffix&.ascii_only? &&
+                                      prefix.bytesize.positive? && suffix.bytesize.positive?
+    end
+
+    def hfa_match_reset_literal_match?(input, position)
+      prefix, suffix = hfa_match_reset_literal_parts
+      candidate = input.index(prefix, position)
+      while candidate
+        return true if input.byteslice(candidate + prefix.bytesize, suffix.bytesize) == suffix
+
+        candidate = input.index(prefix, candidate + 1)
+      end
+      false
+    end
+
+    def hfa_match_reset_literal_parts
+      return @hfa_match_reset_literal_parts if defined?(@hfa_match_reset_literal_parts)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      reset = parts.index { |part| part.is_a?(AST::Escape) && part.kind == :match_reset }
+      prefix = reset && literal_ast_value(AST::Sequence.new(parts[0...reset]))
+      suffix = reset && literal_ast_value(AST::Sequence.new(parts[(reset + 1)..]))
+      @hfa_match_reset_literal_parts = [prefix, suffix].freeze
     end
 
     def hfa_unicode_ignorecase_literal_result_safe?
