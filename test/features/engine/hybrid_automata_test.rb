@@ -199,6 +199,7 @@ class HybridAutomataTest < Minitest::Test
     program = Onibi::HybridAutomata.compile("case", options: ["ignorecase"])
 
     assert_equal %w[c C], program.instance_variable_get(:@casefold_variants)
+    assert_equal "case", program.instance_variable_get(:@casefold_literal)
   end
 
   def test_ignorecase_keeps_unicode_case_folding

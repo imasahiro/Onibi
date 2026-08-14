@@ -910,6 +910,7 @@ module Onibi
         @backref_spec = automaton.backref_spec
         @ignorecase = ignorecase
         @backref_ignorecase = ignorecase
+        @casefold_literal = @exact_literal&.downcase if @ignorecase && @exact_literal&.ascii_only?
         @backref_predicate, @backref_separator, @backref_literal = backref_data(@backref_spec,
                                                                                 ignorecase: ignorecase)
         @backref_separator_length = @backref_separator&.bytesize
@@ -1861,11 +1862,13 @@ module Onibi
       end
 
       def casefold_literal_search(input, position)
-        unless @exact_literal.ascii_only? && input.ascii_only?
-          return unicode_casefold_literal_search(input, position) if @exact_literal.ascii_only?
-
-          return !input.downcase.index(@exact_literal.downcase, position).nil?
+        if @exact_literal.ascii_only? && input.ascii_only?
+          return !input.downcase.index(@casefold_literal, position).nil?
         end
+
+        return unicode_casefold_literal_search(input, position) if @exact_literal.ascii_only?
+
+        return !input.downcase.index(@exact_literal.downcase, position).nil?
 
         variants = @casefold_variants
         variants.any? do |variant|
