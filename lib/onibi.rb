@@ -1239,6 +1239,11 @@ module Onibi
                                         !@options.include?("ignorecase")
     end
 
+    def hfa_ascii_input_impossible_unicode_literal?
+      literal = hfa_exact_literal_value
+      literal && literal.bytesize.positive? && !literal.ascii_only? && !@options.include?("ignorecase")
+    end
+
     def hfa_exact_literal_value
       return @hfa_exact_literal_value if defined?(@hfa_exact_literal_value)
       @hfa_exact_literal_value = if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence)
@@ -3491,6 +3496,7 @@ module Onibi
         block.call([input.bytesize, input.bytesize, []])
         return true
       end
+      return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
 
       if input.ascii_only? && hfa_literal_absence_result_safe?
         position = 0
