@@ -59,6 +59,14 @@ class HfaCaptureScanTest < Minitest::Test
     assert Onibi::Regexp.new(pattern).send(:hfa_top_level_capture_scan_spec)
   end
 
+  def test_hfa_scan_uses_alternative_prefixes_for_top_level_capture
+    pattern = "(?<identifier>v[0-9]+\\.[0-9]+|api/[a-z]+/[0-9]+|pkg-[a-z0-9-]+)"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]], regexp.scan("v1.2 api/users/42 pkg-client")
+    assert_equal %w[v api/ pkg-], regexp.send(:hfa_top_level_capture_scan_spec)
+  end
+
   def test_hfa_uses_delimiter_search_for_negated_class_runs
     regexp = Onibi::Regexp.new("<[^>]*>")
 

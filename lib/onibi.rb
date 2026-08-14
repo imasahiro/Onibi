@@ -1352,11 +1352,38 @@ module Onibi
       return @hfa_top_level_capture_scan_spec if defined?(@hfa_top_level_capture_scan_spec)
 
       plan = hfa_top_level_capture_plan
-      @hfa_top_level_capture_scan_spec = if plan && plan.first.is_a?(AST::Literal) && plan.length > 1
-                                           [plan.first.value].freeze
-                                         else
-                                           false
-                                         end
+      prefixes = if plan && plan.first.is_a?(AST::Literal) && plan.length > 1
+                   [plan.first.value]
+                 elsif plan && plan.length == 1 && plan.first.is_a?(AST::Group) && plan.first.capture
+                   group_prefixes = hfa_capture_literal_prefixes(plan.first.body)
+                   group_prefixes if group_prefixes.length > 1
+                 end
+      prefixes = prefixes&.reject(&:empty?)&.uniq
+      @hfa_top_level_capture_scan_spec = prefixes&.then { |values| values.freeze unless values.empty? } || false
+    end
+
+    def hfa_capture_literal_prefixes(node)
+      case node
+      when AST::Literal
+        [node.value]
+      when AST::Group, AST::OptionGroup, AST::AtomicGroup
+        hfa_capture_literal_prefixes(node.body)
+      when AST::Alternation
+        node.branches.flat_map { |branch| hfa_capture_literal_prefixes(branch) }
+      when AST::Sequence
+        literal_prefix = +""
+        node.parts.each do |part|
+          if part.is_a?(AST::Literal)
+            literal_prefix << part.value
+            next
+          end
+          return [literal_prefix] unless literal_prefix.empty?
+          return [] unless hfa_zero_width_node?(part)
+        end
+        literal_prefix.empty? ? [] : [literal_prefix]
+      else
+        []
+      end
     end
 
     def hfa_whole_capture_offsets(start, finish)
@@ -5650,9 +5677,20 @@ module Onibi
       end
 
       if input.ascii_only? && (scan_spec = hfa_top_level_capture_scan_spec)
-        prefix = scan_spec.first
         position = 0
-        while (start = input.index(prefix, position))
+        while position < input.bytesize
+          start = nil
+          prefix = nil
+          scan_spec.each do |candidate_prefix|
+            candidate = input.index(candidate_prefix, position)
+            next unless candidate && (start.nil? || candidate < start ||
+                                      (candidate == start && candidate_prefix.bytesize > prefix.bytesize))
+
+            start = candidate
+            prefix = candidate_prefix
+          end
+          break unless start
+
           line_end = input.index("\n", start) || input.bytesize
           result = hfa_top_level_capture_match_result(input, start, line_end, allow_short: true)
           if result
