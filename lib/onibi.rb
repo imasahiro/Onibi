@@ -187,7 +187,8 @@ module Onibi
     def match?(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      validate_encoding!(input)
+      ascii_exact_literal = @hfa_exact_literal_fast && @pattern.ascii_only? && !fixed_encoding? && input.ascii_only?
+      validate_encoding!(input) unless ascii_exact_literal
 
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast

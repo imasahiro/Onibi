@@ -1195,6 +1195,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_exact_literal_match_skips_redundant_encoding_validation
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:validate_encoding!, ->(*) { flunk "ASCII exact literal should use the fast path" }) do
+      assert regexp.match?("prefix-needle-suffix")
+    end
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
