@@ -24,6 +24,10 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [%w[foo bar]], Onibi::Regexp.new("(?<first>foo)(?<second>bar)").scan("foobar")
   end
 
+  def test_hfa_capture_boundary_respects_class_values_that_include_delimiter
+    assert_equal [["a,b"]], Onibi::Regexp.new("(?<value>[a-z,]+),").scan("a,b,")
+  end
+
   def test_hfa_scan_handles_nested_non_capture_groups_in_email_pattern
     pattern = "\\b(?<email>[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)\\b"
 

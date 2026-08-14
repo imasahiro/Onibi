@@ -1395,7 +1395,11 @@ module Onibi
       return :unsupported unless table
 
       boundary = if following.is_a?(AST::Literal) && following.value.bytesize.positive?
-                   input.index(following.value, cursor)
+                   if following.value.bytes.all? { |byte| !table[byte] }
+                     input.index(following.value, cursor)
+                   else
+                     input.rindex(following.value, finish - following.value.bytesize)
+                   end
                  elsif following.nil?
                    finish
                  end
@@ -5299,6 +5303,7 @@ module Onibi
     def hfa_each_result(input, &block)
       return enum_for(__method__, input) unless block
       return true if hfa_always_fails?
+      return false if hfa_capture_count.positive? && hfa_top_level_capture_plan && hfa_reverse_literal_capture_spec
 
       if hfa_empty_absence_result_safe?
         block.call([input.bytesize, input.bytesize, []])
