@@ -1308,6 +1308,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_single_capture_literal_alternation_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?<letter>a|aa)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "single capture literal alternation should use HFA" }) do
+      assert_equal ["a", "a"], regexp.match("aa").to_a
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 

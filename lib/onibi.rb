@@ -2802,6 +2802,17 @@ module Onibi
                                              hfa_program
     end
 
+    def hfa_single_capture_literal_alternation_match_result(input, program_result)
+      result = program_result
+      return unless result
+
+      group = @ast.parts.first
+      start, finish, = result
+      captures = Array.new(group.number)
+      captures[group.number - 1] = [start, finish]
+      [start, finish, captures]
+    end
+
     def hfa_adjacent_greedy_capture_result_safe?
       return @hfa_adjacent_greedy_capture_safe if defined?(@hfa_adjacent_greedy_capture_safe)
 
@@ -4111,6 +4122,7 @@ module Onibi
                    hfa_captureless_repeated_alternation_result_safe? ||
                    hfa_repeated_equal_length_literal_capture_result_safe? ||
                    hfa_literal_capture_before_alternation_result_safe? ||
+                   hfa_single_capture_literal_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
@@ -4161,6 +4173,13 @@ module Onibi
         program = hfa_program
         program.each_match_result(input, 0) do |result|
           block.call(hfa_literal_capture_before_alternation_match_result(input, result[0], result))
+        end
+        return true
+      end
+      if hfa_single_capture_literal_alternation_result_safe?
+        program = hfa_program
+        program.each_match_result(input, 0) do |result|
+          block.call(hfa_single_capture_literal_alternation_match_result(input, result))
         end
         return true
       end
@@ -4363,6 +4382,7 @@ module Onibi
                      hfa_captureless_repeated_alternation_result_safe? ||
                      hfa_repeated_equal_length_literal_capture_result_safe? ||
                      hfa_literal_capture_before_alternation_result_safe? ||
+                     hfa_single_capture_literal_alternation_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
