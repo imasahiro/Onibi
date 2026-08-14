@@ -1211,6 +1211,22 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_ignorecase_literal_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?i:é)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "scoped Unicode ignorecase literal should use HFA" }) do
+      assert_equal "é", regexp.match("café École").to_s
+    end
+  end
+
+  def test_scoped_unicode_ignorecase_literal_match_question_uses_hfa
+    regexp = Onibi::Regexp.new("(?i:é)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "scoped Unicode ignorecase literal should use HFA" }) do
+      assert regexp.match?("café École")
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 

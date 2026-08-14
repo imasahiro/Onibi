@@ -90,6 +90,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_ignorecase_literal_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(?i:é)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped Unicode ignorecase literal should use HFA" }) do
+      assert_equal %w[é É], regexp.scan("café École")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
