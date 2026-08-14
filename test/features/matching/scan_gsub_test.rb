@@ -421,6 +421,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_alternation_scan_uses_literal_candidate_search
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+
+    regexp.stub(:hfa_atomic_literal_alternation_match_result, ->(*) { flunk "atomic alternation should use literal candidate search" }) do
+      assert_equal ["ab", "ab"], regexp.scan("zab ab")
+    end
+  end
+
   def test_line_anchor_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("^cat$")
 

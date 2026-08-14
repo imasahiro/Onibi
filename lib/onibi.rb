@@ -1692,16 +1692,36 @@ module Onibi
 
     def hfa_atomic_literal_alternation_match_result(input, position)
       branches, suffix = hfa_atomic_literal_alternation_spec
-      cursor = position
-      while cursor <= input.bytesize
-        branch = branches.find { |value| input.byteslice(cursor, value.bytesize) == value }
+      candidate = branches.filter_map { |value| input.index(value, position) }.min
+      while candidate
+        branch = branches.find { |value| input.byteslice(candidate, value.bytesize) == value }
         if branch
-          finish = cursor + branch.bytesize + suffix.bytesize
-          return [cursor, finish, []] if input.byteslice(cursor + branch.bytesize, suffix.bytesize) == suffix
+          finish = candidate + branch.bytesize + suffix.bytesize
+          return [candidate, finish, []] if input.byteslice(candidate + branch.bytesize, suffix.bytesize) == suffix
         end
-        cursor += 1
+        candidate = branches.filter_map { |value| input.index(value, candidate + 1) }.min
       end
       nil
+    end
+
+    def hfa_atomic_literal_alternation_each_result(input, &block)
+      branches, suffix = hfa_atomic_literal_alternation_spec
+      position = 0
+      loop do
+        candidate = branches.filter_map { |value| input.index(value, position) }.min
+        break unless candidate
+
+        branch = branches.find { |value| input.byteslice(candidate, value.bytesize) == value }
+        if branch
+          finish = candidate + branch.bytesize + suffix.bytesize
+          if input.byteslice(candidate + branch.bytesize, suffix.bytesize) == suffix
+            block.call([candidate, finish, []])
+            position = finish
+            next
+          end
+        end
+        position = candidate + 1
+      end
     end
 
     def hfa_scoped_casefold_backref_spec
@@ -4547,11 +4567,7 @@ module Onibi
         return true
       end
       if input.ascii_only? && hfa_atomic_literal_alternation_spec
-        position = 0
-        while (result = hfa_atomic_literal_alternation_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
+        hfa_atomic_literal_alternation_each_result(input, &block)
         return true
       end
       if input.ascii_only? && hfa_scoped_casefold_backref_spec
