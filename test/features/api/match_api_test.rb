@@ -743,6 +743,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_capture_match_question_uses_string_path
+    regexp = Onibi::Regexp.new("(こんにちは)(世界)")
+
+    regexp.stub(:hfa_program, -> { flunk "Unicode literal capture match? should use string path" }) do
+      assert regexp.match?("挨拶こんにちは世界です")
+    end
+  end
+
   def test_ignorecase_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("case", ["ignorecase"])
 
