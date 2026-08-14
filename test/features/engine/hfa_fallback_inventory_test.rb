@@ -4,7 +4,6 @@ require_relative "../../test_helper"
 
 class HfaFallbackInventoryTest < Minitest::Test
   FALLBACK_CASES = [
-    ["(?<x>a)(?i:\\k<x>)", "aA"],
     ["(?<x>.*)\\k<x>", "aa"]
   ].freeze
 

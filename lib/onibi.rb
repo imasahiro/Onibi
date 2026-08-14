@@ -462,6 +462,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_atomic_literal_alternation_match_result(input, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_scoped_casefold_backref_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_scoped_casefold_backref_match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
@@ -835,6 +839,12 @@ module Onibi
       if input.ascii_only? && hfa_atomic_literal_alternation_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_atomic_literal_alternation_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_scoped_casefold_backref_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_scoped_casefold_backref_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1657,6 +1667,37 @@ module Onibi
           return [cursor, finish, []] if input.byteslice(cursor + branch.bytesize, suffix.bytesize) == suffix
         end
         cursor += 1
+      end
+      nil
+    end
+
+    def hfa_scoped_casefold_backref_spec
+      return @hfa_scoped_casefold_backref_spec if defined?(@hfa_scoped_casefold_backref_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, option_group = parts
+      literal = group.body if group.is_a?(AST::Group) && group.capture
+      literal = literal_ast_value(literal)
+      reference = option_group.body if option_group.is_a?(AST::OptionGroup) && option_group.ignorecase == true &&
+                                      option_group.multiline.nil? && option_group.extended.nil?
+      reference = reference.parts.first if reference.is_a?(AST::Sequence) && reference.parts.one?
+      valid = parts.length == 2 && literal&.ascii_only? && literal.bytesize.positive? &&
+              reference.is_a?(AST::Backreference) &&
+              (reference.identifier.to_s == group.name.to_s || reference.identifier.to_i == group.number)
+      @hfa_scoped_casefold_backref_spec = valid ? [literal, group.number].freeze : false
+    end
+
+    def hfa_scoped_casefold_backref_match_result(input, position)
+      literal, number = hfa_scoped_casefold_backref_spec
+      candidate = input.index(literal, position)
+      while candidate
+        repeated = candidate + literal.bytesize
+        if input.byteslice(repeated, literal.bytesize)&.casecmp?(literal)
+          captures = Array.new(number)
+          captures[number - 1] = [candidate, repeated]
+          return [candidate, repeated + literal.bytesize, captures]
+        end
+        candidate = input.index(literal, candidate + 1)
       end
       nil
     end
@@ -4310,6 +4351,14 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && hfa_scoped_casefold_backref_spec
+        position = 0
+        while (result = hfa_scoped_casefold_backref_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if input.ascii_only? && hfa_scoped_multiline_sequence_direct_spec
         hfa_scoped_multiline_sequence_direct_each_result(input, &block)
         return true
@@ -4571,7 +4620,8 @@ module Onibi
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? || hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                     hfa_scoped_multiline_sequence_direct_spec || hfa_scoped_ignorecase_sequence_direct_spec ||
-                    hfa_atomic_literal_alternation_spec || hfa_start_match_result_safe? ||
+                    hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
+                    hfa_start_match_result_safe? ||
                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                     hfa_anchor_result_safe? || hfa_greedy_bounded_sequence_result_safe? ||
                     hfa_lazy_bounded_sequence_result_safe? || hfa_scoped_extended_literal_result_safe? ||
@@ -4610,7 +4660,7 @@ module Onibi
                      hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                      hfa_scoped_multiline_sequence_direct_spec ||
                      hfa_scoped_ignorecase_sequence_direct_spec ||
-                     hfa_atomic_literal_alternation_spec ||
+                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                      hfa_anchor_result_safe? ||

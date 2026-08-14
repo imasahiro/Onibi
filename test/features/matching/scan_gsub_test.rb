@@ -601,6 +601,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_casefold_backreference_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(?<x>a)(?i:\\k<x>)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped casefold backreference scan should use HFA" }) do
+      assert_equal [["a"], ["a"]], regexp.scan("aA aa")
+    end
+  end
+
   def test_named_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
 

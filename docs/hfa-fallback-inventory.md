@@ -26,12 +26,12 @@ future change reintroduces the fallback.
 
 | Pattern | APIs affected before the capturing-backref work | Reason |
 | --- | --- | --- |
-| `(?<x>a)(?i:\\k<x>)` | `match?`, `match`, `scan` | option-scoped backreference changes the capture comparison semantics and is outside the current HFA extractor |
 | `(?<x>.*)\\k<x>` | `match?`, `match`, `scan` | arbitrary-width capture must be retained and compared at runtime; no tagged HFA representation exists yet |
 
-`(a*)\\1` and `(?>a|ab)c` were fallbacks in the original snapshot. Both are
+`(a*)\\1`, `(?<x>a)(?i:\\k<x>)`, and `(?>a|ab)c` were fallbacks in the original snapshot. All three are
 now covered by generalized HFA runtime paths: variable literal backreference
-matching and atomic-literal branch evaluation.
+matching, scoped casefold backreference matching, and atomic-literal branch
+evaluation.
 
 `(?>a|ab)c` was a fallback in the original snapshot because the generic
 atomic-literal shortcut only handled branches whose remainder repeated the

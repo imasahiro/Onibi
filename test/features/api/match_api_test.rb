@@ -1172,6 +1172,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_casefold_backreference_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?<x>a)(?i:\\k<x>)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "scoped casefold backreference match? should use HFA" }) do
+      regexp.stub(:codegen_match, ->(*) { flunk "scoped casefold backreference match should use HFA" }) do
+        assert regexp.match?("aA")
+        assert_equal ["aA", "a"], regexp.match("zaA").to_a
+      end
+    end
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
