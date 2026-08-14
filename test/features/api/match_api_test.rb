@@ -38,6 +38,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_exact_literal_match_question_uses_constructor_fast_metadata
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_exact_literal_result_safe?, -> { flunk "exact literal match? should use constructor metadata" }) do
+      assert regexp.match?("prefix-needle-suffix")
+    end
+  end
+
   def test_word_boundary_literal_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("\\bcat\\b")
 

@@ -78,14 +78,19 @@ module Onibi
       @ast = Codegen::Optimization.prepare(Parser.new(tokens).parse, normalized_options)
       @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding,
                                         boundary_analysis: false).analyze(@ast)
+      literal = if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence)
+                  literal_ast_value(@ast)
+                end
+      @hfa_exact_literal_fast = literal if literal&.ascii_only? && literal.bytesize.positive? &&
+                                           !@options.include?("ignorecase")
     end
 
     def match?(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      if hfa_exact_literal_result_safe?
-        literal = hfa_exact_literal_value
+      if @hfa_exact_literal_fast
+        literal = @hfa_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
       end
