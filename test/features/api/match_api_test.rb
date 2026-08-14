@@ -1272,6 +1272,15 @@ class MatchApiTest < Minitest::Test
                 adjacent.send(:hfa_adjacent_nested_repeated_capture_groups)
   end
 
+  def test_tagged_hfa_offset_helper_builds_match_data
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)")
+
+    match = regexp.send(:hfa_offset_match_data, "xxwordyy", 2, 6, [[2, 6]], { "word" => 1 })
+
+    assert_equal ["word", "word"], match.to_a
+    assert_equal [2, 6], match.offset("word")
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
