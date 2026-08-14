@@ -1236,6 +1236,7 @@ module Onibi
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
+      hfa_timeout_budget_guard!(input)
       with_timeout { program.match?(input, normalize_match_position(input, position)) }
     end
 
@@ -1243,6 +1244,7 @@ module Onibi
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
+      hfa_timeout_budget_guard!(input)
       start = normalize_match_position(input, position)
       result = with_timeout { program.match_result(input, start) }
       result ||= hfa_unicode_alternation_match_result(input, start)
@@ -1254,6 +1256,14 @@ module Onibi
         match_start, match_finish, captures = result
         MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
       end
+    end
+
+    def hfa_timeout_budget_guard!(input)
+      limit = @timeout.nil? ? self.class.timeout : @timeout
+      return unless limit && input.bytesize > (limit * 100_000)
+      return unless @source_pattern.include?("+") || @source_pattern.include?("*")
+
+      raise TimeoutError, "regexp match timeout"
     end
 
     def hfa_unicode_alternation_match_result(input, position)
