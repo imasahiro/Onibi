@@ -505,6 +505,12 @@ module Onibi
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end
+      if input.ascii_only? && hfa_captureless_alternation_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
@@ -2205,6 +2211,14 @@ module Onibi
       end
     end
 
+    def hfa_captureless_alternation_result_safe?
+      return @hfa_captureless_alternation_safe if defined?(@hfa_captureless_alternation_safe)
+
+      @hfa_captureless_alternation_safe = @ast.is_a?(AST::Alternation) &&
+                                          !hfa_literal_alternation_result_safe? &&
+                                          hfa_public_safe? && hfa_program
+    end
+
     def hfa_literal_alternation_values
       return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
 
@@ -3091,6 +3105,7 @@ module Onibi
                    hfa_anchored_class_run_result_safe? ||
                    hfa_literal_assertion_result_safe? ||
                    hfa_literal_alternation_result_safe? ||
+                   hfa_captureless_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
@@ -3285,6 +3300,7 @@ module Onibi
                      hfa_linebreak_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
+                     hfa_captureless_alternation_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||

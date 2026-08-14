@@ -221,6 +221,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_captureless_class_run_alternation_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("foo[a-z]+|foo[0-9]+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "captureless class alternation should use HFA" }) do
+      assert_equal "fooabc", regexp.match("xxfooabc!").to_s
+      assert_equal "foo123", regexp.match("xxfoo123!").to_s
+    end
+  end
+
   def test_single_byte_dot_match_uses_hfa_result
     regexp = Onibi::Regexp.new(".")
 
