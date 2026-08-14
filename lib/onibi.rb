@@ -201,6 +201,28 @@ module Onibi
         return !input.index(@hfa_match_reset_literal_fast, normalized_position).nil?
       end
 
+      if input.ascii_only? && @hfa_dot_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_dot_literal_match?(input, normalized_position)
+      end
+
+      if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
+      end
+
+      if @hfa_positive_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        prefix, literal = @hfa_positive_lookbehind_literal_fast
+        candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
+        while candidate
+          return true if candidate + prefix.bytesize >= normalized_position
+
+          candidate = input.index(prefix + literal, candidate + 1)
+        end
+        return false
+      end
+
       if (literal = hfa_start_match_literal_fast)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return input[normalized_position, literal.length] == literal
@@ -271,10 +293,6 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: true).nil?
       end
-      if input.ascii_only? && @hfa_dot_literal_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_dot_literal_match?(input, normalized_position)
-      end
       if input.ascii_only? && @hfa_literal_assertion_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil?
@@ -282,17 +300,6 @@ module Onibi
       if input.ascii_only? && @hfa_literal_conditional_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
-      end
-      if @hfa_positive_lookbehind_literal_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        prefix, literal = @hfa_positive_lookbehind_literal_fast
-        candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
-        while candidate
-          return true if candidate + prefix.bytesize >= normalized_position
-
-          candidate = input.index(prefix + literal, candidate + 1)
-        end
-        return false
       end
       if @hfa_negative_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -525,10 +532,6 @@ module Onibi
         return !result.nil? if timeout_unconfigured?
 
         return with_timeout { !result.nil? }
-      end
-      if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
       end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
