@@ -520,6 +520,16 @@ module Onibi
         end
         return nil
       end
+      if input.ascii_only? && hfa_adjacent_greedy_capture_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        if result
+          start, finish, = result
+          first_finish = hfa_adjacent_greedy_capture_end(input, start, finish)
+          return hfa_match_data([start, finish, [[start, first_finish], [first_finish, first_finish]]], input)
+        end
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
@@ -2238,6 +2248,41 @@ module Onibi
       @hfa_single_capture_alternation_safe = values && values.length > 1 &&
                                              values.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
                                              hfa_program
+    end
+
+    def hfa_adjacent_greedy_capture_result_safe?
+      return @hfa_adjacent_greedy_capture_safe if defined?(@hfa_adjacent_greedy_capture_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      first, second = parts
+      first_body = first.body if first.is_a?(AST::Group)
+      second_body = second.body if second.is_a?(AST::Group)
+      first_quantifier = first_body.parts.one? && first_body.parts.first if first_body.is_a?(AST::Sequence)
+      second_quantifier = second_body.parts.one? && second_body.parts.first if second_body.is_a?(AST::Sequence)
+      valid = parts.length == 2 && [first, second].all? { |node| node.is_a?(AST::Group) && node.capture } &&
+              first_quantifier.is_a?(AST::Quantifier) && second_quantifier.is_a?(AST::Quantifier) &&
+              first_quantifier.kind == :* && second_quantifier.kind == :* &&
+              first_quantifier.mode == :greedy && second_quantifier.mode == :greedy &&
+              first_quantifier.expression == second_quantifier.expression &&
+              (first_quantifier.expression.is_a?(AST::Literal) || first_quantifier.expression.is_a?(AST::Any)) &&
+              !@options.include?("ignorecase")
+      @hfa_adjacent_greedy_capture_safe = valid && hfa_program
+    end
+
+    def hfa_adjacent_greedy_capture_end(input, start, finish)
+      expression = @ast.parts.first.body.parts.first.expression
+      cursor = start
+      if expression.is_a?(AST::Literal)
+        literal = expression.value
+        cursor += literal.bytesize while cursor < finish && input.byteslice(cursor, literal.bytesize) == literal
+      elsif expression.is_a?(AST::Any)
+        while cursor < finish
+          break if !@options.include?("multiline") && input.getbyte(cursor) == 10
+
+          cursor += 1
+        end
+      end
+      cursor
     end
 
     def hfa_literal_alternation_values

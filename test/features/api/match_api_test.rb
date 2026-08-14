@@ -1352,6 +1352,20 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_adjacent_greedy_capture_match_uses_hfa_result
+    {
+      "(a*)(a*)" => ["aa", ["aa", ""]],
+      "(.*)(.*)" => ["abc", ["abc", ""]]
+    }.each do |pattern, (input, captures)|
+      regexp = Onibi::Regexp.new(pattern)
+
+      regexp.stub(:codegen_match, ->(*) { flunk "adjacent greedy captures should use HFA" }) do
+        match = regexp.match(input)
+        assert_equal captures, match.captures
+      end
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 
