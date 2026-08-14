@@ -111,7 +111,8 @@ module Onibi
                                hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
                                hfa_negative_lookbehind_result_safe? || hfa_backref_result_safe? ||
                                hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                               hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?)
+                               hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
+                               hfa_repeated_class_capture_result_safe?)
         result = with_timeout { hfa_program&.match_result(input, position) }
         return hfa_match_data(result, input) if result
         return nil if hfa_program
@@ -430,6 +431,15 @@ module Onibi
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
       end
+      if captures.empty? && (capture_offsets = hfa_repeated_class_capture_offsets(input, start, finish))
+        values = capture_offsets.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
+        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        return MatchData.new(input.byteslice(start, finish - start), values,
+                             [[start, finish], *capture_offsets], names,
+                             MatchData::Context.new(input, self))
+      end
       if captures.empty? && (capture_offsets = hfa_simple_capture_offsets(input, start, finish))
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
@@ -725,7 +735,8 @@ module Onibi
       ascii_safe = input.ascii_only? &&
                    (hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?)
+                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
+                    hfa_repeated_class_capture_result_safe?)
       unicode_safe = !input.ascii_only? && hfa_unicode_match_result_safe?
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
@@ -752,6 +763,11 @@ module Onibi
           captures = hfa_nested_repeated_capture_offsets(input, result[0], result[1])
           block.call([result[0], result[1], captures || result[2]])
         end
+      elsif hfa_repeated_class_capture_result_safe?
+        program.each_match_result(input, 0) do |result|
+          captures = hfa_repeated_class_capture_offsets(input, result[0], result[1])
+          block.call([result[0], result[1], captures || result[2]])
+        end
       else
         program.each_match_result(input, 0, &block)
       end
@@ -761,7 +777,8 @@ module Onibi
     def hfa_iterator_safe?
       return true if hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                      hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?
+                      hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
+                      hfa_repeated_class_capture_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||
                      fixed_class_run_literal_ast? || dot_literal_ast? || repeat_literal_ast? ||
@@ -924,6 +941,59 @@ module Onibi
                                                  parts.last.is_a?(AST::Literal)
 
       [nil, nil]
+    end
+
+    def hfa_repeated_class_capture_parts
+      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
+
+      repeated, separator, class_group = @ast.parts
+      return unless repeated.is_a?(AST::Group) && separator.is_a?(AST::Literal) &&
+                    class_group.is_a?(AST::Group) && repeated.capture && class_group.capture
+
+      [repeated, separator, class_group]
+    end
+
+    def hfa_repeated_class_capture_result_safe?
+      parts = hfa_repeated_class_capture_parts
+      return false unless parts
+
+      repeated, _separator, class_group = parts
+      return false unless hfa_repeated_group_node?(repeated)
+
+      body = class_group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
+        hfa_capture_class_table(body.expression) && hfa_program
+    end
+
+    def hfa_repeated_group_node?(group)
+      body = group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
+        body.expression.is_a?(AST::Group) && body.expression.capture &&
+        hfa_repeated_unit_value(body.expression.body)
+    end
+
+    def hfa_repeated_class_capture_offsets(input, start, finish)
+      return unless hfa_repeated_class_capture_result_safe?
+
+      repeated, separator, class_group = hfa_repeated_class_capture_parts
+      separator_position = input.index(separator.value, start)
+      return unless separator_position && separator_position < finish
+
+      repeated_body = repeated.body.parts.first
+      lengths = hfa_repeated_match_lengths(repeated_body.expression.body, input, start, separator_position)
+      return unless lengths&.any? && lengths.sum == separator_position - start
+
+      class_body = class_group.body.parts.first
+      table = hfa_capture_class_table(class_body.expression)
+      class_start = separator_position + separator.value.bytesize
+      cursor = class_start
+      cursor += 1 while cursor < finish && table[input.getbyte(cursor)]
+      return unless cursor == finish && cursor > class_start
+
+      [[start, separator_position], [separator_position - lengths.last, separator_position],
+       [class_start, finish]]
     end
 
     def hfa_repeated_unit_value(node)
