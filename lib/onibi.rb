@@ -84,7 +84,7 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      if !input.ascii_only? && hfa_unicode_match_result_safe?
+      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
         hfa = hfa_program
         return with_timeout { hfa.match?(input, normalize_match_position(input, position)) } if hfa
       end
@@ -100,7 +100,7 @@ module Onibi
 
       validate_encoding!(input)
 
-      if !input.ascii_only? && hfa_unicode_match_result_safe?
+      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
         result = with_timeout { hfa_program&.match_result(input, position) }
         return hfa_match_data(result, input) if result
         return nil if hfa_program
@@ -326,6 +326,15 @@ module Onibi
       return false unless node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy
 
       node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Property)
+    end
+
+    def hfa_unicode_literal_result_safe?
+      return false if @options.include?("ignorecase")
+      return false unless @ast.is_a?(AST::Sequence)
+      return false unless @ast.parts.all? { |part| part.is_a?(AST::Literal) }
+
+      literal = literal_ast_value(@ast)
+      literal && literal.each_codepoint.any? { |codepoint| codepoint > 0xFF } && hfa_program
     end
 
     def hfa_literal_result_node?(node)

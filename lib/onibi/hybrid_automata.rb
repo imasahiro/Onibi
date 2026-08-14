@@ -924,6 +924,10 @@ module Onibi
         return if position.negative? || position > input.bytesize
         return if @negative_suffix == ""
         return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
+        if @exact_literal && !@exact_literal.ascii_only?
+          start = input.b.index(@exact_literal.b, position)
+          return start && [start, start + @exact_literal.bytesize, []]
+        end
 
         return unless input.ascii_only?
         return backref_match_result(input, position) if @backref_spec

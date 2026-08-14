@@ -226,6 +226,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("こんにちは")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "unicode literal should use HFA result" }) do
+      match = regexp.match("挨拶はこんにちはです")
+      assert_equal "こんにちは", match[0]
+      assert_equal [9, 24], match.offset(0)
+    end
+  end
+
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
