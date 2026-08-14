@@ -31,7 +31,6 @@ require_relative "onibi/input_view"
 require_relative "onibi/invocation_state"
 require_relative "onibi/candidate_source"
 require_relative "onibi/swar"
-require_relative "onibi/codegen"
 require_relative "onibi/search_plan"
 require_relative "parser_widths"
 require_relative "parser_assertions"
@@ -48,6 +47,7 @@ require_relative "onibi/match_data"
 module Onibi
   class Error < StandardError; end
   class RegexpError < Error; end
+  class CodegenError < Error; end
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
@@ -75,9 +75,7 @@ module Onibi
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
-      @ast = Codegen::Optimization.prepare(Parser.new(tokens).parse, normalized_options)
-      @analysis = Codegen::Analyzer.new(normalized_options, pattern.encoding,
-                                        boundary_analysis: false).analyze(@ast)
+      @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
       literal = if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence)
                   literal_ast_value(@ast)
                 end
@@ -1107,14 +1105,15 @@ module Onibi
     end
 
     def codegen_program
+      require_relative "onibi/codegen" unless defined?(Codegen::GeneratedProgram)
+      @analysis ||= Codegen::Analyzer.new(@options, encoding, boundary_analysis: false).analyze(@ast)
       @codegen_program ||= Codegen::GeneratedProgram.prepared(@ast, options: @options, analysis: @analysis)
     end
 
     def hfa_program
       return @hfa_program if defined?(@hfa_program)
 
-      unit = Codegen::Optimization.compile_prepared(@ast, @options, encoding)
-      @hfa_program = HybridAutomata.compile_unit(unit)
+      @hfa_program = HybridAutomata.compile_ast(@ast, options: @options)
     rescue HybridAutomata::UnsupportedPattern
       @hfa_program = false
     end

@@ -56,22 +56,46 @@ module Onibi
 
     module_function
 
+    def normalize_ast(ast)
+      return normalize_sequence(ast) if ast.is_a?(AST::Sequence)
+      return AST::Alternation.new(ast.branches.map { |branch| normalize_ast(branch) }) if ast.is_a?(AST::Alternation)
+
+      ast
+    end
+
+    def normalize_sequence(sequence)
+      parts = sequence.parts.map { |part| normalize_ast(part) }
+      coalesced = parts.each_with_object([]) do |part, result|
+        if result.last.is_a?(AST::Literal) && part.is_a?(AST::Literal) &&
+           result.last.value.encoding == part.value.encoding
+          result[-1] = AST::Literal.new(result.last.value + part.value)
+        else
+          result << part
+        end
+      end
+      AST::Sequence.new(coalesced)
+    end
+
     def compile(pattern, options: [], dfa: true, string_matching: true, dfa_state_limit: 4096)
       raise TypeError, "pattern must be a String" unless pattern.is_a?(String)
 
-      ast = Parser.new(pattern, options).parse
-      unit = Codegen::Optimization.compile_prepared(ast, options, Encoding::US_ASCII)
-      compile_unit(unit, dfa: dfa, string_matching: string_matching,
-                         dfa_state_limit: dfa_state_limit)
+      ast = normalize_ast(Parser.new(pattern, options).parse)
+      compile_ast(ast, options: options, dfa: dfa, string_matching: string_matching,
+                       dfa_state_limit: dfa_state_limit)
     end
 
     def compile_unit(unit, dfa: true, string_matching: true, dfa_state_limit: 4096)
-      unless unit.is_a?(Codegen::Optimization::CompilationUnit)
-        raise TypeError, "expected an optimization compilation unit"
-      end
+      raise TypeError, "expected an AST compilation unit" unless unit.respond_to?(:ast) && unit.respond_to?(:options)
 
       Compiler.new(dfa: dfa, string_matching: string_matching,
-                   dfa_state_limit: dfa_state_limit, options: unit.options).compile(unit)
+                   dfa_state_limit: dfa_state_limit, options: unit.options).compile(normalize_ast(unit.ast))
+    end
+
+    def compile_ast(ast, options: [], dfa: true, string_matching: true, dfa_state_limit: 4096)
+      raise TypeError, "expected an AST" unless ast && AST.constants.any? { |name| ast.is_a?(AST.const_get(name)) }
+
+      Compiler.new(dfa: dfa, string_matching: string_matching,
+                   dfa_state_limit: dfa_state_limit, options: options).compile(normalize_ast(ast))
     end
 
     def validate_cfg!(cfg)
@@ -166,18 +190,17 @@ module Onibi
         @scoped_multiline = nil
       end
 
-      def compile(unit)
-        prepared = prepare_ast(unit)
+      def compile(ast)
+        prepared = prepare_ast(ast)
         build_program(prepared)
       end
 
       private
 
-      def prepare_ast(unit)
-        ast = CfgTopology.ast(unit.cfg)
+      def prepare_ast(ast)
         atomic_literal = atomic_literal_spec(ast)
         possessive_literal = possessive_literal_spec(ast)
-        source_positive_prefix = positive_lookbehind_literal(unit.ast)
+        source_positive_prefix = positive_lookbehind_literal(ast)
         backref, ast = extract_backref(ast)
         ast = RegularNormalizer.normalize(ast)
         ast, positive_prefix, positive_suffix, negative_prefix, negative_suffix = extract_guards(ast)
@@ -187,7 +210,6 @@ module Onibi
         ast, word_boundary_start, word_boundary_end = extract_boundaries(ast)
         ast, start_match = extract_start_match(ast)
         ast, anchored_start, anchored_end, before_final_newline, line_anchor_start, line_anchor_end = extract_anchors(ast)
-        HybridAutomata.validate_cfg!(unit.cfg)
         positive_prefix ||= source_positive_prefix
         PreparedAst.new(ast, backref, positive_prefix, positive_suffix, negative_prefix, negative_suffix,
                         word_boundary_start, word_boundary_end, anchored_start, anchored_end, before_final_newline,

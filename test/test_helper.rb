@@ -15,6 +15,7 @@ SimpleCov.start do
 end
 
 require "onibi"
+require "onibi/codegen"
 require_relative "support/fixtures"
 
 require "minitest/autorun"
