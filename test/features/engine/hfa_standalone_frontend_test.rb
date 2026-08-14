@@ -88,4 +88,16 @@ class HfaStandaloneFrontendTest < Minitest::Test
     assert_equal ["a"], match.captures
     assert_equal [["a"]], regexp.scan("aaba")
   end
+
+  def test_hfa_handles_literal_absence_with_literal_suffix_without_codegen
+    regexp = Onibi::Regexp.new("(?~real)ist")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+    regexp.define_singleton_method(:hfa_program) { raise "unexpected generic HFA program" }
+
+    assert regexp.match?("realist")
+    assert_equal "ealist", regexp.match("realist").to_s
+    assert_equal ["ealist"], regexp.scan("realist")
+  end
 end

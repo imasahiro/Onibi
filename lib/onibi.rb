@@ -239,6 +239,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_repeated_literal_backref_match_result(input, normalized_position, spec).nil?
       end
+      if (spec = hfa_literal_absence_suffix_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_absence_suffix_match_result(input, normalized_position, spec).nil?
+      end
 
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
@@ -311,6 +315,12 @@ module Onibi
       if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_repeated_literal_backref_match_result(input, normalized_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_literal_absence_suffix_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_absence_suffix_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -698,6 +708,12 @@ module Onibi
       if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_repeated_literal_backref_match_result(input, normalized_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_literal_absence_suffix_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_absence_suffix_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1326,6 +1342,32 @@ module Onibi
       body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
       body = body.body if body.is_a?(AST::Group) && body.capture
       literal_ast_value(body)
+    end
+
+    def hfa_literal_absence_suffix_spec
+      return @hfa_literal_absence_suffix_spec if defined?(@hfa_literal_absence_suffix_spec)
+      return @hfa_literal_absence_suffix_spec = false if @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      absence, suffix = parts
+      body = absence.body if absence.is_a?(AST::Absence)
+      forbidden = hfa_literal_absence_body_literal(body)
+      valid = parts.length == 2 && forbidden&.ascii_only? && forbidden.bytesize.positive? &&
+              suffix.is_a?(AST::Literal) && suffix.value.ascii_only? && suffix.value.bytesize.positive?
+      @hfa_literal_absence_suffix_spec = valid ? [forbidden.freeze, suffix.value.freeze].freeze : false
+    end
+
+    def hfa_literal_absence_suffix_match_result(input, position, spec)
+      forbidden, suffix = spec
+      suffix_position = input.index(suffix, position)
+      while suffix_position
+        forbidden_position = input.rindex(forbidden, suffix_position - 1)
+        start = [position, forbidden_position ? forbidden_position + 1 : position].max
+        return [start, suffix_position + suffix.bytesize, []] if start <= suffix_position
+
+        suffix_position = input.index(suffix, suffix_position + 1)
+      end
+      nil
     end
 
     def hfa_empty_absence_result_safe?
@@ -4514,6 +4556,14 @@ module Onibi
       if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
         position = 0
         while (result = hfa_repeated_literal_backref_match_result(input, position, spec))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && (spec = hfa_literal_absence_suffix_spec)
+        position = 0
+        while (result = hfa_literal_absence_suffix_match_result(input, position, spec))
           block.call(result)
           position = result[1]
         end
