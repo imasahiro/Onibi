@@ -1307,8 +1307,113 @@ module Onibi
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
-      program.each_match_result(input, 0, &block)
+      program.each_match_result(input, 0) do |result|
+        captures = hfa_generic_capture_offsets(input, result[0], result[1])
+        block.call([result[0], result[1], captures || result[2]])
+      end
       true
+    end
+
+    # The position NFA omits capture tags. Reconstruct captures for
+    # deterministic AST regions after the automaton identifies a match span.
+    def hfa_generic_capture_offsets(input, start, finish)
+      capture_count = hfa_capture_count
+      return [] if capture_count.zero?
+
+      if (offsets = hfa_variable_backreference_capture_offsets(input, start, finish))
+        return offsets
+      end
+
+      offsets = Array.new(capture_count)
+      cursor = hfa_consume_capture_node(@ast, input, start, finish, offsets)
+      cursor == finish ? offsets : nil
+    end
+
+    def hfa_variable_backreference_capture_offsets(input, start, finish)
+      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
+
+      group, reference = @ast.parts
+      return unless group.is_a?(AST::Group) && group.capture && reference.is_a?(AST::Backreference)
+      return unless reference.identifier.to_i == group.number || reference.identifier.to_s == group.name.to_s
+
+      length = finish - start
+      return unless length.even?
+
+      midpoint = start + (length / 2)
+      return unless input.byteslice(start, midpoint - start) == input.byteslice(midpoint, midpoint - start)
+
+      offsets = Array.new(hfa_capture_count)
+      offsets[group.number - 1] = [start, midpoint]
+      offsets
+    end
+
+    def hfa_capture_count(node = @ast)
+      case node
+      when AST::Group
+        [node.number, hfa_capture_count(node.body)].max
+      when AST::Sequence
+        node.parts.map { |part| hfa_capture_count(part) }.max || 0
+      when AST::Alternation
+        node.branches.map { |branch| hfa_capture_count(branch) }.max || 0
+      when AST::Quantifier
+        hfa_capture_count(node.expression)
+      when AST::OptionGroup, AST::AtomicGroup
+        hfa_capture_count(node.body)
+      else
+        0
+      end
+    end
+
+    def hfa_consume_capture_node(node, input, cursor, finish, offsets)
+      case node
+      when AST::Literal
+        value = node.value
+        input.byteslice(cursor, value.bytesize) == value ? cursor + value.bytesize : nil
+      when AST::CharacterClass
+        character = input[cursor]
+        character && ClassPredicates.compiled(node.value).matches?(character) ? cursor + character.bytesize : nil
+      when AST::Escape
+        character = input[cursor]
+        character && CharacterPredicates.escape_matches?(node.kind, character) ? cursor + character.bytesize : nil
+      when AST::Property
+        character = input[cursor]
+        matched = character && UnicodeProperties.matches?(node.name, character)
+        character && (matched ^ node.negated) ? cursor + character.bytesize : nil
+      when AST::Any
+        character = input[cursor]
+        character ? cursor + character.bytesize : nil
+      when AST::Group
+        group_start = cursor
+        result = hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+        offsets[node.number - 1] = [group_start, result] if result && node.capture
+        result
+      when AST::OptionGroup, AST::AtomicGroup
+        hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+      when AST::Sequence
+        node.parts.reduce(cursor) do |position, part|
+          position && hfa_consume_capture_node(part, input, position, finish, offsets)
+        end
+      when AST::Alternation
+        node.branches.each do |branch|
+          snapshot = offsets.dup
+          result = hfa_consume_capture_node(branch, input, cursor, finish, offsets)
+          return result if result
+
+          offsets.replace(snapshot)
+        end
+        nil
+      when AST::Quantifier
+        count = 0
+        position = cursor
+        while node.maximum.nil? || count < node.maximum
+          result = hfa_consume_capture_node(node.expression, input, position, finish, offsets)
+          break unless result && result > position && result <= finish
+
+          position = result
+          count += 1
+        end
+        count >= node.minimum ? position : nil
+      end
     end
 
     def named_captures
@@ -5610,7 +5715,10 @@ module Onibi
           block.call(hfa_tagged_capture_result(input, result, strategy))
         end
       else
-        program.each_match_result(input, 0, &block)
+        program.each_match_result(input, 0) do |result|
+          captures = hfa_generic_capture_offsets(input, result[0], result[1])
+          block.call([result[0], result[1], captures || result[2]])
+        end
       end
       true
     end
