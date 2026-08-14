@@ -85,6 +85,7 @@ module Onibi
 
       validate_encoding!(input)
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                                hfa_unicode_simple_capture_result_safe? ||
                                 hfa_unicode_repeated_literal_result_safe?)
         hfa = hfa_program
         if hfa
@@ -115,6 +116,7 @@ module Onibi
       validate_encoding!(input)
 
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                                hfa_unicode_simple_capture_result_safe? ||
                                 hfa_unicode_repeated_literal_result_safe?)
         if hfa_unicode_repeated_literal_result_safe?
           result = hfa_unicode_repeated_literal_match_result(input, position)
@@ -372,6 +374,17 @@ module Onibi
 
       literal = literal_ast_value(@ast)
       literal && literal.each_codepoint.any? { |codepoint| codepoint > 0xFF } && hfa_program
+    end
+
+    def hfa_unicode_simple_capture_result_safe?
+      return @hfa_unicode_simple_capture_safe if defined?(@hfa_unicode_simple_capture_safe)
+      layout = hfa_simple_capture_layout
+      @hfa_unicode_simple_capture_safe = if layout && !@pattern.ascii_only? &&
+                                           layout.all? { |kind, value, number| kind == :literal && number && value }
+                                          hfa_program
+                                        else
+                                          false
+                                        end
     end
 
     def hfa_unicode_repeated_literal_result_safe?
@@ -833,6 +846,7 @@ module Onibi
                     hfa_repeated_class_capture_result_safe?)
       unicode_safe = !input.ascii_only? &&
                      (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                      hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
