@@ -441,6 +441,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_optional_repeated_literal_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(a*)b")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "optional repeated capture scan should use HFA" }) do
+      assert_equal [["aaa"]], regexp.scan("xxaaabyy")
+      assert_equal [[""]], regexp.scan("b")
+    end
+  end
+
   def test_nested_variable_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a))")
 

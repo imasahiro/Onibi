@@ -3079,13 +3079,19 @@ module Onibi
       value = literal_ast_value(node.body)
       return [:literal, value, number] if value
 
+      body = node.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      if node.capture && body.is_a?(AST::Quantifier) && body.kind == :* &&
+         body.mode == :greedy
+        value = literal_ast_value(body.expression)
+        return [:optional_repeated_literal, value, number] if value
+      end
+
       if node.capture && node.body.is_a?(AST::Alternation)
         branches = node.body.branches.map { |branch| literal_ast_value(branch) }
         return [:alternation_literal, branches.freeze, number] if branches.all?
       end
 
-      body = node.body
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
       return unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
 
       table = hfa_capture_class_table(body.expression)
@@ -3157,6 +3163,11 @@ module Onibi
           finish_position = cursor
           captured = true
           capture_start = cursor - value.bytesize
+        when :optional_repeated_literal
+          capture_start = cursor
+          cursor += value.bytesize while input.byteslice(cursor, value.bytesize) == value
+          finish_position = cursor
+          captured = true
         when :alternation_literal
           branch = value.select { |candidate| input.byteslice(cursor, candidate.bytesize) == candidate }
                         .max_by(&:bytesize)

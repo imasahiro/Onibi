@@ -1222,6 +1222,19 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_optional_repeated_literal_capture_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(a*)b")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "optional repeated captures should use HFA result" }) do
+      repeated = regexp.match("xxaaabyy")
+      empty = regexp.match("b")
+      assert_equal "aaa", repeated[1]
+      assert_equal [2, 5], repeated.offset(1)
+      assert_equal "", empty[1]
+      assert_equal [0, 0], empty.offset(1)
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 
