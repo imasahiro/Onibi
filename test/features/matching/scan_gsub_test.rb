@@ -666,6 +666,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_named_subexpression_call_scan_uses_literal_iterator
+    regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
+
+    regexp.stub(:hfa_program, -> { flunk "literal subexpression call scan should avoid HFA program" }) do
+      assert_equal [["ab"]], regexp.scan("zzabab")
+    end
+  end
+
   def test_nested_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab))")
 

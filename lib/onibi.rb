@@ -3029,16 +3029,15 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       group, call = parts
       body = group.body if group.is_a?(AST::Group) && group.capture
-      body = body.parts.one? && body.parts.first if body.is_a?(AST::Sequence)
       valid = parts.length == 2 && group.is_a?(AST::Group) && group.capture &&
               call.is_a?(AST::SubexpressionCall) && [group.number, group.name].include?(call.identifier) &&
-              body.is_a?(AST::Literal) && body.value.ascii_only? && body.value.bytesize.positive? &&
+              (literal = literal_ast_value(body)) && literal.ascii_only? && literal.bytesize.positive? &&
               !@options.include?("ignorecase")
       @hfa_literal_subexpression_safe = valid
     end
 
     def hfa_literal_subexpression_call_literal
-      @ast.parts.first.body.parts.first.value
+      literal_ast_value(@ast.parts.first.body)
     end
 
     def hfa_captureless_regular_sequence_result_safe?
@@ -4206,6 +4205,20 @@ module Onibi
         while (result = hfa_possessive_literal_string_match_result(input, position))
           block.call(result)
           position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_literal_subexpression_call_result_safe?
+        literal = hfa_literal_subexpression_call_literal
+        repeated = literal + literal
+        capture_number = @ast.parts.first.number
+        position = 0
+        while (start = input.index(repeated, position))
+          finish = start + repeated.bytesize
+          captures = Array.new(capture_number)
+          captures[capture_number - 1] = [start, start + literal.bytesize]
+          block.call([start, finish, captures])
+          position = finish
         end
         return true
       end
