@@ -257,6 +257,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_literal_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("case", ["ignorecase"])
+
+    regexp.stub(:codegen_match, ->(*) { flunk "ignorecase literal should use HFA result" }) do
+      match = regexp.match("xxCASEyy")
+      assert_equal "CASE", match[0]
+      assert_equal [2, 6], match.offset(0)
+    end
+  end
+
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
