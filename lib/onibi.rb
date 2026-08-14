@@ -251,6 +251,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return true unless hfa_literal_absence_match_result(input, normalized_position).nil?
       end
+      if !input.ascii_only? && hfa_literal_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: true).nil?
+      end
       if input.ascii_only? && @hfa_dot_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_dot_literal_match?(input, normalized_position)
@@ -722,6 +726,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if !input.ascii_only? && hfa_literal_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_absence_match_result(input, normalized_position, byte_mode: true)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_match_reset_literal_match_result(input, normalized_position)
@@ -1145,11 +1155,13 @@ module Onibi
       literal && [body.number, literal].freeze
     end
 
-    def hfa_literal_absence_match_result(input, position)
+    def hfa_literal_absence_match_result(input, position, byte_mode: false)
       literal = hfa_literal_absence_value
       capture_spec = hfa_literal_absence_capture_spec
+      search_input = byte_mode ? input.b : input
+      search_literal = byte_mode ? literal.b : literal
       search_position = 0
-      while (occurrence = input.index(literal, search_position))
+      while (occurrence = search_input.index(search_literal, search_position))
         candidate = occurrence + literal.bytesize
         if candidate > position
           finish = occurrence >= position ? candidate - 1 : candidate
@@ -3730,6 +3742,16 @@ module Onibi
         position = 0
         while position <= input.bytesize
           result = hfa_literal_absence_match_result(input, position)
+          block.call(result)
+          position = [result[1], position + 1].max
+        end
+        return true
+      end
+      if !input.ascii_only? && hfa_literal_absence_result_safe?
+        validate_encoding!(input)
+        position = 0
+        while position <= input.bytesize
+          result = hfa_literal_absence_match_result(input, position, byte_mode: true)
           block.call(result)
           position = [result[1], position + 1].max
         end

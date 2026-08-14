@@ -671,6 +671,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_absence_match_uses_hfa_on_unicode_input
+    regexp = Onibi::Regexp.new("(?~END)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal absence match should use HFA" }) do
+      assert_equal "日本語EN", regexp.match("日本語END").to_s
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_combined_literal_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 

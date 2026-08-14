@@ -112,6 +112,14 @@ class ScanGsubTest < Minitest::Test
     assert_equal "日本語<cat> <cat>", regexp.gsub("日本語cat cat", "<\\0>")
   end
 
+  def test_literal_absence_scan_uses_hfa_on_unicode_input
+    regexp = Onibi::Regexp.new("(?~END)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode literal absence scan should use HFA" }) do
+      assert_equal ["日本語EN", "D", ""], regexp.scan("日本語END")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
