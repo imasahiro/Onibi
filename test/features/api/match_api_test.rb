@@ -558,6 +558,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_repeated_alternation_captures_use_hfa_result
+    regexp = Onibi::Regexp.new("((a|b)+)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested repeated alternation should use HFA result" }) do
+      match = regexp.match("zzabab")
+      assert_equal ["abab", "b"], match.captures
+      assert_equal [[2, 6], [5, 6]], [match.offset(1), match.offset(2)]
+    end
+  end
+
   def test_match_exposes_capture_offsets_and_size
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 

@@ -898,7 +898,7 @@ module Onibi
       return false unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
 
       inner = body.expression
-      inner.is_a?(AST::Group) && inner.capture && literal_ast_value(inner.body) && hfa_program
+      inner.is_a?(AST::Group) && inner.capture && hfa_repeated_unit_value(inner.body) && hfa_program
     end
 
     def hfa_nested_repeated_capture_offsets(input, start, finish)
@@ -906,11 +906,18 @@ module Onibi
 
       root = @ast.is_a?(AST::Sequence) ? @ast.parts.first : @ast
       body = root.body.parts.first
-      value = literal_ast_value(body.expression.body)
+      value = hfa_repeated_unit_value(body.expression.body)
       width = value.bytesize
       return unless width.positive? && (finish - start) >= width && ((finish - start) % width).zero?
 
       [[start, finish], [finish - width, finish]]
+    end
+
+    def hfa_repeated_unit_value(node)
+      return literal_ast_value(node) unless node.is_a?(AST::Alternation)
+
+      values = node.branches.map { |branch| literal_ast_value(branch) }
+      values.all? && values.map(&:bytesize).uniq.one? ? values.first : nil
     end
 
     def repeated_alternation_ast?
