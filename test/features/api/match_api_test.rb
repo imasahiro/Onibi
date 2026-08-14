@@ -583,6 +583,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_greedy_bounded_sequence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("foo.{0,4}bar")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "greedy bounded sequence should use HFA" }) do
+      assert_equal "foo12bar", regexp.match("xfoo12bar").to_s
+      assert_nil regexp.match("fooxxxxxbar")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 

@@ -247,6 +247,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_greedy_bounded_sequence_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("foo.{0,4}bar")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "greedy bounded sequence should use HFA" }) do
+      assert_equal ["foo12bar", "foo-bar"], regexp.scan("foo12bar foo-bar")
+    end
+  end
+
   def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
