@@ -540,6 +540,11 @@ module Onibi
         end
         return nil
       end
+      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
+        result = hfa_unicode_repeated_literal_capture_match_result(input, position)
+        return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
@@ -2295,6 +2300,41 @@ module Onibi
 
     def hfa_literal_subexpression_call_literal
       @ast.parts.first.body.parts.first.value
+    end
+
+    def hfa_unicode_repeated_literal_capture_result_safe?
+      return @hfa_unicode_repeated_capture_safe if defined?(@hfa_unicode_repeated_capture_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group = parts.one? && parts.first
+      body = group.body if group.is_a?(AST::Group) && group.capture
+      body = body.parts.one? && body.parts.first if body.is_a?(AST::Sequence)
+      valid = group.is_a?(AST::Group) && body.is_a?(AST::Quantifier) && body.kind == :+ &&
+              body.mode == :greedy && body.expression.is_a?(AST::Literal) &&
+              !body.expression.value.ascii_only? && !@options.include?("ignorecase")
+      @hfa_unicode_repeated_capture_safe = valid
+    end
+
+    def hfa_unicode_repeated_literal_capture_match_result(input, position)
+      literal = @ast.parts.first.body.parts.first.expression.value
+      start = input.byteindex(literal, position)
+      return nil unless start
+
+      finish = start + literal.bytesize
+      while input.byteslice(finish, literal.bytesize) == literal
+        finish += literal.bytesize
+      end
+      [start, finish, [[start, finish]]]
+    end
+
+    def hfa_unicode_repeated_literal_capture_match_data(result, input)
+      start, finish, = result
+      start_character = input.byteslice(0, start).to_s.length
+      finish_character = input.byteslice(0, finish).to_s.length
+      value = input.byteslice(start, finish - start)
+      names = hfa_capture_names.transform_values(&:last)
+      MatchData.new(value, [value], [[start_character, finish_character], [start_character, finish_character]],
+                    names, MatchData::Context.new(input, self))
     end
 
     def hfa_adjacent_greedy_capture_end(input, start, finish)
