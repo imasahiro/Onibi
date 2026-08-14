@@ -267,6 +267,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_adjacent_ascii_class_runs_use_direct_match_question_path
+    regexp = Onibi::Regexp.new("[[:alpha:]]+[[:digit:]]+")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "adjacent class runs should use direct match? path" }) do
+      assert regexp.match?("item2026")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
