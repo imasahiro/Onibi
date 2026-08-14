@@ -195,6 +195,11 @@ module Onibi
       end
       return true if @hfa_empty_absence_fast
 
+      if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
+      end
+
       if input.ascii_only? && @hfa_match_reset_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(@hfa_match_reset_literal_fast, normalized_position).nil?
@@ -291,6 +296,12 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1102,6 +1113,12 @@ module Onibi
       if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_class_run_positive_lookahead_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -4556,6 +4573,38 @@ module Onibi
                                                      end
     end
 
+    def hfa_lookahead_literal_backreference_spec
+      return @hfa_lookahead_literal_backreference_spec if defined?(@hfa_lookahead_literal_backreference_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      assertion, backref = parts
+      group = if assertion.is_a?(AST::Assertion) && assertion.kind == :positive
+                body = assertion.body
+                body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+                body if body.is_a?(AST::Group) && body.capture
+              end
+      literal = literal_ast_value(group&.body)
+      @hfa_lookahead_literal_backreference_spec = if parts.length == 2 && literal&.ascii_only? && literal.bytesize.positive? &&
+                                                     backref.is_a?(AST::Backreference) &&
+                                                     (backref.identifier.to_i == group.number ||
+                                                      backref.identifier.to_s == group.name.to_s)
+                                                   [literal.freeze, group.number].freeze
+                                                 else
+                                                   false
+                                                 end
+    end
+
+    def hfa_lookahead_literal_backreference_match_result(input, position, spec)
+      literal, number = spec
+      start = input.index(literal, position)
+      return unless start
+
+      finish = start + literal.bytesize
+      captures = Array.new(number)
+      captures[number - 1] = [start, finish]
+      [start, finish, captures]
+    end
+
     def hfa_lookahead_alternation_backreference_match_result(input, position)
       branches, suffix, number = hfa_lookahead_alternation_backreference_spec
       cursor = position
@@ -4726,6 +4775,14 @@ module Onibi
 
       if hfa_empty_absence_result_safe?
         block.call([input.bytesize, input.bytesize, []])
+        return true
+      end
+      if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
+        position = 0
+        while (result = hfa_lookahead_literal_backreference_match_result(input, position, spec))
+          block.call(result)
+          position = result[1]
+        end
         return true
       end
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
