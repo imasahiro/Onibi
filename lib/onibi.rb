@@ -4944,16 +4944,22 @@ module Onibi
     end
 
     def hfa_adjacent_nested_repeated_capture_result_safe?
+      return @hfa_adjacent_nested_repeated_capture_safe if defined?(@hfa_adjacent_nested_repeated_capture_safe)
+
       groups = hfa_adjacent_nested_repeated_capture_groups
-      groups && hfa_program
+      @hfa_adjacent_nested_repeated_capture_safe = groups && hfa_program
     end
 
     def hfa_adjacent_nested_repeated_capture_groups
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      return if parts.length < 2
-      return unless parts.all? { |part| part.is_a?(AST::Group) && part.capture && hfa_repeated_group_node?(part) }
+      return @hfa_adjacent_nested_repeated_capture_groups if defined?(@hfa_adjacent_nested_repeated_capture_groups)
 
-      parts
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      return @hfa_adjacent_nested_repeated_capture_groups = false if parts.length < 2
+      return @hfa_adjacent_nested_repeated_capture_groups = false unless parts.all? do |part|
+        part.is_a?(AST::Group) && part.capture && hfa_repeated_group_node?(part)
+      end
+
+      @hfa_adjacent_nested_repeated_capture_groups = parts
     end
 
     def hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
@@ -5011,27 +5017,31 @@ module Onibi
     end
 
     def hfa_repeated_class_capture_parts
-      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 3
+      return @hfa_repeated_class_capture_parts if defined?(@hfa_repeated_class_capture_parts)
+
+      return @hfa_repeated_class_capture_parts = false unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 3
 
       repeated, suffix = @ast.parts[0], @ast.parts[1..]
-      return unless repeated.is_a?(AST::Group) && repeated.capture && suffix.length.even?
+      return @hfa_repeated_class_capture_parts = false unless repeated.is_a?(AST::Group) && repeated.capture && suffix.length.even?
 
       pairs = suffix.each_slice(2).to_a
-      return unless pairs.all? do |separator, class_group|
+      return @hfa_repeated_class_capture_parts = false unless pairs.all? do |separator, class_group|
         separator.is_a?(AST::Literal) && class_group.is_a?(AST::Group) && class_group.capture
       end
 
-      [repeated, pairs]
+      @hfa_repeated_class_capture_parts = [repeated, pairs].freeze
     end
 
     def hfa_repeated_class_capture_result_safe?
+      return @hfa_repeated_class_capture_safe if defined?(@hfa_repeated_class_capture_safe)
+
       parts = hfa_repeated_class_capture_parts
-      return false unless parts
+      return @hfa_repeated_class_capture_safe = false unless parts
 
       repeated, pairs = parts
-      return false unless hfa_repeated_group_node?(repeated)
+      return @hfa_repeated_class_capture_safe = false unless hfa_repeated_group_node?(repeated)
 
-      pairs.all? do |_separator, class_group|
+      @hfa_repeated_class_capture_safe = pairs.all? do |_separator, class_group|
         hfa_class_capture_spec(class_group)
       end && hfa_program
     end
