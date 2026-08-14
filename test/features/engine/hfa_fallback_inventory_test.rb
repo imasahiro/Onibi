@@ -6,7 +6,10 @@ class HfaFallbackInventoryTest < Minitest::Test
   HFA_CASES = [
     ["(a*)\\1", "aaaa"],
     ["(?<x>a)(?i:\\k<x>)", "aA"],
-    ["(?<x>.*)\\k<x>", "aa"]
+    ["(?<x>.*)\\k<x>", "aa"],
+    ["(?<x>a|ab)c\\g<x>d", "aacad"],
+    ["(?<=[ß])x", "ßx"],
+    ["(?~real)", "real"]
   ].freeze
 
   def test_known_fallback_shapes_are_now_hfa_only
