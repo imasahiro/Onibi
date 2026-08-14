@@ -150,7 +150,9 @@ class ScanGsubTest < Minitest::Test
   def test_ascii_property_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\p{Alpha}+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "ASCII property run should use HFA" }) do
-      assert_equal %w[letters words], regexp.scan("123letters 456words")
+      regexp.stub(:hfa_program, -> { flunk "ASCII property run should avoid HFA program compilation" }) do
+        assert_equal %w[letters words], regexp.scan("123letters 456words")
+      end
     end
   end
 
