@@ -206,6 +206,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_dot_literal_match?(input, normalized_position)
       end
+      if input.ascii_only? && @hfa_repeated_class_backref_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_repeated_class_backref_match?(input, normalized_position)
+      end
 
       if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -340,10 +344,6 @@ module Onibi
       if input.ascii_only? && @hfa_word_boundary_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
-      end
-      if input.ascii_only? && @hfa_repeated_class_backref_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_repeated_class_backref_match?(input, normalized_position)
       end
       if !input.ascii_only? && (literal = hfa_unicode_fixed_literal_capture_literal)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -677,6 +677,12 @@ module Onibi
       if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_lookahead_alternation_backreference_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_repeated_class_backref_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_repeated_class_backref_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -2797,6 +2803,10 @@ module Onibi
     end
 
     def hfa_repeated_class_backref_match?(input, position)
+      !hfa_repeated_class_backref_match_result(input, position).nil?
+    end
+
+    def hfa_repeated_class_backref_match_result(input, position)
       table, separator = hfa_repeated_class_backref_parts
       separator_position = input.index(separator, position + 1)
       while separator_position
@@ -2805,12 +2815,15 @@ module Onibi
         length = separator_position - left
         if length.positive? && input.byteslice(separator_position + separator.bytesize, length) ==
            input.byteslice(left, length)
-          return true
+          group = @ast.parts.first
+          captures = Array.new(group.number)
+          captures[group.number - 1] = [left, separator_position]
+          return [left, separator_position + separator.bytesize + length, captures]
         end
 
         separator_position = input.index(separator, separator_position + 1)
       end
-      false
+      nil
     end
 
     def hfa_anchored_class_run_result_safe?
@@ -4412,6 +4425,14 @@ module Onibi
           result = hfa_variable_any_backref_match_result(input, position)
           block.call(result)
           position = [result[1], position + 1].max
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_repeated_class_backref_result_safe?
+        position = 0
+        while (result = hfa_repeated_class_backref_match_result(input, position))
+          block.call(result)
+          position = result[1]
         end
         return true
       end
