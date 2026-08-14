@@ -1298,6 +1298,16 @@ class MatchApiTest < Minitest::Test
     assert_equal [4, 2], regexp.send(:hfa_repeated_match_span, unit, "ababc", 0, 4)
   end
 
+  def test_adjacent_nested_capture_spec_is_cached
+    regexp = Onibi::Regexp.new("((ab)+)((cd)+)")
+
+    first = regexp.send(:hfa_adjacent_nested_repeated_capture_spec)
+    second = regexp.send(:hfa_adjacent_nested_repeated_capture_spec)
+
+    assert_same first, second
+    assert_equal [["ab", "cd"], [1, 2, 3, 4]], [first[1], first[2]]
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

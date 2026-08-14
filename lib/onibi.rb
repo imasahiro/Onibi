@@ -4930,8 +4930,7 @@ module Onibi
     def hfa_adjacent_nested_repeated_capture_result_safe?
       return @hfa_adjacent_nested_repeated_capture_safe if defined?(@hfa_adjacent_nested_repeated_capture_safe)
 
-      groups = hfa_adjacent_nested_repeated_capture_groups
-      @hfa_adjacent_nested_repeated_capture_safe = groups && hfa_program
+      @hfa_adjacent_nested_repeated_capture_safe = hfa_adjacent_nested_repeated_capture_spec && hfa_program
     end
 
     def hfa_adjacent_nested_repeated_capture_groups
@@ -4947,16 +4946,12 @@ module Onibi
     end
 
     def hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
-      groups = hfa_adjacent_nested_repeated_capture_groups
+      groups, units, numbers = hfa_adjacent_nested_repeated_capture_spec
       return unless groups
 
-      units = groups.map { |group| hfa_repeated_group_node_unit(group) }
       boundaries = hfa_adjacent_repeated_boundaries(input, start, finish, units)
       return unless boundaries
 
-      numbers = groups.flat_map do |group|
-        [group.number, group.body.parts.first.expression.number]
-      end
       offsets = Array.new(numbers.max)
       groups.each_with_index do |group, index|
         group_start, group_finish = boundaries[index], boundaries[index + 1]
@@ -4969,6 +4964,21 @@ module Onibi
         offsets[inner.number - 1] = [group_finish - span.last, group_finish]
       end
       offsets
+    end
+
+    def hfa_adjacent_nested_repeated_capture_spec
+      return @hfa_adjacent_nested_repeated_capture_spec if defined?(@hfa_adjacent_nested_repeated_capture_spec)
+
+      groups = hfa_adjacent_nested_repeated_capture_groups
+      @hfa_adjacent_nested_repeated_capture_spec = if groups
+                                                     units = groups.map { |group| hfa_repeated_group_node_unit(group) }.freeze
+                                                     numbers = groups.flat_map do |group|
+                                                       [group.number, group.body.parts.first.expression.number]
+                                                     end.freeze
+                                                     [groups, units, numbers].freeze
+                                                   else
+                                                     false
+                                                   end
     end
 
     def hfa_repeated_group_node_unit(group)
