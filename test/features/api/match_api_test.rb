@@ -259,6 +259,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_ignorecase_match_question_uses_constructor_fast_metadata
+    regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
+
+    regexp.stub(:hfa_ignorecase_literal_result_safe?, -> { flunk "ignorecase literal match? should use constructor metadata" }) do
+      assert regexp.match?("prefix CASE suffix")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
