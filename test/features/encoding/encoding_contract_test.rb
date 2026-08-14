@@ -37,4 +37,25 @@ class EncodingContractTest < Minitest::Test
       assert regexp.match?("S")
     end
   end
+
+  def test_ascii_compatible_literal_skips_redundant_encoding_validation
+    input = ValidationTrackingString.new("needle")
+
+    assert Onibi::Regexp.new("needle").match?(input)
+    assert_equal 0, input.valid_encoding_calls
+  end
+
+  class ValidationTrackingString < String
+    attr_reader :valid_encoding_calls
+
+    def initialize(value)
+      super
+      @valid_encoding_calls = 0
+    end
+
+    def valid_encoding?
+      @valid_encoding_calls += 1
+      super
+    end
+  end
 end
