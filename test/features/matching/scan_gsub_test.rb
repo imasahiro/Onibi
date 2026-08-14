@@ -347,6 +347,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_full_casefold_class_lookbehind_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(?<=[ß])x", ["ignorecase"])
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode full case-fold class lookbehind should use HFA" }) do
+      assert_equal %w[x x], regexp.scan("ssx ax ßx")
+    end
+  end
+
   def test_unicode_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("こんにちは")
 
@@ -549,6 +557,14 @@ class ScanGsubTest < Minitest::Test
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode literal should reject ASCII input in HFA" }) do
       assert_empty regexp.scan("ascii only")
+    end
+  end
+
+  def test_unicode_full_casefold_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("ß", ["ignorecase"])
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode full case-fold scan should use HFA" }) do
+      assert_equal ["SS", "ß"], regexp.scan("SS ß")
     end
   end
 

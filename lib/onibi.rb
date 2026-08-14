@@ -151,6 +151,7 @@ module Onibi
         @hfa_negative_lookbehind_literal_fast = parts.freeze if parts
       end
       @hfa_class_lookbehind_fast = hfa_class_lookbehind_parts
+      @hfa_casefold_class_lookbehind_fast = hfa_casefold_class_lookbehind_parts
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
       lookahead_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
@@ -1653,6 +1654,25 @@ module Onibi
       [assertion.kind, ClassPredicates.compiled(guard.value), literal].freeze
     end
 
+    def hfa_casefold_class_lookbehind_parts
+      return unless @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      assertion = parts.first
+      body = parts[1..]
+      return unless assertion.is_a?(AST::Assertion) && assertion.kind == :positive_lookbehind
+      return unless body.all? { |node| node.is_a?(AST::Literal) }
+
+      guard = assertion.body
+      guard = guard.parts.first if guard.is_a?(AST::Sequence) && guard.parts.one?
+      return unless guard.is_a?(AST::CharacterClass) && guard.value.length.positive?
+
+      literal = body.map(&:value).join
+      return if literal.empty?
+
+      [guard.value, literal].freeze
+    end
+
     def hfa_class_lookbehind_match_result(input, position)
       kind, predicate, literal = @hfa_class_lookbehind_fast
       candidate = input.b.index(literal.b, position)
@@ -1662,6 +1682,23 @@ module Onibi
         matches = !matches if kind == :negative_lookbehind
         return [candidate, candidate + literal.bytesize, []] if matches
 
+        candidate = input.b.index(literal.b, candidate + 1)
+      end
+      nil
+    end
+
+    def hfa_casefold_class_lookbehind_match_result(input, position)
+      guard, literal = @hfa_casefold_class_lookbehind_fast
+      offsets = [0]
+      input.each_char { |character| offsets << offsets[-1] + character.bytesize }
+      candidate = input.b.index(literal.b, position)
+      while candidate
+        candidate_index = offsets.index(candidate)
+        maximum_start = [candidate_index - (guard.length * 2), 0].max
+        maximum_start.upto(candidate_index - 1) do |start_index|
+          previous = input[start_index...candidate_index]
+          return [candidate, candidate + literal.bytesize, []] if previous&.casecmp?(guard)
+        end
         candidate = input.b.index(literal.b, candidate + 1)
       end
       nil
@@ -1840,14 +1877,14 @@ module Onibi
       literal = hfa_unicode_ignorecase_literal_fold
       folded_input = input.downcase
       character_start = folded_input.index(literal, position)
-      unless character_start
-        return hfa_unicode_full_casefold_literal_match_result(input, position)
-      end
-
-      offsets = [0]
-      input.each_char { |character| offsets << offsets[-1] + character.bytesize }
-      character_finish = character_start + literal.length
-      [offsets[character_start], offsets[character_finish], []]
+      downcase_result = if character_start
+                          offsets = [0]
+                          input.each_char { |character| offsets << offsets[-1] + character.bytesize }
+                          character_finish = character_start + literal.length
+                          [offsets[character_start], offsets[character_finish], []]
+                        end
+      full_casefold_result = hfa_unicode_full_casefold_literal_match_result(input, position)
+      [downcase_result, full_casefold_result].compact.min_by(&:first)
     end
 
     def hfa_unicode_full_casefold_literal_match_result(input, position)
@@ -3604,7 +3641,7 @@ module Onibi
         end
         return true
       end
-      if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
+      if hfa_unicode_ignorecase_literal_result_safe?
         position = 0
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
           block.call(result)
@@ -3747,6 +3784,7 @@ module Onibi
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
                    hfa_negative_lookbehind_result_safe? ||
+                   @hfa_casefold_class_lookbehind_fast ||
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                     hfa_adjacent_nested_repeated_capture_result_safe? ||
                     hfa_repeated_class_capture_result_safe?)
@@ -3879,6 +3917,14 @@ module Onibi
         end
         return true
       end
+      if @hfa_casefold_class_lookbehind_fast
+        position = 0
+        while (result = hfa_casefold_class_lookbehind_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if @hfa_class_lookbehind_fast
         position = 0
         while (result = hfa_class_lookbehind_match_result(input, position))
@@ -3962,6 +4008,7 @@ module Onibi
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
                      @hfa_class_lookbehind_fast ||
+                     @hfa_casefold_class_lookbehind_fast ||
                      hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
