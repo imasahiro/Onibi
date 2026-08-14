@@ -47,6 +47,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_lookaround_match_uses_hfa_string_path
+    regexp = Onibi::Regexp.new("a(?=b)")
+
+    regexp.stub(:hfa_program, -> { flunk "literal lookaround should use HFA string path" }) do
+      assert regexp.match?("ab")
+      refute regexp.match?("ac")
+    end
+  end
+
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
