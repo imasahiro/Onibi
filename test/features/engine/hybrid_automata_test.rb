@@ -22,6 +22,18 @@ class HybridAutomataTest < Minitest::Test
     assert_equal 65_536, program.send(:prefix_literal_candidate, "x" * 65_536 + "BEGIN", 0)
   end
 
+  def test_builds_candidate_event_stream_for_wide_ascii_first_sets
+    program = compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+")
+    input = "user.name+tag@example.com"
+
+    events = program.send(:candidate_search_input, input)
+
+    refute_nil events
+    assert_equal 0, events.getbyte(0)
+    assert_equal "@".ord, events.getbyte(input.index("@"))
+    assert_nil program.send(:candidate_search_input, "#{input}\0")
+  end
+
   def test_specialized_program_skips_generic_topology
     specialized = compile("needle")
     generic = compile("(?:ab|a[0-9])+z")

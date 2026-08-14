@@ -1440,7 +1440,7 @@ module Onibi
         earliest
       end
 
-      def nfa_match_result(input, position)
+      def nfa_match_result(input, position, candidate_input = nil)
         prefix = @prefix_literal
         exact_first_byte = @exact_first_byte
         required_literals = @required_literals
@@ -1453,6 +1453,8 @@ module Onibi
                       required_literal_candidate(input, position)
                     elsif first_bytes
                       first_byte_set_candidate(input, position, first_bytes)
+                    elsif candidate_input
+                      candidate_input.index("\0", position)
                     else
                       position
                     end
@@ -1477,12 +1479,33 @@ module Onibi
                         required_literal_candidate(input, candidate + 1)
                       elsif first_bytes
                         first_byte_set_candidate(input, candidate + 1, first_bytes)
+                      elsif candidate_input
+                        candidate_input.index("\0", candidate + 1)
                       else
                         candidate + 1
                       end
           candidate = nil if candidate && candidate >= input.bytesize
         end
         nil
+      end
+
+      def candidate_search_input(input)
+        return unless input.ascii_only?
+        return if input.include?("\0")
+
+        source = candidate_event_source
+        source && input.tr(source, "\0")
+      end
+
+      def candidate_event_source
+        return @candidate_event_source if defined?(@candidate_event_source)
+
+        bytes = 256.times.select { |byte| (@first_mask & @reach_masks[byte]).positive? }
+        @candidate_event_source = if bytes.length > 8 && bytes.length < 256
+                                    bytes.pack("C*").force_encoding(Encoding::ASCII_8BIT).freeze
+                                  else
+                                    false
+                                  end
       end
 
       def required_literal_candidate(input, position)
@@ -1754,7 +1777,8 @@ module Onibi
         end
 
         if @prefix_literal.nil?
-          while (result = nfa_match_result(input, position))
+          candidate_input = candidate_search_input(input)
+          while (result = nfa_match_result(input, position, candidate_input))
             yield result
             position = result[1]
           end
@@ -1762,7 +1786,8 @@ module Onibi
         end
 
         if @exact_literal.nil?
-          while (result = nfa_match_result(input, position))
+          candidate_input = candidate_search_input(input)
+          while (result = nfa_match_result(input, position, candidate_input))
             yield result
             position = result[1]
           end
