@@ -233,6 +233,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_word_class_run_match_question_uses_direct_character_path
+    regexp = Onibi::Regexp.new("[[:word:]]+")
+
+    regexp.stub(:hfa_program, -> { flunk "Unicode word class match? should avoid program compilation" }) do
+      assert regexp.match?("記号-日本語_2026-終端")
+      refute regexp.match?("---😀")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 

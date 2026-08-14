@@ -118,6 +118,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_unicode_property_run_match?(input, normalized_position)
       end
+      if !input.ascii_only? && hfa_unicode_word_class_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_unicode_word_class_run_match?(input, normalized_position)
+      end
       if !input.ascii_only? && hfa_fixed_literal_capture_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_fixed_literal_capture_match?(input, normalized_position)
@@ -779,6 +783,37 @@ module Onibi
                                           else
                                             ->(codepoint, predicate) { predicate.call(codepoint.chr(Encoding::UTF_8)) }
                                           end
+    end
+
+    def hfa_unicode_word_class_run_result_safe?
+      return @hfa_unicode_word_class_run_safe if defined?(@hfa_unicode_word_class_run_safe)
+
+      node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
+      @hfa_unicode_word_class_run_safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+                                         node.kind == :+ && node.mode == :greedy &&
+                                         node.expression.is_a?(AST::CharacterClass) &&
+                                         node.expression.value == "[:word:]"
+    end
+
+    def hfa_unicode_word_class_run_match?(input, position)
+      index = 0
+      input.each_codepoint do |codepoint|
+        if index >= position && hfa_unicode_word_codepoint?(codepoint)
+          return true
+        end
+
+        index += 1
+      end
+      false
+    end
+
+    def hfa_unicode_word_codepoint?(codepoint)
+      return true if codepoint == 95 || codepoint.between?(48, 57) ||
+                     codepoint.between?(65, 90) || codepoint.between?(97, 122)
+      return true if codepoint.between?(0x3040, 0x30ff) || codepoint.between?(0x3400, 0x4dbf) ||
+                     codepoint.between?(0x4e00, 0x9fff) || codepoint.between?(0xac00, 0xd7af)
+
+      UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8))
     end
 
     def hfa_unicode_simple_capture_result_safe?
