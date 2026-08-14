@@ -2,7 +2,7 @@
 schema_version: 1
 ruby_version: "4.0.6"
 recorded_on: "2026-08-11"
-engine: "Onibi legacy matcher before AST-to-Ruby cutover"
+engine: "hfa"
 syntax_fixture: fixtures/syntax/core.yml
 ast_nodes:
 - Absence
@@ -48,21 +48,10 @@ benchmark_method:
   iterations: 1000
   reports: compile_time, first_match, warm_match, allocations, peak_memory
 baseline_observation:
-  status: captured_with_known_legacy_failures
+  status: hfa_public_matcher
   notes: >-
-    Compile/first/warm timing and allocation reports are collected by the benchmark
-    harness before each codegen phase. The legacy matcher currently raises an
-    internal transition error for some complex workloads; these are recorded as
-    migration targets rather than hidden or treated as codegen regressions.
-known_legacy_differences:
-- workload: alternation_capture
-  observed: legacy matcher may raise an internal transition error
-- workload: assertion
-  observed: legacy matcher uses AST fallback semantics
-- workload: backreference
-  observed: legacy matcher uses capture-specific semantics
-- workload: pathological_mismatch
-  observed: legacy matcher has no deterministic resource accounting
+    These workloads document the public HFA matcher and are checked against MRI
+    by the acceptance and differential suites.
 benchmark_cases:
   literal_short:
     pattern: cat

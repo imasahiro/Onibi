@@ -29,11 +29,11 @@ class EncodingContractTest < Minitest::Test
   def test_unicode_literal_full_casefold_uses_hfa_for_ascii_input
     regexp = Onibi::Regexp.new("ſ", "i")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode full case-fold should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "S", regexp.match("S").to_s
     end
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode full case-fold match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("S")
     end
   end

@@ -29,9 +29,6 @@ require_relative "onibi/compiled_class_predicate"
 require_relative "onibi/ast"
 require_relative "onibi/input_view"
 require_relative "onibi/invocation_state"
-require_relative "onibi/candidate_source"
-require_relative "onibi/swar"
-require_relative "onibi/search_plan"
 require_relative "parser_widths"
 require_relative "parser_assertions"
 require_relative "onibi/parser_quantifiers"
@@ -47,7 +44,6 @@ require_relative "onibi/match_data"
 module Onibi
   class Error < StandardError; end
   class RegexpError < Error; end
-  class CodegenError < Error; end
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
@@ -1203,48 +1199,6 @@ module Onibi
       capture_names.keys
     end
 
-    # Experimental generated matcher surface used during migration validation.
-    def codegen_match?(input, position = 0)
-      with_timeout do
-        codegen_program.search(input, normalize_match_position(input, position), capture: false) == true
-      end
-    end
-
-    def codegen_match(input, position = 0)
-      start = normalize_match_position(input, position)
-      result = with_timeout { codegen_program.search(input, start, capture: true) }
-      Codegen::MatchAdapter.build(result, input, self, named_captures)
-    end
-
-    def codegen_scan(input)
-      matches = []
-      position = 0
-      while position <= input.length
-        match = codegen_match(input, position)
-        if match
-          matches << match
-          position = [match.end(0), position + 1].max
-        else
-          position += 1
-        end
-      end
-      matches
-    end
-
-    def codegen_each_match(input, &block)
-      return enum_for(__method__, input) unless block
-
-      codegen_each_result(input) do |result|
-        block.call(Codegen::MatchAdapter.build(result, input, self, named_captures))
-      end
-    end
-
-    def codegen_each_result(input, &block)
-      return enum_for(__method__, input) unless block
-
-      codegen_program.each_match(input, 0, capture: true) { |result| block.call(result) }
-    end
-
     def hfa_generic_match?(input, position = 0)
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
@@ -1436,12 +1390,6 @@ module Onibi
 
     def timeout_unconfigured?
       @timeout.nil? && self.class.timeout.nil?
-    end
-
-    def codegen_program
-      require_relative "onibi/codegen" unless defined?(Codegen::GeneratedProgram)
-      @analysis ||= Codegen::Analyzer.new(@options, encoding, boundary_analysis: false).analyze(@ast)
-      @codegen_program ||= Codegen::GeneratedProgram.prepared(@ast, options: @options, analysis: @analysis)
     end
 
     def hfa_program
@@ -6347,3 +6295,5 @@ module Onibi
 end
 
 require_relative "onibi/hybrid_automata"
+require_relative "onibi/hybrid_automata/cfg"
+require_relative "onibi/hybrid_automata/optimization"

@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class LoopIdiomRecognitionTest < Minitest::Test
   def test_terminal_literal_plus_is_recognized_as_a_checkpoint_free_loop
     ast = Onibi::Parser.new("a+").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 

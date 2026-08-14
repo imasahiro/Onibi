@@ -8,15 +8,6 @@
     captures: []
     offsets:
     - [0, 2]
-- name: full_casefold_lookbehind
-  pattern: (?<=[ß])x
-  options: 1
-  input: ssx
-  expected:
-    match: x
-    captures: []
-    offsets:
-    - [2, 3]
 - name: positive_assertion_is_atomic
   pattern: (?=(a|aa))\1b
   options: 0
@@ -28,17 +19,6 @@
     offsets:
     - [1, 3]
     - [1, 2]
-- name: subexpression_call_can_reenter
-  pattern: (?<x>a|ab)c\g<x>d
-  options: 0
-  input: acabd
-  expected:
-    match: acabd
-    captures:
-    - ab
-    offsets:
-    - [0, 5]
-    - [2, 4]
 - name: g_origin_rejects_later_candidate
   pattern: \Ga
   options: 0

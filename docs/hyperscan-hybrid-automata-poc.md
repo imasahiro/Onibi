@@ -64,7 +64,7 @@ Onibi already contains three pieces of the decomposition architecture:
 | small regular engine | `RegularRun` and generated straight-line code | limited to a few proven sequence shapes |
 | semantic verification | sole generated Ruby matcher | restarted at every admitted start |
 
-Adding a separate DFA/NFA backend would violate the accepted codegen design
+Adding a separate DFA/NFA backend would violate the accepted HFA lowering design
 and duplicate capture and priority semantics. Extending immutable search-plan
 metadata and candidate sources does not: rejected candidates are proven
 impossible, while every admitted candidate still runs the same generated

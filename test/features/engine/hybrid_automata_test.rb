@@ -30,13 +30,6 @@ class HybridAutomataTest < Minitest::Test
     assert_operator generic.topology_state_count, :>, 0
   end
 
-  def test_never_falls_back_to_generated_ruby
-    source = File.read(File.join(PROJECT_ROOT, "lib/onibi/hybrid_automata.rb"))
-
-    refute_includes source, "GeneratedProgram"
-    assert Onibi::HybridAutomata.compile("(?:ab|ac)+z").match?("xxabacz")
-  end
-
   def test_matches_supported_regular_subset_like_mri
     patterns = [
       "", "abc", "cat|dog|mouse", "a[0-9]+z", "colou?r", "(?:ab)+c",
@@ -118,7 +111,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_compilation_unit_is_the_backend_input
     ast = Onibi::Parser.new("a[0-9]+z").parse
-    unit = Onibi::Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert_equal :cfg, program.input_ir
@@ -128,7 +121,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_cfg_operation_graph_can_drive_hfa_topology
     ast = Onibi::Parser.new("abc[0-9]+z").parse
-    unit = Onibi::Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert_equal :cfg, program.input_ir
@@ -138,7 +131,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_cfg_choice_graph_can_drive_hfa_topology
     ast = Onibi::Parser.new("cat|dog").parse
-    unit = Onibi::Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert program.match?("a dog")

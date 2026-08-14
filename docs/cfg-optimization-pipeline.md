@@ -3,7 +3,7 @@
 ## Decision
 
 Onibi uses an immutable control-flow graph (CFG) as a compiler IR inside the
-single generated-Ruby matcher pipeline. The CFG is not a second matcher and is
+single HFA matcher pipeline. The CFG is not a second matcher and is
 never interpreted at match time.
 
 The initial compilation flow is:
@@ -18,14 +18,13 @@ tokens -> AST -> early passes -> semantic analysis
                                       search planning + generated Ruby
 ```
 
-Ruby emission temporarily consumes the optimized AST paired with the CFG. This
-keeps the established matcher semantics while the CFG vocabulary is completed.
-The transition is complete only when every high-level CFG operation can be
-lowered without consulting an AST outside its typed operand.
+HFA lowering consumes the optimized AST paired with the CFG. The CFG vocabulary
+can evolve independently while every high-level operation remains typed and
+reusable by the AST-to-HFA conversion.
 
 ## CFG contract
 
-`Onibi::Codegen::CFG` contains immutable graphs, blocks, operations,
+`Onibi::HybridAutomata::CFG` contains immutable graphs, blocks, operations,
 terminators, and ordered edges. Sequence becomes a flow edge. Alternation
 becomes a `choice` terminator whose `alternative` edges retain their
 left-to-right priority. CFG materialization is lazy and memoized so ordinary
@@ -47,7 +46,7 @@ differential tests defining the contract.
 
 ## Pass manager
 
-`Onibi::Codegen::Optimization::Pipeline` owns an explicit, deterministic pass
+`Onibi::HybridAutomata::Optimization::Pipeline` owns an explicit, deterministic pass
 order and publishes the executed pass names in the immutable compilation unit.
 Production construction runs only shape-changing passes needed by semantic
 analysis; emission-stage normalization and lazy CFG publication happen when the

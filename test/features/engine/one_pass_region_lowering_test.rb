@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class OnePassRegionLoweringTest < Minitest::Test
   def test_pipeline_records_one_pass_region_lowering
     ast = Onibi::Parser.new("abc").parse
-    unit = Onibi::Codegen::Optimization::Pipeline.default.call(
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     )
 

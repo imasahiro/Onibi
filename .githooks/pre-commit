@@ -11,11 +11,11 @@ if [ "${#ruby_files[@]}" -eq 0 ]; then
   exit 0
 fi
 
-bundle exec rubocop -A "${ruby_files[@]}"
+bundle exec rubocop --force-exclusion -A "${ruby_files[@]}"
 
 if ! git diff --quiet -- "${ruby_files[@]}"; then
   echo "RuboCop formatted staged Ruby files; review and stage the changes before committing." >&2
   exit 1
 fi
 
-bundle exec rubocop "${ruby_files[@]}"
+bundle exec rubocop --force-exclusion "${ruby_files[@]}"

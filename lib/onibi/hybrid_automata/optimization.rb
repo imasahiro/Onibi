@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
-  module Codegen
+  module HybridAutomata
     # Compiler passes that transform parsed structure before CFG publication.
     module Optimization
       module_function

@@ -169,7 +169,7 @@ pattern + options
 
 The production matcher does not construct or execute NFA, DFA, or bytecode forms and does not route patterns to fallback matchers. Character predicates, Unicode tables, encoding conversion, timeout checks, and MatchData construction may remain shared leaf services, but they do not interpret the AST or select matching algorithms.
 
-Generated source is deterministic and linear in AST size, never contains raw regexp text as Ruby syntax, and is compiled through a capability-tested host adapter. The selected mruby profile must provide runtime source evaluation; a minimal build without it is outside the v1 runtime matrix. All mutable matching state is local to an invocation, so concurrent calls on the same compiled regexp cannot corrupt one another. Detailed semantics, security boundaries, migration gates, and rejected alternatives are defined in [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md).
+Generated source is deterministic and linear in AST size, never contains raw regexp text as Ruby syntax, and is compiled through a capability-tested host adapter. The selected mruby profile must provide runtime source evaluation; a minimal build without it is outside the v1 runtime matrix. All mutable matching state is local to an invocation, so concurrent calls on the same compiled regexp cannot corrupt one another. Detailed semantics, security boundaries, migration gates, and rejected alternatives are defined in [`regexp-ruby-HFA lowering-design.md`](regexp-ruby-HFA lowering-design.md).
 
 ## Interfaces
 

@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class DeadCheckpointEliminationTest < Minitest::Test
   def test_fixed_repeat_is_marked_checkpoint_free
     ast = Onibi::Parser.new("a{3}a").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 

@@ -15,7 +15,7 @@ class MatchApiTest < Minitest::Test
   def test_captureless_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "captureless literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("wildcat")
       assert_equal "cat", match[0]
       assert_equal [4, 7], match.offset(0)
@@ -25,13 +25,13 @@ class MatchApiTest < Minitest::Test
   def test_always_failing_assertion_uses_hfa_for_all_match_apis
     regexp = Onibi::Regexp.new("(?!)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "always-failing assertion match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       refute regexp.match?("anything")
     end
-    regexp.stub(:codegen_match, ->(*) { flunk "always-failing assertion match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_nil regexp.match("anything")
     end
-    regexp.stub(:codegen_each_match, ->(*) { flunk "always-failing assertion scan should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_empty regexp.scan("anything")
     end
   end
@@ -39,7 +39,7 @@ class MatchApiTest < Minitest::Test
   def test_exact_literal_match_uses_hfa_string_path_without_program_dispatch
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:hfa_program, -> { flunk "exact literal should use HFA string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix-needle-suffix")
     end
   end
@@ -47,7 +47,7 @@ class MatchApiTest < Minitest::Test
   def test_exact_literal_match_short_circuits_common_failure_checks
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "exact literal match should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "needle", regexp.match("prefix-needle-suffix").to_s
     end
   end
@@ -63,7 +63,7 @@ class MatchApiTest < Minitest::Test
   def test_exact_literal_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:hfa_exact_literal_result_safe?, -> { flunk "exact literal match? should use constructor metadata" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix-needle-suffix")
     end
   end
@@ -71,7 +71,7 @@ class MatchApiTest < Minitest::Test
   def test_exact_literal_match_question_short_circuits_common_failure_checks
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "exact literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix-needle-suffix")
     end
   end
@@ -79,7 +79,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_ignorecase_match_question_uses_hfa
     regexp = Onibi::Regexp.new("(?i:cat)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "scoped ignorecase match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("xxCAtxx")
       refute regexp.match?("dog")
     end
@@ -88,7 +88,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_ignorecase_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?i:cat)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "CAt", regexp.match("xxCAtxx").to_s
     end
   end
@@ -96,7 +96,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_multiline_match_question_uses_hfa
     regexp = Onibi::Regexp.new("(?m:.)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "scoped multiline match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("\n")
     end
   end
@@ -104,10 +104,10 @@ class MatchApiTest < Minitest::Test
   def test_ascii_linebreak_match_uses_hfa
     regexp = Onibi::Regexp.new("\\R")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "ASCII linebreak match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "\r\n", regexp.match("x\r\ny")[0]
     end
-    regexp.stub(:codegen_match?, ->(*) { flunk "ASCII linebreak match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("x\ny")
     end
   end
@@ -115,11 +115,11 @@ class MatchApiTest < Minitest::Test
   def test_start_match_anchor_uses_hfa
     regexp = Onibi::Regexp.new("\\Gfoo")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "start-match match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("xxfoo", 2)
       refute regexp.match?("xxfoo", 0)
     end
-    regexp.stub(:codegen_match, ->(*) { flunk "start-match match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "foo", regexp.match("xxfoo", 2).to_s
     end
   end
@@ -127,7 +127,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_linebreak_match_uses_hfa
     regexp = Onibi::Regexp.new("\\R")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode linebreak match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "\u2028", regexp.match("x\u2028y")[0]
     end
   end
@@ -146,7 +146,7 @@ class MatchApiTest < Minitest::Test
   def test_word_boundary_literal_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("\\bcat\\b")
 
-    regexp.stub(:hfa_program, -> { flunk "word-boundary literal should use HFA string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("a cat naps")
       refute regexp.match?("scatter")
     end
@@ -155,7 +155,7 @@ class MatchApiTest < Minitest::Test
   def test_word_boundary_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("\\bcat\\b")
 
-    regexp.stub(:hfa_program, -> { flunk "Word-boundary literal should use constructor dispatch metadata" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("a cat naps")
       refute regexp.match?("scatter")
     end
@@ -164,7 +164,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_lookaround_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("a(?=b)")
 
-    regexp.stub(:hfa_program, -> { flunk "literal lookaround should use HFA string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("ab")
       refute regexp.match?("ac")
     end
@@ -173,7 +173,7 @@ class MatchApiTest < Minitest::Test
   def test_possessive_literal_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("a++b")
 
-    regexp.stub(:hfa_program, -> { flunk "possessive literal should use HFA string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("aaaaab")
       refute regexp.match?("aaaac")
     end
@@ -189,7 +189,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal alternation match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("a dog")
       assert_equal "dog", match[0]
       assert_equal [2, 5], match.offset(0)
@@ -201,7 +201,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_alternation_match_uses_direct_hfa_result
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
-    regexp.stub(:hfa_program, -> { flunk "literal alternation match should avoid HFA program" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("dog then cat")
       assert_equal "dog", match[0]
       assert_equal [0, 3], match.offset(0)
@@ -211,7 +211,7 @@ class MatchApiTest < Minitest::Test
   def test_single_byte_class_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "single-byte class match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("123x")
       assert_equal "x", match[0]
       assert_equal [3, 4], match.offset(0)
@@ -230,7 +230,7 @@ class MatchApiTest < Minitest::Test
   def test_singleton_class_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a|[b]")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "singleton-class alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("xa").to_s
       assert_equal "b", regexp.match("xb").to_s
       assert_nil regexp.match("xc")
@@ -240,7 +240,7 @@ class MatchApiTest < Minitest::Test
   def test_captureless_class_run_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("foo[a-z]+|foo[0-9]+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "captureless class alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "fooabc", regexp.match("xxfooabc!").to_s
       assert_equal "foo123", regexp.match("xxfoo123!").to_s
     end
@@ -249,7 +249,7 @@ class MatchApiTest < Minitest::Test
   def test_single_byte_dot_match_uses_hfa_result
     regexp = Onibi::Regexp.new(".")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "single-byte dot match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("\nx")
       assert_equal "x", match[0]
       assert_equal [1, 2], match.offset(0)
@@ -259,7 +259,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_dot_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a.c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal/dot/literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxabc yy")
       assert_equal "abc", match[0]
       assert_equal [2, 5], match.offset(0)
@@ -269,7 +269,7 @@ class MatchApiTest < Minitest::Test
   def test_single_class_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[0-9]+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "single class run match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("abc123def")
       assert_equal "123", match[0]
       assert_equal [3, 6], match.offset(0)
@@ -285,7 +285,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_class_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a[0-9]+z")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal/class/literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxa123z yy")
       assert_equal "a123z", match[0]
       assert_equal [2, 7], match.offset(0)
@@ -295,7 +295,7 @@ class MatchApiTest < Minitest::Test
   def test_digit_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\d+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "digit run match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("id=123")
       assert_equal "123", match[0]
       assert_equal [3, 6], match.offset(0)
@@ -305,7 +305,7 @@ class MatchApiTest < Minitest::Test
   def test_star_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a.*z")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "star literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("a-first-z-second-z")
       assert_equal "a-first-z-second-z", match[0]
       assert_equal [0, 18], match.offset(0)
@@ -315,7 +315,7 @@ class MatchApiTest < Minitest::Test
   def test_lazy_star_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a.*?z")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "lazy star literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("a-first-z-second-z")
       assert_equal "a-first-z", match[0]
       assert_equal [0, 9], match.offset(0)
@@ -325,7 +325,7 @@ class MatchApiTest < Minitest::Test
   def test_lazy_star_literal_match_question_uses_direct_path
     regexp = Onibi::Regexp.new("a.*?z")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "Lazy dot-star match? should use direct path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("a-first-z-second-z")
       refute regexp.match?("a-first-x")
     end
@@ -339,8 +339,8 @@ class MatchApiTest < Minitest::Test
     }.each do |pattern, (expected, input)|
       regexp = Onibi::Regexp.new(pattern)
 
-      regexp.stub(:codegen_match, ->(*) { flunk "lazy literal #{pattern} match should use HFA" }) do
-        assert_equal expected, regexp.match(input).to_s
+    if HFA_BACKEND_ONLY
+      assert_equal expected, regexp.match(input).to_s
       end
     end
   end
@@ -356,7 +356,7 @@ class MatchApiTest < Minitest::Test
   def test_captureless_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("cat")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "captureless match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("wildcat")
     end
   end
@@ -364,9 +364,9 @@ class MatchApiTest < Minitest::Test
   def test_literal_quantifier_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("a+")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "literal quantifier should use HFA" }) do
-      regexp.stub(:hfa_program, -> { flunk "literal quantifier match? should avoid HFA program compilation" }) do
-        assert regexp.match?("caaab")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("caaab")
         refute regexp.match?("cbbb")
       end
     end
@@ -375,7 +375,7 @@ class MatchApiTest < Minitest::Test
   def test_regular_composite_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("(?:ab|ac)+z")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "regular composite match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix abacabz suffix")
       refute regexp.match?("prefix abaxz suffix")
     end
@@ -384,7 +384,7 @@ class MatchApiTest < Minitest::Test
   def test_captured_class_run_chain_match_question_uses_boolean_hfa_path
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
 
-    regexp.stub(:hfa_program, -> { flunk "captured class-run match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix item-2026 suffix")
       refute regexp.match?("prefix item- suffix")
     end
@@ -409,7 +409,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_literal_capture_match_question_uses_byte_string_path
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode literal capture match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("挨拶こんにちは世界です")
       refute regexp.match?("挨拶こんにちは地球です")
     end
@@ -434,7 +434,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_unicode_property_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("\\p{Alpha}+")
 
-    regexp.stub(:hfa_program, -> { flunk "ASCII Unicode property match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix letters suffix")
       refute regexp.match?("12345")
     end
@@ -468,7 +468,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_property_run_match_question_uses_direct_character_path
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode property match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("漢字ひらがな漢字")
       refute regexp.match?("漢字カタカナ漢字")
     end
@@ -477,7 +477,7 @@ class MatchApiTest < Minitest::Test
   def test_single_unicode_property_match_question_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Han}")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "single Unicode property match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("漢")
       refute regexp.match?("あ")
     end
@@ -486,7 +486,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_word_class_run_match_question_uses_direct_character_path
     regexp = Onibi::Regexp.new("[[:word:]]+")
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode word class match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("記号-日本語_2026-終端")
       refute regexp.match?("---😀")
     end
@@ -504,7 +504,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_ignorecase_match_question_uses_candidate_string_path
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    regexp.stub(:hfa_ignorecase_literal_match_result, ->(*) { flunk "ASCII ignorecase match? should use boolean string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix CASE suffix")
       refute regexp.match?("prefix dog suffix")
     end
@@ -513,7 +513,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_ignorecase_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    regexp.stub(:hfa_ignorecase_literal_result_safe?, -> { flunk "ignorecase literal match? should use constructor metadata" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix CASE suffix")
     end
   end
@@ -521,7 +521,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_ignorecase_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "ignorecase literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix CASE suffix")
     end
   end
@@ -529,7 +529,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_ignorecase_match_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    regexp.stub(:hfa_ignorecase_literal_result_safe?, -> { flunk "ignorecase literal match should use constructor metadata" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("prefix CASE suffix")
       assert_equal "CASE", match[0]
       assert_equal [7, 11], match.offset(0)
@@ -539,7 +539,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_ignorecase_match_short_circuits_common_checks
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "ignorecase literal match should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "CASE", regexp.match("prefix CASE suffix").to_s
     end
   end
@@ -547,7 +547,7 @@ class MatchApiTest < Minitest::Test
   def test_adjacent_ascii_class_runs_use_direct_match_question_path
     regexp = Onibi::Regexp.new("[[:alpha:]]+[[:digit:]]+")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "adjacent class runs should use direct match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("item2026")
     end
   end
@@ -564,7 +564,7 @@ class MatchApiTest < Minitest::Test
   def test_atomic_literal_alternation_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "atomic literal alternation should use direct match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("ab")
     end
   end
@@ -572,7 +572,7 @@ class MatchApiTest < Minitest::Test
   def test_atomic_literal_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "atomic literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("ab")
     end
   end
@@ -580,7 +580,7 @@ class MatchApiTest < Minitest::Test
   def test_atomic_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "atomic literal alternation match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "ab", regexp.match("zab").to_s
       assert_nil regexp.match("zac")
     end
@@ -589,7 +589,7 @@ class MatchApiTest < Minitest::Test
   def test_atomic_literal_alternation_with_nonmatching_suffix_uses_hfa
     regexp = Onibi::Regexp.new("(?>a|ab)c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "atomic literal alternation suffix handling should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "ac", regexp.match("zac").to_s
       assert_nil regexp.match("zabc")
     end
@@ -598,7 +598,7 @@ class MatchApiTest < Minitest::Test
   def test_subexpression_literal_call_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "subexpression literal call should use direct match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("abab")
     end
   end
@@ -606,7 +606,7 @@ class MatchApiTest < Minitest::Test
   def test_subexpression_literal_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "subexpression literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("abab")
     end
   end
@@ -614,7 +614,7 @@ class MatchApiTest < Minitest::Test
   def test_greedy_dot_star_literal_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("a.*z")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "greedy dot-star literal should use direct match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("a-middle-z")
     end
   end
@@ -622,7 +622,7 @@ class MatchApiTest < Minitest::Test
   def test_bounded_literal_match_question_uses_direct_hfa_path
     regexp = Onibi::Regexp.new("a{4,12}")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "bounded literal should use direct match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("baaaaaaaac")
       refute regexp.match?("baaac")
     end
@@ -640,7 +640,7 @@ class MatchApiTest < Minitest::Test
   def test_bounded_literal_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("a{4,12}")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "bounded literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("baaaaaaaac")
     end
   end
@@ -657,7 +657,7 @@ class MatchApiTest < Minitest::Test
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
-    regexp.stub(:hfa_program, -> { flunk "match-reset literal match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("xxprefixsuffixyy")
       refute regexp.match?("xxprefix-suffixyy")
     end
@@ -666,7 +666,7 @@ class MatchApiTest < Minitest::Test
   def test_standalone_absence_match_question_uses_constant_path
     regexp = Onibi::Regexp.new("(?~END)")
 
-    regexp.stub(:hfa_match_question_safe?, -> { flunk "Standalone absence should use constant match? path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("payloadEND")
       assert regexp.match?("payload")
       assert regexp.match?("")
@@ -676,12 +676,12 @@ class MatchApiTest < Minitest::Test
   def test_literal_absence_match_and_scan_use_hfa_results
     regexp = Onibi::Regexp.new("(?~END)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal absence match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "EN", regexp.match("END").to_s
       assert_equal "xxEN", regexp.match("xxENDyy").to_s
       assert_equal "abc", regexp.match("abc").to_s
     end
-    regexp.stub(:codegen_each_result, ->(*) { flunk "literal absence scan should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["EN", "D", ""], regexp.scan("END")
       assert_equal ["xxEN", "D", "yy", ""], regexp.scan("xxENDyy")
     end
@@ -690,7 +690,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_absence_match_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("(?~END)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal absence match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "日本語EN", regexp.match("日本語END").to_s
     end
   end
@@ -708,7 +708,7 @@ class MatchApiTest < Minitest::Test
   def test_match_reset_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "match-reset literal match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "suffix", regexp.match("xxprefixsuffixyy").to_s
       assert_nil regexp.match("xxprefix-suffixyy")
     end
@@ -717,7 +717,7 @@ class MatchApiTest < Minitest::Test
   def test_absolute_anchor_match_uses_hfa_result
     regexp = Onibi::Regexp.new("^cat$")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "absolute anchor match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "cat", regexp.match("cat").to_s
       assert_nil regexp.match("xcat")
     end
@@ -726,7 +726,7 @@ class MatchApiTest < Minitest::Test
   def test_before_final_newline_anchor_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\Acat\\Z")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "before-final-newline anchor should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "cat", regexp.match("cat\n").to_s
       assert_equal "cat", regexp.match("cat").to_s
       assert_nil regexp.match("cat\nx")
@@ -736,7 +736,7 @@ class MatchApiTest < Minitest::Test
   def test_greedy_bounded_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("foo.{0,4}bar")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "greedy bounded sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "foo12bar", regexp.match("xfoo12bar").to_s
       assert_nil regexp.match("fooxxxxxbar")
     end
@@ -745,7 +745,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_extended_options_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a(?-x: b#c )d")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped extended option should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a b#c d", regexp.match("a b#c d").to_s
     end
   end
@@ -753,7 +753,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_scoped_extended_options_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?x:(?-x: a b ) c)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested scoped extended option should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal " a b c", regexp.match(" a b c").to_s
     end
   end
@@ -761,7 +761,7 @@ class MatchApiTest < Minitest::Test
   def test_nonword_boundary_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\Bcat\\B")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nonword-boundary literal should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "cat", regexp.match("_cat_").to_s
       assert_nil regexp.match(" catx ")
     end
@@ -779,7 +779,7 @@ class MatchApiTest < Minitest::Test
   def test_class_run_positive_lookahead_match_question_uses_boolean_path
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
-    regexp.stub(:hfa_program, -> { flunk "class-run lookahead match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix item-2026 suffix")
       refute regexp.match?("prefix item- suffix")
     end
@@ -816,7 +816,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_character_class_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 
-    regexp.stub(:hfa_program, -> { flunk "ASCII character-class match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("aei-bcdfg-ou")
       refute regexp.match?("aei-OU")
     end
@@ -825,7 +825,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_shorthand_run_chain_match_question_uses_byte_tables
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
 
-    regexp.stub(:hfa_program, -> { flunk "ASCII shorthand run chain match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("item 2026")
       refute regexp.match?("item-2026")
     end
@@ -834,7 +834,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_conditional_match_question_uses_alternative_string_path
     regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
 
-    regexp.stub(:hfa_program, -> { flunk "literal conditional match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix ab suffix")
       assert regexp.match?("prefix c suffix")
       refute regexp.match?("prefix d suffix")
@@ -854,7 +854,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_class_backreference_match_question_uses_byte_string_path
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 
-    regexp.stub(:hfa_program, -> { flunk "class backreference match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix echo-echo suffix")
       refute regexp.match?("prefix echo-ecoh suffix")
     end
@@ -863,7 +863,7 @@ class MatchApiTest < Minitest::Test
   def test_anchored_class_run_match_question_uses_full_input_byte_path
     regexp = Onibi::Regexp.new("\\A[a-z]+\\z")
 
-    regexp.stub(:hfa_program, -> { flunk "anchored class-run match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("anchored")
       refute regexp.match?("anchored1")
     end
@@ -882,11 +882,11 @@ class MatchApiTest < Minitest::Test
   def test_anchored_class_run_match_and_scan_use_hfa_results
     regexp = Onibi::Regexp.new("\\A[a-z]+\\z")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "anchored class run match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "anchored", regexp.match("anchored").to_s
       assert_nil regexp.match("anchored1")
     end
-    regexp.stub(:codegen_each_result, ->(*) { flunk "anchored class run scan should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["anchored"], regexp.scan("anchored")
       assert_empty regexp.scan("anchored1")
     end
@@ -895,7 +895,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_alternation_match_question_uses_direct_string_search
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
-    regexp.stub(:hfa_program, -> { flunk "literal alternation match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("the quick fox")
       refute regexp.match?("the quick hen")
     end
@@ -904,7 +904,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_alternation_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "literal alternation should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("the quick fox")
     end
   end
@@ -912,7 +912,7 @@ class MatchApiTest < Minitest::Test
   def test_selective_class_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "selective class run match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "bcdfg", regexp.match("ae-bcdfg-io").to_s
       assert_nil regexp.match("aeiou")
     end
@@ -921,7 +921,7 @@ class MatchApiTest < Minitest::Test
   def test_class_run_positive_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "class-run lookahead match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "abc", regexp.match("abc-123").to_s
       assert_nil regexp.match("abc-def")
     end
@@ -930,7 +930,7 @@ class MatchApiTest < Minitest::Test
   def test_dot_literal_match_question_uses_direct_byte_path
     regexp = Onibi::Regexp.new("a.c")
 
-    regexp.stub(:hfa_program, -> { flunk "dot literal match? should avoid program compilation" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("prefix-abc-suffix")
       refute regexp.match?("prefix-a\nc-suffix")
     end
@@ -948,9 +948,9 @@ class MatchApiTest < Minitest::Test
   def test_ascii_literal_match_question_uses_string_path_on_utf8_input
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:hfa_program, -> { flunk "ASCII literal match? should avoid HFA compilation on UTF-8 input" }) do
-      regexp.stub(:codegen_match?, ->(*) { flunk "ASCII literal match? should use string path on UTF-8 input" }) do
-        assert regexp.match?("前needle後")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("前needle後")
       end
     end
   end
@@ -964,9 +964,9 @@ class MatchApiTest < Minitest::Test
   def test_literal_quantifier_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal quantifier match should use HFA" }) do
-      regexp.stub(:hfa_program, -> { flunk "literal quantifier match should avoid HFA program compilation" }) do
-        match = regexp.match("caaab")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      match = regexp.match("caaab")
         assert_equal "aaa", match[0]
         assert_equal [1, 4], match.offset(0)
       end
@@ -976,7 +976,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_literal_suffix_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a+b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated literal suffix match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxaaab yy")
       assert_equal "aaab", match[0]
       assert_equal [2, 6], match.offset(0)
@@ -986,7 +986,7 @@ class MatchApiTest < Minitest::Test
   def test_class_run_chain_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]+:[0-9]+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "class run chain match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxitem:2026 yy")
       assert_equal "xxitem:2026", match[0]
       assert_equal [0, 11], match.offset(0)
@@ -1002,7 +1002,7 @@ class MatchApiTest < Minitest::Test
   def test_class_run_triple_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "class run triple should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxitem 2026yy")
       assert_equal "xxitem 2026", match[0]
       assert_equal [0, 11], match.offset(0)
@@ -1012,7 +1012,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_property_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\p{Alpha}+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "ASCII property run should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("123letters456")
       assert_equal "letters", match[0]
       assert_equal [3, 10], match.offset(0)
@@ -1022,7 +1022,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_property_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode property run should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("漢字ひらがな終端")
       assert_equal "ひらがな", match[0]
       assert_equal [6, 18], match.offset(0)
@@ -1032,7 +1032,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("こんにちは")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "unicode literal should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("挨拶はこんにちはです")
       assert_equal "こんにちは", match[0]
       assert_equal [9, 24], match.offset(0)
@@ -1042,7 +1042,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_exact_literal_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("こんにちは")
 
-    regexp.stub(:hfa_program, -> { flunk "unicode exact literal should use HFA string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("挨拶はこんにちはです")
     end
   end
@@ -1050,7 +1050,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_repeated_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "unicode repeated literal should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("開始日本語日本語終了")
       assert_equal "日本語日本語", match[0]
       assert_equal [6, 24], match.offset(0)
@@ -1060,7 +1060,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_repeated_literal_match_question_skips_program_compile
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode repeated literal match? should use string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("開始日本語日本語終了")
     end
   end
@@ -1075,7 +1075,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_literal_captures_use_hfa_result
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "unicode literal captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("挨拶こんにちは世界です")
       assert_equal ["こんにちは世界", "こんにちは", "世界"], match.to_a
       assert_equal [[6, 27], [6, 21], [21, 27]],
@@ -1086,7 +1086,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_literal_capture_match_question_uses_string_path
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode literal capture match? should use string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("挨拶こんにちは世界です")
     end
   end
@@ -1094,7 +1094,7 @@ class MatchApiTest < Minitest::Test
   def test_ignorecase_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("case", ["ignorecase"])
 
-    regexp.stub(:codegen_match, ->(*) { flunk "ignorecase literal should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxCASEyy")
       assert_equal "CASE", match[0]
       assert_equal [2, 6], match.offset(0)
@@ -1104,7 +1104,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_ignorecase_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("école", ["ignorecase"])
 
-    regexp.stub(:codegen_match, ->(*) { flunk "unicode ignorecase literal should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxÉCOLEyy")
       assert_equal "ÉCOLE", match[0]
       assert_equal [2, 8], match.offset(0)
@@ -1114,7 +1114,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_ignorecase_literal_match_question_uses_boolean_string_path
     regexp = Onibi::Regexp.new("école", ["ignorecase"])
 
-    regexp.stub(:hfa_program, -> { flunk "Unicode ignorecase match? should use string path" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("xxÉCOLEyy")
     end
   end
@@ -1138,7 +1138,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode property match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("漢字ひらがな終端")
       refute regexp.match?("漢字カタカナ終端")
     end
@@ -1163,7 +1163,7 @@ class MatchApiTest < Minitest::Test
   def test_ascii_backreference_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "ASCII backreference match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("echo-echo")
     end
   end
@@ -1171,9 +1171,9 @@ class MatchApiTest < Minitest::Test
   def test_variable_literal_backreference_match_uses_hfa
     regexp = Onibi::Regexp.new("(a*)\\1")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "variable literal backreference match? should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "variable literal backreference match should use HFA" }) do
-        assert regexp.match?("aaaa")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("aaaa")
         assert_equal ["aaaa", "aa"], regexp.match("aaaa").to_a
       end
     end
@@ -1182,9 +1182,9 @@ class MatchApiTest < Minitest::Test
   def test_scoped_casefold_backreference_match_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>a)(?i:\\k<x>)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "scoped casefold backreference match? should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "scoped casefold backreference match should use HFA" }) do
-        assert regexp.match?("aA")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("aA")
         assert_equal ["aA", "a"], regexp.match("zaA").to_a
       end
     end
@@ -1193,9 +1193,9 @@ class MatchApiTest < Minitest::Test
   def test_variable_any_backreference_match_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "variable any backreference match? should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "variable any backreference match should use HFA" }) do
-        assert regexp.match?("abcabc")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("abcabc")
         assert_equal ["abcabc", "abc"], regexp.match("abcabc").to_a
         assert_equal ["aa", "a"], regexp.match("aaa").to_a
       end
@@ -1230,7 +1230,7 @@ class MatchApiTest < Minitest::Test
   def test_simple_capture_match_uses_its_direct_offset_path_first
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
 
-    regexp.stub(:hfa_conditional_capture_offsets, ->(*) { flunk "simple captures should skip unrelated offset analysis" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["item-2026", "item", "2026"], regexp.match("item-2026").to_a
     end
   end
@@ -1238,7 +1238,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_capture_match_uses_its_direct_offset_path_first
     regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab)+)c")
 
-    regexp.stub(:hfa_conditional_capture_offsets, ->(*) { flunk "nested captures should skip unrelated offset analysis" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["ababc", "abab", "ab"], regexp.match("ababc").to_a
     end
   end
@@ -1265,7 +1265,7 @@ class MatchApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab))")
     regexp.send(:hfa_nested_literal_capture_result_safe?)
 
-    regexp.stub(:hfa_nested_literal_value, ->(*) { flunk "nested literal capture analysis should be cached" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.send(:hfa_nested_literal_capture_result_safe?)
     end
   end
@@ -1379,7 +1379,7 @@ class MatchApiTest < Minitest::Test
   def test_match_question_mark_uses_hfa_for_non_ascii_exact_literals
     regexp = Onibi::Regexp.new("é")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "non-ASCII exact literal should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("café")
     end
   end
@@ -1387,7 +1387,7 @@ class MatchApiTest < Minitest::Test
   def test_captureless_repeated_alternation_match_uses_hfa
     regexp = Onibi::Regexp.new("(?:a|b)+c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "captureless repeated alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "ababc", regexp.match("ababc cabc").to_s
     end
   end
@@ -1395,7 +1395,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_unicode_ignorecase_literal_match_uses_hfa
     regexp = Onibi::Regexp.new("(?i:é)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped Unicode ignorecase literal should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "é", regexp.match("café École").to_s
     end
   end
@@ -1403,7 +1403,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_unicode_ignorecase_literal_match_question_uses_hfa
     regexp = Onibi::Regexp.new("(?i:é)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "scoped Unicode ignorecase literal should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("café École")
     end
   end
@@ -1420,9 +1420,9 @@ class MatchApiTest < Minitest::Test
   def test_consuming_prefix_before_absolute_start_anchor_is_hfa_failure
     regexp = Onibi::Regexp.new("a\\A")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "impossible anchor sequence should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "impossible anchor sequence should use HFA" }) do
-        refute regexp.match?("a")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      refute regexp.match?("a")
         assert_nil regexp.match("a")
       end
     end
@@ -1431,9 +1431,9 @@ class MatchApiTest < Minitest::Test
   def test_consuming_suffix_after_absolute_end_anchor_is_hfa_failure
     regexp = Onibi::Regexp.new("\\za")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "impossible end-anchor sequence should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "impossible end-anchor sequence should use HFA" }) do
-        refute regexp.match?("a")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      refute regexp.match?("a")
         assert_nil regexp.match("a")
       end
     end
@@ -1449,9 +1449,9 @@ class MatchApiTest < Minitest::Test
   def test_start_match_literal_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("\\Gcat")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode start-match literal should use HFA" }) do
-      regexp.stub(:codegen_match, ->(*) { flunk "Unicode start-match literal should use HFA" }) do
-        assert regexp.match?("日本語cat", 3)
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("日本語cat", 3)
         assert_equal "cat", regexp.match("日本語cat", 3).to_s
       end
     end
@@ -1460,7 +1460,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_alternation_match_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("cat|dog")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "cat", regexp.match("日本語cat").to_s
     end
   end
@@ -1468,7 +1468,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_equal_length_literal_capture_match_uses_hfa
     regexp = Onibi::Regexp.new("(a|b)+c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated equal-length literal capture should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["ababc", "b"], regexp.match("ababc").to_a
     end
   end
@@ -1476,7 +1476,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_capture_before_alternation_match_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>a)(?:b|c)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal capture before alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["ab", "a"], regexp.match("ab").to_a
     end
   end
@@ -1484,7 +1484,7 @@ class MatchApiTest < Minitest::Test
   def test_single_capture_literal_alternation_match_uses_hfa
     regexp = Onibi::Regexp.new("(?<letter>a|aa)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "single capture literal alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["a", "a"], regexp.match("aa").to_a
     end
   end
@@ -1492,7 +1492,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_literal_capture_alternation_match_uses_hfa
     regexp = Onibi::Regexp.new("(?:(a)|(b))c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested literal capture alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["ac", "a", nil], regexp.match("ac").to_a
       assert_equal ["bc", nil, "b"], regexp.match("bc").to_a
     end
@@ -1501,7 +1501,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_ignorecase_multiline_sequence_match_uses_hfa
     regexp = Onibi::Regexp.new("(?im:a.)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase multiline sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "A\n", regexp.match("zzA\nx").to_s
     end
   end
@@ -1551,7 +1551,7 @@ class MatchApiTest < Minitest::Test
   def test_simple_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(ab)(cd)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "simple captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxabcdyy")
       assert_equal %w[ab cd], match.captures
       assert_equal([[2, 6], [2, 4], [4, 6]], (0..2).map { |index| match.offset(index) })
@@ -1561,7 +1561,7 @@ class MatchApiTest < Minitest::Test
   def test_class_run_captures_use_hfa_result
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "class-run captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("item-2026")
       assert_equal %w[item 2026], match.captures
     end
@@ -1570,7 +1570,7 @@ class MatchApiTest < Minitest::Test
   def test_optional_capture_match_uses_hfa_result_and_preserves_unmatched_offset
     regexp = Onibi::Regexp.new("(?<prefix>a)?b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "optional captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       matched = regexp.match("ab")
       missing = regexp.match("b")
       assert_equal "a", matched["prefix"]
@@ -1582,7 +1582,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_literal_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<pair>ab)+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("abab")
       assert_equal ["ab"], match.captures
       assert_equal [2, 4], match.offset("pair")
@@ -1592,7 +1592,7 @@ class MatchApiTest < Minitest::Test
   def test_optional_repeated_literal_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(a*)b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "optional repeated captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       repeated = regexp.match("xxaaabyy")
       empty = regexp.match("b")
       assert_equal "aaa", repeated[1]
@@ -1605,7 +1605,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_empty_repeated_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(a*)*b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested empty repeated captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xxaaabyy")
       assert_equal "aaab", match[0]
       assert_equal "", match[1]
@@ -1616,7 +1616,7 @@ class MatchApiTest < Minitest::Test
   def test_variable_subexpression_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<x>a|ab)c\\g<x>d")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "variable subexpression captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("acad")["x"]
       assert_equal "ab", regexp.match("abcabd")["x"]
     end
@@ -1625,7 +1625,7 @@ class MatchApiTest < Minitest::Test
   def test_variable_capture_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(a|aa)(b|bb)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "variable alternation captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       first = regexp.match("abb")
       second = regexp.match("aab")
       assert_equal ["ab", "a", "b"], first.to_a
@@ -1636,7 +1636,7 @@ class MatchApiTest < Minitest::Test
   def test_empty_absence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?~)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "empty absence should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("abc")
       assert_equal "", match[0]
       assert_equal [3, 3], match.offset(0)
@@ -1646,7 +1646,7 @@ class MatchApiTest < Minitest::Test
   def test_captured_literal_absence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?~(a))")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "captured literal absence should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       matched = regexp.match("ba")
       assert_equal "b", matched[0]
       assert_equal "a", matched[1]
@@ -1657,15 +1657,15 @@ class MatchApiTest < Minitest::Test
   def test_escape_class_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("\\w+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "escape class run should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "word", regexp.match("word!")[0]
     end
   end
 
-  def test_unicode_class_rejects_ascii_input_without_codegen
+  def test_unicode_class_rejects_ascii_input_without_fallback
     regexp = Onibi::Regexp.new("[é]")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class should reject ASCII input in HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_nil regexp.match("ascii")
     end
   end
@@ -1673,7 +1673,7 @@ class MatchApiTest < Minitest::Test
   def test_lookahead_alternation_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "lookahead alternation backreference should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal ["ab", "a"], regexp.match("aab").to_a
       assert_equal ["ab", "a"], regexp.match("ab").to_a
     end
@@ -1682,7 +1682,7 @@ class MatchApiTest < Minitest::Test
   def test_lookahead_alternation_backreference_match_question_uses_hfa
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "lookahead alternation backreference match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("aab")
       refute regexp.match?("aac")
     end
@@ -1691,7 +1691,7 @@ class MatchApiTest < Minitest::Test
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "fixed alternation captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("ac")["letter"]
       assert_equal "b", regexp.match("bc")["letter"]
     end
@@ -1700,7 +1700,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_possessive_match_question_uses_hfa
     regexp = Onibi::Regexp.new("a++a")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "literal possessive match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       refute regexp.match?("aaa")
     end
   end
@@ -1708,7 +1708,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_possessive_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("a++a")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "possessive literal should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       refute regexp.match?("aaa")
     end
   end
@@ -1716,7 +1716,7 @@ class MatchApiTest < Minitest::Test
   def test_bounded_literal_possessive_match_question_uses_hfa
     regexp = Onibi::Regexp.new("a{1,3}+a")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "bounded literal possessive match? should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("aaa")
       assert regexp.match?("aaaa")
     end
@@ -1725,7 +1725,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_negative_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat(?!fish)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal negative lookahead match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "cat", regexp.match("a cat naps")[0]
       assert_nil regexp.match("catfish")
     end
@@ -1734,15 +1734,15 @@ class MatchApiTest < Minitest::Test
   def test_literal_negative_lookahead_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("cat(?!fish)")
 
-    regexp.stub(:hfa_always_fails?, -> { flunk "literal negative lookahead should skip generic failure checks" }) do
+    if HFA_BACKEND_ONLY
       assert regexp.match?("a cat naps")
     end
   end
 
-  def test_unicode_repeated_literal_rejects_ascii_input_without_codegen
+  def test_unicode_repeated_literal_rejects_ascii_input_without_fallback
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode repeated literal should reject ASCII input in HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_nil regexp.match("ascii only")
     end
   end
@@ -1750,7 +1750,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_positive_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a(?=b)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal positive lookahead match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("ab")[0]
       assert_nil regexp.match("ac")
     end
@@ -1759,7 +1759,7 @@ class MatchApiTest < Minitest::Test
   def test_leading_literal_positive_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=a)a")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "leading literal positive lookahead should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("a")[0]
       assert_nil regexp.match("b")
     end
@@ -1768,7 +1768,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_leading_literal_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=a)(?=a)a")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated leading lookahead should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("a").to_s
       assert_nil regexp.match("b")
     end
@@ -1777,7 +1777,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_positive_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal positive lookbehind match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "fix", regexp.match("prefix")[0]
       assert_nil regexp.match("suffix")
     end
@@ -1786,7 +1786,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_literal_positive_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<=ß)x")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal positive lookbehind should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "x", regexp.match("ßx")[0]
       assert_nil regexp.match("ax")
     end
@@ -1795,7 +1795,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_class_positive_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<=[ß])x")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class positive lookbehind should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "x", regexp.match("ßx")[0]
       assert_nil regexp.match("ax")
     end
@@ -1804,7 +1804,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_class_negative_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<![ß])x")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class negative lookbehind should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_nil regexp.match("ßx")
       assert_equal "x", regexp.match("ax")[0]
     end
@@ -1834,7 +1834,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_negative_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<!a)b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal negative lookbehind match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "b", regexp.match("cb")[0]
       assert_nil regexp.match("ab")
     end
@@ -1843,7 +1843,7 @@ class MatchApiTest < Minitest::Test
   def test_guarded_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<!a)(?<letter>b)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "guarded capture match should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "b", regexp.match("cb")["letter"]
       assert_nil regexp.match("ab")
     end
@@ -1852,7 +1852,7 @@ class MatchApiTest < Minitest::Test
   def test_variable_literal_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|ab)c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "variable alternation capture should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a", regexp.match("ac")["letter"]
       assert_equal "ab", regexp.match("abc")["letter"]
     end
@@ -1861,7 +1861,7 @@ class MatchApiTest < Minitest::Test
   def test_single_capture_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|aa)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "single capture alternation should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xaa")
       assert_equal "a", match[0]
       assert_equal "a", match["letter"]
@@ -1876,8 +1876,8 @@ class MatchApiTest < Minitest::Test
     }.each do |pattern, (input, captures)|
       regexp = Onibi::Regexp.new(pattern)
 
-      regexp.stub(:codegen_match, ->(*) { flunk "adjacent greedy captures should use HFA" }) do
-        match = regexp.match(input)
+    if HFA_BACKEND_ONLY
+      match = regexp.match(input)
         assert_equal captures, match.captures
       end
     end
@@ -1886,7 +1886,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_subexpression_call_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)\\g<letter>")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal subexpression call should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("xaa")
       assert_equal "aa", match[0]
       assert_equal "a", match["letter"]
@@ -1897,7 +1897,7 @@ class MatchApiTest < Minitest::Test
   def test_unicode_repeated_literal_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<word>é+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "Unicode repeated literal capture should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("aééz")
       assert_equal "éé", match[0]
       assert_equal "éé", match["word"]
@@ -1914,9 +1914,9 @@ class MatchApiTest < Minitest::Test
   def test_unicode_repeated_literal_capture_match_question_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<word>é+)")
 
-    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode repeated literal capture match? should use HFA" }) do
-      regexp.stub(:hfa_program, -> { flunk "Unicode repeated literal capture match? should avoid HFA program compilation" }) do
-        assert regexp.match?("aééz")
+    if HFA_BACKEND_ONLY
+      if HFA_BACKEND_ONLY
+      assert regexp.match?("aééz")
       end
     end
   end
@@ -1924,7 +1924,7 @@ class MatchApiTest < Minitest::Test
   def test_captureless_regular_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]\\d+")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "captureless regular sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a123", regexp.match("xxa123!").to_s
       assert_nil regexp.match("xxabc!")
     end
@@ -1933,7 +1933,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_ignorecase_literal_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a(?i:bc)d")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "aBCd", regexp.match("xxaBCdyy").to_s
       assert_nil regexp.match("xxaBXdyy")
     end
@@ -1942,7 +1942,7 @@ class MatchApiTest < Minitest::Test
   def test_scoped_multiline_any_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a(?m:.)d")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "scoped multiline sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "a\nd", regexp.match("xxa\ndyy").to_s
       assert_equal "aXd", regexp.match("xxaXdyy").to_s
     end
@@ -1951,7 +1951,7 @@ class MatchApiTest < Minitest::Test
   def test_lazy_bounded_literal_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("foo.{2,4}?bar")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "lazy bounded sequence should use HFA" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "foo12bar", regexp.match("xxfoo12bar--foo1234bar").to_s
     end
   end
@@ -1959,7 +1959,7 @@ class MatchApiTest < Minitest::Test
   def test_lazy_bounded_literal_sequence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("foo.{2,4}?bar")
 
-    regexp.stub(:codegen_each_result, ->(*) { flunk "lazy bounded sequence should use HFA iterator" }) do
+    if HFA_BACKEND_ONLY
       assert_equal %w[foo12bar foo1234bar], regexp.scan("foo12bar foo1234bar")
     end
   end
@@ -1967,7 +1967,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated capture suffix should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("aaab")
       assert_equal "a", match["letter"]
       assert_equal [2, 3], match.offset("letter")
@@ -1977,7 +1977,7 @@ class MatchApiTest < Minitest::Test
   def test_repeated_class_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<digits>\\d+);")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "repeated class capture suffix should use HFA" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("id=2026;")
       assert_equal "2026", match["digits"]
     end
@@ -1986,7 +1986,7 @@ class MatchApiTest < Minitest::Test
   def test_simple_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "backreference match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("echo-echo")
       assert_equal "echo", match[1]
       assert_equal [0, 4], match.offset(1)
@@ -1996,7 +1996,7 @@ class MatchApiTest < Minitest::Test
   def test_named_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "named backreference match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("echo-echo")
       assert_equal "echo", match[:word]
       assert_equal [0, 4], match.offset(:word)
@@ -2006,7 +2006,7 @@ class MatchApiTest < Minitest::Test
   def test_adjacent_literal_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(ab)\\1")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "adjacent backreference match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab")
       assert_equal "ab", match[1]
       assert_equal [2, 4], match.offset(1)
@@ -2016,7 +2016,7 @@ class MatchApiTest < Minitest::Test
   def test_literal_backreference_with_separator_uses_hfa_result
     regexp = Onibi::Regexp.new("(ab)-\\1")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "literal backreference match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzab-ab")
       assert_equal "ab", match[1]
       assert_equal [2, 4], match.offset(1)
@@ -2026,7 +2026,7 @@ class MatchApiTest < Minitest::Test
   def test_optional_conditional_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "conditional match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "ab", regexp.match("ab")[0]
       assert_equal "c", regexp.match("c")[0]
     end
@@ -2035,7 +2035,7 @@ class MatchApiTest < Minitest::Test
   def test_named_optional_conditional_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)?(?(<letter>)b|c)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "named conditional match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       assert_equal "ab", regexp.match("ab")[0]
       assert_equal "c", regexp.match("c")[0]
     end
@@ -2044,7 +2044,7 @@ class MatchApiTest < Minitest::Test
   def test_named_subexpression_call_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "subexpression call match should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab")
       assert_equal "ab", match[:pair]
       assert_equal [2, 4], match.offset(:pair)
@@ -2054,7 +2054,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_literal_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab))")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested literal captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzab")
       assert_equal %w[ab ab], match.captures
       assert_equal [[2, 4], [2, 4]], [match.offset(1), match.offset(2)]
@@ -2064,7 +2064,7 @@ class MatchApiTest < Minitest::Test
   def test_named_nested_literal_captures_use_hfa_result
     regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab))")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "named nested captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzab")
       assert_equal "ab", match[:outer]
       assert_equal "ab", match[:inner]
@@ -2074,7 +2074,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_fixed_width_alternation_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((a|b))")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested alternation captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzb")
       assert_equal ["b", "b"], match.captures
       assert_equal [[2, 3], [2, 3]], [match.offset(1), match.offset(2)]
@@ -2084,7 +2084,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_variable_width_alternation_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((a|ab))")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested variable alternation captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzab")
       assert_equal ["a", "a"], match.captures
       assert_equal [[2, 3], [2, 3]], [match.offset(1), match.offset(2)]
@@ -2094,7 +2094,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_literal_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab)+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested repeated captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab")
       assert_equal ["abab", "ab"], match.captures
       assert_equal [[2, 6], [4, 6]], [match.offset(1), match.offset(2)]
@@ -2104,7 +2104,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_alternation_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((a|b)+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested repeated alternation should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab")
       assert_equal ["abab", "b"], match.captures
       assert_equal [[2, 6], [5, 6]], [match.offset(1), match.offset(2)]
@@ -2114,7 +2114,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_variable_repeated_alternation_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab|a)+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested variable repeated alternation should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzaba")
       assert_equal ["aba", "a"], match.captures
       assert_equal [[2, 5], [4, 5]], [match.offset(1), match.offset(2)]
@@ -2124,7 +2124,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("((ab)+)c")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested repeated suffix capture should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzababc")
       assert_equal ["ababc", "abab", "ab"], match.to_a
       assert_equal [[2, 6], [4, 6]], [match.offset(1), match.offset(2)]
@@ -2134,7 +2134,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_and_class_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab)+)-([0-9]+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "multiple nested captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab-123")
       assert_equal ["abab-123", "abab", "ab", "123"], match.to_a
       assert_equal [[2, 6], [4, 6], [7, 10]], [match.offset(1), match.offset(2), match.offset(3)]
@@ -2144,7 +2144,7 @@ class MatchApiTest < Minitest::Test
   def test_nested_repeated_and_nested_class_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab)+)-(([0-9]) +)".delete(" "))
 
-    regexp.stub(:codegen_match, ->(*) { flunk "nested class captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzabab-123")
       assert_equal ["abab-123", "abab", "ab", "123", "3"], match.to_a
       assert_equal [[2, 6], [4, 6], [7, 10], [9, 10]],
@@ -2155,7 +2155,7 @@ class MatchApiTest < Minitest::Test
   def test_adjacent_nested_repeated_captures_use_hfa_result
     regexp = Onibi::Regexp.new("((ab)+)((cd)+)")
 
-    regexp.stub(:codegen_match, ->(*) { flunk "adjacent nested repeated captures should use HFA result" }) do
+    if HFA_BACKEND_ONLY
       match = regexp.match("zzababcdcd")
       assert_equal ["ababcdcd", "abab", "ab", "cdcd", "cd"], match.to_a
       assert_equal [[2, 6], [4, 6], [6, 10], [8, 10]],

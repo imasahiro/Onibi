@@ -22,7 +22,7 @@ PATTERNS.each do |pattern|
   cold_cfg_time = elapsed do
     iterations.times do
       ast = Onibi::Parser.new(pattern).parse
-      unit = Onibi::Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+      unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
       Onibi::HybridAutomata.compile_unit(unit)
     end
   end
@@ -30,7 +30,7 @@ PATTERNS.each do |pattern|
   warm_cfg_time = elapsed do
     iterations.times do
       ast = Onibi::Parser.new(pattern).parse
-      unit = Onibi::Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+      unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
       unit.cfg
       Onibi::HybridAutomata.compile_unit(unit)
     end
