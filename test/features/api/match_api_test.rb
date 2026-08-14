@@ -538,6 +538,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_variable_width_alternation_captures_use_hfa_result
+    regexp = Onibi::Regexp.new("((a|ab))")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested variable alternation captures should use HFA result" }) do
+      match = regexp.match("zzab")
+      assert_equal ["a", "a"], match.captures
+      assert_equal [[2, 3], [2, 3]], [match.offset(1), match.offset(2)]
+    end
+  end
+
   def test_match_exposes_capture_offsets_and_size
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 

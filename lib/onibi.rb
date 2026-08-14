@@ -474,13 +474,10 @@ module Onibi
       captures = []
       value = hfa_nested_literal_value(@ast, captures)
       matched_length = hfa_nested_literal_match_length(@ast, input, start)
-      return unless value && matched_length == value.bytesize && start + matched_length == finish
+      return unless value && matched_length && start + matched_length == finish
 
       offsets = Array.new(captures.map(&:first).max)
-      captures.each do |capture|
-        number = capture.first
-        offsets[number - 1] = [start, start + value_for_capture(captures, number).bytesize]
-      end
+      hfa_collect_nested_capture_offsets(@ast, input, start, offsets)
       offsets
     end
 
@@ -502,7 +499,7 @@ module Onibi
         values.all? ? values.join : nil
       when AST::Alternation
         values = node.branches.map { |branch| hfa_nested_literal_value(branch, []) }
-        values.all? && values.map(&:bytesize).uniq.one? ? values.first : nil
+        values.all? ? values.first : nil
       end
     end
 
@@ -523,6 +520,34 @@ module Onibi
         cursor - position
       when AST::Alternation
         node.branches.filter_map { |branch| hfa_nested_literal_match_length(branch, input, position) }.first
+      end
+    end
+
+    def hfa_collect_nested_capture_offsets(node, input, position, offsets)
+      case node
+      when AST::Group
+        length = hfa_nested_literal_match_length(node.body, input, position)
+        return unless length
+
+        offsets[node.number - 1] = [position, position + length] if node.capture
+        hfa_collect_nested_capture_offsets(node.body, input, position, offsets)
+      when AST::Sequence
+        cursor = position
+        node.parts.each do |part|
+          length = hfa_nested_literal_match_length(part, input, cursor)
+          return unless length
+
+          hfa_collect_nested_capture_offsets(part, input, cursor, offsets)
+          cursor += length
+        end
+      when AST::Alternation
+        node.branches.each do |branch|
+          length = hfa_nested_literal_match_length(branch, input, position)
+          next unless length
+
+          hfa_collect_nested_capture_offsets(branch, input, position, offsets)
+          break
+        end
       end
     end
 
