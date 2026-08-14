@@ -419,7 +419,10 @@ class ScanGsubTest < Minitest::Test
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "unicode ignorecase literal scan should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "unicode ignorecase scan should avoid HFA program compilation" }) do
-        assert_equal ["ÉCOLE", "école"], regexp.scan("xxÉCOLE yyécole")
+        regexp.stub(:hfa_unicode_full_casefold_literal_match_result,
+                    ->(*) { flunk "simple Unicode casefold scan should skip full casefold search" }) do
+          assert_equal ["ÉCOLE", "école"], regexp.scan("xxÉCOLE yyécole")
+        end
       end
     end
   end

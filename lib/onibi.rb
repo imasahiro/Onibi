@@ -1951,6 +1951,22 @@ module Onibi
       literal.downcase == literal.upcase.downcase
     end
 
+    def hfa_unicode_simple_casefold_each_result(input, literal)
+      return false unless hfa_unicode_simple_casefold_literal?(literal)
+
+      folded_input = input.downcase
+      return false unless folded_input.length == input.length
+
+      folded_literal = literal.downcase
+      character_position = 0
+      while (character_start = folded_input.index(folded_literal, character_position))
+        character_finish = character_start + folded_literal.length
+        yield [input[0, character_start].bytesize, input[0, character_finish].bytesize, []]
+        character_position = character_finish
+      end
+      true
+    end
+
     def hfa_unicode_full_casefold_literal_match_result(input, position, literal_value = nil)
       literal = literal_value || literal_ast_value(@ast)
       return unless literal
@@ -3727,22 +3743,19 @@ module Onibi
         return true
       end
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
-        folded_input = input.downcase
-        if hfa_unicode_simple_casefold_literal?(literal) && folded_input.length == input.length
-          folded_literal = literal.downcase
-          character_position = 0
-          while (character_start = folded_input.index(folded_literal, character_position))
-            character_finish = character_start + folded_literal.length
-            block.call([input[0, character_start].bytesize, input[0, character_finish].bytesize, []])
-            character_position = character_finish
-          end
-        else
+        unless hfa_unicode_simple_casefold_each_result(input, literal) { |result| block.call(result) }
           position = 0
           while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length, literal))
             block.call(result)
             position = result[1]
           end
         end
+        return true
+      end
+      if hfa_unicode_ignorecase_literal_result_safe? &&
+         (literal = literal_ast_value(@ast)) && hfa_unicode_simple_casefold_each_result(input, literal) do |result|
+        block.call(result)
+      end
         return true
       end
       if hfa_unicode_ignorecase_literal_result_safe?
