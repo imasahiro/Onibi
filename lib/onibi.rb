@@ -965,10 +965,7 @@ module Onibi
       return false unless hfa_repeated_group_node?(repeated)
 
       pairs.all? do |_separator, class_group|
-        body = class_group.body
-        body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-        body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
-          hfa_capture_class_table(body.expression)
+        hfa_class_capture_spec(class_group)
       end && hfa_program
     end
 
@@ -991,7 +988,8 @@ module Onibi
       lengths = hfa_repeated_match_lengths(repeated_body.expression.body, input, start, separator_position)
       return unless lengths&.any? && lengths.sum == separator_position - start
 
-      numbers = [repeated.number, repeated.body.parts.first.expression.number] + pairs.map { |_separator, group| group.number }
+      numbers = [repeated.number, repeated.body.parts.first.expression.number] +
+                pairs.flat_map { |_separator, group| [group.number, hfa_class_capture_spec(group)[1]] }.compact
       offsets = Array.new(numbers.max)
       offsets[repeated.number - 1] = [start, separator_position]
       offsets[repeated.body.parts.first.expression.number - 1] =
@@ -1008,17 +1006,33 @@ module Onibi
                        end
         return unless class_finish && class_finish > class_start
 
-        class_body = class_group.body.parts.first
-        table = hfa_capture_class_table(class_body.expression)
+        table, inner_number = hfa_class_capture_spec(class_group)
         cursor = class_start
         cursor += 1 while cursor < class_finish && table[input.getbyte(cursor)]
         return unless cursor == class_finish
 
         offsets[class_group.number - 1] = [class_start, class_finish]
+        offsets[inner_number - 1] = [class_finish - 1, class_finish] if inner_number
       end
       return unless cursor == finish
 
       offsets
+    end
+
+    def hfa_class_capture_spec(group)
+      body = group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      return unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
+
+      if body.expression.is_a?(AST::Group) && body.expression.capture
+        inner = body.expression.body
+        inner = inner.parts.first if inner.is_a?(AST::Sequence) && inner.parts.one?
+        table = hfa_capture_class_table(inner)
+        return [table, body.expression.number] if table
+      end
+
+      table = hfa_capture_class_table(body.expression)
+      table && [table, nil]
     end
 
     def hfa_repeated_unit_value(node)

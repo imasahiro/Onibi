@@ -598,6 +598,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_repeated_and_nested_class_captures_use_hfa_result
+    regexp = Onibi::Regexp.new("((ab)+)-(([0-9]) +)".delete(" "))
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested class captures should use HFA result" }) do
+      match = regexp.match("zzabab-123")
+      assert_equal ["abab-123", "abab", "ab", "123", "3"], match.to_a
+      assert_equal [[2, 6], [4, 6], [7, 10], [9, 10]],
+                   [match.offset(1), match.offset(2), match.offset(3), match.offset(4)]
+    end
+  end
+
   def test_match_exposes_capture_offsets_and_size
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 
