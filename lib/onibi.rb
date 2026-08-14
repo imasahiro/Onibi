@@ -2736,8 +2736,10 @@ module Onibi
                       hfa_adjacent_nested_repeated_capture_result_safe? ||
                      hfa_unicode_repeated_literal_result_safe? || @hfa_ignorecase_literal_fast ||
                      hfa_ignorecase_literal_result_safe? ||
-                      hfa_unicode_ignorecase_literal_result_safe? ||
+                     hfa_unicode_ignorecase_literal_result_safe? ||
                       hfa_repeated_class_capture_result_safe?
+
+      return true if hfa_fixed_class_alternation_ast?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||
                      fixed_class_run_literal_ast? || dot_literal_ast? || repeat_literal_ast? ||
@@ -3124,6 +3126,26 @@ module Onibi
       repeat.is_a?(AST::Quantifier) && repeat.kind == :+ && repeat.mode == :greedy &&
         repeat.expression.is_a?(AST::Literal) && repeat.expression.value.ascii_only? &&
         repeat.expression.value.bytesize.positive?
+    end
+
+    def hfa_fixed_class_alternation_ast?
+      return false unless @ast.is_a?(AST::Alternation) && @ast.branches.length > 1
+
+      @ast.branches.all? do |branch|
+        parts = branch.is_a?(AST::Sequence) ? branch.parts : [branch]
+        next false unless parts.all? { |part| part.is_a?(AST::Literal) || part.is_a?(AST::CharacterClass) }
+
+        run = 0
+        parts.any? do |part|
+          if part.is_a?(AST::Literal) && part.value.ascii_only?
+            run += part.value.bytesize
+            run >= 3
+          else
+            run = 0
+            false
+          end
+        end
+      end
     end
 
     def class_run_chain_ast?

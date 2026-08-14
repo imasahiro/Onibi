@@ -10,7 +10,7 @@ module Onibi
 
     Fragment = Data.define(:nullable, :first, :last)
     Automaton = Data.define(:first_mask, :accept_mask, :nullable, :reach_masks,
-                            :span_masks, :prefix_literal, :exact_literal,
+                            :span_masks, :prefix_literal, :required_literals, :exact_literal,
                             :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
                             :positive_prefix, :positive_suffix, :negative_prefix, :negative_suffix,
                             :word_boundary_start, :word_boundary_end, :unicode_spec,
@@ -26,6 +26,7 @@ module Onibi
     UnicodeSpec = Data.define(:kind, :value, :minimum, :maximum)
     BackrefSpec = Data.define(:body, :separator)
     RepeatLiteralSpec = Data.define(:byte, :suffix)
+    RequiredLiteralSpec = Data.define(:literal, :offset)
     PossessiveLiteralSpec = Data.define(:unit, :minimum, :maximum, :suffix)
     DotLiteralSpec = Data.define(:prefix, :suffix, :allow_newline)
     StarLiteralSpec = Data.define(:prefix, :suffix, :allow_newline)
@@ -199,6 +200,7 @@ module Onibi
         prefix = @string_matching && !ignorecase? ? selective_prefix(ast) : nil
         prefix ||= atomic_exact if atomic_exact && @string_matching && !ignorecase?
         prefix = nil if prefix && !prefix.ascii_only?
+        required_literals = @string_matching && !ignorecase? ? required_literal_specs(ast) : nil
         exact_literal = literal_value(ast) || repeated_literal_value(ast) || atomic_exact
         if prepared.positive_prefix && exact_literal&.start_with?(prepared.positive_prefix)
           exact_literal = exact_literal.delete_prefix(prepared.positive_prefix)
@@ -229,7 +231,7 @@ module Onibi
         span_masks = specialized ? EMPTY_SPAN_MASKS : build_span_masks
 
         automaton = Automaton.new(fragment.first, fragment.last, fragment.nullable,
-                                  reach_masks, span_masks, prefix, exact_literal,
+                                  reach_masks, span_masks, prefix, required_literals, exact_literal,
                                   prepared.anchored_start, prepared.anchored_end,
                                   prepared.line_anchor_start, prepared.line_anchor_end,
                                   prepared.positive_prefix, prepared.positive_suffix,
@@ -825,6 +827,7 @@ module Onibi
         @reach_masks = automaton.reach_masks
         @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
         @prefix_literal = automaton.prefix_literal
+        @required_literals = automaton.required_literals
         @exact_literal = automaton.exact_literal
         @exact_first_byte = @exact_literal&.byteslice(0, 1)
         @anchored_start = automaton.anchored_start
@@ -876,13 +879,14 @@ module Onibi
       def components
         components = [:bit_parallel_nfa]
         components.unshift(:lazy_dfa) if @dfa_enabled
-        components.unshift(:string_matching) if @prefix_literal
+        components.unshift(:string_matching) if @prefix_literal || @required_literals
         components.freeze
       end
 
       def bytecode
         instructions = []
         instructions << BytecodeInstruction.new(:string_search, @prefix_literal) if @prefix_literal
+        instructions << BytecodeInstruction.new(:required_literal_search, @required_literals) if @required_literals
         instructions << BytecodeInstruction.new(:dfa_lookup, @dfa_state_limit) if @dfa_enabled
         instructions << BytecodeInstruction.new(:nfa_transition, @span_masks)
         instructions << BytecodeInstruction.new(:accept, @accept_mask)
@@ -1223,6 +1227,8 @@ module Onibi
       def nfa_match_result(input, position)
         candidate = if @exact_first_byte
                       input.index(@exact_first_byte, position)
+                    elsif @required_literals
+                      required_literal_candidate(input, position)
                     elsif (first_bytes = static_first_bytes)
                       first_byte_set_candidate(input, position, first_bytes)
                     else
@@ -1242,7 +1248,9 @@ module Onibi
           return [candidate, last_accept, []] if last_accept
 
           candidate = if @exact_first_byte
-                        input.index(@exact_first_byte, candidate + 1)
+                      input.index(@exact_first_byte, candidate + 1)
+                      elsif @required_literals
+                        required_literal_candidate(input, candidate + 1)
                       elsif static_first_bytes
                         first_byte_set_candidate(input, candidate + 1, static_first_bytes)
                       else
@@ -1251,6 +1259,14 @@ module Onibi
           candidate = nil if candidate && candidate >= input.bytesize
         end
         nil
+      end
+
+      def required_literal_candidate(input, position)
+        @required_literals.filter_map do |spec|
+          literal_position = input.index(spec.literal, position + spec.offset)
+          start = literal_position && literal_position - spec.offset
+          start if start && start >= position
+        end.min
       end
 
       def each_match_result(input, position = 0, &block)
@@ -1659,6 +1675,7 @@ module Onibi
 
       def search_unanchored(input, position)
         return search_unanchored_single_span(input, position) if @single_span
+        return search_required_literal_events(input, position) if @required_literals
         return search_first_byte_events(input, position) if input.ascii_only? && !@ignorecase && static_first_byte
         return search_first_byte_set_events(input, position) if input.ascii_only? && !@ignorecase && static_first_bytes
 
@@ -1688,6 +1705,25 @@ module Onibi
             cursor += 1
           end
           candidate = input.index(first_byte, candidate + 1)
+        end
+        false
+      end
+
+      def search_required_literal_events(input, position)
+        candidate = required_literal_candidate(input, position)
+        while candidate
+          active = transition(0, input.getbyte(candidate), true)
+          return true unless (active & @accept_mask).zero?
+
+          cursor = candidate + 1
+          while cursor < input.bytesize
+            active = transition(active, input.getbyte(cursor), false)
+            return true unless (active & @accept_mask).zero?
+            break if active.zero?
+
+            cursor += 1
+          end
+          candidate = required_literal_candidate(input, candidate + 1)
         end
         false
       end

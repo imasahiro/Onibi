@@ -435,6 +435,13 @@ class HybridAutomataTest < Minitest::Test
     assert_equal ["c", "g", "t"], program.instance_variable_get(:@static_first_bytes).bytes.sort.map(&:chr)
   end
 
+  def test_alternation_caches_required_literals_for_string_matching
+    program = Onibi::HybridAutomata.compile("[cgt]gggtaaa|tttaccc[acg]")
+
+    assert_equal [["gggtaaa", 1], ["tttaccc", 0]],
+                 program.instance_variable_get(:@required_literals).map { |spec| [spec.literal, spec.offset] }
+  end
+
   def test_small_single_span_uses_static_dfa
     program = compile("a[bc]{4}z")
     assert program.match?("aabcbcz")

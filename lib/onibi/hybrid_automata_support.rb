@@ -11,6 +11,31 @@ module Onibi
         prefix if prefix && prefix.bytesize >= 2
       end
 
+      def required_literal_specs(node)
+        return unless node.is_a?(AST::Alternation) && node.branches.length > 1
+
+        specs = node.branches.map do |branch|
+          parts = branch.is_a?(AST::Sequence) ? branch.parts : [branch]
+          offset = 0
+          best = nil
+          parts.each do |part|
+            if part.is_a?(AST::Literal)
+              best = [part.value, offset] if best.nil? || part.value.bytesize > best[0].bytesize
+              offset += part.value.bytesize
+            elsif part.is_a?(AST::CharacterClass)
+              offset += 1
+            else
+              best = nil
+              break
+            end
+          end
+          best && best[0].ascii_only? && best[0].bytesize >= 3 ? best : nil
+        end
+        return unless specs.all?
+
+        specs.map { |literal, offset| RequiredLiteralSpec.new(literal, offset) }.freeze
+      end
+
       def leading_literal(node)
         return node.value if node.is_a?(AST::Literal)
         return unless node.is_a?(AST::Sequence)

@@ -497,6 +497,13 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_fixed_class_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "fixed class alternation should use HFA" }) do
+      assert_equal %w[cgggtaaa tttaccca], regexp.scan("xxcgggtaaa yytttaccca")
+    end
+  end
+
   def test_repeated_alternation_scan_uses_hfa_iterator
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
