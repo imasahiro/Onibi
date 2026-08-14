@@ -600,6 +600,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_scoped_extended_options_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?x:(?-x: a b ) c)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested scoped extended option should use HFA" }) do
+      assert_equal " a b c", regexp.match(" a b c").to_s
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 

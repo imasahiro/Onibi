@@ -1108,14 +1108,22 @@ module Onibi
       return @hfa_scoped_extended_literal_safe if defined?(@hfa_scoped_extended_literal_safe)
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = parts.length > 1 && parts.all? do |part|
-        if part.is_a?(AST::OptionGroup)
-          part.ignorecase.nil? && part.multiline.nil? && literal_ast_value(part.body)
-        else
-          part.is_a?(AST::Literal)
-        end
-      end
+      valid = parts.any? && parts.all? { |part| hfa_extended_literal_node?(part) } &&
+              parts.any? { |part| part.is_a?(AST::OptionGroup) || part.is_a?(AST::Group) }
       @hfa_scoped_extended_literal_safe = valid && hfa_program
+    end
+
+    def hfa_extended_literal_node?(node)
+      return true if node.is_a?(AST::Literal)
+      if node.is_a?(AST::Sequence)
+        return node.parts.all? { |part| hfa_extended_literal_node?(part) }
+      end
+      if node.is_a?(AST::Group)
+        return !node.capture && hfa_extended_literal_node?(node.body)
+      end
+      return false unless node.is_a?(AST::OptionGroup)
+
+      node.ignorecase.nil? && node.multiline.nil? && hfa_extended_literal_node?(node.body)
     end
 
     def hfa_possessive_literal_string_result_safe?
