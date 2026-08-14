@@ -66,6 +66,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_word_boundary_literal_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("\\bcat\\b")
+
+    regexp.stub(:hfa_program, -> { flunk "Word-boundary literal should use constructor dispatch metadata" }) do
+      assert regexp.match?("a cat naps")
+      refute regexp.match?("scatter")
+    end
+  end
+
   def test_literal_lookaround_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("a(?=b)")
 
