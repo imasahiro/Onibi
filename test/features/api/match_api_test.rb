@@ -191,6 +191,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_lazy_star_literal_match_question_uses_direct_path
+    regexp = Onibi::Regexp.new("a.*?z")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "Lazy dot-star match? should use direct path" }) do
+      assert regexp.match?("a-first-z-second-z")
+      refute regexp.match?("a-first-x")
+    end
+  end
+
   def test_match_returns_nil_and_match_question_mark_returns_boolean
     regexp = Onibi::Regexp.new("cat")
 

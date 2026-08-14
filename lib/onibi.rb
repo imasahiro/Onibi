@@ -227,6 +227,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
       end
+      if input.ascii_only? && (parts = hfa_lazy_dot_star_literal_parts)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
+      end
       if input.ascii_only? && hfa_literal_conditional_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
@@ -1183,6 +1187,19 @@ module Onibi
         candidate = input.index(prefix, candidate + 1)
       end
       false
+    end
+
+    def hfa_lazy_dot_star_literal_parts
+      return @hfa_lazy_dot_star_literal_parts if defined?(@hfa_lazy_dot_star_literal_parts)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      prefix, repeat, suffix = parts
+      valid = prefix.is_a?(AST::Literal) && repeat.is_a?(AST::Quantifier) &&
+              repeat.kind == :* && repeat.mode == :lazy && repeat.expression.is_a?(AST::Any) &&
+              suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
+              prefix.value.bytesize.positive? && suffix.value.bytesize.positive? &&
+              !@options.include?("ignorecase")
+      @hfa_lazy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
     end
 
     def hfa_literal_conditional_result_safe?
