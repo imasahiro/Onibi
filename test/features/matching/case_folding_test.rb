@@ -18,4 +18,8 @@ class CaseFoldingTest < Minitest::Test
   def test_ignorecase_applies_to_literal_alternations
     assert Onibi::Regexp.new("a|b", ["ignorecase"]).match?("A")
   end
+
+  def test_ignorecase_applies_to_repeated_literals
+    assert Onibi::Regexp.new("a+", ["ignorecase"]).match?("A")
+  end
 end

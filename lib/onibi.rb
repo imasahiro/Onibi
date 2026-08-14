@@ -5179,6 +5179,7 @@ module Onibi
     end
 
     def ascii_repeated_literal_run_ast?
+      return false if @options.include?("ignorecase")
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
 
       repeat = @ast.parts.first
