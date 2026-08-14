@@ -223,8 +223,8 @@ module Onibi
         bounded_literal_spec = bounded_literal_spec(ast) unless constrained_match?(prepared)
         lazy_star_literal_spec = lazy_star_literal_spec(ast) unless constrained_match?(prepared)
         anchored_class_spec = anchored_class_spec(ast, prepared)
-        alternation_literal_spec = alternation_literal_spec(ast) unless constrained_match?(prepared)
-        repeated_alternation_literal_spec = repeated_alternation_literal_spec(ast) unless constrained_match?(prepared)
+        alternation_literal_spec = alternation_literal_spec(ast) unless constrained_match?(prepared) || ignorecase?
+        repeated_alternation_literal_spec = repeated_alternation_literal_spec(ast) unless constrained_match?(prepared) || ignorecase?
         class_run_literal_spec = class_run_literal_spec(ast) unless constrained_match?(prepared)
         class_run_chain_spec = class_run_chain_spec(ast) unless constrained_match?(prepared)
         adjacent_class_run_spec = adjacent_class_run_spec(ast) unless constrained_match?(prepared)

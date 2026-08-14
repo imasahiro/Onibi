@@ -2845,6 +2845,7 @@ module Onibi
 
     def hfa_literal_alternation_result_safe?
       return @hfa_literal_alternation_safe if defined?(@hfa_literal_alternation_safe)
+      return @hfa_literal_alternation_safe = false if @options.include?("ignorecase")
 
       alternatives = hfa_literal_alternation_values
       @hfa_literal_alternation_safe = alternatives.length > 1 && alternatives.all? do |value|
