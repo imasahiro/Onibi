@@ -112,6 +112,16 @@ class MatchApiTest < Minitest::Test
     assert_equal "a", Onibi::Regexp.new("a|aa").match("aa")[0]
   end
 
+  def test_literal_alternation_match_uses_direct_hfa_result
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+
+    regexp.stub(:hfa_program, -> { flunk "literal alternation match should avoid HFA program" }) do
+      match = regexp.match("dog then cat")
+      assert_equal "dog", match[0]
+      assert_equal [0, 3], match.offset(0)
+    end
+  end
+
   def test_single_byte_class_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]")
 

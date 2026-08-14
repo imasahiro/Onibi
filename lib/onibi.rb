@@ -465,6 +465,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && @hfa_literal_alternation_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_alternation_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_word_boundary_literal_match_result(input, normalized_position)
@@ -1574,6 +1580,19 @@ module Onibi
 
     def hfa_literal_alternation_match?(input, position)
       hfa_literal_alternation_values.any? { |value| !input.index(value, position).nil? }
+    end
+
+    def hfa_literal_alternation_match_result(input, position)
+      best_start = nil
+      best_value = nil
+      hfa_literal_alternation_values.each do |value|
+        candidate = input.index(value, position)
+        next unless candidate && (best_start.nil? || candidate < best_start)
+
+        best_start = candidate
+        best_value = value
+      end
+      best_start && [best_start, best_start + best_value.bytesize, []]
     end
 
     def hfa_dot_literal_result_safe?
