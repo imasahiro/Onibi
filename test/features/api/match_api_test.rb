@@ -609,6 +609,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_adjacent_nested_repeated_captures_use_hfa_result
+    regexp = Onibi::Regexp.new("((ab)+)((cd)+)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "adjacent nested repeated captures should use HFA result" }) do
+      match = regexp.match("zzababcdcd")
+      assert_equal ["ababcdcd", "abab", "ab", "cdcd", "cd"], match.to_a
+      assert_equal [[2, 6], [4, 6], [6, 10], [8, 10]],
+                   [match.offset(1), match.offset(2), match.offset(3), match.offset(4)]
+    end
+  end
+
   def test_match_exposes_capture_offsets_and_size
     match = Onibi::Regexp.new("(ab)(cd)").match("xxabcdyy")
 
