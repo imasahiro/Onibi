@@ -969,14 +969,19 @@ module Onibi
         raise TypeError, "input must be a String" unless input.is_a?(String)
         return false if @negative_suffix == ""
 
-        fast = fast_literal_match(input, position)
-        return fast unless fast.nil?
+        if @exact_literal && @prefix_literal
+          fast = fast_literal_match(input, position)
+          return fast unless fast.nil?
+        end
 
         if input.ascii_only?
           return class_run_chain_match?(input, position) if @class_run_chain_spec
           return adjacent_class_run_match?(input, position) if @adjacent_class_run_spec
           return class_run_triple_match?(input, position) if @class_run_triple_spec
           return ascii_run_match?(input, position) if @ascii_run_spec
+          return star_literal_match?(input, position) if @star_literal_spec
+          return lazy_star_literal_match?(input, position) if @lazy_star_literal_spec
+          return bounded_literal_match?(input, position) if @bounded_literal_spec
         end
 
         return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
