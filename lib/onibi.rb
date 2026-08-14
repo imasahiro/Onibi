@@ -139,9 +139,9 @@ module Onibi
       end
       if input.ascii_only? && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
-        result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return !result.nil? if timeout_unconfigured?
+        return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
 
+        result = hfa_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? }
       end
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
@@ -625,6 +625,32 @@ module Onibi
       folded_input = input.downcase
       start = folded_input.index(literal.downcase, position)
       start && [start, start + literal.bytesize, []]
+    end
+
+    def hfa_ignorecase_literal_match?(input, position)
+      literal = hfa_ignorecase_literal_value
+      hfa_ignorecase_literal_variants.any? do |variant|
+        candidate = input.index(variant, position)
+        while candidate
+          return true if input.byteslice(candidate, literal.bytesize).casecmp?(literal)
+
+          candidate = input.index(variant, candidate + 1)
+        end
+        false
+      end
+    end
+
+    def hfa_ignorecase_literal_value
+      return @hfa_ignorecase_literal_value if defined?(@hfa_ignorecase_literal_value)
+
+      @hfa_ignorecase_literal_value = literal_ast_value(@ast)
+    end
+
+    def hfa_ignorecase_literal_variants
+      return @hfa_ignorecase_literal_variants if defined?(@hfa_ignorecase_literal_variants)
+
+      literal = hfa_ignorecase_literal_value
+      @hfa_ignorecase_literal_variants = [literal.downcase, literal.upcase].uniq.freeze
     end
 
     def hfa_unicode_ignorecase_literal_result_safe?

@@ -242,6 +242,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_ignorecase_match_question_uses_candidate_string_path
+    regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
+
+    regexp.stub(:hfa_ignorecase_literal_match_result, ->(*) { flunk "ASCII ignorecase match? should use boolean string path" }) do
+      assert regexp.match?("prefix CASE suffix")
+      refute regexp.match?("prefix dog suffix")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
