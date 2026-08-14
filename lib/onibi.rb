@@ -4790,7 +4790,7 @@ module Onibi
       if node.capture && body.is_a?(AST::Quantifier) && body.kind == :+ &&
          body.mode == :greedy
         value = literal_ast_value(body.expression)
-        return [:repeated_literal, value, number] if value
+        return [:repeated_group_literal, value, number] if value
       end
 
       if node.capture && node.body.is_a?(AST::Alternation)
@@ -4866,6 +4866,14 @@ module Onibi
             captured = false
           end
         when :repeated_literal
+          first = cursor
+          cursor += value.bytesize while input.byteslice(cursor, value.bytesize) == value
+          return if cursor == first
+
+          finish_position = cursor
+          captured = true
+          capture_start = cursor - value.bytesize
+        when :repeated_group_literal
           first = cursor
           cursor += value.bytesize while input.byteslice(cursor, value.bytesize) == value
           return if cursor == first
