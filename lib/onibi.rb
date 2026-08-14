@@ -511,6 +511,15 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_single_capture_literal_alternation_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        if result
+          start, finish, = result
+          return hfa_match_data([start, finish, [[start, finish]]], input)
+        end
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
@@ -2217,6 +2226,18 @@ module Onibi
       @hfa_captureless_alternation_safe = @ast.is_a?(AST::Alternation) &&
                                           !hfa_literal_alternation_result_safe? &&
                                           hfa_public_safe? && hfa_program
+    end
+
+    def hfa_single_capture_literal_alternation_result_safe?
+      return @hfa_single_capture_alternation_safe if defined?(@hfa_single_capture_alternation_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group = parts.one? && parts.first
+      alternation = group.body if group.is_a?(AST::Group) && group.capture && group.body.is_a?(AST::Alternation)
+      values = alternation&.branches&.map { |branch| literal_ast_value(branch) }
+      @hfa_single_capture_alternation_safe = values && values.length > 1 &&
+                                             values.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
+                                             hfa_program
     end
 
     def hfa_literal_alternation_values
