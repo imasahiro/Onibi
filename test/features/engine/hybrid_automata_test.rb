@@ -146,6 +146,12 @@ class HybridAutomataTest < Minitest::Test
     assert word.match?("記号-日本語_2026-終端")
   end
 
+  def test_unicode_word_class_lowers_to_fast_word_matcher
+    program = Onibi::HybridAutomata.compile("[[:word:]]+")
+
+    assert_equal :word?, program.instance_variable_get(:@unicode_matcher)
+  end
+
   def test_unicode_range_run_accepts_codepoint_iteration
     program = Onibi::HybridAutomata.compile("[ぁ-ん]+")
 
