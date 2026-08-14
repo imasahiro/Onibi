@@ -137,6 +137,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, normalized_position).nil?
       end
+      if input.ascii_only? && (parts = hfa_greedy_dot_star_literal_parts)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
+      end
       if input.ascii_only? && hfa_literal_conditional_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
@@ -1035,7 +1039,35 @@ module Onibi
       literal = valid ? literal_ast_value(group.body) : nil
       @hfa_subexpression_literal_match_literal = if literal&.ascii_only? && literal.bytesize.positive?
                                                   literal + literal
-                                                end
+                                                  end
+    end
+
+    def hfa_greedy_dot_star_literal_parts
+      return @hfa_greedy_dot_star_literal_parts if defined?(@hfa_greedy_dot_star_literal_parts)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      prefix, repeat, suffix = parts
+      valid = prefix.is_a?(AST::Literal) && repeat.is_a?(AST::Quantifier) &&
+              repeat.kind == :* && repeat.mode == :greedy && repeat.expression.is_a?(AST::Any) &&
+              suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
+              prefix.value.bytesize.positive? && suffix.value.bytesize.positive?
+      @hfa_greedy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
+    end
+
+    def hfa_greedy_dot_star_literal_match?(input, position, parts)
+      prefix, suffix, allow_newline = parts
+      candidate = input.index(prefix, position)
+      while candidate
+        suffix_position = input.index(suffix, candidate + prefix.bytesize)
+        while suffix_position
+          newline = input.index("\n", candidate + prefix.bytesize)
+          return true if allow_newline || newline.nil? || newline >= suffix_position
+
+          suffix_position = input.index(suffix, suffix_position + 1)
+        end
+        candidate = input.index(prefix, candidate + 1)
+      end
+      false
     end
 
     def hfa_literal_conditional_result_safe?

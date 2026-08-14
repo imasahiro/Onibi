@@ -291,6 +291,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_greedy_dot_star_literal_uses_direct_match_question_path
+    regexp = Onibi::Regexp.new("a.*z")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "greedy dot-star literal should use direct match? path" }) do
+      assert regexp.match?("a-middle-z")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
