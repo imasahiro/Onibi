@@ -1325,6 +1325,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_multiline_sequence_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?im:a.)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase multiline sequence should use HFA" }) do
+      assert_equal "A\n", regexp.match("zzA\nx").to_s
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 

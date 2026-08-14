@@ -728,6 +728,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_scoped_ignorecase_multiline_sequence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_scoped_ignorecase_multiline_sequence_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_lazy_bounded_sequence_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_program.match_result(input, normalized_position)
@@ -928,6 +934,7 @@ module Onibi
       if input.ascii_only? && (hfa_public_safe? && hfa_match_result_safe? ||
                                hfa_scoped_ignorecase_literal_result_safe? ||
                                hfa_scoped_multiline_any_result_safe? ||
+                               hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                                hfa_start_match_result_safe? ||
                                hfa_linebreak_result_safe? ||
                                hfa_simple_capture_result_safe? || hfa_literal_guard_result_safe? ||
@@ -2894,6 +2901,26 @@ module Onibi
       @hfa_scoped_multiline_sequence_safe = valid && hfa_program
     end
 
+    def hfa_scoped_ignorecase_multiline_sequence_result_safe?
+      return @hfa_scoped_ignorecase_multiline_sequence_safe if defined?(@hfa_scoped_ignorecase_multiline_sequence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group = parts.one? && parts.first
+      body = group.body if group.is_a?(AST::OptionGroup) && group.ignorecase == true &&
+                          group.multiline == true && group.extended.nil?
+      body = body.parts if body.is_a?(AST::Sequence)
+      literal, wildcard = body if body&.length == 2
+      valid = literal.is_a?(AST::Literal) && wildcard.is_a?(AST::Any) &&
+              literal.value.ascii_only? && literal.value.bytesize.positive?
+      @hfa_scoped_ignorecase_multiline_sequence_safe = valid && [literal.value].freeze
+    end
+
+    def hfa_scoped_ignorecase_multiline_sequence_match_result(input, position)
+      literal = hfa_scoped_ignorecase_multiline_sequence_result_safe?.first
+      start = input.downcase.index(literal.downcase, position)
+      start && [start, start + literal.bytesize + 1, []]
+    end
+
     def hfa_lazy_bounded_sequence_result_safe?
       return @hfa_lazy_bounded_sequence_safe if defined?(@hfa_lazy_bounded_sequence_safe)
 
@@ -4176,6 +4203,16 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && hfa_scoped_ignorecase_multiline_sequence_result_safe?
+        literal = hfa_scoped_ignorecase_multiline_sequence_result_safe?.first
+        folded_input = input.downcase
+        position = 0
+        while (start = folded_input.index(literal.downcase, position))
+          block.call([start, start + literal.bytesize + 1, []])
+          position = start + literal.bytesize + 1
+        end
+        return true
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         validate_encoding!(input)
         literal = @ast.parts.first.body.parts.first.expression.value
@@ -4194,6 +4231,7 @@ module Onibi
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? ||
+                    hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                     hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                     hfa_anchor_result_safe? ||
@@ -4455,6 +4493,7 @@ module Onibi
                      hfa_unicode_property_result_safe? ||
                      hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_scoped_multiline_any_result_safe? ||
+                     hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                      hfa_anchor_result_safe? ||
