@@ -195,6 +195,14 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
 
+      if input.ascii_only? && @hfa_ignorecase_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
+
+        result = hfa_ignorecase_literal_match_result(input, normalized_position)
+        return with_timeout { !result.nil? }
+      end
+
       if input.ascii_only? && hfa_possessive_literal_string_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
@@ -232,13 +240,6 @@ module Onibi
       if input.ascii_only? && hfa_literal_absence_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return true unless hfa_literal_absence_match_result(input, normalized_position).nil?
-      end
-      if input.ascii_only? && @hfa_ignorecase_literal_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
-
-        result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return with_timeout { !result.nil? }
       end
       if input.ascii_only? && @hfa_literal_alternation_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
