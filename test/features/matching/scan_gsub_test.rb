@@ -179,7 +179,9 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "unicode repeated literal scan should use HFA" }) do
-      assert_equal ["日本語日本語", "日本語"], regexp.scan("開始日本語日本語 終了日本語")
+      regexp.stub(:hfa_program, -> { flunk "unicode repeated literal scan should avoid HFA program compilation" }) do
+        assert_equal ["日本語日本語", "日本語"], regexp.scan("開始日本語日本語 終了日本語")
+      end
     end
   end
 

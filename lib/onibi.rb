@@ -2229,6 +2229,14 @@ module Onibi
         end
         return true
       end
+      if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
+        position = 0
+        while (result = hfa_unicode_repeated_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         position = 0
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
@@ -2334,13 +2342,7 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_unicode_repeated_literal_result_safe?
-        position = 0
-        while (result = hfa_unicode_repeated_literal_match_result(input, position))
-          block.call([result[0], result[1], result[2]])
-          position = result[1]
-        end
-      elsif hfa_simple_capture_result_safe?
+      if hfa_simple_capture_result_safe?
         program.each_match_result(input, 0) do |result|
           captures = hfa_simple_capture_offsets(input, result[0], result[1])
           block.call([result[0], result[1], captures || result[2]])
