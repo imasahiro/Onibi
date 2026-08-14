@@ -786,6 +786,8 @@ module Onibi
         return true if spec.minimum.zero? && position <= input.bytesize
         return unicode_letter_match?(input) if spec.kind == :property && @unicode_matcher == :letter? &&
                                                !@unicode_negated && spec.minimum == 1 && position.zero?
+        return unicode_word_match?(input) if spec.kind == :class && @unicode_matcher == :word? &&
+                                             spec.minimum == 1 && position.zero?
         return unicode_range_match?(input) if spec.kind == :class && @unicode_range &&
                                               !@unicode_negated && spec.minimum == 1 && position.zero?
         return !unicode_match_result(input, position).nil? if position.positive?
@@ -808,6 +810,24 @@ module Onibi
           return true if fast || (fast.nil? && UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8)))
         end
         false
+      end
+
+      def unicode_word_match?(input)
+        input.each_codepoint do |codepoint|
+          return true if unicode_word_codepoint?(codepoint)
+        end
+        false
+      end
+
+      def unicode_word_codepoint?(codepoint)
+        return true if codepoint == 95 || codepoint.between?(48, 57) ||
+                       codepoint.between?(65, 90) || codepoint.between?(97, 122)
+
+        fast = fast_unicode_letter?(codepoint)
+        return true if fast
+        return false if fast == false
+
+        UnicodeProperties.word?(codepoint.chr(Encoding::UTF_8))
       end
 
       def unicode_range_match?(input)

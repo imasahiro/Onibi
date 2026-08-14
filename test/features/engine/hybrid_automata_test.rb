@@ -188,6 +188,8 @@ class HybridAutomataTest < Minitest::Test
     program = Onibi::HybridAutomata.compile("[[:word:]]+")
 
     assert_equal :word?, program.instance_variable_get(:@unicode_matcher)
+    assert program.match?("—日本語—")
+    refute program.match?("——")
   end
 
   def test_unicode_range_run_accepts_codepoint_iteration
