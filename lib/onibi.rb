@@ -1868,6 +1868,9 @@ module Onibi
     def hfa_unicode_property_run_match_result(input, position)
       predicate, negated = hfa_unicode_property_run_spec
       property_name = @ast.parts.first.expression.name.sub("Is", "").sub("^", "")
+      if property_name == "Hiragana"
+        return hfa_unicode_hiragana_run_match_result(input, position, negated)
+      end
       if %w[Letter Alpha].include?(property_name)
         return hfa_unicode_letter_property_run_match_result(input, position, negated)
       end
@@ -1877,6 +1880,21 @@ module Onibi
       start = nil
       input.each_codepoint do |codepoint|
         matched = cursor >= position && (matcher.call(codepoint, predicate) ^ negated)
+        if matched
+          start ||= cursor
+        elsif start
+          return [start, cursor, []]
+        end
+        cursor += utf8_codepoint_bytesize(codepoint)
+      end
+      start && [start, cursor, []]
+    end
+
+    def hfa_unicode_hiragana_run_match_result(input, position, negated)
+      cursor = 0
+      start = nil
+      input.each_codepoint do |codepoint|
+        matched = cursor >= position && (codepoint.between?(0x3040, 0x309f) ^ negated)
         if matched
           start ||= cursor
         elsif start

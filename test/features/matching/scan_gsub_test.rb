@@ -164,7 +164,10 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode property run should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "Unicode property run should avoid HFA program compilation" }) do
-        assert_equal %w[ひらがな ひらがな], regexp.scan("漢字ひらがな ひらがな")
+        regexp.stub(:hfa_unicode_property_run_matcher,
+                    -> { flunk "Hiragana property run should use specialized codepoint matching" }) do
+          assert_equal %w[ひらがな ひらがな], regexp.scan("漢字ひらがな ひらがな")
+        end
       end
     end
   end
