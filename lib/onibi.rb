@@ -210,6 +210,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_repeated_class_backref_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_ascii_class_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_ascii_class_run_match?(input, normalized_position)
+      end
 
       if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -412,10 +416,6 @@ module Onibi
       if input.ascii_only? && hfa_ascii_unicode_run_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_unicode_run_match?(input, normalized_position)
-      end
-      if input.ascii_only? && hfa_ascii_class_run_result_safe?
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_ascii_class_run_match?(input, normalized_position)
       end
       if input.ascii_only? && hfa_ascii_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
