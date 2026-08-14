@@ -640,6 +640,16 @@ module Onibi
         return nil
       end
 
+      if input.ascii_only? && hfa_capture_offset_strategy
+        program = hfa_program
+        if program
+          normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+          result = program.match_result(input, normalized_position)
+          return hfa_match_data(result, input) if result
+          return nil
+        end
+      end
+
       return nil if hfa_always_fails?
 
       if hfa_empty_absence_result_safe?
