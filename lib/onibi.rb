@@ -3595,6 +3595,15 @@ module Onibi
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
       return true if input.ascii_only? && hfa_ascii_input_impossible_class?
 
+      if input.ascii_only? && @hfa_literal_alternation_fast
+        position = 0
+        while (result = hfa_literal_alternation_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+
       if input.ascii_only? && hfa_literal_absence_result_safe?
         position = 0
         while position <= input.bytesize
