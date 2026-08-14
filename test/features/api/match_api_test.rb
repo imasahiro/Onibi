@@ -1323,6 +1323,24 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_class_positive_lookbehind_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<=[ß])x")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class positive lookbehind should use HFA" }) do
+      assert_equal "x", regexp.match("ßx")[0]
+      assert_nil regexp.match("ax")
+    end
+  end
+
+  def test_unicode_class_negative_lookbehind_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<![ß])x")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class negative lookbehind should use HFA" }) do
+      assert_nil regexp.match("ßx")
+      assert_equal "x", regexp.match("ax")[0]
+    end
+  end
+
   def test_positive_literal_lookbehind_match_question_uses_combined_literal_path
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 

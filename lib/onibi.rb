@@ -150,6 +150,7 @@ module Onibi
         parts = hfa_literal_lookbehind_parts(:negative_lookbehind)
         @hfa_negative_lookbehind_literal_fast = parts.freeze if parts
       end
+      @hfa_class_lookbehind_fast = hfa_class_lookbehind_parts
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
       lookahead_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
@@ -242,6 +243,10 @@ module Onibi
           candidate = input.index(literal, candidate + 1)
         end
         return false
+      end
+      if @hfa_class_lookbehind_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_class_lookbehind_match_result(input, normalized_position).nil?
       end
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
@@ -522,6 +527,12 @@ module Onibi
       if @hfa_negative_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_negative_lookbehind_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if @hfa_class_lookbehind_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_class_lookbehind_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1525,6 +1536,46 @@ module Onibi
       return unless value.bytesize.positive?
 
       kind == :positive_lookbehind ? [guard, value] : [value, guard]
+    end
+
+    def hfa_class_lookbehind_parts
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      assertion = parts.first
+      body = parts[1..]
+      return unless assertion.is_a?(AST::Assertion) &&
+                    %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+      return unless body.all? { |node| node.is_a?(AST::Literal) }
+
+      guard = assertion.body
+      guard = guard.parts.first if guard.is_a?(AST::Sequence) && guard.parts.one?
+      return unless guard.is_a?(AST::CharacterClass)
+
+      literal = body.map(&:value).join
+      return if literal.empty?
+
+      [assertion.kind, ClassPredicates.compiled(guard.value), literal].freeze
+    end
+
+    def hfa_class_lookbehind_match_result(input, position)
+      kind, predicate, literal = @hfa_class_lookbehind_fast
+      candidate = input.b.index(literal.b, position)
+      while candidate
+        previous = hfa_previous_character(input, candidate)
+        matches = previous && predicate.matches?(previous)
+        matches = !matches if kind == :negative_lookbehind
+        return [candidate, candidate + literal.bytesize, []] if matches
+
+        candidate = input.b.index(literal.b, candidate + 1)
+      end
+      nil
+    end
+
+    def hfa_previous_character(input, byte_position)
+      return if byte_position.zero?
+
+      start = byte_position - 1
+      start -= 1 while start.positive? && (input.getbyte(start) & 0xc0) == 0x80
+      input.byteslice(start, byte_position - start)
     end
 
     def hfa_negative_lookbehind_literal_match_result(input, position)
@@ -3423,6 +3474,7 @@ module Onibi
                       hfa_linebreak_result_safe? ||
                       hfa_positive_lookbehind_result_safe? ||
                       hfa_negative_lookbehind_result_safe? ||
+                      @hfa_class_lookbehind_fast ||
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
@@ -3543,6 +3595,14 @@ module Onibi
         end
         return true
       end
+      if @hfa_class_lookbehind_fast
+        position = 0
+        while (result = hfa_class_lookbehind_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if @hfa_ignorecase_literal_fast
         folded_input = input.downcase
         literal = @hfa_ignorecase_literal_fast.downcase
@@ -3617,6 +3677,7 @@ module Onibi
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
+                     @hfa_class_lookbehind_fast ||
                      hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||

@@ -319,6 +319,18 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_class_lookbehind_scan_uses_hfa_iterator
+    positive = Onibi::Regexp.new("(?<=[ß])x")
+    negative = Onibi::Regexp.new("(?<![ß])x")
+
+    positive.stub(:codegen_each_result, ->(*) { flunk "Unicode class lookbehind should use HFA" }) do
+      assert_equal %w[x x], positive.scan("ßx ax ßx")
+    end
+    negative.stub(:codegen_each_result, ->(*) { flunk "Unicode class lookbehind should use HFA" }) do
+      assert_equal %w[x], negative.scan("ßx ax ßx")
+    end
+  end
+
   def test_unicode_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("こんにちは")
 
