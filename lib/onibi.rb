@@ -64,6 +64,8 @@ module Onibi
     MULTILINE = 4
     FIXEDENCODING = 16
     NOENCODING = 32
+    HFA_ASCII_PROPERTY_TABLES = {}
+    HFA_ASCII_ESCAPE_TABLES = {}
 
     class TimeoutError < RegexpError
     end
@@ -195,6 +197,16 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
       return true if @hfa_empty_absence_fast
+
+      if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_class_run_positive_lookahead_match?(input, normalized_position)
+      end
+
+      if input.ascii_only? && @hfa_literal_assertion_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil?
+      end
 
       if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -3432,7 +3444,11 @@ module Onibi
     end
 
     def hfa_literal_conditional_match?(input, position)
-      !hfa_literal_conditional_match_result(input, position).nil?
+      yes, no = hfa_literal_conditional_parts
+      prefix = hfa_literal_conditional_prefix
+      yes_start = input.index(prefix + yes, position)
+      no_start = input.index(no, position)
+      !yes_start.nil? || !no_start.nil?
     end
 
     def hfa_literal_conditional_match_result(input, position)
@@ -3448,8 +3464,10 @@ module Onibi
     end
 
     def hfa_literal_conditional_prefix
+      return @hfa_literal_conditional_prefix if defined?(@hfa_literal_conditional_prefix)
+
       optional = @ast.parts.first
-      literal_ast_value(optional.expression.body)
+      @hfa_literal_conditional_prefix = literal_ast_value(optional.expression.body)
     end
 
     def hfa_repeated_class_backref_result_safe?
@@ -4809,14 +4827,19 @@ module Onibi
       return if node.is_a?(AST::Any)
 
       if node.is_a?(AST::Escape)
-        return 256.times.map do |byte|
+        return HFA_ASCII_ESCAPE_TABLES[node.kind] if HFA_ASCII_ESCAPE_TABLES.key?(node.kind)
+
+        return HFA_ASCII_ESCAPE_TABLES[node.kind] = 256.times.map do |byte|
           CharacterPredicates.escape_matches?(node.kind, byte.chr(Encoding::ASCII_8BIT))
         end.freeze
       end
       return unless node.is_a?(AST::Property)
       return unless UnicodeProperties::SUPPORTED.include?(node.name.sub("Is", "").sub("^", ""))
 
-      256.times.map do |byte|
+      cache_key = [node.name, node.negated]
+      return HFA_ASCII_PROPERTY_TABLES[cache_key] if HFA_ASCII_PROPERTY_TABLES.key?(cache_key)
+
+      HFA_ASCII_PROPERTY_TABLES[cache_key] = 256.times.map do |byte|
         matched = UnicodeProperties.matches?(node.name, byte.chr(Encoding::ASCII_8BIT))
         node.negated ? !matched : matched
       end.freeze
