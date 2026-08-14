@@ -189,6 +189,11 @@ module Onibi
       validate_encoding!(input)
       return false if hfa_always_fails?
 
+      if hfa_empty_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return normalized_position <= input.bytesize
+      end
+
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -510,6 +515,13 @@ module Onibi
 
       validate_encoding!(input)
       return nil if hfa_always_fails?
+
+      if hfa_empty_absence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_match_data([input.bytesize, input.bytesize, []], input) if normalized_position <= input.bytesize
+
+        return nil
+      end
 
       if hfa_empty_nested_capture_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1009,6 +1021,14 @@ module Onibi
       literal = literal_ast_value(body)
       @hfa_literal_absence_safe = literal&.ascii_only? && literal.bytesize.positive? &&
                                    !@options.include?("ignorecase") && hfa_program
+    end
+
+    def hfa_empty_absence_result_safe?
+      return @hfa_empty_absence_safe if defined?(@hfa_empty_absence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      body = parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
+      @hfa_empty_absence_safe = body.is_a?(AST::Sequence) && body.parts.empty?
     end
 
     def hfa_literal_absence_value
@@ -3416,6 +3436,11 @@ module Onibi
     def hfa_each_result(input, &block)
       return enum_for(__method__, input) unless block
       return true if hfa_always_fails?
+
+      if hfa_empty_absence_result_safe?
+        block.call([input.bytesize, input.bytesize, []])
+        return true
+      end
 
       if input.ascii_only? && hfa_literal_absence_result_safe?
         position = 0

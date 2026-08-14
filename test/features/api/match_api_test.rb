@@ -1266,6 +1266,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_empty_absence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?~)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "empty absence should use HFA result" }) do
+      match = regexp.match("abc")
+      assert_equal "", match[0]
+      assert_equal [3, 3], match.offset(0)
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 
