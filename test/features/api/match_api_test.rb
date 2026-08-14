@@ -1195,11 +1195,19 @@ class MatchApiTest < Minitest::Test
     end
   end
 
-  def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
+  def test_match_question_mark_uses_hfa_for_non_ascii_exact_literals
     regexp = Onibi::Regexp.new("é")
 
-    regexp.stub(:hfa_program, -> { flunk "non-ASCII match? should use codegen" }) do
+    regexp.stub(:codegen_match?, ->(*) { flunk "non-ASCII exact literal should use HFA" }) do
       assert regexp.match?("café")
+    end
+  end
+
+  def test_captureless_repeated_alternation_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?:a|b)+c")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "captureless repeated alternation should use HFA" }) do
+      assert_equal "ababc", regexp.match("ababc cabc").to_s
     end
   end
 

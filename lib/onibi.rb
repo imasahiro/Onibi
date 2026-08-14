@@ -791,6 +791,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_captureless_repeated_alternation_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       return nil if input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
 
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
@@ -2557,6 +2563,18 @@ module Onibi
                                           hfa_public_safe? && hfa_program
     end
 
+    def hfa_captureless_repeated_alternation_result_safe?
+      return @hfa_captureless_repeated_alternation_safe if defined?(@hfa_captureless_repeated_alternation_safe)
+      return @hfa_captureless_repeated_alternation_safe = false unless repeated_alternation_ast?
+
+      repeat, = @ast.parts
+      body = repeat.expression
+      body = body.body if body.is_a?(AST::Group)
+      valid = (!repeat.expression.is_a?(AST::Group) || !repeat.expression.capture) &&
+              body.is_a?(AST::Alternation) && body.branches.all? { |branch| hfa_literal_result_node?(branch) }
+      @hfa_captureless_repeated_alternation_safe = valid && !@options.include?("ignorecase") && hfa_program
+    end
+
     def hfa_single_capture_literal_alternation_result_safe?
       return @hfa_single_capture_alternation_safe if defined?(@hfa_single_capture_alternation_safe)
 
@@ -3804,6 +3822,7 @@ module Onibi
                    hfa_literal_alternation_result_safe? ||
                    hfa_captureless_alternation_result_safe? ||
                    hfa_captureless_regular_sequence_result_safe? ||
+                   hfa_captureless_repeated_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
@@ -3829,6 +3848,14 @@ module Onibi
       if hfa_literal_alternation_result_safe?
         position = 0
         while (result = hfa_literal_alternation_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if hfa_captureless_repeated_alternation_result_safe?
+        position = 0
+        while (result = hfa_program.match_result(input, position))
           block.call(result)
           position = result[1]
         end
@@ -4029,6 +4056,7 @@ module Onibi
                      hfa_literal_alternation_result_safe? ||
                      hfa_captureless_alternation_result_safe? ||
                      hfa_captureless_regular_sequence_result_safe? ||
+                     hfa_captureless_repeated_alternation_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
