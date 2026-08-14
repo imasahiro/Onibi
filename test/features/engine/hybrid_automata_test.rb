@@ -92,6 +92,13 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("zaaac")
   end
 
+  def test_plain_unicode_literal_uses_direct_search
+    program = compile("こんにちは")
+
+    assert program.match?("挨拶はこんにちはです")
+    refute program.match?("挨拶はさようならです")
+  end
+
   def test_promotes_observed_nfa_subsets_to_bounded_dfa_states
     hybrid = compile("(?:ab|ac)+z")
     nfa_only = Onibi::HybridAutomata.compile("(?:ab|ac)+z", dfa: false, string_matching: false)

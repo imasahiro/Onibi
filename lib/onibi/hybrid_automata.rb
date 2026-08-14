@@ -984,6 +984,13 @@ module Onibi
           return bounded_literal_match?(input, position) if @bounded_literal_spec
         end
 
+        if exact_literal_search?
+          position = normalize_position(input, position)
+          return false if position.negative? || position > input.bytesize
+
+          return !input.index(@exact_literal, position).nil?
+        end
+
         return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
         return linebreak_match?(input, position) if @linebreak_spec
         return !start_match_result(input, normalize_position(input, position)).nil? if @start_match
@@ -1945,6 +1952,12 @@ module Onibi
         return unless position.is_a?(Integer) && position.zero? && @exact_literal && @prefix_literal
 
         literal_search(input, position)
+      end
+
+      def exact_literal_search?
+        @exact_literal && @span_masks.length == 1 && !@ignorecase && !@start_match &&
+          !@anchored_start && !@anchored_end && !@before_final_newline && !@line_anchor_start &&
+          !@line_anchor_end && !guarded_search?
       end
 
       def word_boundary_literal_search?
