@@ -272,7 +272,7 @@ module Onibi
 
     # Derives specialized metadata from the normalized compiler AST.
     module CompilerFacts
-      ASCII_PROPERTY_TABLE_CACHE = {}.freeze
+      ASCII_PROPERTY_TABLE_CACHE = {}
       ASCII_PROPERTY_TABLE_MUTEX = Mutex.new
 
       private

@@ -473,7 +473,8 @@ module Onibi
 
       captures = []
       value = hfa_nested_literal_value(@ast, captures)
-      return unless value && input.byteslice(start, value.bytesize) == value && start + value.bytesize == finish
+      matched_length = hfa_nested_literal_match_length(@ast, input, start)
+      return unless value && matched_length == value.bytesize && start + matched_length == finish
 
       offsets = Array.new(captures.map(&:first).max)
       captures.each do |capture|
@@ -499,6 +500,29 @@ module Onibi
       when AST::Sequence
         values = node.parts.map { |part| hfa_nested_literal_value(part, captures) }
         values.all? ? values.join : nil
+      when AST::Alternation
+        values = node.branches.map { |branch| hfa_nested_literal_value(branch, []) }
+        values.all? && values.map(&:bytesize).uniq.one? ? values.first : nil
+      end
+    end
+
+    def hfa_nested_literal_match_length(node, input, position)
+      case node
+      when AST::Literal
+        input.byteslice(position, node.value.bytesize) == node.value ? node.value.bytesize : nil
+      when AST::Group
+        hfa_nested_literal_match_length(node.body, input, position)
+      when AST::Sequence
+        cursor = position
+        node.parts.each do |part|
+          length = hfa_nested_literal_match_length(part, input, cursor)
+          return unless length
+
+          cursor += length
+        end
+        cursor - position
+      when AST::Alternation
+        node.branches.filter_map { |branch| hfa_nested_literal_match_length(branch, input, position) }.first
       end
     end
 
