@@ -133,6 +133,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, normalized_position).nil?
       end
+      if input.ascii_only? && (literal = hfa_subexpression_literal_match_literal)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_literal_conditional_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
@@ -1019,6 +1023,19 @@ module Onibi
       else
         @hfa_atomic_literal_match_literal = nil
       end
+    end
+
+    def hfa_subexpression_literal_match_literal
+      return @hfa_subexpression_literal_match_literal if defined?(@hfa_subexpression_literal_match_literal)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, call = parts
+      valid = group.is_a?(AST::Group) && group.capture && group.name &&
+              call.is_a?(AST::SubexpressionCall) && call.identifier.to_s == group.name.to_s
+      literal = valid ? literal_ast_value(group.body) : nil
+      @hfa_subexpression_literal_match_literal = if literal&.ascii_only? && literal.bytesize.positive?
+                                                  literal + literal
+                                                end
     end
 
     def hfa_literal_conditional_result_safe?

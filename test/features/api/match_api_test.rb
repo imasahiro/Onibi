@@ -283,6 +283,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_subexpression_literal_call_uses_direct_match_question_path
+    regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "subexpression literal call should use direct match? path" }) do
+      assert regexp.match?("abab")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
