@@ -123,6 +123,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_adjacent_class_runs_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("[a-z]+[0-9]+")
+
+    regexp.stub(:hfa_program, -> { flunk "adjacent class run scan should avoid HFA program compilation" }) do
+      assert_equal %w[item2026 key7], regexp.scan("item2026 key7")
+    end
+  end
+
   def test_adjacent_class_runs_scan_uses_hfa_iterator
     program = Onibi::HybridAutomata.compile("[a-z]+[0-9]+")
 

@@ -1409,6 +1409,23 @@ module Onibi
       false
     end
 
+    def hfa_ascii_adjacent_run_match_result(input, position)
+      tables = hfa_ascii_adjacent_run_tables
+      cursor = position
+      while cursor < input.bytesize
+        left = cursor
+        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
+        if left > cursor
+          right = left
+          right += 1 while right < input.bytesize && tables[1][input.getbyte(right)]
+          return [cursor, right, []] if right > left
+        end
+
+        cursor += 1
+      end
+      nil
+    end
+
     def hfa_atomic_literal_match_literal
       return @hfa_atomic_literal_match_literal if defined?(@hfa_atomic_literal_match_literal)
 
@@ -2283,6 +2300,14 @@ module Onibi
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         position = 0
         while (result = hfa_class_run_positive_lookahead_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && @hfa_ascii_adjacent_run_fast
+        position = 0
+        while (result = hfa_ascii_adjacent_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end
