@@ -538,6 +538,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "atomic literal should skip generic failure checks" }) do
+      assert regexp.match?("ab")
+    end
+  end
+
   def test_atomic_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 
