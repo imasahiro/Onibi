@@ -1213,6 +1213,13 @@ class MatchApiTest < Minitest::Test
     assert_equal({ "word" => 1, "id" => 2 }, first)
   end
 
+  def test_hfa_simple_capture_count_is_cached
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    assert_equal 2, regexp.send(:hfa_simple_capture_count)
+    assert_equal 2, regexp.send(:hfa_simple_capture_count)
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

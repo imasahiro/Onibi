@@ -3768,6 +3768,13 @@ module Onibi
                                    end
     end
 
+    def hfa_simple_capture_count
+      return @hfa_simple_capture_count if defined?(@hfa_simple_capture_count)
+
+      layout = hfa_simple_capture_layout
+      @hfa_simple_capture_count = layout ? (layout.filter_map { |_kind, _value, number| number }.max || 0) : 0
+    end
+
     def hfa_empty_nested_capture_spec
       return @hfa_empty_nested_capture_spec if defined?(@hfa_empty_nested_capture_spec)
 
@@ -4064,7 +4071,7 @@ module Onibi
       return unless layout
 
       cursor = start
-      offsets = Array.new(layout.filter_map { |_kind, _value, number| number }.max || 0)
+      offsets = Array.new(hfa_simple_capture_count)
       layout.each do |kind, value, number|
         capture_start = nil
         case kind
