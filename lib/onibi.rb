@@ -111,7 +111,7 @@ module Onibi
                                hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
                                hfa_negative_lookbehind_result_safe? || hfa_backref_result_safe? ||
                                hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                               hfa_nested_literal_capture_result_safe?)
+                               hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?)
         result = with_timeout { hfa_program&.match_result(input, position) }
         return hfa_match_data(result, input) if result
         return nil if hfa_program
@@ -421,6 +421,15 @@ module Onibi
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
       end
+      if captures.empty? && (capture_offsets = hfa_nested_repeated_capture_offsets(input, start, finish))
+        values = capture_offsets.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
+        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        return MatchData.new(input.byteslice(start, finish - start), values,
+                             [[start, finish], *capture_offsets], names,
+                             MatchData::Context.new(input, self))
+      end
       if captures.empty? && (capture_offsets = hfa_simple_capture_offsets(input, start, finish))
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
@@ -715,8 +724,8 @@ module Onibi
 
       ascii_safe = input.ascii_only? &&
                    (hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
-                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                    hfa_nested_literal_capture_result_safe?)
+                   hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
+                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?)
       unicode_safe = !input.ascii_only? && hfa_unicode_match_result_safe?
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
@@ -738,6 +747,11 @@ module Onibi
           captures = hfa_nested_literal_capture_offsets(input, result[0], result[1])
           block.call([result[0], result[1], captures || result[2]])
         end
+      elsif hfa_nested_repeated_capture_result_safe?
+        program.each_match_result(input, 0) do |result|
+          captures = hfa_nested_repeated_capture_offsets(input, result[0], result[1])
+          block.call([result[0], result[1], captures || result[2]])
+        end
       else
         program.each_match_result(input, 0, &block)
       end
@@ -746,8 +760,8 @@ module Onibi
 
     def hfa_iterator_safe?
       return true if hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
-                     hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                     hfa_nested_literal_capture_result_safe?
+                      hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
+                      hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||
                      fixed_class_run_literal_ast? || dot_literal_ast? || repeat_literal_ast? ||
@@ -870,6 +884,33 @@ module Onibi
       captures = []
       value = hfa_nested_literal_value(root, captures)
       value && captures.length > 1 && hfa_program
+    end
+
+    def hfa_nested_repeated_capture_result_safe?
+      root = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
+               @ast.parts.first
+             else
+               @ast
+             end
+      return false unless root.is_a?(AST::Group) && root.capture
+      body = root.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      return false unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
+
+      inner = body.expression
+      inner.is_a?(AST::Group) && inner.capture && literal_ast_value(inner.body) && hfa_program
+    end
+
+    def hfa_nested_repeated_capture_offsets(input, start, finish)
+      return unless hfa_nested_repeated_capture_result_safe?
+
+      root = @ast.is_a?(AST::Sequence) ? @ast.parts.first : @ast
+      body = root.body.parts.first
+      value = literal_ast_value(body.expression.body)
+      width = value.bytesize
+      return unless width.positive? && (finish - start) >= width && ((finish - start) % width).zero?
+
+      [[start, finish], [finish - width, finish]]
     end
 
     def repeated_alternation_ast?
