@@ -130,6 +130,8 @@ module Onibi
       @hfa_dot_literal_fast = hfa_dot_literal_parts if dot_candidate
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
+      match_reset_literal = hfa_match_reset_literal_combined_literal
+      @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
       @hfa_empty_absence_fast = true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
                                          @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
@@ -275,6 +277,10 @@ module Onibi
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_match_reset_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(@hfa_match_reset_literal_fast, normalized_position).nil?
       end
       if input.ascii_only? && (literal = hfa_match_reset_literal_combined_literal)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
