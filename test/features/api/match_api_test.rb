@@ -1295,6 +1295,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_class_rejects_ascii_input_without_codegen
+    regexp = Onibi::Regexp.new("[é]")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode class should reject ASCII input in HFA" }) do
+      assert_nil regexp.match("ascii")
+    end
+  end
+
   def test_lookahead_alternation_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 

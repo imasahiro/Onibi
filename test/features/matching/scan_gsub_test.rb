@@ -331,6 +331,22 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_class_rejects_ascii_scan_without_codegen
+    regexp = Onibi::Regexp.new("[é]")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode class should reject ASCII input in HFA" }) do
+      assert_empty regexp.scan("ascii")
+    end
+  end
+
+  def test_unicode_class_lookbehind_rejects_ascii_scan_without_codegen
+    regexp = Onibi::Regexp.new("(?<=[ß])x")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode class lookbehind should reject ASCII input in HFA" }) do
+      assert_empty regexp.scan("ascii")
+    end
+  end
+
   def test_unicode_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("こんにちは")
 

@@ -193,6 +193,7 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return normalized_position <= input.bytesize
       end
+      return false if input.ascii_only? && hfa_ascii_input_impossible_class?
       if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_lookahead_alternation_backreference_match_result(input, normalized_position).nil?
@@ -526,6 +527,7 @@ module Onibi
 
         return nil
       end
+      return nil if input.ascii_only? && hfa_ascii_input_impossible_class?
 
       if hfa_empty_nested_capture_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1266,6 +1268,23 @@ module Onibi
     def hfa_ascii_input_impossible_unicode_literal?
       literal = hfa_exact_literal_value
       literal && literal.bytesize.positive? && !literal.ascii_only? && !@options.include?("ignorecase")
+    end
+
+    def hfa_ascii_input_impossible_class?
+      return false if @options.include?("ignorecase")
+
+      if @hfa_class_lookbehind_fast && @hfa_class_lookbehind_fast[0] == :positive_lookbehind
+        return @hfa_class_lookbehind_fast[1].ascii_table.none?
+      end
+
+      node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
+               @ast.parts.first
+             else
+               @ast
+             end
+      return false unless node.is_a?(AST::CharacterClass)
+
+      ClassPredicates.compiled(node.value).ascii_table.none?
     end
 
     def hfa_exact_literal_value
@@ -3521,6 +3540,7 @@ module Onibi
         return true
       end
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
+      return true if input.ascii_only? && hfa_ascii_input_impossible_class?
 
       if input.ascii_only? && hfa_literal_absence_result_safe?
         position = 0
