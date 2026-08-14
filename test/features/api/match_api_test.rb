@@ -22,6 +22,20 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_always_failing_assertion_uses_hfa_for_all_match_apis
+    regexp = Onibi::Regexp.new("(?!)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "always-failing assertion match? should use HFA" }) do
+      refute regexp.match?("anything")
+    end
+    regexp.stub(:codegen_match, ->(*) { flunk "always-failing assertion match should use HFA" }) do
+      assert_nil regexp.match("anything")
+    end
+    regexp.stub(:codegen_each_match, ->(*) { flunk "always-failing assertion scan should use HFA" }) do
+      assert_empty regexp.scan("anything")
+    end
+  end
+
   def test_exact_literal_match_uses_hfa_string_path_without_program_dispatch
     regexp = Onibi::Regexp.new("needle")
 

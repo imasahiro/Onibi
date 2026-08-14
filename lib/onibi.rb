@@ -178,6 +178,8 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      return false if hfa_always_fails?
+
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -482,6 +484,8 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      return nil if hfa_always_fails?
+
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -2729,6 +2733,7 @@ module Onibi
 
     def hfa_each_result(input, &block)
       return enum_for(__method__, input) unless block
+      return true if hfa_always_fails?
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         folded_input = input.downcase
