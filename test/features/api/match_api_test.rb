@@ -404,6 +404,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_hfa_default_position_skips_position_normalization
+    regexp = Onibi::Regexp.new("\\p{Alpha}+")
+
+    regexp.stub(:normalize_match_position, ->(*) { flunk "default ASCII HFA position should be zero" }) do
+      assert regexp.match?("letters")
+    end
+  end
+
   def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
     regexp = Onibi::Regexp.new("é")
 

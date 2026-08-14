@@ -141,7 +141,7 @@ module Onibi
 
       hfa = hfa_program if input.ascii_only? && hfa_match_question_safe?
       if hfa
-        normalized_position = normalize_match_position(input, position)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa.match?(input, normalized_position) if timeout_unconfigured?
 
         return with_timeout { hfa.match?(input, normalized_position) }
