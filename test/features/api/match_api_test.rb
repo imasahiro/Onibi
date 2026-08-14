@@ -608,6 +608,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nonword_boundary_literal_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("\\Bcat\\B")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nonword-boundary literal should use HFA" }) do
+      assert_equal "cat", regexp.match("_cat_").to_s
+      assert_nil regexp.match(" catx ")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
