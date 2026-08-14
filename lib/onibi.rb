@@ -84,6 +84,10 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      if input.ascii_only? && hfa_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        return !input.index(literal, normalize_match_position(input, position)).nil?
+      end
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
@@ -128,6 +132,12 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      if input.ascii_only? && hfa_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        start = input.index(literal, normalize_match_position(input, position))
+        return hfa_match_data([start, start + literal.bytesize, []], input) if start
+        return nil
+      end
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         result = hfa_unicode_ignorecase_literal_match_result(input, position)
         return hfa_match_data(result, input) if result
@@ -410,6 +420,20 @@ module Onibi
                                     else
                                       false
                                     end
+    end
+
+    def hfa_exact_literal_result_safe?
+      return @hfa_exact_literal_safe if defined?(@hfa_exact_literal_safe)
+      literal = hfa_exact_literal_value
+      @hfa_exact_literal_safe = literal && literal.bytesize.positive? && literal.ascii_only? &&
+                                !@options.include?("ignorecase")
+    end
+
+    def hfa_exact_literal_value
+      return @hfa_exact_literal_value if defined?(@hfa_exact_literal_value)
+      @hfa_exact_literal_value = if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence)
+                                   literal_ast_value(@ast)
+                                 end
     end
 
     def hfa_ignorecase_literal_match_result(input, position)
@@ -904,7 +928,7 @@ module Onibi
       return enum_for(__method__, input) unless block
 
       ascii_safe = input.ascii_only? &&
-                   (hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
+                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    hfa_ignorecase_literal_result_safe? ||
                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
@@ -922,7 +946,15 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_unicode_ignorecase_literal_result_safe?
+      if hfa_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        position = 0
+        while (start = input.index(literal, position))
+          finish = start + literal.bytesize
+          block.call([start, finish, []])
+          position = finish
+        end
+      elsif hfa_unicode_ignorecase_literal_result_safe?
         position = 0
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
           block.call(result)
@@ -980,7 +1012,7 @@ module Onibi
     end
 
     def hfa_iterator_safe?
-      return true if hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
+      return true if hfa_exact_literal_result_safe? || hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
                      hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||

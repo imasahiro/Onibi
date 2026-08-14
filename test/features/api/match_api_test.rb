@@ -22,6 +22,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_exact_literal_match_uses_hfa_string_path_without_program_dispatch
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_program, -> { flunk "exact literal should use HFA string path" }) do
+      assert regexp.match?("prefix-needle-suffix")
+    end
+  end
+
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
@@ -302,7 +310,7 @@ class MatchApiTest < Minitest::Test
   end
 
   def test_hfa_match_question_safety_analysis_is_cached
-    regexp = Onibi::Regexp.new("needle")
+    regexp = Onibi::Regexp.new("needle.")
     calls = 0
     original = regexp.method(:hfa_contains_possessive_quantifier?)
     regexp.define_singleton_method(:hfa_contains_possessive_quantifier?) do
@@ -310,7 +318,7 @@ class MatchApiTest < Minitest::Test
       original.call
     end
 
-    3.times { assert regexp.match?("needle") }
+    3.times { assert regexp.match?("needlex") }
     assert_equal 1, calls
   end
 
