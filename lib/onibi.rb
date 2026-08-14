@@ -101,6 +101,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_run_chain_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_literal_conditional_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_literal_conditional_match?(input, normalized_position)
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
@@ -905,6 +909,37 @@ module Onibi
         cursor = starts + 1
       end
       false
+    end
+
+    def hfa_literal_conditional_result_safe?
+      return @hfa_literal_conditional_safe if defined?(@hfa_literal_conditional_safe)
+
+      yes, no = hfa_literal_conditional_parts
+      @hfa_literal_conditional_safe = yes&.ascii_only? && no&.ascii_only? &&
+                                      yes.bytesize.positive? && no.bytesize.positive?
+    end
+
+    def hfa_literal_conditional_parts
+      return @hfa_literal_conditional_parts if defined?(@hfa_literal_conditional_parts)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      optional, conditional = parts
+      capture = optional&.expression if optional.is_a?(AST::Quantifier) && optional.kind == :"?"
+      yes = conditional&.yes_branch if conditional.is_a?(AST::Conditional)
+      no = conditional&.no_branch if conditional.is_a?(AST::Conditional)
+      valid = parts.length == 2 && optional.is_a?(AST::Quantifier) && optional.kind == :"?" &&
+              optional.mode == :greedy && capture.is_a?(AST::Group) && capture.capture &&
+              conditional.is_a?(AST::Conditional) && conditional.condition == [capture.number, false]
+      @hfa_literal_conditional_parts = if valid
+                                         [literal_ast_value(yes), literal_ast_value(no)].freeze
+                                       else
+                                         [nil, nil].freeze
+                                       end
+    end
+
+    def hfa_literal_conditional_match?(input, position)
+      yes, no = hfa_literal_conditional_parts
+      !input.index(yes, position).nil? || !input.index(no, position).nil?
     end
 
     def hfa_unicode_property_run_result_safe?

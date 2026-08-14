@@ -287,6 +287,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_conditional_match_question_uses_alternative_string_path
+    regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
+
+    regexp.stub(:hfa_program, -> { flunk "literal conditional match? should avoid program compilation" }) do
+      assert regexp.match?("prefix ab suffix")
+      assert regexp.match?("prefix c suffix")
+      refute regexp.match?("prefix d suffix")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
