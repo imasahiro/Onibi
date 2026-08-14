@@ -179,7 +179,10 @@ class ScanGsubTest < Minitest::Test
     input = input_class.new("123日本語 456終端")
     regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode letter property run should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "Unicode letter property run should avoid HFA program compilation" }) do
-        assert_equal %w[日本語 終端], regexp.scan(input)
+        regexp.stub(:hfa_unicode_property_run_matcher,
+                    -> { flunk "Unicode letter property run should use specialized codepoint matching" }) do
+          assert_equal %w[日本語 終端], regexp.scan(input)
+        end
       end
     end
   end

@@ -1867,6 +1867,11 @@ module Onibi
 
     def hfa_unicode_property_run_match_result(input, position)
       predicate, negated = hfa_unicode_property_run_spec
+      property_name = @ast.parts.first.expression.name.sub("Is", "").sub("^", "")
+      if %w[Letter Alpha].include?(property_name)
+        return hfa_unicode_letter_property_run_match_result(input, position, negated)
+      end
+
       matcher = hfa_unicode_property_run_matcher
       cursor = 0
       start = nil
@@ -1880,6 +1885,29 @@ module Onibi
         cursor += utf8_codepoint_bytesize(codepoint)
       end
       start && [start, cursor, []]
+    end
+
+    def hfa_unicode_letter_property_run_match_result(input, position, negated)
+      cursor = 0
+      start = nil
+      input.each_codepoint do |codepoint|
+        matched = cursor >= position && (hfa_unicode_letter_codepoint?(codepoint) ^ negated)
+        if matched
+          start ||= cursor
+        elsif start
+          return [start, cursor, []]
+        end
+        cursor += utf8_codepoint_bytesize(codepoint)
+      end
+      start && [start, cursor, []]
+    end
+
+    def hfa_unicode_letter_codepoint?(codepoint)
+      return true if codepoint.between?(65, 90) || codepoint.between?(97, 122)
+      return true if codepoint.between?(0x3040, 0x30ff) || codepoint.between?(0x3400, 0x4dbf) ||
+                     codepoint.between?(0x4e00, 0x9fff) || codepoint.between?(0xac00, 0xd7af)
+
+      UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8))
     end
 
     def utf8_codepoint_bytesize(codepoint)
