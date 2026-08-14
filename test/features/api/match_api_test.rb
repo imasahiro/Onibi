@@ -496,6 +496,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_class_backreference_uses_early_constructor_dispatch
+    regexp = Onibi::Regexp.new("([a-z]+)-\\1")
+
+    regexp.stub(:hfa_repeated_class_backref_result_safe?,
+                -> { flunk "repeated class backreference should use early constructor dispatch" }) do
+      assert regexp.match?("echo-echo")
+    end
+  end
+
   def test_ascii_character_class_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 

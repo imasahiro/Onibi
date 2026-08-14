@@ -169,6 +169,7 @@ module Onibi
       @hfa_unicode_word_class_run_fast = word_node if word_node && !@options.include?("ignorecase")
       captured_chain_candidate = !@options.include?("ignorecase") && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
+      @hfa_repeated_class_backref_fast = true if hfa_repeated_class_backref_candidate?
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
@@ -193,6 +194,10 @@ module Onibi
       if input.ascii_only? && @hfa_literal_assertion_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil?
+      end
+      if input.ascii_only? && @hfa_repeated_class_backref_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_repeated_class_backref_match?(input, normalized_position)
       end
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1433,6 +1438,28 @@ module Onibi
 
       table, separator = hfa_repeated_class_backref_parts
       @hfa_repeated_class_backref_safe = !table.nil? && separator&.ascii_only? && separator.bytesize.positive?
+    end
+
+    def hfa_repeated_class_backref_candidate?
+      return false if @options.include?("ignorecase")
+      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
+
+      group, separator, backref = @ast.parts
+      return false unless hfa_repeated_class_backref_header?(group, separator, backref)
+
+      body = group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      hfa_repeated_class_backref_body?(body)
+    end
+
+    def hfa_repeated_class_backref_header?(group, separator, backref)
+      group.is_a?(AST::Group) && group.capture && separator.is_a?(AST::Literal) &&
+        backref.is_a?(AST::Backreference) && backref.identifier == group.number
+    end
+
+    def hfa_repeated_class_backref_body?(body)
+      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
+        (body.expression.is_a?(AST::CharacterClass) || body.expression.is_a?(AST::Escape))
     end
 
     def hfa_repeated_class_backref_parts
