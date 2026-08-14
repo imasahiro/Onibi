@@ -1254,6 +1254,15 @@ class MatchApiTest < Minitest::Test
     assert_same first, second
   end
 
+  def test_nested_literal_capture_safety_analysis_is_cached
+    regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab))")
+    regexp.send(:hfa_nested_literal_capture_result_safe?)
+
+    regexp.stub(:hfa_nested_literal_value, ->(*) { flunk "nested literal capture analysis should be cached" }) do
+      assert regexp.send(:hfa_nested_literal_capture_result_safe?)
+    end
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

@@ -4881,17 +4881,19 @@ module Onibi
     end
 
     def hfa_nested_literal_capture_result_safe?
+      return @hfa_nested_literal_capture_safe if defined?(@hfa_nested_literal_capture_safe)
+
       root = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
                @ast.parts.first
              else
                @ast
              end
-      return false unless root.is_a?(AST::Group) && root.capture
-      return false if @options.include?("ignorecase")
+      return @hfa_nested_literal_capture_safe = false unless root.is_a?(AST::Group) && root.capture
+      return @hfa_nested_literal_capture_safe = false if @options.include?("ignorecase")
 
       captures = []
       value = hfa_nested_literal_value(root, captures)
-      value && captures.length > 1 && hfa_program
+      @hfa_nested_literal_capture_safe = value && captures.length > 1 && hfa_program
     end
 
     def hfa_nested_repeated_capture_result_safe?
