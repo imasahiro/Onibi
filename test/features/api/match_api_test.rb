@@ -1300,6 +1300,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_capture_before_alternation_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?<x>a)(?:b|c)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "literal capture before alternation should use HFA" }) do
+      assert_equal ["ab", "a"], regexp.match("ab").to_a
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
