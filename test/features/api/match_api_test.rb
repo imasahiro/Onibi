@@ -278,6 +278,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_shorthand_run_chain_match_question_uses_byte_tables
+    regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
+
+    regexp.stub(:hfa_program, -> { flunk "ASCII shorthand run chain match? should avoid program compilation" }) do
+      assert regexp.match?("item 2026")
+      refute regexp.match?("item-2026")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
