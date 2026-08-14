@@ -380,6 +380,24 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_bounded_literal_match_question_uses_direct_hfa_path
+    regexp = Onibi::Regexp.new("a{4,12}")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "bounded literal should use direct match? path" }) do
+      assert regexp.match?("baaaaaaaac")
+      refute regexp.match?("baaac")
+    end
+  end
+
+  def test_bounded_literal_match_returns_the_greedy_run_and_respects_position
+    regexp = Onibi::Regexp.new("a{2,4}")
+
+    match = regexp.match("zaaaaa")
+    assert_equal "aaaa", match[0]
+    assert_equal [1, 5], match.offset(0)
+    assert_nil regexp.match("zaaaaa", 5)
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
