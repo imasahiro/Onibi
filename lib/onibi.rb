@@ -187,6 +187,7 @@ module Onibi
 
       ascii_exact_literal = @hfa_exact_literal_fast && @pattern.ascii_only? && !fixed_encoding? && input.ascii_only?
       validate_encoding!(input) unless ascii_exact_literal
+      hfa_timeout_budget_guard!(input)
 
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
