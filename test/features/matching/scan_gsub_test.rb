@@ -141,7 +141,9 @@ class ScanGsubTest < Minitest::Test
   def test_class_run_triple_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "class run triple should use HFA" }) do
-      assert_equal ["item 2026", "key 7"], regexp.scan("item 2026 key 7")
+      regexp.stub(:hfa_program, -> { flunk "class run triple should avoid HFA program compilation" }) do
+        assert_equal ["item 2026", "key 7"], regexp.scan("item 2026 key 7")
+      end
     end
   end
 

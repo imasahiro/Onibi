@@ -1359,6 +1359,28 @@ module Onibi
       false
     end
 
+    def hfa_ascii_run_chain_match_result(input, position)
+      tables = hfa_ascii_run_chain_tables
+      cursor = position
+      while cursor < input.bytesize
+        starts = cursor
+        left = starts
+        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
+        if left > starts
+          middle = left
+          middle += 1 while middle < input.bytesize && tables[1][input.getbyte(middle)]
+          if middle > left
+            right = middle
+            right += 1 while right < input.bytesize && tables[2][input.getbyte(right)]
+            return [starts, right, []] if right > middle
+          end
+        end
+
+        cursor = starts + 1
+      end
+      nil
+    end
+
     def hfa_ascii_adjacent_run_result_safe?
       return @hfa_ascii_adjacent_run_safe if defined?(@hfa_ascii_adjacent_run_safe)
 
@@ -2308,6 +2330,14 @@ module Onibi
       if input.ascii_only? && @hfa_ascii_adjacent_run_fast
         position = 0
         while (result = hfa_ascii_adjacent_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && @hfa_ascii_run_chain_fast
+        position = 0
+        while (result = hfa_ascii_run_chain_match_result(input, position))
           block.call(result)
           position = result[1]
         end
