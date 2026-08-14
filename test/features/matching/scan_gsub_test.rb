@@ -569,6 +569,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_class_run_capture_scan_avoids_hfa_program
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    regexp.stub(:hfa_program, -> { flunk "class-run capture scan should avoid HFA program" }) do
+      assert_equal [%w[item 2026], %w[key 7]], regexp.scan("item-2026 key-7")
+    end
+  end
+
   def test_guarded_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<!a)(?<letter>b)")
 
