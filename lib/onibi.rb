@@ -1078,7 +1078,12 @@ module Onibi
       anchor_index = @ast.parts.index do |part|
         part.is_a?(AST::Anchor) && part.kind == :anchor_absolute_start
       end
-      anchor_index && @ast.parts[0...anchor_index].any? { |part| hfa_definitely_nonempty?(part) }
+      return true if anchor_index && @ast.parts[0...anchor_index].any? { |part| hfa_definitely_nonempty?(part) }
+
+      end_anchor_index = @ast.parts.index do |part|
+        part.is_a?(AST::Anchor) && part.kind == :anchor_absolute_end
+      end
+      end_anchor_index && @ast.parts[(end_anchor_index + 1)..].any? { |part| hfa_definitely_nonempty?(part) }
     end
 
     def hfa_definitely_nonempty?(node)

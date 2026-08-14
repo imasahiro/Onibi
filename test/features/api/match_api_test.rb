@@ -1247,6 +1247,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_consuming_suffix_after_absolute_end_anchor_is_hfa_failure
+    regexp = Onibi::Regexp.new("\\za")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "impossible end-anchor sequence should use HFA" }) do
+      regexp.stub(:codegen_match, ->(*) { flunk "impossible end-anchor sequence should use HFA" }) do
+        refute regexp.match?("a")
+        assert_nil regexp.match("a")
+      end
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
