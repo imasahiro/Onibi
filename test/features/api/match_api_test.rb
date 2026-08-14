@@ -420,6 +420,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_anchored_class_run_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("\\A[a-z]+\\z")
+
+    regexp.stub(:hfa_anchored_class_run_result_safe?,
+                -> { flunk "Anchored class run should use constructor dispatch metadata" }) do
+      assert regexp.match?("anchored")
+      refute regexp.match?("anchored1")
+    end
+  end
+
   def test_literal_alternation_match_question_uses_direct_string_search
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
