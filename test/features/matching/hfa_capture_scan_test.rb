@@ -56,6 +56,7 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["00000000-0000-4000-8000-000000000000", "2026-08-10T00:00:00Z"]],
                  Onibi::Regexp.new(pattern).scan(input)
+    assert Onibi::Regexp.new(pattern).send(:hfa_top_level_capture_scan_spec)
   end
 
   def test_hfa_uses_delimiter_search_for_negated_class_runs

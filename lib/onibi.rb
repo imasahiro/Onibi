@@ -1317,6 +1317,11 @@ module Onibi
     end
 
     def hfa_top_level_capture_offsets(input, start, finish)
+      result = hfa_top_level_capture_match_result(input, start, finish)
+      result && result[2]
+    end
+
+    def hfa_top_level_capture_match_result(input, start, finish, allow_short: false)
       offsets = Array.new(hfa_capture_count)
       cursor = start
       hfa_top_level_capture_plan.each do |part|
@@ -1337,7 +1342,21 @@ module Onibi
         cursor = hfa_consume_capture_node(part, input, cursor, finish, offsets)
         return unless cursor
       end
-      cursor == finish ? offsets : nil
+      return [start, cursor, offsets] if cursor == finish
+      return [start, cursor, offsets] if allow_short && cursor < finish
+
+      nil
+    end
+
+    def hfa_top_level_capture_scan_spec
+      return @hfa_top_level_capture_scan_spec if defined?(@hfa_top_level_capture_scan_spec)
+
+      plan = hfa_top_level_capture_plan
+      @hfa_top_level_capture_scan_spec = if plan && plan.first.is_a?(AST::Literal) && plan.length > 1
+                                           [plan.first.value].freeze
+                                         else
+                                           false
+                                         end
     end
 
     def hfa_whole_capture_offsets(start, finish)
@@ -5626,6 +5645,22 @@ module Onibi
           end
           block.call([start, finish, [[start, finish]]])
           position = finish
+        end
+        return true
+      end
+
+      if input.ascii_only? && (scan_spec = hfa_top_level_capture_scan_spec)
+        prefix = scan_spec.first
+        position = 0
+        while (start = input.index(prefix, position))
+          line_end = input.index("\n", start) || input.bytesize
+          result = hfa_top_level_capture_match_result(input, start, line_end, allow_short: true)
+          if result
+            block.call(result)
+            position = result[1]
+          else
+            position = start + prefix.bytesize
+          end
         end
         return true
       end
