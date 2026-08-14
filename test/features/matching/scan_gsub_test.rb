@@ -99,6 +99,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_positive_lookbehind_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<=pre)fix")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal positive lookbehind should use HFA" }) do
+      assert_equal %w[fix fix], regexp.scan("prefix suffix prefix")
+    end
+  end
+
   def test_class_run_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
 
