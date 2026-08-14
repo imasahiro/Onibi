@@ -867,9 +867,33 @@ module Onibi
         candidates = inject_start ? @first_mask : 0
         return single_span_transition(candidates, active, byte) if @single_span
 
-        @span_entries.each do |span, sources|
+        case @span_entries.length
+        when 1
+          span, sources = @span_entries[0]
           selected = active & sources
           candidates |= span.negative? ? selected >> -span : selected << span
+        when 2
+          span, sources = @span_entries[0]
+          selected = active & sources
+          candidates |= span.negative? ? selected >> -span : selected << span
+          span, sources = @span_entries[1]
+          selected = active & sources
+          candidates |= span.negative? ? selected >> -span : selected << span
+        when 3
+          span, sources = @span_entries[0]
+          selected = active & sources
+          candidates |= span.negative? ? selected >> -span : selected << span
+          span, sources = @span_entries[1]
+          selected = active & sources
+          candidates |= span.negative? ? selected >> -span : selected << span
+          span, sources = @span_entries[2]
+          selected = active & sources
+          candidates |= span.negative? ? selected >> -span : selected << span
+        else
+          @span_entries.each do |span, sources|
+            selected = active & sources
+            candidates |= span.negative? ? selected >> -span : selected << span
+          end
         end
         candidates & @reach_masks[byte]
       end
@@ -1417,13 +1441,17 @@ module Onibi
       end
 
       def nfa_match_result(input, position)
-        candidate = if @prefix_literal
-                      input.index(@prefix_literal, position)
-                    elsif @exact_first_byte
-                      input.index(@exact_first_byte, position)
-                    elsif @required_literals
+        prefix = @prefix_literal
+        exact_first_byte = @exact_first_byte
+        required_literals = @required_literals
+        first_bytes = static_first_bytes unless prefix || exact_first_byte || required_literals
+        candidate = if prefix
+                      input.index(prefix, position)
+                    elsif exact_first_byte
+                      input.index(exact_first_byte, position)
+                    elsif required_literals
                       required_literal_candidate(input, position)
-                    elsif (first_bytes = static_first_bytes)
+                    elsif first_bytes
                       first_byte_set_candidate(input, position, first_bytes)
                     else
                       position
@@ -1441,14 +1469,14 @@ module Onibi
           end
           return [candidate, last_accept, []] if last_accept
 
-          candidate = if @prefix_literal
-                        input.index(@prefix_literal, candidate + 1)
-                      elsif @exact_first_byte
-                        input.index(@exact_first_byte, candidate + 1)
-                      elsif @required_literals
+          candidate = if prefix
+                        input.index(prefix, candidate + 1)
+                      elsif exact_first_byte
+                        input.index(exact_first_byte, candidate + 1)
+                      elsif required_literals
                         required_literal_candidate(input, candidate + 1)
-                      elsif static_first_bytes
-                        first_byte_set_candidate(input, candidate + 1, static_first_bytes)
+                      elsif first_bytes
+                        first_byte_set_candidate(input, candidate + 1, first_bytes)
                       else
                         candidate + 1
                       end
