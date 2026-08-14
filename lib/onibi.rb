@@ -113,6 +113,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_anchored_class_run_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_literal_alternation_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_literal_alternation_match?(input, normalized_position)
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
@@ -1022,6 +1026,26 @@ module Onibi
         cursor += 1
       end
       true
+    end
+
+    def hfa_literal_alternation_result_safe?
+      return @hfa_literal_alternation_safe if defined?(@hfa_literal_alternation_safe)
+
+      alternatives = hfa_literal_alternation_values
+      @hfa_literal_alternation_safe = alternatives.length > 1 && alternatives.all? do |value|
+        value.ascii_only? && value.bytesize.positive?
+      end
+    end
+
+    def hfa_literal_alternation_values
+      return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
+
+      branches = @ast.is_a?(AST::Alternation) ? @ast.branches : []
+      @hfa_literal_alternation_values = branches.map { |branch| literal_ast_value(branch) }.freeze
+    end
+
+    def hfa_literal_alternation_match?(input, position)
+      hfa_literal_alternation_values.any? { |value| !input.index(value, position).nil? }
     end
 
     def hfa_unicode_property_run_result_safe?

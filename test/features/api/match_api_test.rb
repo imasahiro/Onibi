@@ -315,6 +315,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_alternation_match_question_uses_direct_string_search
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+
+    regexp.stub(:hfa_program, -> { flunk "literal alternation match? should avoid program compilation" }) do
+      assert regexp.match?("the quick fox")
+      refute regexp.match?("the quick hen")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
