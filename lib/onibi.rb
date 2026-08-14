@@ -163,6 +163,8 @@ module Onibi
                                        node.expression.value == "[:word:]"
                   end
       @hfa_unicode_word_class_run_fast = word_node if word_node && !@options.include?("ignorecase")
+      captured_chain_candidate = !@options.include?("ignorecase") && hfa_captured_class_run_chain_candidate?
+      @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
     end
 
     def match?(input, position = 0)
@@ -316,6 +318,10 @@ module Onibi
       if input.ascii_only? && hfa_possessive_literal_string_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
+      end
+      if input.ascii_only? && @hfa_captured_class_run_chain_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_captured_class_run_chain_match?(input, normalized_position)
       end
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1078,6 +1084,26 @@ module Onibi
       @hfa_unicode_ignorecase_literal_fold = literal_ast_value(@ast)&.downcase
     end
 
+    def hfa_captured_class_run_chain_candidate?
+      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
+
+      left, separator, right = @ast.parts
+      separator.is_a?(AST::Literal) && left.is_a?(AST::Group) && right.is_a?(AST::Group) &&
+        left.capture && right.capture && hfa_captured_class_run_group_candidate?(left) &&
+        hfa_captured_class_run_group_candidate?(right)
+    end
+
+    def hfa_captured_class_run_group_candidate?(group)
+      body = group.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
+        hfa_captured_class_run_expression_candidate?(body.expression)
+    end
+
+    def hfa_captured_class_run_expression_candidate?(expression)
+      expression.is_a?(AST::CharacterClass) || expression.is_a?(AST::Escape) || expression.is_a?(AST::Property)
+    end
+
     def hfa_captured_class_run_chain_result_safe?
       layout = hfa_simple_capture_layout
       return false unless layout.is_a?(Array) && layout.length == 3
@@ -1085,8 +1111,7 @@ module Onibi
       layout[0][0] == :class_run && layout[1][0] == :literal && layout[2][0] == :class_run
     end
 
-    def hfa_captured_class_run_chain_match?(input, position)
-      layout = hfa_simple_capture_layout
+    def hfa_captured_class_run_chain_match?(input, position, layout = hfa_simple_capture_layout)
       left_table = layout[0][1]
       separator = layout[1][1]
       right_table = layout[2][1]
