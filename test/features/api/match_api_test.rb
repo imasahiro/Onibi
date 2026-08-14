@@ -206,6 +206,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_capture_match_question_uses_byte_string_path
+    regexp = Onibi::Regexp.new("(こんにちは)(世界)")
+
+    regexp.stub(:hfa_program, -> { flunk "Unicode literal capture match? should avoid program compilation" }) do
+      assert regexp.match?("挨拶こんにちは世界です")
+      refute regexp.match?("挨拶こんにちは地球です")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
