@@ -61,7 +61,9 @@ class ScanGsubTest < Minitest::Test
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
-      assert_equal %w[aaa aa], regexp.scan("baaacaa")
+      regexp.stub(:hfa_program, -> { flunk "literal quantifier scan should avoid HFA program compilation" }) do
+        assert_equal %w[aaa aa], regexp.scan("baaacaa")
+      end
     end
   end
 

@@ -1585,6 +1585,19 @@ module Onibi
       nil
     end
 
+    def hfa_repeated_literal_run_match_result(input, position)
+      unit = @ast.parts.first.expression.value
+      candidate = input.index(unit, position)
+      while candidate
+        finish = candidate
+        finish += unit.bytesize while input.byteslice(finish, unit.bytesize) == unit
+        return [candidate, finish, []] if finish > candidate
+
+        candidate = input.index(unit, candidate + 1)
+      end
+      nil
+    end
+
     def hfa_lazy_dot_star_literal_parts
       return @hfa_lazy_dot_star_literal_parts if defined?(@hfa_lazy_dot_star_literal_parts)
 
@@ -2481,6 +2494,14 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && ascii_repeated_literal_run_ast?
+        position = 0
+        while (result = hfa_repeated_literal_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
 
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
@@ -3006,6 +3027,15 @@ module Onibi
       repeat.is_a?(AST::Quantifier) && repeat.kind == :+ && repeat.mode == :greedy &&
         repeat.expression.is_a?(AST::Literal) && repeat.expression.value.bytesize == 1 &&
         suffix.is_a?(AST::Literal)
+    end
+
+    def ascii_repeated_literal_run_ast?
+      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
+
+      repeat = @ast.parts.first
+      repeat.is_a?(AST::Quantifier) && repeat.kind == :+ && repeat.mode == :greedy &&
+        repeat.expression.is_a?(AST::Literal) && repeat.expression.value.ascii_only? &&
+        repeat.expression.value.bytesize.positive?
     end
 
     def class_run_chain_ast?
