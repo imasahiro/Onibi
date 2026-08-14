@@ -270,6 +270,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_word_class_run_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("[[:word:]]+")
+
+    regexp.stub(:hfa_unicode_word_class_run_result_safe?,
+                -> { flunk "Unicode word class run should use constructor dispatch metadata" }) do
+      assert regexp.match?("記号-日本語_2026-終端")
+    end
+  end
+
   def test_ascii_ignorecase_match_question_uses_candidate_string_path
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
