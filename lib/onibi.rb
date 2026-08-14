@@ -481,6 +481,12 @@ module Onibi
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end
+      if input.ascii_only? && hfa_match_reset_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_match_reset_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
@@ -797,6 +803,7 @@ module Onibi
       return true if hfa_linebreak_result_safe?
       return true if hfa_leading_literal_assertion_result_safe?
       return true if hfa_atomic_literal_result_safe?
+      return true if hfa_match_reset_literal_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?

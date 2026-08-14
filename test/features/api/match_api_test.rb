@@ -555,6 +555,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_match_reset_literal_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("prefix\\Ksuffix")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "match-reset literal match should use HFA" }) do
+      assert_equal "suffix", regexp.match("xxprefixsuffixyy").to_s
+      assert_nil regexp.match("xxprefix-suffixyy")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
