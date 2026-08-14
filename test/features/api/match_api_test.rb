@@ -306,6 +306,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_anchored_class_run_match_question_uses_full_input_byte_path
+    regexp = Onibi::Regexp.new("\\A[a-z]+\\z")
+
+    regexp.stub(:hfa_program, -> { flunk "anchored class-run match? should avoid program compilation" }) do
+      assert regexp.match?("anchored")
+      refute regexp.match?("anchored1")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 

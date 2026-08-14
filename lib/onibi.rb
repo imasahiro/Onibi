@@ -109,6 +109,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_repeated_class_backref_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_anchored_class_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_anchored_class_run_match?(input, normalized_position)
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
@@ -986,6 +990,38 @@ module Onibi
         separator_position = input.index(separator, separator_position + 1)
       end
       false
+    end
+
+    def hfa_anchored_class_run_result_safe?
+      return @hfa_anchored_class_run_safe if defined?(@hfa_anchored_class_run_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      run = parts[1]
+      valid = parts.length == 3 && parts[0].is_a?(AST::Anchor) &&
+              parts[0].kind == :anchor_absolute_start && parts[2].is_a?(AST::Anchor) &&
+              parts[2].kind == :anchor_absolute_end && run.is_a?(AST::Quantifier) &&
+              run.kind == :+ && run.mode == :greedy &&
+              run.expression.is_a?(AST::CharacterClass)
+      @hfa_anchored_class_run_safe = valid && !hfa_anchored_class_run_table.nil?
+    end
+
+    def hfa_anchored_class_run_table
+      return @hfa_anchored_class_run_table if defined?(@hfa_anchored_class_run_table)
+
+      @hfa_anchored_class_run_table = ClassPredicates.compiled(@ast.parts[1].expression.value).ascii_table
+    end
+
+    def hfa_anchored_class_run_match?(input, position)
+      return false unless position.zero? && input.bytesize.positive?
+
+      table = hfa_anchored_class_run_table
+      cursor = 0
+      while cursor < input.bytesize
+        return false unless table[input.getbyte(cursor)]
+
+        cursor += 1
+      end
+      true
     end
 
     def hfa_unicode_property_run_result_safe?
