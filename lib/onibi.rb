@@ -644,6 +644,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_nested_literal_capture_alternation_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_nested_literal_capture_alternation_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_lookahead_alternation_backreference_match_result(input, normalized_position)
@@ -3651,6 +3657,47 @@ module Onibi
       nil
     end
 
+    def hfa_nested_literal_capture_alternation_spec
+      return @hfa_nested_literal_capture_alternation_spec if defined?(@hfa_nested_literal_capture_alternation_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      outer, suffix = parts
+      alternation = outer.body if outer.is_a?(AST::Group) && !outer.capture &&
+                                  outer.body.is_a?(AST::Alternation)
+      branches = alternation&.branches&.map do |branch|
+        group = branch.parts.one? && branch.parts.first if branch.is_a?(AST::Sequence)
+        value = group.body if group.is_a?(AST::Group) && group.capture
+        [literal_ast_value(value), group&.number]
+      end
+      valid = parts.length == 2 && suffix.is_a?(AST::Literal) && branches&.all? do |value, number|
+        value&.ascii_only? && value.bytesize.positive? && number
+      end
+      @hfa_nested_literal_capture_alternation_spec = if valid && suffix.value.ascii_only? &&
+                                                        suffix.value.bytesize.positive? && hfa_program
+                                                       [branches.freeze, suffix.value].freeze
+                                                     else
+                                                       false
+                                                     end
+    end
+
+    def hfa_nested_literal_capture_alternation_match_result(input, position, program_result = nil)
+      branches, suffix = hfa_nested_literal_capture_alternation_spec
+      result = program_result || hfa_program.match_result(input, position)
+      return unless result
+
+      start, finish, = result
+      value, number = branches.find do |branch, _capture_number|
+        branch.bytesize + suffix.bytesize == finish - start &&
+          input.byteslice(start, branch.bytesize) == branch &&
+          input.byteslice(start + branch.bytesize, suffix.bytesize) == suffix
+      end
+      return unless value
+
+      captures = Array.new(branches.map(&:last).max)
+      captures[number - 1] = [start, start + value.bytesize]
+      [start, finish, captures]
+    end
+
     def hfa_lookahead_alternation_backreference_spec
       return @hfa_lookahead_alternation_backreference_spec if defined?(@hfa_lookahead_alternation_backreference_spec)
 
@@ -4093,6 +4140,13 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && hfa_nested_literal_capture_alternation_spec
+        program = hfa_program
+        program.each_match_result(input, 0) do |result|
+          block.call(hfa_nested_literal_capture_alternation_match_result(input, result[0], result))
+        end
+        return true
+      end
       if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
         position = 0
         while (result = hfa_lookahead_alternation_backreference_match_result(input, position))
@@ -4137,6 +4191,7 @@ module Onibi
                    hfa_repeated_equal_length_literal_capture_result_safe? ||
                    hfa_literal_capture_before_alternation_result_safe? ||
                    hfa_single_capture_literal_alternation_result_safe? ||
+                   hfa_nested_literal_capture_alternation_spec ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
@@ -4398,6 +4453,7 @@ module Onibi
                      hfa_repeated_equal_length_literal_capture_result_safe? ||
                      hfa_literal_capture_before_alternation_result_safe? ||
                      hfa_single_capture_literal_alternation_result_safe? ||
+                     hfa_nested_literal_capture_alternation_spec ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||

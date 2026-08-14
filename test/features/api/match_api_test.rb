@@ -1316,6 +1316,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_literal_capture_alternation_match_uses_hfa
+    regexp = Onibi::Regexp.new("(?:(a)|(b))c")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested literal capture alternation should use HFA" }) do
+      assert_equal ["ac", "a", nil], regexp.match("ac").to_a
+      assert_equal ["bc", nil, "b"], regexp.match("bc").to_a
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
