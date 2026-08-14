@@ -529,6 +529,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_ignorecase_match_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "ignorecase literal match should skip generic failure checks" }) do
+      assert_equal "CASE", regexp.match("prefix CASE suffix").to_s
+    end
+  end
+
   def test_adjacent_ascii_class_runs_use_direct_match_question_path
     regexp = Onibi::Regexp.new("[[:alpha:]]+[[:digit:]]+")
 
