@@ -1235,6 +1235,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_empty_repeated_capture_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(a*)*b")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "nested empty repeated captures should use HFA result" }) do
+      match = regexp.match("xxaaabyy")
+      assert_equal "aaab", match[0]
+      assert_equal "", match[1]
+      assert_equal [5, 5], match.offset(1)
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 

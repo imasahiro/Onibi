@@ -511,6 +511,13 @@ module Onibi
       validate_encoding!(input)
       return nil if hfa_always_fails?
 
+      if hfa_empty_nested_capture_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_empty_nested_capture_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -3144,6 +3151,40 @@ module Onibi
                                    end
     end
 
+    def hfa_empty_nested_capture_spec
+      return @hfa_empty_nested_capture_spec if defined?(@hfa_empty_nested_capture_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      outer = parts.first
+      suffix = parts[1..]
+      group = outer.expression if outer.is_a?(AST::Quantifier) && outer.kind == :* && outer.mode == :greedy
+      body = group.body if group.is_a?(AST::Group) && group.capture
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      inner = body if body.is_a?(AST::Quantifier) && body.kind == :* && body.mode == :greedy
+      unit = inner.expression if inner
+      literal = unit.value if unit.is_a?(AST::Literal)
+      suffix_value = suffix&.map { |node| node.value if node.is_a?(AST::Literal) }&.then do |values|
+        values.all? ? values.join : nil
+      end
+      @hfa_empty_nested_capture_spec = if group && literal&.ascii_only? && literal.bytesize == 1 &&
+                                         suffix_value&.ascii_only? && suffix_value.bytesize.positive?
+                                        [group.number, suffix_value].freeze
+                                      else
+                                        false
+                                      end
+    end
+
+    def hfa_empty_nested_capture_match_result(input, position)
+      number, suffix = hfa_empty_nested_capture_spec
+      result = hfa_program.match_result(input, position)
+      return unless result
+
+      capture_position = result[1] - suffix.bytesize
+      captures = Array.new(number)
+      captures[number - 1] = [capture_position, capture_position]
+      [result[0], result[1], captures]
+    end
+
     def hfa_capture_component(node)
       if node.is_a?(AST::Assertion) && %i[positive positive_lookahead positive_lookbehind
                                           negative negative_lookahead negative_lookbehind].include?(node.kind)
@@ -3435,6 +3476,14 @@ module Onibi
       if input.ascii_only? && ascii_repeated_literal_run_ast?
         position = 0
         while (result = hfa_repeated_literal_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if hfa_empty_nested_capture_spec
+        position = 0
+        while (result = hfa_empty_nested_capture_match_result(input, position))
           block.call(result)
           position = result[1]
         end

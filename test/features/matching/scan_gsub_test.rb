@@ -478,6 +478,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_nested_empty_repeated_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(a*)*b")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "nested empty repeated capture scan should use HFA" }) do
+      assert_equal [[""]], regexp.scan("xxaaabyy")
+    end
+  end
+
   def test_nested_variable_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a))")
 
