@@ -1346,6 +1346,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_possessive_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("a++a")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "possessive literal should skip generic failure checks" }) do
+      refute regexp.match?("aaa")
+    end
+  end
+
   def test_bounded_literal_possessive_match_question_uses_hfa
     regexp = Onibi::Regexp.new("a{1,3}+a")
 

@@ -195,6 +195,11 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
 
+      if input.ascii_only? && hfa_possessive_literal_string_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
+      end
+
       return false if hfa_always_fails?
 
       if hfa_empty_absence_result_safe?
@@ -415,10 +420,6 @@ module Onibi
       if input.ascii_only? && (literal = hfa_atomic_literal_result_safe?)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, normalized_position).nil?
-      end
-      if input.ascii_only? && hfa_possessive_literal_string_result_safe?
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
       end
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
