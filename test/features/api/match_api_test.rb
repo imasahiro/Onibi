@@ -449,6 +449,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_unicode_property_tables_are_shared_between_regexp_instances
+    first = Onibi::Regexp.new("\\p{Alpha}+")
+    second = Onibi::Regexp.new("\\p{Alpha}+")
+
+    assert_same first.send(:hfa_ascii_unicode_run_table), second.send(:hfa_ascii_unicode_run_table)
+  end
+
   def test_ascii_run_chain_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
 
