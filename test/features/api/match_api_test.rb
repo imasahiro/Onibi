@@ -106,6 +106,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_alternation_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+
+    regexp.stub(:hfa_literal_alternation_result_safe?,
+                -> { flunk "Literal alternation should use constructor dispatch metadata" }) do
+      assert regexp.match?("the quick fox")
+    end
+  end
+
   def test_single_byte_dot_match_uses_hfa_result
     regexp = Onibi::Regexp.new(".")
 

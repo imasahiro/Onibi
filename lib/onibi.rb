@@ -117,6 +117,11 @@ module Onibi
                               finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
                           end
       @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
+      alternation_values = if !@options.include?("ignorecase") && @ast.is_a?(AST::Alternation)
+                             @ast.branches.map { |branch| literal_ast_value(branch) }
+                           end
+      @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
+                                                                  alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
       word_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
                     node = @ast.parts.first
                     node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
@@ -134,6 +139,10 @@ module Onibi
         literal = @hfa_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
+      end
+      if input.ascii_only? && @hfa_literal_alternation_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return @hfa_literal_alternation_fast.any? { |value| !input.index(value, normalized_position).nil? }
       end
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
