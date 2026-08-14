@@ -436,6 +436,12 @@ module Onibi
           return with_timeout { hfa.match?(input, normalized_position) }
         end
       end
+      if !input.ascii_only? && hfa_linebreak_result_safe?
+        result = hfa_program.match?(input, position)
+        return result if timeout_unconfigured?
+
+        return with_timeout { result }
+      end
       if input.ascii_only? && ascii_repeated_literal_run_ast?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
@@ -537,6 +543,11 @@ module Onibi
         result = with_timeout { hfa_program&.match_result(input, position) }
         return hfa_match_data(result, input) if result
         return nil if hfa_program
+      end
+      if !input.ascii_only? && hfa_linebreak_result_safe?
+        result = with_timeout { hfa_program.match_result(input, position) }
+        return hfa_linebreak_match_data(result, input) if result
+        return nil
       end
 
       if input.ascii_only? && ascii_repeated_literal_run_ast?
@@ -808,6 +819,14 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       @hfa_linebreak_safe = parts.one? && parts.first.is_a?(AST::Escape) &&
                             parts.first.kind == :linebreak && hfa_program
+    end
+
+    def hfa_linebreak_match_data(result, input)
+      start, finish, = result
+      char_start = input.byteslice(0, start).length
+      char_finish = input.byteslice(0, finish).length
+      MatchData.new(input.byteslice(start, finish - start), [], [[char_start, char_finish]], {},
+                    MatchData::Context.new(input, self))
     end
 
     def hfa_unicode_match_result_safe?
@@ -2646,6 +2665,7 @@ module Onibi
       unicode_safe = !input.ascii_only? &&
                      (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
                       hfa_unicode_ignorecase_literal_result_safe? ||
+                      hfa_linebreak_result_safe? ||
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?

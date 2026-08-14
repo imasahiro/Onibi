@@ -1000,7 +1000,7 @@ module Onibi
         return if position.negative? || position > input.bytesize
         return if @negative_suffix == ""
         return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
-        return linebreak_match_result(input, position) if @linebreak_spec && input.ascii_only?
+        return linebreak_match_result(input, position) if @linebreak_spec
         if @exact_literal && !@exact_literal.ascii_only?
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
@@ -1160,12 +1160,12 @@ module Onibi
       end
 
       def linebreak_match?(input, position)
-        return false unless input.ascii_only?
-
         !linebreak_match_result(input, normalize_position(input, position)).nil?
       end
 
       def linebreak_match_result(input, position)
+        return unicode_linebreak_match_result(input, position) unless input.ascii_only?
+
         candidate = position
         while candidate < input.bytesize
           byte = input.getbyte(candidate)
@@ -1177,6 +1177,24 @@ module Onibi
           return [candidate, finish, []] if finish
 
           candidate += 1
+        end
+        nil
+      end
+
+      def unicode_linebreak_match_result(input, position)
+        cursor = position
+        while cursor < input.bytesize
+          character = input.byteslice(cursor, 4).each_char.first
+          width = character.bytesize
+          finish = if character == "\r"
+                     next_character = input.byteslice(cursor + width, 4)&.each_char&.first
+                     next_character == "\n" ? cursor + width + next_character.bytesize : cursor + width
+                   elsif CharacterPredicates.linebreak?(character)
+                     cursor + width
+                   end
+          return [cursor, finish, []] if finish
+
+          cursor += width
         end
         nil
       end
@@ -1360,6 +1378,17 @@ module Onibi
 
       def each_match_result(input, position = 0, &block)
         return enum_for(__method__, input, position) unless block_given?
+
+        if @linebreak_spec
+          position = normalize_position(input, position)
+          return if position.negative? || position > input.bytesize
+
+          while (result = linebreak_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
 
         unless input.ascii_only?
           if @exact_literal && !@exact_literal.ascii_only?

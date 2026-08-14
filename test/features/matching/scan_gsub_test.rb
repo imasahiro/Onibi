@@ -518,6 +518,13 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_linebreak_iteration_uses_hfa
+    regexp = Onibi::Regexp.new("\\R")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode linebreak scan should use HFA" }) do
+      assert_equal ["\u2028", "\u2029"], regexp.scan("x\u2028y\u2029z")
+    end
+  end
+
   def test_fixed_class_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
     regexp.stub(:codegen_each_result, ->(*) { flunk "fixed class alternation should use HFA" }) do

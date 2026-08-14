@@ -82,6 +82,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_linebreak_match_uses_hfa
+    regexp = Onibi::Regexp.new("\\R")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode linebreak match should use HFA" }) do
+      assert_equal "\u2028", regexp.match("x\u2028y")[0]
+    end
+  end
+
   def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("こんにちは")
 
