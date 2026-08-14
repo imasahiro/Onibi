@@ -984,6 +984,8 @@ module Onibi
 
         return positive_prefix_literal_match?(input, position) if positive_prefix_literal_search?
 
+        return negative_suffix_literal_match?(input, position) if negative_suffix_literal_search?
+
         return word_boundary_literal_match?(input, position) if word_boundary_literal_search?
 
         return anchored_class_match?(input, position) if @anchored_class_spec
@@ -1015,6 +1017,8 @@ module Onibi
         end
 
         return positive_prefix_literal_match_result(input, position) if positive_prefix_literal_search?
+
+        return negative_suffix_literal_match_result(input, position) if negative_suffix_literal_search?
 
         return word_boundary_literal_match_result(input, position) if word_boundary_literal_search?
 
@@ -1476,6 +1480,14 @@ module Onibi
           return
         end
 
+        if negative_suffix_literal_search?
+          while (result = negative_suffix_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
         if @backref_spec
           while (result = backref_match_result(input, position))
             yield result
@@ -1929,6 +1941,28 @@ module Onibi
           return [candidate, candidate + @exact_literal.bytesize, []] if prefix_start >= 0 &&
                                                                         input.byteslice(prefix_start,
                                                                                        @positive_prefix.bytesize) == @positive_prefix
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        nil
+      end
+
+      def negative_suffix_literal_search?
+        @exact_literal && @negative_suffix && !@positive_prefix && !@positive_suffix && !@negative_prefix &&
+          !@word_boundary_start && !@word_boundary_end
+      end
+
+      def negative_suffix_literal_match?(input, position)
+        !negative_suffix_literal_match_result(input, position).nil?
+      end
+
+      def negative_suffix_literal_match_result(input, position)
+        return unless input.ascii_only?
+
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          finish = candidate + @exact_literal.bytesize
+          return [candidate, finish, []] if input.byteslice(finish, @negative_suffix.bytesize) != @negative_suffix
 
           candidate = input.index(@exact_literal, candidate + 1)
         end

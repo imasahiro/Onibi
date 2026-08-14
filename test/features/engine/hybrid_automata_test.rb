@@ -231,6 +231,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("a catfish swims")
   end
 
+  def test_negative_suffix_literal_uses_direct_suffix_search
+    program = compile("cat(?!fish)")
+
+    assert_equal [2, 5, []], program.match_result("a cat naps")
+    assert_equal [8, 11, []], program.match_result("catfish cat")
+    refute program.match?("catfish")
+  end
+
   def test_literal_dot_candidate_respects_multiline_option
     multiline = Onibi::HybridAutomata.compile("a.b", options: ["multiline"])
     regular = Onibi::HybridAutomata.compile("a.b")
