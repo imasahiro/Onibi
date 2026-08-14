@@ -202,6 +202,17 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
       end
+      if input.ascii_only? && @hfa_positive_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        prefix, literal = @hfa_positive_lookbehind_literal_fast
+        candidate = input.index(prefix + literal, [normalized_position - prefix.bytesize, 0].max)
+        while candidate
+          return true if candidate + prefix.bytesize >= normalized_position
+
+          candidate = input.index(prefix + literal, candidate + 1)
+        end
+        return false
+      end
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -253,17 +264,6 @@ module Onibi
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_class_run_positive_lookahead_match?(input, normalized_position)
-      end
-      if input.ascii_only? && @hfa_positive_lookbehind_literal_fast
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        prefix, literal = @hfa_positive_lookbehind_literal_fast
-        candidate = input.index(prefix + literal, [normalized_position - prefix.bytesize, 0].max)
-        while candidate
-          return true if candidate + prefix.bytesize >= normalized_position
-
-          candidate = input.index(prefix + literal, candidate + 1)
-        end
-        return false
       end
       if input.ascii_only? && @hfa_negative_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
