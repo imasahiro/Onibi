@@ -144,6 +144,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_repeated_equal_length_literal_capture_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(a|b)+c")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "repeated equal-length literal capture scan should use HFA" }) do
+      assert_equal [["b"]], regexp.scan("ababc")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do

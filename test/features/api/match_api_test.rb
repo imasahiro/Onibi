@@ -1292,6 +1292,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_equal_length_literal_capture_match_uses_hfa
+    regexp = Onibi::Regexp.new("(a|b)+c")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "repeated equal-length literal capture should use HFA" }) do
+      assert_equal ["ababc", "b"], regexp.match("ababc").to_a
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
