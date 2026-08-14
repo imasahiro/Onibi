@@ -972,6 +972,8 @@ module Onibi
         fast = fast_literal_match(input, position)
         return fast unless fast.nil?
 
+        return class_run_chain_match?(input, position) if @class_run_chain_spec
+
         return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
         return linebreak_match?(input, position) if @linebreak_spec
         return !start_match_result(input, normalize_position(input, position)).nil? if @start_match
