@@ -22,6 +22,7 @@ module Onibi
                             :class_run_literal_spec, :class_run_chain_spec,
                             :adjacent_class_run_spec, :class_run_triple_spec,
                             :literal_class_literal_spec, :ascii_run_spec, :single_byte_spec,
+                            :linebreak_spec,
                             :possessive_literal_spec)
     BytecodeInstruction = Data.define(:opcode, :operand)
     UnicodeSpec = Data.define(:kind, :value, :minimum, :maximum)
@@ -43,6 +44,7 @@ module Onibi
     LiteralClassLiteralSpec = Data.define(:prefix, :table, :suffix)
     AsciiRunSpec = Data.define(:table, :candidate_byte, :candidate_bytes, :character_set, :any_byte)
     SingleByteSpec = Data.define(:table, :candidate_byte)
+    LinebreakSpec = Data.define(:ascii_only)
     AtomicLiteralSpec = Data.define(:branches, :suffix, :subsumed_literal, :candidate_bytes)
     MAX_STATES = 512
     MAX_BOUNDED_REPEAT = 64
@@ -227,12 +229,13 @@ module Onibi
         literal_class_literal_spec = literal_class_literal_spec(ast) unless constrained_match?(prepared)
         ascii_run_spec = ascii_run_spec(ast) unless constrained_match?(prepared)
         single_byte_spec = single_byte_spec(ast)
+        linebreak_spec = linebreak_spec(ast)
         spec = unicode_spec(ast)
         specialized = specialized_runtime?(prefix, exact_literal, prepared,
                                            repeat_literal_spec, dot_literal_spec, star_literal_spec,
                                            bounded_literal_spec, lazy_star_literal_spec,
                                            anchored_class_spec, alternation_literal_spec,
-                                           literal_class_literal_spec, ascii_run_spec)
+                                           literal_class_literal_spec, ascii_run_spec) || linebreak_spec
         fragment = specialized ? Fragment.new(false, 0, 0) : visit(ast)
         reach_masks = specialized ? EMPTY_REACH_MASKS : build_reach_masks
         span_masks = specialized ? EMPTY_SPAN_MASKS : build_span_masks
@@ -249,7 +252,7 @@ module Onibi
                                   lazy_star_literal_spec, anchored_class_spec, alternation_literal_spec,
                                   repeated_alternation_literal_spec, class_run_literal_spec,
                                   class_run_chain_spec, adjacent_class_run_spec, class_run_triple_spec,
-                                  literal_class_literal_spec, ascii_run_spec, single_byte_spec,
+                                  literal_class_literal_spec, ascii_run_spec, single_byte_spec, linebreak_spec,
                                   prepared.possessive_literal_spec)
         Program.new(automaton, dfa: @dfa, dfa_state_limit: @dfa_state_limit, input_ir: :cfg,
                                ignorecase: ignorecase?)
@@ -923,6 +926,7 @@ module Onibi
         @literal_class_literal_spec = automaton.literal_class_literal_spec
         @ascii_run_spec = automaton.ascii_run_spec
         @single_byte_spec = automaton.single_byte_spec
+        @linebreak_spec = automaton.linebreak_spec
         @atomic_literal_spec = automaton.atomic_literal_spec
         @possessive_literal_spec = automaton.possessive_literal_spec
         initialize_runtime_options(dfa, dfa_state_limit, input_ir)
@@ -962,6 +966,7 @@ module Onibi
         raise TypeError, "input must be a String" unless input.is_a?(String)
         return false if @negative_suffix == ""
         return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
+        return linebreak_match?(input, position) if @linebreak_spec
         return backref_match?(input, position) if @backref_spec
         return possessive_literal_match?(input, position) if @possessive_literal_spec
         return repeat_literal_match?(input, position) if @repeat_literal_spec
@@ -995,6 +1000,7 @@ module Onibi
         return if position.negative? || position > input.bytesize
         return if @negative_suffix == ""
         return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
+        return linebreak_match_result(input, position) if @linebreak_spec && input.ascii_only?
         if @exact_literal && !@exact_literal.ascii_only?
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
@@ -1147,6 +1153,28 @@ module Onibi
         candidate = position
         while candidate < input.bytesize
           return [candidate, candidate + 1, []] if table[input.getbyte(candidate)]
+
+          candidate += 1
+        end
+        nil
+      end
+
+      def linebreak_match?(input, position)
+        return false unless input.ascii_only?
+
+        !linebreak_match_result(input, normalize_position(input, position)).nil?
+      end
+
+      def linebreak_match_result(input, position)
+        candidate = position
+        while candidate < input.bytesize
+          byte = input.getbyte(candidate)
+          finish = if byte == 13
+                     input.getbyte(candidate + 1) == 10 ? candidate + 2 : candidate + 1
+                   elsif [10, 11, 12].include?(byte)
+                     candidate + 1
+                   end
+          return [candidate, finish, []] if finish
 
           candidate += 1
         end
@@ -1363,6 +1391,7 @@ module Onibi
                       @class_run_chain_spec ||
                       @adjacent_class_run_spec ||
                       @class_run_triple_spec ||
+                      @linebreak_spec ||
                       @single_byte_spec || @bounded_literal_spec ||
                       @class_run_literal_spec ||
                       @dot_literal_spec ||
@@ -1424,6 +1453,14 @@ module Onibi
 
         if @class_run_triple_spec
           while (result = class_run_triple_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @linebreak_spec
+          while (result = linebreak_match_result(input, position))
             yield result
             position = result[1]
           end

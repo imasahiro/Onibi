@@ -484,7 +484,7 @@ class HybridAutomataTest < Minitest::Test
   end
 
   def test_rejects_non_regular_or_capture_dependent_patterns
-    ["\\R"].each do |pattern|
+    ["\\Gcat"].each do |pattern|
       assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { compile(pattern) }
     end
   end
@@ -494,6 +494,14 @@ class HybridAutomataTest < Minitest::Test
 
     assert program.match?("\n")
     refute compile(".").match?("\n")
+  end
+
+  def test_supports_ascii_linebreak_escape
+    program = compile("\\R")
+
+    assert_equal [[1, 3, []], [1, 2, []]],
+                 [program.match_result("x\r\ny"), program.match_result("x\ny")]
+    refute program.match?("abc")
   end
 
   def test_supports_scoped_ignorecase_literals

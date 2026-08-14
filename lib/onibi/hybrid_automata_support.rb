@@ -49,6 +49,13 @@ module Onibi
         value.empty? ? nil : value.freeze
       end
 
+      def linebreak_spec(node)
+        parts = node.is_a?(AST::Sequence) ? node.parts : [node]
+        return unless parts.one? && parts.first.is_a?(AST::Escape) && parts.first.kind == :linebreak
+
+        LinebreakSpec.new(true).freeze
+      end
+
       def scoped_option_group?(node)
         return true if node.is_a?(AST::OptionGroup)
 

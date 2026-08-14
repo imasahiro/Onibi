@@ -71,6 +71,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_linebreak_match_uses_hfa
+    regexp = Onibi::Regexp.new("\\R")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "ASCII linebreak match should use HFA" }) do
+      assert_equal "\r\n", regexp.match("x\r\ny")[0]
+    end
+    regexp.stub(:codegen_match?, ->(*) { flunk "ASCII linebreak match? should use HFA" }) do
+      assert regexp.match?("x\ny")
+    end
+  end
+
   def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("こんにちは")
 
