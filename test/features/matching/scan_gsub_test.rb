@@ -239,6 +239,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_line_anchor_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("^cat$")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "line-anchor iteration should use HFA" }) do
+      assert_equal %w[cat cat], regexp.scan("cat\ncat")
+    end
+  end
+
   def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 

@@ -1017,6 +1017,8 @@ module Onibi
         return backref_match_result(input, position) if @backref_spec
 
         return anchored_class_match_result(input, position) if @anchored_class_spec
+        return anchored_match_result(input, position) if @anchored_start || @anchored_end
+        return line_anchor_match_result(input, position) if @line_anchor_start || @line_anchor_end
         return alternation_match_result(input, position) if @alternation_literal_spec
         return repeated_alternation_match_result(input, position) if @repeated_alternation_literal_spec
         return repeat_literal_match_result(input, position) if @repeat_literal_spec
@@ -1404,6 +1406,21 @@ module Onibi
           return
         end
 
+        if (@anchored_start || @anchored_end) && !@anchored_class_spec
+          position = normalize_position(input, position)
+          result = anchored_match_result(input, position)
+          yield result if result
+          return
+        end
+        if (@line_anchor_start || @line_anchor_end) && !@anchored_class_spec
+          position = normalize_position(input, position)
+          while (result = line_anchor_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
         unless input.ascii_only?
           if @exact_literal && !@exact_literal.ascii_only?
             position = normalize_position(input, position)
@@ -1703,6 +1720,65 @@ module Onibi
           break if active.zero?
 
           cursor += 1
+        end
+        nil
+      end
+
+      def anchored_match_result(input, position)
+        return if position.negative? || position > input.bytesize
+        return if @anchored_start && position != 0
+
+        candidate = @anchored_start ? 0 : position
+        while candidate < input.bytesize
+          active = 0
+          cursor = candidate
+          while cursor < input.bytesize
+            active = transition(active, input.getbyte(cursor), cursor == candidate)
+            if (active & @accept_mask).positive?
+              finish = cursor + 1
+              return [candidate, finish, []] unless @anchored_end && finish != input.bytesize
+            end
+            break if active.zero?
+
+            cursor += 1
+          end
+          break if @anchored_start
+
+          candidate += 1
+        end
+        return [position, position, []] if @nullable && (!@anchored_end || position == input.bytesize)
+
+        nil
+      end
+
+      def line_anchor_match_result(input, position)
+        return if position.negative? || position > input.bytesize
+
+        candidate = position
+        candidate += 1 while @line_anchor_start && candidate.positive? &&
+                             candidate < input.bytesize && input.getbyte(candidate - 1) != 10
+        while candidate <= input.bytesize
+          if !@line_anchor_start || candidate.zero? || input.getbyte(candidate - 1) == 10
+            active = 0
+            cursor = candidate
+            while cursor < input.bytesize
+              active = transition(active, input.getbyte(cursor), cursor == candidate)
+              if (active & @accept_mask).positive?
+                finish = cursor + 1
+                line_end = finish == input.bytesize || input.getbyte(finish) == 10
+                return [candidate, finish, []] unless @line_anchor_end && !line_end
+              end
+              break if active.zero?
+
+              cursor += 1
+            end
+          end
+          break unless @line_anchor_start
+
+          newline = input.index("\n", candidate)
+          break unless newline
+
+          candidate = newline + 1
         end
         nil
       end

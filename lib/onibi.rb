@@ -388,6 +388,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_match_reset_literal_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_anchor_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_program.match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_class_run_positive_lookahead_match?(input, normalized_position)
@@ -484,6 +488,12 @@ module Onibi
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_match_reset_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_anchor_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -804,6 +814,7 @@ module Onibi
       return true if hfa_leading_literal_assertion_result_safe?
       return true if hfa_atomic_literal_result_safe?
       return true if hfa_match_reset_literal_result_safe?
+      return true if hfa_anchor_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
@@ -1042,6 +1053,22 @@ module Onibi
 
     def hfa_atomic_literal_result_safe?
       hfa_atomic_literal_match_literal
+    end
+
+    def hfa_anchor_result_safe?
+      return @hfa_anchor_result_safe if defined?(@hfa_anchor_result_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      has_anchor = parts.any? { |part| part.is_a?(AST::Anchor) }
+      return @hfa_anchor_result_safe = false unless has_anchor
+
+      program = hfa_program
+      @hfa_anchor_result_safe = program &&
+                                !program.instance_variable_get(:@anchored_class_spec) &&
+                                (program.instance_variable_get(:@anchored_start) ||
+                                 program.instance_variable_get(:@anchored_end) ||
+                                 program.instance_variable_get(:@line_anchor_start) ||
+                                 program.instance_variable_get(:@line_anchor_end))
     end
 
     def hfa_possessive_literal_string_result_safe?
@@ -2733,7 +2760,8 @@ module Onibi
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? ||
                     hfa_start_match_result_safe? ||
-                    hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                    hfa_anchor_result_safe? ||
                     hfa_linebreak_result_safe? ||
                     hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
@@ -2890,6 +2918,7 @@ module Onibi
                      hfa_scoped_multiline_any_result_safe? ||
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                     hfa_anchor_result_safe? ||
                      hfa_linebreak_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
