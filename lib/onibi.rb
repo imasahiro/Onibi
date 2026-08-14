@@ -337,7 +337,7 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_bounded_literal_match_result(input, normalized_position).nil?
       end
-      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+      if (spec = hfa_bounded_sequence_direct_spec) && (input.ascii_only? || spec[:table].nil?)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
       end
@@ -664,7 +664,7 @@ module Onibi
         return with_timeout { hfa.match?(input, normalized_position) }
       end
 
-      codegen_match?(input, position)
+      hfa_generic_match?(input, position)
     end
 
     def match(input, position = 0)
@@ -742,10 +742,15 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
-      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+      if (spec = hfa_bounded_sequence_direct_spec) && (input.ascii_only? || spec[:table].nil?)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_bounded_sequence_direct_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
+        if result
+          return hfa_match_data(result, input) if input.ascii_only?
+
+          match_start, match_finish, captures = result
+          return MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
+        end
         return nil
       end
       if input.ascii_only? && (spec = hfa_fixed_literal_backref_spec)
@@ -1139,7 +1144,7 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil if hfa_program
       end
-      codegen_match(input, position)
+      hfa_generic_match(input, position)
     end
 
     define_method([61, 126].pack("C*")) do |input|
@@ -1215,6 +1220,62 @@ module Onibi
       return enum_for(__method__, input) unless block
 
       codegen_program.each_match(input, 0, capture: true) { |result| block.call(result) }
+    end
+
+    def hfa_generic_match?(input, position = 0)
+      program = hfa_program
+      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+
+      with_timeout { program.match?(input, normalize_match_position(input, position)) }
+    end
+
+    def hfa_generic_match(input, position = 0)
+      program = hfa_program
+      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+
+      start = normalize_match_position(input, position)
+      result = with_timeout { program.match_result(input, start) }
+      result ||= hfa_unicode_alternation_match_result(input, start)
+      return nil unless result
+
+      if input.ascii_only?
+        hfa_match_data(result, input)
+      else
+        match_start, match_finish, captures = result
+        MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
+      end
+    end
+
+    def hfa_unicode_alternation_match_result(input, position)
+      return unless input.encoding == Encoding::UTF_8 && @ast.is_a?(AST::Alternation)
+      branches = @ast.branches.map { |branch| branch.is_a?(AST::Sequence) && branch.parts.one? ? branch.parts.first : branch }
+      return unless branches.all? { |branch| branch.is_a?(AST::Literal) || branch.is_a?(AST::CharacterClass) }
+
+      byte_offset = 0
+      input.each_char do |character|
+        if byte_offset >= input.byteslice(0, position).bytesize
+          branch = branches.find do |candidate|
+            candidate.is_a?(AST::Literal) ? input.byteslice(byte_offset, candidate.value.bytesize) == candidate.value :
+              ClassPredicates.matches?(candidate.value, character)
+          end
+          if branch
+            length = branch.is_a?(AST::Literal) ? branch.value.bytesize : character.bytesize
+            return [byte_offset, byte_offset + length, []]
+          end
+        end
+        byte_offset += character.bytesize
+      end
+      nil
+    end
+
+    def hfa_generic_each_result(input, &block)
+      return enum_for(__method__, input) unless block
+
+      program = hfa_program
+      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+
+      program.each_match_result(input, 0, &block)
+      true
     end
 
     def named_captures
@@ -1368,7 +1429,7 @@ module Onibi
       node = parts.one? && parts.first
       source = node.value if node.is_a?(AST::CharacterClass)
       direct = source if source && (!source.ascii_only? || source.include?("\\p") || source.include?("\\P") ||
-                                   source.include?("\\u") || source.include?("\\M-"))
+                                   source.include?("\\u") || source.include?("\\M-") || source.include?("[:"))
       @hfa_unicode_class_direct_spec = direct
     end
 
@@ -2415,23 +2476,28 @@ module Onibi
 
     def hfa_bounded_sequence_direct_match_result(input, position)
       spec = hfa_bounded_sequence_direct_spec
-      candidate = input.index(spec[:prefix], position)
+      binary = !input.ascii_only?
+      source = binary ? input.b : input
+      prefix = binary ? spec[:prefix].b : spec[:prefix]
+      suffix = binary ? spec[:suffix].b : spec[:suffix]
+      position = input.byteslice(0, position).bytesize if binary
+      candidate = source.index(prefix, position)
       while candidate
         body_start = candidate + spec[:prefix].bytesize
         first_suffix = body_start + spec[:minimum]
         last_suffix = [body_start + spec[:maximum], input.bytesize - spec[:suffix].bytesize].min
-        suffix_position = input.index(spec[:suffix], first_suffix)
+        suffix_position = source.index(suffix, first_suffix)
         best = nil
         while suffix_position && suffix_position <= last_suffix
           span = suffix_position - body_start
           if hfa_bounded_sequence_body_valid?(input, body_start, span, spec)
             best = suffix_position
           end
-          suffix_position = input.index(spec[:suffix], suffix_position + 1)
+        suffix_position = source.index(suffix, suffix_position + 1)
         end
         return [candidate, best + spec[:suffix].bytesize, []] if best
 
-        candidate = input.index(spec[:prefix], candidate + 1)
+        candidate = source.index(prefix, candidate + 1)
       end
       nil
     end
@@ -4163,6 +4229,8 @@ module Onibi
     end
 
     def hfa_match_data(result, input)
+      return nil unless result
+
       start, finish, captures = result
       if hfa_literal_capture_sequence_spec && captures.any?
         return MatchData.from_byte_offsets(input, start, finish, captures, hfa_result_names, self)
@@ -4868,7 +4936,7 @@ module Onibi
         end
         return true
       end
-      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+      if (spec = hfa_bounded_sequence_direct_spec) && (input.ascii_only? || spec[:table].nil?)
         position = 0
         while (result = hfa_bounded_sequence_direct_match_result(input, position))
           block.call(result)

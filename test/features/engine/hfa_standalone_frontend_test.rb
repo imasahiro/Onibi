@@ -129,6 +129,28 @@ class HfaStandaloneFrontendTest < Minitest::Test
     assert_equal [["a"]], regexp.scan("a")
   end
 
+  def test_hfa_uses_generic_automaton_instead_of_codegen_for_generic_matches
+    regexp = Onibi::Regexp.new("(a|b)c")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+
+    assert regexp.match?("bc")
+    assert_equal "bc", regexp.match("bc").to_s
+    assert_equal [["b"]], regexp.scan("bc")
+  end
+
+  def test_unsupported_match_does_not_fallback_to_codegen
+    regexp = Onibi::Regexp.new("a(?=b)c")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+
+    assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { regexp.match?("abc") }
+    assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { regexp.match("abc") }
+    assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { regexp.scan("abc") }
+  end
+
   def test_hfa_handles_literal_absence_with_literal_suffix_without_codegen
     regexp = Onibi::Regexp.new("(?~real)ist")
     %i[codegen_match? codegen_match codegen_each_result].each do |method|

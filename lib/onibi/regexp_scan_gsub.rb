@@ -58,7 +58,7 @@ module Onibi
     end
 
     def each_result(input, &block)
-      return codegen_each_result(input, &block) unless hfa_each_result(input, &block)
+      return hfa_generic_each_result(input, &block) unless hfa_each_result(input, &block)
 
       nil
     end
@@ -72,7 +72,9 @@ module Onibi
         block.call(hfa_match_data(result, input))
       end
 
-      codegen_each_match(input, &block)
+      hfa_generic_each_result(input) do |result|
+        block.call(hfa_match_data(result, input))
+      end
     end
 
     def scan_value(match)
