@@ -134,6 +134,9 @@ module Onibi
       if assertion_parts.is_a?(Array) && assertion_parts[1] == :positive_lookbehind &&
          assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
         @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
+      elsif assertion_parts.is_a?(Array) && assertion_parts[1] == :negative_lookbehind &&
+            assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+        @hfa_negative_lookbehind_literal_fast = [assertion_parts[0], assertion_parts[2]].freeze
       end
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
@@ -196,6 +199,18 @@ module Onibi
           return true if candidate + prefix.bytesize >= normalized_position
 
           candidate = input.index(prefix + literal, candidate + 1)
+        end
+        return false
+      end
+      if input.ascii_only? && @hfa_negative_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        literal, guard = @hfa_negative_lookbehind_literal_fast
+        candidate = input.index(literal, normalized_position)
+        while candidate
+          return true if candidate < guard.bytesize ||
+                         input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
+
+          candidate = input.index(literal, candidate + 1)
         end
         return false
       end

@@ -941,6 +941,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_negative_literal_lookbehind_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("(?<!un)happy")
+
+    regexp.stub(:hfa_literal_assertion_result_safe?,
+                -> { flunk "Negative lookbehind should use constructor dispatch metadata" }) do
+      assert regexp.match?("very happy")
+      refute regexp.match?("unhappy")
+    end
+  end
+
   def test_literal_negative_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<!a)b")
 
