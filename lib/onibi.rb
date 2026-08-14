@@ -236,6 +236,11 @@ module Onibi
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_casefold_class_direct_match_result(input, byte_position, spec).nil?
       end
+      if (spec = hfa_literal_capture_sequence_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        return !hfa_literal_capture_sequence_match_result(input, byte_position, spec).nil?
+      end
       if (spec = hfa_fixed_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_fixed_literal_backref_match_result(input, normalized_position, spec).nil?
@@ -293,6 +298,13 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_casefold_class_direct_match_result(input, byte_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if (spec = hfa_literal_capture_sequence_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_literal_capture_sequence_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -688,6 +700,13 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_casefold_class_direct_match_result(input, byte_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if (spec = hfa_literal_capture_sequence_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_literal_capture_sequence_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1376,6 +1395,127 @@ module Onibi
 
           return [offsets[index], offsets[index + length], []]
         end
+      end
+      nil
+    end
+
+    def hfa_literal_capture_sequence_spec
+      return @hfa_literal_capture_sequence_spec if defined?(@hfa_literal_capture_sequence_spec)
+      return @hfa_literal_capture_sequence_spec = false if @options.include?("ignorecase")
+      return @hfa_literal_capture_sequence_spec = false if CaptureNameCollector.indices(@ast).values.any? { |indices| indices.length > 1 }
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      tokens = []
+      capture_count = 0
+      valid = parts.length > 1 && parts.all? do |part|
+        case part
+        when AST::Literal
+          tokens << { kind: :fixed, value: part.value, captures: [] }.freeze
+          part.value.ascii_only? || !part.value.empty?
+        when AST::Group
+          info = hfa_literal_capture_group_info(part)
+          next false unless info
+
+          capture_count = [capture_count, *info[:captures].map(&:first)].max
+          tokens << { kind: :fixed, value: info[:value], captures: info[:captures] }.freeze
+          true
+        when AST::Quantifier
+          group = part.expression
+          info = group.is_a?(AST::Group) && group.capture ? hfa_literal_capture_group_info(group) : nil
+          next false unless info && info[:captures].length == 1 && %i[+ ?].include?(part.kind) &&
+                            part.mode == :greedy
+
+          capture_count = [capture_count, group.number].max
+          kind = part.kind == :+ ? :repeat : :optional
+          tokens << { kind: kind, value: info[:value], number: group.number }.freeze
+          true
+        else
+          false
+        end
+      end
+      valid &&= tokens.first&.fetch(:kind) == :fixed && tokens.first[:value].bytesize.positive?
+      @hfa_literal_capture_sequence_spec = if valid && tokens.any? { |token| %i[repeat optional].include?(token[:kind]) }
+                                             [tokens.freeze, capture_count].freeze
+                                           else
+                                             false
+                                           end
+    end
+
+    def hfa_literal_capture_group_info(group)
+      value, captures = hfa_literal_capture_body_info(group.body)
+      return unless value && group.number
+
+      [{ value: value, captures: [[group.number, 0, value.bytesize], *captures] }].first
+    end
+
+    def hfa_literal_capture_body_info(body)
+      nodes = body.is_a?(AST::Sequence) ? body.parts : [body]
+      value = +""
+      captures = []
+      nodes.each do |node|
+        case node
+        when AST::Literal
+          return unless node.value.bytesize.positive?
+
+          value << node.value
+        when AST::Group
+          return unless node.capture
+
+          nested = hfa_literal_capture_group_info(node)
+          return unless nested
+
+          start = value.bytesize
+          value << nested[:value]
+          nested[:captures].each { |number, from, to| captures << [number, from + start, to + start] }
+        else
+          return
+        end
+      end
+      [value.freeze, captures.freeze]
+    end
+
+    def hfa_literal_capture_sequence_match_result(input, byte_position, spec)
+      tokens, capture_count = spec
+      first = tokens.first[:value]
+      candidate = input.b.index(first.b, byte_position)
+      while candidate
+        cursor = candidate
+        captures = Array.new(capture_count)
+        valid = true
+        tokens.each do |token|
+          case token[:kind]
+          when :fixed
+            value = token[:value]
+            unless input.byteslice(cursor, value.bytesize) == value
+              valid = false
+              break
+            end
+            token[:captures].each do |number, from, to|
+              captures[number - 1] = [cursor + from, cursor + to]
+            end
+            cursor += value.bytesize
+          when :repeat
+            start = cursor
+            value = token[:value]
+            while input.byteslice(cursor, value.bytesize) == value
+              cursor += value.bytesize
+            end
+            if cursor == start
+              valid = false
+              break
+            end
+            captures[token[:number] - 1] = [cursor - value.bytesize, cursor]
+          when :optional
+            value = token[:value]
+            if input.byteslice(cursor, value.bytesize) == value
+              captures[token[:number] - 1] = [cursor, cursor + value.bytesize]
+              cursor += value.bytesize
+            end
+          end
+        end
+        return [candidate, cursor, captures] if valid
+
+        candidate = input.b.index(first.b, candidate + 1)
       end
       nil
     end
@@ -4007,6 +4147,9 @@ module Onibi
 
     def hfa_match_data(result, input)
       start, finish, captures = result
+      if hfa_literal_capture_sequence_spec && captures.any?
+        return MatchData.from_byte_offsets(input, start, finish, captures, hfa_result_names, self)
+      end
       if captures.empty? && (strategy = hfa_capture_offset_strategy)
         capture_offsets = case strategy
                            when :simple then hfa_simple_capture_offsets(input, start, finish)
@@ -4601,6 +4744,14 @@ module Onibi
         validate_encoding!(input)
         position = 0
         while (result = hfa_casefold_class_direct_match_result(input, position, spec))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if (spec = hfa_literal_capture_sequence_spec)
+        position = 0
+        while (result = hfa_literal_capture_sequence_match_result(input, position, spec))
           block.call(result)
           position = result[1]
         end

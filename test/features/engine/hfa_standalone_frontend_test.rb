@@ -73,6 +73,20 @@ class HfaStandaloneFrontendTest < Minitest::Test
     assert_equal ["SS"], regexp.scan("SS")
   end
 
+  def test_hfa_handles_nested_literal_capture_sequences_without_codegen
+    regexp = Onibi::Regexp.new("(?<outer>(?<inner>é))(?<repeat>a)+(?<missing>b)?")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+    regexp.define_singleton_method(:hfa_program) { raise "unexpected generic HFA program" }
+
+    assert regexp.match?("éaa")
+    match = regexp.match("éaa")
+    assert_equal "éaa", match.to_s
+    assert_equal ["é", "é", "a", nil], match.captures
+    assert_equal [["é", "é", "a", nil]], regexp.scan("éaa")
+  end
+
   def test_hfa_handles_fixed_literal_backreferences_without_codegen
     regexp = Onibi::Regexp.new("(a)(b)\\1")
     %i[codegen_match? codegen_match codegen_each_result].each do |method|

@@ -56,5 +56,6 @@ module Onibi
     def byte_position(character_position)
       @string[0, character_position].bytesize
     end
+
   end
 end

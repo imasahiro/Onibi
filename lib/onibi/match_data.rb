@@ -40,6 +40,30 @@ module Onibi
       match_data
     end
 
+    def self.from_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
+      character_position = lambda do |byte_position|
+        input.byteslice(0, byte_position).to_s.length
+      end
+      offsets = capture_offsets.map do |offset|
+        offset && [character_position.call(offset[0]), character_position.call(offset[1])]
+      end
+      captures = capture_offsets.map do |offset|
+        offset && input.byteslice(offset[0], offset[1] - offset[0])
+      end
+      match_data = allocate
+      match_data.instance_variable_set(:@values,
+                                       ([input.byteslice(start_position, finish_position - start_position)] + captures).freeze)
+      match_data.instance_variable_set(:@captures, captures.freeze)
+      match_data.instance_variable_set(
+        :@offsets,
+        [[character_position.call(start_position), character_position.call(finish_position)], *offsets].freeze
+      )
+      match_data.instance_variable_set(:@names, names.freeze)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
     def initialize(values, captures, offsets, names = {}, context = nil)
       @values = ([values] + captures).freeze
       @captures = captures.freeze
