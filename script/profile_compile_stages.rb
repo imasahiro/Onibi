@@ -5,6 +5,7 @@ require "optparse"
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 $LOAD_PATH.unshift File.expand_path("../benchmark", __dir__)
 require "onibi"
+require "onibi/codegen"
 require "regexp_features"
 
 # Separates Onibi construction into front-end and generated-source stages.

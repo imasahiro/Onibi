@@ -10,6 +10,60 @@ module Onibi
 
     attr_reader :string, :regexp
 
+    EMPTY_CAPTURES = [].freeze
+    EMPTY_NAMES = {}.freeze
+
+    def self.captureless(input, start_position, finish_position, regexp)
+      match_data = allocate
+      value = input.byteslice(start_position, finish_position - start_position)
+      match_data.instance_variable_set(:@values, [value].freeze)
+      match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
+      match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)
+      match_data.instance_variable_set(:@names, EMPTY_NAMES)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
+    def self.from_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
+      match_data = allocate
+      full_match = input.byteslice(start_position, finish_position - start_position)
+      captures = capture_offsets.map do |offset|
+        offset && input.byteslice(offset[0], offset[1] - offset[0])
+      end
+      match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
+      match_data.instance_variable_set(:@captures, captures.freeze)
+      match_data.instance_variable_set(:@offsets, [[start_position, finish_position], *capture_offsets].freeze)
+      match_data.instance_variable_set(:@names, names.freeze)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
+    def self.from_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
+      character_position = lambda do |byte_position|
+        input.byteslice(0, byte_position).to_s.length
+      end
+      offsets = capture_offsets.map do |offset|
+        offset && [character_position.call(offset[0]), character_position.call(offset[1])]
+      end
+      captures = capture_offsets.map do |offset|
+        offset && input.byteslice(offset[0], offset[1] - offset[0])
+      end
+      match_data = allocate
+      match_data.instance_variable_set(:@values,
+                                       ([input.byteslice(start_position, finish_position - start_position)] + captures).freeze)
+      match_data.instance_variable_set(:@captures, captures.freeze)
+      match_data.instance_variable_set(
+        :@offsets,
+        [[character_position.call(start_position), character_position.call(finish_position)], *offsets].freeze
+      )
+      match_data.instance_variable_set(:@names, names.freeze)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
     def initialize(values, captures, offsets, names = {}, context = nil)
       @values = ([values] + captures).freeze
       @captures = captures.freeze

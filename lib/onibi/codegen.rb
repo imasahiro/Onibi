@@ -3,8 +3,8 @@
 # Pure-Ruby regexp compiler and generated matcher namespace.
 module Onibi
   # Raised when generated Ruby cannot be compiled or violates the codegen boundary.
-  class CodegenError < StandardError
-  end
+  class CodegenError < Error
+  end unless const_defined?(:CodegenError, false)
 
   require_relative "codegen/cfg"
   require_relative "codegen/optimization"

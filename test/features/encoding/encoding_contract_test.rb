@@ -25,4 +25,37 @@ class EncodingContractTest < Minitest::Test
       assert_equal expected, actual, "#{pattern.inspect} against #{input.inspect}"
     end
   end
+
+  def test_unicode_literal_full_casefold_uses_hfa_for_ascii_input
+    regexp = Onibi::Regexp.new("ſ", "i")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode full case-fold should use HFA" }) do
+      assert_equal "S", regexp.match("S").to_s
+    end
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode full case-fold match? should use HFA" }) do
+      assert regexp.match?("S")
+    end
+  end
+
+  def test_ascii_compatible_literal_skips_redundant_encoding_validation
+    input = ValidationTrackingString.new("needle")
+
+    assert Onibi::Regexp.new("needle").match?(input)
+    assert_equal 0, input.valid_encoding_calls
+  end
+
+  class ValidationTrackingString < String
+    attr_reader :valid_encoding_calls
+
+    def initialize(value)
+      super
+      @valid_encoding_calls = 0
+    end
+
+    def valid_encoding?
+      @valid_encoding_calls += 1
+      super
+    end
+  end
 end
