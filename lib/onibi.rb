@@ -113,7 +113,7 @@ module Onibi
                                 hfa_unicode_repeated_literal_result_safe?)
         hfa = hfa_program
         if hfa
-          normalized_position = normalize_match_position(input, position)
+          normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
           if hfa_unicode_repeated_literal_result_safe?
             return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
           end

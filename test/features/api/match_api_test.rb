@@ -353,6 +353,14 @@ class MatchApiTest < Minitest::Test
     assert_equal true, regexp.instance_variable_get(:@hfa_unicode_match_safe)
   end
 
+  def test_unicode_hfa_default_position_skips_position_normalization
+    regexp = Onibi::Regexp.new("\\p{Letter}+")
+
+    regexp.stub(:normalize_match_position, ->(*) { flunk "default Unicode HFA position should be zero" }) do
+      assert regexp.match?("日本語")
+    end
+  end
+
   def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
     regexp = Onibi::Regexp.new("é")
 
