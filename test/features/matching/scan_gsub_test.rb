@@ -42,6 +42,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_word_boundary_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("\\bcat\\b")
+
+    regexp.stub(:hfa_program, -> { flunk "word-boundary scan should avoid HFA program compilation" }) do
+      assert_equal ["cat", "cat"], regexp.scan("cat scatter cat")
+    end
+  end
+
   def test_literal_alternation_scan_uses_direct_hfa_iterator
     regexp = Onibi::Regexp.new("cat|dog|fox")
 

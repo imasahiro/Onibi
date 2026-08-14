@@ -2235,6 +2235,14 @@ module Onibi
         end
         return true
       end
+      if hfa_word_boundary_literal_result_safe?
+        position = 0
+        while (result = hfa_word_boundary_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
 
       program = hfa_program
       return false unless program
@@ -2248,12 +2256,6 @@ module Onibi
       elsif hfa_literal_assertion_result_safe?
         position = 0
         while (result = hfa_literal_assertion_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-      elsif hfa_word_boundary_literal_result_safe?
-        position = 0
-        while (result = hfa_word_boundary_literal_match_result(input, position))
           block.call(result)
           position = result[1]
         end
