@@ -84,7 +84,7 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      if input.ascii_only? && hfa_exact_literal_result_safe?
+      if hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?

@@ -333,6 +333,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_literal_match_question_uses_string_path_on_utf8_input
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_program, -> { flunk "ASCII literal match? should avoid HFA compilation on UTF-8 input" }) do
+      regexp.stub(:codegen_match?, ->(*) { flunk "ASCII literal match? should use string path on UTF-8 input" }) do
+        assert regexp.match?("前needle後")
+      end
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
