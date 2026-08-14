@@ -3645,6 +3645,20 @@ module Onibi
                                      end
     end
 
+    def hfa_tagged_capture_result(input, result, strategy)
+      start, finish, captures = result
+      offsets = case strategy
+                when :simple then hfa_simple_capture_offsets(input, start, finish)
+                when :nested_literal then hfa_nested_literal_capture_offsets(input, start, finish)
+                when :nested_repeated then hfa_nested_repeated_capture_offsets(input, start, finish)
+                when :adjacent_nested_repeated then hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
+                when :repeated_class then hfa_repeated_class_capture_offsets(input, start, finish)
+                when :conditional then hfa_conditional_capture_offsets(input, start)
+                when :subexpression then hfa_subexpression_capture_offsets(input, start)
+                end
+      [start, finish, offsets || captures]
+    end
+
     def hfa_offset_match_data(input, start, finish, capture_offsets, names)
       MatchData.from_offsets(input, start, finish, capture_offsets, names, self)
     end
@@ -4666,35 +4680,10 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_simple_capture_result_safe?
+      strategy = hfa_capture_offset_strategy
+      if %i[simple nested_literal nested_repeated adjacent_nested_repeated repeated_class subexpression].include?(strategy)
         program.each_match_result(input, 0) do |result|
-          captures = hfa_simple_capture_offsets(input, result[0], result[1])
-          block.call([result[0], result[1], captures || result[2]])
-        end
-      elsif hfa_subexpression_result_safe?
-        program.each_match_result(input, 0) do |result|
-          captures = hfa_subexpression_capture_offsets(input, result[0])
-          block.call([result[0], result[1], captures || result[2]])
-        end
-      elsif hfa_nested_literal_capture_result_safe?
-        program.each_match_result(input, 0) do |result|
-          captures = hfa_nested_literal_capture_offsets(input, result[0], result[1])
-          block.call([result[0], result[1], captures || result[2]])
-        end
-      elsif hfa_nested_repeated_capture_result_safe?
-        program.each_match_result(input, 0) do |result|
-          captures = hfa_nested_repeated_capture_offsets(input, result[0], result[1])
-          block.call([result[0], result[1], captures || result[2]])
-        end
-      elsif hfa_adjacent_nested_repeated_capture_result_safe?
-        program.each_match_result(input, 0) do |result|
-          captures = hfa_adjacent_nested_repeated_capture_offsets(input, result[0], result[1])
-          block.call([result[0], result[1], captures || result[2]])
-        end
-      elsif hfa_repeated_class_capture_result_safe?
-        program.each_match_result(input, 0) do |result|
-          captures = hfa_repeated_class_capture_offsets(input, result[0], result[1])
-          block.call([result[0], result[1], captures || result[2]])
+          block.call(hfa_tagged_capture_result(input, result, strategy))
         end
       else
         program.each_match_result(input, 0, &block)
