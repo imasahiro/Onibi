@@ -188,6 +188,13 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+
+      if @hfa_exact_literal_fast
+        literal = @hfa_exact_literal_fast
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, start_position).nil?
+      end
+
       return false if hfa_always_fails?
 
       if hfa_empty_absence_result_safe?
@@ -200,11 +207,6 @@ module Onibi
         return !hfa_lookahead_alternation_backreference_match_result(input, normalized_position).nil?
       end
 
-      if @hfa_exact_literal_fast
-        literal = @hfa_exact_literal_fast
-        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !input.index(literal, start_position).nil?
-      end
       if input.ascii_only? && hfa_literal_absence_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return true unless hfa_literal_absence_match_result(input, normalized_position).nil?

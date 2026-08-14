@@ -60,6 +60,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_exact_literal_match_question_short_circuits_common_failure_checks
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "exact literal should skip generic failure checks" }) do
+      assert regexp.match?("prefix-needle-suffix")
+    end
+  end
+
   def test_scoped_ignorecase_match_question_uses_hfa
     regexp = Onibi::Regexp.new("(?i:cat)")
 
