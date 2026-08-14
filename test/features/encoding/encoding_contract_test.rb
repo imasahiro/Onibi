@@ -29,13 +29,11 @@ class EncodingContractTest < Minitest::Test
   def test_unicode_literal_full_casefold_uses_hfa_for_ascii_input
     regexp = Onibi::Regexp.new("ſ", "i")
 
-    if HFA_BACKEND_ONLY
-      assert_equal "S", regexp.match("S").to_s
-    end
+    assert_equal "S", regexp.match("S").to_s if HFA_BACKEND_ONLY
 
-    if HFA_BACKEND_ONLY
-      assert regexp.match?("S")
-    end
+    return unless HFA_BACKEND_ONLY
+
+    assert regexp.match?("S")
   end
 
   def test_ascii_compatible_literal_skips_redundant_encoding_validation

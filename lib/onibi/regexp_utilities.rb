@@ -81,9 +81,7 @@ module Onibi
 
     def compiled_encoding_option(compiled)
       return Onibi::Regexp::NOENCODING if compiled.any? { |pattern| option_set?(pattern, Onibi::Regexp::NOENCODING) }
-      if compiled.any? { |pattern| option_set?(pattern, Onibi::Regexp::FIXEDENCODING) }
-        return Onibi::Regexp::FIXEDENCODING
-      end
+      return Onibi::Regexp::FIXEDENCODING if compiled.any? { |pattern| option_set?(pattern, Onibi::Regexp::FIXEDENCODING) }
 
       0
     end

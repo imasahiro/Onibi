@@ -26,7 +26,7 @@ class MatchDataTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)")
     match_data = Onibi::MatchData.from_offsets("xxwordyy", 2, 6, [[2, 6]], { "word" => 1 }, regexp)
 
-    assert_equal ["word", "word"], match_data.to_a
+    assert_equal %w[word word], match_data.to_a
     assert_equal [2, 6], match_data.offset(:word)
     assert_equal regexp, match_data.regexp
   end

@@ -335,6 +335,7 @@ module Onibi
 
           value = normalize_node(part, groups)
           return NEVER if value.equal?(NEVER)
+
           normalized << value if value
         end
         AST::Sequence.new(normalized.flat_map { |node| node.is_a?(AST::Sequence) ? node.parts : [node] })
@@ -742,9 +743,7 @@ module Onibi
           repeated = separator_position + @backref_separator_length
           while length.positive?
             candidate = separator_position - length
-            if backref_candidate_match?(input, candidate, repeated, length)
-              return [candidate, repeated + length, [[candidate, separator_position]]]
-            end
+            return [candidate, repeated + length, [[candidate, separator_position]]] if backref_candidate_match?(input, candidate, repeated, length)
 
             length -= 1
           end
@@ -761,6 +760,7 @@ module Onibi
         body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
         literal = literal_ast_value(body)
         return [nil, spec.separator, literal] if literal
+
         if body.is_a?(AST::Quantifier) && %i[* +].include?(body.kind) &&
            body.expression.is_a?(AST::Literal) && body.expression.value.bytesize == 1
           table = Array.new(256, false)

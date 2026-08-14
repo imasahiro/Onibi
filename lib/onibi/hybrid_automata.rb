@@ -204,6 +204,7 @@ module Onibi
         backref, ast = extract_backref(ast)
         ast = RegularNormalizer.normalize(ast)
         raise UnsupportedPattern, "pattern is always false" if ast.equal?(RegularNormalizer::NEVER)
+
         ast, positive_prefix, positive_suffix, negative_prefix, negative_suffix = extract_guards(ast)
         validate_literal_guards!(negative_prefix, negative_suffix)
         ast, positive_prefix = consume_positive_guard(ast, positive_prefix, :prefix)
@@ -430,9 +431,7 @@ module Onibi
       end
 
       def validate_quantifier!(node)
-        unless %i[greedy lazy].include?(node.mode)
-          raise UnsupportedPattern, "possessive quantifiers are outside the hybrid PoC subset"
-        end
+        raise UnsupportedPattern, "possessive quantifiers are outside the hybrid PoC subset" unless %i[greedy lazy].include?(node.mode)
         return unless node.maximum && node.maximum > MAX_BOUNDED_REPEAT
 
         raise UnsupportedPattern, "bounded repeat exceeds #{MAX_BOUNDED_REPEAT}"
@@ -774,9 +773,7 @@ module Onibi
 
         @static_first_bytes_attempted = true
         bytes = 256.times.select { |byte| (@first_mask & @reach_masks[byte]).positive? }
-        @static_first_bytes = if bytes.length.between?(2, 8)
-                                bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }.join
-                              end
+        @static_first_bytes = (bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }.join if bytes.length.between?(2, 8))
       end
 
       def static_jump_candidate(input, position, first_byte)
@@ -968,9 +965,7 @@ module Onibi
         @positive_suffix = automaton.positive_suffix
         @word_boundary_start = automaton.word_boundary_start
         @word_boundary_end = automaton.word_boundary_end
-        @word_table = if @word_boundary_start || @word_boundary_end
-                        Array.new(256) { |byte| CharacterPredicates.word?(byte.chr) }.freeze
-                      end
+        @word_table = (Array.new(256) { |byte| CharacterPredicates.word?(byte.chr) }.freeze if @word_boundary_start || @word_boundary_end)
         @unicode_spec = automaton.unicode_spec
         initialize_unicode_runtime(@unicode_spec)
         @backref_spec = automaton.backref_spec
@@ -1002,9 +997,7 @@ module Onibi
         @atomic_literal_spec = automaton.atomic_literal_spec
         @possessive_literal_spec = automaton.possessive_literal_spec
         initialize_runtime_options(dfa, dfa_state_limit, input_ir)
-        @casefold_variants = if @ignorecase && @exact_literal&.ascii_only?
-                               [@exact_first_byte.downcase, @exact_first_byte.upcase].uniq.freeze
-                             end
+        @casefold_variants = ([@exact_first_byte.downcase, @exact_first_byte.upcase].uniq.freeze if @ignorecase && @exact_literal&.ascii_only?)
       end
 
       def engine_kind = :hybrid
@@ -1104,6 +1097,7 @@ module Onibi
         return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
         return linebreak_match_result(input, position) if @linebreak_spec
         return start_match_result(input, position) if @start_match
+
         if @exact_literal && !@exact_literal.ascii_only?
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
@@ -1174,9 +1168,7 @@ module Onibi
           cursor += spec.width while spec.branches.any? { |value| literal_bytes_at?(input, cursor, value) }
           suffix_position = input.rindex(spec.suffix, cursor)
           while suffix_position && suffix_position >= candidate + spec.width
-            if (suffix_position - candidate).modulo(spec.width).zero?
-              return [candidate, suffix_position + spec.suffix.bytesize, []]
-            end
+            return [candidate, suffix_position + spec.suffix.bytesize, []] if (suffix_position - candidate).modulo(spec.width).zero?
 
             suffix_position = input.rindex(spec.suffix, suffix_position - 1)
           end
@@ -1883,9 +1875,7 @@ module Onibi
         cursor = position
         while cursor < input.bytesize
           active = nfa_transition(active, input.getbyte(cursor), cursor == position)
-          if (active & @accept_mask).positive?
-            return [position, cursor + 1, []] if final_anchor_match?(input, cursor + 1)
-          end
+          return [position, cursor + 1, []] if (active & @accept_mask).positive? && final_anchor_match?(input, cursor + 1)
           break if active.zero?
 
           cursor += 1
@@ -1986,9 +1976,7 @@ module Onibi
             cursor = candidate
             while cursor < input.bytesize
               active = transition(active, input.getbyte(cursor), cursor == candidate)
-              if ((active & @accept_mask) != 0) && !(@line_anchor_end && cursor + 1 < input.bytesize && input.getbyte(cursor + 1) != 10)
-                return true
-              end
+              return true if ((active & @accept_mask) != 0) && !(@line_anchor_end && cursor + 1 < input.bytesize && input.getbyte(cursor + 1) != 10)
               break if active.zero?
 
               cursor += 1
@@ -2005,9 +1993,7 @@ module Onibi
       end
 
       def casefold_literal_search(input, position)
-        if @exact_literal.ascii_only? && input.ascii_only?
-          return !input.downcase.index(@casefold_literal, position).nil?
-        end
+        return !input.downcase.index(@casefold_literal, position).nil? if @exact_literal.ascii_only? && input.ascii_only?
 
         return unicode_casefold_literal_search(input, position) if @exact_literal.ascii_only?
 
@@ -2091,8 +2077,8 @@ module Onibi
         while candidate
           prefix_start = candidate - @positive_prefix.bytesize
           return [candidate, candidate + @exact_literal.bytesize, []] if prefix_start >= 0 &&
-                                                                        input.byteslice(prefix_start,
-                                                                                       @positive_prefix.bytesize) == @positive_prefix
+                                                                         input.byteslice(prefix_start,
+                                                                                         @positive_prefix.bytesize) == @positive_prefix
 
           candidate = input.index(@exact_literal, candidate + 1)
         end

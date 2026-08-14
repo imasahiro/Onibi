@@ -15,7 +15,6 @@ class HfaSemanticProbesTest < Minitest::Test
 
   private
 
-  # rubocop:disable Metrics/AbcSize
   def assert_matches_mri(probe)
     pattern = probe.fetch("pattern")
     input = probe.fetch("input")
@@ -34,5 +33,4 @@ class HfaSemanticProbesTest < Minitest::Test
     assert_equal expected && (0...expected.length).map { |index| expected.offset(index) },
                  actual && (0...actual.length).map { |index| actual.offset(index) }, probe.fetch("name")
   end
-  # rubocop:enable Metrics/AbcSize
 end

@@ -19,7 +19,7 @@ class HybridAutomataTest < Minitest::Test
     program = compile("BEGIN(?:[a-z]+|[0-9]{2,4})END")
 
     refute program.match?("x" * 65_536)
-    assert_equal 65_536, program.send(:prefix_literal_candidate, "x" * 65_536 + "BEGIN", 0)
+    assert_equal 65_536, program.send(:prefix_literal_candidate, "#{"x" * 65_536}BEGIN", 0)
   end
 
   def test_builds_candidate_event_stream_for_wide_ascii_first_sets
@@ -493,7 +493,7 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("xxxxxxxx")
     program.send(:static_first_bytes)
 
-    assert_equal ["c", "g", "t"], program.instance_variable_get(:@static_first_bytes).bytes.sort.map(&:chr)
+    assert_equal %w[c g t], program.instance_variable_get(:@static_first_bytes).bytes.sort.map(&:chr)
   end
 
   def test_first_byte_set_candidate_returns_earliest_match
@@ -506,8 +506,8 @@ class HybridAutomataTest < Minitest::Test
   def test_alternation_caches_required_literals_for_string_matching
     program = Onibi::HybridAutomata.compile("[cgt]gggtaaa|tttaccc[acg]")
 
-    assert_equal [["gggtaaa", 1], ["tttaccc", 0]],
-                 program.instance_variable_get(:@required_literals).map { |spec| [spec.literal, spec.offset] }
+    assert_equal([["gggtaaa", 1], ["tttaccc", 0]],
+                 program.instance_variable_get(:@required_literals).map { |spec| [spec.literal, spec.offset] })
   end
 
   def test_required_literal_candidate_returns_earliest_branch_start

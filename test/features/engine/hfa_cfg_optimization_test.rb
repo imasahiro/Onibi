@@ -15,7 +15,6 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert_equal [:match_literal], unit.cfg.operations.map(&:opcode)
   end
 
-  # rubocop:disable Metrics/AbcSize
   def test_cfg_preserves_alternation_priority_as_ordered_edges
     cfg = Onibi::HybridAutomata::CFG::Lowerer.new.call(Onibi::Parser.new("a|ab").parse)
     choice = cfg.blocks.find { |block| block.terminator.opcode == :choice }
@@ -74,5 +73,4 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert_includes cfg.effect_summary.effects, :capture
     assert_includes repeated_cfg.effect_summary.effects, :repeat
   end
-  # rubocop:enable Metrics/AbcSize
 end

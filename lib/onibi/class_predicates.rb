@@ -31,9 +31,7 @@ module Onibi
       depth = 0
       escaped = false
       source.each_char.with_index do |character, index|
-        if intersection_marker?(source, character, index, depth, escaped)
-          return [source[0...index], source[(index + 2)..]]
-        end
+        return [source[0...index], source[(index + 2)..]] if intersection_marker?(source, character, index, depth, escaped)
 
         depth, escaped = intersection_state(character, depth, escaped)
       end
