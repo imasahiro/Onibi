@@ -695,7 +695,7 @@ module Onibi
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       run, assertion = parts
-      body = assertion&.body
+      body = assertion.body if assertion.is_a?(AST::Assertion)
       guard = body.is_a?(AST::Sequence) ? body.parts : []
       valid = parts.length == 2 && run.is_a?(AST::Quantifier) && run.kind == :+ && run.mode == :greedy &&
               run.expression.is_a?(AST::CharacterClass) && assertion.is_a?(AST::Assertion) &&
