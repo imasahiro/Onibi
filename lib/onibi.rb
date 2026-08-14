@@ -64,6 +64,8 @@ module Onibi
     MULTILINE = 4
     FIXEDENCODING = 16
     NOENCODING = 32
+    HFA_ASCII_PROPERTY_TABLES = {}
+    HFA_ASCII_ESCAPE_TABLES = {}
 
     class TimeoutError < RegexpError
     end
@@ -195,6 +197,16 @@ module Onibi
         return !input.index(literal, start_position).nil?
       end
       return true if @hfa_empty_absence_fast
+
+      if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_class_run_positive_lookahead_match?(input, normalized_position)
+      end
+
+      if input.ascii_only? && @hfa_literal_assertion_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil?
+      end
 
       if input.ascii_only? && (spec = hfa_lookahead_literal_backreference_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -1295,8 +1307,113 @@ module Onibi
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
-      program.each_match_result(input, 0, &block)
+      program.each_match_result(input, 0) do |result|
+        captures = hfa_generic_capture_offsets(input, result[0], result[1])
+        block.call([result[0], result[1], captures || result[2]])
+      end
       true
+    end
+
+    # The position NFA omits capture tags. Reconstruct captures for
+    # deterministic AST regions after the automaton identifies a match span.
+    def hfa_generic_capture_offsets(input, start, finish)
+      capture_count = hfa_capture_count
+      return [] if capture_count.zero?
+
+      if (offsets = hfa_variable_backreference_capture_offsets(input, start, finish))
+        return offsets
+      end
+
+      offsets = Array.new(capture_count)
+      cursor = hfa_consume_capture_node(@ast, input, start, finish, offsets)
+      cursor == finish ? offsets : nil
+    end
+
+    def hfa_variable_backreference_capture_offsets(input, start, finish)
+      return unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
+
+      group, reference = @ast.parts
+      return unless group.is_a?(AST::Group) && group.capture && reference.is_a?(AST::Backreference)
+      return unless reference.identifier.to_i == group.number || reference.identifier.to_s == group.name.to_s
+
+      length = finish - start
+      return unless length.even?
+
+      midpoint = start + (length / 2)
+      return unless input.byteslice(start, midpoint - start) == input.byteslice(midpoint, midpoint - start)
+
+      offsets = Array.new(hfa_capture_count)
+      offsets[group.number - 1] = [start, midpoint]
+      offsets
+    end
+
+    def hfa_capture_count(node = @ast)
+      case node
+      when AST::Group
+        [node.number, hfa_capture_count(node.body)].max
+      when AST::Sequence
+        node.parts.map { |part| hfa_capture_count(part) }.max || 0
+      when AST::Alternation
+        node.branches.map { |branch| hfa_capture_count(branch) }.max || 0
+      when AST::Quantifier
+        hfa_capture_count(node.expression)
+      when AST::OptionGroup, AST::AtomicGroup
+        hfa_capture_count(node.body)
+      else
+        0
+      end
+    end
+
+    def hfa_consume_capture_node(node, input, cursor, finish, offsets)
+      case node
+      when AST::Literal
+        value = node.value
+        input.byteslice(cursor, value.bytesize) == value ? cursor + value.bytesize : nil
+      when AST::CharacterClass
+        character = input[cursor]
+        character && ClassPredicates.compiled(node.value).matches?(character) ? cursor + character.bytesize : nil
+      when AST::Escape
+        character = input[cursor]
+        character && CharacterPredicates.escape_matches?(node.kind, character) ? cursor + character.bytesize : nil
+      when AST::Property
+        character = input[cursor]
+        matched = character && UnicodeProperties.matches?(node.name, character)
+        character && (matched ^ node.negated) ? cursor + character.bytesize : nil
+      when AST::Any
+        character = input[cursor]
+        character ? cursor + character.bytesize : nil
+      when AST::Group
+        group_start = cursor
+        result = hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+        offsets[node.number - 1] = [group_start, result] if result && node.capture
+        result
+      when AST::OptionGroup, AST::AtomicGroup
+        hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+      when AST::Sequence
+        node.parts.reduce(cursor) do |position, part|
+          position && hfa_consume_capture_node(part, input, position, finish, offsets)
+        end
+      when AST::Alternation
+        node.branches.each do |branch|
+          snapshot = offsets.dup
+          result = hfa_consume_capture_node(branch, input, cursor, finish, offsets)
+          return result if result
+
+          offsets.replace(snapshot)
+        end
+        nil
+      when AST::Quantifier
+        count = 0
+        position = cursor
+        while node.maximum.nil? || count < node.maximum
+          result = hfa_consume_capture_node(node.expression, input, position, finish, offsets)
+          break unless result && result > position && result <= finish
+
+          position = result
+          count += 1
+        end
+        count >= node.minimum ? position : nil
+      end
     end
 
     def named_captures
@@ -3432,7 +3549,11 @@ module Onibi
     end
 
     def hfa_literal_conditional_match?(input, position)
-      !hfa_literal_conditional_match_result(input, position).nil?
+      yes, no = hfa_literal_conditional_parts
+      prefix = hfa_literal_conditional_prefix
+      yes_start = input.index(prefix + yes, position)
+      no_start = input.index(no, position)
+      !yes_start.nil? || !no_start.nil?
     end
 
     def hfa_literal_conditional_match_result(input, position)
@@ -3448,8 +3569,10 @@ module Onibi
     end
 
     def hfa_literal_conditional_prefix
+      return @hfa_literal_conditional_prefix if defined?(@hfa_literal_conditional_prefix)
+
       optional = @ast.parts.first
-      literal_ast_value(optional.expression.body)
+      @hfa_literal_conditional_prefix = literal_ast_value(optional.expression.body)
     end
 
     def hfa_repeated_class_backref_result_safe?
@@ -4809,14 +4932,19 @@ module Onibi
       return if node.is_a?(AST::Any)
 
       if node.is_a?(AST::Escape)
-        return 256.times.map do |byte|
+        return HFA_ASCII_ESCAPE_TABLES[node.kind] if HFA_ASCII_ESCAPE_TABLES.key?(node.kind)
+
+        return HFA_ASCII_ESCAPE_TABLES[node.kind] = 256.times.map do |byte|
           CharacterPredicates.escape_matches?(node.kind, byte.chr(Encoding::ASCII_8BIT))
         end.freeze
       end
       return unless node.is_a?(AST::Property)
       return unless UnicodeProperties::SUPPORTED.include?(node.name.sub("Is", "").sub("^", ""))
 
-      256.times.map do |byte|
+      cache_key = [node.name, node.negated]
+      return HFA_ASCII_PROPERTY_TABLES[cache_key] if HFA_ASCII_PROPERTY_TABLES.key?(cache_key)
+
+      HFA_ASCII_PROPERTY_TABLES[cache_key] = 256.times.map do |byte|
         matched = UnicodeProperties.matches?(node.name, byte.chr(Encoding::ASCII_8BIT))
         node.negated ? !matched : matched
       end.freeze
@@ -5587,7 +5715,10 @@ module Onibi
           block.call(hfa_tagged_capture_result(input, result, strategy))
         end
       else
-        program.each_match_result(input, 0, &block)
+        program.each_match_result(input, 0) do |result|
+          captures = hfa_generic_capture_offsets(input, result[0], result[1])
+          block.call([result[0], result[1], captures || result[2]])
+        end
       end
       true
     end
