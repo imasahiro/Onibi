@@ -17,4 +17,10 @@ class HybridAutomataPrefixTest < Minitest::Test
     refute program.match?(input)
     assert_nil program.instance_variable_get(:@static_prefix_dfa_data)
   end
+
+  def test_prefix_literal_candidate_preserves_match_span
+    program = Onibi::HybridAutomata.compile("request_id=[0-9]+")
+
+    assert_equal [6, 19, []], program.match_result("noise request_id=42", 0)
+  end
 end
