@@ -188,6 +188,16 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_multiline_sequence_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a(?m:.)b")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped multiline sequence scan should use HFA" }) do
+      regexp.stub(:hfa_program, -> { flunk "scoped multiline sequence scan should use direct HFA search" }) do
+        assert_equal ["a\nb", "aXb"], regexp.scan("za\nb aXb")
+      end
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
