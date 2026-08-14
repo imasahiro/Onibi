@@ -171,9 +171,15 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_letter_property_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\p{Letter}+")
+    input_class = Class.new(String) do
+      def each_char
+        raise "Unicode property scan should iterate codepoints"
+      end
+    end
+    input = input_class.new("123日本語 456終端")
     regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode letter property run should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "Unicode letter property run should avoid HFA program compilation" }) do
-        assert_equal %w[日本語 終端], regexp.scan("123日本語 456終端")
+        assert_equal %w[日本語 終端], regexp.scan(input)
       end
     end
   end

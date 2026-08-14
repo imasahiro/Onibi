@@ -1870,16 +1870,24 @@ module Onibi
       matcher = hfa_unicode_property_run_matcher
       cursor = 0
       start = nil
-      input.each_char do |character|
-        matched = cursor >= position && (matcher.call(character.ord, predicate) ^ negated)
+      input.each_codepoint do |codepoint|
+        matched = cursor >= position && (matcher.call(codepoint, predicate) ^ negated)
         if matched
           start ||= cursor
         elsif start
           return [start, cursor, []]
         end
-        cursor += character.bytesize
+        cursor += utf8_codepoint_bytesize(codepoint)
       end
       start && [start, cursor, []]
+    end
+
+    def utf8_codepoint_bytesize(codepoint)
+      return 1 if codepoint <= 0x7f
+      return 2 if codepoint <= 0x7ff
+      return 3 if codepoint <= 0xffff
+
+      4
     end
 
     def hfa_unicode_property_run_matcher
