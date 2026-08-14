@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class AutoPossessificationTest < Minitest::Test
   def test_pipeline_marks_disjoint_literal_quantifier_as_possessive
     ast = Onibi::Parser.new("a+b").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 
@@ -21,7 +21,7 @@ class AutoPossessificationTest < Minitest::Test
 
   def test_overlapping_literal_quantifier_is_not_possessified
     ast = Onibi::Parser.new("a+a").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 

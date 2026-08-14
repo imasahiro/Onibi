@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class BranchThreadingTest < Minitest::Test
   def test_pipeline_threads_a_common_literal_prefix
     ast = Onibi::Parser.new("ab|ac").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 

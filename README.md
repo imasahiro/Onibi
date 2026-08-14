@@ -3,8 +3,8 @@
 Onibi is a pure Ruby regular expression engine intended to provide a Ruby-compatible `Regexp` and `MatchData` API.
 
 The project provides an opt-in v1 API and is being developed using TDD. The
-current production matcher uses the generated-Ruby architecture described in
-[`docs/regexp-ruby-codegen-design.md`](docs/regexp-ruby-codegen-design.md).
+current production matcher uses the hybrid finite automaton (HFA) architecture
+described in [`docs/hybrid-automata-backend-poc.md`](docs/hybrid-automata-backend-poc.md).
 See [`docs/onibi-design.md`](docs/onibi-design.md) for the canonical design,
 [`docs/regexp-feature-coverage.md`](docs/regexp-feature-coverage.md) for the
 current compatibility matrix, and [`docs/v1-task-list.md`](docs/v1-task-list.md)

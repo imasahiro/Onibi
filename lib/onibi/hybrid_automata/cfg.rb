@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
-  module Codegen
+  module HybridAutomata
     # Immutable control-flow representation used between parsing and Ruby emission.
     module CFG
       StateToken = Struct.new(:domain, :version, keyword_init: true) do
@@ -292,7 +292,7 @@ module Onibi
 
         def append_operation(block, node)
           opcode = OPCODES[node.class]
-          raise CodegenError, "unsupported CFG node #{node.class}" unless opcode
+          raise UnsupportedPattern, "unsupported CFG node #{node.class}" unless opcode
 
           @builder.append(block, opcode, operand: node, effects: EFFECTS.fetch(node.class, []))
         end

@@ -3,7 +3,7 @@
 ## Conclusion
 
 This PoC replaces generated Ruby with one `HybridAutomata::Program` for a
-match-only regular subset. It does not call `GeneratedProgram`, expose a
+match-only regular subset. It does not call `HFA program`, expose a
 Ruby-lowered HFA backend, or fall back to another matcher. A single bytecode
 runtime combines:
 
@@ -61,7 +61,7 @@ and warm `match?` for all 37 cases in `benchmark/regexp_features.yml`, and
 checks every result against MRI before reporting timings. On Ruby 4.0.6 arm64
 with 0.03 seconds per warm sample, the geometric means were:
 
-| Lifecycle | HFA bytecode | Ruby codegen | MRI |
+| Lifecycle | HFA bytecode | HFA Ruby lowering | MRI |
 |---|---:|---:|---:|
 | compile (i/s) | 4,814 | 6,971 | 859,797 |
 | first match (i/s) | 4,732 | 6,652 | 694,967 |
@@ -71,7 +71,7 @@ Thus the single HFA runtime is about 3.64x the generated matcher on the warm
 full-fixture geometric mean, but remains about 0.213x MRI. Backreference,
 negative-lookahead, UTF-8 repeated literal, multiline-dot, and atomic literal
 candidate paths now exceed the generated matcher. All 37 benchmark fixtures
-meet or exceed codegen warm throughput and pass the HFA/MRI equivalence test.
+meet or exceed HFA lowering warm throughput and pass the HFA/MRI equivalence test.
 
 The frontend microbenchmark (`benchmark/hybrid_automata_frontend.rb`) measures
 CFG compilation with a cold versus already-materialized CFG. CFG is the only

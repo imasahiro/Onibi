@@ -5,7 +5,7 @@ require_relative "../../test_helper"
 class RedundantPredicateEliminationTest < Minitest::Test
   def test_pipeline_eliminates_repeated_pure_assertions
     ast = Onibi::Parser.new("(?=a)(?=a)a").parse
-    optimized = Onibi::Codegen::Optimization::Pipeline.default.call(
+    optimized = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     ).ast
 

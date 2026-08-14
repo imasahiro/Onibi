@@ -1,6 +1,6 @@
 # Ruby 4.0.6 Regexp 機能カバレッジと Onibi の今後のタスク
 
-この文書は、MRI Ruby 4.0.6 の公式 Regexp / MatchData 仕様と、現在の Onibi 実装を突き合わせたスナップショットである。Onibi の判定は、実装・既存テスト・Core MVP の設計文書を基準にしている。Ruby のベースラインを更新する際にはこの表も再検証する。matcher architecture の現行方針は [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md) であり、過去の NFA/DFA 実装記録は履歴として扱う。
+この文書は、MRI Ruby 4.0.6 の公式 Regexp / MatchData 仕様と、現在の Onibi 実装を突き合わせたスナップショットである。Onibi の判定は、実装・既存テスト・Core MVP の設計文書を基準にしている。Ruby のベースラインを更新する際にはこの表も再検証する。matcher architecture の現行方針は [`regexp-ruby-HFA-design.md`](regexp-ruby-HFA-design.md) であり、過去の NFA/DFA 実装記録は履歴として扱う。
 
 ## Onibi のカバレッジ判定
 
@@ -303,9 +303,9 @@ Onibi は Core MVP の「文字列 pattern を明示的にコンパイルし、m
 - [x] class/instance timeout の 0 および負値を拒否する。
 - [x] timeout 発生時に `Regexp::TimeoutError` 相当の専用例外を返す。
 - [x] Regexp.linear_time? 相当の保守的な安全性判定（backreference、lookaround、atomic group、absence operator）を追加する。
-- [x] matcher のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。現行 codegen design は generated Ruby source size と explicit backtrack/call/capture-trail budget、deadline/step accounting を必須とする。
+- [x] matcher のメモリ上限、実行ステップ上限、割り込み・キャンセル方針を整理する。現行 HFA design は HFA resource accounting と explicit backtrack/call/capture-trail budget、deadline/step accounting を必須とする。
 - [x] backreference/lookaround/atomic group を含む危険パターンの安全性を differential/property test する。
-- timeout/resource control の v1 scope / codegen 移行 scope は positive timeout と専用例外、保守的な linear-time 判定、generated Ruby source size と explicit backtrack/call/capture-trail budget とし、包括的な ReDoS tuning と運用可観測性は codegen task list に従って段階導入する。
+- timeout/resource control の v1 scope / HFA 移行 scope は positive timeout と専用例外、保守的な linear-time 判定、HFA resource accounting と explicit backtrack/call/capture-trail budget とし、包括的な ReDoS tuning と運用可観測性は HFA implementation notes に従って段階導入する。
 
 ### REGEXP-012 [Complete] — MatchData の完全な Ruby API と統合を追加する
 
