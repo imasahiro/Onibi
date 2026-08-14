@@ -7,6 +7,7 @@ class HfaFallbackInventoryTest < Minitest::Test
     ["(a*)\\1", "aaaa"],
     ["(?<x>a)(?i:\\k<x>)", "aA"],
     ["(?<x>.*)\\k<x>", "aa"],
+    ["(?=(a|aa))\\1b", "aab"],
     ["(?<x>a|ab)c\\g<x>d", "aacad"],
     ["(?<=[ß])x", "ßx"],
     ["(?~real)", "real"]
