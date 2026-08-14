@@ -563,6 +563,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_subexpression_literal_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "subexpression literal should skip generic failure checks" }) do
+      assert regexp.match?("abab")
+    end
+  end
+
   def test_greedy_dot_star_literal_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("a.*z")
 

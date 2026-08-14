@@ -205,6 +205,11 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
+      if input.ascii_only? && (literal = hfa_subexpression_literal_match_literal)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, normalized_position).nil?
+      end
+
       return false if hfa_always_fails?
 
       if hfa_empty_absence_result_safe?
@@ -365,10 +370,6 @@ module Onibi
       if input.ascii_only? && hfa_ascii_adjacent_run_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_adjacent_run_match?(input, normalized_position)
-      end
-      if input.ascii_only? && (literal = hfa_subexpression_literal_match_literal)
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !input.index(literal, normalized_position).nil?
       end
       if input.ascii_only? && (parts = hfa_greedy_dot_star_literal_parts)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
