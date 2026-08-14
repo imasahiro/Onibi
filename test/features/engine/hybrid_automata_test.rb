@@ -442,6 +442,12 @@ class HybridAutomataTest < Minitest::Test
                  program.instance_variable_get(:@required_literals).map { |spec| [spec.literal, spec.offset] }
   end
 
+  def test_required_literal_candidate_returns_earliest_branch_start
+    program = Onibi::HybridAutomata.compile("[cgt]gggtaaa|tttaccc[acg]")
+
+    assert_equal 3, program.send(:required_literal_candidate, "xxxcgggtaaa", 0)
+  end
+
   def test_small_single_span_uses_static_dfa
     program = compile("a[bc]{4}z")
     assert program.match?("aabcbcz")

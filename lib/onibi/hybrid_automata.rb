@@ -1262,11 +1262,15 @@ module Onibi
       end
 
       def required_literal_candidate(input, position)
-        @required_literals.filter_map do |spec|
+        best = nil
+        @required_literals.each do |spec|
           literal_position = input.index(spec.literal, position + spec.offset)
           start = literal_position && literal_position - spec.offset
-          start if start && start >= position
-        end.min
+          next unless start && start >= position
+
+          best = start if best.nil? || start < best
+        end
+        best
       end
 
       def each_match_result(input, position = 0, &block)
