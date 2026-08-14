@@ -540,6 +540,12 @@ module Onibi
         end
         return nil
       end
+      if input.ascii_only? && hfa_captureless_regular_sequence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
@@ -2302,6 +2308,20 @@ module Onibi
       @ast.parts.first.body.parts.first.value
     end
 
+    def hfa_captureless_regular_sequence_result_safe?
+      return @hfa_captureless_regular_sequence_safe if defined?(@hfa_captureless_regular_sequence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      valid = parts.length > 1 && parts.all? do |part|
+        part.is_a?(AST::Literal) || part.is_a?(AST::CharacterClass) ||
+          (part.is_a?(AST::Quantifier) && part.mode == :greedy &&
+           %i[+ * bounded].include?(part.kind) &&
+           (part.expression.is_a?(AST::Literal) || part.expression.is_a?(AST::CharacterClass) ||
+            part.expression.is_a?(AST::Escape)))
+      end
+      @hfa_captureless_regular_sequence_safe = valid && !@options.include?("ignorecase") && hfa_program
+    end
+
     def hfa_unicode_repeated_literal_capture_result_safe?
       return @hfa_unicode_repeated_capture_safe if defined?(@hfa_unicode_repeated_capture_safe)
 
@@ -3240,6 +3260,7 @@ module Onibi
                    hfa_literal_assertion_result_safe? ||
                    hfa_literal_alternation_result_safe? ||
                    hfa_captureless_alternation_result_safe? ||
+                   hfa_captureless_regular_sequence_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
@@ -3435,6 +3456,7 @@ module Onibi
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
                      hfa_captureless_alternation_result_safe? ||
+                     hfa_captureless_regular_sequence_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||

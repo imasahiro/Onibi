@@ -1388,6 +1388,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_captureless_regular_sequence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("[a-z]\\d+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "captureless regular sequence should use HFA" }) do
+      assert_equal "a123", regexp.match("xxa123!").to_s
+      assert_nil regexp.match("xxabc!")
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 
