@@ -33,10 +33,6 @@ ADAPTERS = [
     program = Onibi::HybridAutomata.compile(pattern)
     ->(input) { program.match?(input) }
   end),
-  Adapter.new("hybrid_ruby", lambda do |pattern|
-    program = Onibi::HybridAutomata.compile(pattern).ruby_program
-    ->(input) { program.match?(input) }
-  end),
   Adapter.new("no_dfa", lambda do |pattern|
     program = Onibi::HybridAutomata.compile(pattern, dfa: false)
     ->(input) { program.match?(input) }

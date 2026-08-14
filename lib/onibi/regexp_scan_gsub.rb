@@ -21,7 +21,7 @@ module Onibi
       validate_gsub_input!(input)
       replacement = normalize_replacement(replacement, block_given?)
       result, cursor = replace_matches(input, replacement, block)
-      result << input[cursor..] if cursor < input.length
+      result << input.byteslice(cursor, input.bytesize - cursor) if cursor < input.bytesize
       result
     end
 
@@ -43,8 +43,8 @@ module Onibi
     def replace_literal_matches(input, replacement)
       result = String.new(encoding: input.encoding)
       cursor = 0
-      codegen_each_result(input) do |raw|
-        result << input[cursor...raw[0]]
+      each_result(input) do |raw|
+        result << input.byteslice(cursor, raw[0] - cursor)
         result << replacement
         cursor = raw[1]
       end
@@ -54,7 +54,13 @@ module Onibi
     def scan_results(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      codegen_each_result(input, &block)
+      each_result(input, &block)
+    end
+
+    def each_result(input, &block)
+      return codegen_each_result(input, &block) unless hfa_each_result(input, &block)
+
+      nil
     end
 
     def each_match(input, &block)
@@ -69,7 +75,7 @@ module Onibi
 
     def scan_value_from_result(result, input)
       captures = result[2]
-      return input[result[0]...result[1]] if captures.empty?
+      return input.byteslice(result[0], result[1] - result[0]) if captures.empty?
 
       match = Codegen::MatchAdapter.build(result, input, self, named_captures)
       scan_value(match)

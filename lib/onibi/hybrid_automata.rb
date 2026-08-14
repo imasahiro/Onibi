@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
-  # Experimental single-engine hybrid automaton for captureless ASCII regexps.
+  # Experimental single-engine hybrid automaton for match-only regular syntax.
   # String matching emits candidate events, a bit-parallel position NFA computes
   # cold transitions, and the resulting subset states populate a bounded DFA.
   module HybridAutomata
@@ -10,20 +10,54 @@ module Onibi
 
     Fragment = Data.define(:nullable, :first, :last)
     Automaton = Data.define(:first_mask, :accept_mask, :nullable, :reach_masks,
-                            :span_masks, :prefix_literal, :exact_literal)
+                            :span_masks, :prefix_literal, :exact_literal,
+                            :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
+                            :positive_prefix, :positive_suffix, :negative_prefix, :negative_suffix,
+                            :word_boundary_start, :word_boundary_end, :unicode_spec,
+                            :backref_spec, :repeat_literal_spec, :dot_literal_spec,
+                            :atomic_literal_spec, :star_literal_spec, :bounded_literal_spec,
+                            :lazy_star_literal_spec, :anchored_class_spec,
+                            :alternation_literal_spec, :repeated_alternation_literal_spec,
+                            :class_run_literal_spec, :class_run_chain_spec,
+                            :adjacent_class_run_spec, :class_run_triple_spec,
+                            :literal_class_literal_spec, :ascii_run_spec, :single_byte_spec,
+                            :possessive_literal_spec)
     BytecodeInstruction = Data.define(:opcode, :operand)
+    UnicodeSpec = Data.define(:kind, :value, :minimum, :maximum)
+    BackrefSpec = Data.define(:body, :separator)
+    RepeatLiteralSpec = Data.define(:byte, :suffix)
+    PossessiveLiteralSpec = Data.define(:unit, :minimum, :maximum, :suffix)
+    DotLiteralSpec = Data.define(:prefix, :suffix, :allow_newline)
+    StarLiteralSpec = Data.define(:prefix, :suffix, :allow_newline)
+    BoundedLiteralSpec = Data.define(:literal, :unit, :minimum, :maximum)
+    LazyStarLiteralSpec = Data.define(:prefix, :suffix, :allow_newline)
+    AnchoredClassSpec = Data.define(:table)
+    AlternationLiteralSpec = Data.define(:branches)
+    RepeatedAlternationLiteralSpec = Data.define(:branches, :suffix, :width)
+    ClassRunLiteralSpec = Data.define(:prefix, :table, :minimum, :suffix)
+    ClassRunChainSpec = Data.define(:left_table, :separator, :right_table)
+    AdjacentClassRunSpec = Data.define(:left_table, :right_table)
+    ClassRunTripleSpec = Data.define(:first_table, :middle_table, :last_table)
+    LiteralClassLiteralSpec = Data.define(:prefix, :table, :suffix)
+    AsciiRunSpec = Data.define(:table, :candidate_byte, :candidate_bytes, :character_set, :any_byte)
+    SingleByteSpec = Data.define(:table, :candidate_byte)
+    AtomicLiteralSpec = Data.define(:branches, :suffix, :subsumed_literal, :candidate_bytes)
     MAX_STATES = 512
     MAX_BOUNDED_REPEAT = 64
+    EMPTY_REACH_MASKS = Array.new(256, 0).freeze
+    EMPTY_SPAN_MASKS = {}.freeze
+
+    require_relative "hybrid_automata_support"
 
     module_function
 
-    def compile(pattern, dfa: true, string_matching: true, dfa_state_limit: 4096)
+    def compile(pattern, options: [], dfa: true, string_matching: true, dfa_state_limit: 4096)
       raise TypeError, "pattern must be a String" unless pattern.is_a?(String)
-      raise UnsupportedPattern, "the PoC accepts ASCII patterns only" unless pattern.ascii_only?
 
-      ast = Parser.new(pattern).parse
-      unit = Codegen::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
-      compile_unit(unit, dfa: dfa, string_matching: string_matching, dfa_state_limit: dfa_state_limit)
+      ast = Parser.new(pattern, options).parse
+      unit = Codegen::Optimization.compile_prepared(ast, options, Encoding::US_ASCII)
+      compile_unit(unit, dfa: dfa, string_matching: string_matching,
+                         dfa_state_limit: dfa_state_limit)
     end
 
     def compile_unit(unit, dfa: true, string_matching: true, dfa_state_limit: 4096)
@@ -32,12 +66,14 @@ module Onibi
       end
 
       Compiler.new(dfa: dfa, string_matching: string_matching,
-                   dfa_state_limit: dfa_state_limit).compile(unit)
+                   dfa_state_limit: dfa_state_limit, options: unit.options).compile(unit)
     end
 
     def validate_cfg!(cfg)
       supported = %i[match_literal match_class match_escape match_property match_any epsilon
-                     match_group match_quantifier]
+                     match_group match_quantifier match_assertion match_atomic_group
+                     match_conditional match_subexpression_call match_absence
+                     match_backreference test_anchor]
       return if cfg.operations.all? { |operation| supported.include?(operation.opcode) }
 
       raise UnsupportedPattern, "CFG contains stateful operation outside the hybrid PoC subset"
@@ -89,71 +125,132 @@ module Onibi
       end
     end
 
-    # Derives literals used by the HFA candidate-event policy.
-    module PatternFacts
-      module_function
-
-      def selective_prefix(node)
-        prefix = leading_literal(node)
-        prefix if prefix && prefix.bytesize >= 2
-      end
-
-      def leading_literal(node)
-        return node.value if node.is_a?(AST::Literal)
-        return unless node.is_a?(AST::Sequence)
-
-        value = +""
-        node.parts.each do |part|
-          break unless part.is_a?(AST::Literal)
-
-          value << part.value
-        end
-        value.empty? ? nil : value.freeze
-      end
-
-      def literal_value(node)
-        return node.value if node.is_a?(AST::Literal)
-        return unless node.is_a?(AST::Sequence) && node.parts.all? { |part| part.is_a?(AST::Literal) }
-
-        node.parts.map(&:value).join.freeze
-      end
-    end
-
     # Immutable NFA topology builder. Quantifiers are expanded into position
     # states so the runtime can represent every active state in one Integer.
     class Compiler
       include GraphBuilder
       include PatternFacts
+      include AnchorFacts
+      include GuardFacts
+      include BoundaryFacts
+      include CompilerFacts
 
       NODE_VISITORS = {
         AST::Literal => :literal_node, AST::CharacterClass => :character_class_node,
-        AST::Escape => :escape_node, AST::Any => :any_node,
+        AST::Escape => :escape_node, AST::Property => :property_node, AST::Any => :any_node,
         AST::Sequence => :sequence_node, AST::Alternation => :alternation_node,
         AST::Group => :group_node, AST::Quantifier => :quantifier_node
       }.freeze
+      PreparedAst = Data.define(:ast, :backref, :positive_prefix, :positive_suffix,
+                                :negative_prefix, :negative_suffix,
+                                :word_boundary_start, :word_boundary_end,
+                                :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
+                                :atomic_literal_spec, :possessive_literal_spec)
 
-      def initialize(dfa:, string_matching:, dfa_state_limit:)
+      def initialize(dfa:, string_matching:, dfa_state_limit:, options:)
         @dfa = dfa
         @string_matching = string_matching
         @dfa_state_limit = dfa_state_limit
+        @options = options
         @state_tables = []
         @follow = []
       end
 
       def compile(unit)
-        ast = unit.ast
-        HybridAutomata.validate_cfg!(unit.cfg)
-        prefix = @string_matching ? selective_prefix(ast) : nil
-        exact_literal = literal_value(ast)
-        fragment = visit(ast)
-        reach_masks = build_reach_masks
-
-        automaton = Automaton.new(fragment.first, fragment.last, fragment.nullable,
-                                  reach_masks, build_span_masks, prefix, exact_literal)
-        Program.new(automaton, dfa: @dfa, dfa_state_limit: @dfa_state_limit, input_ir: :cfg)
+        prepared = prepare_ast(unit)
+        build_program(prepared)
       end
 
       private
+
+      def prepare_ast(unit)
+        ast = CfgTopology.ast(unit.cfg)
+        atomic_literal = atomic_literal_spec(ast)
+        possessive_literal = possessive_literal_spec(ast)
+        source_positive_prefix = positive_lookbehind_literal(unit.ast)
+        backref, ast = extract_backref(ast)
+        ast = RegularNormalizer.normalize(ast)
+        ast, positive_prefix, positive_suffix, negative_prefix, negative_suffix = extract_guards(ast)
+        validate_literal_guards!(negative_prefix, negative_suffix)
+        ast, positive_prefix = consume_positive_guard(ast, positive_prefix, :prefix)
+        ast, positive_suffix = consume_positive_guard(ast, positive_suffix, :suffix)
+        ast, word_boundary_start, word_boundary_end = extract_boundaries(ast)
+        ast, anchored_start, anchored_end, line_anchor_start, line_anchor_end = extract_anchors(ast)
+        HybridAutomata.validate_cfg!(unit.cfg)
+        positive_prefix ||= source_positive_prefix
+        PreparedAst.new(ast, backref, positive_prefix, positive_suffix, negative_prefix, negative_suffix,
+                        word_boundary_start, word_boundary_end, anchored_start, anchored_end,
+                        line_anchor_start, line_anchor_end,
+                        atomic_literal, possessive_literal)
+      end
+
+      def positive_lookbehind_literal(ast)
+        return unless ast.is_a?(AST::Sequence) && ast.parts.length >= 2
+
+        assertion = ast.parts.first
+        return unless assertion.is_a?(AST::Assertion) && assertion.kind == :positive_lookbehind
+
+        literal_value(assertion.body)
+      end
+
+      def build_program(prepared)
+        ast = prepared.ast
+        atomic_exact = prepared.atomic_literal_spec&.subsumed_literal
+        prefix = @string_matching && !ignorecase? ? selective_prefix(ast) : nil
+        prefix ||= atomic_exact if atomic_exact && @string_matching && !ignorecase?
+        prefix = nil if prefix && !prefix.ascii_only?
+        exact_literal = literal_value(ast) || repeated_literal_value(ast) || atomic_exact
+        if prepared.positive_prefix && exact_literal&.start_with?(prepared.positive_prefix)
+          exact_literal = exact_literal.delete_prefix(prepared.positive_prefix)
+        end
+        repeat_literal_spec = repeat_literal_spec(ast) unless constrained_match?(prepared)
+        dot_literal_spec = dot_literal_spec(ast) unless constrained_match?(prepared)
+        star_literal_spec = star_literal_spec(ast) unless constrained_match?(prepared)
+        bounded_literal_spec = bounded_literal_spec(ast) unless constrained_match?(prepared)
+        lazy_star_literal_spec = lazy_star_literal_spec(ast) unless constrained_match?(prepared)
+        anchored_class_spec = anchored_class_spec(ast, prepared)
+        alternation_literal_spec = alternation_literal_spec(ast) unless constrained_match?(prepared)
+        repeated_alternation_literal_spec = repeated_alternation_literal_spec(ast) unless constrained_match?(prepared)
+        class_run_literal_spec = class_run_literal_spec(ast) unless constrained_match?(prepared)
+        class_run_chain_spec = class_run_chain_spec(ast) unless constrained_match?(prepared)
+        adjacent_class_run_spec = adjacent_class_run_spec(ast) unless constrained_match?(prepared)
+        class_run_triple_spec = class_run_triple_spec(ast) unless constrained_match?(prepared)
+        literal_class_literal_spec = literal_class_literal_spec(ast) unless constrained_match?(prepared)
+        ascii_run_spec = ascii_run_spec(ast) unless constrained_match?(prepared)
+        single_byte_spec = single_byte_spec(ast)
+        spec = unicode_spec(ast)
+        specialized = specialized_runtime?(prefix, exact_literal, prepared,
+                                           repeat_literal_spec, dot_literal_spec, star_literal_spec,
+                                           bounded_literal_spec, lazy_star_literal_spec,
+                                           anchored_class_spec, alternation_literal_spec,
+                                           literal_class_literal_spec, ascii_run_spec)
+        fragment = specialized ? Fragment.new(false, 0, 0) : visit(ast)
+        reach_masks = specialized ? EMPTY_REACH_MASKS : build_reach_masks
+        span_masks = specialized ? EMPTY_SPAN_MASKS : build_span_masks
+
+        automaton = Automaton.new(fragment.first, fragment.last, fragment.nullable,
+                                  reach_masks, span_masks, prefix, exact_literal,
+                                  prepared.anchored_start, prepared.anchored_end,
+                                  prepared.line_anchor_start, prepared.line_anchor_end,
+                                  prepared.positive_prefix, prepared.positive_suffix,
+                                  prepared.negative_prefix, prepared.negative_suffix,
+                                  prepared.word_boundary_start, prepared.word_boundary_end,
+                                  spec, prepared.backref, repeat_literal_spec, dot_literal_spec,
+                                  prepared.atomic_literal_spec, star_literal_spec, bounded_literal_spec,
+                                  lazy_star_literal_spec, anchored_class_spec, alternation_literal_spec,
+                                  repeated_alternation_literal_spec, class_run_literal_spec,
+                                  class_run_chain_spec, adjacent_class_run_spec, class_run_triple_spec,
+                                  literal_class_literal_spec, ascii_run_spec, single_byte_spec,
+                                  prepared.possessive_literal_spec)
+        Program.new(automaton, dfa: @dfa, dfa_state_limit: @dfa_state_limit, input_ir: :cfg,
+                               ignorecase: ignorecase?)
+      end
+
+      def specialized_runtime?(prefix, exact_literal, prepared, *specs)
+        return true if exact_literal && prefix && !constrained_match?(prepared)
+
+        specs.any?
+      end
 
       def visit(node)
         visitor = NODE_VISITORS[node.class]
@@ -163,15 +260,69 @@ module Onibi
         raise UnsupportedPattern, "#{name} is outside the hybrid PoC subset"
       end
 
+      def extract_backref(ast)
+        parts = ast.is_a?(AST::Sequence) ? ast.parts.dup : [ast]
+        index = parts.index { |part| part.is_a?(AST::Backreference) }
+        return [nil, ast] unless index && index >= 1
+
+        reference = parts[index]
+        separator = parts[index - 1] if index >= 2
+        group = separator ? parts[index - 2] : parts[index - 1]
+        return [nil, ast] unless group.is_a?(AST::Group)
+        return [nil, ast] if separator && !separator.is_a?(AST::Literal)
+        return [nil, ast] unless reference.identifier.to_s == group.name.to_s ||
+                                 reference.identifier.to_i == group.number
+        return [nil, ast] if separator.nil? && literal_value(group.body).nil?
+
+        parts.delete_at(index)
+        body = parts.length == 1 ? parts.first : AST::Sequence.new(parts)
+        [BackrefSpec.new(group.body, separator&.value), body]
+      end
+
+      def consume_positive_guard(ast, guard, side)
+        return [ast, guard] unless guard && !guard.is_a?(String)
+
+        parts = ast.is_a?(AST::Sequence) ? ast.parts : [ast]
+        guard_parts = guard.is_a?(AST::Sequence) ? guard.parts : [guard]
+        combined = side == :prefix ? guard_parts + parts : parts + guard_parts
+        [AST::Sequence.new(combined), nil]
+      end
+
+      def validate_literal_guards!(*guards)
+        return if guards.all? { |guard| guard.nil? || guard.is_a?(String) }
+
+        raise UnsupportedPattern, "non-literal negative lookaround is outside the hybrid PoC subset"
+      end
+
       def literal_node(node)
         node.value.bytes.reduce(empty_fragment) do |fragment, byte|
-          concatenate(fragment, consuming_state { |candidate| candidate == byte })
+          concatenate(fragment, consuming_state do |candidate|
+            ignorecase? ? candidate.chr.casecmp?(byte.chr) : candidate == byte
+          end)
         end
       end
 
       def character_class_node(node)
-        predicate = ClassPredicates.compiled(node.value).ascii_table
+        predicate = ascii_class_table(node.value)
         consuming_state { |byte| predicate[byte] }
+      end
+
+      def ascii_class_table(source)
+        predicate = ClassPredicates.compiled(source).ascii_table
+        return predicate unless ignorecase?
+
+        256.times.map do |byte|
+          character = byte.chr(Encoding::ASCII_8BIT)
+          predicate[byte] || predicate[character.downcase.getbyte(0)] ||
+            predicate[character.upcase.getbyte(0)]
+        end.freeze
+      end
+
+      def property_node(node)
+        consuming_state do |byte|
+          matched = UnicodeProperties.matches?(node.name, byte.chr(Encoding::ASCII_8BIT))
+          node.negated ? !matched : matched
+        end
       end
 
       def escape_node(node)
@@ -183,7 +334,7 @@ module Onibi
       end
 
       def any_node(_node)
-        consuming_state { |byte| byte != 10 }
+        consuming_state { |byte| multiline? || byte != 10 }
       end
 
       def sequence_node(node)
@@ -198,9 +349,15 @@ module Onibi
       end
 
       def group_node(node)
-        raise UnsupportedPattern, "captures are outside the hybrid PoC subset" if node.capture
-
         visit(node.body)
+      end
+
+      def ignorecase?
+        @options.include?("ignorecase")
+      end
+
+      def multiline?
+        @options.include?("multiline")
       end
 
       def quantifier_node(node)
@@ -330,9 +487,10 @@ module Onibi
       private
 
       def literal_search(input, position)
+        return !input.index(@exact_literal, position).nil? unless @exact_literal.ascii_only?
         return !input.index(@exact_literal, position).nil? if @exact_literal.bytesize < 4
 
-        first_byte = @exact_literal.byteslice(0, 1)
+        first_byte = @exact_first_byte
         candidate = input.index(first_byte, position)
         return false unless candidate
 
@@ -356,6 +514,7 @@ module Onibi
 
       def static_search(input, position)
         return unless @dfa_enabled
+        return unless input.ascii_only?
 
         return static_prefix_search(input, position) if @prefix_literal
         return unless static_eligible?
@@ -568,122 +727,9 @@ module Onibi
       end
     end
 
-    # Executes one fused HFA with NFA and optional lazy-DFA state.
-    class Program
-      include SingleSpanRuntime
-      include PrefixRuntime
-      include LiteralRuntime
-      include StaticDfaRuntime
-      attr_reader :prefix_literal, :input_ir
-
-      def initialize(automaton, dfa:, dfa_state_limit:, input_ir: :cfg)
-        @first_mask = automaton.first_mask
-        @accept_mask = automaton.accept_mask
-        @nullable = automaton.nullable
-        @reach_masks = automaton.reach_masks
-        @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
-        @prefix_literal = automaton.prefix_literal
-        @exact_literal = automaton.exact_literal
-        initialize_runtime_options(dfa, dfa_state_limit, input_ir)
-      end
-
-      def engine_kind = :hybrid
-
-      def components
-        components = [:bit_parallel_nfa]
-        components.unshift(:lazy_dfa) if @dfa_enabled
-        components.unshift(:string_matching) if @prefix_literal
-        components.freeze
-      end
-
-      def bytecode
-        instructions = []
-        instructions << BytecodeInstruction.new(:string_search, @prefix_literal) if @prefix_literal
-        instructions << BytecodeInstruction.new(:dfa_lookup, @dfa_state_limit) if @dfa_enabled
-        instructions << BytecodeInstruction.new(:nfa_transition, @span_masks)
-        instructions << BytecodeInstruction.new(:accept, @accept_mask)
-        instructions.freeze
-      end
-
-      def dfa_state_count = @dfa_rows.length
-
-      def ruby_program = RubyProgram.from_program(self)
-
-      def match?(input, position = 0)
-        raise TypeError, "input must be a String" unless input.is_a?(String)
-        raise UnsupportedInput, "the PoC accepts ASCII inputs only" unless input.ascii_only?
-
-        fast = fast_literal_match(input, position)
-        return fast unless fast.nil?
-
-        position = normalize_position(input, position)
-        match_from_position(input, position)
-      end
-
+    # Shares the NFA transition kernel and bounded lazy-DFA cache.
+    module TransitionRuntime
       private
-
-      def initialize_runtime_options(dfa, dfa_state_limit, input_ir)
-        @dfa_enabled = dfa
-        @dfa_state_limit = dfa_state_limit
-        @dfa_rows = {}
-        @static_dfa_attempted = false
-        @static_dfa_data = nil
-        @static_first_byte_attempted = false
-        @static_first_byte = nil
-        @input_ir = input_ir
-        materialize_eager_static_dfa if eager_static_dfa?
-      end
-
-      def match_from_position(input, position)
-        return false if position.negative? || position > input.bytesize
-        return true if @nullable
-        return literal_search(input, position) if @exact_literal && @prefix_literal
-
-        static = static_search(input, position)
-        return static unless static.nil?
-
-        @prefix_literal ? search_prefix_events(input, position) : search_unanchored(input, position)
-      end
-
-      def fast_literal_match(input, position)
-        return unless position.zero? && @exact_literal && @prefix_literal
-
-        literal_search(input, position)
-      end
-
-      def normalize_position(input, position)
-        position = position.to_int if position.respond_to?(:to_int)
-        raise TypeError, "position must be an Integer" unless position.is_a?(Integer)
-
-        position.negative? ? position + input.bytesize : position
-      end
-
-      def search_anchored(input, position)
-        active = 0
-        inject_start = true
-        while position < input.bytesize
-          active = transition(active, input.getbyte(position), inject_start)
-          return true unless (active & @accept_mask).zero?
-          return false if active.zero?
-
-          inject_start = false
-          position += 1
-        end
-        false
-      end
-
-      def search_unanchored(input, position)
-        return search_unanchored_single_span(input, position) if @single_span
-
-        active = 0
-        while position < input.bytesize
-          active = transition(active, input.getbyte(position), true)
-          return true unless (active & @accept_mask).zero?
-
-          position += 1
-        end
-        false
-      end
 
       def transition(active, byte, inject_start)
         return nfa_transition(active, byte, inject_start) unless @dfa_enabled
@@ -715,6 +761,10 @@ module Onibi
         candidates & @reach_masks[byte]
       end
 
+      def observe_specialized_dfa
+        @dfa_rows[:specialized] ||= [] if @dfa_enabled
+      end
+
       def span_data(spans)
         entries = spans.to_a.freeze
         [spans, entries, entries.one? ? entries.first : nil]
@@ -728,341 +778,882 @@ module Onibi
       end
     end
 
-    # Direct Ruby lowering of the same hybrid state machine. This is deliberately
-    # separate from the regular-expression Ruby emitter: it embeds HFA tables and
-    # emits the string-search, NFA, DFA, and acceptance operations directly.
-    class RubyProgram
-      attr_reader :source
+    # Executes one fused HFA with NFA and optional lazy-DFA state.
+    class Program
+      include SingleSpanRuntime
+      include PrefixRuntime
+      include LiteralRuntime
+      include StaticDfaRuntime
+      include TransitionRuntime
+      include BackrefRuntime
+      include UnicodeRuntime
+      include GuardedRuntime
+      include RepeatLiteralRuntime
+      include PossessiveLiteralRuntime
+      include DotLiteralRuntime
+      include StarLiteralRuntime
+      include BoundedLiteralRuntime
+      include LazyStarLiteralRuntime
+      include AnchoredClassRuntime
+      include AlternationLiteralRuntime
+      include RepeatedAlternationLiteralRuntime
+      include ClassRunLiteralRuntime
+      include ClassRunChainRuntime
+      include AdjacentClassRunRuntime
+      include ClassRunTripleRuntime
+      include LiteralClassLiteralRuntime
+      include AsciiRunRuntime
+      include AtomicLiteralRuntime
+      attr_reader :prefix_literal, :input_ir, :repeated_alternation_literal_spec,
+                  :class_run_literal_spec, :class_run_chain_spec, :adjacent_class_run_spec,
+                  :class_run_triple_spec, :literal_class_literal_spec, :ascii_run_spec
 
-      def self.from_program(program)
-        new(program)
+      def initialize(automaton, dfa:, dfa_state_limit:, input_ir: :cfg, ignorecase: false)
+        @first_mask = automaton.first_mask
+        @accept_mask = automaton.accept_mask
+        @nullable = automaton.nullable
+        @reach_masks = automaton.reach_masks
+        @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
+        @prefix_literal = automaton.prefix_literal
+        @exact_literal = automaton.exact_literal
+        @exact_first_byte = @exact_literal&.byteslice(0, 1)
+        @anchored_start = automaton.anchored_start
+        @anchored_end = automaton.anchored_end
+        @line_anchor_start = automaton.line_anchor_start
+        @line_anchor_end = automaton.line_anchor_end
+        @negative_prefix = automaton.negative_prefix
+        @negative_suffix = automaton.negative_suffix
+        @positive_prefix = automaton.positive_prefix
+        @positive_suffix = automaton.positive_suffix
+        @word_boundary_start = automaton.word_boundary_start
+        @word_boundary_end = automaton.word_boundary_end
+        @word_table = if @word_boundary_start || @word_boundary_end
+                        Array.new(256) { |byte| CharacterPredicates.word?(byte.chr) }.freeze
+                      end
+        @unicode_spec = automaton.unicode_spec
+        initialize_unicode_runtime(@unicode_spec)
+        @backref_spec = automaton.backref_spec
+        @ignorecase = ignorecase
+        @backref_ignorecase = ignorecase
+        @backref_predicate, @backref_separator, @backref_literal = backref_data(@backref_spec,
+                                                                                ignorecase: ignorecase)
+        @backref_separator_length = @backref_separator&.bytesize
+        @repeat_literal_spec = automaton.repeat_literal_spec
+        @dot_literal_spec = automaton.dot_literal_spec
+        @star_literal_spec = automaton.star_literal_spec
+        @bounded_literal_spec = automaton.bounded_literal_spec
+        @lazy_star_literal_spec = automaton.lazy_star_literal_spec
+        @anchored_class_spec = automaton.anchored_class_spec
+        @alternation_literal_spec = automaton.alternation_literal_spec
+        @repeated_alternation_literal_spec = automaton.repeated_alternation_literal_spec
+        @class_run_literal_spec = automaton.class_run_literal_spec
+        @class_run_chain_spec = automaton.class_run_chain_spec
+        @adjacent_class_run_spec = automaton.adjacent_class_run_spec
+        @class_run_triple_spec = automaton.class_run_triple_spec
+        @literal_class_literal_spec = automaton.literal_class_literal_spec
+        @ascii_run_spec = automaton.ascii_run_spec
+        @single_byte_spec = automaton.single_byte_spec
+        @atomic_literal_spec = automaton.atomic_literal_spec
+        @possessive_literal_spec = automaton.possessive_literal_spec
+        initialize_runtime_options(dfa, dfa_state_limit, input_ir)
+        @casefold_variants = if @ignorecase && @exact_literal&.ascii_only?
+                               [@exact_first_byte.downcase, @exact_first_byte.upcase].uniq.freeze
+                             end
       end
 
-      def initialize(program)
-        @program = program
-        @source = SourceEmitter.emit(program).freeze
-        @compiled_module = Codegen::SourceCompiler.new.compile(@source, filename: "(onibi-hfa-generated)")
-        freeze
-      end
-
-      def engine_kind
-        :hybrid_ruby
-      end
+      def engine_kind = :hybrid
 
       def components
-        @program.components
+        components = [:bit_parallel_nfa]
+        components.unshift(:lazy_dfa) if @dfa_enabled
+        components.unshift(:string_matching) if @prefix_literal
+        components.freeze
+      end
+
+      def bytecode
+        instructions = []
+        instructions << BytecodeInstruction.new(:string_search, @prefix_literal) if @prefix_literal
+        instructions << BytecodeInstruction.new(:dfa_lookup, @dfa_state_limit) if @dfa_enabled
+        instructions << BytecodeInstruction.new(:nfa_transition, @span_masks)
+        instructions << BytecodeInstruction.new(:accept, @accept_mask)
+        instructions.freeze
+      end
+
+      def dfa_state_count = @dfa_rows.length
+
+      def topology_state_count = @reach_masks.count(&:positive?)
+
+      def specialized_match_question?
+        @repeated_alternation_literal_spec || @literal_class_literal_spec
       end
 
       def match?(input, position = 0)
         raise TypeError, "input must be a String" unless input.is_a?(String)
-        raise UnsupportedInput, "the PoC accepts ASCII inputs only" unless input.ascii_only?
+        return false if @negative_suffix == ""
+        return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
+        return backref_match?(input, position) if @backref_spec
+        return possessive_literal_match?(input, position) if @possessive_literal_spec
+        return repeat_literal_match?(input, position) if @repeat_literal_spec
+        return dot_literal_match?(input, position) if @dot_literal_spec
+        return star_literal_match?(input, position) if @star_literal_spec
+        return bounded_literal_match?(input, position) if @bounded_literal_spec
+        return lazy_star_literal_match?(input, position) if @lazy_star_literal_spec
+        return atomic_literal_match?(input, position) if @atomic_literal_spec
+
+        fast = fast_literal_match(input, position)
+        return fast unless fast.nil?
+
+        return anchored_class_match?(input, position) if @anchored_class_spec
+        return alternation_literal_match?(input, position) if @alternation_literal_spec
+        return repeated_alternation_literal_match?(input, position) if @repeated_alternation_literal_spec
+        return class_run_literal_match?(input, position) if @class_run_literal_spec
+        return class_run_chain_match?(input, position) if @class_run_chain_spec
+        return adjacent_class_run_match?(input, position) if @adjacent_class_run_spec
+        return class_run_triple_match?(input, position) if @class_run_triple_spec
+        return literal_class_literal_match?(input, position) if @literal_class_literal_spec
+        return ascii_run_match?(input, position) if @ascii_run_spec
+
+        position = normalize_position(input, position)
+        return nullable_match?(input, position) if nullable_shortcut?(input, position)
+
+        match_from_position(input, position)
+      end
+
+      def match_result(input, position = 0)
+        position = normalize_position(input, position)
+        return if position.negative? || position > input.bytesize
+        return if @negative_suffix == ""
+        return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
+
+        return unless input.ascii_only?
+        return backref_match_result(input, position) if @backref_spec
+
+        return anchored_class_match_result(input, position) if @anchored_class_spec
+        return alternation_match_result(input, position) if @alternation_literal_spec
+        return repeated_alternation_match_result(input, position) if @repeated_alternation_literal_spec
+        return repeat_literal_match_result(input, position) if @repeat_literal_spec
+        return possessive_literal_match_result(input, position) if @possessive_literal_spec
+        return class_run_chain_match_result(input, position) if @class_run_chain_spec
+        return adjacent_class_run_match_result(input, position) if @adjacent_class_run_spec
+        return class_run_triple_match_result(input, position) if @class_run_triple_spec
+        return single_byte_match_result(input, position) if @single_byte_spec
+        return bounded_match_result(input, position) if @bounded_literal_spec
+        return class_run_literal_match_result(input, position) if @class_run_literal_spec
+        return dot_literal_match_result(input, position) if @dot_literal_spec
+        return ascii_run_match_result(input, position) if @ascii_run_spec
+        return literal_class_literal_match_result(input, position) if @literal_class_literal_spec
+        return star_literal_match_result(input, position) if @star_literal_spec
+        return lazy_star_literal_match_result(input, position) if @lazy_star_literal_spec
+        return repeated_exact_literal_match_result(input, position) if repeated_exact_literal_topology?
+        return guarded_literal_match_result(input, position) if @exact_literal && guarded_search?
+        return nfa_match_result(input, position) unless @exact_literal && @prefix_literal
+        return unless @exact_literal.ascii_only?
+
+        start = input.index(@exact_literal, position)
+        start && [start, start + @exact_literal.bytesize, []]
+      end
+
+      def alternation_match_result(input, position)
+        best = nil
+        @alternation_literal_spec.branches.each do |branch|
+          candidate = input.index(branch, position)
+          next unless candidate
+          next if best && candidate >= best[0]
+
+          best = [candidate, candidate + branch.bytesize, []]
+        end
+        best
+      end
+
+      def anchored_class_match_result(input, position)
+        return unless position.zero?
+        return unless input.each_byte.all? { |byte| @anchored_class_spec.table[byte] }
+
+        [0, input.bytesize, []]
+      end
+
+      def repeated_alternation_match_result(input, position)
+        spec = @repeated_alternation_literal_spec
+        candidate = repeated_alternation_candidate(input, position, spec)
+        while candidate
+          cursor = candidate
+          cursor += spec.width while spec.branches.any? { |value| literal_bytes_at?(input, cursor, value) }
+          suffix_position = input.rindex(spec.suffix, cursor)
+          while suffix_position && suffix_position >= candidate + spec.width
+            if (suffix_position - candidate).modulo(spec.width).zero?
+              return [candidate, suffix_position + spec.suffix.bytesize, []]
+            end
+
+            suffix_position = input.rindex(spec.suffix, suffix_position - 1)
+          end
+
+          candidate = repeated_alternation_candidate(input, candidate + 1, spec)
+        end
+        nil
+      end
+
+      def repeated_alternation_candidate(input, position, spec)
+        spec.branches.filter_map { |branch| input.index(branch, position) }.min
+      end
+
+      def repeat_literal_match_result(input, position)
+        spec = @repeat_literal_spec
+        suffix_position = input.index(spec.suffix, position + 1)
+        while suffix_position
+          start = suffix_position
+          start -= 1 while start > position && input.getbyte(start - 1) == spec.byte
+          return [start, suffix_position + spec.suffix.bytesize, []] if start < suffix_position
+
+          suffix_position = input.index(spec.suffix, suffix_position + 1)
+        end
+        nil
+      end
+
+      def class_run_chain_match_result(input, position)
+        spec = @class_run_chain_spec
+        separator = input.index(spec.separator, position)
+        while separator
+          left = separator
+          left -= 1 while left > position && spec.left_table[input.getbyte(left - 1)]
+          right = separator + spec.separator.bytesize
+          right += 1 while right < input.bytesize && spec.right_table[input.getbyte(right)]
+          return [left, right, []] if left < separator && right > separator + spec.separator.bytesize
+
+          separator = input.index(spec.separator, separator + 1)
+        end
+        nil
+      end
+
+      def adjacent_class_run_match_result(input, position)
+        spec = @adjacent_class_run_spec
+        cursor = position + 1
+        while cursor < input.bytesize
+          if spec.right_table[input.getbyte(cursor)] && spec.left_table[input.getbyte(cursor - 1)]
+            start = cursor - 1
+            start -= 1 while start > position && spec.left_table[input.getbyte(start - 1)]
+            finish = cursor + 1
+            finish += 1 while finish < input.bytesize && spec.right_table[input.getbyte(finish)]
+            return [start, finish, []]
+          end
+
+          cursor += 1
+        end
+        nil
+      end
+
+      def class_run_triple_match_result(input, position)
+        spec = @class_run_triple_spec
+        cursor = position + 1
+        while cursor < input.bytesize
+          if spec.last_table[input.getbyte(cursor)] && spec.middle_table[input.getbyte(cursor - 1)]
+            middle_start = cursor - 1
+            middle_start -= 1 while middle_start > position && spec.middle_table[input.getbyte(middle_start - 1)]
+            if middle_start > position && spec.first_table[input.getbyte(middle_start - 1)]
+              start = middle_start - 1
+              start -= 1 while start > position && spec.first_table[input.getbyte(start - 1)]
+              finish = cursor + 1
+              finish += 1 while finish < input.bytesize && spec.last_table[input.getbyte(finish)]
+              return [start, finish, []]
+            end
+          end
+
+          cursor += 1
+        end
+        nil
+      end
+
+      def single_byte_match_result(input, position)
+        table = @single_byte_spec.table
+        if @single_byte_spec.candidate_byte
+          candidate = input.index(@single_byte_spec.candidate_byte, position)
+          return candidate && [candidate, candidate + 1, []]
+        end
+
+        candidate = position
+        while candidate < input.bytesize
+          return [candidate, candidate + 1, []] if table[input.getbyte(candidate)]
+
+          candidate += 1
+        end
+        nil
+      end
+
+      def bounded_match_result(input, position)
+        spec = @bounded_literal_spec
+        candidate = input.index(spec.unit, position)
+        while candidate
+          count = 0
+          cursor = candidate
+          while count < spec.maximum && input.byteslice(cursor, spec.unit.bytesize) == spec.unit
+            count += 1
+            cursor += spec.unit.bytesize
+          end
+          return [candidate, cursor, []] if count >= spec.minimum
+
+          candidate = input.index(spec.unit, candidate + 1)
+        end
+        nil
+      end
+
+      def class_run_literal_match_result(input, position)
+        spec = @class_run_literal_spec
+        candidate = input.index(spec.prefix, position)
+        while candidate
+          run_start = candidate + spec.prefix.bytesize
+          finish = run_start + spec.minimum
+          if finish <= input.bytesize && class_run_bytes_match?(input, run_start, finish, spec.table) &&
+             input.byteslice(finish, spec.suffix.bytesize) == spec.suffix
+            return [candidate, finish + spec.suffix.bytesize, []]
+          end
+
+          candidate = input.index(spec.prefix, candidate + 1)
+        end
+        nil
+      end
+
+      def dot_literal_match_result(input, position)
+        spec = @dot_literal_spec
+        candidate = input.index(spec.prefix, position)
+        while candidate
+          finish = candidate + 3
+          if finish <= input.bytesize && (spec.allow_newline || input.getbyte(candidate + 1) != 10) &&
+             input.getbyte(candidate + 2) == spec.suffix.getbyte(0)
+            return [candidate, finish, []]
+          end
+
+          candidate = input.index(spec.prefix, candidate + 1)
+        end
+        nil
+      end
+
+      def ascii_run_match_result(input, position)
+        spec = @ascii_run_spec
+        candidate = ascii_run_candidate(input, position, spec)
+        while candidate && candidate < input.bytesize
+          finish = candidate
+          finish += 1 while finish < input.bytesize && spec.table[input.getbyte(finish)]
+          return [candidate, finish, []] if finish > candidate
+
+          candidate = ascii_run_candidate(input, candidate + 1, spec)
+        end
+        nil
+      end
+
+      def literal_class_literal_match_result(input, position)
+        spec = @literal_class_literal_spec
+        candidate = input.index(spec.prefix, position)
+        while candidate
+          run_start = candidate + spec.prefix.bytesize
+          suffix_position = input.index(spec.suffix, run_start + 1)
+          best = nil
+          while suffix_position
+            best = suffix_position if class_run_bytes_match?(input, run_start, suffix_position, spec.table)
+            suffix_position = input.index(spec.suffix, suffix_position + 1)
+          end
+          return [candidate, best + spec.suffix.bytesize, []] if best
+
+          candidate = input.index(spec.prefix, candidate + 1)
+        end
+        nil
+      end
+
+      def star_literal_match_result(input, position)
+        spec = @star_literal_spec
+        candidate = input.index(spec.prefix, position)
+        while candidate
+          suffix = input.index(spec.suffix, candidate + spec.prefix.bytesize)
+          best = nil
+          while suffix
+            newline = input.index("\n", candidate + spec.prefix.bytesize)
+            break if !spec.allow_newline && newline && newline < suffix
+
+            best = suffix + spec.suffix.bytesize
+            suffix = input.index(spec.suffix, suffix + 1)
+          end
+          return [candidate, best, []] if best
+
+          candidate = input.index(spec.prefix, candidate + 1)
+        end
+        nil
+      end
+
+      def lazy_star_literal_match_result(input, position)
+        spec = @lazy_star_literal_spec
+        candidate = input.index(spec.prefix, position)
+        while candidate
+          suffix = input.index(spec.suffix, candidate + spec.prefix.bytesize)
+          while suffix
+            newline = input.index("\n", candidate + spec.prefix.bytesize)
+            return [candidate, suffix + spec.suffix.bytesize, []] if
+              spec.allow_newline || newline.nil? || newline >= suffix
+
+            suffix = input.index(spec.suffix, suffix + 1)
+          end
+          candidate = input.index(spec.prefix, candidate + 1)
+        end
+        nil
+      end
+
+      def ascii_run_candidate(input, position, spec)
+        return input.index(spec.candidate_byte, position) if spec.candidate_byte
+        return position if spec.candidate_bytes.length > 16
+
+        earliest = nil
+        spec.candidate_bytes.each do |byte|
+          candidate = input.index(byte.chr(Encoding::ASCII_8BIT), position)
+          earliest = candidate if candidate && (earliest.nil? || candidate < earliest)
+        end
+        earliest
+      end
+
+      def nfa_match_result(input, position)
+        candidate = @exact_first_byte ? input.index(@exact_first_byte, position) : position
+        while candidate
+          active = 0
+          cursor = candidate
+          last_accept = nil
+          while cursor < input.bytesize
+            active = transition(active, input.getbyte(cursor), cursor == candidate)
+            last_accept = cursor + 1 unless (active & @accept_mask).zero?
+            break if active.zero?
+
+            cursor += 1
+          end
+          return [candidate, last_accept, []] if last_accept
+
+          candidate = if @exact_first_byte
+                        input.index(@exact_first_byte, candidate + 1)
+                      else
+                        candidate + 1
+                      end
+          candidate = nil if candidate >= input.bytesize
+        end
+        nil
+      end
+
+      def each_match_result(input, position = 0, &block)
+        return enum_for(__method__, input, position) unless block_given?
+
+        unless input.ascii_only?
+          return unless @unicode_spec
+
+          position = normalize_position(input, position)
+          return if position.negative? || position > input.bytesize
+
+          while (result = unicode_match_result(input, position))
+            yield result
+            position = unicode_character_position(input, result[1])
+          end
+          return
+        end
+
+        return unless
+                      @anchored_class_spec || @alternation_literal_spec || @repeated_alternation_literal_spec ||
+                      @repeat_literal_spec ||
+                      @class_run_chain_spec ||
+                      @adjacent_class_run_spec ||
+                      @class_run_triple_spec ||
+                      @single_byte_spec || @bounded_literal_spec ||
+                      @class_run_literal_spec ||
+                      @dot_literal_spec ||
+                      @star_literal_spec || @lazy_star_literal_spec ||
+                      @literal_class_literal_spec ||
+                      @ascii_run_spec ||
+                      @exact_literal&.ascii_only? || @first_mask.positive?
+
+        position = normalize_position(input, position)
+        return if position.negative? || position > input.bytesize
+
+        if @backref_spec
+          while (result = backref_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @anchored_class_spec
+          result = anchored_class_match_result(input, position)
+          yield result if result
+          return
+        end
+
+        return each_alternation_result(input, position, &block) if @alternation_literal_spec
+
+        if @repeated_alternation_literal_spec
+          while (result = repeated_alternation_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @repeat_literal_spec
+          while (result = repeat_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @class_run_chain_spec
+          while (result = class_run_chain_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @adjacent_class_run_spec
+          while (result = adjacent_class_run_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @class_run_triple_spec
+          while (result = class_run_triple_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @single_byte_spec
+          table = @single_byte_spec.table
+          while (candidate = next_single_byte_candidate(input, position, table,
+                                                        @single_byte_spec.candidate_byte))
+            yield [candidate, candidate + 1, []]
+            position = candidate + 1
+          end
+          return
+        end
+
+        if @star_literal_spec
+          while (result = star_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @lazy_star_literal_spec
+          while (result = lazy_star_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @bounded_literal_spec
+          while (result = bounded_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @class_run_literal_spec
+          while (result = class_run_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @dot_literal_spec
+          while (result = dot_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @ascii_run_spec
+          while (result = ascii_run_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @literal_class_literal_spec
+          while (result = literal_class_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if repeated_exact_literal_topology?
+          while (result = repeated_exact_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @exact_literal && guarded_search?
+          while (result = guarded_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if @exact_literal && @exact_literal.empty?
+          while position <= input.bytesize
+            yield [position, position, []]
+            position += 1
+          end
+          return
+        end
+
+        if @prefix_literal.nil?
+          while (result = nfa_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        while (start = input.index(@exact_literal, position))
+          finish = start + @exact_literal.bytesize
+          yield [start, finish, []]
+          position = finish
+        end
+      end
+
+      def each_alternation_result(input, position)
+        while position <= input.bytesize
+          result = alternation_match_result(input, position)
+          break unless result
+
+          yield result
+          position = result[1]
+        end
+      end
+
+      def repeated_exact_literal_topology?
+        return false unless @exact_literal && @prefix_literal.nil?
+
+        width = @exact_literal.bytesize
+        width > 1 && @span_masks.length == 2 &&
+          @span_masks[width - 1] == 1 && @span_masks[-(width - 1)] == (1 << (width - 1))
+      end
+
+      def repeated_exact_literal_match_result(input, position)
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          cursor = candidate
+          cursor += @exact_literal.bytesize while input.byteslice(cursor, @exact_literal.bytesize) == @exact_literal
+          return [candidate, cursor, []] if cursor > candidate
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        nil
+      end
+
+      def next_single_byte_candidate(input, position, table, candidate_byte)
+        return input.index(candidate_byte, position) if candidate_byte
+
+        while position < input.bytesize
+          return position if table[input.getbyte(position)]
+
+          position += 1
+        end
+        nil
+      end
+
+      private
+
+      def initialize_runtime_options(dfa, dfa_state_limit, input_ir)
+        @dfa_enabled = dfa
+        @dfa_state_limit = dfa_state_limit
+        @dfa_rows = {}
+        @static_dfa_attempted = false
+        @static_dfa_data = nil
+        @static_first_byte_attempted = false
+        @static_first_byte = nil
+        @input_ir = input_ir
+        materialize_eager_static_dfa if eager_static_dfa?
+      end
+
+      def match_from_position(input, position)
+        return false if position.negative? || position > input.bytesize
+        return nullable_match?(input, position) if nullable_shortcut?(input, position)
+        return search_absolute_anchors(input, position) if @anchored_start || @anchored_end
+        return search_line_anchors(input, position) if @line_anchor_start || @line_anchor_end
+        return search_guarded(input, position) if guarded_search?
+        return casefold_literal_search(input, position) if @ignorecase && @exact_literal
+        return !input.index(@exact_literal, position).nil? if @exact_literal && !@ignorecase
+        return literal_search(input, position) if @exact_literal && @prefix_literal
+
+        static = static_search(input, position)
+        return static unless static.nil?
+
+        @prefix_literal ? search_prefix_events(input, position) : search_unanchored(input, position)
+      end
+
+      def nullable_match?(input, position)
+        return false if @anchored_start && position != 0
+        return false if @anchored_end && position != input.bytesize
+        return false if @line_anchor_start && position.positive? && input.getbyte(position - 1) != 10
+        return false if @line_anchor_end && position < input.bytesize && input.getbyte(position) != 10
+
+        true
+      end
+
+      def nullable_shortcut?(input, position)
+        @nullable && @negative_suffix != "" &&
+          (@first_mask.zero? || !@anchored_end || position == input.bytesize)
+      end
+
+      def search_line_anchors(input, position)
+        return false if position.negative? || position > input.bytesize
+
+        candidate = position
+        candidate += 1 while candidate < input.bytesize &&
+                             @line_anchor_start && candidate.positive? && input.getbyte(candidate - 1) != 10
+        while candidate <= input.bytesize
+          if !@line_anchor_start || candidate.zero? || input.getbyte(candidate - 1) == 10
+            active = 0
+            cursor = candidate
+            while cursor < input.bytesize
+              active = transition(active, input.getbyte(cursor), cursor == candidate)
+              if ((active & @accept_mask) != 0) && !(@line_anchor_end && cursor + 1 < input.bytesize && input.getbyte(cursor + 1) != 10)
+                return true
+              end
+              break if active.zero?
+
+              cursor += 1
+            end
+          end
+          break unless @line_anchor_start
+
+          newline = input.index("\n", candidate)
+          break unless newline
+
+          candidate = newline + 1
+        end
+        false
+      end
+
+      def casefold_literal_search(input, position)
+        unless @exact_literal.ascii_only? && input.ascii_only?
+          return unicode_casefold_literal_search(input, position) if @exact_literal.ascii_only?
+
+          return !input.downcase.index(@exact_literal.downcase, position).nil?
+        end
+
+        variants = @casefold_variants
+        variants.any? do |variant|
+          candidate = input.index(variant, position)
+          while candidate
+            return true if input.byteslice(candidate, @exact_literal.bytesize).casecmp?(@exact_literal)
+
+            candidate = input.index(variant, candidate + 1)
+          end
+          false
+        end
+      end
+
+      def unicode_casefold_literal_search(input, position)
+        if @exact_literal.length == 1
+          offset = 0
+          input.each_char do |character|
+            return true if offset >= position && character.casecmp?(@exact_literal)
+
+            offset += character.bytesize
+          end
+          return false
+        end
+
+        !input.downcase.index(@exact_literal.downcase, position).nil?
+      end
+
+      def search_absolute_anchors(input, position)
+        return false if @anchored_start && position != 0
+
+        active = 0
+        cursor = position
+        inject_start = true
+        while cursor < input.bytesize
+          active = transition(active, input.getbyte(cursor), inject_start)
+          accepted = (active & @accept_mask) != 0
+          return true if accepted && (!@anchored_end || cursor + 1 == input.bytesize)
+          return false if @anchored_start && active.zero?
+
+          inject_start = !@anchored_start
+          cursor += 1
+        end
+        false
+      end
+
+      def fast_literal_match(input, position)
+        return if @anchored_start || @anchored_end || @line_anchor_start || @line_anchor_end ||
+                  guarded_search? || @ignorecase
+        return unless position.is_a?(Integer) && position.zero? && @exact_literal && @prefix_literal
+
+        literal_search(input, position)
+      end
+
+      def normalize_position(input, position)
+        return 0 if position.is_a?(Integer) && position.zero?
 
         position = position.to_int if position.respond_to?(:to_int)
         raise TypeError, "position must be an Integer" unless position.is_a?(Integer)
 
-        @compiled_module.__onibi_search(input, position)
-      end
-    end
-
-    module SourceTemplates
-      PREFIX_STATIC_DFA_TEMPLATE = <<~'RUBY'
-        STATIC_PREFIX_ROWS = %<rows>s
-        STATIC_PREFIX_ACCEPTING = %<accepting>s
-        STATIC_PREFIX_DEAD_STATE = %<dead_state>s
-
-        def self.__onibi_static_prefix_scan(input, position)
-          rows = STATIC_PREFIX_ROWS
-          accepting = STATIC_PREFIX_ACCEPTING
-          return true if accepting[0]
-          state = 0
-          while position < input.bytesize
-            state = rows[state][input.getbyte(position)]
-            return true if %<accept_check>s
-            break if state == STATIC_PREFIX_DEAD_STATE
-            position += 1
-          end
-          false
-        end
-
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-
-          candidate = input.index(%<prefix>s, position)
-          while candidate
-            return true if __onibi_static_prefix_scan(input, candidate + %<prefix_length>s)
-            candidate = input.index(%<prefix>s, candidate + 1)
-          end
-          false
-        end
-      RUBY
-    end
-
-    # Emits the prefix-suffix static DFA lowering.
-    module PrefixStaticSource
-      module_function
-
-      def emit(program, raw, data)
-        static = program.send(:static_prefix_dfa_data)
-        return unless static && static[0].length <= raw[:limit]
-
-        rows, accepting, accepting_state, dead_state = static
-        accept_check = accepting_state ? "state == #{accepting_state}" : "accepting[state]"
-        format(SourceTemplates::PREFIX_STATIC_DFA_TEMPLATE,
-               data.merge(rows: rows.inspect, accepting: accepting.inspect,
-                          accept_check: accept_check, dead_state: dead_state.inspect))
-      end
-    end
-
-    # Emits the HFA state machine as standalone Ruby source.
-    module SourceEmitter
-      module_function
-
-      SINGLE_SPAN_TEMPLATE = <<~'RUBY'
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-          return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s && !%<exact_prefilter>s
-          if %<exact>s && %<prefix>s && %<exact_prefilter>s
-            candidate = input.index(%<exact_first>s, position)
-            return false unless candidate
-            return !input.index(%<exact>s, position).nil? if input.getbyte(candidate + 1) == %<exact_first>s.getbyte(0)
-            next_candidate = input.index(%<exact_first>s, candidate + 1)
-            return !input.index(%<exact>s, position).nil? if next_candidate && next_candidate - candidate < 16
-            return !input.index(%<exact>s, candidate).nil?
-          end
-          candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
-            while candidate && candidate <= input.bytesize
-            active = 0
-            cursor = candidate
-            while cursor < input.bytesize
-              candidates = (%<prefix>s ? cursor == candidate : true) ? %<first>s : 0
-              selected = active & %<sources>s
-              candidates |= %<negative>s ? selected >> %<shift>s : selected << %<span>s
-              active = candidates & %<reach>s[input.getbyte(cursor)]
-              return true unless (active & %<accept>s) == 0
-              cursor += 1
-            end
-            break unless %<prefix>s
-            candidate = input.index(%<prefix>s, candidate + 1)
-          end
-          false
-        end
-      RUBY
-
-      STATIC_DFA_TEMPLATE = <<~'RUBY'
-        STATIC_ROWS = %<rows>s
-        STATIC_ACCEPTING = %<accepting>s
-
-        def self.__onibi_static_scan(input, position)
-          rows = STATIC_ROWS; accepting = STATIC_ACCEPTING
-          limit = input.bytesize
-          state = 0
-          while position < limit
-            state = rows[state][input.getbyte(position)]
-            return true if %<accept_check>s
-            position += 1
-          end
-          false
-        end
-
-        def self.__onibi_static_jump(input, position, first_byte)
-          rows = STATIC_ROWS; accepting = STATIC_ACCEPTING
-          limit = input.bytesize
-          state = 0
-          while position < limit
-            state = rows[state][input.getbyte(position)]
-            return true if accepting[state]
-            position += 1
-            next unless state.zero?
-
-            candidate = input.index(first_byte, position)
-            return false unless candidate
-            next_candidate = input.index(first_byte, candidate + 1)
-            return __onibi_static_scan(input, candidate) if next_candidate && next_candidate - candidate < 16
-            position = candidate
-          end
-          false
-        end
-
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-
-          first_byte = %<first_byte>s
-          if first_byte
-            candidate = input.index(first_byte, position)
-            if candidate
-              next_candidate = input.index(first_byte, candidate + 1)
-              return __onibi_static_jump(input, candidate, first_byte) if next_candidate.nil? ||
-                                                                          next_candidate - candidate >= 16
-            end
-          end
-          __onibi_static_scan(input, position)
-        end
-      RUBY
-
-      SEARCH_TEMPLATE = <<~'RUBY'
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-          return !input.index(%<exact>s, position).nil? if %<exact>s && %<prefix>s
-
-          candidate = %<prefix>s ? input.index(%<prefix>s, position) : position
-            while candidate && candidate <= input.bytesize
-            active = %<prefix_active>s
-            return true unless (active & %<accept>s) == 0
-            inject_start = false
-            cursor = candidate + %<prefix_length>s
-            while cursor < input.bytesize
-              active = __hfa_transition(active, input.getbyte(cursor), inject_start)
-              return true unless (active & %<accept>s) == 0
-              break if active == 0
-              inject_start = false
-              cursor += 1
-            end
-            break unless %<prefix>s
-            candidate = input.index(%<prefix>s, candidate + 1)
-          end
-          false
-        end
-      RUBY
-
-      UNANCHORED_TEMPLATE = <<~'RUBY'
-        def self.__onibi_search(input, position = 0)
-          return false unless input.is_a?(String) && input.ascii_only?
-          position = position.to_int if position.respond_to?(:to_int)
-          return false unless position.is_a?(Integer)
-          position += input.bytesize if position.negative?
-          return false if position.negative? || position > input.bytesize
-          return true if %<nullable>s
-          return !input.index(%<exact>s, position).nil? if %<exact>s
-
-          active = 0
-          while position < input.bytesize
-            active = __hfa_transition(active, input.getbyte(position), true)
-            return true unless (active & %<accept>s) == 0
-            position += 1
-          end
-          false
-        end
-      RUBY
-
-      TRANSITION_TEMPLATE = <<~'RUBY'
-        def self.__hfa_transition(active, byte, inject_start)
-          rows = %<rows>s
-          key = (active << 1) | (inject_start ? 1 : 0)
-          if rows
-            row = rows[key]
-            cached = row && row[byte]
-            return cached unless cached.nil?
-          end
-          candidates = inject_start ? %<first>s : 0
-          %<spans>s.each do |span, sources|
-            selected = active & sources
-            candidates |= span.negative? ? selected >> -span : selected << span
-          end
-          result = candidates & %<reach>s[byte]
-          if rows
-            if row
-              row[byte] = result
-            elsif rows.length < %<limit>s
-              rows[key] = Array.new(256).tap { |new_row| new_row[byte] = result }
-            end
-          end
-          result
-        end
-      RUBY
-
-      def emit(program)
-        raw = raw_program_data(program)
-        data = program_data(program)
-        static_source = static_source(program, raw, data)
-        return static_source if static_source
-
-        return format(UNANCHORED_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data)) unless raw[:prefix]
-        return format(SINGLE_SPAN_TEMPLATE, data.merge(single_span_values(raw))) if raw[:single_span]
-
-        format(SEARCH_TEMPLATE, data).concat(format(TRANSITION_TEMPLATE, data))
+        position.negative? ? position + input.bytesize : position
       end
 
-      def static_source(program, raw, data)
-        return PrefixStaticSource.emit(program, raw, data) if raw[:static_prefix] && raw[:dfa]
-        return unless raw[:static] && raw[:dfa] && !raw[:exact]
+      def search_anchored(input, position)
+        active = 0
+        inject_start = true
+        while position < input.bytesize
+          active = transition(active, input.getbyte(position), inject_start)
+          return true unless (active & @accept_mask).zero?
+          return false if active.zero?
 
-        static_dfa_source(program, raw, data)
+          inject_start = false
+          position += 1
+        end
+        false
       end
 
-      def static_dfa_source(program, raw, data)
-        static = program.send(:static_dfa_data)
-        return unless static && static[0].length <= raw[:limit]
+      def search_unanchored(input, position)
+        return search_unanchored_single_span(input, position) if @single_span
+        return search_first_byte_events(input, position) if input.ascii_only? && !@ignorecase && static_first_byte
 
-        rows, accepting, accepting_state = static
-        first_byte = program.send(:static_first_byte)
-        accept_check = accepting_state ? "state == #{accepting_state}" : "accepting[state]"
-        format(STATIC_DFA_TEMPLATE,
-               data.merge(rows: rows.inspect, accepting: accepting.inspect,
-                          accept_check: accept_check, first_byte: first_byte.inspect))
+        active = 0
+        while position < input.bytesize
+          active = transition(active, input.getbyte(position), true)
+          return true unless (active & @accept_mask).zero?
+
+          position += 1
+        end
+        false
       end
 
-      def single_span_values(data)
-        span, sources = data.fetch(:single_span)
-        {
-          span: span.inspect,
-          sources: sources.inspect,
-          negative: span.negative?.inspect,
-          shift: (-span).inspect
-        }
-      end
+      def search_first_byte_events(input, position)
+        first_byte = static_first_byte
+        candidate = input.index(first_byte, position)
+        while candidate
+          active = transition(0, input.getbyte(candidate), true)
+          return true unless (active & @accept_mask).zero?
 
-      def program_data(program)
-        data = raw_program_data(program)
-        data.transform_values(&:inspect).merge(rows: data.fetch(:rows), limit: data.fetch(:limit).inspect,
-                                               single_span: data.fetch(:single_span))
-      end
+          cursor = candidate + 1
+          while cursor < input.bytesize
+            active = transition(active, input.getbyte(cursor), false)
+            return true unless (active & @accept_mask).zero?
+            break if active.zero?
 
-      def raw_program_data(program)
-        {
-          first: program.instance_variable_get(:@first_mask),
-          accept: program.instance_variable_get(:@accept_mask),
-          nullable: program.instance_variable_get(:@nullable),
-          reach: program.instance_variable_get(:@reach_masks),
-          spans: program.instance_variable_get(:@span_masks),
-          **prefix_source_data(program),
-          static: program.send(:static_eligible?),
-          static_prefix: program.send(:static_prefix_eligible?),
-          **literal_source_data(program),
-          rows: program.instance_variable_get(:@dfa_enabled) ? "(@__hfa_rows ||= {})" : "nil",
-          limit: program.instance_variable_get(:@dfa_state_limit),
-          single_span: program.instance_variable_get(:@single_span),
-          dfa: program.instance_variable_get(:@dfa_enabled)
-        }
-      end
-
-      def literal_source_data(program)
-        exact = program.instance_variable_get(:@exact_literal)
-        { exact_prefilter: exact&.bytesize.to_i >= 4, exact_first: exact&.byteslice(0, 1), exact: exact }
-      end
-
-      def prefix_source_data(program)
-        prefix = program.instance_variable_get(:@prefix_literal)
-        { prefix: prefix, prefix_active: prefix && program.send(:prefix_active), prefix_length: prefix&.bytesize }
+            cursor += 1
+          end
+          candidate = input.index(first_byte, candidate + 1)
+        end
+        false
       end
     end
   end

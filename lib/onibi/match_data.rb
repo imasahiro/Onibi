@@ -10,6 +10,21 @@ module Onibi
 
     attr_reader :string, :regexp
 
+    EMPTY_CAPTURES = [].freeze
+    EMPTY_NAMES = {}.freeze
+
+    def self.captureless(input, start_position, finish_position, regexp)
+      match_data = allocate
+      value = input.byteslice(start_position, finish_position - start_position)
+      match_data.instance_variable_set(:@values, [value].freeze)
+      match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
+      match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)
+      match_data.instance_variable_set(:@names, EMPTY_NAMES)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
     def initialize(values, captures, offsets, names = {}, context = nil)
       @values = ([values] + captures).freeze
       @captures = captures.freeze

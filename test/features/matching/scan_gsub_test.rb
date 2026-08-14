@@ -26,6 +26,227 @@ class ScanGsubTest < Minitest::Test
     assert_equal "b<aaa>c<aa>", regexp.gsub("baaacaa", "<\\0>")
   end
 
+  def test_captureless_literal_scan_and_gsub_use_hfa_iterator
+    regexp = Onibi::Regexp.new("a")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal iteration should use HFA" }) do
+      assert_equal %w[a a], regexp.scan("baac")
+      assert_equal "b<a><a>c", regexp.gsub("baac", "<a>")
+    end
+  end
+
+  def test_captureless_literal_quantifier_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
+      assert_equal %w[aaa aa], regexp.scan("baaacaa")
+    end
+  end
+
+  def test_repeated_literal_suffix_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a+b")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do
+      assert_equal %w[aaab aab], regexp.scan("xxaaab yyaab")
+    end
+  end
+
+  def test_class_run_chain_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("[a-z]+:[0-9]+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "class run chain iteration should use HFA" }) do
+      assert_equal %w[item:2026 key:7], regexp.scan("item:2026 key:7")
+    end
+  end
+
+  def test_adjacent_class_runs_scan_uses_hfa_iterator
+    program = Onibi::HybridAutomata.compile("[a-z]+[0-9]+")
+
+    assert_equal [[0, 8, []], [9, 13, []]],
+                 program.each_match_result("item2026 key7").to_a
+  end
+
+  def test_class_run_triple_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "class run triple should use HFA" }) do
+      assert_equal ["item 2026", "key 7"], regexp.scan("item 2026 key 7")
+    end
+  end
+
+  def test_ascii_property_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\p{Alpha}+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "ASCII property run should use HFA" }) do
+      assert_equal %w[letters words], regexp.scan("123letters 456words")
+    end
+  end
+
+  def test_unicode_property_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode property run should use HFA" }) do
+      assert_equal %w[ひらがな ひらがな], regexp.scan("漢字ひらがな ひらがな")
+    end
+  end
+
+  def test_literal_negative_lookahead_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("cat(?!fish)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal negative lookahead should use HFA" }) do
+      assert_equal %w[cat cat], regexp.scan("catfish cat cat")
+    end
+  end
+
+  def test_class_run_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "class-run capture scan should use HFA" }) do
+      assert_equal [%w[item 2026], %w[key 7]], regexp.scan("item-2026 key-7")
+    end
+  end
+
+  def test_guarded_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<!a)(?<letter>b)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "guarded capture scan should use HFA" }) do
+      assert_equal [["b"], ["b"]], regexp.scan("ab cb db")
+    end
+  end
+
+  def test_variable_alternation_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<letter>a|ab)c")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "variable alternation capture scan should use HFA" }) do
+      assert_equal [["a"], ["ab"]], regexp.scan("ac abc")
+    end
+  end
+
+  def test_backreference_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("([a-z]+)-\\1")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "backreference scan should use HFA" }) do
+      assert_equal [["echo"], ["test"]], regexp.scan("echo-echo test-test")
+    end
+  end
+
+  def test_named_backreference_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "named backreference scan should use HFA" }) do
+      assert_equal [["echo"], ["test"]], regexp.scan("echo-echo test-test")
+    end
+  end
+
+  def test_adjacent_backreference_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(ab)\\1")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "adjacent backreference scan should use HFA" }) do
+      assert_equal [["ab"]], regexp.scan("zzabab")
+    end
+  end
+
+  def test_conditional_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "conditional scan should use HFA" }) do
+      assert_equal %w[ab c], regexp.scan("ab c")
+    end
+  end
+
+  def test_named_subexpression_call_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "subexpression call scan should use HFA" }) do
+      assert_equal [["ab"]], regexp.scan("zzabab")
+    end
+  end
+
+  def test_nested_literal_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("((ab))")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "nested capture scan should use HFA" }) do
+      assert_equal [%w[ab ab]], regexp.scan("zzab")
+    end
+  end
+
+  def test_unicode_property_run_gsub_preserves_byte_offsets
+    regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+
+    assert_equal "漢字<h> 終端", regexp.gsub("漢字ひらがな 終端", "<h>")
+  end
+
+  def test_bounded_literal_quantifier_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a{2,4}")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "bounded literal iteration should use HFA" }) do
+      assert_equal %w[aaaa aa], regexp.scan("baaaacaa")
+    end
+  end
+
+  def test_fixed_class_run_literal_scan_uses_hfa_iterator
+    program = Onibi::HybridAutomata.compile("a[bc]{4}z")
+
+    assert_equal [[3, 9, []], [12, 18, []]],
+                 program.each_match_result("xxaabcbcz yyabcbcz").to_a
+  end
+
+  def test_single_class_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("[0-9]+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "single class run iteration should use HFA" }) do
+      assert_equal %w[123 456], regexp.scan("abc123def456")
+    end
+  end
+
+  def test_literal_class_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a[0-9]+z")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal/class/literal iteration should use HFA" }) do
+      assert_equal %w[a123z a45z], regexp.scan("xxa123z yya45z")
+    end
+  end
+
+  def test_star_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a.*z")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "star literal iteration should use HFA" }) do
+      assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
+    end
+  end
+
+  def test_lazy_star_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a.*?z")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "lazy star literal iteration should use HFA" }) do
+      assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
+    end
+  end
+
+  def test_captureless_literal_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("cat|dog")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal alternation iteration should use HFA" }) do
+      assert_equal %w[dog cat], regexp.scan("dogmatic cat")
+      assert_equal "<x>matic <x>", regexp.gsub("dogmatic cat", "<x>")
+    end
+  end
+
+  def test_repeated_alternation_scan_uses_hfa_iterator
+    program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
+
+    assert_equal [[2, 7, []], [10, 15, []]],
+                 program.each_match_result("xxabacz yyababz").to_a
+  end
+
+  def test_captureless_single_byte_class_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("[a-z]")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "single-byte class iteration should use HFA" }) do
+      assert_equal %w[a b c], regexp.scan("1a2b3c")
+    end
+  end
+
+  def test_captureless_single_byte_dot_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new(".")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "single-byte dot iteration should use HFA" }) do
+      assert_equal %w[a b], regexp.scan("a\nb")
+    end
+  end
+
+  def test_literal_dot_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a.c")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "literal/dot/literal iteration should use HFA" }) do
+      assert_equal %w[abc aXc], regexp.scan("xxabc yyaXc")
+    end
+  end
+
   def test_scan_yields_mri_compatible_values_and_returns_input
     pattern = Onibi::Regexp.new("(\\w+)=(\\d+)")
     expected = []

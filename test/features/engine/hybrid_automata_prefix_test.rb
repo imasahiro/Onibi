@@ -5,10 +5,9 @@ require_relative "../../test_helper"
 class HybridAutomataPrefixTest < Minitest::Test
   def test_large_prefix_hfa_uses_static_suffix_dfa
     program = Onibi::HybridAutomata.compile("BEGIN(?:ab|ac|ad|ba|bc|bd)+z")
-    ruby = program.ruby_program
-    assert_includes ruby.source, "STATIC_PREFIX_ROWS ="
-    assert ruby.match?("xxBEGINabacadbabcbdz")
-    refute ruby.match?("xxBEGINabacadbabcbdx")
+    assert program.match?("xxBEGINabacadbabcbdxBEGINabacadbabcbdz")
+    refute program.match?("xxBEGINabacadbabcbdxBEGINabacadbabcbdx")
+    assert program.instance_variable_get(:@static_prefix_dfa_data)
   end
 
   def test_sparse_prefix_does_not_materialize_static_suffix_dfa
