@@ -3153,12 +3153,18 @@ module Onibi
 
     def hfa_unicode_repeated_literal_capture_match_data(result, input)
       start, finish, = result
-      start_character = input.byteslice(0, start).to_s.length
-      finish_character = input.byteslice(0, finish).to_s.length
+      start_character, finish_character = hfa_unicode_repeated_literal_capture_character_offsets(input, start, finish)
       value = input.byteslice(start, finish - start)
       names = hfa_result_names
       MatchData.new(value, [value], [[start_character, finish_character], [start_character, finish_character]],
                     names, MatchData::Context.new(input, self))
+    end
+
+    def hfa_unicode_repeated_literal_capture_character_offsets(input, start, finish)
+      literal = @ast.parts.first.body.parts.first.expression.value
+      start_character = input.byteslice(0, start).to_s.length
+      repetitions = (finish - start) / literal.bytesize
+      [start_character, start_character + repetitions * literal.length]
     end
 
     def hfa_adjacent_greedy_capture_end(input, start, finish)

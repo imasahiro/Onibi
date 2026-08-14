@@ -1834,6 +1834,12 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_capture_character_offsets_use_unit_width
+    regexp = Onibi::Regexp.new("(?<word>é+)")
+
+    assert_equal [1, 3], regexp.send(:hfa_unicode_repeated_literal_capture_character_offsets, "aééz", 1, 5)
+  end
+
   def test_unicode_repeated_literal_capture_match_question_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<word>é+)")
 
