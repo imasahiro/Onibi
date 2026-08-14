@@ -3562,35 +3562,27 @@ module Onibi
 
     def hfa_match_data(result, input)
       start, finish, captures = result
-      if captures.empty? && (capture_offsets = hfa_simple_capture_offsets(input, start, finish))
-        names = hfa_static_capture_names || hfa_capture_names.transform_values do |indices|
-          indices.reverse_each.find { |index| capture_offsets[index - 1] } || indices.last
+      if captures.empty? && (strategy = hfa_capture_offset_strategy)
+        capture_offsets = case strategy
+                           when :simple then hfa_simple_capture_offsets(input, start, finish)
+                           when :nested_literal then hfa_nested_literal_capture_offsets(input, start, finish)
+                           when :nested_repeated then hfa_nested_repeated_capture_offsets(input, start, finish)
+                           when :adjacent_nested_repeated
+                             hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
+                           when :repeated_class then hfa_repeated_class_capture_offsets(input, start, finish)
+                           when :conditional then hfa_conditional_capture_offsets(input, start)
+                           when :subexpression then hfa_subexpression_capture_offsets(input, start)
+                           end
+        if capture_offsets
+          names = if strategy == :simple
+                    hfa_static_capture_names || hfa_capture_names.transform_values do |indices|
+                      indices.reverse_each.find { |index| capture_offsets[index - 1] } || indices.last
+                    end
+                  else
+                    hfa_static_capture_names || hfa_result_names
+                  end
+          return hfa_offset_match_data(input, start, finish, capture_offsets, names)
         end
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_nested_literal_capture_offsets(input, start, finish))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_nested_repeated_capture_offsets(input, start, finish))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_adjacent_nested_repeated_capture_offsets(input, start, finish))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_repeated_class_capture_offsets(input, start, finish))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_conditional_capture_offsets(input, start))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      end
-      if captures.empty? && (capture_offsets = hfa_subexpression_capture_offsets(input, start))
-        names = hfa_static_capture_names || hfa_result_names
-        return hfa_offset_match_data(input, start, finish, capture_offsets, names)
       end
       if captures.any? && captures.all? { |capture| capture.nil? || (capture.is_a?(Array) && capture.length == 2) }
         return hfa_offset_match_data(input, start, finish, captures, hfa_result_names)
@@ -3599,6 +3591,28 @@ module Onibi
 
       MatchData.new(input[start...finish], captures, [[start, finish]], {},
                     MatchData::Context.new(input, self))
+    end
+
+    def hfa_capture_offset_strategy
+      return @hfa_capture_offset_strategy if defined?(@hfa_capture_offset_strategy)
+
+      @hfa_capture_offset_strategy = if hfa_simple_capture_layout
+                                       :simple
+                                     elsif hfa_nested_literal_capture_result_safe?
+                                       :nested_literal
+                                     elsif hfa_nested_repeated_capture_result_safe?
+                                       :nested_repeated
+                                     elsif hfa_adjacent_nested_repeated_capture_result_safe?
+                                       :adjacent_nested_repeated
+                                     elsif hfa_repeated_class_capture_result_safe?
+                                       :repeated_class
+                                     elsif hfa_conditional_result_safe?
+                                       :conditional
+                                     elsif hfa_subexpression_result_safe?
+                                       :subexpression
+                                     else
+                                       false
+                                     end
     end
 
     def hfa_offset_match_data(input, start, finish, capture_offsets, names)

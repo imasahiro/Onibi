@@ -1281,6 +1281,16 @@ class MatchApiTest < Minitest::Test
     assert_equal [2, 6], match.offset("word")
   end
 
+  def test_tagged_hfa_capture_strategy_is_selected_once
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    first = regexp.send(:hfa_capture_offset_strategy)
+    second = regexp.send(:hfa_capture_offset_strategy)
+
+    assert_equal :simple, first
+    assert_same first, second
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
