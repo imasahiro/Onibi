@@ -421,6 +421,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_bounded_literal_match_question_uses_early_constructor_dispatch
+    regexp = Onibi::Regexp.new("a{4,12}")
+
+    regexp.stub(:hfa_bounded_literal_result_safe?,
+                -> { flunk "bounded literal should use early constructor dispatch" }) do
+      assert regexp.match?("baaaaaaaac")
+    end
+  end
+
   def test_bounded_literal_match_returns_the_greedy_run_and_respects_position
     regexp = Onibi::Regexp.new("a{2,4}")
 

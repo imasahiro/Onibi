@@ -170,6 +170,7 @@ module Onibi
       captured_chain_candidate = !@options.include?("ignorecase") && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
       @hfa_repeated_class_backref_fast = true if hfa_repeated_class_backref_candidate?
+      @hfa_bounded_literal_fast = true if hfa_bounded_literal_candidate?
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
@@ -202,6 +203,10 @@ module Onibi
       if input.ascii_only? && @hfa_repeated_class_backref_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_repeated_class_backref_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_bounded_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_bounded_literal_match_result(input, normalized_position).nil?
       end
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -913,6 +918,13 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       quantifier = parts.one? && parts.first
       @hfa_bounded_literal_result_safe = hfa_bounded_literal_quantifier?(quantifier)
+    end
+
+    def hfa_bounded_literal_candidate?
+      return false if @options.include?("ignorecase")
+      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
+
+      hfa_bounded_literal_quantifier?(@ast.parts.first)
     end
 
     def hfa_bounded_literal_quantifier?(quantifier)
