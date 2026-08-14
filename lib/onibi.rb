@@ -89,6 +89,11 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
       end
+      if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.b.index(literal.b, start_position).nil?
+      end
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
@@ -137,6 +142,13 @@ module Onibi
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         start = input.index(literal, start_position)
+        return hfa_match_data([start, start + literal.bytesize, []], input) if start
+        return nil
+      end
+      if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        start = input.b.index(literal.b, start_position)
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end
@@ -429,6 +441,14 @@ module Onibi
       literal = hfa_exact_literal_value
       @hfa_exact_literal_safe = literal && literal.bytesize.positive? && literal.ascii_only? &&
                                 !@options.include?("ignorecase")
+    end
+
+    def hfa_unicode_exact_literal_result_safe?
+      return @hfa_unicode_exact_literal_safe if defined?(@hfa_unicode_exact_literal_safe)
+      literal = hfa_exact_literal_value
+      @hfa_unicode_exact_literal_safe = literal && literal.bytesize.positive? &&
+                                        literal.each_codepoint.any? { |codepoint| codepoint > 0xFF } &&
+                                        !@options.include?("ignorecase")
     end
 
     def hfa_exact_literal_value
@@ -948,10 +968,14 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_exact_literal_result_safe?
+      if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         position = 0
-        while (start = input.index(literal, position))
+        while (start = if hfa_exact_literal_result_safe?
+                         input.index(literal, position)
+                       else
+                         input.b.index(literal.b, position)
+                       end)
           finish = start + literal.bytesize
           block.call([start, finish, []])
           position = finish
@@ -1014,7 +1038,8 @@ module Onibi
     end
 
     def hfa_iterator_safe?
-      return true if hfa_exact_literal_result_safe? || hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
+      return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
+                     hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
                      hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||

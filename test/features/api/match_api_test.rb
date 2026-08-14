@@ -252,6 +252,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_exact_literal_match_uses_hfa_string_path
+    regexp = Onibi::Regexp.new("こんにちは")
+
+    regexp.stub(:hfa_program, -> { flunk "unicode exact literal should use HFA string path" }) do
+      assert regexp.match?("挨拶はこんにちはです")
+    end
+  end
+
   def test_unicode_repeated_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
