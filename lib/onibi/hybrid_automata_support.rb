@@ -109,12 +109,14 @@ module Onibi
         parts.shift if line_anchor_start
         anchored_end = absolute_anchor?(parts.last, :anchor_absolute_end)
         parts.pop if anchored_end
+        before_final_newline = absolute_anchor?(parts.last, :anchor_before_final_newline)
+        parts.pop if before_final_newline
         line_anchor_end = absolute_anchor?(parts.last, :anchor_end)
         parts.pop if line_anchor_end
-        raise UnsupportedPattern, "only leading \\A and trailing \\z anchors are supported" if
+        raise UnsupportedPattern, "only leading \\A and trailing \\z/\\Z anchors are supported" if
           parts.any? { |part| part.is_a?(AST::Anchor) }
 
-        [anchor_body(parts), anchored_start, anchored_end, line_anchor_start, line_anchor_end]
+        [anchor_body(parts), anchored_start, anchored_end, before_final_newline, line_anchor_start, line_anchor_end]
       end
 
       def absolute_anchor?(node, kind)
@@ -397,7 +399,7 @@ module Onibi
       end
 
       def constrained_match?(prepared)
-        prepared.anchored_start || prepared.anchored_end || prepared.line_anchor_start ||
+        prepared.anchored_start || prepared.anchored_end || prepared.before_final_newline || prepared.line_anchor_start ||
           prepared.line_anchor_end || prepared.positive_prefix || prepared.positive_suffix ||
           prepared.negative_prefix ||
           prepared.negative_suffix || prepared.word_boundary_start || prepared.word_boundary_end ||

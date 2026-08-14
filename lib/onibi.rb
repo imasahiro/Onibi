@@ -1065,8 +1065,9 @@ module Onibi
       program = hfa_program
       @hfa_anchor_result_safe = program &&
                                 !program.instance_variable_get(:@anchored_class_spec) &&
-                                (program.instance_variable_get(:@anchored_start) ||
+                                 (program.instance_variable_get(:@anchored_start) ||
                                  program.instance_variable_get(:@anchored_end) ||
+                                 program.instance_variable_get(:@before_final_newline) ||
                                  program.instance_variable_get(:@line_anchor_start) ||
                                  program.instance_variable_get(:@line_anchor_end))
     end

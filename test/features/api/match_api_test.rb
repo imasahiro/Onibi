@@ -573,6 +573,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_before_final_newline_anchor_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("\\Acat\\Z")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "before-final-newline anchor should use HFA" }) do
+      assert_equal "cat", regexp.match("cat\n").to_s
+      assert_equal "cat", regexp.match("cat").to_s
+      assert_nil regexp.match("cat\nx")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 

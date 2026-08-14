@@ -12,7 +12,7 @@ module Onibi
     Automaton = Data.define(:first_mask, :accept_mask, :nullable, :reach_masks,
                             :span_masks, :prefix_literal, :required_literals, :trailing_literal,
                             :exact_literal,
-                            :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
+                            :anchored_start, :anchored_end, :before_final_newline, :line_anchor_start, :line_anchor_end,
                             :start_match,
                             :positive_prefix, :positive_suffix, :negative_prefix, :negative_suffix,
                             :word_boundary_start, :word_boundary_end, :unicode_spec,
@@ -151,7 +151,7 @@ module Onibi
       PreparedAst = Data.define(:ast, :backref, :positive_prefix, :positive_suffix,
                                 :negative_prefix, :negative_suffix,
                                 :word_boundary_start, :word_boundary_end,
-                                :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
+                                :anchored_start, :anchored_end, :before_final_newline, :line_anchor_start, :line_anchor_end,
                                 :start_match,
                                 :atomic_literal_spec, :possessive_literal_spec)
 
@@ -186,11 +186,11 @@ module Onibi
         ast, positive_suffix = consume_positive_guard(ast, positive_suffix, :suffix)
         ast, word_boundary_start, word_boundary_end = extract_boundaries(ast)
         ast, start_match = extract_start_match(ast)
-        ast, anchored_start, anchored_end, line_anchor_start, line_anchor_end = extract_anchors(ast)
+        ast, anchored_start, anchored_end, before_final_newline, line_anchor_start, line_anchor_end = extract_anchors(ast)
         HybridAutomata.validate_cfg!(unit.cfg)
         positive_prefix ||= source_positive_prefix
         PreparedAst.new(ast, backref, positive_prefix, positive_suffix, negative_prefix, negative_suffix,
-                        word_boundary_start, word_boundary_end, anchored_start, anchored_end,
+                        word_boundary_start, word_boundary_end, anchored_start, anchored_end, before_final_newline,
                         line_anchor_start, line_anchor_end, start_match,
                         atomic_literal, possessive_literal)
       end
@@ -246,7 +246,7 @@ module Onibi
         automaton = Automaton.new(fragment.first, fragment.last, fragment.nullable,
                                   reach_masks, span_masks, prefix, required_literals, trailing, exact_literal,
                                   prepared.anchored_start, prepared.anchored_end,
-                                  prepared.line_anchor_start, prepared.line_anchor_end,
+                                  prepared.before_final_newline, prepared.line_anchor_start, prepared.line_anchor_end,
                                   prepared.start_match,
                                   prepared.positive_prefix, prepared.positive_suffix,
                                   prepared.negative_prefix, prepared.negative_suffix,
@@ -896,6 +896,7 @@ module Onibi
         @exact_first_byte = @exact_literal&.byteslice(0, 1)
         @anchored_start = automaton.anchored_start
         @anchored_end = automaton.anchored_end
+        @before_final_newline = automaton.before_final_newline
         @line_anchor_start = automaton.line_anchor_start
         @line_anchor_end = automaton.line_anchor_end
         @start_match = automaton.start_match
@@ -1017,7 +1018,7 @@ module Onibi
         return backref_match_result(input, position) if @backref_spec
 
         return anchored_class_match_result(input, position) if @anchored_class_spec
-        return anchored_match_result(input, position) if @anchored_start || @anchored_end
+        return anchored_match_result(input, position) if @anchored_start || @anchored_end || @before_final_newline
         return line_anchor_match_result(input, position) if @line_anchor_start || @line_anchor_end
         return alternation_match_result(input, position) if @alternation_literal_spec
         return repeated_alternation_match_result(input, position) if @repeated_alternation_literal_spec
@@ -1406,7 +1407,7 @@ module Onibi
           return
         end
 
-        if (@anchored_start || @anchored_end) && !@anchored_class_spec
+        if (@anchored_start || @anchored_end || @before_final_newline) && !@anchored_class_spec
           position = normalize_position(input, position)
           result = anchored_match_result(input, position)
           yield result if result
@@ -1693,7 +1694,7 @@ module Onibi
         return false if position.negative? || position > input.bytesize
         return nullable_match?(input, position) if nullable_shortcut?(input, position)
         return !start_match_result(input, position).nil? if @start_match
-        return search_absolute_anchors(input, position) if @anchored_start || @anchored_end
+        return search_absolute_anchors(input, position) if @anchored_start || @anchored_end || @before_final_newline
         return search_line_anchors(input, position) if @line_anchor_start || @line_anchor_end
         return search_guarded(input, position) if guarded_search?
         return casefold_literal_search(input, position) if @ignorecase && @exact_literal
@@ -1708,14 +1709,14 @@ module Onibi
 
       def start_match_result(input, position)
         return if position.negative? || position > input.bytesize
-        return [position, position, []] if @nullable && (!@anchored_end || position == input.bytesize)
+        return [position, position, []] if @nullable && final_anchor_match?(input, position)
 
         active = 0
         cursor = position
         while cursor < input.bytesize
           active = nfa_transition(active, input.getbyte(cursor), cursor == position)
           if (active & @accept_mask).positive?
-            return [position, cursor + 1, []] unless @anchored_end && cursor + 1 != input.bytesize
+            return [position, cursor + 1, []] if final_anchor_match?(input, cursor + 1)
           end
           break if active.zero?
 
@@ -1736,7 +1737,7 @@ module Onibi
             active = transition(active, input.getbyte(cursor), cursor == candidate)
             if (active & @accept_mask).positive?
               finish = cursor + 1
-              return [candidate, finish, []] unless @anchored_end && finish != input.bytesize
+              return [candidate, finish, []] if final_anchor_match?(input, finish)
             end
             break if active.zero?
 
@@ -1746,7 +1747,7 @@ module Onibi
 
           candidate += 1
         end
-        return [position, position, []] if @nullable && (!@anchored_end || position == input.bytesize)
+        return [position, position, []] if @nullable && final_anchor_match?(input, position)
 
         nil
       end
@@ -1785,7 +1786,7 @@ module Onibi
 
       def nullable_match?(input, position)
         return false if @anchored_start && position != 0
-        return false if @anchored_end && position != input.bytesize
+        return false unless final_anchor_match?(input, position)
         return false if @line_anchor_start && position.positive? && input.getbyte(position - 1) != 10
         return false if @line_anchor_end && position < input.bytesize && input.getbyte(position) != 10
 
@@ -1794,7 +1795,15 @@ module Onibi
 
       def nullable_shortcut?(input, position)
         @nullable && @negative_suffix != "" &&
-          (@first_mask.zero? || !@anchored_end || position == input.bytesize)
+          (@first_mask.zero? || final_anchor_match?(input, position))
+      end
+
+      def final_anchor_match?(input, finish)
+        return true unless @anchored_end || @before_final_newline
+        return true if @anchored_end && finish == input.bytesize
+        return true if @before_final_newline && finish == input.bytesize
+
+        @before_final_newline && finish == input.bytesize - 1 && input.getbyte(finish) == 10
       end
 
       def search_line_anchors(input, position)
@@ -1869,7 +1878,7 @@ module Onibi
         while cursor < input.bytesize
           active = transition(active, input.getbyte(cursor), inject_start)
           accepted = (active & @accept_mask) != 0
-          return true if accepted && (!@anchored_end || cursor + 1 == input.bytesize)
+          return true if accepted && final_anchor_match?(input, cursor + 1)
           return false if @anchored_start && active.zero?
 
           inject_start = !@anchored_start
@@ -1879,7 +1888,7 @@ module Onibi
       end
 
       def fast_literal_match(input, position)
-        return if @anchored_start || @anchored_end || @line_anchor_start || @line_anchor_end ||
+        return if @anchored_start || @anchored_end || @before_final_newline || @line_anchor_start || @line_anchor_end ||
                   guarded_search? || @ignorecase
         return unless position.is_a?(Integer) && position.zero? && @exact_literal && @prefix_literal
 
