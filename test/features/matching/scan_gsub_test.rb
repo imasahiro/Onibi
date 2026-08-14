@@ -173,7 +173,9 @@ class ScanGsubTest < Minitest::Test
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "nested literal capture alternation scan should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "nested literal capture alternation scan should use direct HFA search" }) do
-        assert_equal [["a", nil], [nil, "b"]], regexp.scan("ac bc")
+        Onibi::Codegen::MatchAdapter.stub(:build, ->(*) { flunk "nested literal capture scan should avoid codegen adapter" }) do
+          assert_equal [["a", nil], [nil, "b"]], regexp.scan("ac bc")
+        end
       end
     end
   end
