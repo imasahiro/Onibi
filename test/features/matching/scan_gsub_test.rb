@@ -198,6 +198,16 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_sequence_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a(?i:bc)d")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped ignorecase sequence scan should use HFA" }) do
+      regexp.stub(:hfa_program, -> { flunk "scoped ignorecase sequence scan should use direct HFA search" }) do
+        assert_equal ["aBCd", "aBcd"], regexp.scan("xaBCd yaBcd")
+      end
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
