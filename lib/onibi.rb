@@ -195,6 +195,7 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
       end
+      return true if @hfa_empty_absence_fast
 
       if input.ascii_only? && @hfa_match_reset_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -328,7 +329,6 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_class_lookbehind_match_result(input, normalized_position).nil?
       end
-      return true if @hfa_empty_absence_fast
       if input.ascii_only? && @hfa_ascii_adjacent_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_adjacent_run_match?(input, normalized_position)
