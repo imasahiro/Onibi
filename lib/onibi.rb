@@ -1028,9 +1028,15 @@ module Onibi
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       body = parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
-      literal = literal_ast_value(body)
+      literal = hfa_literal_absence_body_literal(body)
       @hfa_literal_absence_safe = literal&.ascii_only? && literal.bytesize.positive? &&
                                    !@options.include?("ignorecase") && hfa_program
+    end
+
+    def hfa_literal_absence_body_literal(body)
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      body = body.body if body.is_a?(AST::Group) && body.capture
+      literal_ast_value(body)
     end
 
     def hfa_empty_absence_result_safe?
@@ -1042,21 +1048,39 @@ module Onibi
     end
 
     def hfa_literal_absence_value
-      hfa_literal_absence_result_safe? && literal_ast_value(@ast.parts.first.body)
+      hfa_literal_absence_result_safe? && hfa_literal_absence_body_literal(@ast.parts.first.body)
+    end
+
+    def hfa_literal_absence_capture_spec
+      body = @ast.parts.first.body
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      return unless body.is_a?(AST::Group) && body.capture
+
+      literal = literal_ast_value(body.body)
+      literal && [body.number, literal].freeze
     end
 
     def hfa_literal_absence_match_result(input, position)
       literal = hfa_literal_absence_value
+      capture_spec = hfa_literal_absence_capture_spec
       search_position = 0
       while (occurrence = input.index(literal, search_position))
         candidate = occurrence + literal.bytesize
         if candidate > position
           finish = occurrence >= position ? candidate - 1 : candidate
-          return [position, finish, []]
+          captures = if capture_spec
+                       offsets = Array.new(capture_spec[0])
+                       offsets[capture_spec[0] - 1] = [occurrence, candidate]
+                       offsets
+                     else
+                       []
+                     end
+          return [position, finish, captures]
         end
         search_position = occurrence + 1
       end
-      [position, input.bytesize, []]
+      captures = capture_spec ? Array.new(capture_spec[0]) : []
+      [position, input.bytesize, captures]
     end
 
     def hfa_match_result_safe?

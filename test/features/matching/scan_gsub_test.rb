@@ -512,6 +512,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_captured_literal_absence_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?~(a))")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "captured literal absence scan should use HFA" }) do
+      assert_equal [["a"], ["a"], [nil]], regexp.scan("ba")
+    end
+  end
+
   def test_escape_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\w+")
 
