@@ -1203,6 +1203,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_hfa_capture_result_names_are_cached
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)-(?<id>[0-9]+)")
+
+    first = regexp.send(:hfa_result_names)
+    second = regexp.send(:hfa_result_names)
+
+    assert_same first, second
+    assert_equal({ "word" => 1, "id" => 2 }, first)
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

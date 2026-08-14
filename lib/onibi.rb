@@ -3156,7 +3156,7 @@ module Onibi
       start_character = input.byteslice(0, start).to_s.length
       finish_character = input.byteslice(0, finish).to_s.length
       value = input.byteslice(start, finish - start)
-      names = hfa_capture_names.transform_values(&:last)
+      names = hfa_result_names
       MatchData.new(value, [value], [[start_character, finish_character], [start_character, finish_character]],
                     names, MatchData::Context.new(input, self))
     end
@@ -3560,7 +3560,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3569,7 +3569,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3578,7 +3578,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3587,7 +3587,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3596,7 +3596,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3605,7 +3605,7 @@ module Onibi
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values(&:last)
+        names = hfa_static_capture_names || hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
@@ -3623,7 +3623,7 @@ module Onibi
       end
       if captures.any? && captures.all? { |capture| capture.nil? || (capture.is_a?(Array) && capture.length == 2) }
         values = captures.map { |offset| offset && input.byteslice(offset[0], offset[1] - offset[0]) }
-        names = hfa_capture_names.transform_values(&:last)
+        names = hfa_result_names
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *captures], names,
                              MatchData::Context.new(input, self))
@@ -4042,6 +4042,10 @@ module Onibi
 
     def hfa_capture_names
       @hfa_capture_names ||= CaptureNameCollector.indices(@ast)
+    end
+
+    def hfa_result_names
+      @hfa_result_names ||= hfa_capture_names.transform_values(&:last).freeze
     end
 
     def hfa_static_capture_names
