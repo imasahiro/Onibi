@@ -2513,8 +2513,8 @@ module Onibi
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
       end
-      if captures.any? && captures.all? { |capture| capture.is_a?(Array) && capture.length == 2 }
-        values = captures.map { |offset| input.byteslice(offset[0], offset[1] - offset[0]) }
+      if captures.any? && captures.all? { |capture| capture.nil? || (capture.is_a?(Array) && capture.length == 2) }
+        values = captures.map { |offset| offset && input.byteslice(offset[0], offset[1] - offset[0]) }
         names = hfa_capture_names.transform_values(&:last)
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *captures], names,

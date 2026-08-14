@@ -66,6 +66,12 @@ module Onibi
     def each_match(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
+      return enum_for(__method__, input) unless block
+
+      return nil if hfa_each_result(input) do |result|
+        block.call(hfa_match_data(result, input))
+      end
+
       codegen_each_match(input, &block)
     end
 

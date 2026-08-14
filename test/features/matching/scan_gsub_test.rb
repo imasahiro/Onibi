@@ -34,6 +34,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_gsub_with_match_replacement_uses_hfa_match_iterator
+    regexp = Onibi::Regexp.new("a")
+
+    regexp.stub(:codegen_each_match, ->(*) { flunk "gsub match iterator should use HFA" }) do
+      assert_equal "b<a><a>c", regexp.gsub("baac", "<\\0>")
+    end
+  end
+
   def test_start_match_anchor_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\Gfoo")
 
