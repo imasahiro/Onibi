@@ -136,11 +136,19 @@ module Onibi
         @hfa_literal_assertion_fast = assertion_parts.freeze
       end
       if assertion_parts.is_a?(Array) && assertion_parts[1] == :positive_lookbehind &&
-         assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+         assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
         @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
       elsif assertion_parts.is_a?(Array) && assertion_parts[1] == :negative_lookbehind &&
-            assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+            assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
         @hfa_negative_lookbehind_literal_fast = [assertion_parts[0], assertion_parts[2]].freeze
+      end
+      if hfa_positive_lookbehind_result_safe? && !@hfa_positive_lookbehind_literal_fast
+        parts = hfa_literal_lookbehind_parts(:positive_lookbehind)
+        @hfa_positive_lookbehind_literal_fast = parts.freeze if parts
+      end
+      if hfa_negative_lookbehind_result_safe? && !@hfa_negative_lookbehind_literal_fast
+        parts = hfa_literal_lookbehind_parts(:negative_lookbehind)
+        @hfa_negative_lookbehind_literal_fast = parts.freeze if parts
       end
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
@@ -212,10 +220,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
       end
-      if input.ascii_only? && @hfa_positive_lookbehind_literal_fast
+      if @hfa_positive_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         prefix, literal = @hfa_positive_lookbehind_literal_fast
-        candidate = input.index(prefix + literal, [normalized_position - prefix.bytesize, 0].max)
+        candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
         while candidate
           return true if candidate + prefix.bytesize >= normalized_position
 
@@ -223,10 +231,10 @@ module Onibi
         end
         return false
       end
-      if input.ascii_only? && @hfa_negative_lookbehind_literal_fast
+      if @hfa_negative_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         literal, guard = @hfa_negative_lookbehind_literal_fast
-        candidate = input.index(literal, normalized_position)
+        candidate = input.b.index(literal.b, normalized_position)
         while candidate
           return true if candidate < guard.bytesize ||
                          input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
@@ -503,6 +511,18 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         start = input.index(literal, start_position)
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
+        return nil
+      end
+      if @hfa_positive_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_positive_lookbehind_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if @hfa_negative_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_negative_lookbehind_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
         return nil
       end
       if input.ascii_only? && hfa_captureless_alternation_result_safe?
@@ -1481,24 +1501,40 @@ module Onibi
 
     def hfa_positive_lookbehind_literal_match_result(input, position)
       prefix, literal = @hfa_positive_lookbehind_literal_fast
-      candidate = input.index(prefix + literal, [position - prefix.bytesize, 0].max)
+      candidate = input.b.index((prefix + literal).b, [position - prefix.bytesize, 0].max)
       while candidate
         start = candidate + prefix.bytesize
         return [start, start + literal.bytesize, []] if start >= position
 
-        candidate = input.index(prefix + literal, candidate + 1)
+        candidate = input.b.index((prefix + literal).b, candidate + 1)
       end
       nil
     end
 
+    def hfa_literal_lookbehind_parts(kind)
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      assertion = parts.first
+      body = parts[1..]
+      return unless assertion.is_a?(AST::Assertion) && assertion.kind == kind
+
+      literal = body.map { |node| literal_ast_value(node) }
+      guard = literal_ast_value(assertion.body)
+      return unless guard && guard.bytesize.positive? && literal.all?
+
+      value = literal.join
+      return unless value.bytesize.positive?
+
+      kind == :positive_lookbehind ? [guard, value] : [value, guard]
+    end
+
     def hfa_negative_lookbehind_literal_match_result(input, position)
       literal, guard = @hfa_negative_lookbehind_literal_fast
-      candidate = input.index(literal, position)
+      candidate = input.b.index(literal.b, position)
       while candidate
         return [candidate, candidate + literal.bytesize, []] if candidate < guard.bytesize ||
                                                                input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
 
-        candidate = input.index(literal, candidate + 1)
+        candidate = input.b.index(literal.b, candidate + 1)
       end
       nil
     end
@@ -3385,6 +3421,8 @@ module Onibi
                       hfa_unicode_literal_result_safe? ||
                       hfa_unicode_ignorecase_literal_result_safe? ||
                       hfa_linebreak_result_safe? ||
+                      hfa_positive_lookbehind_result_safe? ||
+                      hfa_negative_lookbehind_result_safe? ||
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?

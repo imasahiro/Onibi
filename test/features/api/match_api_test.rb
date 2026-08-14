@@ -1314,6 +1314,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_positive_lookbehind_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<=ß)x")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal positive lookbehind should use HFA" }) do
+      assert_equal "x", regexp.match("ßx")[0]
+      assert_nil regexp.match("ax")
+    end
+  end
+
   def test_positive_literal_lookbehind_match_question_uses_combined_literal_path
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 
