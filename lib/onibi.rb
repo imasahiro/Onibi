@@ -746,6 +746,7 @@ module Onibi
                    (hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
+                   hfa_negative_lookbehind_result_safe? ||
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                     hfa_adjacent_nested_repeated_capture_result_safe? ||
                     hfa_repeated_class_capture_result_safe?)
@@ -793,7 +794,7 @@ module Onibi
 
     def hfa_iterator_safe?
       return true if hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
-                     hfa_positive_lookbehind_result_safe? ||
+                     hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
                      hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
