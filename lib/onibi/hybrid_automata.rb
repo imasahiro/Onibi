@@ -203,6 +203,7 @@ module Onibi
         source_positive_prefix = positive_lookbehind_literal(ast)
         backref, ast = extract_backref(ast)
         ast = RegularNormalizer.normalize(ast)
+        raise UnsupportedPattern, "pattern is always false" if ast.equal?(RegularNormalizer::NEVER)
         ast, positive_prefix, positive_suffix, negative_prefix, negative_suffix = extract_guards(ast)
         validate_literal_guards!(negative_prefix, negative_suffix)
         ast, positive_prefix = consume_positive_guard(ast, positive_prefix, :prefix)

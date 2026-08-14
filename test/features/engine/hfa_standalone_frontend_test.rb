@@ -17,4 +17,17 @@ class HfaStandaloneFrontendTest < Minitest::Test
 
     assert system(RbConfig.ruby, "-Ilib", "-e", script)
   end
+
+  def test_hfa_discards_alternation_branches_that_are_always_false
+    regexp = Onibi::Regexp.new("a|(?!)|b")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+
+    assert regexp.match?("a")
+    assert regexp.match?("b")
+    refute regexp.match?("c")
+    assert_equal "a", regexp.match("a").to_s
+    assert_equal %w[a b], regexp.scan("ab").map(&:to_s)
+  end
 end

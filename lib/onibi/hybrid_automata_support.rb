@@ -257,6 +257,8 @@ module Onibi
     module RegularNormalizer
       module_function
 
+      NEVER = Object.new.freeze
+
       def normalize(ast)
         groups = {}
         collect_groups(ast, groups)
@@ -280,7 +282,15 @@ module Onibi
       def normalize_node(node, groups)
         case node
         when AST::Sequence then normalize_sequence(node.parts, groups)
-        when AST::Alternation then AST::Alternation.new(node.branches.map { |branch| normalize_node(branch, groups) })
+        when AST::Alternation
+          branches = node.branches.filter_map do |branch|
+            normalized = normalize_node(branch, groups)
+            normalized unless normalized.equal?(NEVER)
+          end
+          return NEVER if branches.empty?
+          return branches.first if branches.one?
+
+          AST::Alternation.new(branches)
         when AST::Group then normalize_node(node.body, groups)
         when AST::AtomicGroup then normalize_node(node.body, groups)
         when AST::SubexpressionCall
@@ -291,10 +301,11 @@ module Onibi
         when AST::Conditional
           AST::Alternation.new([normalize_node(node.yes_branch, groups), normalize_node(node.no_branch, groups)])
         when AST::Assertion
-          return normalize_node(node.body, groups) unless
-            %i[negative negative_lookbehind positive].include?(node.kind)
+          body = normalize_node(node.body, groups)
+          return NEVER if node.kind == :negative && empty_sequence?(body)
+          return body unless %i[negative negative_lookbehind positive].include?(node.kind)
 
-          AST::Assertion.new(normalize_node(node.body, groups), node.kind)
+          AST::Assertion.new(body, node.kind)
         when AST::Absence
           AST::Quantifier.new(AST::Any.new(nil), :*, 0, nil, :greedy)
         when AST::Quantifier
@@ -323,9 +334,14 @@ module Onibi
           end
 
           value = normalize_node(part, groups)
+          return NEVER if value.equal?(NEVER)
           normalized << value if value
         end
         AST::Sequence.new(normalized.flat_map { |node| node.is_a?(AST::Sequence) ? node.parts : [node] })
+      end
+
+      def empty_sequence?(node)
+        node.is_a?(AST::Sequence) && node.parts.empty?
       end
 
       def optional_capture?(node, condition)

@@ -3275,7 +3275,20 @@ module Onibi
       return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
 
       branches = @ast.is_a?(AST::Alternation) ? @ast.branches : []
-      @hfa_literal_alternation_values = branches.map { |branch| hfa_alternation_literal_value(branch) }.freeze
+      @hfa_literal_alternation_values = branches.filter_map do |branch|
+        value = hfa_alternation_literal_value(branch)
+        next if value.nil? && hfa_always_false_alternation_branch?(branch)
+
+        value
+      end.freeze
+    end
+
+    def hfa_always_false_alternation_branch?(branch)
+      return false unless branch.is_a?(AST::Sequence) && branch.parts.one?
+
+      assertion = branch.parts.first
+      assertion.is_a?(AST::Assertion) && assertion.kind == :negative &&
+        assertion.body.is_a?(AST::Sequence) && assertion.body.parts.empty?
     end
 
     def hfa_alternation_literal_value(branch)
