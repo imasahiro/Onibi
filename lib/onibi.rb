@@ -541,6 +541,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_lookahead_alternation_backreference_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
 
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
@@ -3291,6 +3297,45 @@ module Onibi
       nil
     end
 
+    def hfa_lookahead_alternation_backreference_spec
+      return @hfa_lookahead_alternation_backreference_spec if defined?(@hfa_lookahead_alternation_backreference_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      assertion, backref, suffix = parts
+      group = if assertion.is_a?(AST::Assertion) && assertion.kind == :positive
+                body = assertion.body
+                body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+                body if body.is_a?(AST::Group) && body.capture && body.body.is_a?(AST::Alternation)
+              end
+      branches = group&.body&.branches&.map { |branch| literal_ast_value(branch) }
+      @hfa_lookahead_alternation_backreference_spec = if branches&.all? &&
+                                                        branches.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
+                                                        backref.is_a?(AST::Backreference) &&
+                                                        backref.identifier.to_i == group.number && suffix.is_a?(AST::Literal)
+                                                       [branches.freeze, suffix.value, group.number].freeze
+                                                     else
+                                                       false
+                                                     end
+    end
+
+    def hfa_lookahead_alternation_backreference_match_result(input, position)
+      branches, suffix, number = hfa_lookahead_alternation_backreference_spec
+      cursor = position
+      while cursor <= input.bytesize
+        branch = branches.find { |value| input.byteslice(cursor, value.bytesize) == value }
+        if branch
+          finish = cursor + branch.bytesize + suffix.bytesize
+          if input.byteslice(cursor, finish - cursor) == branch + suffix
+            captures = Array.new(number)
+            captures[number - 1] = [cursor, cursor + branch.bytesize]
+            return [cursor, finish, captures]
+          end
+        end
+        cursor += 1
+      end
+      nil
+    end
+
     def hfa_capture_component(node)
       if node.is_a?(AST::Assertion) && %i[positive positive_lookahead positive_lookbehind
                                           negative negative_lookahead negative_lookbehind].include?(node.kind)
@@ -3611,6 +3656,14 @@ module Onibi
       if input.ascii_only? && hfa_variable_capture_alternation_spec
         position = 0
         while (result = hfa_variable_capture_alternation_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
+        position = 0
+        while (result = hfa_lookahead_alternation_backreference_match_result(input, position))
           block.call(result)
           position = result[1]
         end

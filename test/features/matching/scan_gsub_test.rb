@@ -512,6 +512,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_lookahead_alternation_backreference_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "lookahead alternation backreference scan should use HFA" }) do
+      assert_equal [["a"]], regexp.scan("xaab")
+    end
+  end
+
   def test_nested_variable_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a))")
 

@@ -1276,6 +1276,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_lookahead_alternation_backreference_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "lookahead alternation backreference should use HFA result" }) do
+      assert_equal ["ab", "a"], regexp.match("aab").to_a
+      assert_equal ["ab", "a"], regexp.match("ab").to_a
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 
