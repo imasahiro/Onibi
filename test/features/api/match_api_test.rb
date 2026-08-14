@@ -224,6 +224,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_property_run_match_question_uses_direct_character_path
+    regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+
+    regexp.stub(:hfa_program, -> { flunk "Unicode property match? should avoid program compilation" }) do
+      assert regexp.match?("漢字ひらがな漢字")
+      refute regexp.match?("漢字カタカナ漢字")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 

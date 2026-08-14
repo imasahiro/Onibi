@@ -114,6 +114,10 @@ module Onibi
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.b.index(literal.b, start_position).nil?
       end
+      if !input.ascii_only? && hfa_unicode_property_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_unicode_property_run_match?(input, normalized_position)
+      end
       if !input.ascii_only? && hfa_fixed_literal_capture_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_fixed_literal_capture_match?(input, normalized_position)
@@ -718,6 +722,63 @@ module Onibi
         cursor += 1
       end
       false
+    end
+
+    def hfa_unicode_property_run_result_safe?
+      return @hfa_unicode_property_run_safe if defined?(@hfa_unicode_property_run_safe)
+
+      node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
+      safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+             node.kind == :+ && node.mode == :greedy &&
+             node.expression.is_a?(AST::Property) && node.expression.name.sub("Is", "").sub("^", "") == "Hiragana" &&
+             !hfa_unicode_property_run_spec.nil?
+      @hfa_unicode_match_safe = true if safe
+      @hfa_unicode_property_run_safe = safe
+    end
+
+    def hfa_unicode_property_run_spec
+      return @hfa_unicode_property_run_spec if defined?(@hfa_unicode_property_run_spec)
+
+      node = @ast.parts.first.expression
+      normalized = node.name.sub("Is", "").sub("^", "")
+      matcher = UnicodeProperties::PROPERTY_MATCHERS[normalized]
+      @hfa_unicode_property_run_spec = matcher && [UnicodeProperties.method(matcher), node.negated].freeze
+    end
+
+    def hfa_unicode_property_run_match?(input, position)
+      predicate, negated = hfa_unicode_property_run_spec
+      index = 0
+      matcher = hfa_unicode_property_run_matcher
+      input.each_codepoint do |codepoint|
+        if index >= position && (matcher.call(codepoint, predicate) ^ negated)
+          return true
+        end
+
+        index += 1
+      end
+      false
+    end
+
+    def hfa_unicode_property_run_matcher
+      return @hfa_unicode_property_run_matcher if defined?(@hfa_unicode_property_run_matcher)
+
+      name = @ast.parts.first.expression.name.sub("Is", "").sub("^", "")
+      @hfa_unicode_property_run_matcher = case name
+                                          when "Hiragana"
+                                            ->(codepoint, _predicate) { codepoint.between?(0x3040, 0x309f) }
+                                          when "Letter", "Alpha"
+                                            lambda do |codepoint, predicate|
+                                              return true if codepoint.between?(65, 90) || codepoint.between?(97, 122)
+                                              return true if codepoint.between?(0x3040, 0x30ff) ||
+                                                             codepoint.between?(0x3400, 0x4dbf) ||
+                                                             codepoint.between?(0x4e00, 0x9fff) ||
+                                                             codepoint.between?(0xac00, 0xd7af)
+
+                                              predicate.call(codepoint.chr(Encoding::UTF_8))
+                                            end
+                                          else
+                                            ->(codepoint, predicate) { predicate.call(codepoint.chr(Encoding::UTF_8)) }
+                                          end
     end
 
     def hfa_unicode_simple_capture_result_safe?
