@@ -516,6 +516,11 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
       end
+      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input[0, normalized_position].bytesize
+        return !hfa_unicode_repeated_literal_capture_match_result(input, byte_position).nil?
+      end
       if input.ascii_only? && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?

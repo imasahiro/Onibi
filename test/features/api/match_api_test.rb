@@ -1732,6 +1732,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_literal_capture_match_question_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<word>é+)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "Unicode repeated literal capture match? should use HFA" }) do
+      regexp.stub(:hfa_program, -> { flunk "Unicode repeated literal capture match? should avoid HFA program compilation" }) do
+        assert regexp.match?("aééz")
+      end
+    end
+  end
+
   def test_captureless_regular_sequence_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z]\\d+")
 
