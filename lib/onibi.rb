@@ -193,6 +193,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return normalized_position <= input.bytesize
       end
+      if input.ascii_only? && hfa_lookahead_alternation_backreference_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_lookahead_alternation_backreference_match_result(input, normalized_position).nil?
+      end
 
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
