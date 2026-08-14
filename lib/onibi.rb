@@ -624,6 +624,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_literal_alternation_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_alternation_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
 
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
                                 hfa_unicode_simple_capture_result_safe? ||
@@ -2203,7 +2209,20 @@ module Onibi
       return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
 
       branches = @ast.is_a?(AST::Alternation) ? @ast.branches : []
-      @hfa_literal_alternation_values = branches.map { |branch| literal_ast_value(branch) }.freeze
+      @hfa_literal_alternation_values = branches.map { |branch| hfa_alternation_literal_value(branch) }.freeze
+    end
+
+    def hfa_alternation_literal_value(branch)
+      literal = literal_ast_value(branch)
+      return literal if literal
+      return unless branch.is_a?(AST::Sequence) && branch.parts.one?
+
+      node = branch.parts.first
+      return unless node.is_a?(AST::CharacterClass) && node.value.ascii_only?
+
+      table = ClassPredicates.compiled(node.value).ascii_table
+      values = (0..255).select { |byte| table[byte] }
+      values.one? ? values.first.chr : nil
     end
 
     def hfa_literal_alternation_match?(input, position)

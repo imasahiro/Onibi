@@ -211,6 +211,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_singleton_class_alternation_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("a|[b]")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "singleton-class alternation should use HFA" }) do
+      assert_equal "a", regexp.match("xa").to_s
+      assert_equal "b", regexp.match("xb").to_s
+      assert_nil regexp.match("xc")
+    end
+  end
+
   def test_single_byte_dot_match_uses_hfa_result
     regexp = Onibi::Regexp.new(".")
 
