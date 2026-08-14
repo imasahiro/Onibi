@@ -1239,6 +1239,17 @@ module Onibi
         return enum_for(__method__, input, position) unless block_given?
 
         unless input.ascii_only?
+          if @exact_literal && !@exact_literal.ascii_only?
+            position = normalize_position(input, position)
+            return if position.negative? || position > input.bytesize
+
+            while (start = input.b.index(@exact_literal.b, position))
+              finish = start + @exact_literal.bytesize
+              yield [start, finish, []]
+              position = finish
+            end
+            return
+          end
           return unless @unicode_spec
 
           position = normalize_position(input, position)

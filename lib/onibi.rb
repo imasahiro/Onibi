@@ -772,7 +772,8 @@ module Onibi
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                     hfa_adjacent_nested_repeated_capture_result_safe? ||
                     hfa_repeated_class_capture_result_safe?)
-      unicode_safe = !input.ascii_only? && hfa_unicode_match_result_safe?
+      unicode_safe = !input.ascii_only? &&
+                     (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
       program = hfa_program

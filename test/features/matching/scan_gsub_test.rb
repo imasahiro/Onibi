@@ -107,6 +107,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("こんにちは")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "unicode literal scan should use HFA" }) do
+      assert_equal %w[こんにちは こんにちは], regexp.scan("こんにちは 世界 こんにちは")
+    end
+  end
+
   def test_literal_negative_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<!a)b")
 
