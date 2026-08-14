@@ -2034,7 +2034,16 @@ module Onibi
       end
 
       def word_boundary_literal_match?(input, position)
-        !word_boundary_literal_match_result(input, position).nil?
+        return false unless input.ascii_only?
+
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          finish = candidate + @exact_literal.bytesize
+          return true if word_boundary_edges_match?(input, candidate, finish)
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        false
       end
 
       def word_boundary_literal_match_result(input, position)
