@@ -2761,8 +2761,24 @@ module Onibi
     end
 
     def hfa_literal_conditional_match?(input, position)
+      !hfa_literal_conditional_match_result(input, position).nil?
+    end
+
+    def hfa_literal_conditional_match_result(input, position)
       yes, no = hfa_literal_conditional_parts
-      !input.index(yes, position).nil? || !input.index(no, position).nil?
+      prefix = hfa_literal_conditional_prefix
+      yes_start = input.index(prefix + yes, position)
+      no_start = input.index(no, position)
+      start = [yes_start, no_start].compact.min
+      return unless start
+
+      literal = yes_start == start ? prefix + yes : no
+      [start, start + literal.bytesize, []]
+    end
+
+    def hfa_literal_conditional_prefix
+      optional = @ast.parts.first
+      literal_ast_value(optional.expression.body)
     end
 
     def hfa_repeated_class_backref_result_safe?
@@ -4176,6 +4192,31 @@ module Onibi
       end
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
       return true if input.ascii_only? && hfa_ascii_input_impossible_class?
+
+      if input.ascii_only? && @hfa_bounded_literal_fast
+        position = 0
+        while (result = hfa_bounded_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_possessive_literal_string_result_safe?
+        position = 0
+        while (result = hfa_possessive_literal_string_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_literal_conditional_result_safe?
+        position = 0
+        while (result = hfa_literal_conditional_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
 
       if @hfa_exact_literal_fast && !input.ascii_only?
         validate_encoding!(input)
