@@ -117,6 +117,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_alternation_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_dot_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_dot_literal_match?(input, normalized_position)
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
@@ -1046,6 +1050,44 @@ module Onibi
 
     def hfa_literal_alternation_match?(input, position)
       hfa_literal_alternation_values.any? { |value| !input.index(value, position).nil? }
+    end
+
+    def hfa_dot_literal_result_safe?
+      return @hfa_dot_literal_safe if defined?(@hfa_dot_literal_safe)
+
+      prefix, suffix = hfa_dot_literal_parts
+      @hfa_dot_literal_safe = !@options.include?("ignorecase") && prefix&.ascii_only? && suffix&.ascii_only? &&
+                              prefix.bytesize == 1 && suffix.bytesize == 1
+    end
+
+    def hfa_dot_literal_parts
+      return @hfa_dot_literal_parts if defined?(@hfa_dot_literal_parts)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      prefix, wildcard, suffix = parts
+      valid = parts.length == 3 && prefix.is_a?(AST::Literal) && wildcard.is_a?(AST::Any) &&
+              suffix.is_a?(AST::Literal)
+      @hfa_dot_literal_parts = if valid
+                                 [prefix.value, suffix.value, @options.include?("multiline")].freeze
+                               else
+                                 [nil, nil, false].freeze
+                               end
+    end
+
+    def hfa_dot_literal_match?(input, position)
+      prefix, suffix, allow_newline = hfa_dot_literal_parts
+      candidate = input.index(prefix, position)
+      while candidate
+        middle = candidate + 1
+        finish = candidate + 2
+        if finish < input.bytesize && (allow_newline || input.getbyte(middle) != 10) &&
+           input.getbyte(finish) == suffix.getbyte(0)
+          return true
+        end
+
+        candidate = input.index(prefix, candidate + 1)
+      end
+      false
     end
 
     def hfa_unicode_property_run_result_safe?

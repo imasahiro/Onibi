@@ -324,6 +324,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_dot_literal_match_question_uses_direct_byte_path
+    regexp = Onibi::Regexp.new("a.c")
+
+    regexp.stub(:hfa_program, -> { flunk "dot literal match? should avoid program compilation" }) do
+      assert regexp.match?("prefix-abc-suffix")
+      refute regexp.match?("prefix-a\nc-suffix")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
