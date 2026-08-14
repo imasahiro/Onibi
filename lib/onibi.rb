@@ -1350,7 +1350,7 @@ module Onibi
     def hfa_capture_count(node = @ast)
       case node
       when AST::Group
-        [node.number, hfa_capture_count(node.body)].max
+        [node.number || 0, hfa_capture_count(node.body)].max
       when AST::Sequence
         node.parts.map { |part| hfa_capture_count(part) }.max || 0
       when AST::Alternation
@@ -1373,6 +1373,8 @@ module Onibi
         character = input[cursor]
         character && ClassPredicates.compiled(node.value).matches?(character) ? cursor + character.bytesize : nil
       when AST::Escape
+        return cursor if %i[word_boundary nonword_boundary].include?(node.kind)
+
         character = input[cursor]
         character && CharacterPredicates.escape_matches?(node.kind, character) ? cursor + character.bytesize : nil
       when AST::Property
@@ -1382,6 +1384,8 @@ module Onibi
       when AST::Any
         character = input[cursor]
         character ? cursor + character.bytesize : nil
+      when AST::Assertion, AST::Anchor
+        cursor
       when AST::Group
         group_start = cursor
         result = hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
