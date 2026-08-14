@@ -269,6 +269,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_character_class_run_match_question_uses_byte_table_path
+    regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
+
+    regexp.stub(:hfa_program, -> { flunk "ASCII character-class match? should avoid program compilation" }) do
+      assert regexp.match?("aei-bcdfg-ou")
+      refute regexp.match?("aei-OU")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
