@@ -3,6 +3,7 @@ AllCops:
   # The HFA cutover keeps the matcher and its regression corpus cohesive;
   # these files are tracked as a dedicated lint-cleanup baseline.
   Exclude:
+    - "vendor/**/*"
     - "lib/onibi.rb"
     - "lib/onibi/regexp_scan_gsub.rb"
     - "lib/onibi/codegen.rb"

@@ -15,5 +15,3 @@ gem "benchmark-ips", "~> 2.14"
 gem "simplecov", "~> 0.22"
 
 gem "rubocop", "~> 1.21"
-
-gem "rubocop-rake", "~> 0.7.1", group: :development
