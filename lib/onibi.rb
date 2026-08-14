@@ -517,6 +517,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if hfa_variable_subexpression_capture_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_variable_subexpression_capture_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
 
       if input.ascii_only? && hfa_exact_literal_result_safe?
         literal = hfa_exact_literal_value
@@ -3185,6 +3191,41 @@ module Onibi
       [result[0], result[1], captures]
     end
 
+    def hfa_variable_subexpression_capture_spec
+      return @hfa_variable_subexpression_capture_spec if defined?(@hfa_variable_subexpression_capture_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, separator, call, suffix = parts
+      branches = if group.is_a?(AST::Group) && group.capture && group.body.is_a?(AST::Alternation)
+                   group.body.branches.map { |branch| literal_ast_value(branch) }
+                 end
+      @hfa_variable_subexpression_capture_spec = if branches&.all? && group.name &&
+                                                   call.is_a?(AST::SubexpressionCall) &&
+                                                   call.identifier.to_s == group.name.to_s &&
+                                                   separator.is_a?(AST::Literal) && suffix.is_a?(AST::Literal)
+                                                  [branches.freeze, separator.value, suffix.value, group.number].freeze
+                                                else
+                                                  false
+                                                end
+    end
+
+    def hfa_variable_subexpression_capture_match_result(input, position)
+      branches, separator, suffix, number = hfa_variable_subexpression_capture_spec
+      result = hfa_program.match_result(input, position)
+      return unless result
+
+      start, finish, = result
+      branch = branches.find do |value|
+        expected = value + separator + value + suffix
+        expected.bytesize == finish - start && input.byteslice(start, expected.bytesize) == expected
+      end
+      return unless branch
+
+      captures = Array.new(number)
+      captures[number - 1] = [start, start + branch.bytesize]
+      [start, finish, captures]
+    end
+
     def hfa_capture_component(node)
       if node.is_a?(AST::Assertion) && %i[positive positive_lookahead positive_lookbehind
                                           negative negative_lookahead negative_lookbehind].include?(node.kind)
@@ -3484,6 +3525,14 @@ module Onibi
       if hfa_empty_nested_capture_spec
         position = 0
         while (result = hfa_empty_nested_capture_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if hfa_variable_subexpression_capture_spec
+        position = 0
+        while (result = hfa_variable_subexpression_capture_match_result(input, position))
           block.call(result)
           position = result[1]
         end

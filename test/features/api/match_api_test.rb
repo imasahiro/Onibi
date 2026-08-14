@@ -1246,6 +1246,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_variable_subexpression_capture_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<x>a|ab)c\\g<x>d")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "variable subexpression captures should use HFA result" }) do
+      assert_equal "a", regexp.match("acad")["x"]
+      assert_equal "ab", regexp.match("abcabd")["x"]
+    end
+  end
+
   def test_fixed_alternation_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a|b)c")
 

@@ -486,6 +486,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_variable_subexpression_capture_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?<x>a|ab)c\\g<x>d")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "variable subexpression capture scan should use HFA" }) do
+      assert_equal [["a"]], regexp.scan("acad")
+      assert_equal [["ab"]], regexp.scan("abcabd")
+    end
+  end
+
   def test_nested_variable_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a))")
 
