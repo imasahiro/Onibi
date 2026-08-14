@@ -77,6 +77,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("suffix")
   end
 
+  def test_negative_prefix_literal_uses_direct_prefix_search
+    program = compile("(?<!un)happy")
+
+    assert_equal [5, 10, []], program.match_result("very happy")[0..2]
+    refute program.match?("unhappy")
+    assert program.match?("happy")
+  end
+
   def test_promotes_observed_nfa_subsets_to_bounded_dfa_states
     hybrid = compile("(?:ab|ac)+z")
     nfa_only = Onibi::HybridAutomata.compile("(?:ab|ac)+z", dfa: false, string_matching: false)

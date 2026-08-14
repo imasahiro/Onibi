@@ -985,6 +985,8 @@ module Onibi
 
         return positive_prefix_literal_match?(input, position) if positive_prefix_literal_search?
 
+        return negative_prefix_literal_match?(input, position) if negative_prefix_literal_search?
+
         return negative_suffix_literal_match?(input, position) if negative_suffix_literal_search?
 
         return word_boundary_literal_match?(input, position) if word_boundary_literal_search?
@@ -1018,6 +1020,8 @@ module Onibi
         end
 
         return positive_prefix_literal_match_result(input, position) if positive_prefix_literal_search?
+
+        return negative_prefix_literal_match_result(input, position) if negative_prefix_literal_search?
 
         return negative_suffix_literal_match_result(input, position) if negative_suffix_literal_search?
 
@@ -1475,6 +1479,14 @@ module Onibi
 
         if word_boundary_literal_search?
           while (result = word_boundary_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
+        if negative_prefix_literal_search?
+          while (result = negative_prefix_literal_match_result(input, position))
             yield result
             position = result[1]
           end
@@ -1953,6 +1965,29 @@ module Onibi
       def negative_suffix_literal_search?
         @exact_literal && @negative_suffix && !@positive_prefix && !@positive_suffix && !@negative_prefix &&
           !@word_boundary_start && !@word_boundary_end
+      end
+
+      def negative_prefix_literal_search?
+        @exact_literal && @negative_prefix && !@positive_prefix && !@positive_suffix && !@negative_suffix &&
+          !@word_boundary_start && !@word_boundary_end
+      end
+
+      def negative_prefix_literal_match?(input, position)
+        !negative_prefix_literal_match_result(input, position).nil?
+      end
+
+      def negative_prefix_literal_match_result(input, position)
+        return unless input.ascii_only?
+
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          prefix_start = candidate - @negative_prefix.bytesize
+          prefix = prefix_start >= 0 && input.byteslice(prefix_start, @negative_prefix.bytesize)
+          return [candidate, candidate + @exact_literal.bytesize, []] unless prefix == @negative_prefix
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        nil
       end
 
       def negative_suffix_literal_match?(input, position)
