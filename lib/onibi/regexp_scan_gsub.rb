@@ -83,21 +83,13 @@ module Onibi
       captures = result[2]
       return input.byteslice(result[0], result[1] - result[0]) if captures.empty?
 
-      if (respond_to?(:hfa_unicode_simple_capture_result_safe?, true) &&
-          hfa_unicode_simple_capture_result_safe?) ||
-         (respond_to?(:hfa_nested_literal_capture_alternation_spec, true) &&
-          hfa_nested_literal_capture_alternation_spec)
-        match = hfa_match_data(result, input)
-        return scan_value(match)
-      end
-      if respond_to?(:hfa_unicode_repeated_literal_capture_result_safe?, true) &&
-         hfa_unicode_repeated_literal_capture_result_safe?
-        match = hfa_match_data(result, input)
-        return scan_value(match)
+      if captures.all? { |capture| capture.nil? || (capture.is_a?(Array) && capture.length == 2) }
+        return captures.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
       end
 
-      match = Codegen::MatchAdapter.build(result, input, self, named_captures)
-      scan_value(match)
+      scan_value(hfa_match_data(result, input))
     end
 
     def validate_gsub_input!(input)

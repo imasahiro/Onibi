@@ -618,6 +618,22 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_variable_any_backreference_scan_builds_match_values_without_codegen_adapter
+    regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
+
+    Onibi::Codegen::MatchAdapter.stub(:build, ->(*) { flunk "HFA scan should not use the codegen match adapter" }) do
+      assert_equal [["abc"], [""]], regexp.scan("abcabc")
+    end
+  end
+
+  def test_hfa_scan_converts_capture_offsets_without_match_data
+    regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
+
+    regexp.stub(:hfa_match_data, ->(*) { flunk "scan should not build MatchData for offset captures" }) do
+      assert_equal [["abc"], [""]], regexp.scan("abcabc")
+    end
+  end
+
   def test_named_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
 
