@@ -1330,6 +1330,18 @@ module Onibi
       false
     end
 
+    def hfa_ascii_class_run_match_result(input, position)
+      table = hfa_ascii_class_run_table
+      cursor = position
+      while cursor < input.bytesize
+        cursor += 1 while cursor < input.bytesize && !table[input.getbyte(cursor)]
+        start = cursor
+        cursor += 1 while cursor < input.bytesize && table[input.getbyte(cursor)]
+        return [start, cursor, []] if cursor > start
+      end
+      nil
+    end
+
     def hfa_ascii_run_chain_result_safe?
       return @hfa_ascii_run_chain_safe if defined?(@hfa_ascii_run_chain_safe)
 
@@ -2394,6 +2406,14 @@ module Onibi
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         position = 0
         while (result = hfa_ascii_unicode_run_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_ascii_class_run_result_safe?
+        position = 0
+        while (result = hfa_ascii_class_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end

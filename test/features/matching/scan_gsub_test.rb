@@ -416,7 +416,9 @@ class ScanGsubTest < Minitest::Test
   def test_single_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[0-9]+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "single class run iteration should use HFA" }) do
-      assert_equal %w[123 456], regexp.scan("abc123def456")
+      regexp.stub(:hfa_program, -> { flunk "single class run should avoid HFA program compilation" }) do
+        assert_equal %w[123 456], regexp.scan("abc123def456")
+      end
     end
   end
 
