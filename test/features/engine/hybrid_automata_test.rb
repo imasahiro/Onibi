@@ -427,6 +427,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("prefix cXd suffix")
   end
 
+  def test_unanchored_search_caches_multiple_first_bytes
+    program = Onibi::HybridAutomata.compile("[cgt]gggtaaa|tttaccc[acg]")
+    refute program.match?("xxxxxxxx")
+    program.send(:static_first_bytes)
+
+    assert_equal ["c", "g", "t"], program.instance_variable_get(:@static_first_bytes).bytes.sort.map(&:chr)
+  end
+
   def test_small_single_span_uses_static_dfa
     program = compile("a[bc]{4}z")
     assert program.match?("aabcbcz")

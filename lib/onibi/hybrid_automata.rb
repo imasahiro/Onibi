@@ -666,6 +666,16 @@ module Onibi
         @static_first_byte = bytes.one? ? bytes.first.chr : nil
       end
 
+      def static_first_bytes
+        return @static_first_bytes if @static_first_bytes_attempted
+
+        @static_first_bytes_attempted = true
+        bytes = 256.times.select { |byte| (@first_mask & @reach_masks[byte]).positive? }
+        @static_first_bytes = if bytes.length.between?(2, 8)
+                                bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }.join
+                              end
+      end
+
       def static_jump_candidate(input, position, first_byte)
         candidate = input.index(first_byte, position)
         return unless candidate
@@ -1211,7 +1221,13 @@ module Onibi
       end
 
       def nfa_match_result(input, position)
-        candidate = @exact_first_byte ? input.index(@exact_first_byte, position) : position
+        candidate = if @exact_first_byte
+                      input.index(@exact_first_byte, position)
+                    elsif (first_bytes = static_first_bytes)
+                      first_byte_set_candidate(input, position, first_bytes)
+                    else
+                      position
+                    end
         while candidate
           active = 0
           cursor = candidate
@@ -1227,10 +1243,12 @@ module Onibi
 
           candidate = if @exact_first_byte
                         input.index(@exact_first_byte, candidate + 1)
+                      elsif static_first_bytes
+                        first_byte_set_candidate(input, candidate + 1, static_first_bytes)
                       else
                         candidate + 1
                       end
-          candidate = nil if candidate >= input.bytesize
+          candidate = nil if candidate && candidate >= input.bytesize
         end
         nil
       end
@@ -1491,6 +1509,8 @@ module Onibi
         @static_dfa_data = nil
         @static_first_byte_attempted = false
         @static_first_byte = nil
+        @static_first_bytes_attempted = false
+        @static_first_bytes = nil
         @input_ir = input_ir
         materialize_eager_static_dfa if eager_static_dfa?
       end
@@ -1640,6 +1660,7 @@ module Onibi
       def search_unanchored(input, position)
         return search_unanchored_single_span(input, position) if @single_span
         return search_first_byte_events(input, position) if input.ascii_only? && !@ignorecase && static_first_byte
+        return search_first_byte_set_events(input, position) if input.ascii_only? && !@ignorecase && static_first_bytes
 
         active = 0
         while position < input.bytesize
@@ -1669,6 +1690,32 @@ module Onibi
           candidate = input.index(first_byte, candidate + 1)
         end
         false
+      end
+
+      def search_first_byte_set_events(input, position)
+        first_bytes = static_first_bytes
+        candidate = first_byte_set_candidate(input, position, first_bytes)
+        while candidate
+          active = transition(0, input.getbyte(candidate), true)
+          return true unless (active & @accept_mask).zero?
+
+          cursor = candidate + 1
+          while cursor < input.bytesize
+            active = transition(active, input.getbyte(cursor), false)
+            return true unless (active & @accept_mask).zero?
+            break if active.zero?
+
+            cursor += 1
+          end
+          candidate = first_byte_set_candidate(input, candidate + 1, first_bytes)
+        end
+        false
+      end
+
+      def first_byte_set_candidate(input, position, first_bytes)
+        first_bytes.bytes.map do |byte|
+          input.index(byte.chr(Encoding::ASCII_8BIT), position)
+        end.compact.min
       end
     end
   end
