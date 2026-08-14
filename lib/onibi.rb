@@ -556,7 +556,12 @@ module Onibi
       if @hfa_exact_literal_fast
         literal = @hfa_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        start = input.index(literal, start_position)
+        start = if input.ascii_only?
+                  input.index(literal, start_position)
+                else
+                  byte_position = input.byteslice(0, start_position).bytesize
+                  input.b.index(literal.b, byte_position)
+                end
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end

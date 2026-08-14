@@ -1258,6 +1258,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_literal_match_preserves_bytes_after_unicode_prefix
+    match = Onibi::Regexp.new("cat").match("日本語cat")
+
+    assert_equal "cat", match.to_s
+    assert_equal [9, 12], match.offset(0)
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
