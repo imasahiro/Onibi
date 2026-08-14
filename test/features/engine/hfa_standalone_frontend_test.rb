@@ -6,6 +6,7 @@ class HfaStandaloneFrontendTest < Minitest::Test
   def test_hfa_compile_does_not_require_codegen_namespace
     script = <<~RUBY
       require "onibi"
+      abort if $LOADED_FEATURES.any? { |feature| feature.end_with?("/onibi/codegen.rb") }
       abort if defined?(Onibi::Codegen::GeneratedProgram)
       Onibi.send(:remove_const, :Codegen)
       program = Onibi::HybridAutomata.compile("a+")
