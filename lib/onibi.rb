@@ -1260,8 +1260,37 @@ module Onibi
 
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+      boundary_spec = hfa_scan_boundary_spec
+
+      if input.ascii_only? && (spec = hfa_reverse_literal_capture_spec)
+        delimiter, table = spec
+        position = 0
+        while (delimiter_start = input.index(delimiter, position))
+          candidate = delimiter_start
+          candidate -= 1 while candidate.positive? && table[input.getbyte(candidate - 1)]
+          while candidate < delimiter_start && !hfa_scan_boundary_start_match?(input, candidate, boundary_spec)
+            candidate += 1
+          end
+
+          if candidate < delimiter_start
+            result = program.match_result(input, candidate)
+            if result && result[0] == candidate && result[1] > delimiter_start &&
+               hfa_scan_boundary_match?(input, result[0], result[1], boundary_spec)
+              captures = hfa_generic_capture_offsets(input, result[0], result[1])
+              block.call([result[0], result[1], captures || result[2]])
+              position = result[1]
+              next
+            end
+          end
+
+          position = delimiter_start + delimiter.bytesize
+        end
+        return true
+      end
 
       program.each_match_result(input, 0) do |result|
+        next unless hfa_scan_boundary_match?(input, result[0], result[1], boundary_spec)
+
         captures = hfa_generic_capture_offsets(input, result[0], result[1])
         block.call([result[0], result[1], captures || result[2]])
       end
@@ -1360,6 +1389,64 @@ module Onibi
                  end
       prefixes = prefixes&.reject(&:empty?)&.uniq
       @hfa_top_level_capture_scan_spec = prefixes&.then { |values| values.freeze unless values.empty? } || false
+    end
+
+    def hfa_reverse_literal_capture_spec
+      return @hfa_reverse_literal_capture_spec if defined?(@hfa_reverse_literal_capture_spec)
+      return @hfa_reverse_literal_capture_spec = false if @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
+      group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
+      group = group_index && parts[group_index]
+      body_parts = group&.body.is_a?(AST::Sequence) ? group.body.parts : []
+      run = body_parts.first
+      delimiter = body_parts[1]
+      valid = group && parts[0...group_index].all? { |part| hfa_zero_width_node?(part) } &&
+              parts[(group_index + 1)..].to_a.all? { |part| hfa_zero_width_node?(part) } &&
+              run.is_a?(AST::Quantifier) && run.mode == :greedy && run.minimum.positive? && run.maximum.nil? &&
+              run.expression.is_a?(AST::CharacterClass) && delimiter.is_a?(AST::Literal) &&
+              delimiter.value.bytesize.positive?
+      @hfa_reverse_literal_capture_spec = if valid
+                                            table = ClassPredicates.compiled(run.expression.value).ascii_table
+                                            [delimiter.value, table].freeze
+                                          else
+                                            false
+                                          end
+    end
+
+    def hfa_scan_boundary_spec
+      return @hfa_scan_boundary_spec if defined?(@hfa_scan_boundary_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      first = parts.first
+      last = parts.last
+      @hfa_scan_boundary_spec = if first.is_a?(AST::Escape) && last.is_a?(AST::Escape) &&
+                                   %i[word_boundary nonword_boundary].include?(first.kind) &&
+                                   first.kind == last.kind
+                                  first.kind
+                                else
+                                  false
+                                end
+    end
+
+    def hfa_scan_boundary_match?(input, start, finish, boundary)
+      return true unless boundary
+
+      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
+      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
+      after_current = finish.positive? && CharacterPredicates.word?(input.getbyte(finish - 1).chr)
+      after = finish < input.bytesize && CharacterPredicates.word?(input.getbyte(finish).chr)
+      return before != current && after_current != after if boundary == :word_boundary
+
+      before == current && after_current == after
+    end
+
+    def hfa_scan_boundary_start_match?(input, start, boundary)
+      return true unless boundary
+
+      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
+      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
+      boundary == :word_boundary ? before != current : before == current
     end
 
     def hfa_capture_literal_prefixes(node)
