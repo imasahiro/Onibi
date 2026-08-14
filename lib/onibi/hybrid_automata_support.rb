@@ -94,6 +94,13 @@ module Onibi
     module AnchorFacts
       private
 
+      def extract_start_match(ast)
+        parts = ast.is_a?(AST::Sequence) ? ast.parts.dup : [ast]
+        start_match = parts.first.is_a?(AST::Escape) && parts.first.kind == :start_match
+        parts.shift if start_match
+        [anchor_body(parts), start_match]
+      end
+
       def extract_anchors(ast)
         parts = ast.is_a?(AST::Sequence) ? ast.parts.dup : [ast]
         anchored_start = absolute_anchor?(parts.first, :anchor_absolute_start)
@@ -393,7 +400,8 @@ module Onibi
         prepared.anchored_start || prepared.anchored_end || prepared.line_anchor_start ||
           prepared.line_anchor_end || prepared.positive_prefix || prepared.positive_suffix ||
           prepared.negative_prefix ||
-          prepared.negative_suffix || prepared.word_boundary_start || prepared.word_boundary_end
+          prepared.negative_suffix || prepared.word_boundary_start || prepared.word_boundary_end ||
+          prepared.start_match
       end
 
       def dot_literal_spec(ast)

@@ -451,6 +451,7 @@ module Onibi
       end
 
       hfa = hfa_program if input.ascii_only? && hfa_match_question_safe?
+      hfa = hfa_program if input.ascii_only? && hfa_start_match_result_safe?
       if hfa
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa.match?(input, normalized_position) if timeout_unconfigured?
@@ -559,6 +560,7 @@ module Onibi
       if input.ascii_only? && (hfa_public_safe? && hfa_match_result_safe? ||
                                hfa_scoped_ignorecase_literal_result_safe? ||
                                hfa_scoped_multiline_any_result_safe? ||
+                               hfa_start_match_result_safe? ||
                                hfa_linebreak_result_safe? ||
                                hfa_simple_capture_result_safe? || hfa_literal_guard_result_safe? ||
                                hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
@@ -771,6 +773,7 @@ module Onibi
     def hfa_match_result_safe_uncached?
       return true if hfa_scoped_ignorecase_literal_result_safe?
       return true if hfa_scoped_multiline_any_result_safe?
+      return true if hfa_start_match_result_safe?
       return true if hfa_linebreak_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
@@ -819,6 +822,14 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       @hfa_linebreak_safe = parts.one? && parts.first.is_a?(AST::Escape) &&
                             parts.first.kind == :linebreak && hfa_program
+    end
+
+    def hfa_start_match_result_safe?
+      return @hfa_start_match_result_safe if defined?(@hfa_start_match_result_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      @hfa_start_match_result_safe = parts.first.is_a?(AST::Escape) &&
+                                     parts.first.kind == :start_match && hfa_program
     end
 
     def hfa_linebreak_match_data(result, input)
@@ -2650,6 +2661,7 @@ module Onibi
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? ||
+                    hfa_start_match_result_safe? ||
                     hfa_linebreak_result_safe? ||
                     hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
@@ -2787,6 +2799,7 @@ module Onibi
       return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
                      hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_scoped_multiline_any_result_safe? ||
+                     hfa_start_match_result_safe? ||
                      hfa_linebreak_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||

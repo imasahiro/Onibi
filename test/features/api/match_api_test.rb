@@ -82,6 +82,18 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_start_match_anchor_uses_hfa
+    regexp = Onibi::Regexp.new("\\Gfoo")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "start-match match? should use HFA" }) do
+      assert regexp.match?("xxfoo", 2)
+      refute regexp.match?("xxfoo", 0)
+    end
+    regexp.stub(:codegen_match, ->(*) { flunk "start-match match should use HFA" }) do
+      assert_equal "foo", regexp.match("xxfoo", 2).to_s
+    end
+  end
+
   def test_unicode_linebreak_match_uses_hfa
     regexp = Onibi::Regexp.new("\\R")
 

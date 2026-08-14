@@ -34,6 +34,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_start_match_anchor_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\Gfoo")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "start-match iteration should use HFA" }) do
+      assert_equal ["foo"], regexp.scan("foo foo")
+    end
+  end
+
   def test_literal_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("needle")
 

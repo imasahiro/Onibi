@@ -484,9 +484,17 @@ class HybridAutomataTest < Minitest::Test
   end
 
   def test_rejects_non_regular_or_capture_dependent_patterns
-    ["\\Gcat"].each do |pattern|
+    ["a\\A"].each do |pattern|
       assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { compile(pattern) }
     end
+  end
+
+  def test_supports_start_match_anchor
+    program = compile("\\Gfoo")
+
+    assert program.match?("xxfoo", 2)
+    refute program.match?("xxfoo", 0)
+    refute program.match?("xxfo", 2)
   end
 
   def test_supports_scoped_multiline_dot
