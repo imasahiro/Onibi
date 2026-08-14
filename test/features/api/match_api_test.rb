@@ -234,6 +234,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_literal_capture_match_question_uses_constructor_fast_metadata
+    regexp = Onibi::Regexp.new("(こんにちは)(世界)")
+
+    regexp.stub(:hfa_fixed_literal_capture_result_safe?,
+                -> { flunk "Unicode literal captures should use constructor metadata" }) do
+      assert regexp.match?("挨拶こんにちは世界です")
+    end
+  end
+
   def test_ascii_unicode_property_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("\\p{Alpha}+")
 

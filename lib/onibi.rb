@@ -206,6 +206,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_unicode_word_class_run_match?(input, normalized_position)
       end
+      if !input.ascii_only? && (literal = hfa_unicode_fixed_literal_capture_literal)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, normalized_position).nil?
+      end
       if !input.ascii_only? && hfa_fixed_literal_capture_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_fixed_literal_capture_match?(input, normalized_position)
@@ -873,6 +877,17 @@ module Onibi
     def hfa_fixed_literal_capture_match?(input, position)
       literal = hfa_simple_capture_layout.map { |_kind, value, _number| value }.join
       !input.b.index(literal.b, position).nil?
+    end
+
+    def hfa_unicode_fixed_literal_capture_literal
+      return @hfa_unicode_fixed_literal_capture_literal if defined?(@hfa_unicode_fixed_literal_capture_literal)
+
+      layout = hfa_simple_capture_layout
+      @hfa_unicode_fixed_literal_capture_literal = if layout.is_a?(Array) &&
+                                                      layout.all? { |kind, value, _number| kind == :literal && value } &&
+                                                      !@pattern.ascii_only?
+                                                     layout.map { |_kind, value, _number| value }.join
+                                                   end
     end
 
     def hfa_ascii_unicode_run_result_safe?
