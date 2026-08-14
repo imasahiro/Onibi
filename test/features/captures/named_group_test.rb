@@ -21,6 +21,12 @@ class NamedGroupTest < Minitest::Test
     assert_equal ["cat"], match.values_at("word")
   end
 
+  def test_named_repeated_literal_group_preserves_capture_value
+    match = Onibi::Regexp.new("(?<word>a+)").match("xxaaa")
+
+    assert_equal "aaa", match["word"]
+  end
+
   def test_named_match_data_formats_full_match_and_names
     match = Onibi::Regexp.new("(?<word>cat)").match("a cat")
 
