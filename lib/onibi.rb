@@ -997,6 +997,30 @@ module Onibi
       [count, cursor]
     end
 
+    def hfa_positive_lookbehind_literal_match_result(input, position)
+      prefix, literal = @hfa_positive_lookbehind_literal_fast
+      candidate = input.index(prefix + literal, [position - prefix.bytesize, 0].max)
+      while candidate
+        start = candidate + prefix.bytesize
+        return [start, start + literal.bytesize, []] if start >= position
+
+        candidate = input.index(prefix + literal, candidate + 1)
+      end
+      nil
+    end
+
+    def hfa_negative_lookbehind_literal_match_result(input, position)
+      literal, guard = @hfa_negative_lookbehind_literal_fast
+      candidate = input.index(literal, position)
+      while candidate
+        return [candidate, candidate + literal.bytesize, []] if candidate < guard.bytesize ||
+                                                               input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
+
+        candidate = input.index(literal, candidate + 1)
+      end
+      nil
+    end
+
     def hfa_ignorecase_literal_match_result(input, position)
       literal = literal_ast_value(@ast)
       folded_input = input.downcase
@@ -2254,6 +2278,22 @@ module Onibi
       if hfa_literal_assertion_result_safe?
         position = 0
         while (result = hfa_literal_assertion_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if @hfa_positive_lookbehind_literal_fast
+        position = 0
+        while (result = hfa_positive_lookbehind_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if @hfa_negative_lookbehind_literal_fast
+        position = 0
+        while (result = hfa_negative_lookbehind_literal_match_result(input, position))
           block.call(result)
           position = result[1]
         end

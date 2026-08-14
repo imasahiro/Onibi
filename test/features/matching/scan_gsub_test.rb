@@ -81,6 +81,18 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_lookbehind_scan_avoids_hfa_program_compile
+    positive = Onibi::Regexp.new("(?<=pre)fix")
+    negative = Onibi::Regexp.new("(?<!un)happy")
+
+    positive.stub(:hfa_program, -> { flunk "positive lookbehind scan should avoid HFA program compilation" }) do
+      assert_equal ["fix", "fix"], positive.scan("prefix preprefix")
+    end
+    negative.stub(:hfa_program, -> { flunk "negative lookbehind scan should avoid HFA program compilation" }) do
+      assert_equal ["happy", "happy"], negative.scan("happy unhappy happy")
+    end
+  end
+
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
     regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do
