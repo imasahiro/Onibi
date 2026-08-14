@@ -97,6 +97,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_literal_assertion_match_result(input, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_possessive_literal_string_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
+      end
       if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -162,6 +166,12 @@ module Onibi
       if input.ascii_only? && hfa_literal_assertion_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_literal_assertion_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_possessive_literal_string_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_possessive_literal_string_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -554,6 +564,34 @@ module Onibi
         return [candidate, finish, []] if matches
 
         candidate = input.index(literal, candidate + 1)
+      end
+      nil
+    end
+
+    def hfa_possessive_literal_string_result_safe?
+      return @hfa_possessive_literal_string_safe if defined?(@hfa_possessive_literal_string_safe)
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      quantifier, suffix = parts
+      @hfa_possessive_literal_string_safe = if parts.length == 2 && quantifier.is_a?(AST::Quantifier) &&
+                                               %i[+ *].include?(quantifier.kind) && quantifier.mode == :possessive &&
+                                               quantifier.expression.is_a?(AST::Literal) && suffix.is_a?(AST::Literal) &&
+                                               quantifier.expression.value.ascii_only? && suffix.value.ascii_only?
+                                              true
+                                            else
+                                              false
+                                            end
+    end
+
+    def hfa_possessive_literal_string_match_result(input, position)
+      quantifier, suffix = @ast.parts
+      unit = quantifier.expression.value
+      candidate = input.index(unit, position)
+      while candidate
+        finish = candidate
+        finish += unit.bytesize while input.byteslice(finish, unit.bytesize) == unit
+        return [candidate, finish + suffix.value.bytesize, []] if input.byteslice(finish, suffix.value.bytesize) == suffix.value
+
+        candidate = input.index(unit, candidate + 1)
       end
       nil
     end
@@ -1052,6 +1090,7 @@ module Onibi
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
+                   hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    hfa_ignorecase_literal_result_safe? ||
                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
@@ -1069,7 +1108,13 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_literal_assertion_result_safe?
+      if hfa_possessive_literal_string_result_safe?
+        position = 0
+        while (result = hfa_possessive_literal_string_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+      elsif hfa_literal_assertion_result_safe?
         position = 0
         while (result = hfa_literal_assertion_match_result(input, position))
           block.call(result)
@@ -1152,7 +1197,7 @@ module Onibi
 
     def hfa_iterator_safe?
       return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
-                     hfa_literal_assertion_result_safe? ||
+                     hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||
