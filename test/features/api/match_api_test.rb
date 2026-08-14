@@ -579,6 +579,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_alternation_with_nonmatching_suffix_uses_hfa
+    regexp = Onibi::Regexp.new("(?>a|ab)c")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "atomic literal alternation suffix handling should use HFA" }) do
+      assert_equal "ac", regexp.match("zac").to_s
+      assert_nil regexp.match("zabc")
+    end
+  end
+
   def test_subexpression_literal_call_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
@@ -1149,6 +1158,17 @@ class MatchApiTest < Minitest::Test
 
     regexp.stub(:codegen_match?, ->(*) { flunk "ASCII backreference match? should use HFA" }) do
       assert regexp.match?("echo-echo")
+    end
+  end
+
+  def test_variable_literal_backreference_match_uses_hfa
+    regexp = Onibi::Regexp.new("(a*)\\1")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "variable literal backreference match? should use HFA" }) do
+      regexp.stub(:codegen_match, ->(*) { flunk "variable literal backreference match should use HFA" }) do
+        assert regexp.match?("aaaa")
+        assert_equal ["aaaa", "aa"], regexp.match("aaaa").to_a
+      end
     end
   end
 

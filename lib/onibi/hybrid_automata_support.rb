@@ -667,6 +667,8 @@ module Onibi
         return false if position.negative? || position > input.bytesize
         return false unless @backref_predicate
 
+        return !variable_backref_match_result(input, position).nil? if @backref_separator.nil?
+
         separator_position = input.index(@backref_separator, position)
         while separator_position
           run_start = backref_run_start(input, separator_position, @backref_predicate)
@@ -715,6 +717,8 @@ module Onibi
 
         return unless @backref_predicate
 
+        return variable_backref_match_result(input, position) if @backref_separator.nil?
+
         separator_position = input.index(@backref_separator, position)
         while separator_position
           run_start = backref_run_start(input, separator_position, @backref_predicate)
@@ -741,6 +745,12 @@ module Onibi
         body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
         literal = literal_ast_value(body)
         return [nil, spec.separator, literal] if literal
+        if body.is_a?(AST::Quantifier) && %i[* +].include?(body.kind) &&
+           body.expression.is_a?(AST::Literal) && body.expression.value.bytesize == 1
+          table = Array.new(256, false)
+          table[body.expression.value.getbyte(0)] = true
+          return [table.freeze, spec.separator, nil]
+        end
         return [nil, nil, nil] unless body.is_a?(AST::Quantifier) && body.kind == :+ &&
                                       body.expression.is_a?(AST::CharacterClass)
 
@@ -774,6 +784,21 @@ module Onibi
         captured = input.byteslice(candidate, length)
         repeated_value = input.byteslice(repeated, length)
         @backref_ignorecase ? captured.casecmp?(repeated_value) : captured == repeated_value
+      end
+
+      def variable_backref_match_result(input, position)
+        run_end = position
+        run_end += 1 while run_end < input.bytesize && @backref_predicate[input.getbyte(run_end)]
+        length = (run_end - position) / 2
+        return [position, position, [[position, position]]] if length.zero? && @backref_empty_allowed
+        return unless length.positive?
+
+        repeated = position + length
+        captured = input.byteslice(position, length)
+        repeated_value = input.byteslice(repeated, length)
+        return unless @backref_ignorecase ? captured.casecmp?(repeated_value) : captured == repeated_value
+
+        [position, repeated + length, [[position, repeated]]]
       end
     end
 

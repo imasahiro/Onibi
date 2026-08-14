@@ -458,6 +458,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_atomic_literal_alternation_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_atomic_literal_alternation_match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
@@ -825,6 +829,12 @@ module Onibi
       if input.ascii_only? && hfa_greedy_bounded_sequence_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_atomic_literal_alternation_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_atomic_literal_alternation_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1617,6 +1627,38 @@ module Onibi
 
     def hfa_atomic_literal_result_safe?
       hfa_atomic_literal_match_literal
+    end
+
+    def hfa_atomic_literal_alternation_spec
+      return @hfa_atomic_literal_alternation_spec if defined?(@hfa_atomic_literal_alternation_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, suffix = parts
+      branches = group.body.branches if group.is_a?(AST::AtomicGroup) &&
+                                       group.body.is_a?(AST::Alternation) && suffix.is_a?(AST::Literal)
+      values = branches&.map { |branch| literal_ast_value(branch) }
+      @hfa_atomic_literal_alternation_spec = if parts.length == 2 && values&.all? do |value|
+                                                value&.ascii_only? && value.bytesize.positive?
+                                              end
+                                                suffix.value.ascii_only? && suffix.value.bytesize.positive?
+                                                [values.freeze, suffix.value].freeze
+                                              else
+                                                false
+                                              end
+    end
+
+    def hfa_atomic_literal_alternation_match_result(input, position)
+      branches, suffix = hfa_atomic_literal_alternation_spec
+      cursor = position
+      while cursor <= input.bytesize
+        branch = branches.find { |value| input.byteslice(cursor, value.bytesize) == value }
+        if branch
+          finish = cursor + branch.bytesize + suffix.bytesize
+          return [cursor, finish, []] if input.byteslice(cursor + branch.bytesize, suffix.bytesize) == suffix
+        end
+        cursor += 1
+      end
+      nil
     end
 
     def hfa_anchor_result_safe?
@@ -4260,6 +4302,14 @@ module Onibi
         hfa_nested_literal_capture_alternation_each_result(input, &block)
         return true
       end
+      if input.ascii_only? && hfa_atomic_literal_alternation_spec
+        position = 0
+        while (result = hfa_atomic_literal_alternation_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if input.ascii_only? && hfa_scoped_multiline_sequence_direct_spec
         hfa_scoped_multiline_sequence_direct_each_result(input, &block)
         return true
@@ -4301,54 +4351,7 @@ module Onibi
         return true
       end
 
-      ascii_safe = input.ascii_only? &&
-                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
-                    hfa_scoped_multiline_any_result_safe? ||
-                   hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
-                   hfa_scoped_multiline_sequence_direct_spec ||
-                   hfa_scoped_ignorecase_sequence_direct_spec ||
-                    hfa_start_match_result_safe? ||
-                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
-                    hfa_anchor_result_safe? ||
-                    hfa_greedy_bounded_sequence_result_safe? ||
-                    hfa_lazy_bounded_sequence_result_safe? ||
-                    hfa_scoped_extended_literal_result_safe? ||
-                    hfa_linebreak_result_safe? ||
-                    hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
-                   hfa_word_boundary_literal_result_safe? || hfa_nonword_boundary_literal_result_safe? ||
-                   hfa_anchored_class_run_result_safe? ||
-                   hfa_literal_assertion_result_safe? ||
-                   hfa_literal_alternation_result_safe? ||
-                   hfa_captureless_alternation_result_safe? ||
-                   hfa_captureless_regular_sequence_result_safe? ||
-                   hfa_captureless_repeated_alternation_result_safe? ||
-                   hfa_repeated_equal_length_literal_capture_result_safe? ||
-                   hfa_literal_capture_before_alternation_result_safe? ||
-                   hfa_single_capture_literal_alternation_result_safe? ||
-                   hfa_nested_literal_capture_alternation_spec ||
-                   hfa_possessive_literal_string_result_safe? ||
-                   hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                   @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
-                   hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
-                   hfa_negative_lookbehind_result_safe? ||
-                   @hfa_casefold_class_lookbehind_fast ||
-                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
-                    hfa_adjacent_nested_repeated_capture_result_safe? ||
-                    hfa_repeated_class_capture_result_safe?)
-      unicode_safe = !input.ascii_only? &&
-                     (hfa_unicode_match_result_safe? ||
-                      (input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?) ||
-                      hfa_unicode_literal_result_safe? ||
-                      hfa_unicode_ignorecase_literal_result_safe? ||
-                      hfa_linebreak_result_safe? ||
-                      hfa_positive_lookbehind_result_safe? ||
-                      hfa_negative_lookbehind_result_safe? ||
-                      @hfa_class_lookbehind_fast ||
-                      hfa_unicode_simple_capture_result_safe? ||
-                      hfa_unicode_repeated_literal_result_safe? ||
-                      hfa_unicode_repeated_literal_capture_result_safe? ||
-                      hfa_scoped_unicode_ignorecase_literal_value)
-      return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
+      return false unless hfa_scan_input_safe?(input)
 
       if hfa_literal_alternation_result_safe?
         position = 0
@@ -4563,6 +4566,42 @@ module Onibi
       true
     end
 
+    def hfa_scan_input_safe?(input)
+      ascii_safe = input.ascii_only? &&
+                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
+                    hfa_scoped_multiline_any_result_safe? || hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
+                    hfa_scoped_multiline_sequence_direct_spec || hfa_scoped_ignorecase_sequence_direct_spec ||
+                    hfa_atomic_literal_alternation_spec || hfa_start_match_result_safe? ||
+                    hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                    hfa_anchor_result_safe? || hfa_greedy_bounded_sequence_result_safe? ||
+                    hfa_lazy_bounded_sequence_result_safe? || hfa_scoped_extended_literal_result_safe? ||
+                    hfa_linebreak_result_safe? || hfa_negative_literal_guard_safe? ||
+                    hfa_simple_capture_result_safe? || hfa_word_boundary_literal_result_safe? ||
+                    hfa_nonword_boundary_literal_result_safe? || hfa_anchored_class_run_result_safe? ||
+                    hfa_literal_assertion_result_safe? || hfa_literal_alternation_result_safe? ||
+                    hfa_captureless_alternation_result_safe? || hfa_captureless_regular_sequence_result_safe? ||
+                    hfa_captureless_repeated_alternation_result_safe? ||
+                    hfa_repeated_equal_length_literal_capture_result_safe? ||
+                    hfa_literal_capture_before_alternation_result_safe? ||
+                    hfa_single_capture_literal_alternation_result_safe? ||
+                    hfa_nested_literal_capture_alternation_spec || hfa_possessive_literal_string_result_safe? ||
+                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
+                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
+                    hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
+                    hfa_negative_lookbehind_result_safe? || @hfa_casefold_class_lookbehind_fast ||
+                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
+                    hfa_adjacent_nested_repeated_capture_result_safe? || hfa_repeated_class_capture_result_safe?)
+      unicode_safe = !input.ascii_only? &&
+                     (hfa_unicode_match_result_safe? ||
+                      (input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?) ||
+                      hfa_unicode_literal_result_safe? || hfa_unicode_ignorecase_literal_result_safe? ||
+                      hfa_linebreak_result_safe? || hfa_positive_lookbehind_result_safe? ||
+                      hfa_negative_lookbehind_result_safe? || @hfa_class_lookbehind_fast ||
+                      hfa_unicode_simple_capture_result_safe? || hfa_unicode_repeated_literal_result_safe? ||
+                      hfa_unicode_repeated_literal_capture_result_safe? || hfa_scoped_unicode_ignorecase_literal_value)
+      (ascii_safe || unicode_safe) && hfa_iterator_safe?
+    end
+
     def hfa_iterator_safe?
       return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
                      hfa_unicode_property_result_safe? ||
@@ -4571,6 +4610,7 @@ module Onibi
                      hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                      hfa_scoped_multiline_sequence_direct_spec ||
                      hfa_scoped_ignorecase_sequence_direct_spec ||
+                     hfa_atomic_literal_alternation_spec ||
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                      hfa_anchor_result_safe? ||

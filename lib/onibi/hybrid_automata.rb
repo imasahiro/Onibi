@@ -288,11 +288,18 @@ module Onibi
         return [nil, ast] if separator && !separator.is_a?(AST::Literal)
         return [nil, ast] unless reference.identifier.to_s == group.name.to_s ||
                                  reference.identifier.to_i == group.number
-        return [nil, ast] if separator.nil? && literal_value(group.body).nil?
+        return [nil, ast] if separator.nil? && literal_value(group.body).nil? &&
+                             !variable_backref_body?(group.body)
 
         parts.delete_at(index)
         body = parts.length == 1 ? parts.first : AST::Sequence.new(parts)
         [BackrefSpec.new(group.body, separator&.value), body]
+      end
+
+      def variable_backref_body?(body)
+        body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+        body.is_a?(AST::Quantifier) && %i[* +].include?(body.kind) &&
+          body.expression.is_a?(AST::Literal) && body.expression.value.bytesize == 1
       end
 
       def consume_positive_guard(ast, guard, side)
@@ -925,6 +932,9 @@ module Onibi
         @casefold_literal = @exact_literal&.downcase if @ignorecase && @exact_literal&.ascii_only?
         @backref_predicate, @backref_separator, @backref_literal = backref_data(@backref_spec,
                                                                                 ignorecase: ignorecase)
+        backref_body = @backref_spec&.body
+        backref_body = backref_body.parts.first if backref_body.is_a?(AST::Sequence) && backref_body.parts.one?
+        @backref_empty_allowed = backref_body.is_a?(AST::Quantifier) && backref_body.kind == :*
         @backref_separator_length = @backref_separator&.bytesize
         @repeat_literal_spec = automaton.repeat_literal_spec
         @dot_literal_spec = automaton.dot_literal_spec
@@ -1536,7 +1546,7 @@ module Onibi
         if @backref_spec
           while (result = backref_match_result(input, position))
             yield result
-            position = result[1]
+            position = [result[1], position + 1].max
           end
           return
         end

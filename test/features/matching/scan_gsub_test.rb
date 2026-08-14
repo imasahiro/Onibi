@@ -397,6 +397,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_alternation_with_nonmatching_suffix_scans_with_hfa
+    regexp = Onibi::Regexp.new("(?>a|ab)c")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "atomic literal alternation suffix handling scan should use HFA" }) do
+      assert_equal ["ac"], regexp.scan("zabc zac")
+    end
+  end
+
   def test_line_anchor_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("^cat$")
 
@@ -582,6 +590,14 @@ class ScanGsubTest < Minitest::Test
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "backreference scan should use HFA" }) do
       assert_equal [["echo"], ["test"]], regexp.scan("echo-echo test-test")
+    end
+  end
+
+  def test_variable_literal_backreference_scan_uses_hfa
+    regexp = Onibi::Regexp.new("(a*)\\1")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "variable literal backreference scan should use HFA" }) do
+      assert_equal [["aa"], [""], ["a"], [""]], regexp.scan("aaaa aa")
     end
   end
 
