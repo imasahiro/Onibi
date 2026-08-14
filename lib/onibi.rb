@@ -1278,12 +1278,65 @@ module Onibi
         return whole_capture
       end
 
+      if hfa_top_level_capture_plan
+        return hfa_top_level_capture_offsets(input, start, finish)
+      end
+
       if (offsets = hfa_variable_backreference_capture_offsets(input, start, finish))
         return offsets
       end
 
       offsets = Array.new(capture_count)
       cursor = hfa_consume_capture_node(@ast, input, start, finish, offsets)
+      cursor == finish ? offsets : nil
+    end
+
+    def hfa_top_level_capture_plan
+      return @hfa_top_level_capture_plan if defined?(@hfa_top_level_capture_plan)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
+      captures = parts.select { |part| part.is_a?(AST::Group) && part.capture }
+      @hfa_top_level_capture_plan = if captures.any? &&
+                                      captures.all? { |group| hfa_capture_count(group.body).zero? } &&
+                                      parts.all? { |part| hfa_top_level_capture_plan_node?(part) }
+                                     parts.freeze
+                                   else
+                                     false
+                                   end
+    end
+
+    def hfa_top_level_capture_plan_node?(node)
+      return true if node.is_a?(AST::Literal) || hfa_zero_width_node?(node)
+      return node.capture && hfa_capture_count(node.body).zero? if node.is_a?(AST::Group)
+
+      return false unless hfa_capture_count(node).zero?
+      return false unless node.is_a?(AST::Quantifier)
+
+      node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Escape) ||
+        node.expression.is_a?(AST::Literal)
+    end
+
+    def hfa_top_level_capture_offsets(input, start, finish)
+      offsets = Array.new(hfa_capture_count)
+      cursor = start
+      hfa_top_level_capture_plan.each do |part|
+        if part.is_a?(AST::Literal)
+          cursor += part.value.bytesize
+          next
+        end
+
+        if part.is_a?(AST::Group) && part.capture
+          group_start = cursor
+          cursor = hfa_consume_capture_node(part.body, input, cursor, finish, offsets)
+          return unless cursor
+
+          offsets[part.number - 1] = [group_start, cursor]
+          next
+        end
+
+        cursor = hfa_consume_capture_node(part, input, cursor, finish, offsets)
+        return unless cursor
+      end
       cursor == finish ? offsets : nil
     end
 
