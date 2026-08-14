@@ -3616,12 +3616,7 @@ module Onibi
     end
 
     def hfa_offset_match_data(input, start, finish, capture_offsets, names)
-      values = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
-      end
-      MatchData.new(input.byteslice(start, finish - start), values,
-                    [[start, finish], *capture_offsets], names,
-                    MatchData::Context.new(input, self))
+      MatchData.from_offsets(input, start, finish, capture_offsets, names, self)
     end
 
     def hfa_conditional_capture_offsets(input, start)

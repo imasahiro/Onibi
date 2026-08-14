@@ -22,6 +22,15 @@ class MatchDataTest < Minitest::Test
     assert_equal "xx", match_data.pre_match
   end
 
+  def test_offset_factory_preserves_match_data_contract
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)")
+    match_data = Onibi::MatchData.from_offsets("xxwordyy", 2, 6, [[2, 6]], { "word" => 1 }, regexp)
+
+    assert_equal ["word", "word"], match_data.to_a
+    assert_equal [2, 6], match_data.offset(:word)
+    assert_equal regexp, match_data.regexp
+  end
+
   def test_unmatched_capture_offset_is_a_pair_of_nil_values
     match_data = Onibi::Regexp.new("(?<prefix>a)?b").match("b")
 
