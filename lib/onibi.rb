@@ -212,6 +212,16 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_bounded_literal_match_result(input, normalized_position).nil?
       end
+      if !input.ascii_only? && !@hfa_unicode_property_run_fast && !@hfa_unicode_word_class_run_fast &&
+         hfa_unicode_match_result_safe?
+        hfa = hfa_program
+        if hfa
+          normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+          return hfa.match?(input, normalized_position) if timeout_unconfigured?
+
+          return with_timeout { hfa.match?(input, normalized_position) }
+        end
+      end
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_class_run_positive_lookahead_match?(input, normalized_position)
@@ -413,8 +423,7 @@ module Onibi
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? }
       end
-      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
-                                hfa_unicode_simple_capture_result_safe? ||
+      if !input.ascii_only? && (hfa_unicode_literal_result_safe? || hfa_unicode_simple_capture_result_safe? ||
                                 hfa_unicode_repeated_literal_result_safe?)
         hfa = hfa_program
         if hfa
