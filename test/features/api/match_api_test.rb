@@ -930,6 +930,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_positive_literal_lookbehind_match_question_uses_combined_literal_path
+    regexp = Onibi::Regexp.new("(?<=pre)fix")
+
+    regexp.stub(:hfa_literal_assertion_result_safe?,
+                -> { flunk "Positive lookbehind should use combined literal path" }) do
+      assert regexp.match?("prefix")
+      assert regexp.match?("xxprefix", 3)
+      refute regexp.match?("xfix")
+    end
+  end
+
   def test_literal_negative_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<!a)b")
 

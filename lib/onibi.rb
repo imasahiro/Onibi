@@ -130,6 +130,11 @@ module Onibi
       @hfa_dot_literal_fast = hfa_dot_literal_parts if dot_candidate
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
+      assertion_parts = hfa_literal_assertion_result_safe? unless @options.include?("ignorecase")
+      if assertion_parts.is_a?(Array) && assertion_parts[1] == :positive_lookbehind &&
+         assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+        @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
+      end
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
       lookahead_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
@@ -182,6 +187,17 @@ module Onibi
       if input.ascii_only? && @hfa_word_boundary_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_word_boundary_literal_match_result(input, normalized_position).nil?
+      end
+      if input.ascii_only? && @hfa_positive_lookbehind_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        prefix, literal = @hfa_positive_lookbehind_literal_fast
+        candidate = input.index(prefix + literal, [normalized_position - prefix.bytesize, 0].max)
+        while candidate
+          return true if candidate + prefix.bytesize >= normalized_position
+
+          candidate = input.index(prefix + literal, candidate + 1)
+        end
+        return false
       end
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
