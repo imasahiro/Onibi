@@ -18,4 +18,26 @@ class HfaCaptureScanTest < Minitest::Test
   def test_hfa_scan_returns_multiple_literal_captures
     assert_equal [%w[foo bar]], Onibi::Regexp.new("(?<first>foo)(?<second>bar)").scan("foobar")
   end
+
+  def test_hfa_scan_handles_nested_non_capture_groups_in_email_pattern
+    pattern = "\\b(?<email>[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)\\b"
+
+    assert_equal [["user0@example.com"]], Onibi::Regexp.new(pattern).scan("Contact user0@example.com")
+  end
+
+  def test_hfa_scan_handles_capture_prefix_url_pattern
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
+
+    assert_equal [["https://example.com/docs/0?lang=en."]],
+                 Onibi::Regexp.new(pattern).scan("See https://example.com/docs/0?lang=en.")
+  end
+
+  def test_hfa_scan_handles_structured_log_prefix_pattern
+    pattern = "request_id=(?<request_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-" \
+              "[0-9a-f]{4}-[0-9a-f]{12}) timestamp=(?<timestamp>[0-9T:-]+Z)"
+    input = "request_id=00000000-0000-4000-8000-000000000000 timestamp=2026-08-10T00:00:00Z"
+
+    assert_equal [["00000000-0000-4000-8000-000000000000", "2026-08-10T00:00:00Z"]],
+                 Onibi::Regexp.new(pattern).scan(input)
+  end
 end
