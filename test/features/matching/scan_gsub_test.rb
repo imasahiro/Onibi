@@ -139,6 +139,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_ignorecase_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("école", ["ignorecase"])
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "unicode ignorecase literal scan should use HFA" }) do
+      assert_equal ["ÉCOLE", "école"], regexp.scan("xxÉCOLE yyécole")
+    end
+  end
+
   def test_literal_negative_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<!a)b")
 

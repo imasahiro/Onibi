@@ -84,6 +84,13 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
+        normalized_position = normalize_match_position(input, position)
+        result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
+        return !result.nil? if timeout_unconfigured?
+
+        return with_timeout { !result.nil? }
+      end
       if input.ascii_only? && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
@@ -121,6 +128,11 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
+      if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
+        result = hfa_unicode_ignorecase_literal_match_result(input, position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_ignorecase_literal_result_safe?
         result = hfa_ignorecase_literal_match_result(input, position)
         return hfa_match_data(result, input) if result
@@ -405,6 +417,30 @@ module Onibi
       folded_input = input.downcase
       start = folded_input.index(literal.downcase, position)
       start && [start, start + literal.bytesize, []]
+    end
+
+    def hfa_unicode_ignorecase_literal_result_safe?
+      return @hfa_unicode_ignorecase_literal_safe if defined?(@hfa_unicode_ignorecase_literal_safe)
+      literal = literal_ast_value(@ast)
+      @hfa_unicode_ignorecase_literal_safe = if @options.include?("ignorecase") && literal &&
+                                               !literal.ascii_only? && literal.bytesize.positive?
+                                              hfa_program
+                                            else
+                                              false
+                                            end
+    end
+
+    def hfa_unicode_ignorecase_literal_match_result(input, position)
+      literal = literal_ast_value(@ast)
+      folded_input = input.downcase
+      folded_literal = literal.downcase
+      character_start = folded_input.index(folded_literal, position)
+      return unless character_start
+
+      offsets = [0]
+      input.each_char { |character| offsets << offsets[-1] + character.bytesize }
+      character_finish = character_start + folded_literal.length
+      [offsets[character_start], offsets[character_finish], []]
     end
 
     def hfa_unicode_simple_capture_result_safe?
@@ -878,6 +914,7 @@ module Onibi
                     hfa_repeated_class_capture_result_safe?)
       unicode_safe = !input.ascii_only? &&
                      (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                      hfa_unicode_ignorecase_literal_result_safe? ||
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
@@ -885,7 +922,13 @@ module Onibi
       program = hfa_program
       return false unless program
 
-      if hfa_ignorecase_literal_result_safe?
+      if hfa_unicode_ignorecase_literal_result_safe?
+        position = 0
+        while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
+          block.call(result)
+          position = result[1]
+        end
+      elsif hfa_ignorecase_literal_result_safe?
         folded_input = input.downcase
         literal = literal_ast_value(@ast).downcase
         position = 0
@@ -944,6 +987,7 @@ module Onibi
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                       hfa_adjacent_nested_repeated_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe? || hfa_ignorecase_literal_result_safe? ||
+                      hfa_unicode_ignorecase_literal_result_safe? ||
                       hfa_repeated_class_capture_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||
