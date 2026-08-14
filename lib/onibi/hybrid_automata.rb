@@ -74,6 +74,7 @@ module Onibi
     def validate_cfg!(cfg)
       supported = %i[match_literal match_class match_escape match_property match_any epsilon
                      match_group match_quantifier match_assertion match_atomic_group
+                     match_option_group
                      match_conditional match_subexpression_call match_absence
                      match_backreference test_anchor]
       return if cfg.operations.all? { |operation| supported.include?(operation.opcode) }
@@ -141,7 +142,8 @@ module Onibi
         AST::Literal => :literal_node, AST::CharacterClass => :character_class_node,
         AST::Escape => :escape_node, AST::Property => :property_node, AST::Any => :any_node,
         AST::Sequence => :sequence_node, AST::Alternation => :alternation_node,
-        AST::Group => :group_node, AST::Quantifier => :quantifier_node
+        AST::Group => :group_node, AST::OptionGroup => :option_group_node,
+        AST::Quantifier => :quantifier_node
       }.freeze
       PreparedAst = Data.define(:ast, :backref, :positive_prefix, :positive_suffix,
                                 :negative_prefix, :negative_suffix,
@@ -156,6 +158,7 @@ module Onibi
         @options = options
         @state_tables = []
         @follow = []
+        @scoped_ignorecase = nil
       end
 
       def compile(unit)
@@ -198,11 +201,12 @@ module Onibi
       def build_program(prepared)
         ast = prepared.ast
         atomic_exact = prepared.atomic_literal_spec&.subsumed_literal
-        prefix = @string_matching && !ignorecase? ? selective_prefix(ast) : nil
-        prefix ||= atomic_exact if atomic_exact && @string_matching && !ignorecase?
+        string_matching_enabled = @string_matching && !ignorecase? && !scoped_option_group?(ast)
+        prefix = string_matching_enabled ? selective_prefix(ast) : nil
+        prefix ||= atomic_exact if atomic_exact && string_matching_enabled
         prefix = nil if prefix && !prefix.ascii_only?
-        required_literals = @string_matching && !ignorecase? ? required_literal_specs(ast) : nil
-        trailing = @string_matching && !ignorecase? ? trailing_literal(ast) : nil
+        required_literals = string_matching_enabled ? required_literal_specs(ast) : nil
+        trailing = string_matching_enabled ? trailing_literal(ast) : nil
         exact_literal = literal_value(ast) || repeated_literal_value(ast) || atomic_exact
         if prepared.positive_prefix && exact_literal&.start_with?(prepared.positive_prefix)
           exact_literal = exact_literal.delete_prefix(prepared.positive_prefix)
@@ -356,7 +360,21 @@ module Onibi
         visit(node.body)
       end
 
+      def option_group_node(node)
+        if !node.multiline.nil? || !node.extended.nil?
+          raise UnsupportedPattern, "scoped multiline or extended options are outside the hybrid PoC subset"
+        end
+
+        previous = @scoped_ignorecase
+        @scoped_ignorecase = node.ignorecase.nil? ? previous : node.ignorecase
+        visit(node.body)
+      ensure
+        @scoped_ignorecase = previous
+      end
+
       def ignorecase?
+        return @scoped_ignorecase unless @scoped_ignorecase.nil?
+
         @options.include?("ignorecase")
       end
 

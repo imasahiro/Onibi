@@ -497,6 +497,13 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_literal_iteration_uses_hfa
+    regexp = Onibi::Regexp.new("(?i:cat)")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped ignorecase scan should use HFA" }) do
+      assert_equal %w[CAT cAt], regexp.scan("CAT xx cAt")
+    end
+  end
+
   def test_fixed_class_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
     regexp.stub(:codegen_each_result, ->(*) { flunk "fixed class alternation should use HFA" }) do

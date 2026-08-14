@@ -46,6 +46,23 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_match_question_uses_hfa
+    regexp = Onibi::Regexp.new("(?i:cat)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "scoped ignorecase match? should use HFA" }) do
+      assert regexp.match?("xxCAtxx")
+      refute regexp.match?("dog")
+    end
+  end
+
+  def test_scoped_ignorecase_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?i:cat)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase match should use HFA" }) do
+      assert_equal "CAt", regexp.match("xxCAtxx").to_s
+    end
+  end
+
   def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("こんにちは")
 

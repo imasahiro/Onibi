@@ -546,6 +546,7 @@ module Onibi
         return nil
       end
       if input.ascii_only? && (hfa_public_safe? && hfa_match_result_safe? ||
+                               hfa_scoped_ignorecase_literal_result_safe? ||
                                hfa_simple_capture_result_safe? || hfa_literal_guard_result_safe? ||
                                hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
                                hfa_negative_lookbehind_result_safe? || hfa_backref_result_safe? ||
@@ -755,6 +756,8 @@ module Onibi
     end
 
     def hfa_match_result_safe_uncached?
+      return true if hfa_scoped_ignorecase_literal_result_safe?
+
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
 
@@ -771,6 +774,17 @@ module Onibi
              class_run_result_node?(@ast.parts.first))))) ||
         (@ast.is_a?(AST::Quantifier) && @ast.mode == :greedy &&
          @ast.expression.is_a?(AST::Literal))
+    end
+
+    def hfa_scoped_ignorecase_literal_result_safe?
+      return @hfa_scoped_ignorecase_literal_safe if defined?(@hfa_scoped_ignorecase_literal_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group = parts.one? && parts.first
+      literal = group.body if group.is_a?(AST::OptionGroup) && group.ignorecase &&
+                             group.multiline.nil? && group.extended.nil?
+      literal = literal_ast_value(literal) if literal
+      @hfa_scoped_ignorecase_literal_safe = literal&.ascii_only? && literal.bytesize.positive? && hfa_program
     end
 
     def hfa_unicode_match_result_safe?
@@ -2592,7 +2606,8 @@ module Onibi
       end
 
       ascii_safe = input.ascii_only? &&
-                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
+                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
+                    hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
                    hfa_literal_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
@@ -2725,6 +2740,7 @@ module Onibi
 
     def hfa_iterator_safe?
       return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
+                     hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||

@@ -49,6 +49,19 @@ module Onibi
         value.empty? ? nil : value.freeze
       end
 
+      def scoped_option_group?(node)
+        return true if node.is_a?(AST::OptionGroup)
+
+        children = case node
+                   when AST::Sequence then node.parts
+                   when AST::Alternation then node.branches
+                   when AST::Group, AST::AtomicGroup then [node.body]
+                   when AST::Quantifier then [node.expression]
+                   else []
+                   end
+        children.any? { |child| child && scoped_option_group?(child) }
+      end
+
       def leading_literal(node)
         return node.value if node.is_a?(AST::Literal)
         return unless node.is_a?(AST::Sequence)

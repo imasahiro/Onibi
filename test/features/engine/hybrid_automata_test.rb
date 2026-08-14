@@ -484,9 +484,17 @@ class HybridAutomataTest < Minitest::Test
   end
 
   def test_rejects_non_regular_or_capture_dependent_patterns
-    ["(?i:a)"].each do |pattern|
+    ["(?m:.)"].each do |pattern|
       assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { compile(pattern) }
     end
+  end
+
+  def test_supports_scoped_ignorecase_literals
+    program = compile("(?i:cat)")
+
+    assert program.match?("CAT")
+    assert program.match?("xxcAtxx")
+    refute program.match?("dog")
   end
 
   def test_supports_line_anchors
