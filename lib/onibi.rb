@@ -4216,6 +4216,16 @@ module Onibi
       return true if input.ascii_only? && hfa_ascii_input_impossible_unicode_literal?
       return true if input.ascii_only? && hfa_ascii_input_impossible_class?
 
+      if input.ascii_only? && @hfa_exact_literal_fast
+        literal = @hfa_exact_literal_fast
+        position = 0
+        while (start = input.index(literal, position))
+          finish = start + literal.bytesize
+          block.call([start, finish, []])
+          position = finish
+        end
+        return true
+      end
       if input.ascii_only? && @hfa_bounded_literal_fast
         position = 0
         while (result = hfa_bounded_literal_match_result(input, position))

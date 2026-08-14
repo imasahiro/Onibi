@@ -58,6 +58,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_ascii_literal_scan_uses_constructor_literal_metadata
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_exact_literal_result_safe?, -> { flunk "ASCII literal scan should use constructor metadata" }) do
+      assert_equal %w[needle needle], regexp.scan("needle x needle")
+    end
+  end
+
   def test_word_boundary_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("\\bcat\\b")
 
