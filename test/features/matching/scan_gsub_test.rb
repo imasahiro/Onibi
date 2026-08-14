@@ -28,7 +28,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_captureless_literal_scan_and_gsub_use_hfa_iterator
     regexp = Onibi::Regexp.new("a")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a a], regexp.scan("baac")
     assert_equal "b<a><a>c", regexp.gsub("baac", "<a>")
@@ -37,15 +36,11 @@ class ScanGsubTest < Minitest::Test
   def test_gsub_with_match_replacement_uses_hfa_match_iterator
     regexp = Onibi::Regexp.new("a")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal "b<a><a>c", regexp.gsub("baac", "<\\0>")
   end
 
   def test_start_match_anchor_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\Gfoo")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["foo"], regexp.scan("foo foo")
   end
@@ -53,15 +48,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("needle")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[needle needle], regexp.scan("needle x needle")
   end
 
   def test_ascii_literal_scan_uses_constructor_literal_metadata
     regexp = Onibi::Regexp.new("needle")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[needle needle], regexp.scan("needle x needle")
   end
@@ -69,15 +60,11 @@ class ScanGsubTest < Minitest::Test
   def test_word_boundary_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("\\bcat\\b")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[cat cat], regexp.scan("cat scatter cat")
   end
 
   def test_literal_alternation_scan_uses_direct_hfa_iterator
     regexp = Onibi::Regexp.new("cat|dog|fox")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[dog cat fox], regexp.scan("dog cat fox")
   end
@@ -85,15 +72,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_alternation_scan_short_circuits_generic_iterator_checks
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[dog cat fox], regexp.scan("dog cat fox")
   end
 
   def test_captureless_repeated_alternation_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?:a|b)+c")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[ababc abc], regexp.scan("ababc cabc")
   end
@@ -101,15 +84,11 @@ class ScanGsubTest < Minitest::Test
   def test_scoped_unicode_ignorecase_literal_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?i:é)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[é É], regexp.scan("café École")
   end
 
   def test_ascii_literal_scan_preserves_matches_after_unicode_prefix
     regexp = Onibi::Regexp.new("cat")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[cat cat], regexp.scan("日本語cat cat")
   end
@@ -123,15 +102,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_absence_scan_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("(?~END)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal ["日本語EN", "D", ""], regexp.scan("日本語END")
   end
 
   def test_latin1_unicode_literal_scan_uses_hfa
     regexp = Onibi::Regexp.new("ß")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["ß"], regexp.scan("café ß")
   end
@@ -139,15 +114,11 @@ class ScanGsubTest < Minitest::Test
   def test_start_match_literal_scan_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("\\Gcat")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal ["cat"], regexp.scan("cat日本語")
   end
 
   def test_literal_alternation_scan_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("cat|dog")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[cat dog], regexp.scan("日本語cat dog")
   end
@@ -155,15 +126,11 @@ class ScanGsubTest < Minitest::Test
   def test_repeated_equal_length_literal_capture_scan_uses_hfa
     regexp = Onibi::Regexp.new("(a|b)+c")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["b"]], regexp.scan("ababc")
   end
 
   def test_literal_capture_before_alternation_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>a)(?:b|c)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["a"]], regexp.scan("ab")
   end
@@ -171,17 +138,11 @@ class ScanGsubTest < Minitest::Test
   def test_single_capture_literal_alternation_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?<letter>a|aa)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["a"], ["a"]], regexp.scan("aa")
   end
 
   def test_nested_literal_capture_alternation_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?:(a)|(b))c")
-
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["a", nil], [nil, "b"]], regexp.scan("ac bc")
   end
@@ -189,16 +150,11 @@ class ScanGsubTest < Minitest::Test
   def test_scoped_ignorecase_multiline_sequence_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?im:a.)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %W[A\n aX], regexp.scan("zzA\nx aX")
   end
 
   def test_scoped_multiline_sequence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a(?m:.)b")
-
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %W[a\nb aXb], regexp.scan("za\nb aXb")
   end
@@ -206,16 +162,11 @@ class ScanGsubTest < Minitest::Test
   def test_scoped_ignorecase_sequence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a(?i:bc)d")
 
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[aBCd aBcd], regexp.scan("xaBCd yaBcd")
   end
 
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[aaa aa], regexp.scan("baaacaa")
   end
@@ -223,15 +174,11 @@ class ScanGsubTest < Minitest::Test
   def test_possessive_literal_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("a++b")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[aaab aab], regexp.scan("xxaaab yyaab")
   end
 
   def test_literal_assertion_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("cat(?!fish)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[cat cat], regexp.scan("cat dog catfish cat")
   end
@@ -240,8 +187,7 @@ class ScanGsubTest < Minitest::Test
     positive = Onibi::Regexp.new("(?<=pre)fix")
     negative = Onibi::Regexp.new("(?<!un)happy")
 
-    assert_equal %w[fix fix], positive.scan("prefix preprefix") if HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
+    assert_equal %w[fix fix], positive.scan("prefix preprefix")
 
     assert_equal %w[happy happy], negative.scan("happy unhappy happy")
   end
@@ -249,15 +195,11 @@ class ScanGsubTest < Minitest::Test
   def test_ascii_ignorecase_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[CASE case], regexp.scan("CASE x case")
   end
 
   def test_match_reset_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[suffix suffix], regexp.scan("prefixsuffix x prefixsuffix")
   end
@@ -265,30 +207,23 @@ class ScanGsubTest < Minitest::Test
   def test_match_reset_scan_uses_combined_literal_search
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[suffix suffix], regexp.scan("prefixsuffix x prefixsuffix")
   end
 
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[aaab aab], regexp.scan("xxaaab yyaab")
   end
 
   def test_class_run_chain_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[a-z]+:[0-9]+")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[item:2026 key:7], regexp.scan("item:2026 key:7")
   end
 
   def test_adjacent_class_runs_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+[0-9]+")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[item2026 key7], regexp.scan("item2026 key7")
   end
@@ -302,24 +237,18 @@ class ScanGsubTest < Minitest::Test
 
   def test_class_run_triple_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["item 2026", "key 7"], regexp.scan("item 2026 key 7")
   end
 
   def test_ascii_property_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\p{Alpha}+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[letters words], regexp.scan("123letters 456words")
   end
 
   def test_unicode_property_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     regexp.stub(:hfa_unicode_property_run_matcher,
                 -> { flunk "Hiragana property run should use specialized codepoint matching" }) do
@@ -335,8 +264,6 @@ class ScanGsubTest < Minitest::Test
       end
     end
     input = input_class.new("123日本語 456終端")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     regexp.stub(:hfa_unicode_property_run_matcher,
                 -> { flunk "Unicode letter property run should use specialized codepoint matching" }) do
@@ -346,8 +273,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_word_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[[:word:]]+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[記号 日本語 _2026 終端], regexp.scan("記号-日本語 _2026 終端!")
   end
@@ -355,15 +280,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_negative_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("cat(?!fish)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[cat cat], regexp.scan("catfish cat cat")
   end
 
   def test_unicode_repeated_literal_scan_rejects_ascii_input_without_fallback
     regexp = Onibi::Regexp.new("(?:日本語)+")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_empty regexp.scan("ascii only")
   end
@@ -371,15 +292,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_positive_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a(?=b)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[a a], regexp.scan("ab ac ab")
   end
 
   def test_leading_literal_positive_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?=a)a")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a a], regexp.scan("a ba")
   end
@@ -387,15 +304,11 @@ class ScanGsubTest < Minitest::Test
   def test_repeated_leading_literal_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?=a)(?=a)a")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[a a], regexp.scan("a ba")
   end
 
   def test_atomic_literal_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?>a|ab)b")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[ab ab], regexp.scan("zab ab")
   end
@@ -403,15 +316,11 @@ class ScanGsubTest < Minitest::Test
   def test_atomic_literal_alternation_with_nonmatching_suffix_scans_with_hfa
     regexp = Onibi::Regexp.new("(?>a|ab)c")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal ["ac"], regexp.scan("zabc zac")
   end
 
   def test_atomic_literal_alternation_scan_uses_literal_candidate_search
     regexp = Onibi::Regexp.new("(?>a|ab)b")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[ab ab], regexp.scan("zab ab")
   end
@@ -419,15 +328,11 @@ class ScanGsubTest < Minitest::Test
   def test_line_anchor_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("^cat$")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[cat cat], regexp.scan("cat\ncat")
   end
 
   def test_greedy_bounded_sequence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("foo.{0,4}bar")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[foo12bar foo-bar], regexp.scan("foo12bar foo-bar")
   end
@@ -435,15 +340,11 @@ class ScanGsubTest < Minitest::Test
   def test_scoped_extended_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a(?-x: b#c )d")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal ["a b#c d"], regexp.scan("a b#c d")
   end
 
   def test_nonword_boundary_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\Bcat\\B")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["cat"], regexp.scan("_cat_ catx")
   end
@@ -451,23 +352,17 @@ class ScanGsubTest < Minitest::Test
   def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[item key], regexp.scan("item-2026 key-7")
   end
 
   def test_literal_positive_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[fix fix], regexp.scan("prefix suffix prefix")
   end
 
   def test_unicode_literal_positive_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<=ß)x")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[x x], regexp.scan("ßx ax ßx")
   end
@@ -476,8 +371,7 @@ class ScanGsubTest < Minitest::Test
     positive = Onibi::Regexp.new("(?<=[ß])x")
     negative = Onibi::Regexp.new("(?<![ß])x")
 
-    assert_equal %w[x x], positive.scan("ßx ax ßx") if HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
+    assert_equal %w[x x], positive.scan("ßx ax ßx")
 
     assert_equal %w[x], negative.scan("ßx ax ßx")
   end
@@ -485,15 +379,11 @@ class ScanGsubTest < Minitest::Test
   def test_unicode_class_rejects_ascii_scan_without_fallback
     regexp = Onibi::Regexp.new("[é]")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_empty regexp.scan("ascii")
   end
 
   def test_unicode_class_lookbehind_rejects_ascii_scan_without_fallback
     regexp = Onibi::Regexp.new("(?<=[ß])x")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_empty regexp.scan("ascii")
   end
@@ -501,15 +391,11 @@ class ScanGsubTest < Minitest::Test
   def test_unicode_full_casefold_class_lookbehind_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?<=[ß])x", ["ignorecase"])
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[x x], regexp.scan("ssx ax ßx")
   end
 
   def test_unicode_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("こんにちは")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[こんにちは こんにちは], regexp.scan("こんにちは 世界 こんにちは")
   end
@@ -518,16 +404,11 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?:日本語)+")
     input = "開始日本語日本語 終了日本語"
 
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[日本語日本語 日本語], regexp.scan(input)
   end
 
   def test_unicode_repeated_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<word>é+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["éé"], ["é"]], regexp.scan("aéé zé")
   end
@@ -535,24 +416,17 @@ class ScanGsubTest < Minitest::Test
   def test_unicode_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[こんにちは 世界]], regexp.scan("挨拶こんにちは世界です")
   end
 
   def test_ignorecase_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("case", ["ignorecase"])
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[CASE case], regexp.scan("xxCASE yycase")
   end
 
   def test_unicode_ignorecase_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("école", ["ignorecase"])
-
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     regexp.stub(:hfa_unicode_full_casefold_literal_match_result,
                 ->(*) { flunk "simple Unicode casefold scan should skip full casefold search" }) do
@@ -563,15 +437,11 @@ class ScanGsubTest < Minitest::Test
   def test_literal_negative_lookbehind_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<!a)b")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[b b], regexp.scan("ab cb db")
   end
 
   def test_class_run_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[item 2026], %w[key 7]], regexp.scan("item-2026 key-7")
   end
@@ -579,15 +449,11 @@ class ScanGsubTest < Minitest::Test
   def test_class_run_capture_scan_avoids_hfa_program
     regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[item 2026], %w[key 7]], regexp.scan("item-2026 key-7")
   end
 
   def test_guarded_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<!a)(?<letter>b)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["b"], ["b"]], regexp.scan("ab cb db")
   end
@@ -595,15 +461,11 @@ class ScanGsubTest < Minitest::Test
   def test_variable_alternation_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<letter>a|ab)c")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["a"], ["ab"]], regexp.scan("ac abc")
   end
 
   def test_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["echo"], ["test"]], regexp.scan("echo-echo test-test")
   end
@@ -611,23 +473,17 @@ class ScanGsubTest < Minitest::Test
   def test_variable_literal_backreference_scan_uses_hfa
     regexp = Onibi::Regexp.new("(a*)\\1")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["aa"], [""], ["a"], [""]], regexp.scan("aaaa aa")
   end
 
   def test_scoped_casefold_backreference_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>a)(?i:\\k<x>)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["a"], ["a"]], regexp.scan("aA aa")
   end
 
   def test_variable_any_backreference_scan_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["abc"], [""]], regexp.scan("abcabc")
     assert_equal [[""], [""], [""], [""]], regexp.scan("abc")
@@ -636,15 +492,11 @@ class ScanGsubTest < Minitest::Test
   def test_variable_any_backreference_scan_builds_match_values_without_hfa_adapter
     regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["abc"], [""]], regexp.scan("abcabc")
   end
 
   def test_hfa_scan_converts_capture_offsets_without_match_data
     regexp = Onibi::Regexp.new("(?<x>.*)\\k<x>")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["abc"], [""]], regexp.scan("abcabc")
   end
@@ -652,15 +504,11 @@ class ScanGsubTest < Minitest::Test
   def test_named_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["echo"], ["test"]], regexp.scan("echo-echo test-test")
   end
 
   def test_adjacent_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(ab)\\1")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["ab"]], regexp.scan("zzabab")
   end
@@ -668,15 +516,11 @@ class ScanGsubTest < Minitest::Test
   def test_conditional_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[ab c], regexp.scan("ab c")
   end
 
   def test_named_subexpression_call_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["ab"]], regexp.scan("zzabab")
   end
@@ -684,15 +528,11 @@ class ScanGsubTest < Minitest::Test
   def test_named_subexpression_call_scan_uses_literal_iterator
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [["ab"]], regexp.scan("zzabab")
   end
 
   def test_nested_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab))")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[ab ab]], regexp.scan("zzab")
   end
@@ -700,15 +540,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_fixed_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((a|b))")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[b b], %w[a a]], regexp.scan("zb za")
   end
 
   def test_optional_repeated_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(a*)b")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["aaa"]], regexp.scan("xxaaabyy")
     assert_equal [[""]], regexp.scan("b")
@@ -717,15 +553,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_empty_repeated_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(a*)*b")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [[""]], regexp.scan("xxaaabyy")
   end
 
   def test_variable_subexpression_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?<x>a|ab)c\\g<x>d")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["a"]], regexp.scan("acad")
     assert_equal [["ab"]], regexp.scan("abcabd")
@@ -734,8 +566,6 @@ class ScanGsubTest < Minitest::Test
   def test_variable_capture_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(a|aa)(b|bb)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[a b]], regexp.scan("zabb")
     assert_equal [%w[aa b]], regexp.scan("zaab")
   end
@@ -743,15 +573,11 @@ class ScanGsubTest < Minitest::Test
   def test_empty_absence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?~)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [""], regexp.scan("abc")
   end
 
   def test_captured_literal_absence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?~(a))")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["a"], ["a"], [nil]], regexp.scan("ba")
   end
@@ -759,15 +585,11 @@ class ScanGsubTest < Minitest::Test
   def test_escape_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\w+")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[word next], regexp.scan("word! next?")
   end
 
   def test_unicode_literal_scan_rejects_ascii_input_without_fallback
     regexp = Onibi::Regexp.new("ß")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_empty regexp.scan("ascii only")
   end
@@ -775,15 +597,11 @@ class ScanGsubTest < Minitest::Test
   def test_unicode_full_casefold_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("ß", ["ignorecase"])
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[SS ß], regexp.scan("SS ß")
   end
 
   def test_lookahead_alternation_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [["a"]], regexp.scan("xaab")
   end
@@ -791,15 +609,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_variable_width_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a))")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[ab ab], %w[a a]], regexp.scan("zab za")
   end
 
   def test_nested_repeated_literal_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab)+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[abab ab]], regexp.scan("zzabab")
   end
@@ -807,15 +621,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_repeated_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((a|b)+)")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[abab b]], regexp.scan("zzabab")
   end
 
   def test_nested_variable_repeated_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab|a)+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[aba a]], regexp.scan("zzaba")
   end
@@ -823,15 +633,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_repeated_suffix_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab)+)c")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[abab ab]], regexp.scan("zzababc")
   end
 
   def test_nested_repeated_and_class_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab)+)-([0-9]+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[abab ab 123]], regexp.scan("zzabab-123")
   end
@@ -839,15 +645,11 @@ class ScanGsubTest < Minitest::Test
   def test_nested_repeated_and_nested_class_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab)+)-(([0-9]) +)".delete(" "))
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal [%w[abab ab 123 3]], regexp.scan("zzabab-123")
   end
 
   def test_adjacent_nested_repeated_capture_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("((ab)+)((cd)+)")
-
-    return unless HFA_BACKEND_ONLY
 
     assert_equal [%w[abab ab cdcd cd]], regexp.scan("zzababcdcd")
   end
@@ -860,7 +662,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_bounded_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a{2,4}")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[aaaa aa], regexp.scan("baaaacaa")
   end
@@ -874,23 +675,18 @@ class ScanGsubTest < Minitest::Test
 
   def test_single_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[0-9]+")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[123 456], regexp.scan("abc123def456")
   end
 
   def test_literal_class_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a[0-9]+z")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a123z a45z], regexp.scan("xxa123z yya45z")
   end
 
   def test_star_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a.*z")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
     assert_equal ["a1z2z"], regexp.scan("a1z2z")
@@ -898,8 +694,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_lazy_star_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a.*?z")
-    return unless HFA_BACKEND_ONLY
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
     assert_equal ["a1z"], regexp.scan("a1z2z")
@@ -907,7 +701,6 @@ class ScanGsubTest < Minitest::Test
 
   def test_captureless_literal_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("cat|dog")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[dog cat], regexp.scan("dogmatic cat")
     assert_equal "<x>matic <x>", regexp.gsub("dogmatic cat", "<x>")
@@ -916,50 +709,41 @@ class ScanGsubTest < Minitest::Test
   def test_captureless_class_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("foo[a-z]+|foo[0-9]+")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[fooabc foo123], regexp.scan("xxfooabc yyfoo123")
   end
 
   def test_captureless_regular_sequence_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[a-z]\\d+")
 
-    return unless HFA_BACKEND_ONLY
-
     assert_equal %w[a123 b7], regexp.scan("xxa123 yyb7")
   end
 
   def test_scoped_ignorecase_literal_iteration_uses_hfa
     regexp = Onibi::Regexp.new("(?i:cat)")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[CAT cAt], regexp.scan("CAT xx cAt")
   end
 
   def test_scoped_multiline_dot_iteration_uses_hfa
     regexp = Onibi::Regexp.new("(?m:.)")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %W[\n a], regexp.scan("\na")
   end
 
   def test_ascii_linebreak_iteration_uses_hfa
     regexp = Onibi::Regexp.new("\\R")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["\r\n", "\n"], regexp.scan("x\r\ny\nz")
   end
 
   def test_unicode_linebreak_iteration_uses_hfa
     regexp = Onibi::Regexp.new("\\R")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["\u2028", "\u2029"], regexp.scan("x\u2028y\u2029z")
   end
 
   def test_fixed_class_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[cgggtaaa tttaccca], regexp.scan("xxcgggtaaa yytttaccca")
   end
@@ -973,28 +757,24 @@ class ScanGsubTest < Minitest::Test
 
   def test_captureless_single_byte_class_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[a-z]")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a b c], regexp.scan("1a2b3c")
   end
 
   def test_captureless_single_byte_dot_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new(".")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[a b], regexp.scan("a\nb")
   end
 
   def test_literal_dot_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a.c")
-    return unless HFA_BACKEND_ONLY
 
     assert_equal %w[abc aXc], regexp.scan("xxabc yyaXc")
   end
 
   def test_multiline_literal_dot_literal_scan_uses_direct_hfa_iterator
     regexp = Onibi::Regexp.new("a.b", ["multiline"])
-    return unless HFA_BACKEND_ONLY
 
     assert_equal ["a\nb"], regexp.scan("xa\nbz")
   end
