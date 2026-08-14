@@ -235,6 +235,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_fixed_literal_backref_match_result(input, normalized_position, spec).nil?
       end
+      if (spec = hfa_repeated_literal_backref_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_repeated_literal_backref_match_result(input, normalized_position, spec).nil?
+      end
 
       if !input.ascii_only? && @hfa_unicode_exact_literal_fast
         literal = @hfa_unicode_exact_literal_fast
@@ -301,6 +305,12 @@ module Onibi
       if input.ascii_only? && (spec = hfa_fixed_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_fixed_literal_backref_match_result(input, normalized_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_repeated_literal_backref_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -682,6 +692,12 @@ module Onibi
       if input.ascii_only? && (spec = hfa_fixed_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_fixed_literal_backref_match_result(input, normalized_position, spec)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_repeated_literal_backref_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1898,6 +1914,46 @@ module Onibi
         captures[number - 1] = [start + offset_start, start + offset_finish]
       end
       [start, start + literal.bytesize, captures]
+    end
+
+    def hfa_repeated_literal_backref_spec
+      return @hfa_repeated_literal_backref_spec if defined?(@hfa_repeated_literal_backref_spec)
+      return @hfa_repeated_literal_backref_spec = false if @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      repeat, separator, reference = parts
+      group = repeat.expression if repeat.is_a?(AST::Quantifier)
+      body = group.body if group.is_a?(AST::Group) && group.capture
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      valid = repeat.is_a?(AST::Quantifier) && repeat.kind == :+ && repeat.mode == :greedy &&
+              body.is_a?(AST::Literal) && body.value.ascii_only? &&
+              separator.is_a?(AST::Literal) && separator.value.ascii_only? && separator.value.bytesize.positive? &&
+              reference.is_a?(AST::Backreference) &&
+              (reference.identifier.to_i == group.number || reference.identifier.to_s == group.name.to_s)
+      @hfa_repeated_literal_backref_spec = if valid
+                                             [body.value.freeze, separator.value.freeze, group.number].freeze
+                                           else
+                                             false
+                                           end
+    end
+
+    def hfa_repeated_literal_backref_match_result(input, position, spec)
+      unit, separator, number = spec
+      unit_size = unit.bytesize
+      separator_position = input.index(separator, position)
+      while separator_position
+        run_start = separator_position
+        run_start -= unit_size while run_start >= unit_size &&
+                                     input.byteslice(run_start - unit_size, unit_size) == unit
+        next_start = separator_position + separator.bytesize
+        if run_start < separator_position && input.byteslice(next_start, unit_size) == unit
+          captures = Array.new(number)
+          captures[number - 1] = [separator_position - unit_size, separator_position]
+          return [run_start, next_start + unit_size, captures]
+        end
+        separator_position = input.index(separator, separator_position + separator.bytesize)
+      end
+      nil
     end
 
     def hfa_variable_any_backref_match_result(input, position)
@@ -4450,6 +4506,14 @@ module Onibi
       if input.ascii_only? && (spec = hfa_fixed_literal_backref_spec)
         position = 0
         while (result = hfa_fixed_literal_backref_match_result(input, position, spec))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && (spec = hfa_repeated_literal_backref_spec)
+        position = 0
+        while (result = hfa_repeated_literal_backref_match_result(input, position, spec))
           block.call(result)
           position = result[1]
         end
