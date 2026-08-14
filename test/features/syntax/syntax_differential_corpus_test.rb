@@ -7,7 +7,6 @@ require_relative "../../support/differential_harness"
 class SyntaxDifferentialCorpusTest < Minitest::Test
   CORPUS = :syntax
 
-  # rubocop:disable Metrics/AbcSize
   def test_every_core_mvp_fixture_matches_mri
     corpus = TestFixtures.load(CORPUS)
     fixtures = corpus.fetch("cases").map { |fixture| normalize_fixture(fixture) }
@@ -19,7 +18,6 @@ class SyntaxDifferentialCorpusTest < Minitest::Test
     assert_equal fixtures.length, results.length
     assert results.all? { |result| result.fetch(:equal) }, mismatch_report(results)
   end
-  # rubocop:enable Metrics/AbcSize
 
   private
 

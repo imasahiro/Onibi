@@ -16,7 +16,6 @@ class PackageTest < Minitest::Test
     end
   end
 
-  # rubocop:disable Metrics/AbcSize
   def test_gem_contains_release_files_and_no_runtime_dependencies
     Dir.mktmpdir("onibi-package") do |directory|
       gem_path = build_package(directory)
@@ -30,7 +29,6 @@ class PackageTest < Minitest::Test
       assert_includes specification.files, "lib/onibi.rb"
     end
   end
-  # rubocop:enable Metrics/AbcSize
 
   private
 

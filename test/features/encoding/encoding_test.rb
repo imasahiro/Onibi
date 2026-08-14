@@ -145,9 +145,9 @@ class EncodingTest < Minitest::Test
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
     input = "あ".encode(encoding)
 
-    if HFA_BACKEND_ONLY
-      refute_nil regexp.match(input)
-    end
+    return unless HFA_BACKEND_ONLY
+
+    refute_nil regexp.match(input)
   end
 
   def test_non_utf8_unicode_property_scan_uses_hfa
@@ -155,9 +155,9 @@ class EncodingTest < Minitest::Test
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
     input = "漢あ字".encode(encoding)
 
-    if HFA_BACKEND_ONLY
-      assert_equal ["あ".encode(encoding)], regexp.scan(input)
-    end
+    return unless HFA_BACKEND_ONLY
+
+    assert_equal ["あ".encode(encoding)], regexp.scan(input)
   end
 
   def test_non_utf8_unicode_property_run_preserves_byte_offsets

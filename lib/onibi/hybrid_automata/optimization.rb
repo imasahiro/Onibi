@@ -369,9 +369,7 @@ module Onibi
         def transform_sequence(sequence)
           parts = sequence.parts.map { |part| transform(part) }
           tail = parts.last
-          if terminal_loop?(tail)
-            parts[-1] = AST::Quantifier.new(tail.expression, tail.kind, tail.minimum, tail.maximum, :possessive)
-          end
+          parts[-1] = AST::Quantifier.new(tail.expression, tail.kind, tail.minimum, tail.maximum, :possessive) if terminal_loop?(tail)
           parts == sequence.parts ? sequence : AST::Sequence.new(parts)
         end
 

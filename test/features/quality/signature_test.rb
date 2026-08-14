@@ -5,7 +5,6 @@ require "test_helper"
 class SignatureTest < Minitest::Test
   SIGNATURE_PATH = File.join(PROJECT_ROOT, "sig", "onibi.rbs")
 
-  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def test_signature_describes_the_public_api
     signature = File.read(SIGNATURE_PATH)
 
@@ -48,5 +47,4 @@ class SignatureTest < Minitest::Test
     assert_includes signature, "def size: () -> Integer"
     assert_includes signature, "def named_captures: () -> Hash[String, String?]"
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end
