@@ -65,6 +65,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_possessive_literal_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("a++b")
+
+    regexp.stub(:hfa_program, -> { flunk "possessive literal scan should avoid HFA program compilation" }) do
+      assert_equal %w[aaab aab], regexp.scan("xxaaab yyaab")
+    end
+  end
+
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
     regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do
