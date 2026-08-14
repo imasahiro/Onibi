@@ -2936,7 +2936,7 @@ module Onibi
       return @hfa_literal_alternation_safe = false if @options.include?("ignorecase")
 
       alternatives = hfa_literal_alternation_values
-      @hfa_literal_alternation_safe = alternatives.length > 1 && alternatives.all? do |value|
+      @hfa_literal_alternation_safe = alternatives.length.positive? && alternatives.all? do |value|
         value && value.ascii_only? && value.bytesize.positive?
       end
     end
@@ -3275,11 +3275,11 @@ module Onibi
       return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
 
       branches = @ast.is_a?(AST::Alternation) ? @ast.branches : []
-      @hfa_literal_alternation_values = branches.filter_map do |branch|
+      @hfa_literal_alternation_values = branches.each_with_object([]) do |branch, values|
         value = hfa_alternation_literal_value(branch)
         next if value.nil? && hfa_always_false_alternation_branch?(branch)
 
-        value
+        values << value
       end.freeze
     end
 

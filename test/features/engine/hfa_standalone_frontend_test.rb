@@ -19,15 +19,16 @@ class HfaStandaloneFrontendTest < Minitest::Test
   end
 
   def test_hfa_discards_alternation_branches_that_are_always_false
-    regexp = Onibi::Regexp.new("a|(?!)|b")
-    %i[codegen_match? codegen_match codegen_each_result].each do |method|
-      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
-    end
+    {"a|(?!)|b" => %w[a b], "(?!)|foo" => ["foo"]}.each do |pattern, matches|
+      regexp = Onibi::Regexp.new(pattern)
+      %i[codegen_match? codegen_match codegen_each_result].each do |method|
+        regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+      end
 
-    assert regexp.match?("a")
-    assert regexp.match?("b")
-    refute regexp.match?("c")
-    assert_equal "a", regexp.match("a").to_s
-    assert_equal %w[a b], regexp.scan("ab").map(&:to_s)
+      matches.each { |value| assert regexp.match?(value) }
+      refute regexp.match?("c")
+      assert_equal matches.first, regexp.match(matches.first).to_s
+      assert_equal matches, regexp.scan(matches.join).map(&:to_s)
+    end
   end
 end
