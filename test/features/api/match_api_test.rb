@@ -1284,6 +1284,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_alternation_match_uses_hfa_on_unicode_input
+    regexp = Onibi::Regexp.new("cat|dog")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode literal alternation should use HFA" }) do
+      assert_equal "cat", regexp.match("日本語cat").to_s
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 

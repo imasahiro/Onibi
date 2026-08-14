@@ -199,6 +199,11 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return input[normalized_position, literal.length] == literal
       end
+      if !input.ascii_only? && @hfa_literal_alternation_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input[0, normalized_position].bytesize
+        return !hfa_literal_alternation_match_result(input, byte_position, byte_mode: true).nil?
+      end
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -581,6 +586,13 @@ module Onibi
 
         start = input[0, normalized_position].bytesize
         return hfa_match_data([start, start + literal.bytesize, []], input)
+      end
+      if !input.ascii_only? && @hfa_literal_alternation_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input[0, normalized_position].bytesize
+        result = hfa_literal_alternation_match_result(input, byte_position, byte_mode: true)
+        return hfa_match_data(result, input) if result
+        return nil
       end
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
@@ -2878,11 +2890,15 @@ module Onibi
       hfa_literal_alternation_values.any? { |value| !input.index(value, position).nil? }
     end
 
-    def hfa_literal_alternation_match_result(input, position)
+    def hfa_literal_alternation_match_result(input, position, byte_mode: false)
       best_start = nil
       best_value = nil
       hfa_literal_alternation_values.each do |value|
-        candidate = input.index(value, position)
+        candidate = if byte_mode
+                      input.b.index(value.b, position)
+                    else
+                      input.index(value, position)
+                    end
         next unless candidate && (best_start.nil? || candidate < best_start)
 
         best_start = candidate
@@ -3770,6 +3786,15 @@ module Onibi
         return true unless input[0, literal.length] == literal
 
         block.call([0, literal.bytesize, []])
+        return true
+      end
+      if !input.ascii_only? && @hfa_literal_alternation_fast
+        validate_encoding!(input)
+        position = 0
+        while (result = hfa_literal_alternation_match_result(input, position, byte_mode: true))
+          block.call(result)
+          position = result[1]
+        end
         return true
       end
 
