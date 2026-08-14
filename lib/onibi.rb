@@ -84,10 +84,14 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       validate_encoding!(input)
-      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
+      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                                hfa_unicode_repeated_literal_result_safe?)
         hfa = hfa_program
         if hfa
           normalized_position = normalize_match_position(input, position)
+          if hfa_unicode_repeated_literal_result_safe?
+            return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
+          end
           return hfa.match?(input, normalized_position) if timeout_unconfigured?
 
           return with_timeout { hfa.match?(input, normalized_position) }
@@ -110,7 +114,13 @@ module Onibi
 
       validate_encoding!(input)
 
-      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
+      if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                                hfa_unicode_repeated_literal_result_safe?)
+        if hfa_unicode_repeated_literal_result_safe?
+          result = hfa_unicode_repeated_literal_match_result(input, position)
+          return hfa_match_data(result, input) if result
+          return nil
+        end
         result = with_timeout { hfa_program&.match_result(input, position) }
         return hfa_match_data(result, input) if result
         return nil if hfa_program
@@ -362,6 +372,41 @@ module Onibi
 
       literal = literal_ast_value(@ast)
       literal && literal.each_codepoint.any? { |codepoint| codepoint > 0xFF } && hfa_program
+    end
+
+    def hfa_unicode_repeated_literal_result_safe?
+      return @hfa_unicode_repeated_literal_safe if defined?(@hfa_unicode_repeated_literal_safe)
+      @hfa_unicode_repeated_literal_safe = if @options.include?("ignorecase") ||
+                                              !@ast.is_a?(AST::Sequence) || !@ast.parts.one?
+                                             false
+                                           else
+                                             quantifier = @ast.parts.first
+                                             if quantifier.is_a?(AST::Quantifier) && quantifier.kind == :+ &&
+                                                quantifier.mode == :greedy
+                                               expression = quantifier.expression
+                                               expression = expression.body if expression.is_a?(AST::Group)
+                                               literal = literal_ast_value(expression)
+                                               literal && literal.bytesize.positive? && !literal.ascii_only? && hfa_program
+                                             end
+                                           end
+    end
+
+    def hfa_unicode_repeated_literal_match_result(input, position)
+      quantifier = @ast.parts.first
+      expression = quantifier.expression
+      expression = expression.body if expression.is_a?(AST::Group)
+      unit = literal_ast_value(expression)
+      unit_bytes = unit.b
+      bytes = input.b
+      candidate = bytes.index(unit_bytes, position)
+      while candidate
+        finish = candidate
+        finish += unit_bytes.bytesize while bytes.byteslice(finish, unit_bytes.bytesize) == unit_bytes
+        return [candidate, finish, []] if finish > candidate
+
+        candidate = bytes.index(unit_bytes, candidate + 1)
+      end
+      nil
     end
 
     def hfa_literal_result_node?(node)
@@ -787,13 +832,20 @@ module Onibi
                     hfa_adjacent_nested_repeated_capture_result_safe? ||
                     hfa_repeated_class_capture_result_safe?)
       unicode_safe = !input.ascii_only? &&
-                     (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe?)
+                     (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
+                      hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
       program = hfa_program
       return false unless program
 
-      if hfa_simple_capture_result_safe?
+      if hfa_unicode_repeated_literal_result_safe?
+        position = 0
+        while (result = hfa_unicode_repeated_literal_match_result(input, position))
+          block.call([result[0], result[1], result[2]])
+          position = result[1]
+        end
+      elsif hfa_simple_capture_result_safe?
         program.each_match_result(input, 0) do |result|
           captures = hfa_simple_capture_offsets(input, result[0], result[1])
           block.call([result[0], result[1], captures || result[2]])
@@ -836,6 +888,7 @@ module Onibi
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                       hfa_adjacent_nested_repeated_capture_result_safe? ||
+                      hfa_unicode_repeated_literal_result_safe? ||
                       hfa_repeated_class_capture_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||

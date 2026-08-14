@@ -236,6 +236,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_literal_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?:日本語)+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "unicode repeated literal should use HFA result" }) do
+      match = regexp.match("開始日本語日本語終了")
+      assert_equal "日本語日本語", match[0]
+      assert_equal [6, 24], match.offset(0)
+    end
+  end
+
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
