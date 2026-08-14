@@ -1274,6 +1274,14 @@ module Onibi
       capture_count = hfa_capture_count
       return [] if capture_count.zero?
 
+      if (whole_capture = hfa_whole_capture_offsets(start, finish))
+        return whole_capture
+      end
+
+      if hfa_top_level_capture_plan
+        return hfa_top_level_capture_offsets(input, start, finish)
+      end
+
       if (offsets = hfa_variable_backreference_capture_offsets(input, start, finish))
         return offsets
       end
@@ -1281,6 +1289,109 @@ module Onibi
       offsets = Array.new(capture_count)
       cursor = hfa_consume_capture_node(@ast, input, start, finish, offsets)
       cursor == finish ? offsets : nil
+    end
+
+    def hfa_top_level_capture_plan
+      return @hfa_top_level_capture_plan if defined?(@hfa_top_level_capture_plan)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
+      captures = parts.select { |part| part.is_a?(AST::Group) && part.capture }
+      @hfa_top_level_capture_plan = if captures.any? &&
+                                      captures.all? { |group| hfa_capture_count(group.body).zero? } &&
+                                      parts.all? { |part| hfa_top_level_capture_plan_node?(part) }
+                                     parts.freeze
+                                   else
+                                     false
+                                   end
+    end
+
+    def hfa_top_level_capture_plan_node?(node)
+      return true if node.is_a?(AST::Literal) || hfa_zero_width_node?(node)
+      return node.capture && hfa_capture_count(node.body).zero? if node.is_a?(AST::Group)
+
+      return false unless hfa_capture_count(node).zero?
+      return false unless node.is_a?(AST::Quantifier)
+
+      node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Escape) ||
+        node.expression.is_a?(AST::Literal)
+    end
+
+    def hfa_top_level_capture_offsets(input, start, finish)
+      result = hfa_top_level_capture_match_result(input, start, finish)
+      result && result[2]
+    end
+
+    def hfa_top_level_capture_match_result(input, start, finish, allow_short: false)
+      offsets = Array.new(hfa_capture_count)
+      cursor = start
+      hfa_top_level_capture_plan.each do |part|
+        if part.is_a?(AST::Literal)
+          cursor += part.value.bytesize
+          next
+        end
+
+        if part.is_a?(AST::Group) && part.capture
+          group_start = cursor
+          cursor = hfa_consume_capture_node(part.body, input, cursor, finish, offsets)
+          return unless cursor
+
+          offsets[part.number - 1] = [group_start, cursor]
+          next
+        end
+
+        cursor = hfa_consume_capture_node(part, input, cursor, finish, offsets)
+        return unless cursor
+      end
+      return [start, cursor, offsets] if cursor == finish
+      return [start, cursor, offsets] if allow_short && cursor < finish
+
+      nil
+    end
+
+    def hfa_top_level_capture_scan_spec
+      return @hfa_top_level_capture_scan_spec if defined?(@hfa_top_level_capture_scan_spec)
+
+      plan = hfa_top_level_capture_plan
+      @hfa_top_level_capture_scan_spec = if plan && plan.first.is_a?(AST::Literal) && plan.length > 1
+                                           [plan.first.value].freeze
+                                         else
+                                           false
+                                         end
+    end
+
+    def hfa_whole_capture_offsets(start, finish)
+      group = hfa_whole_capture_group(@ast)
+      return unless group
+
+      offsets = Array.new(hfa_capture_count)
+      offsets[group.number - 1] = [start, finish]
+      offsets
+    end
+
+    def hfa_whole_capture_group(node = nil)
+      return @hfa_whole_capture_group if node.nil? && defined?(@hfa_whole_capture_group)
+      return @hfa_whole_capture_group = hfa_find_whole_capture_group(@ast) if node.nil?
+
+      hfa_find_whole_capture_group(node)
+    end
+
+    def hfa_find_whole_capture_group(node)
+      case node
+      when AST::Group
+        return node if node.capture && hfa_capture_count(node.body).zero?
+      when AST::Sequence
+        candidates = node.parts.filter_map { |part| hfa_find_whole_capture_group(part) }
+        return candidates.first if candidates.one? &&
+                                  node.parts.all? { |part| part.equal?(candidates.first) || hfa_zero_width_node?(part) }
+      when AST::OptionGroup, AST::AtomicGroup
+        return hfa_find_whole_capture_group(node.body)
+      end
+      nil
+    end
+
+    def hfa_zero_width_node?(node)
+      node.is_a?(AST::Assertion) || node.is_a?(AST::Anchor) ||
+        (node.is_a?(AST::Escape) && %i[word_boundary nonword_boundary].include?(node.kind))
     end
 
     def hfa_variable_backreference_capture_offsets(input, start, finish)
@@ -1301,7 +1412,10 @@ module Onibi
       offsets
     end
 
-    def hfa_capture_count(node = @ast)
+    def hfa_capture_count(node = nil)
+      return @hfa_capture_count if node.nil? && defined?(@hfa_capture_count)
+      return @hfa_capture_count = hfa_capture_count(@ast) if node.nil?
+
       case node
       when AST::Group
         [node.number || 0, hfa_capture_count(node.body)].max
@@ -1361,6 +1475,10 @@ module Onibi
         end
         nil
       when AST::Quantifier
+        if input.ascii_only? && node.expression.is_a?(AST::CharacterClass)
+          return hfa_consume_ascii_class_quantifier(node, input, cursor, finish)
+        end
+
         count = 0
         position = cursor
         while node.maximum.nil? || count < node.maximum
@@ -1372,6 +1490,29 @@ module Onibi
         end
         count >= node.minimum ? position : nil
       end
+    end
+
+    def hfa_consume_ascii_class_quantifier(node, input, cursor, finish)
+      if node.maximum.nil?
+        delimiter = case node.expression.value
+                    when "^\\]" then "]"
+                    when "^ " then " "
+                    end
+        if delimiter
+          boundary = input.index(delimiter, cursor)
+          return boundary if boundary && boundary <= finish
+          return finish
+        end
+      end
+
+      predicate = ClassPredicates.compiled(node.expression.value)
+      count = 0
+      limit = node.maximum || finish - cursor
+      while count < limit && cursor < finish && predicate.matches_byte?(input.getbyte(cursor))
+        cursor += 1
+        count += 1
+      end
+      count >= node.minimum ? cursor : nil
     end
 
     def named_captures
@@ -5219,6 +5360,32 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && (spec = hfa_delimited_negated_class_result_spec)
+        prefix, suffix, minimum = spec
+        position = 0
+        while (start = input.index(prefix, position))
+          finish = input.index(suffix, start + prefix.bytesize)
+          unless finish
+            position = start + prefix.bytesize
+            next
+          end
+          if finish - start - prefix.bytesize >= minimum
+            block.call([start, finish + suffix.bytesize, []])
+            position = finish + suffix.bytesize
+          else
+            position = start + prefix.bytesize
+          end
+        end
+        return true
+      end
+      if input.ascii_only? && (specs = hfa_literal_class_scan_spec)
+        position = 0
+        while (result = hfa_literal_class_scan_match_result(input, position, specs))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if !input.ascii_only? && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
@@ -5482,6 +5649,22 @@ module Onibi
         return true
       end
 
+      if input.ascii_only? && (scan_spec = hfa_top_level_capture_scan_spec)
+        prefix = scan_spec.first
+        position = 0
+        while (start = input.index(prefix, position))
+          line_end = input.index("\n", start) || input.bytesize
+          result = hfa_top_level_capture_match_result(input, start, line_end, allow_short: true)
+          if result
+            block.call(result)
+            position = result[1]
+          else
+            position = start + prefix.bytesize
+          end
+        end
+        return true
+      end
+
       return false unless hfa_scan_input_safe?(input)
 
       if hfa_literal_alternation_result_safe?
@@ -5673,6 +5856,93 @@ module Onibi
         end
       end
       true
+    end
+
+    def hfa_delimited_negated_class_result_spec
+      return @hfa_delimited_negated_class_result_spec if defined?(@hfa_delimited_negated_class_result_spec)
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      prefix = parts.first
+      suffix = parts.last
+      middle = parts[1...-1]
+      valid_literals = prefix.is_a?(AST::Literal) && suffix.is_a?(AST::Literal) &&
+                       prefix.value.bytesize == 1 && suffix.value.bytesize == 1
+      @hfa_delimited_negated_class_result_spec = if valid_literals &&
+                                                   (minimum = hfa_negated_class_run_minimum(middle, suffix.value))
+                                                  [prefix.value, suffix.value, minimum].freeze
+                                                else
+                                                  false
+                                                end
+    end
+
+    def hfa_negated_class_run_minimum(parts, delimiter)
+      return 0 if parts.one? && hfa_negated_class_quantifier?(parts.first, delimiter)
+      return 1 if parts.length == 2 && parts.first.is_a?(AST::CharacterClass) &&
+                   parts.first.value == "^#{delimiter}" &&
+                   hfa_negated_class_quantifier?(parts.last, delimiter)
+
+      nil
+    end
+
+    def hfa_negated_class_quantifier?(node, delimiter)
+      node.is_a?(AST::Quantifier) && node.kind == :* && node.expression.is_a?(AST::CharacterClass) &&
+        node.expression.value == "^#{delimiter}"
+    end
+
+    def hfa_literal_class_scan_spec
+      return @hfa_literal_class_scan_spec if defined?(@hfa_literal_class_scan_spec)
+      return @hfa_literal_class_scan_spec = false if @options.include?("ignorecase")
+
+      branches = @ast.is_a?(AST::Alternation) ? @ast.branches : [@ast]
+      specs = branches.filter_map do |branch|
+        parts = branch.is_a?(AST::Sequence) ? branch.parts : [branch]
+        tokens = parts.filter_map do |part|
+          if part.is_a?(AST::Literal) && part.value.ascii_only?
+            [:literal, part.value]
+          elsif part.is_a?(AST::CharacterClass) && part.value.ascii_only?
+            [:class, ClassPredicates.compiled(part.value)]
+          end
+        end
+        next unless tokens.length == parts.length && tokens.first&.first == :literal
+
+        prefix = tokens.first.last
+        width = tokens.sum { |kind, value| kind == :literal ? value.bytesize : 1 }
+        [prefix, tokens.freeze, width].freeze
+      end
+      @hfa_literal_class_scan_spec = if specs.any? && specs.length == branches.length
+                                       specs.freeze
+                                     else
+                                       false
+                                     end
+    end
+
+    def hfa_literal_class_scan_match_result(input, position, specs)
+      loop do
+        candidate = specs.filter_map { |prefix, _tokens, _width| input.index(prefix, position) }.min
+        return unless candidate
+
+        specs.each do |prefix, tokens, width|
+          next unless input.index(prefix, position) == candidate
+          next unless hfa_literal_class_tokens_match?(input, candidate, tokens)
+
+          return [candidate, candidate + width, []]
+        end
+        position = candidate + 1
+      end
+    end
+
+    def hfa_literal_class_tokens_match?(input, candidate, tokens)
+      cursor = candidate
+      tokens.all? do |kind, value|
+        if kind == :literal
+          matched = input.byteslice(cursor, value.bytesize) == value
+          cursor += value.bytesize if matched
+          matched
+        else
+          matched = value.matches_byte?(input.getbyte(cursor))
+          cursor += 1 if matched
+          matched
+        end
+      end
     end
 
     def hfa_scan_input_safe?(input)

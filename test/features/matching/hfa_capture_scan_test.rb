@@ -13,6 +13,7 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["192.0.2.1", "10/Aug/2026:12:00:00 +0000", "GET",
                    "/api/v1/users/0?page=1&active=true", "200", "17049"]], regexp.scan(ACCESS_LOG)
+    assert regexp.send(:hfa_top_level_capture_plan)
   end
 
   def test_hfa_scan_returns_multiple_literal_captures
@@ -32,6 +33,22 @@ class HfaCaptureScanTest < Minitest::Test
                  Onibi::Regexp.new(pattern).scan("See https://example.com/docs/0?lang=en.")
   end
 
+  def test_hfa_extracts_literal_prefix_inside_capturing_group
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+)"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal "http", regexp.send(:hfa_program).prefix_literal
+  end
+
+  def test_hfa_uses_whole_match_capture_for_wrapped_capture
+    pattern = "\\b(?<email>[A-Za-z]+@[A-Za-z]+)\\b"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal [["user@example"]], regexp.scan("Contact user@example")
+    assert_equal [[0, 12]], regexp.send(:hfa_whole_capture_offsets, 0, 12)
+    assert_same regexp.send(:hfa_whole_capture_group), regexp.send(:hfa_whole_capture_group)
+  end
+
   def test_hfa_scan_handles_structured_log_prefix_pattern
     pattern = "request_id=(?<request_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-" \
               "[0-9a-f]{4}-[0-9a-f]{12}) timestamp=(?<timestamp>[0-9T:-]+Z)"
@@ -39,5 +56,20 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["00000000-0000-4000-8000-000000000000", "2026-08-10T00:00:00Z"]],
                  Onibi::Regexp.new(pattern).scan(input)
+    assert Onibi::Regexp.new(pattern).send(:hfa_top_level_capture_scan_spec)
+  end
+
+  def test_hfa_uses_delimiter_search_for_negated_class_runs
+    regexp = Onibi::Regexp.new("<[^>]*>")
+
+    assert_equal ["<", ">", 0], regexp.send(:hfa_delimited_negated_class_result_spec)
+    assert_equal ["<a>", "<b>"], regexp.scan("<a> <b>")
+  end
+
+  def test_hfa_scans_literal_and_class_sequences_without_nfa_transitions
+    regexp = Onibi::Regexp.new("tHa[Nt]")
+
+    assert regexp.send(:hfa_literal_class_scan_spec)
+    assert_equal %w[tHaN tHat], regexp.scan("x tHaN tHat")
   end
 end

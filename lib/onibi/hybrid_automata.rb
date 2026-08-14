@@ -1417,7 +1417,9 @@ module Onibi
       end
 
       def nfa_match_result(input, position)
-        candidate = if @exact_first_byte
+        candidate = if @prefix_literal
+                      input.index(@prefix_literal, position)
+                    elsif @exact_first_byte
                       input.index(@exact_first_byte, position)
                     elsif @required_literals
                       required_literal_candidate(input, position)
@@ -1439,8 +1441,10 @@ module Onibi
           end
           return [candidate, last_accept, []] if last_accept
 
-          candidate = if @exact_first_byte
-                      input.index(@exact_first_byte, candidate + 1)
+          candidate = if @prefix_literal
+                        input.index(@prefix_literal, candidate + 1)
+                      elsif @exact_first_byte
+                        input.index(@exact_first_byte, candidate + 1)
                       elsif @required_literals
                         required_literal_candidate(input, candidate + 1)
                       elsif static_first_bytes
