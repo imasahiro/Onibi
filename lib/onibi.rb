@@ -229,32 +229,39 @@ module Onibi
     end
 
     def hfa_public_safe?
-      return false unless @pattern.ascii_only?
-      return false if @options.include?("ignorecase")
-      if @ast.is_a?(AST::Sequence) && @ast.parts.length != 1 &&
-         @ast.parts.any? { |part| class_run_result_node?(part) } &&
-         !literal_class_literal_ast? && !class_run_chain_ast? && !adjacent_class_run_ast? &&
-         !class_run_triple_ast?
-        return false
-      end
-      if @ast.is_a?(AST::Sequence) && @ast.parts.length == 1 &&
-         class_run_result_node?(@ast.parts.first) &&
-         !selective_class_run_node?(@ast.parts.first)
-        return false
-      end
+      return @hfa_public_safe if defined?(@hfa_public_safe)
 
-      hfa_public_safe_node?(@ast)
+      @hfa_public_safe = if !@pattern.ascii_only? || @options.include?("ignorecase")
+                           false
+                         elsif @ast.is_a?(AST::Sequence) && @ast.parts.length != 1 &&
+                               @ast.parts.any? { |part| class_run_result_node?(part) } &&
+                               !literal_class_literal_ast? && !class_run_chain_ast? &&
+                               !adjacent_class_run_ast? && !class_run_triple_ast?
+                           false
+                         elsif @ast.is_a?(AST::Sequence) && @ast.parts.length == 1 &&
+                               class_run_result_node?(@ast.parts.first) &&
+                               !selective_class_run_node?(@ast.parts.first)
+                           false
+                         else
+                           hfa_public_safe_node?(@ast)
+                         end
     end
 
     def hfa_match_question_safe?
+      return @hfa_match_question_safe if defined?(@hfa_match_question_safe)
       return false unless @pattern.ascii_only?
       return false if @timeout
 
       program = hfa_program
-      return program if program && hfa_possessive_literal_safe?
-      return false if hfa_contains_possessive_quantifier? || hfa_always_fails?
+      @hfa_match_question_safe = if program && hfa_possessive_literal_safe?
+                                   program
+                                 elsif hfa_contains_possessive_quantifier? || hfa_always_fails?
+                                   false
+                                 else
+                                   program
+                                 end
 
-      program
+      @hfa_match_question_safe
     end
 
     def hfa_possessive_literal_safe?
@@ -300,6 +307,12 @@ module Onibi
     end
 
     def hfa_match_result_safe?
+      return @hfa_match_result_safe if defined?(@hfa_match_result_safe)
+
+      @hfa_match_result_safe = hfa_match_result_safe_uncached?
+    end
+
+    def hfa_match_result_safe_uncached?
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
 

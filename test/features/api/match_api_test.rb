@@ -260,6 +260,19 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_hfa_match_question_safety_analysis_is_cached
+    regexp = Onibi::Regexp.new("needle")
+    calls = 0
+    original = regexp.method(:hfa_contains_possessive_quantifier?)
+    regexp.define_singleton_method(:hfa_contains_possessive_quantifier?) do
+      calls += 1
+      original.call
+    end
+
+    3.times { assert regexp.match?("needle") }
+    assert_equal 1, calls
+  end
+
   def test_match_question_mark_keeps_codegen_for_non_ascii_semantics
     regexp = Onibi::Regexp.new("é")
 
