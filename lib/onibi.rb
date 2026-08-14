@@ -3673,7 +3673,7 @@ module Onibi
         value&.ascii_only? && value.bytesize.positive? && number
       end
       @hfa_nested_literal_capture_alternation_spec = if valid && suffix.value.ascii_only? &&
-                                                        suffix.value.bytesize.positive? && hfa_program
+                                                        suffix.value.bytesize.positive?
                                                        [branches.freeze, suffix.value].freeze
                                                      else
                                                        false
@@ -3696,6 +3696,30 @@ module Onibi
       captures = Array.new(branches.map(&:last).max)
       captures[number - 1] = [start, start + value.bytesize]
       [start, finish, captures]
+    end
+
+    def hfa_nested_literal_capture_alternation_each_result(input, &block)
+      branches, suffix = hfa_nested_literal_capture_alternation_spec
+      position = 0
+      loop do
+        candidate = nil
+        branch_value = nil
+        branches.each do |value, _number|
+          start = input.index(value + suffix, position)
+          next unless start && (!candidate || start < candidate)
+
+          candidate = start
+          branch_value = value
+        end
+        break unless candidate
+
+        finish = candidate + branch_value.bytesize + suffix.bytesize
+        captures = Array.new(branches.map(&:last).max)
+        number = branches.find { |value, _capture_number| value == branch_value }.last
+        captures[number - 1] = [candidate, candidate + branch_value.bytesize]
+        block.call([candidate, finish, captures])
+        position = finish
+      end
     end
 
     def hfa_lookahead_alternation_backreference_spec
@@ -4141,10 +4165,7 @@ module Onibi
         return true
       end
       if input.ascii_only? && hfa_nested_literal_capture_alternation_spec
-        program = hfa_program
-        program.each_match_result(input, 0) do |result|
-          block.call(hfa_nested_literal_capture_alternation_match_result(input, result[0], result))
-        end
+        hfa_nested_literal_capture_alternation_each_result(input, &block)
         return true
       end
       if input.ascii_only? && hfa_lookahead_alternation_backreference_spec

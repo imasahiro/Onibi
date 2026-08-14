@@ -172,7 +172,9 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?:(a)|(b))c")
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "nested literal capture alternation scan should use HFA" }) do
-      assert_equal [["a", nil], [nil, "b"]], regexp.scan("ac bc")
+      regexp.stub(:hfa_program, -> { flunk "nested literal capture alternation scan should use direct HFA search" }) do
+        assert_equal [["a", nil], [nil, "b"]], regexp.scan("ac bc")
+      end
     end
   end
 
