@@ -1421,6 +1421,18 @@ module Onibi
     end
 
     def hfa_consume_ascii_class_quantifier(node, input, cursor, finish)
+      if node.maximum.nil?
+        delimiter = case node.expression.value
+                    when "^\\]" then "]"
+                    when "^ " then " "
+                    end
+        if delimiter
+          boundary = input.index(delimiter, cursor)
+          return boundary if boundary && boundary <= finish
+          return finish
+        end
+      end
+
       predicate = ClassPredicates.compiled(node.expression.value)
       count = 0
       limit = node.maximum || finish - cursor
