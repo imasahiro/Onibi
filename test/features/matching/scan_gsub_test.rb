@@ -972,6 +972,13 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_multiline_literal_dot_literal_scan_uses_direct_hfa_iterator
+    regexp = Onibi::Regexp.new("a.b", ["multiline"])
+    regexp.stub(:hfa_program, -> { flunk "multiline literal/dot/literal scan should avoid HFA program" }) do
+      assert_equal ["a\nb"], regexp.scan("xa\nbz")
+    end
+  end
+
   def test_scan_yields_mri_compatible_values_and_returns_input
     pattern = Onibi::Regexp.new("(\\w+)=(\\d+)")
     expected = []
