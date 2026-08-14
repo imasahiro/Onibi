@@ -36,6 +36,19 @@ module Onibi
         specs.map { |literal, offset| RequiredLiteralSpec.new(literal, offset) }.freeze
       end
 
+      def trailing_literal(node)
+        return node.value if node.is_a?(AST::Literal)
+        return unless node.is_a?(AST::Sequence)
+
+        value = +""
+        node.parts.reverse_each do |part|
+          break unless part.is_a?(AST::Literal)
+
+          value.prepend(part.value)
+        end
+        value.empty? ? nil : value.freeze
+      end
+
       def leading_literal(node)
         return node.value if node.is_a?(AST::Literal)
         return unless node.is_a?(AST::Sequence)

@@ -475,6 +475,14 @@ class HybridAutomataTest < Minitest::Test
     assert_equal([true, false], %w[abacadbabcbdz abacadbabcbdx].map { |input| program.match?(input) })
   end
 
+  def test_prefix_hfa_caches_trailing_literal
+    program = compile("BEGIN(?:ab|ac|ad|ba|bc|bd)+z")
+
+    assert_equal "z", program.instance_variable_get(:@trailing_literal)
+    assert program.match?("BEGINabacadbabcbdz")
+    refute program.match?("BEGINabacadbabcbdx")
+  end
+
   def test_rejects_non_regular_or_capture_dependent_patterns
     ["(?i:a)"].each do |pattern|
       assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { compile(pattern) }

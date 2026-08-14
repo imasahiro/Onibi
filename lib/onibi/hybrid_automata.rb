@@ -10,7 +10,8 @@ module Onibi
 
     Fragment = Data.define(:nullable, :first, :last)
     Automaton = Data.define(:first_mask, :accept_mask, :nullable, :reach_masks,
-                            :span_masks, :prefix_literal, :required_literals, :exact_literal,
+                            :span_masks, :prefix_literal, :required_literals, :trailing_literal,
+                            :exact_literal,
                             :anchored_start, :anchored_end, :line_anchor_start, :line_anchor_end,
                             :positive_prefix, :positive_suffix, :negative_prefix, :negative_suffix,
                             :word_boundary_start, :word_boundary_end, :unicode_spec,
@@ -201,6 +202,7 @@ module Onibi
         prefix ||= atomic_exact if atomic_exact && @string_matching && !ignorecase?
         prefix = nil if prefix && !prefix.ascii_only?
         required_literals = @string_matching && !ignorecase? ? required_literal_specs(ast) : nil
+        trailing = @string_matching && !ignorecase? ? trailing_literal(ast) : nil
         exact_literal = literal_value(ast) || repeated_literal_value(ast) || atomic_exact
         if prepared.positive_prefix && exact_literal&.start_with?(prepared.positive_prefix)
           exact_literal = exact_literal.delete_prefix(prepared.positive_prefix)
@@ -231,7 +233,7 @@ module Onibi
         span_masks = specialized ? EMPTY_SPAN_MASKS : build_span_masks
 
         automaton = Automaton.new(fragment.first, fragment.last, fragment.nullable,
-                                  reach_masks, span_masks, prefix, required_literals, exact_literal,
+                                  reach_masks, span_masks, prefix, required_literals, trailing, exact_literal,
                                   prepared.anchored_start, prepared.anchored_end,
                                   prepared.line_anchor_start, prepared.line_anchor_end,
                                   prepared.positive_prefix, prepared.positive_suffix,
@@ -573,12 +575,44 @@ module Onibi
         static = static_prefix_dfa_data
         return unless static && static[0].length <= @dfa_state_limit
 
+        return static_prefix_suffix_search(input, position, static) if @trailing_literal
+
         while candidate
           return true if static_prefix_match?(input, candidate + prefix.bytesize, static)
 
           candidate = input.index(prefix, candidate + 1)
         end
         false
+      end
+
+      def static_prefix_suffix_search(input, position, static)
+        suffix = @trailing_literal
+        prefix = @prefix_literal
+        suffix_position = input.index(suffix, position)
+        while suffix_position
+          suffix_end = suffix_position + suffix.bytesize
+          prefix_position = input.rindex(prefix, suffix_position - prefix.bytesize)
+          while prefix_position && prefix_position >= position
+            prefix_end = prefix_position + prefix.bytesize
+            return true if static_prefix_match_ending?(input, prefix_end, suffix_end, static)
+
+            prefix_position = input.rindex(prefix, prefix_position - 1)
+          end
+          suffix_position = input.index(suffix, suffix_position + 1)
+        end
+        false
+      end
+
+      def static_prefix_match_ending?(input, position, limit, static)
+        rows, accepting, accepting_state, dead_state = static
+        state = 0
+        while position < limit
+          state = rows[state][input.getbyte(position)]
+          return false if state == dead_state
+
+          position += 1
+        end
+        accepting_state ? state == accepting_state : accepting[state]
       end
 
       def prefix_density(input, position, prefix)
@@ -828,6 +862,7 @@ module Onibi
         @span_masks, @span_entries, @single_span = span_data(automaton.span_masks)
         @prefix_literal = automaton.prefix_literal
         @required_literals = automaton.required_literals
+        @trailing_literal = automaton.trailing_literal
         @exact_literal = automaton.exact_literal
         @exact_first_byte = @exact_literal&.byteslice(0, 1)
         @anchored_start = automaton.anchored_start
