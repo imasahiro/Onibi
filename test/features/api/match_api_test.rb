@@ -46,6 +46,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
+    regexp = Onibi::Regexp.new("こんにちは")
+
+    regexp.stub(:hfa_unicode_exact_literal_result_safe?,
+                -> { flunk "Unicode exact literal match? should use constructor metadata" }) do
+      assert regexp.match?("挨拶はこんにちはです")
+      assert regexp.match?("挨拶はこんにちはです", 3)
+      refute regexp.match?("挨拶はこんにちはです", 4)
+    end
+  end
+
   def test_word_boundary_literal_match_uses_hfa_string_path
     regexp = Onibi::Regexp.new("\\bcat\\b")
 

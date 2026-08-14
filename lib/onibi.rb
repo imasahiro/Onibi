@@ -85,6 +85,9 @@ module Onibi
                                            !@options.include?("ignorecase")
       @hfa_ignorecase_literal_fast = literal if literal&.ascii_only? && literal.bytesize.positive? &&
                                                 @options.include?("ignorecase")
+      @hfa_unicode_exact_literal_fast = literal if literal && !literal.ascii_only? &&
+                                                   literal.bytesize.positive? &&
+                                                   !@options.include?("ignorecase")
       @hfa_unicode_ignorecase_literal_fast = literal if literal && !literal.ascii_only? &&
                                                         literal.bytesize.positive? &&
                                                         @options.include?("ignorecase")
@@ -112,6 +115,11 @@ module Onibi
 
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? }
+      end
+      if !input.ascii_only? && @hfa_unicode_exact_literal_fast
+        literal = @hfa_unicode_exact_literal_fast
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, start_position).nil?
       end
       if input.ascii_only? && hfa_ascii_unicode_run_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
