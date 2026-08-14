@@ -1415,6 +1415,22 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_lazy_bounded_literal_sequence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("foo.{2,4}?bar")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "lazy bounded sequence should use HFA" }) do
+      assert_equal "foo12bar", regexp.match("xxfoo12bar--foo1234bar").to_s
+    end
+  end
+
+  def test_lazy_bounded_literal_sequence_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("foo.{2,4}?bar")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "lazy bounded sequence should use HFA iterator" }) do
+      assert_equal %w[foo12bar foo1234bar], regexp.scan("foo12bar foo1234bar")
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 

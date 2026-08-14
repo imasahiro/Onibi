@@ -558,6 +558,12 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      if input.ascii_only? && hfa_lazy_bounded_sequence_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
@@ -983,6 +989,7 @@ module Onibi
       return true if hfa_anchor_result_safe?
       return true if hfa_greedy_bounded_sequence_result_safe?
       return true if hfa_scoped_extended_literal_result_safe?
+      return true if hfa_lazy_bounded_sequence_result_safe?
 
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
@@ -2358,6 +2365,19 @@ module Onibi
       @hfa_scoped_multiline_sequence_safe = valid && hfa_program
     end
 
+    def hfa_lazy_bounded_sequence_result_safe?
+      return @hfa_lazy_bounded_sequence_safe if defined?(@hfa_lazy_bounded_sequence_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      valid = parts.length > 1 && parts.all? do |part|
+        part.is_a?(AST::Literal) ||
+          (part.is_a?(AST::Quantifier) && part.kind == :bounded && part.mode == :lazy &&
+           (part.expression.is_a?(AST::Literal) || part.expression.is_a?(AST::Any) ||
+            part.expression.is_a?(AST::CharacterClass)))
+      end
+      @hfa_lazy_bounded_sequence_safe = valid && !@options.include?("ignorecase") && hfa_program
+    end
+
     def hfa_unicode_repeated_literal_capture_result_safe?
       return @hfa_unicode_repeated_capture_safe if defined?(@hfa_unicode_repeated_capture_safe)
 
@@ -3288,6 +3308,7 @@ module Onibi
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                     hfa_anchor_result_safe? ||
                     hfa_greedy_bounded_sequence_result_safe? ||
+                    hfa_lazy_bounded_sequence_result_safe? ||
                     hfa_scoped_extended_literal_result_safe? ||
                     hfa_linebreak_result_safe? ||
                     hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
@@ -3399,6 +3420,14 @@ module Onibi
         end
         return true
       end
+      if hfa_lazy_bounded_sequence_result_safe?
+        position = 0
+        while (result = hfa_program.match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if hfa_scoped_extended_literal_result_safe?
         position = 0
         while (result = hfa_program.match_result(input, position))
@@ -3484,6 +3513,7 @@ module Onibi
                      hfa_anchor_result_safe? ||
                      hfa_anchored_class_run_result_safe? ||
                      hfa_greedy_bounded_sequence_result_safe? ||
+                     hfa_lazy_bounded_sequence_result_safe? ||
                      hfa_scoped_extended_literal_result_safe? ||
                      hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
