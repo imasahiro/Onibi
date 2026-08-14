@@ -1220,6 +1220,14 @@ class MatchApiTest < Minitest::Test
     assert_equal 2, regexp.send(:hfa_simple_capture_count)
   end
 
+  def test_simple_capture_match_uses_its_direct_offset_path_first
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    regexp.stub(:hfa_conditional_capture_offsets, ->(*) { flunk "simple captures should skip unrelated offset analysis" }) do
+      assert_equal ["item-2026", "item", "2026"], regexp.match("item-2026").to_a
+    end
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0

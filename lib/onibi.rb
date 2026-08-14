@@ -3556,6 +3556,17 @@ module Onibi
 
     def hfa_match_data(result, input)
       start, finish, captures = result
+      if captures.empty? && (capture_offsets = hfa_simple_capture_offsets(input, start, finish))
+        values = capture_offsets.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
+        names = hfa_static_capture_names || hfa_capture_names.transform_values do |indices|
+          indices.reverse_each.find { |index| capture_offsets[index - 1] } || indices.last
+        end
+        return MatchData.new(input.byteslice(start, finish - start), values,
+                             [[start, finish], *capture_offsets], names,
+                             MatchData::Context.new(input, self))
+      end
       if captures.empty? && (capture_offsets = hfa_conditional_capture_offsets(input, start))
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
@@ -3606,17 +3617,6 @@ module Onibi
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
         names = hfa_static_capture_names || hfa_result_names
-        return MatchData.new(input.byteslice(start, finish - start), values,
-                             [[start, finish], *capture_offsets], names,
-                             MatchData::Context.new(input, self))
-      end
-      if captures.empty? && (capture_offsets = hfa_simple_capture_offsets(input, start, finish))
-        values = capture_offsets.map do |offset|
-          offset && input.byteslice(offset[0], offset[1] - offset[0])
-        end
-        names = hfa_static_capture_names || hfa_capture_names.transform_values do |indices|
-          indices.reverse_each.find { |index| capture_offsets[index - 1] } || indices.last
-        end
         return MatchData.new(input.byteslice(start, finish - start), values,
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
