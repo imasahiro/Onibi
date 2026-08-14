@@ -32,6 +32,22 @@ class HfaCaptureScanTest < Minitest::Test
                  Onibi::Regexp.new(pattern).scan("See https://example.com/docs/0?lang=en.")
   end
 
+  def test_hfa_extracts_literal_prefix_inside_capturing_group
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+)"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal "http", regexp.send(:hfa_program).prefix_literal
+  end
+
+  def test_hfa_uses_whole_match_capture_for_wrapped_capture
+    pattern = "\\b(?<email>[A-Za-z]+@[A-Za-z]+)\\b"
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal [["user@example"]], regexp.scan("Contact user@example")
+    assert_equal [[0, 12]], regexp.send(:hfa_whole_capture_offsets, 0, 12)
+    assert_same regexp.send(:hfa_whole_capture_group), regexp.send(:hfa_whole_capture_group)
+  end
+
   def test_hfa_scan_handles_structured_log_prefix_pattern
     pattern = "request_id=(?<request_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-" \
               "[0-9a-f]{4}-[0-9a-f]{12}) timestamp=(?<timestamp>[0-9T:-]+Z)"

@@ -1274,6 +1274,10 @@ module Onibi
       capture_count = hfa_capture_count
       return [] if capture_count.zero?
 
+      if (whole_capture = hfa_whole_capture_offsets(start, finish))
+        return whole_capture
+      end
+
       if (offsets = hfa_variable_backreference_capture_offsets(input, start, finish))
         return offsets
       end
@@ -1281,6 +1285,41 @@ module Onibi
       offsets = Array.new(capture_count)
       cursor = hfa_consume_capture_node(@ast, input, start, finish, offsets)
       cursor == finish ? offsets : nil
+    end
+
+    def hfa_whole_capture_offsets(start, finish)
+      group = hfa_whole_capture_group(@ast)
+      return unless group
+
+      offsets = Array.new(hfa_capture_count)
+      offsets[group.number - 1] = [start, finish]
+      offsets
+    end
+
+    def hfa_whole_capture_group(node = nil)
+      return @hfa_whole_capture_group if node.nil? && defined?(@hfa_whole_capture_group)
+      return @hfa_whole_capture_group = hfa_find_whole_capture_group(@ast) if node.nil?
+
+      hfa_find_whole_capture_group(node)
+    end
+
+    def hfa_find_whole_capture_group(node)
+      case node
+      when AST::Group
+        return node if node.capture && hfa_capture_count(node.body).zero?
+      when AST::Sequence
+        candidates = node.parts.filter_map { |part| hfa_find_whole_capture_group(part) }
+        return candidates.first if candidates.one? &&
+                                  node.parts.all? { |part| part.equal?(candidates.first) || hfa_zero_width_node?(part) }
+      when AST::OptionGroup, AST::AtomicGroup
+        return hfa_find_whole_capture_group(node.body)
+      end
+      nil
+    end
+
+    def hfa_zero_width_node?(node)
+      node.is_a?(AST::Assertion) || node.is_a?(AST::Anchor) ||
+        (node.is_a?(AST::Escape) && %i[word_boundary nonword_boundary].include?(node.kind))
     end
 
     def hfa_variable_backreference_capture_offsets(input, start, finish)
@@ -1301,7 +1340,10 @@ module Onibi
       offsets
     end
 
-    def hfa_capture_count(node = @ast)
+    def hfa_capture_count(node = nil)
+      return @hfa_capture_count if node.nil? && defined?(@hfa_capture_count)
+      return @hfa_capture_count = hfa_capture_count(@ast) if node.nil?
+
       case node
       when AST::Group
         [node.number || 0, hfa_capture_count(node.body)].max
@@ -1361,6 +1403,10 @@ module Onibi
         end
         nil
       when AST::Quantifier
+        if input.ascii_only? && node.expression.is_a?(AST::CharacterClass)
+          return hfa_consume_ascii_class_quantifier(node, input, cursor, finish)
+        end
+
         count = 0
         position = cursor
         while node.maximum.nil? || count < node.maximum
@@ -1372,6 +1418,17 @@ module Onibi
         end
         count >= node.minimum ? position : nil
       end
+    end
+
+    def hfa_consume_ascii_class_quantifier(node, input, cursor, finish)
+      predicate = ClassPredicates.compiled(node.expression.value)
+      count = 0
+      limit = node.maximum || finish - cursor
+      while count < limit && cursor < finish && predicate.matches_byte?(input.getbyte(cursor))
+        cursor += 1
+        count += 1
+      end
+      count >= node.minimum ? cursor : nil
     end
 
     def named_captures
