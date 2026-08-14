@@ -1729,6 +1729,14 @@ module Onibi
           return
         end
 
+        if @exact_literal.nil?
+          while (result = nfa_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
         while (start = input.index(@exact_literal, position))
           finish = start + @exact_literal.bytesize
           yield [start, finish, []]
