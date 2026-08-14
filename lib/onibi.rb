@@ -1069,9 +1069,33 @@ module Onibi
     end
 
     def hfa_always_fails?
-      @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
-        @ast.parts.first.is_a?(AST::Assertion) && @ast.parts.first.kind == :negative &&
-        @ast.parts.first.body.is_a?(AST::Sequence) && @ast.parts.first.body.parts.empty?
+      return true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
+                     @ast.parts.first.is_a?(AST::Assertion) && @ast.parts.first.kind == :negative &&
+                     @ast.parts.first.body.is_a?(AST::Sequence) && @ast.parts.first.body.parts.empty?
+
+      return false unless @ast.is_a?(AST::Sequence)
+
+      anchor_index = @ast.parts.index do |part|
+        part.is_a?(AST::Anchor) && part.kind == :anchor_absolute_start
+      end
+      anchor_index && @ast.parts[0...anchor_index].any? { |part| hfa_definitely_nonempty?(part) }
+    end
+
+    def hfa_definitely_nonempty?(node)
+      case node
+      when AST::Literal
+        node.value.bytesize.positive?
+      when AST::CharacterClass, AST::Any
+        true
+      when AST::Group
+        hfa_definitely_nonempty?(node.body)
+      when AST::Sequence
+        node.parts.any? { |part| hfa_definitely_nonempty?(part) }
+      when AST::Quantifier
+        node.minimum.to_i.positive? && hfa_definitely_nonempty?(node.expression)
+      else
+        false
+      end
     end
 
     def hfa_literal_absence_result_safe?
