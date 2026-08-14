@@ -982,6 +982,8 @@ module Onibi
         fast = fast_literal_match(input, position)
         return fast unless fast.nil?
 
+        return positive_prefix_literal_match?(input, position) if positive_prefix_literal_search?
+
         return word_boundary_literal_match?(input, position) if word_boundary_literal_search?
 
         return anchored_class_match?(input, position) if @anchored_class_spec
@@ -1011,6 +1013,8 @@ module Onibi
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
         end
+
+        return positive_prefix_literal_match_result(input, position) if positive_prefix_literal_search?
 
         return word_boundary_literal_match_result(input, position) if word_boundary_literal_search?
 
@@ -1905,6 +1909,30 @@ module Onibi
 
       def word_boundary_literal_search?
         @exact_literal && @word_table && (@word_boundary_start || @word_boundary_end)
+      end
+
+      def positive_prefix_literal_search?
+        @exact_literal && @positive_prefix && !@positive_suffix && !@negative_prefix &&
+          !@negative_suffix && !@word_boundary_start && !@word_boundary_end
+      end
+
+      def positive_prefix_literal_match?(input, position)
+        !positive_prefix_literal_match_result(input, position).nil?
+      end
+
+      def positive_prefix_literal_match_result(input, position)
+        return unless input.ascii_only?
+
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          prefix_start = candidate - @positive_prefix.bytesize
+          return [candidate, candidate + @exact_literal.bytesize, []] if prefix_start >= 0 &&
+                                                                        input.byteslice(prefix_start,
+                                                                                       @positive_prefix.bytesize) == @positive_prefix
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        nil
       end
 
       def word_boundary_literal_match?(input, position)
