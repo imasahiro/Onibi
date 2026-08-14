@@ -34,6 +34,7 @@ class HfaCaptureScanTest < Minitest::Test
     regexp = Onibi::Regexp.new(pattern)
 
     assert regexp.send(:hfa_reverse_literal_capture_spec)
+    assert regexp.send(:hfa_direct_delimited_capture_spec)
     assert_equal [["user0@example.com"]], regexp.scan("Contact user0@example.com")
     assert_equal [["foo@example.com"]], regexp.scan(".foo@example.com")
   end
