@@ -1930,12 +1930,13 @@ module Onibi
 
     def hfa_positive_lookbehind_literal_match_result(input, position)
       prefix, literal = @hfa_positive_lookbehind_literal_fast
-      candidate = input.b.index((prefix + literal).b, [position - prefix.bytesize, 0].max)
+      candidate = input.b.index(literal.b, position)
       while candidate
-        start = candidate + prefix.bytesize
-        return [start, start + literal.bytesize, []] if start >= position
+        prefix_start = candidate - prefix.bytesize
+        return [candidate, candidate + literal.bytesize, []] if prefix_start >= 0 &&
+                                                                  input.byteslice(prefix_start, prefix.bytesize) == prefix
 
-        candidate = input.b.index((prefix + literal).b, candidate + 1)
+        candidate = input.b.index(literal.b, candidate + 1)
       end
       nil
     end
