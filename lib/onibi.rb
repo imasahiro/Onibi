@@ -1450,6 +1450,15 @@ module Onibi
 
     def hfa_unicode_property_run_match?(input, position)
       predicate, negated = hfa_unicode_property_run_spec
+      if !negated && @hfa_unicode_property_run_fast
+        index = 0
+        input.each_codepoint do |codepoint|
+          return true if index >= position && codepoint.between?(0x3040, 0x309f)
+
+          index += 1
+        end
+        return false
+      end
       index = 0
       matcher = hfa_unicode_property_run_matcher
       input.each_codepoint do |codepoint|
