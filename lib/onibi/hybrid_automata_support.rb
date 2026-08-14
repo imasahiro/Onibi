@@ -1107,7 +1107,7 @@ module Onibi
         position = normalize_position(input, position)
         return false if position.negative? || position > input.bytesize
 
-        return !possessive_unbounded_suffix_match_result(input, position, spec).nil? if spec.maximum.nil?
+        return possessive_unbounded_suffix_match?(input, position, spec) if spec.maximum.nil?
 
         candidate = input.index(spec.unit, position)
         while candidate
@@ -1152,6 +1152,17 @@ module Onibi
           suffix_position = input.index(spec.suffix, suffix_position + 1)
         end
         nil
+      end
+
+      def possessive_unbounded_suffix_match?(input, position, spec)
+        suffix_position = input.index(spec.suffix, position + spec.unit.bytesize)
+        while suffix_position
+          return true if suffix_position >= spec.unit.bytesize &&
+                         input.byteslice(suffix_position - spec.unit.bytesize, spec.unit.bytesize) == spec.unit
+
+          suffix_position = input.index(spec.suffix, suffix_position + 1)
+        end
+        false
       end
 
       def possessive_literal_finish(input, candidate, spec)
