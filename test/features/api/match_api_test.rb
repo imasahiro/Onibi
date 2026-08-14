@@ -38,6 +38,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_word_boundary_literal_match_uses_hfa_string_path
+    regexp = Onibi::Regexp.new("\\bcat\\b")
+
+    regexp.stub(:hfa_program, -> { flunk "word-boundary literal should use HFA string path" }) do
+      assert regexp.match?("a cat naps")
+      refute regexp.match?("scatter")
+    end
+  end
+
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
