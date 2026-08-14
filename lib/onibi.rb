@@ -101,6 +101,13 @@ module Onibi
                                                         !@options.include?("ignorecase")
       @hfa_ascii_unicode_run_fast = property_node if property_node && !@options.include?("ignorecase") &&
                                                      hfa_capture_class_table(property_node)
+      chain_candidate = !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) &&
+                        @ast.parts.length == 3 && @ast.parts.all? do |part|
+                          part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
+                            (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape))
+                        end
+      chain_tables = hfa_ascii_run_chain_tables if chain_candidate
+      @hfa_ascii_run_chain_fast = chain_tables if chain_tables
       word_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
                     node = @ast.parts.first
                     node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
@@ -122,6 +129,10 @@ module Onibi
       if input.ascii_only? && @hfa_ascii_unicode_run_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_unicode_run_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_ascii_run_chain_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_ascii_run_chain_match?(input, normalized_position)
       end
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         normalized_position = normalize_match_position(input, position)

@@ -261,6 +261,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_ascii_run_chain_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
+
+    regexp.stub(:hfa_ascii_run_chain_result_safe?,
+                -> { flunk "ASCII run chain should use constructor dispatch metadata" }) do
+      assert regexp.match?("item 2026")
+    end
+  end
+
   def test_unicode_property_run_match_question_uses_direct_character_path
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
