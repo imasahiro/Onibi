@@ -504,6 +504,13 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_multiline_dot_iteration_uses_hfa
+    regexp = Onibi::Regexp.new("(?m:.)")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped multiline scan should use HFA" }) do
+      assert_equal ["\n", "a"], regexp.scan("\na")
+    end
+  end
+
   def test_fixed_class_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
     regexp.stub(:codegen_each_result, ->(*) { flunk "fixed class alternation should use HFA" }) do

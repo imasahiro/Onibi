@@ -159,6 +159,7 @@ module Onibi
         @state_tables = []
         @follow = []
         @scoped_ignorecase = nil
+        @scoped_multiline = nil
       end
 
       def compile(unit)
@@ -361,15 +362,16 @@ module Onibi
       end
 
       def option_group_node(node)
-        if !node.multiline.nil? || !node.extended.nil?
-          raise UnsupportedPattern, "scoped multiline or extended options are outside the hybrid PoC subset"
+        if !node.extended.nil?
+          raise UnsupportedPattern, "scoped extended options are outside the hybrid PoC subset"
         end
 
-        previous = @scoped_ignorecase
-        @scoped_ignorecase = node.ignorecase.nil? ? previous : node.ignorecase
+        previous = [@scoped_ignorecase, @scoped_multiline]
+        @scoped_ignorecase = node.ignorecase.nil? ? previous[0] : node.ignorecase
+        @scoped_multiline = node.multiline.nil? ? previous[1] : node.multiline
         visit(node.body)
       ensure
-        @scoped_ignorecase = previous
+        @scoped_ignorecase, @scoped_multiline = previous
       end
 
       def ignorecase?
@@ -379,6 +381,8 @@ module Onibi
       end
 
       def multiline?
+        return @scoped_multiline unless @scoped_multiline.nil?
+
         @options.include?("multiline")
       end
 

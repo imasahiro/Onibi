@@ -484,9 +484,16 @@ class HybridAutomataTest < Minitest::Test
   end
 
   def test_rejects_non_regular_or_capture_dependent_patterns
-    ["(?m:.)"].each do |pattern|
+    ["\\R"].each do |pattern|
       assert_raises(Onibi::HybridAutomata::UnsupportedPattern) { compile(pattern) }
     end
+  end
+
+  def test_supports_scoped_multiline_dot
+    program = compile("(?m:.)")
+
+    assert program.match?("\n")
+    refute compile(".").match?("\n")
   end
 
   def test_supports_scoped_ignorecase_literals

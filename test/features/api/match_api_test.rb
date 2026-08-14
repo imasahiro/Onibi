@@ -63,6 +63,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_multiline_match_question_uses_hfa
+    regexp = Onibi::Regexp.new("(?m:.)")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "scoped multiline match? should use HFA" }) do
+      assert regexp.match?("\n")
+    end
+  end
+
   def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("こんにちは")
 
