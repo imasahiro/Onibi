@@ -5029,15 +5029,7 @@ module Onibi
     def hfa_repeated_class_capture_result_safe?
       return @hfa_repeated_class_capture_safe if defined?(@hfa_repeated_class_capture_safe)
 
-      parts = hfa_repeated_class_capture_parts
-      return @hfa_repeated_class_capture_safe = false unless parts
-
-      repeated, pairs = parts
-      return @hfa_repeated_class_capture_safe = false unless hfa_repeated_group_node?(repeated)
-
-      @hfa_repeated_class_capture_safe = pairs.all? do |_separator, class_group|
-        hfa_class_capture_spec(class_group)
-      end && hfa_program
+      @hfa_repeated_class_capture_safe = hfa_repeated_class_capture_spec && hfa_program
     end
 
     def hfa_repeated_group_node?(group)
@@ -5051,7 +5043,7 @@ module Onibi
     def hfa_repeated_class_capture_offsets(input, start, finish)
       return unless hfa_repeated_class_capture_result_safe?
 
-      repeated, pairs = hfa_repeated_class_capture_parts
+      repeated, pairs, numbers, class_specs = hfa_repeated_class_capture_spec
       separator_position = input.index(pairs.first.first.value, start)
       return unless separator_position && separator_position < finish
 
@@ -5059,8 +5051,6 @@ module Onibi
       span = hfa_repeated_match_span(repeated_body.expression.body, input, start, separator_position)
       return unless span && span.first == separator_position - start
 
-      numbers = [repeated.number, repeated.body.parts.first.expression.number] +
-                pairs.flat_map { |_separator, group| [group.number, hfa_class_capture_spec(group)[1]] }.compact
       offsets = Array.new(numbers.max)
       offsets[repeated.number - 1] = [start, separator_position]
       offsets[repeated.body.parts.first.expression.number - 1] =
@@ -5077,7 +5067,7 @@ module Onibi
                        end
         return unless class_finish && class_finish > class_start
 
-        table, inner_number = hfa_class_capture_spec(class_group)
+        table, inner_number = class_specs[index]
         cursor = class_start
         cursor += 1 while cursor < class_finish && table[input.getbyte(cursor)]
         return unless cursor == class_finish
@@ -5088,6 +5078,23 @@ module Onibi
       return unless cursor == finish
 
       offsets
+    end
+
+    def hfa_repeated_class_capture_spec
+      return @hfa_repeated_class_capture_spec if defined?(@hfa_repeated_class_capture_spec)
+
+      parts = hfa_repeated_class_capture_parts
+      @hfa_repeated_class_capture_spec = if parts
+                                           repeated, pairs = parts
+                                           if hfa_repeated_group_node?(repeated)
+                                             class_specs = pairs.map { |_separator, group| hfa_class_capture_spec(group) }
+                                             if class_specs.all?
+                                               numbers = [repeated.number, repeated.body.parts.first.expression.number] +
+                                                         class_specs.flat_map { |_table, number| [number] }.compact
+                                               [repeated, pairs, numbers.freeze, class_specs.freeze].freeze
+                                             end
+                                           end
+                                         end || false
     end
 
     def hfa_class_capture_spec(group)
