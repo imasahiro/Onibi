@@ -1073,6 +1073,18 @@ module Onibi
       false
     end
 
+    def hfa_match_reset_literal_match_result(input, position)
+      prefix, suffix = hfa_match_reset_literal_parts
+      candidate = input.index(prefix, position)
+      while candidate
+        start = candidate + prefix.bytesize
+        return [start, start + suffix.bytesize, []] if input.byteslice(start, suffix.bytesize) == suffix
+
+        candidate = input.index(prefix, candidate + 1)
+      end
+      nil
+    end
+
     def hfa_match_reset_literal_combined_literal
       return @hfa_match_reset_literal_combined_literal if defined?(@hfa_match_reset_literal_combined_literal)
 
@@ -2240,6 +2252,14 @@ module Onibi
       if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
         position = 0
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && @hfa_match_reset_literal_fast
+        position = 0
+        while (result = hfa_match_reset_literal_match_result(input, position))
           block.call(result)
           position = result[1]
         end
