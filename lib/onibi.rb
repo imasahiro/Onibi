@@ -700,6 +700,7 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil
       end
+      return nil if input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
 
       if !input.ascii_only? && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
                                 hfa_unicode_simple_capture_result_safe? ||
@@ -3227,6 +3228,7 @@ module Onibi
         end
         return true
       end
+      return true if input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
 
       if input.ascii_only? && @hfa_ignorecase_literal_fast
         folded_input = input.downcase

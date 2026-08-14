@@ -1270,6 +1270,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_literal_rejects_ascii_input_without_codegen
+    regexp = Onibi::Regexp.new("(?:日本語)+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "Unicode repeated literal should reject ASCII input in HFA" }) do
+      assert_nil regexp.match("ascii only")
+    end
+  end
+
   def test_literal_positive_lookahead_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a(?=b)")
 

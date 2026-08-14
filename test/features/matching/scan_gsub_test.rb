@@ -223,6 +223,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_literal_scan_rejects_ascii_input_without_codegen
+    regexp = Onibi::Regexp.new("(?:日本語)+")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode repeated literal should reject ASCII input in HFA" }) do
+      assert_empty regexp.scan("ascii only")
+    end
+  end
+
   def test_literal_positive_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a(?=b)")
 
