@@ -61,6 +61,18 @@ class HfaStandaloneFrontendTest < Minitest::Test
     end
   end
 
+  def test_hfa_handles_unicode_full_fold_classes_without_codegen
+    regexp = Onibi::Regexp.new("[ß]", "i")
+    %i[codegen_match? codegen_match codegen_each_result].each do |method|
+      regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+    end
+    regexp.define_singleton_method(:hfa_program) { raise "unexpected generic HFA program" }
+
+    assert regexp.match?("SS")
+    assert_equal "SS", regexp.match("SS").to_s
+    assert_equal ["SS"], regexp.scan("SS")
+  end
+
   def test_hfa_handles_fixed_literal_backreferences_without_codegen
     regexp = Onibi::Regexp.new("(a)(b)\\1")
     %i[codegen_match? codegen_match codegen_each_result].each do |method|

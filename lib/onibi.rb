@@ -231,6 +231,11 @@ module Onibi
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_unicode_class_direct_match_result(input, byte_position, class_source).nil?
       end
+      if (spec = hfa_casefold_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        return !hfa_casefold_class_direct_match_result(input, byte_position, spec).nil?
+      end
       if (spec = hfa_fixed_literal_backref_spec)
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_fixed_literal_backref_match_result(input, normalized_position, spec).nil?
@@ -281,6 +286,13 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if (spec = hfa_casefold_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_casefold_class_direct_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -669,6 +681,13 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if (spec = hfa_casefold_class_direct_spec)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        byte_position = input.byteslice(0, normalized_position).bytesize
+        result = hfa_casefold_class_direct_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1324,6 +1343,39 @@ module Onibi
           return [offset, offset + character.bytesize, []]
         end
         offset += character.bytesize
+      end
+      nil
+    end
+
+    def hfa_casefold_class_direct_spec
+      return @hfa_casefold_class_direct_spec if defined?(@hfa_casefold_class_direct_spec)
+      return @hfa_casefold_class_direct_spec = false unless @options.include?("ignorecase")
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      node = parts.one? && parts.first
+      source = node.value if node.is_a?(AST::CharacterClass)
+      metadata = source && ClassPredicates.compiled(source, ignorecase: true).metadata
+      literals = metadata&.literals
+      @hfa_casefold_class_direct_spec = if literals&.any? && metadata.ignorecase_expansion != :none
+                                          [literals.freeze, metadata.ignorecase_expansion == :full_fold ? 2 : 1].freeze
+                                        else
+                                          false
+                                        end
+    end
+
+    def hfa_casefold_class_direct_match_result(input, byte_position, spec)
+      literals, maximum_chars = spec
+      characters = input.each_char.to_a
+      offsets = Array.new(characters.length + 1, 0)
+      characters.each_with_index { |character, index| offsets[index + 1] = offsets[index] + character.bytesize }
+      start_index = offsets.index { |offset| offset >= byte_position } || characters.length
+      start_index.upto(characters.length - 1) do |index|
+        maximum_chars.downto(1) do |length|
+          candidate = characters[index, length]&.join
+          next unless candidate && literals.any? { |literal| literal.casecmp?(candidate) }
+
+          return [offsets[index], offsets[index + length], []]
+        end
       end
       nil
     end
@@ -4540,6 +4592,15 @@ module Onibi
         validate_encoding!(input)
         position = 0
         while (result = hfa_unicode_class_direct_match_result(input, position, class_source))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if (spec = hfa_casefold_class_direct_spec)
+        validate_encoding!(input)
+        position = 0
+        while (result = hfa_casefold_class_direct_match_result(input, position, spec))
           block.call(result)
           position = result[1]
         end
