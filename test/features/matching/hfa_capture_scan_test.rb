@@ -15,6 +15,9 @@ class HfaCaptureScanTest < Minitest::Test
                    "/api/v1/users/0?page=1&active=true", "200", "17049"]], regexp.scan(ACCESS_LOG)
     assert regexp.send(:hfa_top_level_capture_plan)
     assert regexp.send(:hfa_reverse_literal_capture_spec)
+    result = regexp.send(:hfa_program).match_result(ACCESS_LOG, 0)
+    assert_equal [[0, 9], [15, 41], [44, 47], [48, 82], [93, 96], [97, 102]],
+                 regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1])
   end
 
   def test_hfa_scan_returns_multiple_literal_captures
