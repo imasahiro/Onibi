@@ -411,6 +411,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_conditional_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
+
+    regexp.stub(:hfa_literal_conditional_result_safe?,
+                -> { flunk "Literal conditional should use constructor dispatch metadata" }) do
+      assert regexp.match?("ab")
+      assert regexp.match?("c")
+    end
+  end
+
   def test_repeated_class_backreference_match_question_uses_byte_string_path
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 
