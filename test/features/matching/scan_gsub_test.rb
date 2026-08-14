@@ -255,6 +255,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_scoped_extended_literal_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("a(?-x: b#c )d")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "scoped extended option should use HFA" }) do
+      assert_equal ["a b#c d"], regexp.scan("a b#c d")
+    end
+  end
+
   def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 

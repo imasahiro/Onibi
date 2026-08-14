@@ -369,10 +369,6 @@ module Onibi
       end
 
       def option_group_node(node)
-        if !node.extended.nil?
-          raise UnsupportedPattern, "scoped extended options are outside the hybrid PoC subset"
-        end
-
         previous = [@scoped_ignorecase, @scoped_multiline]
         @scoped_ignorecase = node.ignorecase.nil? ? previous[0] : node.ignorecase
         @scoped_multiline = node.multiline.nil? ? previous[1] : node.multiline
