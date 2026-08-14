@@ -44,6 +44,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_exact_literal_match_short_circuits_common_failure_checks
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "exact literal match should skip generic failure checks" }) do
+      assert_equal "needle", regexp.match("prefix-needle-suffix").to_s
+    end
+  end
+
   def test_exact_literal_default_position_skips_position_normalization
     regexp = Onibi::Regexp.new("needle")
 
