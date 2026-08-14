@@ -855,15 +855,26 @@ module Onibi
     def hfa_possessive_literal_string_match_result(input, position)
       quantifier, suffix = @ast.parts
       unit = quantifier.expression.value
+      unit_bytesize = unit.bytesize
       candidate = input.index(unit, position)
       while candidate
-        finish = candidate
-        finish += unit.bytesize while input.byteslice(finish, unit.bytesize) == unit
+        finish = hfa_possessive_literal_run_end(input, candidate, unit, unit_bytesize)
         return [candidate, finish + suffix.value.bytesize, []] if input.byteslice(finish, suffix.value.bytesize) == suffix.value
 
         candidate = input.index(unit, candidate + 1)
       end
       nil
+    end
+
+    def hfa_possessive_literal_run_end(input, candidate, unit, unit_bytesize)
+      finish = candidate
+      if unit_bytesize == 1
+        byte = unit.getbyte(0)
+        finish += 1 while input.getbyte(finish) == byte
+      else
+        finish += unit_bytesize while input.byteslice(finish, unit_bytesize) == unit
+      end
+      finish
     end
 
     def hfa_bounded_literal_result_safe?

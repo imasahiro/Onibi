@@ -93,6 +93,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_possessive_literal_match_returns_the_longest_one_byte_run
+    match = Onibi::Regexp.new("a++b").match("zaaaab")
+
+    assert_equal "aaaab", match[0]
+    assert_equal [1, 6], match.offset(0)
+  end
+
   def test_literal_alternation_match_uses_hfa_result
     regexp = Onibi::Regexp.new("cat|dog")
 
