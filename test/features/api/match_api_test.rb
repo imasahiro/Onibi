@@ -1397,6 +1397,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_literal_sequence_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("a(?i:bc)d")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "scoped ignorecase sequence should use HFA" }) do
+      assert_equal "aBCd", regexp.match("xxaBCdyy").to_s
+      assert_nil regexp.match("xxaBXdyy")
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 
