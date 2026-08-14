@@ -129,6 +129,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_ascii_adjacent_run_match?(input, normalized_position)
       end
+      if input.ascii_only? && (literal = hfa_atomic_literal_match_literal)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_literal_conditional_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_literal_conditional_match?(input, normalized_position)
@@ -992,6 +996,29 @@ module Onibi
         cursor += 1
       end
       false
+    end
+
+    def hfa_atomic_literal_match_literal
+      return @hfa_atomic_literal_match_literal if defined?(@hfa_atomic_literal_match_literal)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, suffix = parts
+      branches = group.body.branches if group.is_a?(AST::AtomicGroup) &&
+                                       group.body.is_a?(AST::Alternation) && suffix.is_a?(AST::Literal)
+      values = branches&.map { |branch| literal_ast_value(branch) }
+      if values&.all? && values.first&.ascii_only? && suffix.value.ascii_only? && suffix.value.bytesize.positive?
+        first = values.first
+        @hfa_atomic_literal_match_literal = if values.all? do |value|
+          remainder = value.delete_prefix(first)
+          remainder.empty? ||
+            (remainder.bytesize % suffix.value.bytesize).zero? &&
+              remainder == suffix.value * (remainder.bytesize / suffix.value.bytesize)
+        end
+                                               first + suffix.value
+                                             end
+      else
+        @hfa_atomic_literal_match_literal = nil
+      end
     end
 
     def hfa_literal_conditional_result_safe?

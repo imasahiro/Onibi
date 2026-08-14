@@ -275,6 +275,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_alternation_uses_direct_match_question_path
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "atomic literal alternation should use direct match? path" }) do
+      assert regexp.match?("ab")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
