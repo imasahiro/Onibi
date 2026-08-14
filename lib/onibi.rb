@@ -113,6 +113,10 @@ module Onibi
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? } unless timeout_unconfigured?
       end
+      if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
@@ -655,7 +659,7 @@ module Onibi
                                                expression = quantifier.expression
                                                expression = expression.body if expression.is_a?(AST::Group)
                                                literal = literal_ast_value(expression)
-                                               literal && literal.bytesize.positive? && !literal.ascii_only? && hfa_program
+                                               literal && literal.bytesize.positive? && !literal.ascii_only?
                                              end
                                            end
     end
