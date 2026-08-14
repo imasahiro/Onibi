@@ -1567,7 +1567,7 @@ module Onibi
 
       alternatives = hfa_literal_alternation_values
       @hfa_literal_alternation_safe = alternatives.length > 1 && alternatives.all? do |value|
-        value.ascii_only? && value.bytesize.positive?
+        value && value.ascii_only? && value.bytesize.positive?
       end
     end
 
@@ -2197,6 +2197,7 @@ module Onibi
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_literal_assertion_result_safe? ||
+                   hfa_literal_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                    hfa_ignorecase_literal_result_safe? ||
@@ -2211,6 +2212,15 @@ module Onibi
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe?)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
+
+      if hfa_literal_alternation_result_safe?
+        position = 0
+        while (result = hfa_literal_alternation_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
 
       program = hfa_program
       return false unless program
@@ -2305,6 +2315,7 @@ module Onibi
     def hfa_iterator_safe?
       return true if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
                      hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
+                     hfa_literal_alternation_result_safe? ||
                      hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_positive_lookbehind_result_safe? || hfa_negative_lookbehind_result_safe? ||

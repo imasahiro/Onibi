@@ -34,6 +34,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_alternation_scan_uses_direct_hfa_iterator
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+
+    regexp.stub(:hfa_program, -> { flunk "literal alternation scan should avoid HFA program" }) do
+      assert_equal %w[dog cat fox], regexp.scan("dog cat fox")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
