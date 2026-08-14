@@ -743,12 +743,43 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_anchored_class_run_match_and_scan_use_hfa_results
+    regexp = Onibi::Regexp.new("\\A[a-z]+\\z")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "anchored class run match should use HFA" }) do
+      assert_equal "anchored", regexp.match("anchored").to_s
+      assert_nil regexp.match("anchored1")
+    end
+    regexp.stub(:codegen_each_result, ->(*) { flunk "anchored class run scan should use HFA" }) do
+      assert_equal ["anchored"], regexp.scan("anchored")
+      assert_empty regexp.scan("anchored1")
+    end
+  end
+
   def test_literal_alternation_match_question_uses_direct_string_search
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
     regexp.stub(:hfa_program, -> { flunk "literal alternation match? should avoid program compilation" }) do
       assert regexp.match?("the quick fox")
       refute regexp.match?("the quick hen")
+    end
+  end
+
+  def test_selective_class_run_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "selective class run match should use HFA" }) do
+      assert_equal "bcdfg", regexp.match("ae-bcdfg-io").to_s
+      assert_nil regexp.match("aeiou")
+    end
+  end
+
+  def test_class_run_positive_lookahead_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "class-run lookahead match should use HFA" }) do
+      assert_equal "abc", regexp.match("abc-123").to_s
+      assert_nil regexp.match("abc-def")
     end
   end
 

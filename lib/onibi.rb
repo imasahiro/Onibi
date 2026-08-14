@@ -348,7 +348,7 @@ module Onibi
       end
       if input.ascii_only? && hfa_anchored_class_run_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return hfa_anchored_class_run_match?(input, normalized_position)
+        return !hfa_anchored_class_run_match_result(input, normalized_position).nil?
       end
       if input.ascii_only? && hfa_literal_alternation_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -616,6 +616,24 @@ module Onibi
       if input.ascii_only? && ascii_repeated_literal_run_ast?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_anchored_class_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_anchored_class_run_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_ascii_class_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_ascii_class_run_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_class_run_positive_lookahead_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -2005,16 +2023,20 @@ module Onibi
     end
 
     def hfa_anchored_class_run_match?(input, position)
-      return false unless position.zero? && input.bytesize.positive?
+      !hfa_anchored_class_run_match_result(input, position).nil?
+    end
+
+    def hfa_anchored_class_run_match_result(input, position)
+      return unless position.zero? && input.bytesize.positive?
 
       table = hfa_anchored_class_run_table
       cursor = 0
       while cursor < input.bytesize
-        return false unless table[input.getbyte(cursor)]
+        return unless table[input.getbyte(cursor)]
 
         cursor += 1
       end
-      true
+      [0, input.bytesize, []]
     end
 
     def hfa_literal_alternation_result_safe?
@@ -2870,6 +2892,7 @@ module Onibi
                     hfa_linebreak_result_safe? ||
                     hfa_negative_literal_guard_safe? || hfa_simple_capture_result_safe? ||
                    hfa_word_boundary_literal_result_safe? || hfa_nonword_boundary_literal_result_safe? ||
+                   hfa_anchored_class_run_result_safe? ||
                    hfa_literal_assertion_result_safe? ||
                    hfa_literal_alternation_result_safe? ||
                    hfa_possessive_literal_string_result_safe? ||
@@ -2924,6 +2947,11 @@ module Onibi
           block.call(result)
           position = result[1]
         end
+        return true
+      end
+      if hfa_anchored_class_run_result_safe?
+        result = hfa_anchored_class_run_match_result(input, 0)
+        block.call(result) if result
         return true
       end
       if hfa_possessive_literal_string_result_safe?
@@ -3049,6 +3077,7 @@ module Onibi
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                      hfa_anchor_result_safe? ||
+                     hfa_anchored_class_run_result_safe? ||
                      hfa_greedy_bounded_sequence_result_safe? ||
                      hfa_scoped_extended_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
