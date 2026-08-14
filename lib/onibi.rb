@@ -3567,24 +3567,6 @@ module Onibi
                              [[start, finish], *capture_offsets], names,
                              MatchData::Context.new(input, self))
       end
-      if captures.empty? && (capture_offsets = hfa_conditional_capture_offsets(input, start))
-        values = capture_offsets.map do |offset|
-          offset && input.byteslice(offset[0], offset[1] - offset[0])
-        end
-        names = hfa_static_capture_names || hfa_result_names
-        return MatchData.new(input.byteslice(start, finish - start), values,
-                             [[start, finish], *capture_offsets], names,
-                             MatchData::Context.new(input, self))
-      end
-      if captures.empty? && (capture_offsets = hfa_subexpression_capture_offsets(input, start))
-        values = capture_offsets.map do |offset|
-          offset && input.byteslice(offset[0], offset[1] - offset[0])
-        end
-        names = hfa_static_capture_names || hfa_result_names
-        return MatchData.new(input.byteslice(start, finish - start), values,
-                             [[start, finish], *capture_offsets], names,
-                             MatchData::Context.new(input, self))
-      end
       if captures.empty? && (capture_offsets = hfa_nested_literal_capture_offsets(input, start, finish))
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
@@ -3613,6 +3595,24 @@ module Onibi
                              MatchData::Context.new(input, self))
       end
       if captures.empty? && (capture_offsets = hfa_repeated_class_capture_offsets(input, start, finish))
+        values = capture_offsets.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
+        names = hfa_static_capture_names || hfa_result_names
+        return MatchData.new(input.byteslice(start, finish - start), values,
+                             [[start, finish], *capture_offsets], names,
+                             MatchData::Context.new(input, self))
+      end
+      if captures.empty? && (capture_offsets = hfa_conditional_capture_offsets(input, start))
+        values = capture_offsets.map do |offset|
+          offset && input.byteslice(offset[0], offset[1] - offset[0])
+        end
+        names = hfa_static_capture_names || hfa_result_names
+        return MatchData.new(input.byteslice(start, finish - start), values,
+                             [[start, finish], *capture_offsets], names,
+                             MatchData::Context.new(input, self))
+      end
+      if captures.empty? && (capture_offsets = hfa_subexpression_capture_offsets(input, start))
         values = capture_offsets.map do |offset|
           offset && input.byteslice(offset[0], offset[1] - offset[0])
         end
