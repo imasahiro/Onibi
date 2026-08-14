@@ -185,6 +185,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
       end
+      if input.ascii_only? && (literal = hfa_match_reset_literal_combined_literal)
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_match_reset_literal_match?(input, normalized_position)
@@ -758,6 +762,16 @@ module Onibi
         candidate = input.index(prefix, candidate + 1)
       end
       false
+    end
+
+    def hfa_match_reset_literal_combined_literal
+      return @hfa_match_reset_literal_combined_literal if defined?(@hfa_match_reset_literal_combined_literal)
+
+      prefix, suffix = hfa_match_reset_literal_parts
+      @hfa_match_reset_literal_combined_literal = if prefix&.ascii_only? && suffix&.ascii_only? &&
+                                                     prefix.bytesize.positive? && suffix.bytesize.positive?
+                                                    prefix + suffix
+                                                  end
     end
 
     def hfa_match_reset_literal_parts

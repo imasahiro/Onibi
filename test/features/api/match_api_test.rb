@@ -328,6 +328,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_match_reset_literal_match_question_uses_combined_literal_path
+    regexp = Onibi::Regexp.new("prefix\\Ksuffix")
+
+    regexp.stub(:hfa_match_reset_literal_result_safe?,
+                -> { flunk "match-reset literal should use combined literal path" }) do
+      assert regexp.match?("xxprefixsuffixyy")
+      refute regexp.match?("xxprefix-suffixyy")
+    end
+  end
+
   def test_class_run_positive_lookahead_match_question_uses_boolean_path
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
