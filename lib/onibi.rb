@@ -348,6 +348,14 @@ module Onibi
       end
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         normalized_position = normalize_match_position(input, position)
+        if hfa_unicode_simple_casefold_literal?(literal)
+          folded_input = input.downcase
+          folded_literal = literal.downcase
+          result = !folded_input.index(folded_literal, normalized_position).nil?
+          return with_timeout { result } unless timeout_unconfigured?
+
+          return result
+        end
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position, literal)
         return with_timeout { !result.nil? } unless timeout_unconfigured?
 
@@ -1929,13 +1937,18 @@ module Onibi
       folded_input = input.downcase
       character_start = folded_input.index(literal, position)
       downcase_result = if character_start
-                          offsets = [0]
-                          input.each_char { |character| offsets << offsets[-1] + character.bytesize }
                           character_finish = character_start + literal.length
-                          [offsets[character_start], offsets[character_finish], []]
+                          [input[0, character_start].bytesize,
+                           input[0, character_finish].bytesize, []]
                         end
-      full_casefold_result = hfa_unicode_full_casefold_literal_match_result(input, position, literal_value)
+      full_casefold_result = unless hfa_unicode_simple_casefold_literal?(literal)
+                               hfa_unicode_full_casefold_literal_match_result(input, position, literal_value)
+                             end
       [downcase_result, full_casefold_result].compact.min_by(&:first)
+    end
+
+    def hfa_unicode_simple_casefold_literal?(literal)
+      literal.downcase == literal.upcase.downcase
     end
 
     def hfa_unicode_full_casefold_literal_match_result(input, position, literal_value = nil)
@@ -3714,10 +3727,21 @@ module Onibi
         return true
       end
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
-        position = 0
-        while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length, literal))
-          block.call(result)
-          position = result[1]
+        folded_input = input.downcase
+        if hfa_unicode_simple_casefold_literal?(literal) && folded_input.length == input.length
+          folded_literal = literal.downcase
+          character_position = 0
+          while (character_start = folded_input.index(folded_literal, character_position))
+            character_finish = character_start + folded_literal.length
+            block.call([input[0, character_start].bytesize, input[0, character_finish].bytesize, []])
+            character_position = character_finish
+          end
+        else
+          position = 0
+          while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length, literal))
+            block.call(result)
+            position = result[1]
+          end
         end
         return true
       end

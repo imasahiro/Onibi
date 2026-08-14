@@ -1227,6 +1227,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_simple_casefold_match_question_skips_full_casefold
+    regexp = Onibi::Regexp.new("(?i:é)")
+
+    regexp.stub(:hfa_unicode_full_casefold_literal_match_result,
+                ->(*) { flunk "simple Unicode casefold should skip full casefold search" }) do
+      assert regexp.match?("café École")
+    end
+  end
+
   def test_match_and_match_question_mark_accept_a_start_position
     regexp = Onibi::Regexp.new("cat")
 
