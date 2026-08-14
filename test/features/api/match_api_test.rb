@@ -373,6 +373,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_standalone_absence_match_question_uses_constant_path
+    regexp = Onibi::Regexp.new("(?~END)")
+
+    regexp.stub(:hfa_match_question_safe?, -> { flunk "Standalone absence should use constant match? path" }) do
+      assert regexp.match?("payloadEND")
+      assert regexp.match?("payload")
+      assert regexp.match?("")
+    end
+  end
+
   def test_match_reset_literal_match_question_uses_combined_literal_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
