@@ -745,6 +745,13 @@ class MatchApiTest < Minitest::Test
     assert_equal true, regexp.instance_variable_get(:@hfa_unicode_match_safe)
   end
 
+  def test_unicode_letter_runtime_falls_back_outside_fast_ranges
+    regexp = Onibi::Regexp.new("\\p{Letter}+")
+
+    assert regexp.match?("é")
+    refute regexp.match?("123!")
+  end
+
   def test_unicode_hfa_default_position_skips_position_normalization
     regexp = Onibi::Regexp.new("\\p{Letter}+")
 

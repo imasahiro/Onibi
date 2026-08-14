@@ -716,6 +716,8 @@ module Onibi
       def unicode_match?(input, position = 0)
         spec = @unicode_spec
         return true if spec.minimum.zero? && position <= input.bytesize
+        return unicode_letter_match?(input) if spec.kind == :property && @unicode_matcher == :letter? &&
+                                               !@unicode_negated && spec.minimum == 1 && position.zero?
         return !unicode_match_result(input, position).nil? if position.positive?
 
         count = 0
@@ -728,6 +730,14 @@ module Onibi
           end
         end
         spec.minimum.zero?
+      end
+
+      def unicode_letter_match?(input)
+        input.each_codepoint do |codepoint|
+          fast = fast_unicode_letter?(codepoint)
+          return true if fast || (fast.nil? && UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8)))
+        end
+        false
       end
 
       def unicode_match_result(input, position)
