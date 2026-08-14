@@ -2979,7 +2979,7 @@ module Onibi
     def hfa_unicode_repeated_literal_match_result(input, position)
       unit = hfa_unicode_repeated_literal_unit
       unit_bytesize = unit.bytesize
-      candidate = input.byteindex(unit, position)
+      candidate = input.b.index(unit.b, position)
       while candidate
         finish = candidate
         finish += unit_bytesize while input.byteslice(finish, unit_bytesize) == unit

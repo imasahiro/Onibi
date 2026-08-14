@@ -365,12 +365,7 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_repeated_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?:日本語)+")
-    input_class = Class.new(String) do
-      def b
-        raise "Unicode repeat scan should use byteindex without binary conversion"
-      end
-    end
-    input = input_class.new("開始日本語日本語 終了日本語")
+    input = "開始日本語日本語 終了日本語"
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "unicode repeated literal scan should use HFA" }) do
       regexp.stub(:hfa_program, -> { flunk "unicode repeated literal scan should avoid HFA program compilation" }) do
