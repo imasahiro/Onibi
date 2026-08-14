@@ -619,21 +619,25 @@ module Onibi
     end
 
     def hfa_unicode_ignorecase_literal_match_result(input, position)
-      literal = literal_ast_value(@ast)
+      literal = hfa_unicode_ignorecase_literal_fold
       folded_input = input.downcase
-      folded_literal = literal.downcase
-      character_start = folded_input.index(folded_literal, position)
+      character_start = folded_input.index(literal, position)
       return unless character_start
 
       offsets = [0]
       input.each_char { |character| offsets << offsets[-1] + character.bytesize }
-      character_finish = character_start + folded_literal.length
+      character_finish = character_start + literal.length
       [offsets[character_start], offsets[character_finish], []]
     end
 
     def hfa_unicode_ignorecase_literal_match?(input, position)
-      literal = literal_ast_value(@ast)
-      input.downcase.index(literal.downcase, position) != nil
+      input.downcase.index(hfa_unicode_ignorecase_literal_fold, position) != nil
+    end
+
+    def hfa_unicode_ignorecase_literal_fold
+      return @hfa_unicode_ignorecase_literal_fold if defined?(@hfa_unicode_ignorecase_literal_fold)
+
+      @hfa_unicode_ignorecase_literal_fold = literal_ast_value(@ast)&.downcase
     end
 
     def hfa_unicode_simple_capture_result_safe?

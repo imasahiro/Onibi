@@ -351,6 +351,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_ignorecase_literal_fold_is_cached
+    regexp = Onibi::Regexp.new("école", ["ignorecase"])
+
+    assert regexp.match?("ÉCOLE")
+    assert_equal "école", regexp.instance_variable_get(:@hfa_unicode_ignorecase_literal_fold)
+  end
+
   def test_unicode_property_run_match_question_mark_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 
