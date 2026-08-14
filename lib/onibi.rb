@@ -1511,6 +1511,19 @@ module Onibi
           tokens << { kind: :fixed, value: part.value, captures: [] }.freeze
           part.value.ascii_only? || !part.value.empty?
         when AST::Group
+          repeated = if part.capture && part.body.is_a?(AST::Sequence) && part.body.parts.one?
+                       quantifier = part.body.parts.first
+                       quantifier if quantifier.is_a?(AST::Quantifier) && quantifier.kind == :+ &&
+                                      quantifier.mode == :greedy && quantifier.expression.is_a?(AST::Literal)
+                     end
+          if repeated
+            value = repeated.expression.value
+            next false unless value.ascii_only? && value.bytesize.positive?
+
+            capture_count = [capture_count, part.number].max
+            tokens << { kind: :repeat, value: value, number: part.number, capture_full: true }.freeze
+            next true
+          end
           info = hfa_literal_capture_group_info(part)
           next false unless info
 
@@ -1531,7 +1544,7 @@ module Onibi
           false
         end
       end
-      valid &&= tokens.first&.fetch(:kind) == :fixed && tokens.first[:value].bytesize.positive?
+      valid &&= %i[fixed repeat].include?(tokens.first&.fetch(:kind)) && tokens.first[:value].bytesize.positive?
       @hfa_literal_capture_sequence_spec = if valid && tokens.any? { |token| %i[repeat optional].include?(token[:kind]) }
                                              [tokens.freeze, capture_count].freeze
                                            else
@@ -1602,7 +1615,8 @@ module Onibi
               valid = false
               break
             end
-            captures[token[:number] - 1] = [cursor - value.bytesize, cursor]
+            capture_start = token[:capture_full] ? start : cursor - value.bytesize
+            captures[token[:number] - 1] = [capture_start, cursor]
           when :optional
             value = token[:value]
             if input.byteslice(cursor, value.bytesize) == value
