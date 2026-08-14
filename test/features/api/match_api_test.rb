@@ -513,6 +513,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_ignorecase_match_question_uses_constructor_fast_metadata
+    regexp = Onibi::Regexp.new("école", Onibi::Regexp::IGNORECASE)
+
+    regexp.stub(:hfa_unicode_ignorecase_literal_result_safe?,
+                -> { flunk "Unicode ignorecase match? should use constructor metadata" }) do
+      assert regexp.match?("xxÉCOLEyy")
+    end
+  end
+
   def test_unicode_ignorecase_literal_fold_is_cached
     regexp = Onibi::Regexp.new("école", ["ignorecase"])
 
