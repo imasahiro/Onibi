@@ -1276,6 +1276,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_escape_class_run_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("\\w+")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "escape class run should use HFA result" }) do
+      assert_equal "word", regexp.match("word!")[0]
+    end
+  end
+
   def test_lookahead_alternation_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 

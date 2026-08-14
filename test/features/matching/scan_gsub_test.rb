@@ -512,6 +512,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_escape_class_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\w+")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "escape class run scan should use HFA" }) do
+      assert_equal ["word", "next"], regexp.scan("word! next?")
+    end
+  end
+
   def test_lookahead_alternation_backreference_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 

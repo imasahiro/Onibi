@@ -1948,7 +1948,8 @@ module Onibi
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
       @hfa_ascii_class_run_safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
                                   node.kind == :+ && node.mode == :greedy &&
-                                  node.expression.is_a?(AST::CharacterClass) &&
+                                  (node.expression.is_a?(AST::CharacterClass) ||
+                                   node.expression.is_a?(AST::Escape) && %i[digit space word].include?(node.expression.kind)) &&
                                   !hfa_ascii_class_run_table.nil?
     end
 
@@ -1956,7 +1957,7 @@ module Onibi
       return @hfa_ascii_class_run_table if defined?(@hfa_ascii_class_run_table)
 
       node = @ast.parts.first.expression
-      @hfa_ascii_class_run_table = ClassPredicates.compiled(node.value).ascii_table
+      @hfa_ascii_class_run_table = hfa_capture_class_table(node)
     end
 
     def hfa_ascii_class_run_match?(input, position)
