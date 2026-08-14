@@ -1779,6 +1779,34 @@ module Onibi
       false
     end
 
+    def hfa_unicode_property_run_match_result(input, position)
+      predicate, negated = hfa_unicode_property_run_spec
+      matcher = hfa_unicode_property_run_matcher
+      characters = input.each_char.to_a
+      offsets = []
+      cursor = 0
+      characters.each do |character|
+        offsets << cursor
+        cursor += character.bytesize
+      end
+      index = offsets.index { |offset| offset >= position }
+      while index && index < characters.length
+        codepoint = characters[index].ord
+        unless matcher.call(codepoint, predicate) ^ negated
+          index += 1
+          next
+        end
+
+        finish_index = index + 1
+        while finish_index < characters.length &&
+              (matcher.call(characters[finish_index].ord, predicate) ^ negated)
+          finish_index += 1
+        end
+        return [offsets[index], finish_index == characters.length ? input.bytesize : offsets[finish_index], []]
+      end
+      nil
+    end
+
     def hfa_unicode_property_run_matcher
       return @hfa_unicode_property_run_matcher if defined?(@hfa_unicode_property_run_matcher)
 
@@ -2310,6 +2338,14 @@ module Onibi
       if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
         position = 0
         while (result = hfa_unicode_repeated_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if !input.ascii_only? && hfa_unicode_property_run_result_safe?
+        position = 0
+        while (result = hfa_unicode_property_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end
