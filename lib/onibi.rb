@@ -4891,35 +4891,37 @@ module Onibi
     def hfa_nested_repeated_capture_result_safe?
       return @hfa_nested_repeated_capture_safe if defined?(@hfa_nested_repeated_capture_safe)
 
-      root, = hfa_nested_repeated_capture_parts
-      return @hfa_nested_repeated_capture_safe = false unless root
-      return @hfa_nested_repeated_capture_safe = false unless root.is_a?(AST::Group) && root.capture
-      body = root.body
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      return @hfa_nested_repeated_capture_safe = false unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
-
-      inner = body.expression
-      @hfa_nested_repeated_capture_safe = inner.is_a?(AST::Group) && inner.capture &&
-                                          hfa_repeated_unit_value(inner.body) && hfa_program
+      @hfa_nested_repeated_capture_safe = hfa_nested_repeated_capture_spec && hfa_program
     end
 
     def hfa_nested_repeated_capture_offsets(input, start, finish)
       return unless hfa_nested_repeated_capture_result_safe?
 
-      root, suffix = hfa_nested_repeated_capture_parts
+      root, suffix, unit, = hfa_nested_repeated_capture_spec
       repeat_finish = finish - suffix.bytesize
       return unless suffix.empty? || input.byteslice(repeat_finish, suffix.bytesize) == suffix
 
-      body = root.body.parts.first
-      value = hfa_repeated_unit_value(body.expression.body)
-      return unless value
-
-      unit = body.expression.body
       lengths = hfa_repeated_match_lengths(unit, input, start, repeat_finish)
       return unless lengths&.any? && lengths.sum == repeat_finish - start
 
       last_start = repeat_finish - lengths.last
       [[start, repeat_finish], [last_start, repeat_finish]]
+    end
+
+    def hfa_nested_repeated_capture_spec
+      return @hfa_nested_repeated_capture_spec if defined?(@hfa_nested_repeated_capture_spec)
+
+      root, suffix = hfa_nested_repeated_capture_parts
+      body = root.body if root.is_a?(AST::Group) && root.capture
+      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
+      inner = body.expression if body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
+      unit = inner.body if inner.is_a?(AST::Group) && inner.capture
+      value = hfa_repeated_unit_value(unit) if unit
+      @hfa_nested_repeated_capture_spec = if root && inner && value
+                                            [root, suffix, unit, value].freeze
+                                          else
+                                            false
+                                          end
     end
 
     def hfa_nested_repeated_capture_parts
