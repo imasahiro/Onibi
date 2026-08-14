@@ -120,6 +120,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_latin1_unicode_literal_scan_uses_hfa
+    regexp = Onibi::Regexp.new("ß")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Latin-1 Unicode literal scan should use HFA" }) do
+      assert_equal ["ß"], regexp.scan("café ß")
+    end
+  end
+
   def test_captureless_literal_quantifier_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+")
     regexp.stub(:codegen_each_result, ->(*) { flunk "literal quantifier iteration should use HFA" }) do
