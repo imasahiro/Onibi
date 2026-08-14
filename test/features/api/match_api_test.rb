@@ -869,6 +869,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_alternation_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("cat|dog|fox")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "literal alternation should skip generic failure checks" }) do
+      assert regexp.match?("the quick fox")
+    end
+  end
+
   def test_selective_class_run_match_uses_hfa_result
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 
