@@ -600,6 +600,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_property_run_match_question_uses_constructor_dispatch_metadata
+    regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+
+    regexp.stub(:hfa_unicode_property_run_result_safe?,
+                -> { flunk "Unicode property run should use constructor dispatch metadata" }) do
+      assert regexp.match?("漢字ひらがな終端")
+    end
+  end
+
   def test_unicode_property_match_question_mark_honors_start_position
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
 

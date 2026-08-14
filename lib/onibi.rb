@@ -91,6 +91,14 @@ module Onibi
       @hfa_unicode_ignorecase_literal_fast = literal if literal && !literal.ascii_only? &&
                                                         literal.bytesize.positive? &&
                                                         @options.include?("ignorecase")
+      property_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
+                        node = @ast.parts.first
+                        node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
+                                           node.mode == :greedy && node.expression.is_a?(AST::Property)
+                      end
+      @hfa_unicode_property_run_fast = property_node if property_node &&
+                                                        property_node.name.sub("Is", "").sub("^", "") == "Hiragana" &&
+                                                        !@options.include?("ignorecase")
     end
 
     def match?(input, position = 0)
@@ -120,6 +128,10 @@ module Onibi
         literal = @hfa_unicode_exact_literal_fast
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !input.index(literal, start_position).nil?
+      end
+      if !input.ascii_only? && @hfa_unicode_property_run_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_unicode_property_run_match?(input, normalized_position)
       end
       if input.ascii_only? && hfa_ascii_unicode_run_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
