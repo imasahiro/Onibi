@@ -436,6 +436,13 @@ module Onibi
           return with_timeout { hfa.match?(input, normalized_position) }
         end
       end
+      if input.ascii_only? && ascii_repeated_literal_run_ast?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_repeated_literal_run_match_result(input, normalized_position)
+        return !result.nil? if timeout_unconfigured?
+
+        return with_timeout { !result.nil? }
+      end
 
       hfa = hfa_program if input.ascii_only? && hfa_match_question_safe?
       if hfa
@@ -532,6 +539,12 @@ module Onibi
         return nil if hfa_program
       end
 
+      if input.ascii_only? && ascii_repeated_literal_run_ast?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_repeated_literal_run_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && (hfa_public_safe? && hfa_match_result_safe? ||
                                hfa_simple_capture_result_safe? || hfa_literal_guard_result_safe? ||
                                hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
@@ -544,7 +557,6 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil if hfa_program
       end
-
       codegen_match(input, position)
     end
 

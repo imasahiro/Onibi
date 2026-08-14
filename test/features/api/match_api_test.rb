@@ -246,8 +246,10 @@ class MatchApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("a+")
 
     regexp.stub(:codegen_match?, ->(*) { flunk "literal quantifier should use HFA" }) do
-      assert regexp.match?("caaab")
-      refute regexp.match?("cbbb")
+      regexp.stub(:hfa_program, -> { flunk "literal quantifier match? should avoid HFA program compilation" }) do
+        assert regexp.match?("caaab")
+        refute regexp.match?("cbbb")
+      end
     end
   end
 
@@ -647,9 +649,11 @@ class MatchApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("a+")
 
     regexp.stub(:codegen_match, ->(*) { flunk "literal quantifier match should use HFA" }) do
-      match = regexp.match("caaab")
-      assert_equal "aaa", match[0]
-      assert_equal [1, 4], match.offset(0)
+      regexp.stub(:hfa_program, -> { flunk "literal quantifier match should avoid HFA program compilation" }) do
+        match = regexp.match("caaab")
+        assert_equal "aaa", match[0]
+        assert_equal [1, 4], match.offset(0)
+      end
     end
   end
 
