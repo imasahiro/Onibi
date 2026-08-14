@@ -459,6 +459,12 @@ module Onibi
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end
+      if input.ascii_only? && @hfa_ignorecase_literal_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_ignorecase_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_word_boundary_literal_match_result(input, normalized_position)
