@@ -378,6 +378,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_literal_assertion_match_result(input, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_lazy_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_lazy_literal_match_result(input, normalized_position).nil?
+      end
       if input.ascii_only? && hfa_leading_literal_assertion_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil?
@@ -582,6 +586,12 @@ module Onibi
       if input.ascii_only? && hfa_scoped_extended_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_program.match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_lazy_literal_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_lazy_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1993,6 +2003,62 @@ module Onibi
       @hfa_lazy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
     end
 
+    def hfa_lazy_literal_result_safe?
+      return @hfa_lazy_literal_safe if defined?(@hfa_lazy_literal_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      quantifier = parts.first
+      unless quantifier.is_a?(AST::Quantifier)
+        @hfa_lazy_literal_safe = false
+        return @hfa_lazy_literal_safe
+      end
+      suffix = if parts.length == 1
+                  nil
+                else
+                  parts[1..].map { |part| literal_ast_value(part) }.then { |values| values.all? ? values.join : nil }
+                end
+      valid = parts.length <= 2 && quantifier.is_a?(AST::Quantifier) &&
+              %i[+ ?].include?(quantifier.kind) && quantifier.mode == :lazy &&
+              quantifier.expression.is_a?(AST::Literal) && quantifier.expression.value.ascii_only? &&
+              quantifier.expression.value.bytesize.positive? &&
+              (suffix.nil? || (suffix.ascii_only? && suffix.bytesize.positive?)) &&
+              !@options.include?("ignorecase")
+      @hfa_lazy_literal_safe = valid ? [quantifier.kind, quantifier.expression.value, suffix].freeze : false
+    end
+
+    def hfa_lazy_literal_match_result(input, position)
+      kind, literal, suffix = hfa_lazy_literal_result_safe?
+      if kind == :+
+        candidate = input.index(literal, position)
+        while candidate
+          cursor = candidate + literal.bytesize
+          loop do
+            if suffix.nil?
+              return [candidate, cursor, []]
+            end
+            return [candidate, cursor + suffix.bytesize, []] if input.byteslice(cursor, suffix.bytesize) == suffix
+
+            break unless input.byteslice(cursor, literal.bytesize) == literal
+
+            cursor += literal.bytesize
+          end
+          candidate = input.index(literal, candidate + 1)
+        end
+        return nil
+      end
+
+      cursor = position
+      while cursor <= input.bytesize
+        return [cursor, cursor + suffix.bytesize, []] if input.byteslice(cursor, suffix.bytesize) == suffix
+        if input.byteslice(cursor, literal.bytesize) == literal &&
+           input.byteslice(cursor + literal.bytesize, suffix.bytesize) == suffix
+          return [cursor, cursor + literal.bytesize + suffix.bytesize, []]
+        end
+        cursor += 1
+      end
+      nil
+    end
+
     def hfa_literal_conditional_result_safe?
       return @hfa_literal_conditional_safe if defined?(@hfa_literal_conditional_safe)
 
@@ -2851,6 +2917,14 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && hfa_lazy_literal_result_safe?
+        position = 0
+        while (result = hfa_lazy_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
@@ -3186,6 +3260,7 @@ module Onibi
                      hfa_anchored_class_run_result_safe? ||
                      hfa_greedy_bounded_sequence_result_safe? ||
                      hfa_scoped_extended_literal_result_safe? ||
+                     hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
                      hfa_linebreak_result_safe? ||

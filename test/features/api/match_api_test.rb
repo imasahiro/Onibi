@@ -296,6 +296,20 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_lazy_literal_quantifier_match_uses_hfa_result
+    {
+      "a+?" => ["a", "ba"],
+      "a+?a" => ["aa", "aaa"],
+      "a??b" => ["b", "b"]
+    }.each do |pattern, (expected, input)|
+      regexp = Onibi::Regexp.new(pattern)
+
+      regexp.stub(:codegen_match, ->(*) { flunk "lazy literal #{pattern} match should use HFA" }) do
+        assert_equal expected, regexp.match(input).to_s
+      end
+    end
+  end
+
   def test_match_returns_nil_and_match_question_mark_returns_boolean
     regexp = Onibi::Regexp.new("cat")
 
