@@ -1000,6 +1000,7 @@ module Onibi
           return class_run_chain_match?(input, position) if @class_run_chain_spec
           return adjacent_class_run_match?(input, position) if @adjacent_class_run_spec
           return class_run_triple_match?(input, position) if @class_run_triple_spec
+          return class_run_literal_match?(input, position) if @class_run_literal_spec
           return ascii_run_match?(input, position) if @ascii_run_spec
           return star_literal_match?(input, position) if @star_literal_spec
           return lazy_star_literal_match?(input, position) if @lazy_star_literal_spec
