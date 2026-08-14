@@ -169,6 +169,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_unicode_letter_property_run_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("\\p{Letter}+")
+    regexp.stub(:codegen_each_result, ->(*) { flunk "Unicode letter property run should use HFA" }) do
+      regexp.stub(:hfa_program, -> { flunk "Unicode letter property run should avoid HFA program compilation" }) do
+        assert_equal %w[日本語 終端], regexp.scan("123日本語 456終端")
+      end
+    end
+  end
+
   def test_literal_negative_lookahead_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("cat(?!fish)")
 

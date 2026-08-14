@@ -1827,7 +1827,7 @@ module Onibi
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
       safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
              node.kind == :+ && node.mode == :greedy &&
-             node.expression.is_a?(AST::Property) && node.expression.name.sub("Is", "").sub("^", "") == "Hiragana" &&
+             node.expression.is_a?(AST::Property) &&
              !hfa_unicode_property_run_spec.nil?
       @hfa_unicode_match_safe = true if safe
       @hfa_unicode_property_run_safe = safe
