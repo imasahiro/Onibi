@@ -474,6 +474,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_atomic_literal_alternation_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "atomic literal alternation match should use HFA" }) do
+      assert_equal "ab", regexp.match("zab").to_s
+      assert_nil regexp.match("zac")
+    end
+  end
+
   def test_subexpression_literal_call_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?<pair>ab)\\g<pair>")
 
@@ -1091,6 +1100,15 @@ class MatchApiTest < Minitest::Test
     regexp.stub(:codegen_match, ->(*) { flunk "literal positive lookahead match should use HFA" }) do
       assert_equal "a", regexp.match("ab")[0]
       assert_nil regexp.match("ac")
+    end
+  end
+
+  def test_leading_literal_positive_lookahead_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?=a)a")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "leading literal positive lookahead should use HFA" }) do
+      assert_equal "a", regexp.match("a")[0]
+      assert_nil regexp.match("b")
     end
   end
 

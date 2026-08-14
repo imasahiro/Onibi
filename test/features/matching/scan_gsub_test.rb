@@ -223,6 +223,22 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_leading_literal_positive_lookahead_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?=a)a")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "leading literal positive lookahead should use HFA" }) do
+      assert_equal %w[a a], regexp.scan("a ba")
+    end
+  end
+
+  def test_atomic_literal_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "atomic literal alternation should use HFA" }) do
+      assert_equal ["ab", "ab"], regexp.scan("zab ab")
+    end
+  end
+
   def test_class_run_positive_lookahead_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("[a-z]+(?=-[0-9]+)")
 
