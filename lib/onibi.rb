@@ -5341,6 +5341,24 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && (spec = hfa_delimited_negated_class_result_spec)
+        prefix, suffix, minimum = spec
+        position = 0
+        while (start = input.index(prefix, position))
+          finish = input.index(suffix, start + prefix.bytesize)
+          unless finish
+            position = start + prefix.bytesize
+            next
+          end
+          if finish - start - prefix.bytesize >= minimum
+            block.call([start, finish + suffix.bytesize, []])
+            position = finish + suffix.bytesize
+          else
+            position = start + prefix.bytesize
+          end
+        end
+        return true
+      end
       if !input.ascii_only? && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
@@ -5795,6 +5813,36 @@ module Onibi
         end
       end
       true
+    end
+
+    def hfa_delimited_negated_class_result_spec
+      return @hfa_delimited_negated_class_result_spec if defined?(@hfa_delimited_negated_class_result_spec)
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      prefix = parts.first
+      suffix = parts.last
+      middle = parts[1...-1]
+      valid_literals = prefix.is_a?(AST::Literal) && suffix.is_a?(AST::Literal) &&
+                       prefix.value.bytesize == 1 && suffix.value.bytesize == 1
+      @hfa_delimited_negated_class_result_spec = if valid_literals &&
+                                                   (minimum = hfa_negated_class_run_minimum(middle, suffix.value))
+                                                  [prefix.value, suffix.value, minimum].freeze
+                                                else
+                                                  false
+                                                end
+    end
+
+    def hfa_negated_class_run_minimum(parts, delimiter)
+      return 0 if parts.one? && hfa_negated_class_quantifier?(parts.first, delimiter)
+      return 1 if parts.length == 2 && parts.first.is_a?(AST::CharacterClass) &&
+                   parts.first.value == "^#{delimiter}" &&
+                   hfa_negated_class_quantifier?(parts.last, delimiter)
+
+      nil
+    end
+
+    def hfa_negated_class_quantifier?(node, delimiter)
+      node.is_a?(AST::Quantifier) && node.kind == :* && node.expression.is_a?(AST::CharacterClass) &&
+        node.expression.value == "^#{delimiter}"
     end
 
     def hfa_scan_input_safe?(input)
