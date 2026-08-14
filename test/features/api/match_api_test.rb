@@ -197,6 +197,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_captured_class_run_chain_match_question_uses_boolean_hfa_path
+    regexp = Onibi::Regexp.new("([a-z]+)-([0-9]+)")
+
+    regexp.stub(:hfa_program, -> { flunk "captured class-run match? should avoid program compilation" }) do
+      assert regexp.match?("prefix item-2026 suffix")
+      refute regexp.match?("prefix item- suffix")
+    end
+  end
+
   def test_repeated_alternation_match_uses_hfa_result
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 

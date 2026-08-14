@@ -101,6 +101,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_possessive_literal_string_match_result(input, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_captured_class_run_chain_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_captured_class_run_chain_match?(input, normalized_position)
+      end
       if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -638,6 +642,31 @@ module Onibi
       return @hfa_unicode_ignorecase_literal_fold if defined?(@hfa_unicode_ignorecase_literal_fold)
 
       @hfa_unicode_ignorecase_literal_fold = literal_ast_value(@ast)&.downcase
+    end
+
+    def hfa_captured_class_run_chain_result_safe?
+      layout = hfa_simple_capture_layout
+      return false unless layout.is_a?(Array) && layout.length == 3
+
+      layout[0][0] == :class_run && layout[1][0] == :literal && layout[2][0] == :class_run
+    end
+
+    def hfa_captured_class_run_chain_match?(input, position)
+      layout = hfa_simple_capture_layout
+      left_table = layout[0][1]
+      separator = layout[1][1]
+      right_table = layout[2][1]
+      separator_position = input.index(separator, position)
+      while separator_position
+        left = separator_position
+        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
+        right = separator_position + separator.bytesize
+        right += 1 while right < input.bytesize && right_table[input.getbyte(right)]
+        return true if left < separator_position && right > separator_position + separator.bytesize
+
+        separator_position = input.index(separator, separator_position + 1)
+      end
+      false
     end
 
     def hfa_unicode_simple_capture_result_safe?
