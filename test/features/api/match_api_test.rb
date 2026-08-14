@@ -418,6 +418,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_single_unicode_property_match_question_uses_hfa
+    regexp = Onibi::Regexp.new("\\p{Han}")
+
+    regexp.stub(:codegen_match?, ->(*) { flunk "single Unicode property match? should use HFA" }) do
+      assert regexp.match?("漢")
+      refute regexp.match?("あ")
+    end
+  end
+
   def test_unicode_word_class_run_match_question_uses_direct_character_path
     regexp = Onibi::Regexp.new("[[:word:]]+")
 
