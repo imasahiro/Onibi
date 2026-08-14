@@ -2221,6 +2221,20 @@ module Onibi
         end
         return true
       end
+      if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
+        position = 0
+        while (start = if hfa_exact_literal_result_safe?
+                         input.index(literal, position)
+                       else
+                         input.b.index(literal.b, position)
+                       end)
+          finish = start + literal.bytesize
+          block.call([start, finish, []])
+          position = finish
+        end
+        return true
+      end
 
       program = hfa_program
       return false unless program
@@ -2242,18 +2256,6 @@ module Onibi
         while (result = hfa_word_boundary_literal_match_result(input, position))
           block.call(result)
           position = result[1]
-        end
-      elsif hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
-        literal = hfa_exact_literal_value
-        position = 0
-        while (start = if hfa_exact_literal_result_safe?
-                         input.index(literal, position)
-                       else
-                         input.b.index(literal.b, position)
-                       end)
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
         end
       elsif hfa_unicode_ignorecase_literal_result_safe?
         position = 0

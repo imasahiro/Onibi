@@ -34,6 +34,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("needle")
+
+    regexp.stub(:hfa_program, -> { flunk "literal scan should avoid HFA program compilation" }) do
+      assert_equal %w[needle needle], regexp.scan("needle x needle")
+    end
+  end
+
   def test_literal_alternation_scan_uses_direct_hfa_iterator
     regexp = Onibi::Regexp.new("cat|dog|fox")
 
