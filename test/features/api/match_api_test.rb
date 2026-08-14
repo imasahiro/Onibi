@@ -1174,6 +1174,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_leading_literal_lookahead_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?=a)(?=a)a")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "repeated leading lookahead should use HFA" }) do
+      assert_equal "a", regexp.match("a").to_s
+      assert_nil regexp.match("b")
+    end
+  end
+
   def test_literal_positive_lookbehind_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<=pre)fix")
 

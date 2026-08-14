@@ -231,6 +231,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_repeated_leading_literal_lookahead_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new("(?=a)(?=a)a")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "repeated leading lookahead should use HFA" }) do
+      assert_equal %w[a a], regexp.scan("a ba")
+    end
+  end
+
   def test_atomic_literal_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 

@@ -1071,33 +1071,36 @@ module Onibi
       return @hfa_leading_literal_assertion_safe if defined?(@hfa_leading_literal_assertion_safe)
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      assertion = parts.first
-      body = parts[1..]
-      @hfa_leading_literal_assertion_safe = if assertion.is_a?(AST::Assertion) &&
-                                               %i[positive negative].include?(assertion.kind) &&
-                                               body&.all? { |part| part.is_a?(AST::Literal) }
-                                              literal = body.map(&:value).join
-                                              guard = literal_ast_value(assertion.body)
-                                              [literal, assertion.kind, guard] if literal.bytesize.positive? && guard
-                                            end
+      index = 0
+      guards = []
+      while (assertion = parts[index]).is_a?(AST::Assertion) && %i[positive negative].include?(assertion.kind)
+        guard = literal_ast_value(assertion.body)
+        break unless guard
+
+        guards << [assertion.kind, guard]
+        index += 1
+      end
+      body = parts[index..]
+      literal = body&.all? { |part| part.is_a?(AST::Literal) } ? body.map(&:value).join : nil
+      @hfa_leading_literal_assertion_safe = [literal, guards] if literal&.bytesize&.positive? && guards.any?
       values = @hfa_leading_literal_assertion_safe
-      @hfa_leading_literal_assertion_safe = false unless values &&
-                                                        [values[0], values[2]].all? do |value|
-                                                          value.is_a?(String) && value.ascii_only? && value.bytesize.positive?
-                                                        end
+      @hfa_leading_literal_assertion_safe = false unless values && values[0].ascii_only? &&
+                                                        values[1].all? { |_, guard| guard.ascii_only? && guard.bytesize.positive? }
       @hfa_leading_literal_assertion_safe
     end
 
     def hfa_leading_literal_assertion_match_result(input, position,
                                                    assertion = hfa_leading_literal_assertion_result_safe?)
-      literal, kind, guard = assertion
+      literal, guards = assertion
       candidate = input.index(literal, position)
       while candidate
-        matches = if kind == :positive
-                    input.byteslice(candidate, guard.bytesize) == guard
-                  else
-                    input.byteslice(candidate, guard.bytesize) != guard
-                  end
+        matches = guards.all? do |kind, guard|
+          if kind == :positive
+            input.byteslice(candidate, guard.bytesize) == guard
+          else
+            input.byteslice(candidate, guard.bytesize) != guard
+          end
+        end
         return [candidate, candidate + literal.bytesize, []] if matches
 
         candidate = input.index(literal, candidate + 1)
