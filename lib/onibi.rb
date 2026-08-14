@@ -1963,15 +1963,14 @@ module Onibi
 
     def hfa_unicode_repeated_literal_match_result(input, position)
       unit = hfa_unicode_repeated_literal_unit
-      unit_bytes = unit.b
-      bytes = input.b
-      candidate = bytes.index(unit_bytes, position)
+      unit_bytesize = unit.bytesize
+      candidate = input.byteindex(unit, position)
       while candidate
         finish = candidate
-        finish += unit_bytes.bytesize while bytes.byteslice(finish, unit_bytes.bytesize) == unit_bytes
+        finish += unit_bytesize while input.byteslice(finish, unit_bytesize) == unit
         return [candidate, finish, []] if finish > candidate
 
-        candidate = bytes.index(unit_bytes, candidate + 1)
+        candidate = input.byteindex(unit, candidate + 1)
       end
       nil
     end
