@@ -4893,10 +4893,10 @@ module Onibi
       repeat_finish = finish - suffix.bytesize
       return unless suffix.empty? || input.byteslice(repeat_finish, suffix.bytesize) == suffix
 
-      lengths = hfa_repeated_match_lengths(unit, input, start, repeat_finish)
-      return unless lengths&.any? && lengths.sum == repeat_finish - start
+      span = hfa_repeated_match_span(unit, input, start, repeat_finish)
+      return unless span && span.first == repeat_finish - start
 
-      last_start = repeat_finish - lengths.last
+      last_start = repeat_finish - span.last
       [[start, repeat_finish], [last_start, repeat_finish]]
     end
 
@@ -4962,11 +4962,11 @@ module Onibi
         group_start, group_finish = boundaries[index], boundaries[index + 1]
         body = group.body.parts.first
         inner = body.expression
-        lengths = hfa_repeated_match_lengths(inner.body, input, group_start, group_finish)
-        return unless lengths&.any? && lengths.sum == group_finish - group_start
+        span = hfa_repeated_match_span(inner.body, input, group_start, group_finish)
+        return unless span && span.first == group_finish - group_start
 
         offsets[group.number - 1] = [group_start, group_finish]
-        offsets[inner.number - 1] = [group_finish - lengths.last, group_finish]
+        offsets[inner.number - 1] = [group_finish - span.last, group_finish]
       end
       offsets
     end
@@ -5046,15 +5046,15 @@ module Onibi
       return unless separator_position && separator_position < finish
 
       repeated_body = repeated.body.parts.first
-      lengths = hfa_repeated_match_lengths(repeated_body.expression.body, input, start, separator_position)
-      return unless lengths&.any? && lengths.sum == separator_position - start
+      span = hfa_repeated_match_span(repeated_body.expression.body, input, start, separator_position)
+      return unless span && span.first == separator_position - start
 
       numbers = [repeated.number, repeated.body.parts.first.expression.number] +
                 pairs.flat_map { |_separator, group| [group.number, hfa_class_capture_spec(group)[1]] }.compact
       offsets = Array.new(numbers.max)
       offsets[repeated.number - 1] = [start, separator_position]
       offsets[repeated.body.parts.first.expression.number - 1] =
-        [separator_position - lengths.last, separator_position]
+        [separator_position - span.last, separator_position]
       cursor = separator_position
       pairs.each_with_index do |(separator, class_group), index|
         return unless input.byteslice(cursor, separator.value.bytesize) == separator.value
@@ -5114,6 +5114,19 @@ module Onibi
         cursor += length
       end
       lengths if cursor == finish
+    end
+
+    def hfa_repeated_match_span(node, input, start, finish)
+      cursor = start
+      last_length = nil
+      while cursor < finish
+        length = hfa_nested_literal_match_length(node, input, cursor)
+        return unless length&.positive? && cursor + length <= finish
+
+        cursor += length
+        last_length = length
+      end
+      [cursor - start, last_length] if cursor == finish && last_length
     end
 
     def repeated_alternation_ast?

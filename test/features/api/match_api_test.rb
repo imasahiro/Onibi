@@ -1291,6 +1291,13 @@ class MatchApiTest < Minitest::Test
     assert_same first, second
   end
 
+  def test_repeated_capture_span_avoids_length_list
+    regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab)+)c")
+    unit = regexp.instance_variable_get(:@ast).parts.first.body.parts.first.expression.body
+
+    assert_equal [4, 2], regexp.send(:hfa_repeated_match_span, unit, "ababc", 0, 4)
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
