@@ -478,15 +478,27 @@ module Onibi
         prefix = @prefix_literal
         prefix_length = prefix.bytesize
         active = prefix_active
-        candidate = input.index(prefix, position)
+        candidate = prefix_literal_candidate(input, position)
         while candidate
           return true unless (active & @accept_mask).zero?
 
           return true if search_prefix_candidate(input, candidate + prefix_length, active)
 
-          candidate = input.index(prefix, candidate + 1)
+          candidate = prefix_literal_candidate(input, candidate + 1)
         end
         false
+      end
+
+      def prefix_literal_candidate(input, position)
+        prefix = @prefix_literal
+        first_byte = prefix.getbyte(0)
+        candidate = input.index(first_byte.chr(Encoding::ASCII_8BIT), position)
+        while candidate
+          return candidate if input.byteslice(candidate, prefix.bytesize) == prefix
+
+          candidate = input.index(first_byte.chr(Encoding::ASCII_8BIT), candidate + 1)
+        end
+        nil
       end
 
       def search_prefix_candidate(input, position, active)

@@ -15,6 +15,13 @@ class HybridAutomataTest < Minitest::Test
     assert_equal %i[string_search dfa_lookup nfa_transition accept], program.bytecode.map(&:opcode)
   end
 
+  def test_sparse_prefix_with_trailing_literal_materializes_static_dfa
+    program = compile("BEGIN(?:[a-z]+|[0-9]{2,4})END")
+
+    refute program.match?("x" * 65_536)
+    assert_equal 65_536, program.send(:prefix_literal_candidate, "x" * 65_536 + "BEGIN", 0)
+  end
+
   def test_specialized_program_skips_generic_topology
     specialized = compile("needle")
     generic = compile("(?:ab|a[0-9])+z")
