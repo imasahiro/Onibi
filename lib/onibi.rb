@@ -2251,17 +2251,19 @@ module Onibi
         end
         return true
       end
-
-      program = hfa_program
-      return false unless program
-
       if hfa_literal_assertion_result_safe?
         position = 0
         while (result = hfa_literal_assertion_match_result(input, position))
           block.call(result)
           position = result[1]
         end
-      elsif hfa_unicode_ignorecase_literal_result_safe?
+        return true
+      end
+
+      program = hfa_program
+      return false unless program
+
+      if hfa_unicode_ignorecase_literal_result_safe?
         position = 0
         while (result = hfa_unicode_ignorecase_literal_match_result(input, input.byteslice(0, position).to_s.length))
           block.call(result)

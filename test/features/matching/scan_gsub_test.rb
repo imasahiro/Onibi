@@ -73,6 +73,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_assertion_scan_avoids_hfa_program_compile
+    regexp = Onibi::Regexp.new("cat(?!fish)")
+
+    regexp.stub(:hfa_program, -> { flunk "literal assertion scan should avoid HFA program compilation" }) do
+      assert_equal %w[cat cat], regexp.scan("cat dog catfish cat")
+    end
+  end
+
   def test_repeated_literal_suffix_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a+b")
     regexp.stub(:codegen_each_result, ->(*) { flunk "repeated literal suffix iteration should use HFA" }) do
