@@ -113,6 +113,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_match_reset_literal_match?(input, normalized_position)
       end
+      if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return hfa_class_run_positive_lookahead_match?(input, normalized_position)
+      end
       if !input.ascii_only? && hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -684,6 +688,45 @@ module Onibi
       prefix = reset && literal_ast_value(AST::Sequence.new(parts[0...reset]))
       suffix = reset && literal_ast_value(AST::Sequence.new(parts[(reset + 1)..]))
       @hfa_match_reset_literal_parts = [prefix, suffix].freeze
+    end
+
+    def hfa_class_run_positive_lookahead_result_safe?
+      return @hfa_class_run_positive_lookahead_safe if defined?(@hfa_class_run_positive_lookahead_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      run, assertion = parts
+      body = assertion&.body
+      guard = body.is_a?(AST::Sequence) ? body.parts : []
+      valid = parts.length == 2 && run.is_a?(AST::Quantifier) && run.kind == :+ && run.mode == :greedy &&
+              run.expression.is_a?(AST::CharacterClass) && assertion.is_a?(AST::Assertion) &&
+              assertion.kind == :positive && guard.length == 2 && guard.first.is_a?(AST::Literal) &&
+              guard.last.is_a?(AST::Quantifier) && guard.last.kind == :+ && guard.last.mode == :greedy &&
+              guard.last.expression.is_a?(AST::CharacterClass)
+      @hfa_class_run_positive_lookahead_safe = valid && !hfa_class_run_positive_lookahead_tables.nil?
+    end
+
+    def hfa_class_run_positive_lookahead_tables
+      return @hfa_class_run_positive_lookahead_tables if defined?(@hfa_class_run_positive_lookahead_tables)
+
+      run, assertion = @ast.parts
+      guard = assertion.body.parts
+      left = ClassPredicates.compiled(run.expression.value).ascii_table
+      right = ClassPredicates.compiled(guard.last.expression.value).ascii_table
+      @hfa_class_run_positive_lookahead_tables = [left, guard.first.value, right].freeze
+    end
+
+    def hfa_class_run_positive_lookahead_match?(input, position)
+      left_table, separator, right_table = hfa_class_run_positive_lookahead_tables
+      separator_position = input.index(separator, position + 1)
+      while separator_position
+        left = separator_position
+        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
+        right = separator_position + separator.bytesize
+        return true if left < separator_position && right < input.bytesize && right_table[input.getbyte(right)]
+
+        separator_position = input.index(separator, separator_position + 1)
+      end
+      false
     end
 
     def hfa_unicode_ignorecase_literal_result_safe?
