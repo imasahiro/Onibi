@@ -1366,6 +1366,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_literal_subexpression_call_match_uses_hfa_result
+    regexp = Onibi::Regexp.new("(?<letter>a)\\g<letter>")
+
+    regexp.stub(:codegen_match, ->(*) { flunk "literal subexpression call should use HFA" }) do
+      match = regexp.match("xaa")
+      assert_equal "aa", match[0]
+      assert_equal "a", match["letter"]
+      assert_equal [1, 2], match.offset("letter")
+    end
+  end
+
   def test_repeated_literal_capture_with_suffix_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<letter>a)+b")
 

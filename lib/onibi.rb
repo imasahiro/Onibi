@@ -530,6 +530,16 @@ module Onibi
         end
         return nil
       end
+      if input.ascii_only? && hfa_literal_subexpression_call_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        literal = hfa_literal_subexpression_call_literal
+        candidate = input.index(literal + literal, normalized_position)
+        if candidate
+          return hfa_match_data([candidate, candidate + literal.bytesize * 2,
+                                 [[candidate, candidate + literal.bytesize]]], input)
+        end
+        return nil
+      end
       if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
@@ -2267,6 +2277,24 @@ module Onibi
               (first_quantifier.expression.is_a?(AST::Literal) || first_quantifier.expression.is_a?(AST::Any)) &&
               !@options.include?("ignorecase")
       @hfa_adjacent_greedy_capture_safe = valid && hfa_program
+    end
+
+    def hfa_literal_subexpression_call_result_safe?
+      return @hfa_literal_subexpression_safe if defined?(@hfa_literal_subexpression_safe)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      group, call = parts
+      body = group.body if group.is_a?(AST::Group) && group.capture
+      body = body.parts.one? && body.parts.first if body.is_a?(AST::Sequence)
+      valid = parts.length == 2 && group.is_a?(AST::Group) && group.capture &&
+              call.is_a?(AST::SubexpressionCall) && [group.number, group.name].include?(call.identifier) &&
+              body.is_a?(AST::Literal) && body.value.ascii_only? && body.value.bytesize.positive? &&
+              !@options.include?("ignorecase")
+      @hfa_literal_subexpression_safe = valid
+    end
+
+    def hfa_literal_subexpression_call_literal
+      @ast.parts.first.body.parts.first.value
     end
 
     def hfa_adjacent_greedy_capture_end(input, start, finish)
