@@ -203,7 +203,9 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("école", ["ignorecase"])
 
     regexp.stub(:codegen_each_result, ->(*) { flunk "unicode ignorecase literal scan should use HFA" }) do
-      assert_equal ["ÉCOLE", "école"], regexp.scan("xxÉCOLE yyécole")
+      regexp.stub(:hfa_program, -> { flunk "unicode ignorecase scan should avoid HFA program compilation" }) do
+        assert_equal ["ÉCOLE", "école"], regexp.scan("xxÉCOLE yyécole")
+      end
     end
   end
 
