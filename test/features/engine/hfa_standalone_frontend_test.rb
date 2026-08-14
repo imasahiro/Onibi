@@ -31,4 +31,19 @@ class HfaStandaloneFrontendTest < Minitest::Test
       assert_equal matches, regexp.scan(matches.join).map(&:to_s)
     end
   end
+
+  def test_hfa_uses_direct_candidate_scan_for_bounded_sequences
+    {"foo.{0,4}bar" => ["foo--bar", "foo\nbar"],
+     "foo[a-z]{0,4}bar" => ["fooabbar", "foo--bar"]}.each do |pattern, (matching, rejected)|
+      regexp = Onibi::Regexp.new(pattern)
+      %i[codegen_match? codegen_match codegen_each_result].each do |method|
+        regexp.define_singleton_method(method) { |*| raise "unexpected codegen fallback" }
+      end
+      regexp.define_singleton_method(:hfa_program) { raise "unexpected generic HFA program" }
+
+      assert_equal matching, regexp.match(matching).to_s
+      assert_equal [matching], regexp.scan(matching)
+      refute regexp.match?(rejected)
+    end
+  end
 end

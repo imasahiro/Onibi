@@ -276,6 +276,10 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_bounded_literal_match_result(input, normalized_position).nil?
       end
+      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
+      end
 
       if input.ascii_only? && hfa_possessive_literal_string_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -634,6 +638,12 @@ module Onibi
       if input.ascii_only? && @hfa_bounded_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_bounded_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_bounded_sequence_direct_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -1945,6 +1955,64 @@ module Onibi
         end
       end
       [count, cursor]
+    end
+
+    def hfa_bounded_sequence_direct_spec
+      return @hfa_bounded_sequence_direct_spec if defined?(@hfa_bounded_sequence_direct_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      quantifier_index = parts.index { |part| part.is_a?(AST::Quantifier) }
+      @hfa_bounded_sequence_direct_spec = if quantifier_index == 1 && parts.length == 3
+                                            prefix, quantifier, suffix = parts
+                                            expression = quantifier.expression
+                                            valid = quantifier.kind == :bounded &&
+                                                    quantifier.mode == :greedy && quantifier.minimum >= 0 &&
+                                                    quantifier.maximum && quantifier.maximum >= quantifier.minimum &&
+                                                    prefix.is_a?(AST::Literal) && suffix.is_a?(AST::Literal) &&
+                                                    prefix.value.ascii_only? && suffix.value.ascii_only? &&
+                                                    !prefix.value.empty? && !suffix.value.empty? &&
+                                                    (expression.is_a?(AST::Any) || expression.is_a?(AST::CharacterClass))
+                                            if valid
+                                              table = if expression.is_a?(AST::CharacterClass)
+                                                        ClassPredicates.compiled(expression.value).ascii_table
+                                                      end
+                                              { prefix: prefix.value, suffix: suffix.value, minimum: quantifier.minimum,
+                                                maximum: quantifier.maximum, table: table,
+                                                allow_newline: @options.include?("multiline") }.freeze
+                                            end
+                                          end
+      @hfa_bounded_sequence_direct_spec
+    end
+
+    def hfa_bounded_sequence_direct_match_result(input, position)
+      spec = hfa_bounded_sequence_direct_spec
+      candidate = input.index(spec[:prefix], position)
+      while candidate
+        body_start = candidate + spec[:prefix].bytesize
+        first_suffix = body_start + spec[:minimum]
+        last_suffix = [body_start + spec[:maximum], input.bytesize - spec[:suffix].bytesize].min
+        suffix_position = input.index(spec[:suffix], first_suffix)
+        best = nil
+        while suffix_position && suffix_position <= last_suffix
+          span = suffix_position - body_start
+          if hfa_bounded_sequence_body_valid?(input, body_start, span, spec)
+            best = suffix_position
+          end
+          suffix_position = input.index(spec[:suffix], suffix_position + 1)
+        end
+        return [candidate, best + spec[:suffix].bytesize, []] if best
+
+        candidate = input.index(spec[:prefix], candidate + 1)
+      end
+      nil
+    end
+
+    def hfa_bounded_sequence_body_valid?(input, start, length, spec)
+      return true if length.zero?
+      return false if !spec[:allow_newline] && input.byteslice(start, length).include?("\n") && spec[:table].nil?
+      return true unless spec[:table]
+
+      length.times.all? { |offset| spec[:table][input.getbyte(start + offset)] }
     end
 
     def hfa_positive_lookbehind_literal_match_result(input, position)
@@ -4272,6 +4340,14 @@ module Onibi
       if input.ascii_only? && @hfa_bounded_literal_fast
         position = 0
         while (result = hfa_bounded_literal_match_result(input, position))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && hfa_bounded_sequence_direct_spec
+        position = 0
+        while (result = hfa_bounded_sequence_direct_match_result(input, position))
           block.call(result)
           position = result[1]
         end
