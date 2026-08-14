@@ -1305,7 +1305,7 @@ class MatchApiTest < Minitest::Test
     second = regexp.send(:hfa_adjacent_nested_repeated_capture_spec)
 
     assert_same first, second
-    assert_equal [["ab", "cd"], [1, 2, 3, 4]], [first[1], first[2]]
+    assert_equal [["ab", "cd"], [1, 2, 3, 4], 4], [first[1], first[2], first[3]]
   end
 
   def test_repeated_class_capture_spec_is_cached
@@ -1315,7 +1315,7 @@ class MatchApiTest < Minitest::Test
     second = regexp.send(:hfa_repeated_class_capture_spec)
 
     assert_same first, second
-    assert_equal [1, 2], first[2]
+    assert_equal [[1, 2], 2], [first[2], first[4]]
   end
 
   def test_hfa_match_question_safety_analysis_is_cached

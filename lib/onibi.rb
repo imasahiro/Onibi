@@ -4946,13 +4946,13 @@ module Onibi
     end
 
     def hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
-      groups, units, numbers = hfa_adjacent_nested_repeated_capture_spec
+      groups, units, numbers, capture_count = hfa_adjacent_nested_repeated_capture_spec
       return unless groups
 
       boundaries = hfa_adjacent_repeated_boundaries(input, start, finish, units)
       return unless boundaries
 
-      offsets = Array.new(numbers.max)
+      offsets = Array.new(capture_count)
       groups.each_with_index do |group, index|
         group_start, group_finish = boundaries[index], boundaries[index + 1]
         body = group.body.parts.first
@@ -4975,7 +4975,7 @@ module Onibi
                                                      numbers = groups.flat_map do |group|
                                                        [group.number, group.body.parts.first.expression.number]
                                                      end.freeze
-                                                     [groups, units, numbers].freeze
+                                                     [groups, units, numbers, numbers.max].freeze
                                                    else
                                                      false
                                                    end
@@ -5043,7 +5043,7 @@ module Onibi
     def hfa_repeated_class_capture_offsets(input, start, finish)
       return unless hfa_repeated_class_capture_result_safe?
 
-      repeated, pairs, numbers, class_specs = hfa_repeated_class_capture_spec
+      repeated, pairs, numbers, class_specs, capture_count = hfa_repeated_class_capture_spec
       separator_position = input.index(pairs.first.first.value, start)
       return unless separator_position && separator_position < finish
 
@@ -5051,7 +5051,7 @@ module Onibi
       span = hfa_repeated_match_span(repeated_body.expression.body, input, start, separator_position)
       return unless span && span.first == separator_position - start
 
-      offsets = Array.new(numbers.max)
+      offsets = Array.new(capture_count)
       offsets[repeated.number - 1] = [start, separator_position]
       offsets[repeated.body.parts.first.expression.number - 1] =
         [separator_position - span.last, separator_position]
@@ -5091,7 +5091,7 @@ module Onibi
                                              if class_specs.all?
                                                numbers = [repeated.number, repeated.body.parts.first.expression.number] +
                                                          class_specs.flat_map { |_table, number| [number] }.compact
-                                               [repeated, pairs, numbers.freeze, class_specs.freeze].freeze
+                                               [repeated, pairs, numbers.freeze, class_specs.freeze, numbers.max].freeze
                                              end
                                            end
                                          end || false
