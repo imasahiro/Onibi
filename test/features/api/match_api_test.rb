@@ -305,6 +305,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_repeated_literal_unit_is_cached
+    regexp = Onibi::Regexp.new("(?:日本語)+")
+
+    assert regexp.match?("開始日本語終了")
+    assert_equal "日本語", regexp.instance_variable_get(:@hfa_unicode_repeated_literal_unit)
+  end
+
   def test_unicode_literal_captures_use_hfa_result
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 

@@ -656,19 +656,14 @@ module Onibi
                                              quantifier = @ast.parts.first
                                              if quantifier.is_a?(AST::Quantifier) && quantifier.kind == :+ &&
                                                 quantifier.mode == :greedy
-                                               expression = quantifier.expression
-                                               expression = expression.body if expression.is_a?(AST::Group)
-                                               literal = literal_ast_value(expression)
+                                               literal = hfa_unicode_repeated_literal_unit
                                                literal && literal.bytesize.positive? && !literal.ascii_only?
                                              end
                                            end
     end
 
     def hfa_unicode_repeated_literal_match_result(input, position)
-      quantifier = @ast.parts.first
-      expression = quantifier.expression
-      expression = expression.body if expression.is_a?(AST::Group)
-      unit = literal_ast_value(expression)
+      unit = hfa_unicode_repeated_literal_unit
       unit_bytes = unit.b
       bytes = input.b
       candidate = bytes.index(unit_bytes, position)
@@ -680,6 +675,15 @@ module Onibi
         candidate = bytes.index(unit_bytes, candidate + 1)
       end
       nil
+    end
+
+    def hfa_unicode_repeated_literal_unit
+      return @hfa_unicode_repeated_literal_unit if defined?(@hfa_unicode_repeated_literal_unit)
+
+      quantifier = @ast.is_a?(AST::Sequence) && @ast.parts.first
+      expression = quantifier.expression if quantifier.is_a?(AST::Quantifier)
+      expression = expression.body if expression.is_a?(AST::Group)
+      @hfa_unicode_repeated_literal_unit = literal_ast_value(expression)
     end
 
     def hfa_literal_result_node?(node)
