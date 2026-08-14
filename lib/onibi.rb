@@ -306,7 +306,7 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_unicode_property_run_match?(input, normalized_position)
       end
-      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
+      if !input.ascii_only? && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_unicode_property_match_result(input, normalized_position).nil?
       end
@@ -435,12 +435,12 @@ module Onibi
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_fixed_literal_capture_match?(input, normalized_position)
       end
-      if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
+      if hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
-        return hfa_unicode_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
-
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
-        return with_timeout { !result.nil? } unless timeout_unconfigured?
+        return !result.nil? if timeout_unconfigured?
+
+        return with_timeout { !result.nil? }
       end
       if !input.ascii_only? && hfa_unicode_repeated_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -569,9 +569,15 @@ module Onibi
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
         return nil
       end
-      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
+      if !input.ascii_only? && hfa_unicode_property_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_unicode_property_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if !input.ascii_only? && hfa_unicode_property_run_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_unicode_property_run_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -678,7 +684,7 @@ module Onibi
         return hfa_match_data([start, start + literal.bytesize, []], input) if start
         return nil
       end
-      if !input.ascii_only? && hfa_unicode_ignorecase_literal_result_safe?
+      if hfa_unicode_ignorecase_literal_result_safe?
         result = hfa_unicode_ignorecase_literal_match_result(input, position)
         return hfa_match_data(result, input) if result
         return nil
@@ -1089,13 +1095,25 @@ module Onibi
     def hfa_unicode_property_match_result(input, position)
       predicate, negated = hfa_unicode_property_spec
       cursor = 0
-      input.each_codepoint do |codepoint|
+      hfa_unicode_property_codepoint_events(input) do |codepoint, bytesize|
         if cursor >= position && (hfa_unicode_property_codepoint_match?(codepoint, predicate) ^ negated)
-          return [cursor, cursor + utf8_codepoint_bytesize(codepoint), []]
+          return [cursor, cursor + bytesize, []]
         end
-        cursor += utf8_codepoint_bytesize(codepoint)
+        cursor += bytesize
       end
       nil
+    end
+
+    def hfa_unicode_property_codepoint_events(input)
+      return enum_for(__method__, input) unless block_given?
+
+      if input.encoding == Encoding::UTF_8
+        input.each_codepoint { |codepoint| yield codepoint, utf8_codepoint_bytesize(codepoint) }
+      else
+        input.each_char do |character|
+          yield character.encode(Encoding::UTF_8).ord, character.bytesize
+        end
+      end
     end
 
     def hfa_unicode_property_codepoint_match?(codepoint, predicate)
@@ -1637,12 +1655,34 @@ module Onibi
       literal = hfa_unicode_ignorecase_literal_fold
       folded_input = input.downcase
       character_start = folded_input.index(literal, position)
-      return unless character_start
+      unless character_start
+        return hfa_unicode_full_casefold_literal_match_result(input, position)
+      end
 
       offsets = [0]
       input.each_char { |character| offsets << offsets[-1] + character.bytesize }
       character_finish = character_start + literal.length
       [offsets[character_start], offsets[character_finish], []]
+    end
+
+    def hfa_unicode_full_casefold_literal_match_result(input, position)
+      literal = literal_ast_value(@ast)
+      return unless literal
+
+      maximum_length = [literal.length * 2, 1].max
+      offsets = [0]
+      input.each_char { |character| offsets << offsets[-1] + character.bytesize }
+      input_length = offsets.length - 1
+      position.upto(input_length - 1) do |character_start|
+        maximum = [maximum_length, input_length - character_start].min
+        1.upto(maximum) do |candidate_length|
+          candidate = input[character_start, candidate_length]
+          next unless candidate&.casecmp?(literal)
+
+          return [offsets[character_start], offsets[character_start + candidate_length], []]
+        end
+      end
+      nil
     end
 
     def hfa_unicode_ignorecase_literal_match?(input, position)
@@ -2538,7 +2578,7 @@ module Onibi
       end
       index = 0
       matcher = hfa_unicode_property_run_matcher
-      input.each_codepoint do |codepoint|
+      hfa_unicode_property_codepoint_events(input) do |codepoint, _bytesize|
         if index >= position && (matcher.call(codepoint, predicate) ^ negated)
           return true
         end
@@ -2561,14 +2601,14 @@ module Onibi
       matcher = hfa_unicode_property_run_matcher
       cursor = 0
       start = nil
-      input.each_codepoint do |codepoint|
+      hfa_unicode_property_codepoint_events(input) do |codepoint, bytesize|
         matched = cursor >= position && (matcher.call(codepoint, predicate) ^ negated)
         if matched
           start ||= cursor
         elsif start
           return [start, cursor, []]
         end
-        cursor += utf8_codepoint_bytesize(codepoint)
+        cursor += bytesize
       end
       start && [start, cursor, []]
     end
@@ -2576,14 +2616,14 @@ module Onibi
     def hfa_unicode_hiragana_run_match_result(input, position, negated)
       cursor = 0
       start = nil
-      input.each_codepoint do |codepoint|
+      hfa_unicode_property_codepoint_events(input) do |codepoint, bytesize|
         matched = cursor >= position && (codepoint.between?(0x3040, 0x309f) ^ negated)
         if matched
           start ||= cursor
         elsif start
           return [start, cursor, []]
         end
-        cursor += utf8_codepoint_bytesize(codepoint)
+        cursor += bytesize
       end
       start && [start, cursor, []]
     end
@@ -2591,14 +2631,14 @@ module Onibi
     def hfa_unicode_letter_property_run_match_result(input, position, negated)
       cursor = 0
       start = nil
-      input.each_codepoint do |codepoint|
+      hfa_unicode_property_codepoint_events(input) do |codepoint, bytesize|
         matched = cursor >= position && (hfa_unicode_letter_codepoint?(codepoint) ^ negated)
         if matched
           start ||= cursor
         elsif start
           return [start, cursor, []]
         end
-        cursor += utf8_codepoint_bytesize(codepoint)
+        cursor += bytesize
       end
       start && [start, cursor, []]
     end
@@ -3168,7 +3208,7 @@ module Onibi
         end
         return true
       end
-      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?
+      if !input.ascii_only? && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
           block.call(result)

@@ -140,6 +140,36 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_non_utf8_unicode_property_match_uses_hfa
+    encoding = Encoding::EUC_JP
+    regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
+    input = "あ".encode(encoding)
+
+    regexp.stub(:codegen_match, ->(*) { flunk "non-UTF-8 Unicode property should use HFA" }) do
+      refute_nil regexp.match(input)
+    end
+  end
+
+  def test_non_utf8_unicode_property_scan_uses_hfa
+    encoding = Encoding::EUC_JP
+    regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
+    input = "漢あ字".encode(encoding)
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "non-UTF-8 Unicode property scan should use HFA" }) do
+      assert_equal ["あ".encode(encoding)], regexp.scan(input)
+    end
+  end
+
+  def test_non_utf8_unicode_property_run_preserves_byte_offsets
+    encoding = Encoding::EUC_JP
+    regexp = Onibi::Regexp.new("\\p{Hiragana}+".encode(encoding))
+    input = "漢あい字".encode(encoding)
+
+    match = regexp.match(input)
+    assert_equal "あい".encode(encoding), match.to_s
+    assert_equal input.byteslice(0, 2).bytesize, match.begin(0)
+  end
+
   def test_unicode_property_pattern_rejects_non_ascii_input_in_another_encoding
     pattern = "\\p{Hiragana}".encode(Encoding::UTF_8)
     input = "あ".encode(Encoding::EUC_JP)
