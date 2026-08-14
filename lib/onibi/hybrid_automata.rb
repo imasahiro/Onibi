@@ -982,6 +982,8 @@ module Onibi
         fast = fast_literal_match(input, position)
         return fast unless fast.nil?
 
+        return word_boundary_literal_match?(input, position) if word_boundary_literal_search?
+
         return anchored_class_match?(input, position) if @anchored_class_spec
         return alternation_literal_match?(input, position) if @alternation_literal_spec
         return repeated_alternation_literal_match?(input, position) if @repeated_alternation_literal_spec
@@ -1009,6 +1011,8 @@ module Onibi
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
         end
+
+        return word_boundary_literal_match_result(input, position) if word_boundary_literal_search?
 
         return unless input.ascii_only?
         return backref_match_result(input, position) if @backref_spec
@@ -1460,6 +1464,14 @@ module Onibi
         position = normalize_position(input, position)
         return if position.negative? || position > input.bytesize
 
+        if word_boundary_literal_search?
+          while (result = word_boundary_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
         if @backref_spec
           while (result = backref_match_result(input, position))
             yield result
@@ -1889,6 +1901,41 @@ module Onibi
         return unless position.is_a?(Integer) && position.zero? && @exact_literal && @prefix_literal
 
         literal_search(input, position)
+      end
+
+      def word_boundary_literal_search?
+        @exact_literal && @word_table && (@word_boundary_start || @word_boundary_end)
+      end
+
+      def word_boundary_literal_match?(input, position)
+        !word_boundary_literal_match_result(input, position).nil?
+      end
+
+      def word_boundary_literal_match_result(input, position)
+        return unless input.ascii_only?
+
+        candidate = input.index(@exact_literal, position)
+        while candidate
+          finish = candidate + @exact_literal.bytesize
+          return [candidate, finish, []] if word_boundary_edges_match?(input, candidate, finish)
+
+          candidate = input.index(@exact_literal, candidate + 1)
+        end
+        nil
+      end
+
+      def word_boundary_edges_match?(input, start, finish)
+        if @word_boundary_start
+          before = start.positive? && @word_table[input.getbyte(start - 1)]
+          current = @word_table[input.getbyte(start)]
+          return false unless before != current
+        end
+        if @word_boundary_end
+          current = @word_table[input.getbyte(finish - 1)]
+          after = finish < input.bytesize && @word_table[input.getbyte(finish)]
+          return false unless current != after
+        end
+        true
       end
 
       def normalize_position(input, position)

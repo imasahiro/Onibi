@@ -61,6 +61,14 @@ class HybridAutomataTest < Minitest::Test
     assert program.match?("abc", -3)
   end
 
+  def test_word_boundary_literal_uses_string_search_with_boundary_checks
+    program = compile("\\bcat\\b")
+
+    assert_equal [2, 5, []], program.match_result("a cat naps")
+    assert_equal [12, 15, []], program.match_result("concatenate cat")
+    refute program.match?("concatenate")
+  end
+
   def test_promotes_observed_nfa_subsets_to_bounded_dfa_states
     hybrid = compile("(?:ab|ac)+z")
     nfa_only = Onibi::HybridAutomata.compile("(?:ab|ac)+z", dfa: false, string_matching: false)
