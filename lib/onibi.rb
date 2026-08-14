@@ -4101,6 +4101,20 @@ module Onibi
         end
         return true
       end
+      if !input.ascii_only? && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
+        validate_encoding!(input)
+        literal = @ast.parts.first.body.parts.first.expression.value
+        position = 0
+        while (start = input.byteindex(literal, position))
+          finish = start + literal.bytesize
+          while input.byteslice(finish, literal.bytesize) == literal
+            finish += literal.bytesize
+          end
+          block.call([start, finish, [[start, finish]]])
+          position = finish
+        end
+        return true
+      end
 
       ascii_safe = input.ascii_only? &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
@@ -4143,6 +4157,7 @@ module Onibi
                       @hfa_class_lookbehind_fast ||
                       hfa_unicode_simple_capture_result_safe? ||
                       hfa_unicode_repeated_literal_result_safe? ||
+                      hfa_unicode_repeated_literal_capture_result_safe? ||
                       hfa_scoped_unicode_ignorecase_literal_value)
       return false unless (ascii_safe || unicode_safe) && hfa_iterator_safe?
 
@@ -4392,7 +4407,8 @@ module Onibi
                       hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
                       hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                       hfa_adjacent_nested_repeated_capture_result_safe? ||
-                     hfa_unicode_repeated_literal_result_safe? || @hfa_ignorecase_literal_fast ||
+                     hfa_unicode_repeated_literal_result_safe? || hfa_unicode_repeated_literal_capture_result_safe? ||
+                     @hfa_ignorecase_literal_fast ||
                      hfa_ignorecase_literal_result_safe? ||
                      hfa_unicode_ignorecase_literal_result_safe? ||
                      hfa_scoped_unicode_ignorecase_literal_value ||

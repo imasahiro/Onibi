@@ -88,6 +88,11 @@ module Onibi
         match = hfa_match_data(result, input)
         return scan_value(match)
       end
+      if respond_to?(:hfa_unicode_repeated_literal_capture_result_safe?, true) &&
+         hfa_unicode_repeated_literal_capture_result_safe?
+        match = hfa_match_data(result, input)
+        return scan_value(match)
+      end
 
       match = Codegen::MatchAdapter.build(result, input, self, named_captures)
       scan_value(match)
