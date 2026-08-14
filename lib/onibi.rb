@@ -1570,6 +1570,21 @@ module Onibi
       nil
     end
 
+    def hfa_repeated_literal_suffix_match_result(input, position)
+      repeat, suffix = @ast.parts
+      unit = repeat.expression.value
+      suffix_value = suffix.value
+      candidate = input.index(unit, position)
+      while candidate
+        finish = candidate
+        finish += unit.bytesize while input.byteslice(finish, unit.bytesize) == unit
+        return [candidate, finish + suffix_value.bytesize, []] if input.byteslice(finish, suffix_value.bytesize) == suffix_value
+
+        candidate = input.index(unit, candidate + 1)
+      end
+      nil
+    end
+
     def hfa_lazy_dot_star_literal_parts
       return @hfa_lazy_dot_star_literal_parts if defined?(@hfa_lazy_dot_star_literal_parts)
 
@@ -2453,6 +2468,14 @@ module Onibi
       if input.ascii_only? && (parts = hfa_lazy_dot_star_literal_parts)
         position = 0
         while (result = hfa_lazy_dot_star_literal_match_result(input, position, parts))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
+      if input.ascii_only? && repeat_literal_ast?
+        position = 0
+        while (result = hfa_repeated_literal_suffix_match_result(input, position))
           block.call(result)
           position = result[1]
         end
