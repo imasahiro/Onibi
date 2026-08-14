@@ -85,6 +85,13 @@ class HybridAutomataTest < Minitest::Test
     assert program.match?("happy")
   end
 
+  def test_unbounded_possessive_literal_uses_suffix_search
+    program = compile("a++b")
+
+    assert_equal [1, 5, []], program.match_result("zaaab")[0..2]
+    refute program.match?("zaaac")
+  end
+
   def test_promotes_observed_nfa_subsets_to_bounded_dfa_states
     hybrid = compile("(?:ab|ac)+z")
     nfa_only = Onibi::HybridAutomata.compile("(?:ab|ac)+z", dfa: false, string_matching: false)
