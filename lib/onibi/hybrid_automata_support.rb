@@ -718,6 +718,8 @@ module Onibi
         return true if spec.minimum.zero? && position <= input.bytesize
         return unicode_letter_match?(input) if spec.kind == :property && @unicode_matcher == :letter? &&
                                                !@unicode_negated && spec.minimum == 1 && position.zero?
+        return unicode_range_match?(input) if spec.kind == :class && @unicode_range &&
+                                              !@unicode_negated && spec.minimum == 1 && position.zero?
         return !unicode_match_result(input, position).nil? if position.positive?
 
         count = 0
@@ -738,6 +740,11 @@ module Onibi
           return true if fast || (fast.nil? && UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8)))
         end
         false
+      end
+
+      def unicode_range_match?(input)
+        minimum, maximum = @unicode_range
+        input.each_codepoint.any? { |codepoint| codepoint.between?(minimum, maximum) }
       end
 
       def unicode_match_result(input, position)

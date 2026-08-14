@@ -261,6 +261,13 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_unicode_range_runtime_uses_linear_range_scan
+    regexp = Onibi::Regexp.new("[ぁ-ん]+")
+
+    assert regexp.match?("文字列ひらがな終端")
+    refute regexp.match?("漢字カタカナ")
+  end
+
   def test_unicode_literal_capture_match_question_uses_constructor_fast_metadata
     regexp = Onibi::Regexp.new("(こんにちは)(世界)")
 
