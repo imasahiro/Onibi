@@ -5359,6 +5359,14 @@ module Onibi
         end
         return true
       end
+      if input.ascii_only? && (specs = hfa_literal_class_scan_spec)
+        position = 0
+        while (result = hfa_literal_class_scan_match_result(input, position, specs))
+          block.call(result)
+          position = result[1]
+        end
+        return true
+      end
       if !input.ascii_only? && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
@@ -5843,6 +5851,63 @@ module Onibi
     def hfa_negated_class_quantifier?(node, delimiter)
       node.is_a?(AST::Quantifier) && node.kind == :* && node.expression.is_a?(AST::CharacterClass) &&
         node.expression.value == "^#{delimiter}"
+    end
+
+    def hfa_literal_class_scan_spec
+      return @hfa_literal_class_scan_spec if defined?(@hfa_literal_class_scan_spec)
+      return @hfa_literal_class_scan_spec = false if @options.include?("ignorecase")
+
+      branches = @ast.is_a?(AST::Alternation) ? @ast.branches : [@ast]
+      specs = branches.filter_map do |branch|
+        parts = branch.is_a?(AST::Sequence) ? branch.parts : [branch]
+        tokens = parts.filter_map do |part|
+          if part.is_a?(AST::Literal) && part.value.ascii_only?
+            [:literal, part.value]
+          elsif part.is_a?(AST::CharacterClass) && part.value.ascii_only?
+            [:class, ClassPredicates.compiled(part.value)]
+          end
+        end
+        next unless tokens.length == parts.length && tokens.first&.first == :literal
+
+        prefix = tokens.first.last
+        width = tokens.sum { |kind, value| kind == :literal ? value.bytesize : 1 }
+        [prefix, tokens.freeze, width].freeze
+      end
+      @hfa_literal_class_scan_spec = if specs.any? && specs.length == branches.length
+                                       specs.freeze
+                                     else
+                                       false
+                                     end
+    end
+
+    def hfa_literal_class_scan_match_result(input, position, specs)
+      loop do
+        candidate = specs.filter_map { |prefix, _tokens, _width| input.index(prefix, position) }.min
+        return unless candidate
+
+        specs.each do |prefix, tokens, width|
+          next unless input.index(prefix, position) == candidate
+          next unless hfa_literal_class_tokens_match?(input, candidate, tokens)
+
+          return [candidate, candidate + width, []]
+        end
+        position = candidate + 1
+      end
+    end
+
+    def hfa_literal_class_tokens_match?(input, candidate, tokens)
+      cursor = candidate
+      tokens.all? do |kind, value|
+        if kind == :literal
+          matched = input.byteslice(cursor, value.bytesize) == value
+          cursor += value.bytesize if matched
+          matched
+        else
+          matched = value.matches_byte?(input.getbyte(cursor))
+          cursor += 1 if matched
+          matched
+        end
+      end
     end
 
     def hfa_scan_input_safe?(input)
