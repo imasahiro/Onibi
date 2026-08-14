@@ -4889,15 +4889,18 @@ module Onibi
     end
 
     def hfa_nested_repeated_capture_result_safe?
+      return @hfa_nested_repeated_capture_safe if defined?(@hfa_nested_repeated_capture_safe)
+
       root, = hfa_nested_repeated_capture_parts
-      return false unless root
-      return false unless root.is_a?(AST::Group) && root.capture
+      return @hfa_nested_repeated_capture_safe = false unless root
+      return @hfa_nested_repeated_capture_safe = false unless root.is_a?(AST::Group) && root.capture
       body = root.body
       body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      return false unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
+      return @hfa_nested_repeated_capture_safe = false unless body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy
 
       inner = body.expression
-      inner.is_a?(AST::Group) && inner.capture && hfa_repeated_unit_value(inner.body) && hfa_program
+      @hfa_nested_repeated_capture_safe = inner.is_a?(AST::Group) && inner.capture &&
+                                          hfa_repeated_unit_value(inner.body) && hfa_program
     end
 
     def hfa_nested_repeated_capture_offsets(input, start, finish)
@@ -4920,12 +4923,14 @@ module Onibi
     end
 
     def hfa_nested_repeated_capture_parts
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
-      return [parts.first, ""] if parts.length == 1 && parts.first.is_a?(AST::Group)
-      return [parts.first, parts.last.value] if parts.length == 2 && parts.first.is_a?(AST::Group) &&
-                                                 parts.last.is_a?(AST::Literal)
+      return @hfa_nested_repeated_capture_parts if defined?(@hfa_nested_repeated_capture_parts)
 
-      [nil, nil]
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
+      return @hfa_nested_repeated_capture_parts = [parts.first, ""].freeze if parts.length == 1 && parts.first.is_a?(AST::Group)
+      return @hfa_nested_repeated_capture_parts = [parts.first, parts.last.value].freeze if parts.length == 2 &&
+                                                    parts.first.is_a?(AST::Group) && parts.last.is_a?(AST::Literal)
+
+      @hfa_nested_repeated_capture_parts = [nil, nil].freeze
     end
 
     def hfa_adjacent_nested_repeated_capture_result_safe?

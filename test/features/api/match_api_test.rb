@@ -1236,6 +1236,15 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_nested_repeated_capture_shape_is_cached
+    regexp = Onibi::Regexp.new("(?<outer>(?<inner>ab)+)c")
+
+    first = regexp.send(:hfa_nested_repeated_capture_parts)
+    second = regexp.send(:hfa_nested_repeated_capture_parts)
+
+    assert_same first, second
+  end
+
   def test_hfa_match_question_safety_analysis_is_cached
     regexp = Onibi::Regexp.new("needle.")
     calls = 0
