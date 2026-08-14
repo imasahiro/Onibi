@@ -211,6 +211,17 @@ module Onibi
         return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil?
       end
 
+      if !input.ascii_only? && @hfa_unicode_exact_literal_fast
+        literal = @hfa_unicode_exact_literal_fast
+        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !input.index(literal, start_position).nil?
+      end
+
+      if input.ascii_only? && !@hfa_anchored_class_run_fast && hfa_anchor_result_safe?
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_program.match_result(input, normalized_position).nil?
+      end
+
       if @hfa_positive_lookbehind_literal_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         prefix, literal = @hfa_positive_lookbehind_literal_fast
@@ -316,11 +327,6 @@ module Onibi
       if @hfa_class_lookbehind_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return !hfa_class_lookbehind_match_result(input, normalized_position).nil?
-      end
-      if !input.ascii_only? && @hfa_unicode_exact_literal_fast
-        literal = @hfa_unicode_exact_literal_fast
-        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !input.index(literal, start_position).nil?
       end
       return true if @hfa_empty_absence_fast
       if input.ascii_only? && @hfa_ascii_adjacent_run_fast
@@ -490,10 +496,6 @@ module Onibi
       if input.ascii_only? && hfa_match_reset_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_match_reset_literal_match?(input, normalized_position)
-      end
-      if input.ascii_only? && hfa_anchor_result_safe?
-        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !hfa_program.match_result(input, normalized_position).nil?
       end
       if input.ascii_only? && hfa_class_run_positive_lookahead_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
