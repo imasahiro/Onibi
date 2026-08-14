@@ -621,6 +621,14 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_bounded_literal_match_question_short_circuits_common_checks
+    regexp = Onibi::Regexp.new("a{4,12}")
+
+    regexp.stub(:hfa_always_fails?, -> { flunk "bounded literal should skip generic failure checks" }) do
+      assert regexp.match?("baaaaaaaac")
+    end
+  end
+
   def test_bounded_literal_match_returns_the_greedy_run_and_respects_position
     regexp = Onibi::Regexp.new("a{2,4}")
 
