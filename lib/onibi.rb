@@ -131,6 +131,10 @@ module Onibi
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
       assertion_parts = hfa_literal_assertion_result_safe? unless @options.include?("ignorecase")
+      if assertion_parts.is_a?(Array) && %i[positive negative].include?(assertion_parts[1]) &&
+         assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+        @hfa_literal_assertion_fast = assertion_parts.freeze
+      end
       if assertion_parts.is_a?(Array) && assertion_parts[1] == :positive_lookbehind &&
          assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
         @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
@@ -185,6 +189,10 @@ module Onibi
       if input.ascii_only? && @hfa_captured_class_run_chain_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         return hfa_captured_class_run_chain_match?(input, normalized_position)
+      end
+      if input.ascii_only? && @hfa_literal_assertion_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil?
       end
       if input.ascii_only? && @hfa_class_run_positive_lookahead_fast
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
@@ -435,6 +443,12 @@ module Onibi
       if input.ascii_only? && hfa_word_boundary_literal_result_safe?
         normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
         result = hfa_word_boundary_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+        return nil
+      end
+      if input.ascii_only? && @hfa_literal_assertion_fast
+        normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+        result = hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast)
         return hfa_match_data(result, input) if result
         return nil
       end
@@ -827,8 +841,8 @@ module Onibi
       @hfa_literal_assertion_safe
     end
 
-    def hfa_literal_assertion_match_result(input, position)
-      literal, kind, guard = hfa_literal_assertion_result_safe?
+    def hfa_literal_assertion_match_result(input, position, assertion = hfa_literal_assertion_result_safe?)
+      literal, kind, guard = assertion
       candidate = input.index(literal, position)
       while candidate
         finish = candidate + literal.bytesize

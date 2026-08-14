@@ -486,6 +486,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_negative_literal_lookahead_uses_early_constructor_dispatch
+    regexp = Onibi::Regexp.new("cat(?!fish)")
+
+    regexp.stub(:hfa_literal_assertion_result_safe?,
+                -> { flunk "negative literal lookahead should use early constructor dispatch" }) do
+      assert regexp.match?("a cat naps")
+      refute regexp.match?("a catfish naps")
+    end
+  end
+
   def test_ascii_character_class_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 
