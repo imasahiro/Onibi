@@ -1610,37 +1610,6 @@ module Onibi
       [position, input.bytesize, captures]
     end
 
-    def hfa_match_result_safe?
-      return @hfa_match_result_safe if defined?(@hfa_match_result_safe)
-
-      @hfa_match_result_safe = hfa_match_result_safe_uncached?
-    end
-
-    def hfa_match_result_safe_uncached?
-      return true if hfa_scoped_ignorecase_literal_result_safe?
-      return true if hfa_scoped_multiline_any_result_safe?
-      return true if hfa_start_match_result_safe?
-      return true if hfa_linebreak_result_safe?
-      return true if hfa_leading_literal_assertion_result_safe?
-      return true if hfa_match_reset_literal_result_safe?
-      return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
-                     dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
-
-      @ast.is_a?(AST::Literal) ||
-        @ast.is_a?(AST::CharacterClass) || @ast.is_a?(AST::Any) ||
-        (@ast.is_a?(AST::Alternation) && @ast.branches.all? { |part| hfa_literal_result_node?(part) }) ||
-        (@ast.is_a?(AST::Sequence) &&
-          (@ast.parts.all? do |part|
-            hfa_literal_result_node?(part) &&
-           !part.is_a?(AST::CharacterClass) && !part.is_a?(AST::Any)
-          end ||
-           (@ast.parts.length == 1 &&
-            (@ast.parts.first.is_a?(AST::CharacterClass) || @ast.parts.first.is_a?(AST::Any) ||
-             class_run_result_node?(@ast.parts.first))))) ||
-        (@ast.is_a?(AST::Quantifier) && @ast.mode == :greedy &&
-         @ast.expression.is_a?(AST::Literal))
-    end
-
     def hfa_scoped_ignorecase_literal_result_safe?
       return @hfa_scoped_ignorecase_literal_safe if defined?(@hfa_scoped_ignorecase_literal_safe)
 
@@ -4322,13 +4291,6 @@ module Onibi
       guard_literal = guard.is_a?(AST::Literal) ||
                       (guard.is_a?(AST::Sequence) && guard.parts.all? { |part| part.is_a?(AST::Literal) })
       guard_literal && body.all? { |part| hfa_iterator_node?(part) }
-    end
-
-    def hfa_literal_guard_result_safe?
-      return false unless hfa_negative_literal_guard_safe?
-
-      body = @ast.parts[0...-1]
-      body.all? { |part| part.is_a?(AST::Literal) }
     end
 
     def hfa_positive_literal_guard_result_safe?
