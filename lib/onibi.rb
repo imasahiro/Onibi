@@ -6056,10 +6056,11 @@ module Onibi
     end
 
     def hfa_scan_input_safe?(input)
+      return true if hfa_encoding_neutral_scan_safe?
+
       ascii_input = input.ascii_only?
-      common_safe = hfa_encoding_neutral_scan_safe?
       ascii_safe = ascii_input &&
-                   (common_safe || hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
+                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? || hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                     hfa_scoped_multiline_sequence_direct_spec || hfa_scoped_ignorecase_sequence_direct_spec ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
@@ -6084,7 +6085,7 @@ module Onibi
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                     hfa_adjacent_nested_repeated_capture_result_safe? || hfa_repeated_class_capture_result_safe?)
       unicode_safe = !ascii_input &&
-                     (common_safe || hfa_unicode_match_result_safe? ||
+                     (hfa_unicode_match_result_safe? ||
                       (input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?) ||
                       hfa_unicode_literal_result_safe? || hfa_unicode_ignorecase_literal_result_safe? ||
                       @hfa_class_lookbehind_fast ||

@@ -1185,6 +1185,18 @@ class MatchApiTest < Minitest::Test
     assert_equal 1, calls
   end
 
+  def test_encoding_neutral_scan_safety_is_checked_once
+    regexp = Onibi::Regexp.new("(?<=a)b")
+    calls = 0
+    regexp.define_singleton_method(:hfa_encoding_neutral_scan_safe?) do
+      calls += 1
+      true
+    end
+
+    assert regexp.send(:hfa_scan_input_safe?, "ab")
+    assert_equal 1, calls
+  end
+
   def test_hfa_match_question_skips_timeout_wrapper_when_unconfigured
     regexp = Onibi::Regexp.new("needle")
 
