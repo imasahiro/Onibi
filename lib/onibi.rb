@@ -106,7 +106,7 @@ module Onibi
       end
 
       return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
-      return hfa_ascii_class_run_match?(input, normalized_position) if ascii_input && hfa_ascii_class_run_result_safe?
+      return !hfa_ascii_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_class_run_result_safe?
       return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && hfa_captured_class_run_chain_result_safe?
       return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && hfa_anchored_class_run_result_safe?
 
@@ -3289,17 +3289,6 @@ module Onibi
 
       node = @ast.parts.first.expression
       @hfa_ascii_class_run_table = hfa_capture_class_table(node)
-    end
-
-    def hfa_ascii_class_run_match?(input, position)
-      table = hfa_ascii_class_run_table
-      cursor = position
-      while cursor < input.bytesize
-        return true if table[input.getbyte(cursor)]
-
-        cursor += 1
-      end
-      false
     end
 
     def hfa_ascii_class_run_match_result(input, position)

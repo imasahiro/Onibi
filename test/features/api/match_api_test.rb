@@ -480,6 +480,18 @@ class MatchApiTest < Minitest::Test
     assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
+  def test_ascii_class_run_public_apis_match_mri
+    pattern = "[a-z]+"
+    input = "123 abc XYZ"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
+
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
+  end
+
   def test_atomic_literal_alternation_uses_direct_match_question_path
     regexp = Onibi::Regexp.new("(?>a|ab)b")
 
