@@ -264,34 +264,50 @@ module Onibi
       candidate
     end
 
-    def hfa_capture_sequence_match_result(input, start, tokens)
+    def hfa_capture_sequence_match_result(input, start, tokens, captures = nil, offsets = nil, result_container = nil)
       cursor = start
-      captures = Array.new(hfa_capture_count)
-      tokens.each do |kind, *values|
+      captures ||= Array.new(hfa_capture_count)
+      captures.fill(nil)
+      offsets ||= Array.new(hfa_capture_count) { [nil, nil] }
+      tokens.each do |token|
+        kind = token[0]
         case kind
         when :literal
-          literal = values.first
+          literal = token[1]
           return unless input.byteslice(cursor, literal.bytesize) == literal
 
           cursor += literal.bytesize
         when :capture
-          number, operations = values
+          number = token[1]
+          operations = token[2]
           capture_start = cursor
           cursor = hfa_capture_sequence_operations_end(input, cursor, operations)
           return unless cursor
 
-          captures[number - 1] = [capture_start, cursor]
+          offset = offsets[number - 1]
+          offset[0] = capture_start
+          offset[1] = cursor
+          captures[number - 1] = offset
         when :raw
-          cursor = hfa_capture_sequence_operations_end(input, cursor, [values.first])
+          cursor = hfa_capture_sequence_single_operation_end(input, cursor, token[1])
           return unless cursor
         end
       end
-      [cursor, captures]
+      if result_container
+        result_container[0] = cursor
+        result_container[1] = captures
+        result_container
+      else
+        [cursor, captures]
+      end
     end
 
     def hfa_capture_sequence_operations_end(input, position, operations)
       cursor = position
-      operations.each_with_index do |(kind, table, minimum, _maximum), index|
+      operations.each_with_index do |operation, index|
+        kind = operation[0]
+        table = operation[1]
+        minimum = operation[2]
         if kind == :literal
           return unless input.byteslice(cursor, table.bytesize) == table
 
