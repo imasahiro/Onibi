@@ -93,9 +93,6 @@ module Onibi
                         end
       chain_tables = hfa_ascii_run_chain_tables if chain_candidate
       @hfa_ascii_run_chain_fast = chain_tables if chain_tables
-      word_node = single_quantified_expression
-      word_node = nil unless word_node.is_a?(AST::CharacterClass) && word_node.value == "[:word:]"
-      @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
       captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?

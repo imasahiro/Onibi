@@ -415,13 +415,16 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("---😀")
   end
 
-  def test_unicode_word_class_run_match_question_uses_constructor_dispatch_metadata
-    regexp = Onibi::Regexp.new("[[:word:]]+")
+  def test_unicode_word_class_run_public_apis_match_mri
+    pattern = "[[:word:]]+"
+    input = "記号-日本語 _2026 終端!"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
 
-    regexp.stub(:hfa_unicode_word_class_run_result_safe?,
-                -> { flunk "Unicode word class run should use constructor dispatch metadata" }) do
-      assert regexp.match?("記号-日本語_2026-終端")
-    end
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_ascii_ignorecase_match_question_uses_candidate_string_path
