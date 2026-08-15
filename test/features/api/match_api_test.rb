@@ -812,16 +812,6 @@ class MatchApiTest < Minitest::Test
     assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
-  def test_negative_literal_lookahead_uses_early_constructor_dispatch
-    regexp = Onibi::Regexp.new("cat(?!fish)")
-
-    regexp.stub(:hfa_literal_assertion_result_safe?,
-                -> { flunk "negative literal lookahead should use early constructor dispatch" }) do
-      assert regexp.match?("a cat naps")
-      refute regexp.match?("a catfish naps")
-    end
-  end
-
   def test_negative_literal_lookahead_matches_mri_across_public_apis
     regexp = Onibi::Regexp.new("cat(?!fish)")
     input = "cat catfish cat"
@@ -1744,17 +1734,6 @@ class MatchApiTest < Minitest::Test
     assert_equal "x", regexp.match("ax")[0]
   end
 
-  def test_positive_literal_lookbehind_match_question_uses_combined_literal_path
-    regexp = Onibi::Regexp.new("(?<=pre)fix")
-
-    regexp.stub(:hfa_literal_assertion_result_safe?,
-                -> { flunk "Positive lookbehind should use combined literal path" }) do
-      assert regexp.match?("prefix")
-      assert regexp.match?("xxprefix", 3)
-      refute regexp.match?("xfix")
-    end
-  end
-
   def test_literal_lookbehind_matches_mri_across_public_apis
     regexp = Onibi::Regexp.new("(?<=pre)fix")
     input = "prefix prefixture"
@@ -1775,16 +1754,6 @@ class MatchApiTest < Minitest::Test
     assert_equal mri.match(input).to_s, regexp.match(input).to_s
     assert_equal input.scan(mri), regexp.scan(input)
     assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
-  end
-
-  def test_negative_literal_lookbehind_match_question_uses_constructor_dispatch_metadata
-    regexp = Onibi::Regexp.new("(?<!un)happy")
-
-    regexp.stub(:hfa_literal_assertion_result_safe?,
-                -> { flunk "Negative lookbehind should use constructor dispatch metadata" }) do
-      assert regexp.match?("very happy")
-      refute regexp.match?("unhappy")
-    end
   end
 
   def test_literal_negative_lookbehind_match_uses_hfa_result

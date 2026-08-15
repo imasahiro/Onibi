@@ -99,8 +99,6 @@ module Onibi
 
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
-      return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
-
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
@@ -240,7 +238,6 @@ module Onibi
       end
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
-      return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
       return !hfa_literal_conditional_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_conditional_result_safe?
 
       if hfa_negative_lookbehind_result_safe?
@@ -679,12 +676,6 @@ module Onibi
       end
       if ascii_input && hfa_nonword_boundary_literal_result_safe?
         result = hfa_nonword_boundary_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_literal_assertion_result_safe?
-        result = hfa_literal_assertion_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
@@ -5343,14 +5334,6 @@ module Onibi
       if hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if hfa_literal_assertion_result_safe?
-        position = 0
-        while (result = hfa_literal_assertion_match_result(input, position))
           block.call(result)
           position = result[1]
         end
