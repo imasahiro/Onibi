@@ -735,12 +735,6 @@ module Onibi
 
         return nil
       end
-      if ascii_input && hfa_captureless_repeated_alternation_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if ascii_input && hfa_repeated_equal_length_literal_capture_result_safe?
         result = hfa_repeated_equal_length_literal_capture_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
@@ -3278,18 +3272,6 @@ module Onibi
       end
     end
 
-    def hfa_captureless_repeated_alternation_result_safe?
-      return @hfa_captureless_repeated_alternation_safe if defined?(@hfa_captureless_repeated_alternation_safe)
-      return @hfa_captureless_repeated_alternation_safe = false unless repeated_alternation_ast?
-
-      repeat, = @ast.parts
-      body = repeat.expression
-      body = body.body if body.is_a?(AST::Group)
-      valid = (!repeat.expression.is_a?(AST::Group) || !repeat.expression.capture) &&
-              body.is_a?(AST::Alternation) && body.branches.all? { |branch| hfa_literal_result_node?(branch) }
-      @hfa_captureless_repeated_alternation_safe = valid && !casefold? && hfa_program
-    end
-
     def hfa_repeated_equal_length_literal_capture_result_safe?
       return @hfa_repeated_equal_length_capture_safe if defined?(@hfa_repeated_equal_length_capture_safe)
 
@@ -4939,14 +4921,6 @@ module Onibi
         end
         return true
       end
-      if hfa_captureless_repeated_alternation_result_safe?
-        position = 0
-        while (result = hfa_program.match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_repeated_equal_length_literal_capture_result_safe?
         program = hfa_program
         program.each_match_result(input, 0) do |result|
@@ -5191,7 +5165,6 @@ module Onibi
                     hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? ||
                     hfa_literal_alternation_result_safe? ||
-                    hfa_captureless_repeated_alternation_result_safe? ||
                     hfa_repeated_equal_length_literal_capture_result_safe? ||
                     hfa_literal_capture_before_alternation_result_safe? ||
                     hfa_single_capture_literal_alternation_result_safe? ||
@@ -5234,7 +5207,6 @@ module Onibi
                      hfa_literal_absence_result_safe? ||
                      hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
-                     hfa_captureless_repeated_alternation_result_safe? ||
                      hfa_repeated_equal_length_literal_capture_result_safe? ||
                      hfa_literal_capture_before_alternation_result_safe? ||
                      hfa_single_capture_literal_alternation_result_safe? ||
