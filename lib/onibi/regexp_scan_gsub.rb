@@ -22,6 +22,21 @@ module Onibi
         return values
       end
 
+      if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
+         (spec = hfa_literal_prefix_capture_scan_spec)
+        values = []
+        hfa_literal_prefix_capture_each_scan_value(input, spec) do |value|
+          if block
+            block.call(value)
+          else
+            values << value
+          end
+        end
+        return input if block
+
+        return values
+      end
+
       if input.is_a?(String) && input.ascii_only? && hfa_capture_count.positive? &&
          (spec = hfa_capture_sequence_scan_spec)
         values = []
@@ -92,6 +107,36 @@ module Onibi
         else
           position = start + 1
         end
+      end
+    end
+
+    def hfa_literal_prefix_capture_each_scan_value(input, spec)
+      _capture_number, prefix, host_run, path_run = spec
+      host_table = host_run.first
+      path_table = path_run.first
+      position = 0
+      while (start = input.index(prefix, position))
+        cursor = start + prefix.bytesize
+        cursor += 1 if input.getbyte(cursor) == 115
+        unless input.index("://", cursor) == cursor
+          position = start + prefix.bytesize
+          next
+        end
+
+        host_start = cursor + 3
+        host_finish = hfa_literal_prefix_capture_run_end(input, host_start, host_table)
+        if host_finish == host_start
+          position = start + prefix.bytesize
+          next
+        end
+
+        finish = host_finish
+        if input.getbyte(finish) == 47
+          path_finish = hfa_literal_prefix_capture_run_end(input, finish + 1, path_table)
+          finish = path_finish if path_finish > finish + 1
+        end
+        yield [input.byteslice(start, finish - start)]
+        position = finish
       end
     end
 
