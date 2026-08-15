@@ -122,7 +122,6 @@ module Onibi
       @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
       captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
-      @hfa_bounded_literal_fast = true if hfa_bounded_literal_candidate?
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
@@ -237,7 +236,7 @@ module Onibi
 
       return @hfa_literal_alternation_fast.any? { |value| !input.index(value, normalized_position).nil? } if ascii_input && @hfa_literal_alternation_fast
 
-      return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && @hfa_bounded_literal_fast
+      return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
       end
@@ -511,7 +510,7 @@ module Onibi
         return nil
       end
 
-      if ascii_input && @hfa_bounded_literal_fast
+      if ascii_input && hfa_bounded_literal_result_safe?
         result = hfa_bounded_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -2765,13 +2764,6 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       quantifier = parts.one? && parts.first
       @hfa_bounded_literal_result_safe = hfa_bounded_literal_quantifier?(quantifier)
-    end
-
-    def hfa_bounded_literal_candidate?
-      return false if casefold?
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
-
-      hfa_bounded_literal_quantifier?(@ast.parts.first)
     end
 
     def hfa_bounded_literal_quantifier?(quantifier)
@@ -5317,7 +5309,7 @@ module Onibi
         return true
       end
 
-      if ascii_input && @hfa_bounded_literal_fast
+      if ascii_input && hfa_bounded_literal_result_safe?
         position = 0
         while (result = hfa_bounded_literal_match_result(input, position))
           block.call(result)

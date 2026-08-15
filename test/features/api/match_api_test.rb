@@ -524,15 +524,6 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("baaac")
   end
 
-  def test_bounded_literal_match_question_uses_early_constructor_dispatch
-    regexp = Onibi::Regexp.new("a{4,12}")
-
-    regexp.stub(:hfa_bounded_literal_result_safe?,
-                -> { flunk "bounded literal should use early constructor dispatch" }) do
-      assert regexp.match?("baaaaaaaac")
-    end
-  end
-
   def test_bounded_literal_match_question_short_circuits_common_checks
     regexp = Onibi::Regexp.new("a{4,12}")
 
@@ -546,6 +537,18 @@ class MatchApiTest < Minitest::Test
     assert_equal "aaaa", match[0]
     assert_equal [1, 5], match.offset(0)
     assert_nil regexp.match("zaaaaa", 5)
+  end
+
+  def test_bounded_literal_public_apis_match_mri
+    pattern = "a{2,4}"
+    input = "zaaa x aaaa"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
+
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_match_reset_literal_match_question_uses_adjacent_string_path
