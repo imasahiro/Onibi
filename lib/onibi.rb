@@ -3279,34 +3279,6 @@ module Onibi
       start && [start, start + literal.bytesize + 1, []]
     end
 
-    def hfa_scoped_multiline_sequence_direct_spec
-      return @hfa_scoped_multiline_sequence_direct_spec if defined?(@hfa_scoped_multiline_sequence_direct_spec)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      prefix, group, suffix = parts
-      body = group.body if group.is_a?(AST::OptionGroup) && group.multiline == true &&
-                           group.ignorecase.nil? && group.extended.nil?
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      valid = parts.length == 3 && prefix.is_a?(AST::Literal) && suffix.is_a?(AST::Literal) &&
-              body.is_a?(AST::Any) && prefix.value.ascii_only? && suffix.value.ascii_only?
-      @hfa_scoped_multiline_sequence_direct_spec = valid ? [prefix.value, suffix.value].freeze : false
-    end
-
-    def hfa_scoped_multiline_sequence_direct_each_result(input, &block)
-      prefix, suffix = hfa_scoped_multiline_sequence_direct_spec
-      position = 0
-      while (start = input.index(prefix, position))
-        middle = start + prefix.bytesize
-        finish = middle + 1 + suffix.bytesize
-        if finish <= input.bytesize && input.byteslice(finish - suffix.bytesize, suffix.bytesize) == suffix
-          block.call([start, finish, []])
-          position = finish
-        else
-          position = start + 1
-        end
-      end
-    end
-
     def hfa_unicode_repeated_literal_capture_result_safe?
       return @hfa_unicode_repeated_capture_safe if defined?(@hfa_unicode_repeated_capture_safe)
 
@@ -4631,10 +4603,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_scoped_multiline_sequence_direct_spec
-        hfa_scoped_multiline_sequence_direct_each_result(input, &block)
-        return true
-      end
       if ascii_input && hfa_lookahead_alternation_backreference_spec
         position = 0
         while (result = hfa_lookahead_alternation_backreference_match_result(input, position))
@@ -4920,7 +4888,6 @@ module Onibi
       ascii_safe = ascii_input &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
                     hfa_scoped_multiline_any_result_safe? || hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
-                    hfa_scoped_multiline_sequence_direct_spec ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
@@ -4956,7 +4923,6 @@ module Onibi
                      hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_scoped_multiline_any_result_safe? ||
                      hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
-                     hfa_scoped_multiline_sequence_direct_spec ||
                      hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_variable_any_backref_spec ||
                      hfa_start_match_result_safe? ||
