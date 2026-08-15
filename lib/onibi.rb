@@ -113,8 +113,6 @@ module Onibi
       alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                    alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
-      boundary_literal = hfa_word_boundary_literal_result_safe?
-      @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
       assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
       if assertion_parts.is_a?(Array)
         assertion_kind = assertion_parts[1]
@@ -346,7 +344,6 @@ module Onibi
       end
       return !hfa_class_lookbehind_match_result(input, normalized_position).nil? if @hfa_class_lookbehind_fast
       return hfa_ascii_adjacent_run_match?(input, normalized_position) if ascii_input && @hfa_ascii_adjacent_run_fast
-      return !hfa_word_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && @hfa_word_boundary_literal_fast
       if !ascii_input && (literal = hfa_unicode_fixed_literal_capture_literal)
         return !input.index(literal, normalized_position).nil?
       end
