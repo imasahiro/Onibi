@@ -1039,7 +1039,7 @@ module Onibi
         return hfa_match_data(result, input) if result
         return nil if hfa_program
       end
-      hfa_generic_match(input, position)
+      hfa_generic_match(input, position, ascii_input: ascii_input)
     end
 
     define_method([61, 126].pack("C*")) do |input|
@@ -1083,17 +1083,18 @@ module Onibi
       with_timeout { program.match?(input, normalize_match_position(input, position)) }
     end
 
-    def hfa_generic_match(input, position = 0)
+    def hfa_generic_match(input, position = 0, ascii_input: nil)
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
       hfa_timeout_budget_guard!(input)
+      ascii_input = input.ascii_only? if ascii_input.nil?
       start = normalize_match_position(input, position)
       result = with_timeout { program.match_result(input, start) }
       result ||= hfa_unicode_alternation_match_result(input, start)
       return nil unless result
 
-      if input.ascii_only?
+      if ascii_input
         hfa_match_data(result, input)
       else
         match_start, match_finish, captures = result
@@ -1138,17 +1139,18 @@ module Onibi
     def hfa_generic_each_result(input, &block)
       return enum_for(__method__, input) unless block
 
+      ascii_input = input.ascii_only?
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
       boundary_spec = hfa_scan_boundary_spec
 
-      if input.ascii_only? && (spec = hfa_direct_delimited_capture_spec)
+      if ascii_input && (spec = hfa_direct_delimited_capture_spec)
         hfa_direct_delimited_capture_each_result(input, spec) { |result| block.call(result) }
         return true
       end
 
-      if input.ascii_only? && (spec = hfa_reverse_top_level_capture_scan_spec)
+      if ascii_input && (spec = hfa_reverse_top_level_capture_scan_spec)
         delimiter, table = spec
         position = 0
         while (delimiter_start = input.index(delimiter, position))
@@ -1176,7 +1178,7 @@ module Onibi
         return true
       end
 
-      if input.ascii_only? && (spec = hfa_reverse_literal_capture_spec)
+      if ascii_input && (spec = hfa_reverse_literal_capture_spec)
         delimiter, table = spec
         position = 0
         while (delimiter_start = input.index(delimiter, position))
@@ -1345,7 +1347,7 @@ module Onibi
 
     def hfa_reverse_literal_capture_spec
       return @hfa_reverse_literal_capture_spec if defined?(@hfa_reverse_literal_capture_spec)
-      return @hfa_reverse_literal_capture_spec = false if @options.include?("ignorecase")
+      return @hfa_reverse_literal_capture_spec = false if casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
       group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
@@ -1404,7 +1406,7 @@ module Onibi
 
     def hfa_direct_delimited_capture_spec
       return @hfa_direct_delimited_capture_spec if defined?(@hfa_direct_delimited_capture_spec)
-      return @hfa_direct_delimited_capture_spec = false if @options.include?("ignorecase")
+      return @hfa_direct_delimited_capture_spec = false if casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
       group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
@@ -1614,7 +1616,9 @@ module Onibi
       end
     end
 
-    def hfa_consume_capture_node(node, input, cursor, finish, offsets)
+    def hfa_consume_capture_node(node, input, cursor, finish, offsets, ascii_input = nil)
+      ascii_input = input.ascii_only? if ascii_input.nil?
+
       case node
       when AST::Literal
         value = node.value
@@ -1638,31 +1642,31 @@ module Onibi
         cursor
       when AST::Group
         group_start = cursor
-        result = hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+        result = hfa_consume_capture_node(node.body, input, cursor, finish, offsets, ascii_input)
         offsets[node.number - 1] = [group_start, result] if result && node.capture
         result
       when AST::OptionGroup, AST::AtomicGroup
-        hfa_consume_capture_node(node.body, input, cursor, finish, offsets)
+        hfa_consume_capture_node(node.body, input, cursor, finish, offsets, ascii_input)
       when AST::Sequence
         node.parts.reduce(cursor) do |position, part|
-          position && hfa_consume_capture_node(part, input, position, finish, offsets)
+          position && hfa_consume_capture_node(part, input, position, finish, offsets, ascii_input)
         end
       when AST::Alternation
         node.branches.each do |branch|
           snapshot = offsets.dup
-          result = hfa_consume_capture_node(branch, input, cursor, finish, offsets)
+          result = hfa_consume_capture_node(branch, input, cursor, finish, offsets, ascii_input)
           return result if result
 
           offsets.replace(snapshot)
         end
         nil
       when AST::Quantifier
-        return hfa_consume_ascii_class_quantifier(node, input, cursor, finish) if input.ascii_only? && node.expression.is_a?(AST::CharacterClass)
+        return hfa_consume_ascii_class_quantifier(node, input, cursor, finish) if ascii_input && node.expression.is_a?(AST::CharacterClass)
 
         count = 0
         position = cursor
         while node.maximum.nil? || count < node.maximum
-          result = hfa_consume_capture_node(node.expression, input, position, finish, offsets)
+          result = hfa_consume_capture_node(node.expression, input, position, finish, offsets, ascii_input)
           break unless result && result > position && result <= finish
 
           position = result
@@ -1739,7 +1743,7 @@ module Onibi
     def hfa_public_safe?
       return @hfa_public_safe if defined?(@hfa_public_safe)
 
-      @hfa_public_safe = if !@pattern.ascii_only? || @options.include?("ignorecase")
+      @hfa_public_safe = if !@pattern.ascii_only? || casefold?
                            false
                          elsif @ast.is_a?(AST::Sequence) && @ast.parts.length != 1 &&
                                @ast.parts.any? { |part| class_run_result_node?(part) } &&
