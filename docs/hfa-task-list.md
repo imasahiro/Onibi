@@ -347,7 +347,7 @@ report behavior are identical.
 overlapping starts and multiple tail activations. Compare hit, miss, earliest
 start, and accepted end offsets with MRI.
 
-### HFA-023 - Lazily publish an immutable HFA program
+### HFA-023 - Lazily publish an immutable HFA program [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-022

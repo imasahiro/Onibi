@@ -79,6 +79,7 @@ module Onibi
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
+      @hfa_compilation_program_mutex = Mutex.new
       ignorecase = casefold?
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
       literal_ascii = literal&.ascii_only? && literal.bytesize.positive?
@@ -177,6 +178,7 @@ module Onibi
     def match?(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
+      hfa_compilation_program
       ascii_input = input.ascii_only?
       ascii_exact_literal = @hfa_exact_literal_fast && @pattern.ascii_only? && !fixed_encoding? && ascii_input
       validate_encoding!(input, ascii_input: ascii_input) unless ascii_exact_literal
@@ -1660,6 +1662,21 @@ module Onibi
       @hfa_program = HybridAutomata.compile_ast(@ast, options: @options)
     rescue HybridAutomata::UnsupportedPattern
       @hfa_program = false
+    end
+
+    def hfa_compilation_program
+      return @hfa_compilation_program if defined?(@hfa_compilation_program)
+
+      @hfa_compilation_program_mutex.synchronize do
+        return @hfa_compilation_program if defined?(@hfa_compilation_program)
+
+        unit = HybridAutomata::Optimization::Pipeline.new([]).call(
+          @ast, options: @options, encoding: encoding
+        )
+        @hfa_compilation_program = HybridAutomata::Optimization::CompilationProgram.new(
+          unit.component_graph, unit.head_dfa(row_budget: 4_096)
+        ).freeze
+      end
     end
 
     def hfa_public_safe?

@@ -76,6 +76,8 @@ module Onibi
         end
       end
 
+      CompilationProgram = Data.define(:component_graph, :head_dfa)
+
       # Abstract transformation contract.
       class Pass
         def call(_ast, options:, encoding:)

@@ -216,4 +216,36 @@ class HfaCfgOptimizationTest < Minitest::Test
                  end)
     assert(activations.all? { |activation| activation.segments.all?(&:frozen?) })
   end
+
+  def test_regexp_publishes_one_immutable_compilation_program
+    regexp = Onibi::Regexp.new("abc")
+    refute regexp.instance_variable_defined?(:@hfa_compilation_program)
+    assert regexp.match?("abc")
+
+    input = "zabcabc"
+    mri = Regexp.new("abc")
+    calls = [
+      -> { mri.match?(input) },
+      -> { mri.match(input)&.to_a },
+      -> { input.scan(mri) },
+      -> { input.gsub(mri, "X") }
+    ]
+    expected = calls.map(&:call)
+    results = [
+      -> { regexp.match?(input) },
+      -> { regexp.match(input)&.to_a },
+      -> { regexp.scan(input) },
+      -> { regexp.gsub(input, "X") }
+    ].map { |call| Thread.new(&call) }.map(&:value)
+    assert_equal expected, results
+
+    programs = 8.times.map do
+      Thread.new { regexp.send(:hfa_compilation_program) }
+    end.map(&:value)
+
+    assert programs.all?(&:frozen?)
+    assert_same programs.first, programs.drop(1).first
+    assert programs.first.component_graph.frozen?
+    assert programs.first.head_dfa.frozen?
+  end
 end
