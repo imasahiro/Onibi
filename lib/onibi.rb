@@ -280,11 +280,6 @@ module Onibi
       return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
-      if !ascii_input && hfa_fixed_literal_capture_result_safe?
-        literal = hfa_simple_capture_layout.map { |_kind, value, _number| value }.join
-        return !input.b.index(literal.b, normalized_position).nil?
-      end
-
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         result = hfa_unicode_ignorecase_literal_match_result(input, position, literal)
         return !result.nil? if timeout_unconfigured?
@@ -2427,13 +2422,6 @@ module Onibi
         separator_position = input.index(separator, separator_position + 1)
       end
       nil
-    end
-
-    def hfa_fixed_literal_capture_result_safe?
-      layout = hfa_simple_capture_layout
-      return false unless layout.is_a?(Array) && layout.any? { |kind, _value, number| kind == :literal && number }
-
-      layout.all? { |kind, value, _number| kind == :literal && value }
     end
 
     def hfa_unicode_fixed_literal_capture_literal
