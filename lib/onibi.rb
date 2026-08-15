@@ -2264,57 +2264,6 @@ module Onibi
       nil
     end
 
-    def hfa_literal_assertion_result_safe?
-      return @hfa_literal_assertion_safe if defined?(@hfa_literal_assertion_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      @hfa_literal_assertion_safe = if parts.length >= 2 && @options.none? { |option| option == "ignorecase" }
-                                      assertion = parts.first
-                                      body = parts[1..]
-                                      if assertion.is_a?(AST::Assertion) &&
-                                         %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
-                                        [body.map { |node| literal_ast_value(node) }.then { |values| values.all? ? values.join : nil },
-                                         assertion.kind, literal_ast_value(assertion.body)]
-                                      else
-                                        assertion = parts.last
-                                        body = parts[0...-1]
-                                        if assertion.is_a?(AST::Assertion) &&
-                                           %i[positive negative].include?(assertion.kind)
-                                          [body.map { |node| literal_ast_value(node) }.then { |values| values.all? ? values.join : nil },
-                                           assertion.kind, literal_ast_value(assertion.body)]
-                                        end
-                                      end
-                                    end
-      values = @hfa_literal_assertion_safe
-      @hfa_literal_assertion_safe = false unless values &&
-                                                 [values[0], values[2]].all? do |value|
-                                                   value.is_a?(String) && value.ascii_only? && value.bytesize.positive?
-                                                 end
-      @hfa_literal_assertion_safe
-    end
-
-    def hfa_literal_assertion_match_result(input, position, assertion = hfa_literal_assertion_result_safe?)
-      literal, kind, guard = assertion
-      candidate = input.index(literal, position)
-      while candidate
-        finish = candidate + literal.bytesize
-        matches = case kind
-                  when :positive_lookbehind
-                    candidate >= guard.bytesize && input.byteslice(candidate - guard.bytesize, guard.bytesize) == guard
-                  when :negative_lookbehind
-                    candidate < guard.bytesize || input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
-                  when :positive
-                    input.byteslice(finish, guard.bytesize) == guard
-                  when :negative
-                    input.byteslice(finish, guard.bytesize) != guard
-                  end
-        return [candidate, finish, []] if matches
-
-        candidate = input.index(literal, candidate + 1)
-      end
-      nil
-    end
-
     def hfa_leading_literal_assertion_result_safe?
       return @hfa_leading_literal_assertion_safe if defined?(@hfa_leading_literal_assertion_safe)
 
@@ -5531,7 +5480,7 @@ module Onibi
                     hfa_negative_literal_guard_safe? ||
                     hfa_simple_capture_result_safe? || hfa_word_boundary_literal_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? || hfa_anchored_class_run_result_safe? ||
-                    hfa_literal_assertion_result_safe? || hfa_literal_alternation_result_safe? ||
+                    hfa_literal_alternation_result_safe? ||
                     hfa_captureless_alternation_result_safe? || hfa_captureless_regular_sequence_result_safe? ||
                     hfa_captureless_repeated_alternation_result_safe? ||
                     hfa_repeated_equal_length_literal_capture_result_safe? ||
@@ -5575,7 +5524,7 @@ module Onibi
                      hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
-                     hfa_literal_assertion_result_safe? || hfa_possessive_literal_string_result_safe? ||
+                     hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
                      hfa_captureless_alternation_result_safe? ||
                      hfa_captureless_regular_sequence_result_safe? ||
