@@ -16,7 +16,10 @@ module Onibi
     def hfa_captureless_alternation_branch(node)
       parts = node.is_a?(AST::Sequence) ? node.parts : [node]
       class_index = parts.index { |part| part.is_a?(AST::CharacterClass) }
-      return unless class_index
+      unless class_index
+        literal = literal_ast_value(node)
+        return literal && [:literal, literal].freeze
+      end
       return unless parts.count { |part| part.is_a?(AST::CharacterClass) } == 1
 
       prefix_parts = parts.first(class_index)
@@ -31,18 +34,24 @@ module Onibi
       return unless table
 
       anchor = prefix.bytesize >= suffix.bytesize ? :prefix : :suffix
-      [prefix, suffix, table, anchor].freeze
+      [:class, prefix, suffix, table, anchor].freeze
     end
 
     def hfa_captureless_alternation_each_result(input, spec)
       position = 0
       while position < input.bytesize
         start = nil
-        spec.each do |prefix, suffix, _table, anchor_side|
-          anchor = anchor_side == :prefix ? prefix : suffix
-          anchor_position = position + (anchor_side == :prefix ? 0 : prefix.bytesize + 1)
-          candidate = input.index(anchor, anchor_position)
-          candidate -= prefix.bytesize + 1 if candidate && anchor_side == :suffix
+        spec.each do |branch|
+          candidate = if branch.first == :literal
+                        input.index(branch[1], position)
+                      else
+                        prefix, suffix, _table, anchor_side = branch[1..]
+                        anchor = anchor_side == :prefix ? prefix : suffix
+                        anchor_position = position + (anchor_side == :prefix ? 0 : prefix.bytesize + 1)
+                        found = input.index(anchor, anchor_position)
+                        found -= prefix.bytesize + 1 if found && anchor_side == :suffix
+                        found
+                      end
           next unless candidate && (start.nil? || candidate < start)
 
           start = candidate
@@ -60,7 +69,14 @@ module Onibi
     end
 
     def hfa_captureless_alternation_match_result(input, start, spec)
-      spec.each do |prefix, suffix, table, _anchor_side|
+      spec.each do |branch|
+        if branch.first == :literal
+          return start + branch[1].bytesize if input.byteslice(start, branch[1].bytesize) == branch[1]
+
+          next
+        end
+
+        _kind, prefix, suffix, table, _anchor_side = branch
         class_position = start + prefix.bytesize
         next unless input.byteslice(start, prefix.bytesize) == prefix
         next unless table[input.getbyte(class_position)]
