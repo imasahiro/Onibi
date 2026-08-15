@@ -213,7 +213,7 @@ condition contains the removed benchmark literals.
 
 ## Phase 1: make compiler facts authoritative
 
-### HFA-010 - Publish semantic and width facts on the compilation unit
+### HFA-010 - Publish semantic and width facts on the compilation unit [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-001

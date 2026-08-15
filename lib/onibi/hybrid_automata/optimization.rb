@@ -50,6 +50,10 @@ module Onibi
         end
 
         def cfg = graph_source.resolve
+
+        def facts
+          CFG::Analysis.for(cfg, options: options, encoding: encoding)
+        end
       end
 
       # Abstract transformation contract.

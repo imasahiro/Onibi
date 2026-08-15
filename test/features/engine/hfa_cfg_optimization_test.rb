@@ -73,4 +73,26 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert_includes cfg.effect_summary.effects, :capture
     assert_includes repeated_cfg.effect_summary.effects, :repeat
   end
+
+  def test_compilation_unit_publishes_immutable_width_and_effect_facts
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new("(?<x>a)?b+").parse, options: [], encoding: Encoding::UTF_8
+    )
+
+    facts = unit.facts
+    optional = facts.operations.first
+    repeated = facts.operations.last
+
+    assert facts.frozen?
+    assert facts.operations.frozen?
+    assert optional.frozen?
+    assert_equal true, optional.nullable
+    assert_equal [0, 1], optional.width
+    assert_includes optional.writes, :captures
+    assert_equal ["a"], optional.first
+    assert_equal ["a"], optional.last
+    assert_equal [1, nil], repeated.width
+    assert repeated.frozen?
+    assert facts.blocks.all?(&:frozen?)
+  end
 end

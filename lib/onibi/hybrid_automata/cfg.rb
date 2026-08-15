@@ -81,6 +81,79 @@ module Onibi
         end
       end
 
+      # Immutable semantic facts consumed by later region and component passes.
+      module Analysis
+        OperationFact = Data.define(:opcode, :nullable, :width, :width_mode, :first, :last,
+                                    :reads, :writes, :effects, :options, :encoding)
+        BlockFact = Data.define(:id, :operations, :nullable, :width, :effects)
+        CompilationFacts = Data.define(:operations, :blocks, :options, :encoding)
+
+        module_function
+
+        def for(graph, options:, encoding:)
+          operation_facts = graph.operations.map do |operation|
+            node = operation.operand
+            nullable, width, first, last, effects = node_facts(node)
+            effects |= operation.effects
+            writes = operation.state_out.keys | effects.filter_map do |effect|
+              { capture: :captures, repeat: :repeats, choice: :checkpoints, cut: :cuts }[effect]
+            end
+            OperationFact.new(operation.opcode, nullable, width, :character, first, last,
+                              operation.state_in.keys.freeze, writes.freeze, effects.freeze,
+                              options.freeze, encoding).freeze
+          end.freeze
+          facts_by_operation = {}.compare_by_identity
+          graph.operations.each_with_index { |operation, index| facts_by_operation[operation] = operation_facts[index] }
+          by_block = graph.blocks.map do |block|
+            facts = block.operations.map { |operation| facts_by_operation.fetch(operation) }
+            BlockFact.new(block.id, facts.freeze, facts.all?(&:nullable), combine_widths(facts),
+                          facts.flat_map(&:effects).uniq.freeze).freeze
+          end.freeze
+          CompilationFacts.new(operation_facts, by_block, options.freeze, encoding).freeze
+        end
+
+        def node_facts(node)
+          case node
+          when AST::Literal
+            width = node.value.bytesize
+            first = node.value.empty? ? [] : [node.value.chars.first]
+            last = node.value.empty? ? [] : [node.value.chars.last]
+            [width.zero?, [width, width], first.freeze, last.freeze, []]
+          when AST::Group
+            node_facts(node.body).tap { |facts| facts[4] = facts[4] | [:capture] if node.capture }
+          when AST::Quantifier
+            nullable, child_width, first, last, effects = node_facts(node.expression)
+            minimum = child_width[0] * node.minimum
+            maximum = child_width[1].nil? || node.maximum.nil? ? nil : child_width[1] * node.maximum
+            [node.minimum.zero? || nullable, [minimum, maximum], first, last, effects | [:repeat]]
+          when AST::Sequence
+            facts = node.parts.map { |part| node_facts(part) }
+            [facts.all?(&:first), combine_widths(facts.map { |fact| FactProxy.new(fact[1]) }),
+             facts.flat_map { |fact| fact[2] }.freeze, facts.reverse.flat_map { |fact| fact[3] }.freeze,
+             facts.flat_map { |fact| fact[4] }.uniq]
+          when AST::Alternation
+            facts = node.branches.map { |branch| node_facts(branch) }
+            minimum = facts.map { |fact| fact[1][0] }.min || 0
+            maximum = facts.any? { |fact| fact[1][1].nil? } ? nil : facts.map { |fact| fact[1][1] }.max
+            [facts.any?(&:first), [minimum, maximum], facts.flat_map { |fact| fact[2] }.freeze,
+             facts.flat_map { |fact| fact[3] }.freeze, facts.flat_map { |fact| fact[4] }.uniq]
+          when AST::Anchor, AST::Assertion
+            [true, [0, 0], nil, nil, []]
+          when AST::Backreference, AST::SubexpressionCall
+            [false, [0, nil], nil, nil, [:capture_read]]
+          else
+            [false, [1, 1], nil, nil, []]
+          end
+        end
+
+        def combine_widths(facts)
+          [facts.sum { |fact| fact.width[0] }, facts.any? { |fact| fact.width[1].nil? } ? nil : facts.sum { |fact| fact.width[1] }]
+        end
+
+        FactProxy = Data.define(:width)
+        private_constant :FactProxy
+      end
+
       # Computes immutable dominator sets for ordered CFG blocks.
       module Dominance
         module_function
