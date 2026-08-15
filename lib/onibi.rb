@@ -84,9 +84,6 @@ module Onibi
       single_quantified_expression = hfa_single_quantified_expression
       property_node = single_quantified_expression
       property_node = nil unless property_node.is_a?(AST::Property)
-      @hfa_unicode_property_run_fast = property_node if property_node &&
-                                                        property_node.name.sub("Is", "").sub("^", "") == "Hiragana" &&
-                                                        !ignorecase
       @hfa_ascii_unicode_run_fast = property_node if property_node && !ignorecase &&
                                                      hfa_capture_class_table(property_node)
       chain_candidate = !ignorecase && @ast.is_a?(AST::Sequence) &&
@@ -283,7 +280,7 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
-      if !ascii_input && !@hfa_unicode_property_run_fast && !@hfa_unicode_word_class_run_fast &&
+      if !ascii_input && !hfa_unicode_property_run_result_safe? && !hfa_unicode_word_class_run_result_safe? &&
          hfa_unicode_match_result_safe?
         hfa = hfa_program
         if hfa
@@ -318,9 +315,9 @@ module Onibi
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? }
       end
-      return hfa_unicode_property_run_match?(input, normalized_position) if !ascii_input && @hfa_unicode_property_run_fast
+      return hfa_unicode_property_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_property_run_result_safe?
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
-      return hfa_unicode_word_class_run_match?(input, normalized_position) if !ascii_input && @hfa_unicode_word_class_run_fast
+      return hfa_unicode_word_class_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_word_class_run_result_safe?
       return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && hfa_ascii_unicode_run_result_safe?
       return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && hfa_ascii_run_chain_result_safe?
       return hfa_ascii_adjacent_run_match?(input, normalized_position) if ascii_input && hfa_ascii_adjacent_run_result_safe?
@@ -358,8 +355,6 @@ module Onibi
         start_position = normalized_position
         return !input.b.index(literal.b, start_position).nil?
       end
-      return hfa_unicode_property_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_property_run_result_safe?
-      return hfa_unicode_word_class_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_word_class_run_result_safe?
       return hfa_fixed_literal_capture_match?(input, normalized_position) if !ascii_input && hfa_fixed_literal_capture_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
@@ -4297,7 +4292,8 @@ module Onibi
 
     def hfa_unicode_property_run_match?(input, position)
       predicate, negated = hfa_unicode_property_run_spec
-      if !negated && @hfa_unicode_property_run_fast
+      property_name = @ast.parts.first.expression.name.sub("Is", "").sub("^", "")
+      if property_name == "Hiragana" && !negated
         index = 0
         input.each_codepoint do |codepoint|
           return true if index >= position && codepoint.between?(0x3040, 0x309f)
