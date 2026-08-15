@@ -5533,6 +5533,10 @@ module Onibi
         hfa_captureless_alternation_each_result(input, spec, &block)
         return true
       end
+      if input.ascii_only? && hfa_linebreak_alternation_scan_spec
+        hfa_linebreak_alternation_each_result(input, &block)
+        return true
+      end
       if input.ascii_only? && (spec = hfa_fixed_literal_backref_spec)
         position = 0
         while (result = hfa_fixed_literal_backref_match_result(input, position, spec))

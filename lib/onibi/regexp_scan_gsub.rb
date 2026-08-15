@@ -172,6 +172,10 @@ module Onibi
     end
 
     def replace_matches(input, replacement, block)
+      if !block && replacement.index("\\").nil? && input.ascii_only? &&
+         (spec = hfa_delimited_negated_class_result_spec)
+        return [hfa_delimited_negated_class_replace_literal(input, replacement, spec), input.bytesize]
+      end
       return replace_literal_matches(input, replacement) if !block && replacement.index("\\").nil?
 
       result = String.new(encoding: input.encoding)
@@ -182,6 +186,30 @@ module Onibi
         cursor = match.end(0)
       end
       [result, cursor]
+    end
+
+    def hfa_delimited_negated_class_replace_literal(input, replacement, spec)
+      prefix, suffix, minimum = spec
+      result = String.new(encoding: input.encoding)
+      cursor = 0
+      position = 0
+      while (start = input.index(prefix, position))
+        finish = input.index(suffix, start + prefix.bytesize)
+        unless finish
+          position = start + prefix.bytesize
+          next
+        end
+
+        if finish - start - prefix.bytesize >= minimum
+          result << input.byteslice(cursor, start - cursor) << replacement
+          cursor = finish + suffix.bytesize
+          position = cursor
+        else
+          position = start + prefix.bytesize
+        end
+      end
+      result << input.byteslice(cursor, input.bytesize - cursor) if cursor < input.bytesize
+      result
     end
 
     def replace_literal_matches(input, replacement)
