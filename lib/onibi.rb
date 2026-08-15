@@ -4471,20 +4471,6 @@ module Onibi
         end
         return true
       end
-      if hfa_literal_capture_before_alternation_result_safe?
-        program = hfa_program
-        program.each_match_result(input, 0) do |result|
-          block.call(hfa_literal_capture_before_alternation_match_result(input, result[0], result))
-        end
-        return true
-      end
-      if hfa_single_capture_literal_alternation_result_safe?
-        program = hfa_program
-        program.each_match_result(input, 0) do |result|
-          block.call(hfa_single_capture_literal_alternation_match_result(input, result))
-        end
-        return true
-      end
       if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
         literal = hfa_exact_literal_value
         validate_encoding!(input, ascii_input: ascii_input) if hfa_unicode_exact_literal_result_safe?
