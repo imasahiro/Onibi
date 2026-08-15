@@ -97,6 +97,7 @@ module Onibi
         CaptureTag = Data.define(:kind, :capture, :offset)
         TailThread = Data.define(:history, :priority)
         SemanticComponent = Data.define(:kind, :operation, :input_domains, :output_domains)
+        RawResult = Data.define(:match_start_byte, :match_end_byte, :capture_byte_ranges)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
         HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
           def border? = border
@@ -211,6 +212,16 @@ module Onibi
             [activation.component_id, activation.start_offset,
              activation.end_offset]
           end.freeze
+        end
+
+        def result_reports(graph, facts, input:)
+          byte_offset = ->(character) { input.each_char.take(character).join.bytesize }
+          tail_activations(graph, facts, input: input).map do |activation|
+            captures = activation.tags.group_by(&:capture).values.map do |tags|
+              [byte_offset.call(tags.map(&:offset).min), byte_offset.call(tags.map(&:offset).max)].freeze
+            end.sort.freeze
+            RawResult.new(byte_offset.call(activation.start_offset), byte_offset.call(activation.end_offset), captures).freeze
+          end.sort_by { |report| [report.match_start_byte, report.match_end_byte] }.freeze
         end
 
         def mandatory_strings(ast)

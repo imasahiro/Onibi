@@ -475,7 +475,7 @@ for example `HFA-042a` for backreferences and `HFA-042b` for lookarounds.
 differential corpus plus at least one interaction with a string component and
 one interaction with a DFA border.
 
-### HFA-043 - Unify public APIs on one result iterator
+### HFA-043 - Unify public APIs on one result iterator [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-042

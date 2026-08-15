@@ -75,6 +75,10 @@ module Onibi
           CFG::Analysis.tail_activations(cfg, facts, input: input)
         end
 
+        def result_reports(input:)
+          CFG::Analysis.result_reports(cfg, facts, input: input)
+        end
+
         def mandatory_strings
           CFG::Analysis.mandatory_strings(ast)
         end

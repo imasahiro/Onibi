@@ -447,4 +447,21 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert_equal %i[cursor captures], semantic.fetch(0).payload.input_domains
     assert_equal %i[cursor captures], semantic.fetch(0).payload.output_domains
   end
+
+  def test_compilation_unit_publishes_one_immutable_raw_result_iterator
+    source = "(?<word>abc)"
+    input = "zabc"
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+
+    reports = unit.result_reports(input: input)
+
+    assert_equal [[1, 4, [[1, 4]]]], (reports.map do |report|
+      [report.match_start_byte, report.match_end_byte, report.capture_byte_ranges]
+    end)
+    assert reports.frozen?
+    assert reports.all?(&:frozen?)
+    assert(reports.all? { |report| report.capture_byte_ranges.frozen? })
+  end
 end
