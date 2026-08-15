@@ -2701,20 +2701,6 @@ module Onibi
       @hfa_subexpression_literal_match_literal = (literal + literal if literal&.ascii_only? && literal.bytesize.positive?)
     end
 
-    def hfa_lazy_dot_star_literal_match_result(input, position, parts)
-      prefix, suffix, allow_newline = parts
-      candidate = input.index(prefix, position)
-      while candidate
-        suffix_position = candidate + prefix.bytesize
-        newline = allow_newline ? nil : input.index("\n", suffix_position)
-        found = input.index(suffix, suffix_position)
-        return [candidate, found + suffix.bytesize, []] if found && (!newline || found < newline)
-
-        candidate = input.index(prefix, candidate + 1)
-      end
-      nil
-    end
-
     def hfa_repeated_literal_suffix_match_result(input, position)
       repeat, suffix = @ast.parts
       unit = repeat.expression.value
@@ -2741,19 +2727,6 @@ module Onibi
         candidate = input.index(unit, candidate + 1)
       end
       nil
-    end
-
-    def hfa_lazy_dot_star_literal_parts
-      return @hfa_lazy_dot_star_literal_parts if defined?(@hfa_lazy_dot_star_literal_parts)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      prefix, repeat, suffix = parts
-      valid = prefix.is_a?(AST::Literal) && repeat.is_a?(AST::Quantifier) &&
-              repeat.kind == :* && repeat.mode == :lazy && repeat.expression.is_a?(AST::Any) &&
-              suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
-              prefix.value.bytesize.positive? && suffix.value.bytesize.positive? &&
-              !casefold?
-      @hfa_lazy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
     end
 
     def hfa_lazy_literal_result_safe?
