@@ -844,6 +844,15 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_linebreak_alternation_gsub_materializes_directly
+    regexp = Onibi::Regexp.new(">.*\\n|\\n")
+    input = ">header\nsequence\n"
+
+    assert_equal ["sequence", input.bytesize],
+                 regexp.send(:hfa_linebreak_replace_api, input, "", nil)
+    assert_equal "sequence", regexp.gsub(input, "")
+  end
+
   def test_delimited_negated_class_gsub_uses_hfa_result_shape
     regexp = Onibi::Regexp.new("<[^>]*>")
 
