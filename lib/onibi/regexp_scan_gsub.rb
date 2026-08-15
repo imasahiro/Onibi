@@ -5,6 +5,7 @@ module Onibi
   module RegexpScanGsub
     include RegexpReplacement
     include RegexpCapturelessScanGsub
+    include RegexpLinebreakScanGsub
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
     def scan(input, &block)
@@ -238,6 +239,9 @@ module Onibi
     def replace_matches(input, replacement, block)
       captureless_replacement = hfa_captureless_replace_api(input, replacement, block)
       return captureless_replacement if captureless_replacement
+
+      linebreak_replacement = hfa_linebreak_replace_api(input, replacement, block)
+      return linebreak_replacement if linebreak_replacement
       if !block && replacement.index("\\").nil? && input.ascii_only? &&
          (spec = hfa_delimited_negated_class_result_spec)
         return [hfa_delimited_negated_class_replace_literal(input, replacement, spec), input.bytesize]
