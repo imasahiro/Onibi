@@ -20,6 +20,34 @@ may support the acceptance test but do not replace it. A task is not complete
 until its focused tests, the complete suite, and the applicable differential
 tests pass.
 
+### Test scope: library behavior only
+
+Tests under `test/` must protect behavior of the Onibi regular expression
+library. Prefer tests that construct `Onibi::Regexp` or `Onibi::MatchData` and
+assert matching results, captures, errors, encodings, options, or MRI
+compatibility. A public API contract should be tested by calling the API and
+checking its behavior, not by maintaining a list of methods or constants that
+merely exist.
+
+Do not add tests whose subject is repository or development-tooling
+configuration rather than library behavior. This includes tests that only
+read or assert the contents or existence of:
+
+- `.github/workflows/`, `.githooks/`, `Rakefile`, `Gemfile`, or `.rubocop.yml`;
+- coverage, release-gate, runtime-matrix, or other process configuration;
+- gemspec/package file lists, clean-install packaging mechanics, or RBS/API
+  inventory files;
+- benchmark runners, benchmark thresholds, profiling scripts, fuzz runners,
+  or differential-test harness internals.
+
+Keep a benchmark, fuzz, or differential test only when it directly verifies
+that Onibi produces the correct result (for example, a deterministic MRI
+differential case). Remove workflow/configuration assertions from mixed tests
+instead of preserving them for tooling coverage. File-presence checks,
+`respond_to?`/method-inventory checks, and tests of test infrastructure belong
+in the relevant tooling or CI validation, not in the regular expression
+library test suite.
+
 ## Repository structure
 
 The project should use this high-level layout:
