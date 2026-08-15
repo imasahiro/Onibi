@@ -113,12 +113,6 @@ module Onibi
       alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                    alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
-      dot_candidate = @ast.is_a?(AST::Sequence) && @ast.parts.length == 3 &&
-                      @ast.parts[0].is_a?(AST::Literal) && @ast.parts[1].is_a?(AST::Any) &&
-                      @ast.parts[2].is_a?(AST::Literal) && @ast.parts[0].value.ascii_only? &&
-                      @ast.parts[2].value.ascii_only? && @ast.parts[0].value.bytesize == 1 &&
-                      @ast.parts[2].value.bytesize == 1 && !ignorecase
-      @hfa_dot_literal_fast = hfa_dot_literal_parts if dot_candidate
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
       assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
@@ -194,7 +188,6 @@ module Onibi
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
 
-      return hfa_dot_literal_match?(input, normalized_position) if ascii_input && @hfa_dot_literal_fast
       return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && @hfa_repeated_class_backref_fast
       return hfa_ascii_class_run_match?(input, normalized_position) if ascii_input && hfa_ascii_class_run_result_safe?
       return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && @hfa_captured_class_run_chain_fast
@@ -5561,7 +5554,7 @@ module Onibi
         end
         return true
       end
-      if ascii_input && @hfa_dot_literal_fast
+      if ascii_input && hfa_dot_literal_result_safe?
         position = 0
         while (result = hfa_dot_literal_match_result(input, position))
           block.call(result)
