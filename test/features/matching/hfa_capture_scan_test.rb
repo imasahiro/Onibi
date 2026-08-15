@@ -16,7 +16,6 @@ class HfaCaptureScanTest < Minitest::Test
     assert regexp.send(:hfa_top_level_capture_plan)
     assert regexp.send(:hfa_reverse_literal_capture_spec)
     assert regexp.send(:hfa_reverse_top_level_capture_scan_spec)
-    assert regexp.send(:hfa_capture_sequence_scan_spec)
     result = regexp.send(:hfa_program).match_result(ACCESS_LOG, 0)
     assert_equal regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1]),
                  regexp.send(:hfa_generic_capture_offsets, ACCESS_LOG, result[0], result[1])
@@ -33,20 +32,14 @@ class HfaCaptureScanTest < Minitest::Test
 
   def test_hfa_capture_sequence_uses_literal_delimiter_for_class_runs
     regexp = Onibi::Regexp.new("request_id=(?<request_id>[0-9a-f]{8}) timestamp=(?<timestamp>[0-9T:-]+Z)")
-    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
-
-    assert_equal 8, regexp.send(:hfa_capture_sequence_delimited_class_end,
-                                "00000000 timestamp=", 0, table, " timestamp=")
+    assert_equal [["00000000", "2026-08-10T00:00:00Z"]],
+                 regexp.scan("request_id=00000000 timestamp=2026-08-10T00:00:00Z")
   end
 
   def test_hfa_capture_sequence_preserves_negated_class_boundaries
     regexp = Onibi::Regexp.new("x=(?<value>[^,]+),(?<tail>[^,]+)")
-    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
-
     assert_equal [["a;b", "c"]], regexp.scan("x=a;b,c")
     assert_equal [%w[a b]], regexp.scan("x=a,b,c")
-    assert_equal 3, regexp.send(:hfa_capture_sequence_delimited_class_end,
-                                "a;b,c", 0, table, ",", 1)
   end
 
   def test_hfa_scan_returns_multiple_literal_captures
@@ -156,7 +149,6 @@ class HfaCaptureScanTest < Minitest::Test
                  Onibi::Regexp.new(pattern).scan(input)
     regexp = Onibi::Regexp.new(pattern)
     assert regexp.send(:hfa_top_level_capture_scan_spec)
-    assert regexp.send(:hfa_capture_sequence_scan_spec)
   end
 
   def test_hfa_scan_uses_alternative_prefixes_for_top_level_capture

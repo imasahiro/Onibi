@@ -838,11 +838,6 @@ module Onibi
 
       boundary_spec = hfa_scan_boundary_spec
 
-      if ascii_input && (spec = hfa_capture_sequence_scan_spec)
-        hfa_capture_sequence_each_result(input, spec) { |result| block.call(result) }
-        return true
-      end
-
       if ascii_input && (spec = hfa_reverse_top_level_capture_scan_spec)
         delimiter, table = spec
         position = 0
@@ -4537,11 +4532,6 @@ module Onibi
 
       if ascii_input && (scan_spec = hfa_alternation_capture_scan_spec)
         hfa_alternation_capture_each_result(input, scan_spec, &block)
-        return true
-      end
-
-      if ascii_input && (scan_spec = hfa_capture_sequence_scan_spec)
-        hfa_capture_sequence_each_result(input, scan_spec, &block)
         return true
       end
 

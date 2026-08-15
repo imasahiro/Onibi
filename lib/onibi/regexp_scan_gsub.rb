@@ -22,21 +22,6 @@ module Onibi
         return values
       end
 
-      if input.is_a?(String) && input.ascii_only? && hfa_capture_count.positive? &&
-         (spec = hfa_capture_sequence_scan_spec)
-        values = []
-        hfa_capture_sequence_each_scan_value(input, spec) do |value|
-          if block
-            block.call(value)
-          else
-            values << value
-          end
-        end
-        return input if block
-
-        return values
-      end
-
       if block
         scan_results(input) { |result| block.call(scan_value_from_result(result, input)) }
         return input
@@ -81,65 +66,6 @@ module Onibi
           position = start + 1
         end
       end
-    end
-
-    def hfa_capture_sequence_each_scan_value(input, spec)
-      tokens, anchor = spec
-      position = 0
-      captures = Array.new(hfa_capture_count)
-      offsets = Array.new(hfa_capture_count) { [nil, nil] }
-      result_container = [nil, nil]
-      while (start = hfa_capture_sequence_start(input, position, anchor))
-        result = hfa_capture_sequence_match_result(input, start, tokens, captures, offsets, result_container)
-        if result
-          finish = result[0]
-          yield captures.map { |offset| offset && input.byteslice(offset[0], offset[1] - offset[0]) }
-          position = finish
-        elsif anchor.first == :reverse
-          delimiter_start = input.index(anchor[1], start + 1)
-          position = delimiter_start ? delimiter_start + anchor[1].bytesize : input.bytesize
-        else
-          position = start + anchor[1].bytesize
-        end
-      end
-    end
-
-    def hfa_capture_sequence_single_operation_end(input, position, operation)
-      kind = operation[0]
-      table = operation[1]
-      minimum = operation[2]
-      if kind == :fixed
-        minimum.times do
-          return unless table[input.getbyte(position)]
-
-          position += 1
-        end
-        return position
-      end
-
-      if kind == :literal
-        return unless input.byteslice(position, table.bytesize) == table
-
-        return position + table.bytesize
-      end
-
-      finish = hfa_capture_run_end(input, position, table)
-      finish - position >= minimum ? finish : nil
-    end
-
-    def hfa_capture_sequence_delimited_class_end(input, position, table, delimiter, excluded_count = nil)
-      finish = input.index(delimiter, position)
-      return unless finish
-
-      return finish if excluded_count == 1 && !table[delimiter.getbyte(0)]
-
-      cursor = position
-      while cursor < finish
-        return unless table[input.getbyte(cursor)]
-
-        cursor += 1
-      end
-      finish
     end
 
     def hfa_scan_boundary_match?(input, start, finish, boundary)
