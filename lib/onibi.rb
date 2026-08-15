@@ -105,9 +105,6 @@ module Onibi
                                finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
                            end
       @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
-      alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
-      @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
-                                                                   alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
       @hfa_empty_absence_fast = true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
                                         @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
@@ -150,6 +147,11 @@ module Onibi
 
       return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
 
+      if !ascii_input && hfa_literal_alternation_result_safe?
+        byte_position = input[0, normalized_position].bytesize
+        return !hfa_literal_alternation_match_result(input, byte_position, byte_mode: true).nil?
+      end
+
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_unicode_class_direct_match_result(input, byte_position, class_source).nil?
@@ -189,11 +191,6 @@ module Onibi
         return input[normalized_position, literal.length] == literal
       end
 
-      if !ascii_input && @hfa_literal_alternation_fast
-        byte_position = input[0, normalized_position].bytesize
-        return !hfa_literal_alternation_match_result(input, byte_position, byte_mode: true).nil?
-      end
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -229,7 +226,7 @@ module Onibi
         return with_timeout { !result.nil? }
       end
 
-      return @hfa_literal_alternation_fast.any? { |value| !input.index(value, normalized_position).nil? } if ascii_input && @hfa_literal_alternation_fast
+      return hfa_literal_alternation_match?(input, normalized_position) if ascii_input && hfa_literal_alternation_result_safe?
 
       return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
@@ -461,14 +458,13 @@ module Onibi
         start = input[0, normalized_position].bytesize
         return hfa_match_data([start, start + literal.bytesize, []], input)
       end
-      if !ascii_input && @hfa_literal_alternation_fast
+      if !ascii_input && hfa_literal_alternation_result_safe?
         byte_position = input[0, normalized_position].bytesize
         result = hfa_literal_alternation_match_result(input, byte_position, byte_mode: true)
         return hfa_match_data(result, input) if result
 
         return nil
       end
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -498,7 +494,7 @@ module Onibi
         return nil
       end
 
-      if ascii_input && @hfa_literal_alternation_fast
+      if ascii_input && hfa_literal_alternation_result_safe?
         result = hfa_literal_alternation_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -5358,7 +5354,7 @@ module Onibi
         block.call([0, literal.bytesize, []])
         return true
       end
-      if @hfa_literal_alternation_fast
+      if hfa_literal_alternation_result_safe?
         validate_encoding!(input, ascii_input: ascii_input) unless ascii_input
         position = 0
         while (result = hfa_literal_alternation_match_result(input, position, byte_mode: !ascii_input))
