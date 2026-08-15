@@ -119,6 +119,12 @@ class ScanGsubTest < Minitest::Test
     assert_equal ["cat"], regexp.scan("cat日本語")
   end
 
+  def test_start_match_literal_scan_uses_general_ascii_path
+    regexp = Onibi::Regexp.new("\\Gcat")
+
+    assert_equal ["cat"], regexp.scan("cat dog")
+  end
+
   def test_literal_alternation_scan_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("cat|dog")
 

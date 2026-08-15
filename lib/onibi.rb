@@ -4106,13 +4106,6 @@ module Onibi
         end
         return true
       end
-      if (literal = hfa_start_match_literal_fast)
-        validate_encoding!(input, ascii_input: ascii_input)
-        return true unless input[0, literal.length] == literal
-
-        block.call([0, literal.bytesize, []])
-        return true
-      end
       if !ascii_input && hfa_literal_alternation_result_safe?
         validate_encoding!(input, ascii_input: ascii_input)
         position = 0
