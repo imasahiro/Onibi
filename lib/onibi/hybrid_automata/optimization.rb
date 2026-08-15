@@ -70,6 +70,10 @@ module Onibi
         def head_dfa(row_budget:)
           CFG::Analysis.head_dfa(cfg, facts, row_budget: row_budget)
         end
+
+        def tail_activations(input:)
+          CFG::Analysis.tail_activations(cfg, facts, input: input)
+        end
       end
 
       # Abstract transformation contract.

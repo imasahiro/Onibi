@@ -326,7 +326,7 @@ runtime subset construction.
 budgets 0, 1, a boundary value, and 4,096. Results, captures, and offsets must
 remain identical before and after warmup.
 
-### HFA-022 - Execute border activations and concurrent tail NFAs
+### HFA-022 - Execute border activations and concurrent tail NFAs [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-021

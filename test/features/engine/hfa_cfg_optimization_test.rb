@@ -182,4 +182,38 @@ class HfaCfgOptimizationTest < Minitest::Test
       assert dfa.states.any?(&:border?) if row_budget < 4_096
     end
   end
+
+  def test_border_execution_publishes_immutable_tail_activations
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new("abc").parse, options: [], encoding: Encoding::UTF_8
+    )
+
+    activations = unit.tail_activations(input: "zabc")
+
+    assert activations.frozen?
+    assert activations.all?(&:frozen?)
+    assert_equal [1], activations.map(&:start_offset).uniq
+    assert_equal [4], activations.map(&:end_offset).uniq
+  end
+
+  def test_border_execution_deduplicates_overlapping_starts_without_losing_accepts
+    source = "a|aa"
+    input = "aa"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+    assert_equal mri.match?(input), onibi.match?(input)
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    activations = unit.tail_activations(input: input)
+
+    assert_equal([[0, 0, 1], [0, 1, 2], [1, 0, 2]],
+                 activations.map do |activation|
+                   [activation.component_id, activation.start_offset,
+                    activation.end_offset]
+                 end)
+    assert(activations.all? { |activation| activation.segments.all?(&:frozen?) })
+  end
 end

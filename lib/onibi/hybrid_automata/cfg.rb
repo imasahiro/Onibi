@@ -98,6 +98,8 @@ module Onibi
           def border? = border
         end
         HeadDFA = Data.define(:entry, :states, :alphabet, :row_budget)
+        TailActivation = Data.define(:component_id, :start_offset, :end_offset, :segments, :tags,
+                                     :semantic_state)
 
         module_function
 
@@ -179,6 +181,17 @@ module Onibi
           HeadDFA.new(state.id, [state].freeze, alphabet, row_budget).freeze
         end
 
+        def tail_activations(graph, facts, input:)
+          chars = input.each_char.to_a
+          activations = position_nfas(graph, facts).each_with_index.flat_map do |nfa, component_id|
+            activations_for_nfa(nfa, chars, component_id)
+          end
+          activations.uniq do |activation|
+            [activation.component_id, activation.start_offset,
+             activation.end_offset]
+          end.freeze
+        end
+
         def position_nfa_for(region)
           builder = PositionBuilder.new
           fragments = region.operations.map { |operation| builder.build(operation.operand) }
@@ -191,6 +204,34 @@ module Onibi
           end.freeze
           PositionNFA.new(positions, fragment.first.freeze, fragment.last.freeze, follow,
                           fragment.nullable, reach, segments).freeze
+        end
+
+        def activations_for_nfa(nfa, chars, component_id)
+          positions = nfa.positions.to_h { |position| [position.id, position] }
+          chars.each_index.flat_map do |start|
+            active = nfa.first.select { |id| positions.fetch(id).symbol == chars[start] }
+            accepts = []
+            cursor = start
+            until active.empty? || cursor >= chars.length
+              accepts.concat(accepting_activations(nfa, active, component_id, start, cursor + 1))
+              cursor += 1
+              break if cursor >= chars.length
+
+              active = active.flat_map { |id| nfa.follow.fetch(id, []) }
+                             .uniq
+                             .select { |id| positions.fetch(id).symbol == chars[cursor] }
+            end
+            accepts
+          end
+        end
+
+        def accepting_activations(nfa, active, component_id, start, finish)
+          return [] unless (active & nfa.last).any?
+
+          segments = nfa.segments.each_index.map do |index|
+            active.select { |id| id / 512 == index }.freeze
+          end.freeze
+          [TailActivation.new(component_id, start, finish, segments, [].freeze, {}.freeze).freeze]
         end
 
         class PositionBuilder
