@@ -39,6 +39,16 @@ class HfaCaptureScanTest < Minitest::Test
                                 "00000000 timestamp=", 0, table, " timestamp=")
   end
 
+  def test_hfa_capture_sequence_preserves_negated_class_boundaries
+    regexp = Onibi::Regexp.new("x=(?<value>[^,]+),(?<tail>[^,]+)")
+    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
+
+    assert_equal [["a;b", "c"]], regexp.scan("x=a;b,c")
+    assert_equal [%w[a b]], regexp.scan("x=a,b,c")
+    assert_equal 3, regexp.send(:hfa_capture_sequence_delimited_class_end,
+                                "a;b,c", 0, table, ",", 1)
+  end
+
   def test_hfa_scan_returns_multiple_literal_captures
     assert_equal [%w[foo bar]], Onibi::Regexp.new("(?<first>foo)(?<second>bar)").scan("foobar")
   end
