@@ -542,12 +542,6 @@ module Onibi
         end
         return nil
       end
-      if ascii_input && hfa_scoped_ignorecase_multiline_sequence_result_safe?
-        result = hfa_scoped_ignorecase_multiline_sequence_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if !ascii_input && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
