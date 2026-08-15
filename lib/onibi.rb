@@ -4237,14 +4237,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_captured_class_run_chain_result_safe?
-        position = 0
-        while (result = hfa_captured_class_run_chain_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && (parts = hfa_lazy_dot_star_literal_parts)
         position = 0
         while (result = hfa_lazy_dot_star_literal_match_result(input, position, parts))
