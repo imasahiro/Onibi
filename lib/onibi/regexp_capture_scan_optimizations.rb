@@ -189,5 +189,111 @@ module Onibi
       end
       nil
     end
+
+    def hfa_capture_sequence_scan_spec
+      return @hfa_capture_sequence_scan_spec if defined?(@hfa_capture_sequence_scan_spec)
+
+      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      tokens = parts.map { |part| hfa_capture_sequence_token(part) }
+      prefix = tokens.first&.[](1) if tokens.first&.first == :literal
+      valid = prefix&.bytesize&.positive? && tokens.all? && tokens.length > 1
+      @hfa_capture_sequence_scan_spec = valid ? [tokens.freeze, prefix].freeze : false
+    end
+
+    def hfa_capture_sequence_token(node)
+      return [:literal, node.value].freeze if node.is_a?(AST::Literal)
+
+      if node.is_a?(AST::Group) && node.capture
+        body = node.body.is_a?(AST::Sequence) ? node.body.parts : [node.body]
+        operations = body.map { |part| hfa_capture_sequence_operation(part) }
+        return if operations.any?(&:nil?)
+
+        return [:capture, node.number, operations.freeze].freeze
+      end
+
+      operation = hfa_capture_sequence_operation(node)
+      operation && [:raw, operation].freeze
+    end
+
+    def hfa_capture_sequence_operation(node)
+      return [:literal, node.value].freeze if node.is_a?(AST::Literal)
+      return unless node.is_a?(AST::Quantifier) && node.mode == :greedy
+
+      table = hfa_capture_class_table(node.expression)
+      return unless table
+      return unless %i[+ bounded].include?(node.kind)
+
+      [node.kind == :+ ? :class : :fixed, table, node.minimum, node.maximum].freeze
+    end
+
+    def hfa_capture_sequence_each_result(input, spec)
+      tokens, prefix = spec
+      position = 0
+      while (start = input.index(prefix, position))
+        result = hfa_capture_sequence_match_result(input, start, tokens)
+        if result
+          finish, captures = result
+          yield [start, finish, captures]
+          position = finish
+        else
+          position = start + prefix.bytesize
+        end
+      end
+    end
+
+    def hfa_capture_sequence_match_result(input, start, tokens)
+      cursor = start
+      captures = Array.new(hfa_capture_count)
+      tokens.each do |kind, *values|
+        case kind
+        when :literal
+          literal = values.first
+          return unless input.byteslice(cursor, literal.bytesize) == literal
+
+          cursor += literal.bytesize
+        when :capture
+          number, operations = values
+          capture_start = cursor
+          cursor = hfa_capture_sequence_operations_end(input, cursor, operations)
+          return unless cursor
+
+          captures[number - 1] = [capture_start, cursor]
+        when :raw
+          cursor = hfa_capture_sequence_operations_end(input, cursor, [values.first])
+          return unless cursor
+        end
+      end
+      [cursor, captures]
+    end
+
+    def hfa_capture_sequence_operations_end(input, position, operations)
+      cursor = position
+      operations.each_with_index do |(kind, table, minimum, _maximum), index|
+        if kind == :literal
+          return unless input.byteslice(cursor, table.bytesize) == table
+
+          cursor += table.bytesize
+          next
+        end
+
+        if kind == :fixed
+          minimum.times do
+            return unless table[input.getbyte(cursor)]
+
+            cursor += 1
+          end
+          next
+        end
+
+        finish = hfa_literal_prefix_capture_run_end(input, cursor, table)
+        return if finish - cursor < minimum
+
+        next_operation = operations[index + 1]
+        return if next_operation&.first == :literal && table[next_operation[1].getbyte(0)]
+
+        cursor = finish
+      end
+      cursor
+    end
   end
 end

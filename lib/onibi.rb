@@ -6012,6 +6012,11 @@ module Onibi
         return true
       end
 
+      if input.ascii_only? && (scan_spec = hfa_capture_sequence_scan_spec)
+        hfa_capture_sequence_each_result(input, scan_spec, &block)
+        return true
+      end
+
       if input.ascii_only? && (scan_spec = hfa_top_level_capture_scan_spec)
         position = 0
         while position < input.bytesize
