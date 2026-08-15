@@ -1,5 +1,10 @@
 # One-pass execution and backtracking-state design
 
+> **Historical design — superseded.** This proposal explicitly excluded
+> NFA/DFA execution and assumed generated Ruby. Its regular/stateful analysis
+> lessons are carried forward by HFA region analysis in
+> [`../hfa-design.md`](../hfa-design.md).
+
 ## Status and scope
 
 This work package removes repeated suffix rescans for regular subgraphs while
@@ -65,4 +70,3 @@ internal feature flag. Compare both paths with the full differential corpus,
 fuzz seeds, and cross-runtime source-compilation checks. Remove the flag only
 after the regular-region corpus and scaling guardrails pass on MRI, JRuby,
 TruffleRuby, and mruby profiles.
-

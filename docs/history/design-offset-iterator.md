@@ -1,5 +1,10 @@
 # Internal offset iterator for repeated-match APIs
 
+> **Historical design — superseded.** The goal is retained as the common HFA
+> result iterator specified in [`../hfa-design.md`](../hfa-design.md) and task
+> HFA-043 in [`../hfa-task-list.md`](../hfa-task-list.md). Generated matcher
+> details below are historical context only.
+
 ## Status and scope
 
 This document specifies the internal execution surface used by `scan`, `gsub`,
@@ -68,4 +73,3 @@ than with repeated full-input materialization.
 Do not change replacement syntax, block arity, match-global-variable behavior,
 or public `Onibi::MatchData`. Do not hide semantic differences behind the
 iterator; all existing differential tests remain mandatory.
-

@@ -1,5 +1,10 @@
 # Boolean-only matching path
 
+> **Historical design — superseded.** This proposal assumed a generated-Ruby
+> matcher. Capture liveness remains relevant, but its current home is the HFA
+> component/result design in [`../hfa-design.md`](../hfa-design.md) and tasks
+> HFA-040/HFA-043 in [`../hfa-task-list.md`](../hfa-task-list.md).
+
 ## Status and scope
 
 This work package makes `match?` avoid result-only state while retaining all
@@ -60,4 +65,3 @@ the search plan may call boolean mode for candidate rejection. One-pass
 execution owns rollback representation. This package owns only result-mode and
 capture-liveness decisions, so changes remain reviewable and independently
 revertible.
-

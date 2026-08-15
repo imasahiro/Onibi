@@ -1,6 +1,9 @@
 # Onibi Core MVP Task List
 
-> **Historical plan:** This records the completed Core MVP implementation sequence. Its NFA/DFA architecture requirements are superseded by [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md) and [`regexp-ruby-codegen-task-list.md`](regexp-ruby-codegen-task-list.md); completed task history is intentionally unchanged.
+> **Historical record — non-normative.** This preserves the completed Core MVP
+> implementation sequence. Its VM, lazy-DFA, and fallback requirements are
+> superseded by the formal HFA design in [`../hfa-design.md`](../hfa-design.md).
+> Completion history below is intentionally unchanged.
 
 This task list covers the work from the design document through the Core MVP (`0.x.y`). It does not cover v1's complete `Regexp` / `MatchData` API, full encoding compatibility, or v2 MRI replacement integration.
 

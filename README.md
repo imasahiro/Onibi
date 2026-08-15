@@ -2,13 +2,17 @@
 
 Onibi is a pure Ruby regular expression engine intended to provide a Ruby-compatible `Regexp` and `MatchData` API.
 
-The project provides an opt-in v1 API and is being developed using TDD. The
-current production matcher uses the hybrid finite automaton (HFA) architecture
-described in [`docs/hybrid-automata-backend-poc.md`](docs/hybrid-automata-backend-poc.md).
-See [`docs/onibi-design.md`](docs/onibi-design.md) for the canonical design,
-[`docs/regexp-feature-coverage.md`](docs/regexp-feature-coverage.md) for the
-current compatibility matrix, and [`docs/v1-task-list.md`](docs/v1-task-list.md)
-for the historical v1 implementation plan.
+The project provides an opt-in v1 API and is developed using TDD. Its formal
+matcher architecture is the hybrid finite automaton (HFA) defined in
+[`docs/hfa-design.md`](docs/hfa-design.md): a bounded head DFA whose borders
+activate tail NFAs, inside a compiler-derived component graph. The current code
+is migrating from experimental adaptive-cache and direct-specializer paths to
+that architecture; see [`docs/hfa-task-list.md`](docs/hfa-task-list.md).
+
+[`docs/onibi-design.md`](docs/onibi-design.md) is the product overview,
+[`docs/regexp-feature-coverage.md`](docs/regexp-feature-coverage.md) is the
+compatibility snapshot, and [`docs/history/README.md`](docs/history/README.md)
+indexes completed or superseded design records.
 
 ## Installation
 
@@ -96,7 +100,7 @@ bundle exec ruby benchmark/regexp_features.rb --encoding utf8 --operation all
 ```
 
 The default operation is warm `match?`. Use `--operation compile` to isolate
-compilation, `--operation first_match` to compile and immediately match, or
+construction, `--operation first_match` to construct and immediately match, or
 `--operation all` to run all three. Measurement defaults to 1 second with a
 0.5 second warmup per Ruby/Onibi pair; `--time` and `--warmup` override those
 values. Each fixture is also an acceptance test that checks Ruby and Onibi

@@ -1,5 +1,9 @@
 # Compiled character-class predicates
 
+> **Historical work package — non-normative.** Predicate compilation remains a
+> reusable leaf service, but generated-code ownership and fallback language in
+> this proposal are superseded by [`../hfa-design.md`](../hfa-design.md).
+
 ## Status and scope
 
 This work package moves character-class parsing and intersection evaluation out
@@ -58,4 +62,3 @@ constant drops substantially without changing its algorithmic scaling.
 This does not solve suffix re-scanning or public `scan`/`gsub` allocation. It
 must not use Ruby's built-in `Regexp` as a predicate oracle, because that would
 violate the independent-engine boundary and make performance incomparable.
-
