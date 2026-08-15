@@ -120,8 +120,7 @@ module Onibi
           return
         end
       end
-      return if prefix.empty? || steps.empty?
-      return unless hfa_alternation_capture_steps_safe?(steps)
+      return if prefix.empty? || steps.empty? || !hfa_alternation_capture_steps_safe?(steps)
 
       [prefix, steps.freeze].freeze
     end
@@ -163,13 +162,13 @@ module Onibi
 
     def hfa_alternation_capture_match_result(input, start, branches)
       branches.each do |prefix, steps|
-        next unless input.byteslice(start, prefix.bytesize) == prefix
+        next unless input.index(prefix, start) == start
 
         cursor = start + prefix.bytesize
         valid = true
         steps.each do |kind, value|
           if kind == :literal
-            unless input.byteslice(cursor, value.bytesize) == value
+            unless input.index(value, cursor) == cursor
               valid = false
               break
             end
@@ -196,8 +195,16 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       tokens = parts.map { |part| hfa_capture_sequence_token(part) }
       prefix = tokens.first&.[](1) if tokens.first&.first == :literal
-      valid = prefix&.bytesize&.positive? && tokens.all? && tokens.length > 1
-      @hfa_capture_sequence_scan_spec = valid ? [tokens.freeze, prefix].freeze : false
+      anchor = if prefix&.bytesize&.positive?
+                 [:literal, prefix]
+               elsif tokens.first&.first == :capture && tokens[1]&.first == :literal
+                 operation = tokens.first[2].first
+                 delimiter = tokens[1][1]
+                 [:reverse, delimiter, operation[1]] if operation&.first == :class &&
+                                                        delimiter.bytes.all? { |byte| !operation[1][byte] }
+               end
+      valid = anchor && tokens.all? && tokens.length > 1
+      @hfa_capture_sequence_scan_spec = valid ? [tokens.freeze, anchor].freeze : false
     end
 
     def hfa_capture_sequence_token(node)
@@ -223,56 +230,93 @@ module Onibi
       return unless table
       return unless %i[+ bounded].include?(node.kind)
 
-      [node.kind == :+ ? :class : :fixed, table, node.minimum, node.maximum].freeze
+      [node.kind == :+ ? :class : :fixed, table, node.minimum, node.maximum, 128.times.count { |byte| !table[byte] }].freeze
     end
 
     def hfa_capture_sequence_each_result(input, spec)
-      tokens, prefix = spec
+      tokens, anchor = spec
       position = 0
-      while (start = input.index(prefix, position))
+      while (start = hfa_capture_sequence_start(input, position, anchor))
         result = hfa_capture_sequence_match_result(input, start, tokens)
         if result
           finish, captures = result
           yield [start, finish, captures]
           position = finish
+        elsif anchor.first == :reverse
+          delimiter_start = input.index(anchor[1], start + 1)
+          position = delimiter_start ? delimiter_start + anchor[1].bytesize : input.bytesize
         else
-          position = start + prefix.bytesize
+          position = start + anchor[1].bytesize
         end
       end
     end
 
-    def hfa_capture_sequence_match_result(input, start, tokens)
+    def hfa_capture_sequence_start(input, position, anchor)
+      kind, value, table = anchor
+      return input.index(value, position) if kind == :literal
+
+      delimiter_start = input.index(value, position)
+      return unless delimiter_start
+
+      candidate = delimiter_start
+      candidate -= 1 while candidate.positive? && table[input.getbyte(candidate - 1)]
+      candidate
+    end
+
+    def hfa_capture_sequence_match_result(input, start, tokens, captures = nil, offsets = nil, result_container = nil)
       cursor = start
-      captures = Array.new(hfa_capture_count)
-      tokens.each do |kind, *values|
+      captures ||= Array.new(hfa_capture_count)
+      captures.fill(nil)
+      offsets ||= Array.new(hfa_capture_count) { [nil, nil] }
+      token_index = 0
+      while token_index < tokens.length
+        token = tokens[token_index]
+        kind = token[0]
         case kind
         when :literal
-          literal = values.first
+          literal = token[1]
           return unless input.byteslice(cursor, literal.bytesize) == literal
 
           cursor += literal.bytesize
         when :capture
-          number, operations = values
+          number = token[1]
+          operations = token[2]
           capture_start = cursor
           cursor = hfa_capture_sequence_operations_end(input, cursor, operations)
           return unless cursor
 
-          captures[number - 1] = [capture_start, cursor]
+          offset = offsets[number - 1]
+          offset[0] = capture_start
+          offset[1] = cursor
+          captures[number - 1] = offset
         when :raw
-          cursor = hfa_capture_sequence_operations_end(input, cursor, [values.first])
+          cursor = hfa_capture_sequence_single_operation_end(input, cursor, token[1])
           return unless cursor
         end
+        token_index += 1
       end
-      [cursor, captures]
+      if result_container
+        result_container[0] = cursor
+        result_container[1] = captures
+        result_container
+      else
+        [cursor, captures]
+      end
     end
 
     def hfa_capture_sequence_operations_end(input, position, operations)
       cursor = position
-      operations.each_with_index do |(kind, table, minimum, _maximum), index|
+      index = 0
+      while index < operations.length
+        operation = operations[index]
+        kind = operation[0]
+        table = operation[1]
+        minimum = operation[2]
         if kind == :literal
           return unless input.byteslice(cursor, table.bytesize) == table
 
           cursor += table.bytesize
+          index += 1
           next
         end
 
@@ -282,16 +326,27 @@ module Onibi
 
             cursor += 1
           end
+          index += 1
+          next
+        end
+
+        next_operation = operations[index + 1]
+        if next_operation&.first == :literal && !table[next_operation[1].getbyte(0)]
+          finish = hfa_capture_sequence_delimited_class_end(input, cursor, table, next_operation[1], operation[4])
+          return unless finish && finish - cursor >= minimum
+
+          cursor = finish
+          index += 1
           next
         end
 
         finish = hfa_literal_prefix_capture_run_end(input, cursor, table)
         return if finish - cursor < minimum
 
-        next_operation = operations[index + 1]
         return if next_operation&.first == :literal && table[next_operation[1].getbyte(0)]
 
         cursor = finish
+        index += 1
       end
       cursor
     end

@@ -10,6 +10,7 @@ require_relative "onibi/regexp_timeout"
 require_relative "onibi/regexp_replacement"
 require_relative "onibi/regexp_scan_gsub"
 require_relative "onibi/regexp_capture_scan_optimizations"
+require_relative "onibi/regexp_captureless_alternation_scan"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -56,6 +57,7 @@ module Onibi
     include RegexpTimeout
     include RegexpScanGsub
     include RegexpCaptureScanOptimizations
+    include RegexpCapturelessAlternationScan
 
     IGNORECASE = 1
     EXTENDED = 2
@@ -1088,6 +1090,11 @@ module Onibi
         return true
       end
 
+      if ascii_input && (spec = hfa_capture_sequence_scan_spec)
+        hfa_capture_sequence_each_result(input, spec) { |result| block.call(result) }
+        return true
+      end
+
       if ascii_input && (spec = hfa_reverse_top_level_capture_scan_spec)
         delimiter, table = spec
         position = 0
@@ -1382,7 +1389,15 @@ module Onibi
     end
 
     def hfa_direct_delimited_capture_each_result(input, spec)
-      capture_number, delimiter, first_table, second_table, suffix, suffix_table = spec
+      hfa_direct_delimited_capture_each_match(input, spec) do |candidate, finish|
+        captures = Array.new(hfa_capture_count)
+        captures[spec[0] - 1] = [candidate, finish]
+        yield [candidate, finish, captures]
+      end
+    end
+
+    def hfa_direct_delimited_capture_each_match(input, spec)
+      _capture_number, delimiter, first_table, second_table, suffix, suffix_table = spec
       boundary = hfa_scan_boundary_spec
       position = 0
       while (delimiter_start = input.index(delimiter, position))
@@ -1405,9 +1420,7 @@ module Onibi
           end
           if finish && second_finish > second_start && repetitions.positive? &&
              hfa_scan_boundary_match?(input, candidate, finish, boundary)
-            captures = Array.new(hfa_capture_count)
-            captures[capture_number - 1] = [candidate, finish]
-            yield [candidate, finish, captures]
+            yield candidate, finish
             position = finish
             next
           end
@@ -1435,26 +1448,6 @@ module Onibi
                                 else
                                   false
                                 end
-    end
-
-    def hfa_scan_boundary_match?(input, start, finish, boundary)
-      return true unless boundary
-
-      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
-      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
-      after_current = finish.positive? && CharacterPredicates.word?(input.getbyte(finish - 1).chr)
-      after = finish < input.bytesize && CharacterPredicates.word?(input.getbyte(finish).chr)
-      return before != current && after_current != after if boundary == :word_boundary
-
-      before == current && after_current == after
-    end
-
-    def hfa_scan_boundary_start_match?(input, start, boundary)
-      return true unless boundary
-
-      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
-      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
-      boundary == :word_boundary ? before != current : before == current
     end
 
     def hfa_capture_literal_prefixes(node)
@@ -5305,6 +5298,15 @@ module Onibi
         end
         return true
       end
+      if ascii_input && (spec = hfa_captureless_alternation_scan_spec)
+        hfa_captureless_alternation_each_result(input, spec, &block)
+        return true
+      end
+      if ascii_input && hfa_linebreak_alternation_scan_spec
+        hfa_linebreak_alternation_each_result(input, &block)
+        return true
+      end
+
       if ascii_input && (spec = hfa_fixed_literal_backref_spec)
         position = 0
         while (result = hfa_fixed_literal_backref_match_result(input, position, spec))

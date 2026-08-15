@@ -16,11 +16,37 @@ class HfaCaptureScanTest < Minitest::Test
     assert regexp.send(:hfa_top_level_capture_plan)
     assert regexp.send(:hfa_reverse_literal_capture_spec)
     assert regexp.send(:hfa_reverse_top_level_capture_scan_spec)
+    assert regexp.send(:hfa_capture_sequence_scan_spec)
     result = regexp.send(:hfa_program).match_result(ACCESS_LOG, 0)
     assert_equal regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1]),
                  regexp.send(:hfa_generic_capture_offsets, ACCESS_LOG, result[0], result[1])
     assert_equal [[0, 9], [15, 41], [44, 47], [48, 82], [93, 96], [97, 102]],
                  regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1])
+  end
+
+  def test_hfa_capture_sequence_scan_returns_capture_values_in_order
+    regexp = Onibi::Regexp.new("request_id=(?<request_id>[0-9a-f]{8}) timestamp=(?<timestamp>[0-9T:-]+Z)")
+
+    assert_equal [["00000000", "2026-08-10T00:00:00Z"]],
+                 regexp.scan("request_id=00000000 timestamp=2026-08-10T00:00:00Z")
+  end
+
+  def test_hfa_capture_sequence_uses_literal_delimiter_for_class_runs
+    regexp = Onibi::Regexp.new("request_id=(?<request_id>[0-9a-f]{8}) timestamp=(?<timestamp>[0-9T:-]+Z)")
+    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
+
+    assert_equal 8, regexp.send(:hfa_capture_sequence_delimited_class_end,
+                                "00000000 timestamp=", 0, table, " timestamp=")
+  end
+
+  def test_hfa_capture_sequence_preserves_negated_class_boundaries
+    regexp = Onibi::Regexp.new("x=(?<value>[^,]+),(?<tail>[^,]+)")
+    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
+
+    assert_equal [["a;b", "c"]], regexp.scan("x=a;b,c")
+    assert_equal [%w[a b]], regexp.scan("x=a,b,c")
+    assert_equal 3, regexp.send(:hfa_capture_sequence_delimited_class_end,
+                                "a;b,c", 0, table, ",", 1)
   end
 
   def test_hfa_scan_returns_multiple_literal_captures
@@ -42,6 +68,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [["foo@example.com"]], regexp.scan(".foo@example.com")
   end
 
+  def test_hfa_direct_email_scan_keeps_multiple_capture_values_independent
+    pattern = "\\b(?<email>[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)\\b"
+
+    assert_equal [["first@example.com"], ["second@example.org"]],
+                 Onibi::Regexp.new(pattern).scan("first@example.com second@example.org")
+  end
+
   def test_hfa_scan_handles_capture_prefix_url_pattern
     pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
     regexp = Onibi::Regexp.new(pattern)
@@ -49,6 +82,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [["https://example.com/docs/0?lang=en."]],
                  regexp.scan("See https://example.com/docs/0?lang=en.")
     assert regexp.send(:hfa_literal_prefix_capture_scan_spec)
+  end
+
+  def test_hfa_url_scan_returns_multiple_capture_values
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
+
+    assert_equal [["https://example.com"], ["https://example.org/docs/1"]],
+                 Onibi::Regexp.new(pattern).scan("https://example.com https://example.org/docs/1")
   end
 
   def test_hfa_extracts_literal_prefix_inside_capturing_group
@@ -86,6 +126,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]], regexp.scan("v1.2 api/users/42 pkg-client")
     assert_equal %w[v api/ pkg-], regexp.send(:hfa_top_level_capture_scan_spec)
     assert regexp.send(:hfa_alternation_capture_scan_spec)
+  end
+
+  def test_hfa_alternation_scan_returns_single_capture_values_for_each_branch
+    regexp = Onibi::Regexp.new("(?<identifier>v[0-9]+\\.[0-9]+|api/[a-z]+/[0-9]+|pkg-[a-z0-9-]+)")
+
+    assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]],
+                 regexp.scan("v1.2 api/users/42 pkg-client")
   end
 
   def test_hfa_alternation_scan_rejects_overlapping_greedy_class_steps

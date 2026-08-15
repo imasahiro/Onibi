@@ -746,6 +746,21 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
 
     assert_equal %w[cgggtaaa tttaccca], regexp.scan("xxcgggtaaa yytttaccca")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
+  end
+
+  def test_captureless_middle_class_alternation_scan_uses_literal_anchor
+    regexp = Onibi::Regexp.new("a[act]ggtaaa|tttacc[agt]t")
+
+    assert_equal %w[acggtaaa tttaccgt], regexp.scan("xxacggtaaa yytttaccgt")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
+  end
+
+  def test_captureless_mixed_alternation_scan_uses_class_and_literal_branches
+    regexp = Onibi::Regexp.new("a[NSt]|BY")
+
+    assert_equal %w[aN BY], regexp.scan("aN xx BY")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
   def test_repeated_alternation_scan_uses_hfa_iterator
@@ -801,6 +816,20 @@ class ScanGsubTest < Minitest::Test
 
       assert_equal expected, Onibi::Regexp.new(pattern).gsub(input, replacement), pattern
     end
+  end
+
+  def test_linebreak_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new(">.*\\n|\\n")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "linebreak alternation should use HFA" }) do
+      assert_equal [">header\n", "\n"], regexp.scan(">header\nsequence\n")
+    end
+  end
+
+  def test_delimited_negated_class_gsub_uses_hfa_result_shape
+    regexp = Onibi::Regexp.new("<[^>]*>")
+
+    assert_equal "| |", regexp.gsub("<first> <second>", "|")
   end
 
   def test_gsub_matches_mri_replacement_context_tokens
