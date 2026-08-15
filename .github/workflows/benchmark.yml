@@ -36,10 +36,10 @@ jobs:
           persist-credentials: false
 
       - name: Benchmark base revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-before.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE/base" bundle exec ruby script/benchmark_report.rb --time 0.5 --warmup 0.25 --output /tmp/onibi-benchmark-before.json
 
       - name: Benchmark pull request revision
-        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 2 --warmup 1 --output /tmp/onibi-benchmark-after.json
+        run: ONIBI_ROOT="$GITHUB_WORKSPACE" bundle exec ruby script/benchmark_report.rb --time 0.5 --warmup 0.25 --output /tmp/onibi-benchmark-after.json
 
       - name: Render benchmark comment
         run: |

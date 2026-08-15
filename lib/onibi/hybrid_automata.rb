@@ -2002,18 +2002,7 @@ module Onibi
 
         return unicode_casefold_literal_search(input, position) if @exact_literal.ascii_only?
 
-        return !input.downcase.index(@exact_literal.downcase, position).nil?
-
-        variants = @casefold_variants
-        variants.any? do |variant|
-          candidate = input.index(variant, position)
-          while candidate
-            return true if input.byteslice(candidate, @exact_literal.bytesize).casecmp?(@exact_literal)
-
-            candidate = input.index(variant, candidate + 1)
-          end
-          false
-        end
+        !input.downcase.index(@exact_literal.downcase, position).nil?
       end
 
       def unicode_casefold_literal_search(input, position)
