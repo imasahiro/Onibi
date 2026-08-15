@@ -4742,14 +4742,6 @@ module Onibi
 
       return false unless hfa_scan_input_safe?(input)
 
-      if hfa_literal_alternation_result_safe?
-        position = 0
-        while (result = hfa_literal_alternation_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_repeated_equal_length_literal_capture_result_safe?
         program = hfa_program
         program.each_match_result(input, 0) do |result|
