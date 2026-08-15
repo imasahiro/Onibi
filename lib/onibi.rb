@@ -301,9 +301,6 @@ module Onibi
       return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
       return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
-      if ascii_input && (literal = hfa_atomic_literal_result_safe?)
-        return !input.index(literal, normalized_position).nil?
-      end
       return !hfa_atomic_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_atomic_literal_alternation_spec
       return !hfa_scoped_casefold_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_scoped_casefold_backref_spec
       return !hfa_variable_any_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_variable_any_backref_spec
@@ -630,12 +627,6 @@ module Onibi
       if ascii_input && hfa_leading_literal_assertion_result_safe?
         result = hfa_leading_literal_assertion_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && (literal = hfa_atomic_literal_result_safe?)
-        start = input.index(literal, normalized_position)
-        return hfa_match_data([start, start + literal.bytesize, []], input) if start
 
         return nil
       end
@@ -1909,7 +1900,6 @@ module Onibi
       return true if hfa_start_match_result_safe?
       return true if hfa_linebreak_result_safe?
       return true if hfa_leading_literal_assertion_result_safe?
-      return true if hfa_atomic_literal_result_safe?
       return true if hfa_match_reset_literal_result_safe?
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
@@ -2192,10 +2182,6 @@ module Onibi
         candidate = input.index(literal, candidate + 1)
       end
       nil
-    end
-
-    def hfa_atomic_literal_result_safe?
-      hfa_atomic_literal_match_literal
     end
 
     def hfa_atomic_literal_alternation_spec
@@ -4851,15 +4837,6 @@ module Onibi
         end
         return true
       end
-      if (literal = hfa_atomic_literal_result_safe?)
-        position = 0
-        while (start = input.index(literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
-        end
-        return true
-      end
       if hfa_positive_lookbehind_result_safe?
         position = 0
         while (result = hfa_positive_lookbehind_literal_match_result(input, position))
@@ -5020,7 +4997,7 @@ module Onibi
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
-                    hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                    hfa_leading_literal_assertion_result_safe? ||
                     hfa_negative_literal_guard_safe? ||
                     hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? ||
@@ -5057,7 +5034,7 @@ module Onibi
                      hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_variable_any_backref_spec ||
                      hfa_start_match_result_safe? ||
-                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
+                     hfa_leading_literal_assertion_result_safe? ||
                      hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
