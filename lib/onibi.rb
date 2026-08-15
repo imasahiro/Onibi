@@ -1849,7 +1849,7 @@ module Onibi
 
     def hfa_unicode_class_direct_spec
       return @hfa_unicode_class_direct_spec if defined?(@hfa_unicode_class_direct_spec)
-      return @hfa_unicode_class_direct_spec = false if @options.include?("ignorecase")
+      return @hfa_unicode_class_direct_spec = false if casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       node = parts.one? && parts.first
@@ -1871,7 +1871,7 @@ module Onibi
 
     def hfa_casefold_class_direct_spec
       return @hfa_casefold_class_direct_spec if defined?(@hfa_casefold_class_direct_spec)
-      return @hfa_casefold_class_direct_spec = false unless @options.include?("ignorecase")
+      return @hfa_casefold_class_direct_spec = false unless casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       node = parts.one? && parts.first
@@ -1904,7 +1904,7 @@ module Onibi
 
     def hfa_literal_capture_sequence_spec
       return @hfa_literal_capture_sequence_spec if defined?(@hfa_literal_capture_sequence_spec)
-      return @hfa_literal_capture_sequence_spec = false if @options.include?("ignorecase")
+      return @hfa_literal_capture_sequence_spec = false if casefold?
       return @hfa_literal_capture_sequence_spec = false if CaptureNameCollector.indices(@ast).values.any? { |indices| indices.length > 1 }
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
@@ -2038,11 +2038,19 @@ module Onibi
     def hfa_literal_absence_result_safe?
       return @hfa_literal_absence_safe if defined?(@hfa_literal_absence_safe)
 
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      body = parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
+      body = hfa_literal_absence_body
       literal = hfa_literal_absence_body_literal(body)
       @hfa_literal_absence_safe = literal&.ascii_only? && literal.bytesize.positive? &&
-                                  !@options.include?("ignorecase") && hfa_program
+                                  !casefold? && hfa_program
+    end
+
+    def hfa_literal_absence_parts
+      @ast.is_a?(AST::Sequence) ? @ast.parts : []
+    end
+
+    def hfa_literal_absence_body
+      parts = hfa_literal_absence_parts
+      parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
     end
 
     def hfa_literal_absence_body_literal(body)
@@ -2053,9 +2061,9 @@ module Onibi
 
     def hfa_literal_absence_suffix_spec
       return @hfa_literal_absence_suffix_spec if defined?(@hfa_literal_absence_suffix_spec)
-      return @hfa_literal_absence_suffix_spec = false if @options.include?("ignorecase")
+      return @hfa_literal_absence_suffix_spec = false if casefold?
 
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
+      parts = hfa_literal_absence_parts
       absence, suffix = parts
       body = absence.body if absence.is_a?(AST::Absence)
       forbidden = hfa_literal_absence_body_literal(body)
@@ -2080,17 +2088,16 @@ module Onibi
     def hfa_empty_absence_result_safe?
       return @hfa_empty_absence_safe if defined?(@hfa_empty_absence_safe)
 
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      body = parts.first.body if parts.one? && parts.first.is_a?(AST::Absence)
+      body = hfa_literal_absence_body
       @hfa_empty_absence_safe = body.is_a?(AST::Sequence) && body.parts.empty?
     end
 
     def hfa_literal_absence_value
-      hfa_literal_absence_result_safe? && hfa_literal_absence_body_literal(@ast.parts.first.body)
+      hfa_literal_absence_result_safe? && hfa_literal_absence_body_literal(hfa_literal_absence_body)
     end
 
     def hfa_literal_absence_capture_spec
-      body = @ast.parts.first.body
+      body = hfa_literal_absence_body
       body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
       return unless body.is_a?(AST::Group) && body.capture
 
@@ -2217,7 +2224,7 @@ module Onibi
                                                 parts.first.kind == :start_match &&
                                                 parts[1..].all? { |part| part.is_a?(AST::Literal) }
       @hfa_start_match_literal = literal if literal&.bytesize&.positive? &&
-                                            !@options.include?("ignorecase")
+                                            !casefold?
     end
 
     def hfa_linebreak_match_data(result, input)
@@ -2231,7 +2238,7 @@ module Onibi
     def hfa_unicode_match_result_safe?
       return @hfa_unicode_match_safe if defined?(@hfa_unicode_match_safe)
 
-      @hfa_unicode_match_safe = if @options.include?("ignorecase") ||
+      @hfa_unicode_match_safe = if casefold? ||
                                    !@ast.is_a?(AST::Sequence) || !@ast.parts.one?
                                   false
                                 else
@@ -2247,7 +2254,7 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       node = parts.first
       @hfa_unicode_property_safe = parts.one? && node.is_a?(AST::Property) &&
-                                   !@options.include?("ignorecase") &&
+                                   !casefold? &&
                                    !hfa_unicode_property_spec.nil?
     end
 
@@ -2290,7 +2297,7 @@ module Onibi
     end
 
     def hfa_unicode_literal_result_safe?
-      return false if @options.include?("ignorecase")
+      return false if casefold?
       return false unless @ast.is_a?(AST::Sequence)
       return false unless @ast.parts.all? { |part| part.is_a?(AST::Literal) }
 
@@ -2302,7 +2309,7 @@ module Onibi
       return @hfa_ignorecase_literal_safe if defined?(@hfa_ignorecase_literal_safe)
 
       literal = literal_ast_value(@ast)
-      @hfa_ignorecase_literal_safe = if @options.include?("ignorecase") && literal&.ascii_only? &&
+      @hfa_ignorecase_literal_safe = if casefold? && literal&.ascii_only? &&
                                         literal.bytesize.positive?
                                        hfa_program
                                      else
@@ -2315,7 +2322,7 @@ module Onibi
 
       literal = hfa_exact_literal_value
       @hfa_exact_literal_safe = literal&.bytesize&.positive? && literal.ascii_only? &&
-                                !@options.include?("ignorecase")
+                                !casefold?
     end
 
     def hfa_unicode_exact_literal_result_safe?
@@ -2324,16 +2331,16 @@ module Onibi
       literal = hfa_exact_literal_value
       @hfa_unicode_exact_literal_safe = literal&.bytesize&.positive? &&
                                         literal.each_codepoint.any? { |codepoint| codepoint > 0xFF } &&
-                                        !@options.include?("ignorecase")
+                                        !casefold?
     end
 
     def hfa_ascii_input_impossible_unicode_literal?
       literal = hfa_exact_literal_value
-      literal&.bytesize&.positive? && !literal.ascii_only? && !@options.include?("ignorecase")
+      literal&.bytesize&.positive? && !literal.ascii_only? && !casefold?
     end
 
     def hfa_ascii_input_impossible_class?
-      return false if @options.include?("ignorecase")
+      return false if casefold?
 
       return @hfa_class_lookbehind_fast[1].ascii_table.none? if @hfa_class_lookbehind_fast && @hfa_class_lookbehind_fast[0] == :positive_lookbehind
 
@@ -2607,7 +2614,7 @@ module Onibi
 
     def hfa_fixed_literal_backref_spec
       return @hfa_fixed_literal_backref_spec if defined?(@hfa_fixed_literal_backref_spec)
-      return @hfa_fixed_literal_backref_spec = false if @options.include?("ignorecase")
+      return @hfa_fixed_literal_backref_spec = false if casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       groups = {}
@@ -2698,7 +2705,7 @@ module Onibi
 
     def hfa_repeated_literal_backref_spec
       return @hfa_repeated_literal_backref_spec if defined?(@hfa_repeated_literal_backref_spec)
-      return @hfa_repeated_literal_backref_spec = false if @options.include?("ignorecase")
+      return @hfa_repeated_literal_backref_spec = false if casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       repeat, separator, reference = parts
@@ -2857,7 +2864,7 @@ module Onibi
     end
 
     def hfa_bounded_literal_candidate?
-      return false if @options.include?("ignorecase")
+      return false if casefold?
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
 
       hfa_bounded_literal_quantifier?(@ast.parts.first)
@@ -3019,7 +3026,7 @@ module Onibi
     end
 
     def hfa_casefold_class_lookbehind_parts
-      return unless @options.include?("ignorecase")
+      return unless casefold?
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       assertion = parts.first
@@ -3230,7 +3237,7 @@ module Onibi
       return @hfa_unicode_ignorecase_literal_safe if defined?(@hfa_unicode_ignorecase_literal_safe)
 
       literal = literal_ast_value(@ast)
-      @hfa_unicode_ignorecase_literal_safe = if @options.include?("ignorecase") && literal &&
+      @hfa_unicode_ignorecase_literal_safe = if casefold? && literal &&
                                                 !literal.ascii_only? && literal.bytesize.positive?
                                                true
                                              else
@@ -3397,7 +3404,7 @@ module Onibi
       return @hfa_ascii_unicode_run_safe if defined?(@hfa_ascii_unicode_run_safe)
 
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      @hfa_ascii_unicode_run_safe = if !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+      @hfa_ascii_unicode_run_safe = if !casefold? && node.is_a?(AST::Quantifier) &&
                                        node.kind == :+ && node.mode == :greedy &&
                                        node.expression.is_a?(AST::Property)
                                       !hfa_ascii_unicode_run_table.nil?
@@ -3440,7 +3447,7 @@ module Onibi
       return @hfa_ascii_class_run_safe if defined?(@hfa_ascii_class_run_safe)
 
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      @hfa_ascii_class_run_safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+      @hfa_ascii_class_run_safe = !casefold? && node.is_a?(AST::Quantifier) &&
                                   node.kind == :+ && node.mode == :greedy &&
                                   (node.expression.is_a?(AST::CharacterClass) ||
                                    node.expression.is_a?(AST::Escape) && %i[digit space word].include?(node.expression.kind)) &&
@@ -3481,7 +3488,7 @@ module Onibi
       return @hfa_ascii_run_chain_safe if defined?(@hfa_ascii_run_chain_safe)
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = !@options.include?("ignorecase") && parts.length == 3 && parts.all? do |part|
+      valid = !casefold? && parts.length == 3 && parts.all? do |part|
         part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
           (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape))
       end
@@ -3544,7 +3551,7 @@ module Onibi
       return @hfa_ascii_adjacent_run_safe if defined?(@hfa_ascii_adjacent_run_safe)
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = !@options.include?("ignorecase") && parts.length == 2 && parts.all? do |part|
+      valid = !casefold? && parts.length == 2 && parts.all? do |part|
         part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
           (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape) ||
            part.expression.is_a?(AST::Property))
@@ -3553,7 +3560,7 @@ module Onibi
     end
 
     def hfa_ascii_adjacent_run_candidate?
-      return false if @options.include?("ignorecase")
+      return false if casefold?
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
 
       @ast.parts.all? do |part|
@@ -3740,7 +3747,7 @@ module Onibi
               repeat.kind == :* && repeat.mode == :lazy && repeat.expression.is_a?(AST::Any) &&
               suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
               prefix.value.bytesize.positive? && suffix.value.bytesize.positive? &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_lazy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
     end
 
@@ -3763,7 +3770,7 @@ module Onibi
               quantifier.expression.is_a?(AST::Literal) && quantifier.expression.value.ascii_only? &&
               quantifier.expression.value.bytesize.positive? &&
               (suffix.nil? || (suffix.ascii_only? && suffix.bytesize.positive?)) &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_lazy_literal_safe = valid ? [quantifier.kind, quantifier.expression.value, suffix].freeze : false
     end
 
@@ -3860,7 +3867,7 @@ module Onibi
     end
 
     def hfa_repeated_class_backref_candidate?
-      return false if @options.include?("ignorecase")
+      return false if casefold?
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
 
       group, separator, backref = @ast.parts
@@ -3961,7 +3968,7 @@ module Onibi
 
     def hfa_literal_alternation_result_safe?
       return @hfa_literal_alternation_safe if defined?(@hfa_literal_alternation_safe)
-      return @hfa_literal_alternation_safe = false if @options.include?("ignorecase")
+      return @hfa_literal_alternation_safe = false if casefold?
 
       alternatives = hfa_literal_alternation_values
       @hfa_literal_alternation_safe = alternatives.length.positive? && alternatives.all? do |value|
@@ -3986,7 +3993,7 @@ module Onibi
       body = body.body if body.is_a?(AST::Group)
       valid = (!repeat.expression.is_a?(AST::Group) || !repeat.expression.capture) &&
               body.is_a?(AST::Alternation) && body.branches.all? { |branch| hfa_literal_result_node?(branch) }
-      @hfa_captureless_repeated_alternation_safe = valid && !@options.include?("ignorecase") && hfa_program
+      @hfa_captureless_repeated_alternation_safe = valid && !casefold? && hfa_program
     end
 
     def hfa_repeated_equal_length_literal_capture_result_safe?
@@ -4001,7 +4008,7 @@ module Onibi
               repeat.mode == :greedy && group.is_a?(AST::Group) && group.capture &&
               values&.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
               values.map(&:bytesize).uniq.one? && suffix.is_a?(AST::Literal) &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_repeated_equal_length_capture_safe = if valid && hfa_program
                                                   [group.number, values.first.bytesize, suffix.value].freeze
                                                 else
@@ -4033,7 +4040,7 @@ module Onibi
       values = alternation.branches.map { |branch| literal_ast_value(branch) } if alternation.is_a?(AST::Alternation)
       valid = parts.length == 2 && literal&.ascii_only? && literal.bytesize.positive? &&
               values&.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_literal_capture_before_alternation_safe = if valid && hfa_program
                                                        [capture_group.number, literal].freeze
                                                      else
@@ -4090,7 +4097,7 @@ module Onibi
               first_quantifier.mode == :greedy && second_quantifier.mode == :greedy &&
               first_quantifier.expression == second_quantifier.expression &&
               (first_quantifier.expression.is_a?(AST::Literal) || first_quantifier.expression.is_a?(AST::Any)) &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_adjacent_greedy_capture_safe = valid && hfa_program
     end
 
@@ -4103,7 +4110,7 @@ module Onibi
       valid = parts.length == 2 && group.is_a?(AST::Group) && group.capture &&
               call.is_a?(AST::SubexpressionCall) && [group.number, group.name].include?(call.identifier) &&
               (literal = literal_ast_value(body)) && literal.ascii_only? && literal.bytesize.positive? &&
-              !@options.include?("ignorecase")
+              !casefold?
       @hfa_literal_subexpression_safe = valid
     end
 
@@ -4122,7 +4129,7 @@ module Onibi
            (part.expression.is_a?(AST::Literal) || part.expression.is_a?(AST::CharacterClass) ||
             part.expression.is_a?(AST::Escape)))
       end
-      @hfa_captureless_regular_sequence_safe = valid && !@options.include?("ignorecase") && hfa_program
+      @hfa_captureless_regular_sequence_safe = valid && !casefold? && hfa_program
     end
 
     def hfa_scoped_ignorecase_sequence_result_safe?
@@ -4239,7 +4246,7 @@ module Onibi
            (part.expression.is_a?(AST::Literal) || part.expression.is_a?(AST::Any) ||
             part.expression.is_a?(AST::CharacterClass)))
       end
-      @hfa_lazy_bounded_sequence_safe = valid && !@options.include?("ignorecase") && hfa_program
+      @hfa_lazy_bounded_sequence_safe = valid && !casefold? && hfa_program
     end
 
     def hfa_unicode_repeated_literal_capture_result_safe?
@@ -4251,7 +4258,7 @@ module Onibi
       body = body.parts.one? && body.parts.first if body.is_a?(AST::Sequence)
       valid = group.is_a?(AST::Group) && body.is_a?(AST::Quantifier) && body.kind == :+ &&
               body.mode == :greedy && body.expression.is_a?(AST::Literal) &&
-              !body.expression.value.ascii_only? && !@options.include?("ignorecase")
+              !body.expression.value.ascii_only? && !casefold?
       @hfa_unicode_repeated_capture_safe = valid
     end
 
@@ -4355,7 +4362,7 @@ module Onibi
       return @hfa_dot_literal_safe if defined?(@hfa_dot_literal_safe)
 
       prefix, suffix = hfa_dot_literal_parts
-      @hfa_dot_literal_safe = !@options.include?("ignorecase") && prefix&.ascii_only? && suffix&.ascii_only? &&
+      @hfa_dot_literal_safe = !casefold? && prefix&.ascii_only? && suffix&.ascii_only? &&
                               prefix.bytesize == 1 && suffix.bytesize == 1
     end
 
@@ -4397,7 +4404,7 @@ module Onibi
       return @hfa_unicode_property_run_safe if defined?(@hfa_unicode_property_run_safe)
 
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+      safe = !casefold? && node.is_a?(AST::Quantifier) &&
              node.kind == :+ && node.mode == :greedy &&
              node.expression.is_a?(AST::Property) &&
              !hfa_unicode_property_run_spec.nil?
@@ -4528,7 +4535,7 @@ module Onibi
       return @hfa_unicode_word_class_run_safe if defined?(@hfa_unicode_word_class_run_safe)
 
       node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      @hfa_unicode_word_class_run_safe = !@options.include?("ignorecase") && node.is_a?(AST::Quantifier) &&
+      @hfa_unicode_word_class_run_safe = !casefold? && node.is_a?(AST::Quantifier) &&
                                          node.kind == :+ && node.mode == :greedy &&
                                          node.expression.is_a?(AST::CharacterClass) &&
                                          node.expression.value == "[:word:]"
@@ -4583,7 +4590,7 @@ module Onibi
     def hfa_unicode_repeated_literal_result_safe?
       return @hfa_unicode_repeated_literal_safe if defined?(@hfa_unicode_repeated_literal_safe)
 
-      @hfa_unicode_repeated_literal_safe = if @options.include?("ignorecase") ||
+      @hfa_unicode_repeated_literal_safe = if casefold? ||
                                               !@ast.is_a?(AST::Sequence) || !@ast.parts.one?
                                              false
                                            else
