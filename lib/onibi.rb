@@ -1017,20 +1017,6 @@ module Onibi
       position == boundary ? boundary : nil
     end
 
-    def hfa_top_level_capture_scan_spec
-      return @hfa_top_level_capture_scan_spec if defined?(@hfa_top_level_capture_scan_spec)
-
-      plan = hfa_top_level_capture_plan
-      prefixes = if plan && plan.first.is_a?(AST::Literal) && plan.length > 1
-                   [plan.first.value]
-                 elsif plan && plan.length == 1 && plan.first.is_a?(AST::Group) && plan.first.capture
-                   group_prefixes = hfa_capture_literal_prefixes(plan.first.body)
-                   group_prefixes if group_prefixes.length > 1
-                 end
-      prefixes = prefixes&.reject(&:empty?)&.uniq
-      @hfa_top_level_capture_scan_spec = prefixes&.then { |values| values.freeze unless values.empty? } || false
-    end
-
     def hfa_reverse_literal_capture_spec
       return @hfa_reverse_literal_capture_spec if defined?(@hfa_reverse_literal_capture_spec)
       return @hfa_reverse_literal_capture_spec = false if casefold?
@@ -4524,33 +4510,6 @@ module Onibi
           finish += literal.bytesize while input.byteslice(finish, literal.bytesize) == literal
           block.call([start, finish, [[start, finish]]])
           position = finish
-        end
-        return true
-      end
-
-      if ascii_input && (scan_spec = hfa_top_level_capture_scan_spec)
-        position = 0
-        while position < input.bytesize
-          start = nil
-          prefix = nil
-          scan_spec.each do |candidate_prefix|
-            candidate = input.index(candidate_prefix, position)
-            next unless candidate && (start.nil? || candidate < start ||
-                                      (candidate == start && candidate_prefix.bytesize > prefix.bytesize))
-
-            start = candidate
-            prefix = candidate_prefix
-          end
-          break unless start
-
-          line_end = input.index("\n", start) || input.bytesize
-          result = hfa_top_level_capture_match_result(input, start, line_end, allow_short: true)
-          if result
-            block.call(result)
-            position = result[1]
-          else
-            position = start + prefix.bytesize
-          end
         end
         return true
       end

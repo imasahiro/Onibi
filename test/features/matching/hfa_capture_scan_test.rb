@@ -15,7 +15,6 @@ class HfaCaptureScanTest < Minitest::Test
                    "/api/v1/users/0?page=1&active=true", "200", "17049"]], regexp.scan(ACCESS_LOG)
     assert regexp.send(:hfa_top_level_capture_plan)
     assert regexp.send(:hfa_reverse_literal_capture_spec)
-    assert regexp.send(:hfa_reverse_top_level_capture_scan_spec)
     result = regexp.send(:hfa_program).match_result(ACCESS_LOG, 0)
     assert_equal regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1]),
                  regexp.send(:hfa_generic_capture_offsets, ACCESS_LOG, result[0], result[1])
@@ -147,8 +146,7 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["00000000-0000-4000-8000-000000000000", "2026-08-10T00:00:00Z"]],
                  Onibi::Regexp.new(pattern).scan(input)
-    regexp = Onibi::Regexp.new(pattern)
-    assert regexp.send(:hfa_top_level_capture_scan_spec)
+    Onibi::Regexp.new(pattern)
   end
 
   def test_hfa_scan_uses_alternative_prefixes_for_top_level_capture
@@ -156,7 +154,6 @@ class HfaCaptureScanTest < Minitest::Test
     regexp = Onibi::Regexp.new(pattern)
 
     assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]], regexp.scan("v1.2 api/users/42 pkg-client")
-    assert_equal %w[v api/ pkg-], regexp.send(:hfa_top_level_capture_scan_spec)
   end
 
   def test_hfa_alternation_scan_returns_single_capture_values_for_each_branch
