@@ -593,7 +593,6 @@ module Onibi
         static = static_dfa_data
         return unless static && static[0].length <= @dfa_state_limit
 
-        @dfa_rows[:static] ||= Array.new(static[0].length) unless @single_span
         static_match?(input, position, static)
       end
 
@@ -838,25 +837,12 @@ module Onibi
       end
     end
 
-    # Shares the NFA transition kernel and bounded lazy-DFA cache.
+    # Shares the NFA transition kernel used by the immutable runtime.
     module TransitionRuntime
       private
 
       def transition(active, byte, inject_start)
-        return nfa_transition(active, byte, inject_start) unless @dfa_enabled
-
-        key = (active << 1) | (inject_start ? 1 : 0)
-        row = @dfa_rows[key]
-        cached = row&.[](byte)
-        return cached unless cached.nil?
-
-        result = nfa_transition(active, byte, inject_start)
-        if row
-          row[byte] = result
-        elsif @dfa_rows.length < @dfa_state_limit
-          @dfa_rows[key] = Array.new(256).tap { |new_row| new_row[byte] = result }
-        end
-        result
+        nfa_transition(active, byte, inject_start)
       end
 
       def nfa_transition(active, byte, inject_start)
@@ -897,7 +883,7 @@ module Onibi
       end
 
       def observe_specialized_dfa
-        @dfa_rows[:specialized] ||= [] if @dfa_enabled
+        nil
       end
 
       def span_data(spans)
@@ -913,7 +899,7 @@ module Onibi
       end
     end
 
-    # Executes one fused HFA with NFA and optional lazy-DFA state.
+    # Executes one fused HFA with NFA and optional static DFA state.
     class Program
       include SingleSpanRuntime
       include PrefixRuntime
@@ -1009,7 +995,6 @@ module Onibi
 
       def components
         components = [:bit_parallel_nfa]
-        components.unshift(:lazy_dfa) if @dfa_enabled
         components.unshift(:string_matching) if @prefix_literal || @required_literals
         components.freeze
       end
@@ -1018,13 +1003,12 @@ module Onibi
         instructions = []
         instructions << BytecodeInstruction.new(:string_search, @prefix_literal) if @prefix_literal
         instructions << BytecodeInstruction.new(:required_literal_search, @required_literals) if @required_literals
-        instructions << BytecodeInstruction.new(:dfa_lookup, @dfa_state_limit) if @dfa_enabled
         instructions << BytecodeInstruction.new(:nfa_transition, @span_masks)
         instructions << BytecodeInstruction.new(:accept, @accept_mask)
         instructions.freeze
       end
 
-      def dfa_state_count = @dfa_rows.length
+      def dfa_state_count = 0
 
       def topology_state_count = @reach_masks.count(&:positive?)
 
@@ -1848,7 +1832,6 @@ module Onibi
       def initialize_runtime_options(dfa, dfa_state_limit, input_ir)
         @dfa_enabled = dfa
         @dfa_state_limit = dfa_state_limit
-        @dfa_rows = {}
         @static_dfa_attempted = false
         @static_dfa_data = nil
         @static_first_byte_attempted = false

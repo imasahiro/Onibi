@@ -10,9 +10,9 @@ class HybridAutomataTest < Minitest::Test
     assert_equal :cfg, program.input_ir
     assert_equal "BEGIN", program.prefix_literal
     assert_includes program.components, :string_matching
-    assert_includes program.components, :lazy_dfa
+    refute_includes program.components, :lazy_dfa
     assert_includes program.components, :bit_parallel_nfa
-    assert_equal %i[string_search dfa_lookup nfa_transition accept], program.bytecode.map(&:opcode)
+    assert_equal %i[string_search nfa_transition accept], program.bytecode.map(&:opcode)
   end
 
   def test_sparse_prefix_with_trailing_literal_materializes_static_dfa
@@ -111,12 +111,12 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("挨拶はさようならです")
   end
 
-  def test_promotes_observed_nfa_subsets_to_bounded_dfa_states
+  def test_does_not_promote_observed_nfa_subsets_to_mutable_dfa_states
     hybrid = compile("(?:ab|ac)+z")
     nfa_only = Onibi::HybridAutomata.compile("(?:ab|ac)+z", dfa: false, string_matching: false)
 
     3.times { hybrid.match?("xxabacabacz") }
-    assert_operator hybrid.dfa_state_count, :>, 0
+    assert_equal 0, hybrid.dfa_state_count
     assert_equal 0, nfa_only.dfa_state_count
     assert_equal nfa_only.match?("xxabacabacz"), hybrid.match?("xxabacabacz")
   end
@@ -524,10 +524,10 @@ class HybridAutomataTest < Minitest::Test
     assert program.instance_variable_get(:@static_dfa_data)
   end
 
-  def test_dfa_cache_respects_its_state_limit
+  def test_dynamic_dfa_cache_is_not_materialized
     program = Onibi::HybridAutomata.compile("(?:ab|ac|ba|bc)+z", dfa_state_limit: 2)
     program.match?("abacbabcabacx")
-    assert_operator program.dfa_state_count, :<=, 2
+    assert_equal 0, program.dfa_state_count
   end
 
   def test_large_unprefixed_hfa_uses_bounded_static_dfa
