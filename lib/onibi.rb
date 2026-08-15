@@ -97,7 +97,7 @@ module Onibi
       return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_exact_literal_result_safe?
       return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_unicode_exact_literal_result_safe?
 
-      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
+      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
 
@@ -270,7 +270,7 @@ module Onibi
           return with_timeout { hfa.match?(input, normalized_position) }
         end
       end
-      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
+      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
       return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && hfa_ascii_unicode_run_result_safe?
       return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && hfa_ascii_run_chain_result_safe?
 
@@ -328,7 +328,7 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
       return hfa_match_reset_literal_match?(input, normalized_position) if ascii_input && hfa_match_reset_literal_result_safe?
-      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
+      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
       return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
 
       if !ascii_input && hfa_unicode_exact_literal_result_safe?
