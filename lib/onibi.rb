@@ -2704,38 +2704,6 @@ module Onibi
       @hfa_subexpression_literal_match_literal = (literal + literal if literal&.ascii_only? && literal.bytesize.positive?)
     end
 
-    def hfa_greedy_dot_star_literal_parts
-      return @hfa_greedy_dot_star_literal_parts if defined?(@hfa_greedy_dot_star_literal_parts)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      prefix, repeat, suffix = parts
-      valid = prefix.is_a?(AST::Literal) && repeat.is_a?(AST::Quantifier) &&
-              repeat.kind == :* && repeat.mode == :greedy && repeat.expression.is_a?(AST::Any) &&
-              suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
-              prefix.value.bytesize.positive? && suffix.value.bytesize.positive?
-      @hfa_greedy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
-    end
-
-    def hfa_greedy_dot_star_literal_match_result(input, position, parts)
-      prefix, suffix, allow_newline = parts
-      candidate = input.index(prefix, position)
-      while candidate
-        suffix_position = candidate + prefix.bytesize
-        newline = allow_newline ? nil : input.index("\n", suffix_position)
-        last_suffix = nil
-        while (found = input.index(suffix, suffix_position))
-          break if newline && found >= newline
-
-          last_suffix = found
-          suffix_position = found + 1
-        end
-        return [candidate, last_suffix + suffix.bytesize, []] if last_suffix
-
-        candidate = input.index(prefix, candidate + 1)
-      end
-      nil
-    end
-
     def hfa_lazy_dot_star_literal_match_result(input, position, parts)
       prefix, suffix, allow_newline = parts
       candidate = input.index(prefix, position)
