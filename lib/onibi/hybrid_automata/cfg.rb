@@ -169,7 +169,8 @@ module Onibi
         def component_graph(graph)
           tail = ComponentNode.new(0, :tail_nfa, graph).freeze
           semantic_operations = graph.operations.select do |operation|
-            %i[match_backreference match_conditional match_subexpression_call match_absence].include?(operation.opcode)
+            %i[match_backreference match_conditional match_subexpression_call match_absence match_assertion]
+              .include?(operation.opcode)
           end
           semantic_nodes = semantic_operations.each_with_index.map do |operation, index|
             kind = operation.opcode.to_s.delete_prefix("match_").to_sym

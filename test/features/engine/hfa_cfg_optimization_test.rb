@@ -407,4 +407,24 @@ class HfaCfgOptimizationTest < Minitest::Test
     refute_empty unit.mandatory_strings
     assert unit.head_dfa(row_budget: 1).states.all?(&:border?)
   end
+
+  def test_stateful_lookaround_uses_typed_assertion_component_at_border
+    source = "(?=alpha)alpha"
+    input = "prefixalpha"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    assert_equal mri.match?(input), onibi.match?(input)
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    semantic = unit.component_graph.nodes.select { |node| node.kind == :semantic }
+
+    assert_equal([:assertion], semantic.map { |node| node.payload.kind })
+    assert_equal %i[cursor captures], semantic.fetch(0).payload.input_domains
+    assert_equal %i[cursor captures], semantic.fetch(0).payload.output_domains
+    assert unit.head_dfa(row_budget: 1).states.all?(&:border?)
+  end
 end
