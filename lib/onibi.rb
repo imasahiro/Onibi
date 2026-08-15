@@ -113,18 +113,6 @@ module Onibi
       alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                    alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
-      lookahead_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
-                              run, assertion = @ast.parts
-                              guard = assertion.body if assertion.is_a?(AST::Assertion)
-                              guard_parts = guard.parts if guard.is_a?(AST::Sequence)
-                              run.is_a?(AST::Quantifier) && run.kind == :+ && run.mode == :greedy &&
-                                run.expression.is_a?(AST::CharacterClass) && assertion.is_a?(AST::Assertion) &&
-                                assertion.kind == :positive &&
-                                guard_parts&.length == 2 && guard_parts[0].is_a?(AST::Literal) &&
-                                guard_parts[1].is_a?(AST::Quantifier) && guard_parts[1].kind == :+ &&
-                                guard_parts[1].mode == :greedy && guard_parts[1].expression.is_a?(AST::CharacterClass)
-                            end
-      @hfa_class_run_positive_lookahead_fast = hfa_class_run_positive_lookahead_tables if lookahead_candidate
       @hfa_empty_absence_fast = true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
                                         @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
@@ -154,7 +142,7 @@ module Onibi
       return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_exact_literal_result_safe?
       return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_unicode_exact_literal_result_safe?
 
-      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && @hfa_class_run_positive_lookahead_fast
+      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
 
@@ -327,7 +315,7 @@ module Onibi
           return with_timeout { hfa.match?(input, normalized_position) }
         end
       end
-      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && @hfa_class_run_positive_lookahead_fast
+      return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
       return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && @hfa_ascii_unicode_run_fast
       return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && @hfa_ascii_run_chain_fast
 
@@ -5524,7 +5512,7 @@ module Onibi
         end
         return true
       end
-      if ascii_input && @hfa_class_run_positive_lookahead_fast
+      if ascii_input && hfa_class_run_positive_lookahead_result_safe?
         position = 0
         while (result = hfa_class_run_positive_lookahead_match_result(input, position))
           block.call(result)
