@@ -173,9 +173,7 @@ module Onibi
         parts.shift if start_boundary
         end_boundary = boundary?(parts.last)
         parts.pop if end_boundary
-        if parts.any? { |part| part.is_a?(AST::Escape) && part.kind == :word_boundary }
-          raise UnsupportedPattern, "internal word boundaries are outside HFA subset"
-        end
+        raise UnsupportedPattern, "internal word boundaries are outside HFA subset" if parts.any? { |part| part.is_a?(AST::Escape) && boundary?(part) }
 
         body = if parts.empty?
                  AST::Sequence.new([])
@@ -186,7 +184,7 @@ module Onibi
       end
 
       def boundary?(node)
-        node.is_a?(AST::Escape) && node.kind == :word_boundary
+        node.kind if node.is_a?(AST::Escape) && %i[word_boundary not_word_boundary].include?(node.kind)
       end
     end
 
@@ -1046,8 +1044,8 @@ module Onibi
           prefix_blocked = @negative_prefix && candidate >= @negative_prefix.bytesize &&
                            literal_bytes_at?(input, candidate - @negative_prefix.bytesize, @negative_prefix)
           suffix_blocked = negative_suffix_at?(input, end_position)
-          start_boundary = !@word_boundary_start || word_boundary_at?(input, candidate)
-          end_boundary = !@word_boundary_end || word_boundary_at?(input, end_position)
+          start_boundary = !@word_boundary_start || boundary_at?(input, candidate, @word_boundary_start)
+          end_boundary = !@word_boundary_end || boundary_at?(input, end_position, @word_boundary_end)
           return true if positive_prefix && positive_suffix && !prefix_blocked && !suffix_blocked &&
                          start_boundary && end_boundary
 
@@ -1083,7 +1081,7 @@ module Onibi
 
       def guarded_candidate?(input, candidate)
         return false unless positive_prefix_at?(input, candidate)
-        return false if @word_boundary_start && !word_boundary_at?(input, candidate)
+        return false if @word_boundary_start && !boundary_at?(input, candidate, @word_boundary_start)
         return false if @negative_prefix && candidate >= @negative_prefix.bytesize &&
                         literal_bytes_at?(input, candidate - @negative_prefix.bytesize, @negative_prefix)
 
@@ -1094,7 +1092,7 @@ module Onibi
           accepted = (active & @accept_mask) != 0
           return true if accepted && positive_suffix_at?(input, cursor + 1) &&
                          !negative_suffix_at?(input, cursor + 1) &&
-                         (!@word_boundary_end || word_boundary_at?(input, cursor + 1))
+                         (!@word_boundary_end || boundary_at?(input, cursor + 1, @word_boundary_end))
           break if active.zero?
 
           cursor += 1
@@ -1126,6 +1124,11 @@ module Onibi
         before = position.positive? && word_byte?(input.getbyte(position - 1))
         after = position < input.bytesize && word_byte?(input.getbyte(position))
         before != after
+      end
+
+      def boundary_at?(input, position, boundary)
+        result = word_boundary_at?(input, position)
+        boundary == :not_word_boundary ? !result : result
       end
 
       def word_byte?(byte)

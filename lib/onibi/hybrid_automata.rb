@@ -2141,12 +2141,14 @@ module Onibi
         if @word_boundary_start
           before = start.positive? && @word_table[input.getbyte(start - 1)]
           current = @word_table[input.getbyte(start)]
-          return false unless before != current
+          matches = before != current
+          return false unless @word_boundary_start == :not_word_boundary ? !matches : matches
         end
         if @word_boundary_end
           current = @word_table[input.getbyte(finish - 1)]
           after = finish < input.bytesize && @word_table[input.getbyte(finish)]
-          return false unless current != after
+          matches = current != after
+          return false unless @word_boundary_end == :not_word_boundary ? !matches : matches
         end
         true
       end

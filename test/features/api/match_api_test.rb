@@ -777,6 +777,13 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match(" catx ")
   end
 
+  def test_nonword_boundary_group_matches_through_general_hfa_path
+    regexp = Onibi::Regexp.new("\\B(?:cat)\\B")
+
+    assert_equal "cat", regexp.match("_cat_").to_s
+    assert_equal ["cat"], regexp.scan("_cat_ catx")
+  end
+
   def test_match_reset_literal_match_question_matches_mri_after_hfa_lowering
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
