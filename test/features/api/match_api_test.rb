@@ -103,15 +103,13 @@ class MatchApiTest < Minitest::Test
     assert_equal "\u2028", regexp.match("x\u2028y")[0]
   end
 
-  def test_unicode_exact_literal_match_question_uses_constructor_fast_metadata
+  def test_unicode_exact_literal_match_question_matches_mri_without_facade_metadata
     regexp = Onibi::Regexp.new("こんにちは")
 
-    regexp.stub(:hfa_unicode_exact_literal_result_safe?,
-                -> { flunk "Unicode exact literal match? should use constructor metadata" }) do
-      assert regexp.match?("挨拶はこんにちはです")
-      assert regexp.match?("挨拶はこんにちはです", 3)
-      refute regexp.match?("挨拶はこんにちはです", 4)
-    end
+    input = "挨拶はこんにちはです"
+    assert_equal ::Regexp.new("こんにちは").match?(input), regexp.match?(input)
+    assert_equal ::Regexp.new("こんにちは").match?(input, 3), regexp.match?(input, 3)
+    assert_equal ::Regexp.new("こんにちは").match?(input, 4), regexp.match?(input, 4)
   end
 
   def test_word_boundary_literal_match_uses_hfa_string_path
@@ -1055,12 +1053,10 @@ class MatchApiTest < Minitest::Test
     assert_equal %w[aa a], regexp.match("aaa").to_a
   end
 
-  def test_ascii_exact_literal_match_skips_redundant_encoding_validation
+  def test_ascii_exact_literal_match_matches_mri_after_hfa_lowering
     regexp = Onibi::Regexp.new("needle")
 
-    regexp.stub(:validate_encoding!, ->(*) { flunk "ASCII exact literal should use the fast path" }) do
-      assert regexp.match?("prefix-needle-suffix")
-    end
+    assert_equal ::Regexp.new("needle").match?("prefix-needle-suffix"), regexp.match?("prefix-needle-suffix")
   end
 
   def test_hfa_capture_result_names_are_cached

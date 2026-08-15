@@ -84,9 +84,7 @@ module Onibi
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
       literal_ascii = literal&.ascii_only? && literal.bytesize.positive?
       literal_unicode = literal && !literal.ascii_only? && literal.bytesize.positive?
-      @hfa_exact_literal_fast = literal if literal_ascii && !ignorecase
       @hfa_ignorecase_literal_fast = literal if literal_ascii && ignorecase
-      @hfa_unicode_exact_literal_fast = literal if literal_unicode && !ignorecase
       @hfa_unicode_ignorecase_literal_fast = literal if literal_unicode && ignorecase
       single_quantified_expression = hfa_single_quantified_expression
       property_node = single_quantified_expression
@@ -180,18 +178,15 @@ module Onibi
 
       hfa_compilation_program
       ascii_input = input.ascii_only?
-      ascii_exact_literal = @hfa_exact_literal_fast && @pattern.ascii_only? && !fixed_encoding? && ascii_input
-      validate_encoding!(input, ascii_input: ascii_input) unless ascii_exact_literal
+      validate_encoding!(input, ascii_input: ascii_input)
       hfa_timeout_budget_guard!(input)
 
-      literal = ascii_input ? @hfa_exact_literal_fast : (@hfa_unicode_exact_literal_fast || @hfa_exact_literal_fast)
-      if literal
-        start_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
-        return !input.index(literal, start_position).nil?
-      end
       return true if @hfa_empty_absence_fast
 
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
+
+      return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_exact_literal_result_safe?
+      return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_unicode_exact_literal_result_safe?
 
       return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && @hfa_class_run_positive_lookahead_fast
 
@@ -512,8 +507,8 @@ module Onibi
 
       return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
 
-      literal = @hfa_exact_literal_fast
-      if literal
+      if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
+        literal = hfa_exact_literal_value
         search_input = ascii_input ? input : input.b
         search_literal = ascii_input ? literal : literal.b
         start_position = ascii_input ? normalized_position : input.byteslice(0, normalized_position).bytesize
@@ -5382,19 +5377,6 @@ module Onibi
         return true
       end
 
-      literal = ascii_input ? @hfa_exact_literal_fast : (@hfa_unicode_exact_literal_fast || @hfa_exact_literal_fast)
-      if literal
-        validate_encoding!(input, ascii_input: ascii_input) unless ascii_input
-        search_input = ascii_input ? input : input.b
-        search_literal = ascii_input ? literal : literal.b
-        position = 0
-        while (start = search_input.index(search_literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
-        end
-        return true
-      end
       if ascii_input && @hfa_match_reset_literal_fast
         prefix, suffix = hfa_match_reset_literal_parts
         combined = @hfa_match_reset_literal_fast
@@ -5855,18 +5837,17 @@ module Onibi
       if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
         validate_encoding!(input, ascii_input: ascii_input) if hfa_unicode_exact_literal_result_safe?
+        search_input = ascii_input ? input : input.b
+        search_literal = ascii_input ? literal : literal.b
         position = 0
-        while (start = if hfa_exact_literal_result_safe?
-                         input.index(literal, position)
-                       else
-                         input.b.index(literal.b, position)
-                       end)
+        while (start = search_input.index(search_literal, position))
           finish = start + literal.bytesize
           block.call([start, finish, []])
           position = finish
         end
         return true
       end
+
       if hfa_word_boundary_literal_result_safe?
         position = 0
         while (result = hfa_word_boundary_literal_match_result(input, position))
@@ -6109,7 +6090,8 @@ module Onibi
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                     hfa_adjacent_nested_repeated_capture_result_safe? || hfa_repeated_class_capture_result_safe?)
       unicode_safe = !ascii_input &&
-                     (hfa_unicode_match_result_safe? ||
+                     (hfa_exact_literal_result_safe? ||
+                      hfa_unicode_match_result_safe? ||
                       (input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?) ||
                       hfa_unicode_literal_result_safe? || hfa_unicode_ignorecase_literal_result_safe? ||
                       @hfa_class_lookbehind_fast ||

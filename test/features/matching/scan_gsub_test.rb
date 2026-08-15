@@ -51,10 +51,12 @@ class ScanGsubTest < Minitest::Test
     assert_equal %w[needle needle], regexp.scan("needle x needle")
   end
 
-  def test_ascii_literal_scan_uses_constructor_literal_metadata
+  def test_ascii_literal_scan_matches_mri_after_hfa_lowering
     regexp = Onibi::Regexp.new("needle")
 
-    assert_equal %w[needle needle], regexp.scan("needle x needle")
+    input = "needle x needle"
+    assert_equal input.scan(::Regexp.new("needle")), regexp.scan(input)
+    assert_equal input.gsub(::Regexp.new("needle"), "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_word_boundary_scan_avoids_hfa_program_compile
