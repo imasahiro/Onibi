@@ -6,9 +6,21 @@ module Onibi
     include RegexpReplacement
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
-    def scan(input)
-      if block_given?
-        scan_results(input) { |result| yield scan_value_from_result(result, input) }
+    def scan(input, &block)
+      if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
+         (spec = hfa_direct_delimited_capture_spec)
+        values = []
+        hfa_direct_delimited_capture_each_match(input, spec) do |start_position, finish_position|
+          values << [input.byteslice(start_position, finish_position - start_position)]
+        end
+        return values unless block
+
+        values.each(&block)
+        return input
+      end
+
+      if block
+        scan_results(input) { |result| block.call(scan_value_from_result(result, input)) }
         return input
       end
 
@@ -26,6 +38,43 @@ module Onibi
     end
 
     private
+
+    def hfa_ascii_word_byte?(byte)
+      (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) ||
+        (byte >= 48 && byte <= 57) || byte == 95
+    end
+
+    def hfa_scan_boundary_match?(input, start, finish, boundary)
+      return true unless boundary
+
+      if input.ascii_only?
+        before = start.positive? && hfa_ascii_word_byte?(input.getbyte(start - 1))
+        current = start < input.bytesize && hfa_ascii_word_byte?(input.getbyte(start))
+        after_current = finish.positive? && hfa_ascii_word_byte?(input.getbyte(finish - 1))
+        after = finish < input.bytesize && hfa_ascii_word_byte?(input.getbyte(finish))
+      else
+        before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
+        current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
+        after_current = finish.positive? && CharacterPredicates.word?(input.getbyte(finish - 1).chr)
+        after = finish < input.bytesize && CharacterPredicates.word?(input.getbyte(finish).chr)
+      end
+      return before != current && after_current != after if boundary == :word_boundary
+
+      before == current && after_current == after
+    end
+
+    def hfa_scan_boundary_start_match?(input, start, boundary)
+      return true unless boundary
+
+      if input.ascii_only?
+        before = start.positive? && hfa_ascii_word_byte?(input.getbyte(start - 1))
+        current = start < input.bytesize && hfa_ascii_word_byte?(input.getbyte(start))
+      else
+        before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
+        current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
+      end
+      boundary == :word_boundary ? before != current : before == current
+    end
 
     def replace_matches(input, replacement, block)
       return replace_literal_matches(input, replacement) if !block && replacement.index("\\").nil?
