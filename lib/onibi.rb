@@ -833,12 +833,6 @@ module Onibi
 
         return nil
       end
-      if ascii_input && hfa_ascii_class_run_result_safe?
-        result = hfa_ascii_class_run_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if ascii_input && hfa_class_run_positive_lookahead_result_safe?
         result = hfa_class_run_positive_lookahead_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
