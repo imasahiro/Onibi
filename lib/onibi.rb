@@ -588,8 +588,7 @@ module Onibi
         return nil
       end
       if ascii_input &&
-         (hfa_captureless_regular_sequence_result_safe? ||
-          hfa_scoped_ignorecase_sequence_result_safe? ||
+         (hfa_scoped_ignorecase_sequence_result_safe? ||
           hfa_scoped_multiline_sequence_result_safe?)
         result = hfa_program.match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
@@ -3413,20 +3412,6 @@ module Onibi
       literal_ast_value(@ast.parts.first.body)
     end
 
-    def hfa_captureless_regular_sequence_result_safe?
-      return @hfa_captureless_regular_sequence_safe if defined?(@hfa_captureless_regular_sequence_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = parts.length > 1 && parts.all? do |part|
-        part.is_a?(AST::Literal) || part.is_a?(AST::CharacterClass) ||
-          (part.is_a?(AST::Quantifier) && part.mode == :greedy &&
-           %i[+ * bounded].include?(part.kind) &&
-           (part.expression.is_a?(AST::Literal) || part.expression.is_a?(AST::CharacterClass) ||
-            part.expression.is_a?(AST::Escape)))
-      end
-      @hfa_captureless_regular_sequence_safe = valid && !casefold? && hfa_program
-    end
-
     def hfa_scoped_ignorecase_sequence_result_safe?
       return @hfa_scoped_ignorecase_sequence_safe if defined?(@hfa_scoped_ignorecase_sequence_safe)
 
@@ -5206,7 +5191,6 @@ module Onibi
                     hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? ||
                     hfa_literal_alternation_result_safe? ||
-                    hfa_captureless_regular_sequence_result_safe? ||
                     hfa_captureless_repeated_alternation_result_safe? ||
                     hfa_repeated_equal_length_literal_capture_result_safe? ||
                     hfa_literal_capture_before_alternation_result_safe? ||
@@ -5250,7 +5234,6 @@ module Onibi
                      hfa_literal_absence_result_safe? ||
                      hfa_possessive_literal_string_result_safe? ||
                      hfa_literal_alternation_result_safe? ||
-                     hfa_captureless_regular_sequence_result_safe? ||
                      hfa_captureless_repeated_alternation_result_safe? ||
                      hfa_repeated_equal_length_literal_capture_result_safe? ||
                      hfa_literal_capture_before_alternation_result_safe? ||
