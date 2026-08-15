@@ -4306,16 +4306,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_scoped_ignorecase_multiline_sequence_result_safe?
-        literal = hfa_scoped_ignorecase_multiline_sequence_result_safe?.first
-        folded_input = input.downcase
-        position = 0
-        while (start = folded_input.index(literal.downcase, position))
-          block.call([start, start + literal.bytesize + 1, []])
-          position = start + literal.bytesize + 1
-        end
-        return true
-      end
       if !ascii_input && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         validate_encoding!(input, ascii_input: ascii_input)
         literal = @ast.parts.first.body.parts.first.expression.value
