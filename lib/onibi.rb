@@ -4306,14 +4306,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_repeated_class_backref_result_safe?
-        position = 0
-        while (result = hfa_repeated_class_backref_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && hfa_lookahead_alternation_backreference_spec
         position = 0
         while (result = hfa_lookahead_alternation_backreference_match_result(input, position))
