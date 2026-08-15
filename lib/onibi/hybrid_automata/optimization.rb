@@ -54,6 +54,10 @@ module Onibi
         def facts
           CFG::Analysis.for(cfg, options: options, encoding: encoding)
         end
+
+        def regions
+          CFG::Analysis.regions(cfg, facts)
+        end
       end
 
       # Abstract transformation contract.

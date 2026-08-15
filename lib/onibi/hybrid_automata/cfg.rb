@@ -87,6 +87,7 @@ module Onibi
                                     :reads, :writes, :effects, :options, :encoding)
         BlockFact = Data.define(:id, :operations, :nullable, :width, :effects)
         CompilationFacts = Data.define(:operations, :blocks, :options, :encoding)
+        Region = Data.define(:kind, :operations, :facts, :priority_insensitive, :blocks)
 
         module_function
 
@@ -110,6 +111,38 @@ module Onibi
                           facts.flat_map(&:effects).uniq.freeze).freeze
           end.freeze
           CompilationFacts.new(operation_facts, by_block, options.freeze, encoding).freeze
+        end
+
+        def regions(graph, facts)
+          fact_by_operation = {}.compare_by_identity
+          graph.operations.zip(facts.operations).each { |operation, fact| fact_by_operation[operation] = fact }
+          alternative_targets = graph.blocks.flat_map do |block|
+            block.successors.filter_map { |edge| edge.target if edge.kind == :alternative }
+          end.uniq.freeze
+          graph.blocks.flat_map do |block|
+            operations = block.operations.freeze
+            region_facts = operations.map { |operation| fact_by_operation.fetch(operation) }.freeze
+            kinds = region_facts.map do |fact|
+              classify(fact, priority_sensitive: alternative_targets.include?(block.id))
+            end
+            kind = if kinds.include?(:semantic)
+                     :semantic
+                   elsif kinds.include?(:regular_tagged) || block.terminator.opcode == :choice
+                     :regular_tagged
+                   else
+                     :regular_effect_free
+                   end
+            [Region.new(kind, operations, region_facts, kind == :regular_effect_free, [block.id].freeze).freeze]
+          end.freeze
+        end
+
+        def classify(fact, priority_sensitive: false)
+          return :semantic if (fact.effects & %i[capture_read call]).any? ||
+                              %i[match_backreference match_conditional match_subexpression_call match_absence].include?(fact.opcode)
+          return :regular_tagged if (fact.effects & %i[capture assertion choice repeat cut]).any?
+          return :regular_tagged if priority_sensitive
+
+          :regular_effect_free
         end
 
         def node_facts(node)

@@ -95,4 +95,26 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert repeated.frozen?
     assert facts.blocks.all?(&:frozen?)
   end
+
+  def test_compilation_unit_partitions_operations_into_effect_regions
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new("a|ab|(?<x>c)\\k<x>").parse, options: [], encoding: Encoding::UTF_8
+    )
+
+    regions = unit.regions
+
+    assert regions.frozen?
+    assert regions.all?(&:frozen?)
+    assert_equal(unit.cfg.operations.size, regions.sum { |region| region.operations.size })
+    assert_equal unit.cfg.operations.map(&:object_id).sort,
+                 regions.flat_map(&:operations).map(&:object_id).sort
+    assert_equal unit.cfg.blocks.map(&:id).sort, regions.flat_map(&:blocks).sort
+    assert(regions.any? { |region| region.kind == :regular_tagged })
+    assert(regions.any? { |region| region.kind == :semantic })
+
+    regular_unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new("abc").parse, options: [], encoding: Encoding::UTF_8
+    )
+    assert(regular_unit.regions.any? { |region| region.kind == :regular_effect_free })
+  end
 end

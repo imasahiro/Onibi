@@ -239,7 +239,7 @@ result remains unchanged after analysis is enabled.
 **Completion:** every fact object is frozen; analysis never reconstructs or
 parses regexp source text.
 
-### HFA-011 - Compute regular regions and semantic barriers
+### HFA-011 - Compute regular regions and semantic barriers [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-010
