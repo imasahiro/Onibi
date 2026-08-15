@@ -366,7 +366,7 @@ oracle and only one immutable program becomes observable internally.
 
 ## Phase 3: add regexp decomposition and string events
 
-### HFA-030 - Implement mandatory-string extraction
+### HFA-030 - Implement mandatory-string extraction [Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-012

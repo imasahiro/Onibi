@@ -248,4 +248,30 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert programs.first.component_graph.frozen?
     assert programs.first.head_dfa.frozen?
   end
+
+  def test_mandatory_string_extraction_respects_nullable_and_assertion_paths
+    cases = {
+      "header(?:alpha|bravo)" => [["header"], %w[alpha bravo]],
+      "(?:alpha)?suffix" => [["suffix"]],
+      "(?:alpha)*" => [],
+      "(?=alpha)omega" => [["omega"]]
+    }
+
+    cases.each do |source, expected_literals|
+      unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+        Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+      )
+      actual = unit.mandatory_strings.map(&:literals)
+      assert_equal expected_literals, actual
+
+      onibi = Onibi::Regexp.new(source)
+      mri = Regexp.new(source)
+      ["#{source}x", "prefix#{source}", "nomatch"].each do |input|
+        assert_equal mri.match?(input), onibi.match?(input)
+        expected_match = mri.match(input)&.to_a
+        actual_match = onibi.match(input)&.to_a
+        expected_match.nil? ? assert_nil(actual_match) : assert_equal(expected_match, actual_match)
+      end
+    end
+  end
 end

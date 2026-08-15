@@ -74,6 +74,10 @@ module Onibi
         def tail_activations(input:)
           CFG::Analysis.tail_activations(cfg, facts, input: input)
         end
+
+        def mandatory_strings
+          CFG::Analysis.mandatory_strings(ast)
+        end
       end
 
       CompilationProgram = Data.define(:component_graph, :head_dfa)

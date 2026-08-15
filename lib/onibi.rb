@@ -510,6 +510,8 @@ module Onibi
       validate_encoding!(input, ascii_input: ascii_input)
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
+      return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
+
       literal = @hfa_exact_literal_fast
       if literal
         search_input = ascii_input ? input : input.b
@@ -1676,6 +1678,33 @@ module Onibi
         @hfa_compilation_program = HybridAutomata::Optimization::CompilationProgram.new(
           unit.component_graph, unit.head_dfa(row_budget: 4_096)
         ).freeze
+      end
+    end
+
+    def hfa_nullable_empty_match_safe?
+      return @hfa_nullable_empty_match_safe if defined?(@hfa_nullable_empty_match_safe)
+
+      program = hfa_program
+      @hfa_nullable_empty_match_safe = program&.nullable? && !nullable_semantic_ast?(@ast)
+    end
+
+    def nullable_semantic_ast?(node)
+      case node
+      when AST::Sequence
+        node.parts.any? { |part| nullable_semantic_ast?(part) }
+      when AST::Alternation
+        node.branches.any? { |branch| nullable_semantic_ast?(branch) }
+      when AST::Group
+        node.capture || nullable_semantic_ast?(node.body)
+      when AST::OptionGroup, AST::AtomicGroup
+        nullable_semantic_ast?(node.body)
+      when AST::Quantifier
+        nullable_semantic_ast?(node.expression)
+      when AST::Assertion, AST::Anchor, AST::Backreference, AST::Conditional,
+           AST::SubexpressionCall, AST::Absence
+        true
+      else
+        false
       end
     end
 

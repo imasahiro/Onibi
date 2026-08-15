@@ -100,6 +100,9 @@ module Onibi
         HeadDFA = Data.define(:entry, :states, :alphabet, :row_budget)
         TailActivation = Data.define(:component_id, :start_offset, :end_offset, :segments, :tags,
                                      :semantic_state)
+        MandatoryString = Data.define(:literals, :offsets)
+        MandatoryCandidate = Data.define(:literals, :offsets)
+        MandatoryFacts = Data.define(:nullable, :width, :candidates)
 
         module_function
 
@@ -192,6 +195,13 @@ module Onibi
           end.freeze
         end
 
+        def mandatory_strings(ast)
+          facts = mandatory_facts(ast)
+          facts.candidates.map do |candidate|
+            MandatoryString.new(candidate.literals.freeze, candidate.offsets.freeze).freeze
+          end.freeze
+        end
+
         def position_nfa_for(region)
           builder = PositionBuilder.new
           fragments = region.operations.map { |operation| builder.build(operation.operand) }
@@ -232,6 +242,96 @@ module Onibi
             active.select { |id| id / 512 == index }.freeze
           end.freeze
           [TailActivation.new(component_id, start, finish, segments, [].freeze, {}.freeze).freeze]
+        end
+
+        def mandatory_facts(node)
+          case node
+          when AST::Literal
+            literal_mandatory_facts(node)
+          when AST::Sequence
+            sequence_mandatory_facts(node.parts)
+          when AST::Alternation
+            alternation_mandatory_facts(node.branches)
+          when AST::Quantifier
+            quantifier_mandatory_facts(node)
+          when AST::Group, AST::OptionGroup, AST::AtomicGroup
+            mandatory_facts(node.body)
+          when AST::Assertion, AST::Anchor
+            MandatoryFacts.new(true, [0, 0], [].freeze).freeze
+          else
+            MandatoryFacts.new(false, [1, 1], [].freeze).freeze
+          end
+        end
+
+        def literal_mandatory_facts(node)
+          width = node.value.bytesize
+          candidates = if node.value.ascii_only? && width >= 4
+                         [MandatoryCandidate.new([node.value.freeze].freeze, [0].freeze).freeze]
+                       else
+                         []
+                       end
+          MandatoryFacts.new(width.zero?, [width, width], candidates.freeze).freeze
+        end
+
+        def sequence_mandatory_facts(parts)
+          facts = coalesce_literal_parts(parts).map { |part| mandatory_facts(part) }
+          offset = 0
+          candidates = []
+          facts.each do |fact|
+            unless fact.nullable
+              fact.candidates.each do |candidate|
+                candidates << shift_candidate(candidate, offset)
+              end
+            end
+            child_width = fixed_width(fact.width)
+            offset = offset && child_width ? offset + child_width : nil
+          end
+          MandatoryFacts.new(facts.all?(&:nullable), combine_widths(facts), candidates.freeze).freeze
+        end
+
+        def coalesce_literal_parts(parts)
+          parts.each_with_object([]) do |part, result|
+            if result.last.is_a?(AST::Literal) && part.is_a?(AST::Literal)
+              result[-1] = AST::Literal.new(result.last.value + part.value)
+            else
+              result << part
+            end
+          end
+        end
+
+        def alternation_mandatory_facts(branches)
+          facts = branches.map { |branch| mandatory_facts(branch) }
+          candidates = if facts.length.between?(1, 8) && facts.all? { |fact| fact.candidates.any? }
+                         selected = facts.map { |fact| fact.candidates.first }
+                         [MandatoryCandidate.new(selected.flat_map(&:literals).uniq.freeze,
+                                                 selected.flat_map(&:offsets).freeze).freeze]
+                       else
+                         []
+                       end
+          minimum = facts.map { |fact| fact.width[0] }.min || 0
+          maximum = facts.any? { |fact| fact.width[1].nil? } ? nil : facts.map { |fact| fact.width[1] }.max
+          MandatoryFacts.new(facts.all?(&:nullable), [minimum, maximum], candidates.freeze).freeze
+        end
+
+        def quantifier_mandatory_facts(node)
+          child = mandatory_facts(node.expression)
+          candidates = if node.minimum.positive? && !child.nullable
+                         child.candidates
+                       else
+                         []
+                       end
+          maximum = node.maximum.nil? || child.width[1].nil? ? nil : child.width[1] * node.maximum
+          MandatoryFacts.new(node.minimum.zero? || child.nullable,
+                             [child.width[0] * node.minimum, maximum], candidates.freeze).freeze
+        end
+
+        def shift_candidate(candidate, offset)
+          shifted = candidate.offsets.map { |value| offset && value + offset }
+          MandatoryCandidate.new(candidate.literals, shifted.freeze).freeze
+        end
+
+        def fixed_width(width)
+          width[0] == width[1] ? width[0] : nil
         end
 
         class PositionBuilder

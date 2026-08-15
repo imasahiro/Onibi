@@ -1003,6 +1003,10 @@ module Onibi
 
       def engine_kind = :hybrid
 
+      def nullable?
+        @nullable
+      end
+
       def components
         components = [:bit_parallel_nfa]
         components.unshift(:lazy_dfa) if @dfa_enabled
