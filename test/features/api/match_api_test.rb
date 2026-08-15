@@ -568,7 +568,54 @@ class MatchApiTest < Minitest::Test
   def test_literal_absence_match_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("(?~END)")
 
+    assert regexp.match?("日本語END")
     assert_equal "日本語EN", regexp.match("日本語END").to_s
+  end
+
+  def test_generic_match_reuses_precomputed_input_encoding
+    input_class = Class.new(String) do
+      attr_reader :ascii_only_calls
+
+      def initialize(value)
+        super
+        @ascii_only_calls = 0
+      end
+
+      def ascii_only?
+        @ascii_only_calls += 1
+        super
+      end
+    end
+    regexp = Onibi::Regexp.new("a+")
+    input = input_class.new("aaa")
+
+    assert_equal "aaa", regexp.send(:hfa_generic_match, input, 0, ascii_input: true).to_s
+    assert_equal 1, input.ascii_only_calls
+  end
+
+  def test_capture_offset_walker_classifies_input_once_across_recursion
+    input_class = Class.new(String) do
+      attr_reader :ascii_only_calls
+
+      def initialize(value)
+        super
+        @ascii_only_calls = 0
+      end
+
+      def ascii_only?
+        @ascii_only_calls += 1
+        super
+      end
+    end
+    regexp = Onibi::Regexp.new("([a]+)+")
+    input = input_class.new("aaa")
+    offsets = Array.new(regexp.send(:hfa_capture_count))
+
+    result = regexp.send(:hfa_consume_capture_node, regexp.instance_variable_get(:@ast), input, 0,
+                         input.bytesize, offsets)
+
+    assert_equal 3, result
+    assert_equal 1, input.ascii_only_calls
   end
 
   def test_match_reset_literal_match_question_uses_combined_literal_path
