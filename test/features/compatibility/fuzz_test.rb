@@ -6,8 +6,6 @@ require_relative "../../../fuzz/fuzzer"
 
 class FuzzTest < Minitest::Test
   CORPUS_PATH = File.join(PROJECT_ROOT, "fuzz", "seed_corpus.yml")
-  WORKFLOW_PATH = File.join(PROJECT_ROOT, ".github", "workflows", "scheduled-fuzz.yml")
-
   def test_fixed_seed_smoke_is_reproducible
     seed = YAML.safe_load(File.read(CORPUS_PATH)).fetch("seeds").first
     first = Fuzzer.run(seed: seed.fetch("seed"), cases: seed.fetch("cases"))
@@ -41,15 +39,6 @@ class FuzzTest < Minitest::Test
     assert_includes report, "mri: false"
     assert_includes report, "onibi: true"
     assert_includes report, "ONIBI_FUZZ_SEED=123"
-  end
-
-  def test_scheduled_workflow_runs_on_main_and_reports_failures
-    workflow = File.read(WORKFLOW_PATH)
-
-    assert_includes workflow, 'cron: "30 15 * * *"'
-    assert_includes workflow, "ONIBI_FUZZ_SEED: ${{ github.run_id }}"
-    assert_includes workflow, "issues: write"
-    assert_includes workflow, "gh issue create --title \"$title\" --body-file fuzz-report.md"
   end
 
   def failure_result

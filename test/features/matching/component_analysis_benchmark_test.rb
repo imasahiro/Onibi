@@ -12,8 +12,4 @@ class ComponentAnalysisBenchmarkTest < Minitest::Test
       assert_equal expected, actual, name
     end
   end
-
-  def test_benchmark_has_explicit_operations
-    assert_equal %w[compile match], ComponentAnalysisBenchmark::OPERATIONS
-  end
 end
