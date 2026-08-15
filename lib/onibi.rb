@@ -4464,13 +4464,6 @@ module Onibi
 
       return false unless hfa_scan_input_safe?(input)
 
-      if hfa_repeated_equal_length_literal_capture_result_safe?
-        program = hfa_program
-        program.each_match_result(input, 0) do |result|
-          block.call(hfa_repeated_equal_length_literal_capture_match_result(input, result[0], result))
-        end
-        return true
-      end
       if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
         literal = hfa_exact_literal_value
         validate_encoding!(input, ascii_input: ascii_input) if hfa_unicode_exact_literal_result_safe?
