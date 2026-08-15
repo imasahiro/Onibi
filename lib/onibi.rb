@@ -4118,14 +4118,6 @@ module Onibi
         end
         return true
       end
-      if (spec = hfa_literal_capture_sequence_spec)
-        position = 0
-        while (result = hfa_literal_capture_sequence_match_result(input, position, spec))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && hfa_linebreak_alternation_scan_spec
         hfa_linebreak_alternation_each_result(input, &block)
         return true
