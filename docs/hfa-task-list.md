@@ -406,7 +406,7 @@ NFA.
 density, include overlapping literals, non-zero origins, empty suffixes, and
 late hits. Compare all public results with MRI.
 
-### HFA-032 - Coordinate component activation and offset windows
+### HFA-032 - Coordinate component activation and offset windows [Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-023, HFA-031

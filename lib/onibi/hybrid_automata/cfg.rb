@@ -104,6 +104,7 @@ module Onibi
         MandatoryCandidate = Data.define(:literals, :offsets)
         MandatoryFacts = Data.define(:nullable, :width, :candidates)
         StringEvent = Data.define(:component_id, :start_offset, :end_offset, :alternative_id)
+        CoordinatedActivation = Data.define(:event, :offset)
 
         module_function
 
@@ -212,6 +213,22 @@ module Onibi
             end
           end
           events.sort_by { |event| [event.start_offset, event.component_id, event.alternative_id] }.freeze
+        end
+
+        def coordinate_events(events:, predecessor_end:, minimum_offset:, maximum_offset:)
+          raise ArgumentError, "minimum offset must be non-negative" if minimum_offset.negative?
+
+          events.filter_map do |event|
+            offset = event.start_offset - predecessor_end
+            next unless offset >= minimum_offset
+            next if maximum_offset && offset > maximum_offset
+
+            CoordinatedActivation.new(event, offset).freeze
+          end.sort_by do |activation|
+            [activation.event.start_offset,
+             activation.event.component_id,
+             activation.event.alternative_id]
+          end.freeze
         end
 
         def position_nfa_for(region)
@@ -353,9 +370,7 @@ module Onibi
           events.freeze
         end
 
-        def fixed_width(width)
-          width[0] == width[1] ? width[0] : nil
-        end
+        def fixed_width(width) = width[0] == width[1] ? width[0] : nil
 
         class PositionBuilder
           Fragment = Data.define(:first, :last, :nullable)

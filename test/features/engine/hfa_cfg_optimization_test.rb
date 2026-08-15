@@ -298,4 +298,27 @@ class HfaCfgOptimizationTest < Minitest::Test
                  end)
     refute(events.any? { |event| event.respond_to?(:literal) })
   end
+
+  def test_event_coordinator_enforces_inclusive_bounded_and_unbounded_windows
+    source = "head(?:alpha|bravo)"
+    input = "headalpha--headbravo"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    events = unit.string_events(input: input)
+    bounded = unit.coordinate_events(events: events, predecessor_end: 4,
+                                     minimum_offset: 0, maximum_offset: 5)
+    unbounded = unit.coordinate_events(events: events, predecessor_end: 4,
+                                       minimum_offset: 0, maximum_offset: nil)
+
+    assert bounded.frozen?
+    assert bounded.all?(&:frozen?)
+    assert(bounded.all? { |activation| activation.offset.between?(0, 5) })
+    assert unbounded.length >= bounded.length
+    assert_equal [0, 0], bounded.map(&:offset).minmax
+  end
 end

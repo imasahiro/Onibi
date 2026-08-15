@@ -1685,7 +1685,8 @@ module Onibi
       return @hfa_nullable_empty_match_safe if defined?(@hfa_nullable_empty_match_safe)
 
       program = hfa_program
-      @hfa_nullable_empty_match_safe = program&.nullable? && !nullable_semantic_ast?(@ast)
+      @hfa_nullable_empty_match_safe = program.is_a?(HybridAutomata::Program) &&
+                                       program.nullable? && !nullable_semantic_ast?(@ast)
     end
 
     def nullable_semantic_ast?(node)

@@ -82,6 +82,12 @@ module Onibi
         def string_events(input:)
           CFG::Analysis.string_events(ast, input: input)
         end
+
+        def coordinate_events(events:, predecessor_end:, minimum_offset:, maximum_offset:)
+          CFG::Analysis.coordinate_events(events: events, predecessor_end: predecessor_end,
+                                          minimum_offset: minimum_offset,
+                                          maximum_offset: maximum_offset)
+        end
       end
 
       CompilationProgram = Data.define(:component_graph, :head_dfa)
