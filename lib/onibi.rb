@@ -4116,14 +4116,6 @@ module Onibi
         end
         return true
       end
-      if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
-        position = 0
-        while (result = hfa_bounded_sequence_direct_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
