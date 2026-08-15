@@ -120,8 +120,7 @@ module Onibi
           return
         end
       end
-      return if prefix.empty? || steps.empty?
-      return unless hfa_alternation_capture_steps_safe?(steps)
+      return if prefix.empty? || steps.empty? || !hfa_alternation_capture_steps_safe?(steps)
 
       [prefix, steps.freeze].freeze
     end
@@ -231,7 +230,7 @@ module Onibi
       return unless table
       return unless %i[+ bounded].include?(node.kind)
 
-      [node.kind == :+ ? :class : :fixed, table, node.minimum, node.maximum].freeze
+      [node.kind == :+ ? :class : :fixed, table, node.minimum, node.maximum, 128.times.count { |byte| !table[byte] }].freeze
     end
 
     def hfa_capture_sequence_each_result(input, spec)
@@ -333,7 +332,7 @@ module Onibi
 
         next_operation = operations[index + 1]
         if next_operation&.first == :literal && !table[next_operation[1].getbyte(0)]
-          finish = hfa_capture_sequence_delimited_class_end(input, cursor, table, next_operation[1])
+          finish = hfa_capture_sequence_delimited_class_end(input, cursor, table, next_operation[1], operation[4])
           return unless finish && finish - cursor >= minimum
 
           cursor = finish
