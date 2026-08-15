@@ -3169,13 +3169,6 @@ module Onibi
       @hfa_unicode_repeated_literal_unit = literal_ast_value(expression)
     end
 
-    def hfa_literal_result_node?(node)
-      node.is_a?(AST::Literal) || node.is_a?(AST::CharacterClass) || node.is_a?(AST::Any) ||
-        (node.is_a?(AST::Sequence) && node.parts.all? { |part| part.is_a?(AST::Literal) }) ||
-        (node.is_a?(AST::Quantifier) && node.mode == :greedy &&
-         (node.expression.is_a?(AST::Literal) || class_run_result_node?(node)))
-    end
-
     def class_run_result_node?(node)
       node.is_a?(AST::Quantifier) && node.kind == :+ &&
         (node.expression.is_a?(AST::CharacterClass) || node.expression.is_a?(AST::Any) ||
