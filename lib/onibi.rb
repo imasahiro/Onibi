@@ -122,7 +122,6 @@ module Onibi
       @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
       captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
-      @hfa_repeated_class_backref_fast = true if hfa_repeated_class_backref_candidate?
       @hfa_bounded_literal_fast = true if hfa_bounded_literal_candidate?
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
@@ -150,7 +149,7 @@ module Onibi
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
 
-      return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && @hfa_repeated_class_backref_fast
+      return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
       return hfa_ascii_class_run_match?(input, normalized_position) if ascii_input && hfa_ascii_class_run_result_safe?
       return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && @hfa_captured_class_run_chain_fast
       return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && @hfa_anchored_class_run_fast

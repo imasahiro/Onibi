@@ -771,6 +771,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_class_backreference_matches_mri_across_public_apis
+    regexp = Onibi::Regexp.new("([a-z]+)-\\1")
+    input = "echo-echo x echo-ec echo-echo"
+    mri = ::Regexp.new("([a-z]+)-\\1")
+
+    assert_equal mri.match?(input), regexp.match?(input)
+    assert_equal mri.match(input).to_a, regexp.match(input).to_a
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
+  end
+
   def test_ascii_character_class_run_match_question_uses_byte_table_path
     regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]+")
 
