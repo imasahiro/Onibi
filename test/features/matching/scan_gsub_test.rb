@@ -756,6 +756,13 @@ class ScanGsubTest < Minitest::Test
     assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
+  def test_captureless_mixed_alternation_scan_uses_class_and_literal_branches
+    regexp = Onibi::Regexp.new("a[NSt]|BY")
+
+    assert_equal %w[aN BY], regexp.scan("aN xx BY")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
+  end
+
   def test_repeated_alternation_scan_uses_hfa_iterator
     program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
 
