@@ -303,10 +303,10 @@ module Onibi
       return !hfa_ascii_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_run_chain_result_safe?
       return !hfa_ascii_adjacent_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_adjacent_run_result_safe?
       if ascii_input && (parts = hfa_greedy_dot_star_literal_parts)
-        return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
+        return !hfa_greedy_dot_star_literal_match_result(input, normalized_position, parts).nil?
       end
       if ascii_input && (parts = hfa_lazy_dot_star_literal_parts)
-        return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
+        return !hfa_lazy_dot_star_literal_match_result(input, normalized_position, parts).nil?
       end
       return !hfa_literal_conditional_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_conditional_result_safe?
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
