@@ -80,7 +80,6 @@ module Onibi
       tokens = validate_pattern_syntax!(pattern, normalized_options)
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
       @hfa_compilation_program_mutex = Mutex.new
-      @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
     def match?(input, position = 0)
@@ -257,7 +256,7 @@ module Onibi
         return false
       end
       return !hfa_class_lookbehind_match_result(input, normalized_position).nil? if hfa_class_lookbehind_parts
-      return hfa_ascii_adjacent_run_match?(input, normalized_position) if ascii_input && @hfa_ascii_adjacent_run_fast
+      return hfa_ascii_adjacent_run_match?(input, normalized_position) if ascii_input && hfa_ascii_adjacent_run_result_safe?
       if !ascii_input && (literal = hfa_unicode_fixed_literal_capture_literal)
         return !input.index(literal, normalized_position).nil?
       end
@@ -3390,17 +3389,6 @@ module Onibi
       @hfa_ascii_adjacent_run_safe = valid && !hfa_ascii_adjacent_run_tables.nil?
     end
 
-    def hfa_ascii_adjacent_run_candidate?
-      return false if casefold?
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
-
-      @ast.parts.all? do |part|
-        part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
-          (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape) ||
-           part.expression.is_a?(AST::Property))
-      end
-    end
-
     def hfa_ascii_adjacent_run_tables
       return @hfa_ascii_adjacent_run_tables if defined?(@hfa_ascii_adjacent_run_tables)
 
@@ -5447,7 +5435,7 @@ module Onibi
         end
         return true
       end
-      if ascii_input && @hfa_ascii_adjacent_run_fast
+      if ascii_input && hfa_ascii_adjacent_run_result_safe?
         position = 0
         while (result = hfa_ascii_adjacent_run_match_result(input, position))
           block.call(result)
