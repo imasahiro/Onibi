@@ -78,6 +78,10 @@ module Onibi
         def mandatory_strings
           CFG::Analysis.mandatory_strings(ast)
         end
+
+        def string_events(input:)
+          CFG::Analysis.string_events(ast, input: input)
+        end
       end
 
       CompilationProgram = Data.define(:component_graph, :head_dfa)

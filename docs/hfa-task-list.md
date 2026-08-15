@@ -389,7 +389,7 @@ and assertion patterns where a visually present literal is not mandatory. A
 false extraction must cause the test to fail through public behavior, not only
 through plan inspection.
 
-### HFA-031 - Add monotonic string-event sources
+### HFA-031 - Add monotonic string-event sources [Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-030

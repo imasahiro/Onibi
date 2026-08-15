@@ -103,6 +103,7 @@ module Onibi
         MandatoryString = Data.define(:literals, :offsets)
         MandatoryCandidate = Data.define(:literals, :offsets)
         MandatoryFacts = Data.define(:nullable, :width, :candidates)
+        StringEvent = Data.define(:component_id, :start_offset, :end_offset, :alternative_id)
 
         module_function
 
@@ -200,6 +201,17 @@ module Onibi
           facts.candidates.map do |candidate|
             MandatoryString.new(candidate.literals.freeze, candidate.offsets.freeze).freeze
           end.freeze
+        end
+
+        def string_events(ast, input:)
+          events = mandatory_strings(ast).each_with_index.flat_map do |candidate, component_id|
+            candidate.literals.each_with_index.flat_map do |literal, alternative_id|
+              event_offsets(input, literal).map do |start_offset, end_offset|
+                StringEvent.new(component_id, start_offset, end_offset, alternative_id).freeze
+              end
+            end
+          end
+          events.sort_by { |event| [event.start_offset, event.component_id, event.alternative_id] }.freeze
         end
 
         def position_nfa_for(region)
@@ -328,6 +340,17 @@ module Onibi
         def shift_candidate(candidate, offset)
           shifted = candidate.offsets.map { |value| offset && value + offset }
           MandatoryCandidate.new(candidate.literals, shifted.freeze).freeze
+        end
+
+        def event_offsets(input, literal)
+          cursor = 0
+          events = []
+          while (start_offset = input.index(literal, cursor))
+            end_offset = start_offset + literal.length
+            events << [start_offset, end_offset].freeze
+            cursor = [end_offset, start_offset + 1].max
+          end
+          events.freeze
         end
 
         def fixed_width(width)

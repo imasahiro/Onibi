@@ -274,4 +274,28 @@ class HfaCfgOptimizationTest < Minitest::Test
       end
     end
   end
+
+  def test_string_events_are_monotonic_immutable_and_mri_safe
+    source = "prefixalpha"
+    input = "zprefixalphaprefixalpha"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+    assert_equal mri.match?(input), onibi.match?(input)
+    assert_equal input.scan(mri), onibi.scan(input)
+    assert_equal input.gsub(mri, "X"), onibi.gsub(input, "X")
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    events = unit.string_events(input: input)
+
+    assert events.frozen?
+    assert events.all?(&:frozen?)
+    assert_equal([[0, 1, 12, 0], [0, 12, 23, 0]],
+                 events.map do |event|
+                   [event.component_id, event.start_offset,
+                    event.end_offset, event.alternative_id]
+                 end)
+    refute(events.any? { |event| event.respond_to?(:literal) })
+  end
 end
