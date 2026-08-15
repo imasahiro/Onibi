@@ -396,13 +396,6 @@ module Onibi
         start = input[0, normalized_position].bytesize
         return hfa_match_data([start, start + literal.bytesize, []], input)
       end
-      if !ascii_input && hfa_literal_alternation_result_safe?
-        byte_position = input[0, normalized_position].bytesize
-        result = hfa_literal_alternation_match_result(input, byte_position, byte_mode: true)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -427,13 +420,6 @@ module Onibi
 
       if ascii_input && hfa_ignorecase_literal_result_safe?
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-
-      if ascii_input && hfa_literal_alternation_result_safe?
-        result = hfa_literal_alternation_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
@@ -674,12 +660,6 @@ module Onibi
       end
       if ascii_input && hfa_ignorecase_literal_result_safe?
         result = hfa_ignorecase_literal_match_result(input, position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_literal_alternation_result_safe?
-        result = hfa_literal_alternation_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
