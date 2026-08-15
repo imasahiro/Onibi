@@ -7,6 +7,21 @@ module Onibi
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
     def scan(input, &block)
+      if input.is_a?(String) && input.ascii_only? && hfa_capture_count.positive? &&
+         (spec = hfa_capture_sequence_scan_spec)
+        values = []
+        hfa_capture_sequence_each_scan_value(input, spec) do |value|
+          if block
+            block.call(value)
+          else
+            values << value
+          end
+        end
+        return input if block
+
+        return values
+      end
+
       if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
          (spec = hfa_direct_delimited_capture_spec)
         values = []
@@ -42,6 +57,50 @@ module Onibi
     def hfa_ascii_word_byte?(byte)
       (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) ||
         (byte >= 48 && byte <= 57) || byte == 95
+    end
+
+    def hfa_capture_sequence_each_scan_value(input, spec)
+      tokens, anchor = spec
+      position = 0
+      captures = Array.new(hfa_capture_count)
+      offsets = Array.new(hfa_capture_count) { [nil, nil] }
+      result_container = [nil, nil]
+      while (start = hfa_capture_sequence_start(input, position, anchor))
+        result = hfa_capture_sequence_match_result(input, start, tokens, captures, offsets, result_container)
+        if result
+          finish = result[0]
+          yield captures.map { |offset| offset && input.byteslice(offset[0], offset[1] - offset[0]) }
+          position = finish
+        elsif anchor.first == :reverse
+          delimiter_start = input.index(anchor[1], start + 1)
+          position = delimiter_start ? delimiter_start + anchor[1].bytesize : input.bytesize
+        else
+          position = start + anchor[1].bytesize
+        end
+      end
+    end
+
+    def hfa_capture_sequence_single_operation_end(input, position, operation)
+      kind = operation[0]
+      table = operation[1]
+      minimum = operation[2]
+      if kind == :fixed
+        minimum.times do
+          return unless table[input.getbyte(position)]
+
+          position += 1
+        end
+        return position
+      end
+
+      if kind == :literal
+        return unless input.byteslice(position, table.bytesize) == table
+
+        return position + table.bytesize
+      end
+
+      finish = hfa_literal_prefix_capture_run_end(input, position, table)
+      finish - position >= minimum ? finish : nil
     end
 
     def hfa_scan_boundary_match?(input, start, finish, boundary)
