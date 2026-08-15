@@ -96,15 +96,6 @@ module Onibi
                         end
       chain_tables = hfa_ascii_run_chain_tables if chain_candidate
       @hfa_ascii_run_chain_fast = chain_tables if chain_tables
-      anchored_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) &&
-                              @ast.parts.length == 3
-                             start, run, finish = @ast.parts
-                             start.is_a?(AST::Anchor) && start.kind == :anchor_absolute_start &&
-                               run.is_a?(AST::Quantifier) && run.kind == :+ && run.mode == :greedy &&
-                               run.expression.is_a?(AST::CharacterClass) &&
-                               finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
-                           end
-      @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
       word_node = single_quantified_expression
       word_node = nil unless word_node.is_a?(AST::CharacterClass) && word_node.value == "[:word:]"
       @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
@@ -139,7 +130,7 @@ module Onibi
       return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
       return hfa_ascii_class_run_match?(input, normalized_position) if ascii_input && hfa_ascii_class_run_result_safe?
       return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && @hfa_captured_class_run_chain_fast
-      return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && @hfa_anchored_class_run_fast
+      return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && hfa_anchored_class_run_result_safe?
 
       return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
 
@@ -170,7 +161,7 @@ module Onibi
         return !hfa_literal_absence_suffix_match_result(input, normalized_position, spec).nil?
       end
 
-      return !hfa_program.match_result(input, normalized_position).nil? if ascii_input && !@hfa_anchored_class_run_fast && hfa_anchor_result_safe?
+      return !hfa_program.match_result(input, normalized_position).nil? if ascii_input && !hfa_anchored_class_run_result_safe? && hfa_anchor_result_safe?
 
       if hfa_positive_lookbehind_result_safe?
         prefix, literal = hfa_literal_lookbehind_parts(:positive_lookbehind)
