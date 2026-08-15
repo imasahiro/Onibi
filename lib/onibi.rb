@@ -277,9 +277,6 @@ module Onibi
       end
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
 
-      if ascii_input && (parts = hfa_greedy_dot_star_literal_parts)
-        return !hfa_greedy_dot_star_literal_match_result(input, normalized_position, parts).nil?
-      end
       if ascii_input && (parts = hfa_lazy_dot_star_literal_parts)
         return !hfa_lazy_dot_star_literal_match_result(input, normalized_position, parts).nil?
       end
