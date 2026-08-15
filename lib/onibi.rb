@@ -106,11 +106,6 @@ module Onibi
       return !hfa_captured_class_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_captured_class_run_chain_result_safe?
       return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
 
-      if !ascii_input && hfa_literal_alternation_result_safe?
-        byte_position = input[0, normalized_position].bytesize
-        return !hfa_literal_alternation_match_result(input, byte_position, byte_mode: true).nil?
-      end
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_unicode_class_direct_match_result(input, byte_position, class_source).nil?
@@ -182,8 +177,6 @@ module Onibi
 
         return with_timeout { !result.nil? }
       end
-
-      return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
 
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
@@ -297,7 +290,6 @@ module Onibi
       end
       return !hfa_literal_conditional_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_conditional_result_safe?
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
-      return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
       return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
       return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
