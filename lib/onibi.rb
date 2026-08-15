@@ -4261,14 +4261,6 @@ module Onibi
         end
         return true
       end
-      if hfa_empty_nested_capture_spec
-        position = 0
-        while (result = hfa_empty_nested_capture_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_variable_subexpression_capture_spec
         position = 0
         while (result = hfa_variable_subexpression_capture_match_result(input, position))
