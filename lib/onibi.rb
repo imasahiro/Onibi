@@ -3163,45 +3163,6 @@ module Onibi
                                                    end
     end
 
-    def hfa_ascii_adjacent_run_result_safe?
-      return @hfa_ascii_adjacent_run_safe if defined?(@hfa_ascii_adjacent_run_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = !casefold? && parts.length == 2 && parts.all? do |part|
-        part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
-          (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape) ||
-           part.expression.is_a?(AST::Property))
-      end
-      @hfa_ascii_adjacent_run_safe = valid && !hfa_ascii_adjacent_run_tables.nil?
-    end
-
-    def hfa_ascii_adjacent_run_tables
-      return @hfa_ascii_adjacent_run_tables if defined?(@hfa_ascii_adjacent_run_tables)
-
-      @hfa_ascii_adjacent_run_tables = @ast.parts.map do |part|
-        hfa_capture_class_table(part.expression)
-      end
-      @hfa_ascii_adjacent_run_tables = nil unless @hfa_ascii_adjacent_run_tables.all?
-      @hfa_ascii_adjacent_run_tables&.freeze
-    end
-
-    def hfa_ascii_adjacent_run_match_result(input, position)
-      tables = hfa_ascii_adjacent_run_tables
-      cursor = position
-      while cursor < input.bytesize
-        left = cursor
-        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
-        if left > cursor
-          right = left
-          right += 1 while right < input.bytesize && tables[1][input.getbyte(right)]
-          return [cursor, right, []] if right > left
-        end
-
-        cursor += 1
-      end
-      nil
-    end
-
     def hfa_atomic_literal_match_literal
       return @hfa_atomic_literal_match_literal if defined?(@hfa_atomic_literal_match_literal)
 
