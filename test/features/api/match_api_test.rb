@@ -572,6 +572,27 @@ class MatchApiTest < Minitest::Test
     assert_equal "日本語EN", regexp.match("日本語END").to_s
   end
 
+  def test_scan_safety_classifies_input_encoding_once
+    input_class = Class.new(String) do
+      attr_reader :ascii_only_calls
+
+      def initialize(value)
+        super
+        @ascii_only_calls = 0
+      end
+
+      def ascii_only?
+        @ascii_only_calls += 1
+        super
+      end
+    end
+    regexp = Onibi::Regexp.new("cat")
+    input = input_class.new("cat")
+
+    assert regexp.send(:hfa_scan_input_safe?, input)
+    assert_equal 1, input.ascii_only_calls
+  end
+
   def test_generic_match_reuses_precomputed_input_encoding
     input_class = Class.new(String) do
       attr_reader :ascii_only_calls
