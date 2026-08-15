@@ -113,25 +113,6 @@ module Onibi
       alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                    alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
-      assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
-      if assertion_parts.is_a?(Array)
-        assertion_kind = assertion_parts[1]
-        if assertion_kind == :positive_lookbehind &&
-           assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
-          @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
-        elsif assertion_kind == :negative_lookbehind &&
-              assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
-          @hfa_negative_lookbehind_literal_fast = [assertion_parts[0], assertion_parts[2]].freeze
-        end
-      end
-      if hfa_positive_lookbehind_result_safe? && !@hfa_positive_lookbehind_literal_fast
-        parts = hfa_literal_lookbehind_parts(:positive_lookbehind)
-        @hfa_positive_lookbehind_literal_fast = parts.freeze if parts
-      end
-      if hfa_negative_lookbehind_result_safe? && !@hfa_negative_lookbehind_literal_fast
-        parts = hfa_literal_lookbehind_parts(:negative_lookbehind)
-        @hfa_negative_lookbehind_literal_fast = parts.freeze if parts
-      end
       @hfa_class_lookbehind_fast = hfa_class_lookbehind_parts
       @hfa_casefold_class_lookbehind_fast = hfa_casefold_class_lookbehind_parts
       lookahead_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
@@ -214,8 +195,8 @@ module Onibi
 
       return !hfa_program.match_result(input, normalized_position).nil? if ascii_input && !@hfa_anchored_class_run_fast && hfa_anchor_result_safe?
 
-      if @hfa_positive_lookbehind_literal_fast
-        prefix, literal = @hfa_positive_lookbehind_literal_fast
+      if hfa_positive_lookbehind_result_safe?
+        prefix, literal = hfa_literal_lookbehind_parts(:positive_lookbehind)
         candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
         while candidate
           return true if candidate + prefix.bytesize >= normalized_position
@@ -322,8 +303,8 @@ module Onibi
       return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
       return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && @hfa_literal_conditional_fast
 
-      if @hfa_negative_lookbehind_literal_fast
-        literal, guard = @hfa_negative_lookbehind_literal_fast
+      if hfa_negative_lookbehind_result_safe?
+        literal, guard = hfa_literal_lookbehind_parts(:negative_lookbehind)
         candidate = input.b.index(literal.b, normalized_position)
         while candidate
           return true if candidate < guard.bytesize ||
@@ -642,13 +623,13 @@ module Onibi
         return nil
       end
 
-      if @hfa_positive_lookbehind_literal_fast
+      if hfa_positive_lookbehind_result_safe?
         result = hfa_positive_lookbehind_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
       end
-      if @hfa_negative_lookbehind_literal_fast
+      if hfa_negative_lookbehind_result_safe?
         result = hfa_negative_lookbehind_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -2916,7 +2897,7 @@ module Onibi
     end
 
     def hfa_positive_lookbehind_literal_match_result(input, position)
-      prefix, literal = @hfa_positive_lookbehind_literal_fast
+      prefix, literal = hfa_literal_lookbehind_parts(:positive_lookbehind)
       candidate = input.b.index(literal.b, position)
       while candidate
         prefix_start = candidate - prefix.bytesize
@@ -3021,7 +3002,7 @@ module Onibi
     end
 
     def hfa_negative_lookbehind_literal_match_result(input, position)
-      literal, guard = @hfa_negative_lookbehind_literal_fast
+      literal, guard = hfa_literal_lookbehind_parts(:negative_lookbehind)
       candidate = input.b.index(literal.b, position)
       while candidate
         return [candidate, candidate + literal.bytesize, []] if candidate < guard.bytesize ||
@@ -5873,7 +5854,7 @@ module Onibi
         end
         return true
       end
-      if @hfa_positive_lookbehind_literal_fast
+      if hfa_positive_lookbehind_result_safe?
         position = 0
         while (result = hfa_positive_lookbehind_literal_match_result(input, position))
           block.call(result)
@@ -5881,7 +5862,7 @@ module Onibi
         end
         return true
       end
-      if @hfa_negative_lookbehind_literal_fast
+      if hfa_negative_lookbehind_result_safe?
         position = 0
         while (result = hfa_negative_lookbehind_literal_match_result(input, position))
           block.call(result)
