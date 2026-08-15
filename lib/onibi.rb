@@ -490,8 +490,7 @@ module Onibi
         return with_timeout { !result.nil? }
       end
 
-      hfa = hfa_program if ascii_input && hfa_match_question_safe?
-      hfa = hfa_program if ascii_input && hfa_start_match_result_safe?
+      hfa = hfa_program if ascii_input && (hfa_match_question_safe? || hfa_start_match_result_safe?)
       if hfa
         return hfa.match?(input, normalized_position) if timeout_unconfigured?
 
@@ -716,19 +715,10 @@ module Onibi
         end
         return nil
       end
-      if ascii_input && hfa_captureless_regular_sequence_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_scoped_ignorecase_sequence_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_scoped_multiline_sequence_result_safe?
+      if ascii_input &&
+         (hfa_captureless_regular_sequence_result_safe? ||
+          hfa_scoped_ignorecase_sequence_result_safe? ||
+          hfa_scoped_multiline_sequence_result_safe?)
         result = hfa_program.match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -5884,23 +5874,8 @@ module Onibi
         end
         return true
       end
-      if hfa_greedy_bounded_sequence_result_safe?
-        position = 0
-        while (result = hfa_program.match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if hfa_lazy_bounded_sequence_result_safe?
-        position = 0
-        while (result = hfa_program.match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if hfa_scoped_extended_literal_result_safe?
+      if hfa_greedy_bounded_sequence_result_safe? ||
+         hfa_lazy_bounded_sequence_result_safe? || hfa_scoped_extended_literal_result_safe?
         position = 0
         while (result = hfa_program.match_result(input, position))
           block.call(result)
