@@ -321,4 +321,39 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert unbounded.length >= bounded.length
     assert_equal [0, 0], bounded.map(&:offset).minmax
   end
+
+  def test_tagged_tail_activations_preserve_nested_and_multibyte_capture_state
+    source = "(?<outer>a(?<inner>β))(?<repeat>x)?(?<first>y)(?<second>z)"
+    input = "--aβxyzz"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+    expected_match = mri.match(input)
+    actual_match = onibi.match(input)
+    expected_offsets = expected_match && (0..expected_match.length - 1).map { |index| expected_match.offset(index) }
+    actual_offsets = actual_match && (0..actual_match.length - 1).map { |index| actual_match.offset(index) }
+    assert_equal expected_offsets, actual_offsets
+    assert_equal mri.match(input)&.named_captures, onibi.match(input)&.named_captures
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    activations = unit.tail_activations(input: input)
+
+    refute_empty activations
+    tags = activations.flat_map(&:tags)
+    refute_empty tags
+    assert_equal %i[end start], tags.map(&:kind).uniq.sort
+    assert_equal [1, 2, 3, 4, 5], tags.map(&:capture).uniq.sort
+    assert tags.all?(&:frozen?)
+
+    ["(?<dup>y)(?<dup>z)", "(?<optional>x)?y"].each do |capture_source|
+      capture_input = capture_source.start_with?("(?<dup") ? "yz" : "y"
+      expected = Regexp.new(capture_source).match(capture_input)
+      actual = Onibi::Regexp.new(capture_source).match(capture_input)
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected&.named_captures, actual&.named_captures
+    end
+  end
 end

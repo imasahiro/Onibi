@@ -92,7 +92,9 @@ module Onibi
         ComponentEdge = Data.define(:source, :target, :minimum_offset, :maximum_offset, :activation,
                                     :priority, :effects)
         ComponentGraph = Data.define(:entry, :nodes, :edges, :accepts)
-        Position = Data.define(:id, :symbol, :operation)
+        Position = Data.define(:id, :symbol, :operation, :tags)
+        TagOperation = Data.define(:kind, :capture, :position)
+        CaptureTag = Data.define(:kind, :capture, :offset)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
         HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
           def border? = border
@@ -248,7 +250,11 @@ module Onibi
         def activations_for_nfa(nfa, chars, component_id)
           positions = nfa.positions.to_h { |position| [position.id, position] }
           chars.each_index.flat_map do |start|
-            active = nfa.first.select { |id| positions.fetch(id).symbol == chars[start] }
+            active = nfa.first.filter_map do |id|
+              next unless positions.fetch(id).symbol == chars[start]
+
+              [id, positions.fetch(id).tags]
+            end.to_h
             accepts = []
             cursor = start
             until active.empty? || cursor >= chars.length
@@ -256,21 +262,32 @@ module Onibi
               cursor += 1
               break if cursor >= chars.length
 
-              active = active.flat_map { |id| nfa.follow.fetch(id, []) }
-                             .uniq
-                             .select { |id| positions.fetch(id).symbol == chars[cursor] }
+              active = active.each_with_object({}) do |(id, history), next_active|
+                nfa.follow.fetch(id, []).each do |next_id|
+                  next unless positions.fetch(next_id).symbol == chars[cursor]
+
+                  next_active[next_id] ||= history + positions.fetch(next_id).tags
+                end
+              end
             end
             accepts
           end
         end
 
         def accepting_activations(nfa, active, component_id, start, finish)
-          return [] unless (active & nfa.last).any?
+          accepted = active.select { |id, _history| nfa.last.include?(id) }
+          return [] if accepted.empty?
 
           segments = nfa.segments.each_index.map do |index|
-            active.select { |id| id / 512 == index }.freeze
+            active.keys.select { |id| id / 512 == index }.freeze
           end.freeze
-          [TailActivation.new(component_id, start, finish, segments, [].freeze, {}.freeze).freeze]
+          tags = accepted.values.first.uniq { |tag| [tag.kind, tag.capture] }
+                         .sort_by { |tag| [tag.position, tag.kind == :start ? 0 : 1, tag.capture] }
+                         .map do |tag|
+            offset = tag.kind == :start ? start : finish
+            CaptureTag.new(tag.kind, tag.capture, offset).freeze
+          end
+          [TailActivation.new(component_id, start, finish, segments, tags.freeze, {}.freeze).freeze]
         end
 
         def mandatory_facts(node)
@@ -371,72 +388,6 @@ module Onibi
         end
 
         def fixed_width(width) = width[0] == width[1] ? width[0] : nil
-
-        class PositionBuilder
-          Fragment = Data.define(:first, :last, :nullable)
-
-          attr_reader :positions, :follow, :reach
-
-          def initialize
-            @positions = []
-            @follow = Hash.new { |hash, key| hash[key] = [] }
-            @reach = Hash.new { |hash, key| hash[key] = [] }
-          end
-
-          def build(node)
-            case node
-            when AST::Literal
-              literal(node)
-            when AST::Sequence
-              sequence(node.parts.map { |part| build(part) })
-            when AST::Alternation
-              alternatives(node.branches.map { |branch| build(branch) })
-            when AST::Quantifier
-              quantified(node)
-            else
-              Fragment.new([], [], true)
-            end
-          end
-
-          def sequence(fragments)
-            result = Fragment.new([], [], true)
-            fragments.each { |fragment| result = concatenate(result, fragment) }
-            result
-          end
-
-          private
-
-          def literal(node)
-            ids = node.value.each_char.map do |character|
-              id = @positions.length
-              position = Position.new(id, character, node).freeze
-              @positions << position
-              @reach[character] << id
-              id
-            end
-            ids.each_cons(2) { |left, right| @follow[left] << right }
-            Fragment.new(ids.first ? [ids.first] : [], ids.last ? [ids.last] : [], ids.empty?)
-          end
-
-          def alternatives(fragments)
-            Fragment.new(fragments.flat_map(&:first).uniq, fragments.flat_map(&:last).uniq,
-                         fragments.all?(&:nullable))
-          end
-
-          def quantified(node)
-            fragment = build(node.expression)
-            repeat = node.maximum.nil? || node.maximum > 1
-            fragment.last.product(fragment.first) { |left, right| @follow[left] << right } if repeat
-            Fragment.new(fragment.first, fragment.last, node.minimum.zero? || fragment.nullable)
-          end
-
-          def concatenate(left, right)
-            left.last.product(right.first) { |source, target| @follow[source] << target }
-            first = left.first + (left.nullable ? right.first : [])
-            last = right.last + (right.nullable ? left.last : [])
-            Fragment.new(first.uniq, last.uniq, left.nullable && right.nullable)
-          end
-        end
 
         def node_facts(node)
           case node

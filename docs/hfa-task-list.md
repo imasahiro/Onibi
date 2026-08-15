@@ -425,7 +425,7 @@ start and end choices, not only boolean acceptance.
 
 ## Phase 4: preserve MRI captures and priority in the component graph
 
-### HFA-040 - Add tagged tail-NFA capture state
+### HFA-040 - Add tagged tail-NFA capture state [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-032
