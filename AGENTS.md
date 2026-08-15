@@ -63,14 +63,18 @@ The project should use this high-level layout:
 ├── bin/
 │   └── onibi
 ├── docs/
-│   └── onibi-design.md
+│   ├── onibi-design.md
+│   ├── hfa-design.md
+│   ├── hfa-task-list.md
+│   └── history/
 ├── lib/
 │   ├── onibi.rb
 │   └── onibi/
 │       ├── regexp.rb
 │       ├── parser.rb
 │       ├── ast.rb
-│       ├── codegen/
+│       ├── hybrid_automata.rb
+│       ├── hybrid_automata/
 │       ├── match_data*.rb
 │       ├── lexer*.rb
 │       └── errors.rb
@@ -88,7 +92,6 @@ The project should use this high-level layout:
 │   └── support/
 ├── fixtures/
 │   ├── api/
-│   ├── codegen/
 │   ├── encoding/
 │   └── syntax/
 ├── benchmark/
@@ -100,13 +103,14 @@ The project should use this high-level layout:
     └── pre-commit
 ```
 
-Keep the public API small and explicit. The production matcher is the
-generated-Ruby codegen pipeline described in
-[`docs/regexp-ruby-codegen-design.md`](docs/regexp-ruby-codegen-design.md).
-Parser, AST, codegen, predicate, timeout, and MatchData helpers are internal
-unless the design document explicitly promotes an interface. NFA, DFA,
-bytecode, and VM references in the historical MVP/v1 task lists are historical
-records, not current production architecture.
+Keep the public API small and explicit. The sole production matcher
+architecture is the hybrid finite automaton defined in
+[`docs/hfa-design.md`](docs/hfa-design.md): optimized CFG, regexp
+decomposition, bounded head DFA, tail NFA, typed semantic components, and one
+ordered result iterator. Parser, AST, CFG, automata, predicates, timeout, and
+MatchData helpers are internal unless a design document explicitly promotes an
+interface. Generated-Ruby, earlier VM, adaptive-cache, and direct-specializer
+references under `docs/history/` are records, not current requirements.
 
 ## Dependencies
 
@@ -254,17 +258,22 @@ failure to fix, not a reason to bypass the hook.
 
 ## Architecture and performance guardrails
 
-The generated-Ruby pipeline is the sole production matcher:
+The HFA pipeline is the sole production matcher architecture:
 
 ```text
-Regexp source -> Token stream -> AST -> generated Ruby matcher -> offset result
+Regexp source -> AST -> optimized CFG -> component graph
+              -> head DFA + tail NFA + semantic components -> ordered result
 ```
 
 Do not add a second production backend, user-facing engine toggle, pattern-text
-router, or silent semantic fallback. NFA, DFA, bytecode, and VM references in
-historical task lists describe superseded implementation work. New matcher
-optimizations must preserve the same control graph semantics and include MRI
-differential coverage for the affected syntax and public API.
+router, generated-Ruby matcher, whole-pattern semantic verifier, or silent
+fallback. An HFA is specifically a bounded head DFA whose border states
+activate tail NFAs; string/component decomposition is a separate upper layer.
+New matcher optimizations must be derived from semantic, CFG, region, or
+automaton facts, preserve ordered control semantics, and include MRI
+differential coverage for the affected syntax and public API. Literal values
+from Regex Redux, macro benchmarks, or applications must never select an
+optimization implementation.
 
 Performance work must report the commit SHA, Ruby/runtime configuration, input
 corpus, iteration counts, and allocation results. Separate cold construction,
@@ -311,8 +320,9 @@ bundle exec rake build
 ```
 
 When the changed files affect runtime loading or packaging, also run the
-installed-gem smoke test in an isolated `GEM_HOME`. When they affect generated
-matching or runtime compatibility, run the cross-runtime contract directly:
+installed-gem smoke test in an isolated `GEM_HOME`. When they affect HFA
+compilation, matching, or runtime compatibility, run the cross-runtime contract
+directly:
 
 ```sh
 bundle exec ruby script/cross_runtime_contract.rb
@@ -329,7 +339,7 @@ tools under `script/`, and benchmark tests under
 feature microbenchmarks and provide an explicit engine selection when
 comparing MRI with Onibi. Benchmark refactors must retain a deterministic test
 that verifies the engines produce equivalent fixture output; performance
-numbers alone are not a correctness result. Separate cold compilation/codegen
+numbers alone are not a correctness result. Separate cold HFA compilation
 cost, first match, warm matching, `match`, `scan`, and `gsub` measurements so
 the benchmark does not compare different lifecycle phases accidentally.
 

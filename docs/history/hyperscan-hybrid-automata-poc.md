@@ -1,5 +1,10 @@
 # Hyperscan hybrid automata analysis and Onibi PoC
 
+> **Historical research report — non-normative.** Its decomposition and event
+> coordination findings inform the current design, but its generated-Ruby
+> semantic verifier and rejection of an HFA backend are superseded by
+> [`../hfa-design.md`](../hfa-design.md).
+
 ## Conclusion
 
 Onibi should adopt Hyperscan's decomposition and event-coordination ideas, but

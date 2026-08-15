@@ -1,6 +1,9 @@
 # Onibi v1 Task List
 
-> **Historical plan:** This records the completed v1 implementation sequence. Its NFA/DFA execution and specialization requirements are superseded by [`regexp-ruby-codegen-design.md`](regexp-ruby-codegen-design.md) and [`regexp-ruby-codegen-task-list.md`](regexp-ruby-codegen-task-list.md); completed task history is intentionally unchanged.
+> **Historical record — non-normative.** This preserves the completed v1
+> implementation sequence. Architecture statements in this record are
+> superseded by [`../hfa-design.md`](../hfa-design.md); current compatibility is
+> tracked in [`../regexp-feature-coverage.md`](../regexp-feature-coverage.md).
 
 This document decomposes the v1 work described in docs/onibi-design.md, using the
 current snapshot in docs/regexp-feature-coverage.md. The Core MVP and REGEXP-001

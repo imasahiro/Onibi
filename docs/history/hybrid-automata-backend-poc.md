@@ -1,5 +1,10 @@
 # Hybrid automata backend PoC
 
+> **Historical PoC — non-normative.** This experiment combines a bit-parallel
+> position NFA, runtime adaptive subset cache, and direct specializations. It is
+> not the formal Onibi HFA because it has no precompiled bounded head with
+> explicit tail borders. See [`../hfa-design.md`](../hfa-design.md).
+
 ## Conclusion
 
 This PoC replaces generated Ruby with one `HybridAutomata::Program` for a
