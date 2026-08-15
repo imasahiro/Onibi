@@ -708,18 +708,6 @@ class ScanGsubTest < Minitest::Test
     assert_equal "<x>matic <x>", regexp.gsub("dogmatic cat", "<x>")
   end
 
-  def test_captureless_alternation_exposes_match_ranges_without_result_tuples
-    regexp = Onibi::Regexp.new("a[NSt]|BY")
-    spec = regexp.send(:hfa_captureless_alternation_scan_spec)
-    ranges = []
-
-    regexp.send(:hfa_captureless_alternation_each_range, "aN BY aS", spec) do |start_position, finish_position|
-      ranges << [start_position, finish_position]
-    end
-
-    assert_equal [[0, 2], [3, 5], [6, 8]], ranges
-  end
-
   def test_captureless_alternation_gsub_does_not_accept_another_branch_candidate
     regexp = Onibi::Regexp.new("aND|caN|Ha[DS]|WaS")
 
@@ -766,21 +754,18 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
 
     assert_equal %w[cgggtaaa tttaccca], regexp.scan("xxcgggtaaa yytttaccca")
-    assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
   def test_captureless_middle_class_alternation_scan_uses_literal_anchor
     regexp = Onibi::Regexp.new("a[act]ggtaaa|tttacc[agt]t")
 
     assert_equal %w[acggtaaa tttaccgt], regexp.scan("xxacggtaaa yytttaccgt")
-    assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
   def test_captureless_mixed_alternation_scan_uses_class_and_literal_branches
     regexp = Onibi::Regexp.new("a[NSt]|BY")
 
     assert_equal %w[aN BY], regexp.scan("aN xx BY")
-    assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
   def test_repeated_alternation_scan_uses_hfa_iterator

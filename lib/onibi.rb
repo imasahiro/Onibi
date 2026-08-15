@@ -4556,10 +4556,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && (spec = hfa_captureless_alternation_scan_spec)
-        hfa_captureless_alternation_each_result(input, spec, &block)
-        return true
-      end
       if ascii_input && hfa_linebreak_alternation_scan_spec
         hfa_linebreak_alternation_each_result(input, &block)
         return true
