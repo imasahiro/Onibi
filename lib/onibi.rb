@@ -191,7 +191,7 @@ module Onibi
         return with_timeout { !result.nil? }
       end
 
-      return hfa_literal_alternation_match?(input, normalized_position) if ascii_input && hfa_literal_alternation_result_safe?
+      return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
 
       return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
@@ -311,7 +311,7 @@ module Onibi
       return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && hfa_literal_conditional_result_safe?
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_anchored_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_anchored_class_run_result_safe?
-      return hfa_literal_alternation_match?(input, normalized_position) if ascii_input && hfa_literal_alternation_result_safe?
+      return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
       return hfa_dot_literal_match?(input, normalized_position) if ascii_input && hfa_dot_literal_result_safe?
       return !hfa_word_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_word_boundary_literal_result_safe?
       return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
