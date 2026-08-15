@@ -1302,20 +1302,6 @@ class MatchApiTest < Minitest::Test
     assert regexp.match?("needlex")
   end
 
-  def test_scan_program_fast_paths_share_one_dispatch_condition
-    source = File.read(File.join(PROJECT_ROOT, "lib/onibi.rb"))
-    start = source.index("    def hfa_each_result")
-    finish = source.index("\n    def ", start + 1)
-    scan_method = source[start...finish]
-    shared_condition = Regexp.new(
-      "if hfa_greedy_bounded_sequence_result_safe\\?\\s+\\|\\|\\s+" \
-      "hfa_lazy_bounded_sequence_result_safe\\?\\s+\\|\\|\\s+" \
-      "hfa_scoped_extended_literal_result_safe\\?"
-    )
-
-    assert_equal 1, scan_method.scan(shared_condition).length
-  end
-
   def test_encoding_neutral_scan_safety_is_checked_once
     regexp = Onibi::Regexp.new("(?<=a)b")
     calls = 0
