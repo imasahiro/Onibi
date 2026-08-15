@@ -4107,15 +4107,6 @@ module Onibi
         end
         return true
       end
-      if (spec = hfa_casefold_class_direct_spec)
-        validate_encoding!(input, ascii_input: ascii_input)
-        position = 0
-        while (result = hfa_casefold_class_direct_match_result(input, position, spec))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
