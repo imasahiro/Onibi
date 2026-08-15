@@ -96,6 +96,7 @@ module Onibi
         TagOperation = Data.define(:kind, :capture, :position)
         CaptureTag = Data.define(:kind, :capture, :offset)
         TailThread = Data.define(:history, :priority)
+        SemanticComponent = Data.define(:kind, :operation, :input_domains, :output_domains)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
         HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
           def border? = border
@@ -166,8 +167,19 @@ module Onibi
         end
 
         def component_graph(graph)
-          node = ComponentNode.new(0, :tail_nfa, graph).freeze
-          ComponentGraph.new(0, [node].freeze, [].freeze, [graph.exit].freeze).freeze
+          tail = ComponentNode.new(0, :tail_nfa, graph).freeze
+          semantic_operations = graph.operations.select do |operation|
+            %i[match_backreference match_conditional match_subexpression_call match_absence].include?(operation.opcode)
+          end
+          semantic_nodes = semantic_operations.each_with_index.map do |operation, index|
+            kind = operation.opcode.to_s.delete_prefix("match_").to_sym
+            payload = SemanticComponent.new(kind, operation, %i[cursor captures], %i[cursor captures]).freeze
+            ComponentNode.new(index + 1, :semantic, payload).freeze
+          end
+          edges = semantic_nodes.each_with_index.map do |node, index|
+            ComponentEdge.new(index, node.id, 0, nil, :semantic, index, %i[cursor captures].freeze).freeze
+          end
+          ComponentGraph.new(0, [tail, *semantic_nodes].freeze, edges.freeze, [graph.exit].freeze).freeze
         end
 
         def position_nfas(graph, facts)

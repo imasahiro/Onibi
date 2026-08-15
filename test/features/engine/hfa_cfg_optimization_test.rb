@@ -128,7 +128,7 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert graph.frozen?
     assert graph.nodes.frozen?
     assert graph.nodes.all?(&:frozen?)
-    assert_equal [:tail_nfa], graph.nodes.map(&:kind)
+    assert_equal %i[tail_nfa semantic], graph.nodes.map(&:kind)
     assert_equal graph.nodes.fetch(0).id, graph.entry
     assert graph.edges.frozen?
     assert graph.accepts.frozen?
@@ -384,5 +384,27 @@ class HfaCfgOptimizationTest < Minitest::Test
       input = source == "a++a" ? "aa" : "aab"
       assert_equal Regexp.new(source).match?(input), Onibi::Regexp.new(source).match?(input)
     end
+  end
+
+  def test_backreference_uses_typed_semantic_component_with_border_context
+    source = "(?<word>alpha)-\\k<word>"
+    input = "prefixalpha-alpha"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+    assert_equal mri.match(input)&.begin(0), onibi.match(input)&.begin(0)
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    graph = unit.component_graph
+    semantic = graph.nodes.select { |node| node.kind == :semantic }
+
+    refute_empty semantic
+    assert(semantic.all? { |node| node.payload.kind == :backreference })
+    assert(semantic.all? { |node| node.payload.frozen? })
+    refute_empty unit.mandatory_strings
+    assert unit.head_dfa(row_budget: 1).states.all?(&:border?)
   end
 end
