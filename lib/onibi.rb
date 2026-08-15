@@ -3201,36 +3201,6 @@ module Onibi
       nil
     end
 
-    def hfa_ascii_class_run_result_safe?
-      return @hfa_ascii_class_run_safe if defined?(@hfa_ascii_class_run_safe)
-
-      node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      @hfa_ascii_class_run_safe = !casefold? && node.is_a?(AST::Quantifier) &&
-                                  node.kind == :+ && node.mode == :greedy &&
-                                  (node.expression.is_a?(AST::CharacterClass) ||
-                                   node.expression.is_a?(AST::Escape) && %i[digit space word].include?(node.expression.kind)) &&
-                                  !hfa_ascii_class_run_table.nil?
-    end
-
-    def hfa_ascii_class_run_table
-      return @hfa_ascii_class_run_table if defined?(@hfa_ascii_class_run_table)
-
-      node = @ast.parts.first.expression
-      @hfa_ascii_class_run_table = hfa_capture_class_table(node)
-    end
-
-    def hfa_ascii_class_run_match_result(input, position)
-      table = hfa_ascii_class_run_table
-      cursor = position
-      while cursor < input.bytesize
-        cursor += 1 while cursor < input.bytesize && !table[input.getbyte(cursor)]
-        start = cursor
-        cursor += 1 while cursor < input.bytesize && table[input.getbyte(cursor)]
-        return [start, cursor, []] if cursor > start
-      end
-      nil
-    end
-
     def hfa_ascii_run_chain_result_safe?
       return @hfa_ascii_run_chain_safe if defined?(@hfa_ascii_run_chain_safe)
 
