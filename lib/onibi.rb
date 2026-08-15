@@ -1640,7 +1640,15 @@ module Onibi
     end
 
     def hfa_direct_delimited_capture_each_result(input, spec)
-      capture_number, delimiter, first_table, second_table, suffix, suffix_table = spec
+      hfa_direct_delimited_capture_each_match(input, spec) do |candidate, finish|
+        captures = Array.new(hfa_capture_count)
+        captures[spec[0] - 1] = [candidate, finish]
+        yield [candidate, finish, captures]
+      end
+    end
+
+    def hfa_direct_delimited_capture_each_match(input, spec)
+      _capture_number, delimiter, first_table, second_table, suffix, suffix_table = spec
       boundary = hfa_scan_boundary_spec
       position = 0
       while (delimiter_start = input.index(delimiter, position))
@@ -1663,9 +1671,7 @@ module Onibi
           end
           if finish && second_finish > second_start && repetitions.positive? &&
              hfa_scan_boundary_match?(input, candidate, finish, boundary)
-            captures = Array.new(hfa_capture_count)
-            captures[capture_number - 1] = [candidate, finish]
-            yield [candidate, finish, captures]
+            yield candidate, finish
             position = finish
             next
           end
@@ -1693,26 +1699,6 @@ module Onibi
                                 else
                                   false
                                 end
-    end
-
-    def hfa_scan_boundary_match?(input, start, finish, boundary)
-      return true unless boundary
-
-      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
-      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
-      after_current = finish.positive? && CharacterPredicates.word?(input.getbyte(finish - 1).chr)
-      after = finish < input.bytesize && CharacterPredicates.word?(input.getbyte(finish).chr)
-      return before != current && after_current != after if boundary == :word_boundary
-
-      before == current && after_current == after
-    end
-
-    def hfa_scan_boundary_start_match?(input, start, boundary)
-      return true unless boundary
-
-      before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
-      current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
-      boundary == :word_boundary ? before != current : before == current
     end
 
     def hfa_capture_literal_prefixes(node)

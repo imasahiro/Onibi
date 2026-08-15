@@ -43,6 +43,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [["foo@example.com"]], regexp.scan(".foo@example.com")
   end
 
+  def test_hfa_direct_email_scan_keeps_multiple_capture_values_independent
+    pattern = "\\b(?<email>[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)\\b"
+
+    assert_equal [["first@example.com"], ["second@example.org"]],
+                 Onibi::Regexp.new(pattern).scan("first@example.com second@example.org")
+  end
+
   def test_hfa_scan_handles_capture_prefix_url_pattern
     pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
     regexp = Onibi::Regexp.new(pattern)
