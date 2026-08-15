@@ -117,4 +117,20 @@ class HfaCfgOptimizationTest < Minitest::Test
     )
     assert(regular_unit.regions.any? { |region| region.kind == :regular_effect_free })
   end
+
+  def test_compilation_unit_publishes_one_immutable_placeholder_component_graph
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new("a|(?<x>b)+|\\k<x>").parse, options: [], encoding: Encoding::UTF_8
+    )
+
+    graph = unit.component_graph
+
+    assert graph.frozen?
+    assert graph.nodes.frozen?
+    assert graph.nodes.all?(&:frozen?)
+    assert_equal [:tail_nfa], graph.nodes.map(&:kind)
+    assert_equal graph.nodes.fetch(0).id, graph.entry
+    assert graph.edges.frozen?
+    assert graph.accepts.frozen?
+  end
 end

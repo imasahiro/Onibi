@@ -264,7 +264,7 @@ analysis never changes full match or capture offsets.
 **Completion:** every CFG block belongs to exactly one region; region boundaries
 preserve all incoming and outgoing priority/effect information.
 
-### HFA-012 - Introduce the immutable component graph
+### HFA-012 - Introduce the immutable component graph [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-011

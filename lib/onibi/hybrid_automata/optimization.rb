@@ -58,6 +58,10 @@ module Onibi
         def regions
           CFG::Analysis.regions(cfg, facts)
         end
+
+        def component_graph
+          CFG::Analysis.component_graph(cfg)
+        end
       end
 
       # Abstract transformation contract.

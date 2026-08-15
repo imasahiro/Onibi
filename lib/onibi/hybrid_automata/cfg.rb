@@ -88,6 +88,10 @@ module Onibi
         BlockFact = Data.define(:id, :operations, :nullable, :width, :effects)
         CompilationFacts = Data.define(:operations, :blocks, :options, :encoding)
         Region = Data.define(:kind, :operations, :facts, :priority_insensitive, :blocks)
+        ComponentNode = Data.define(:id, :kind, :payload)
+        ComponentEdge = Data.define(:source, :target, :minimum_offset, :maximum_offset, :activation,
+                                    :priority, :effects)
+        ComponentGraph = Data.define(:entry, :nodes, :edges, :accepts)
 
         module_function
 
@@ -143,6 +147,11 @@ module Onibi
           return :regular_tagged if priority_sensitive
 
           :regular_effect_free
+        end
+
+        def component_graph(graph)
+          node = ComponentNode.new(0, :tail_nfa, graph).freeze
+          ComponentGraph.new(0, [node].freeze, [].freeze, [graph.exit].freeze).freeze
         end
 
         def node_facts(node)
