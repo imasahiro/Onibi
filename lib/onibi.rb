@@ -116,11 +116,8 @@ module Onibi
       assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
       if assertion_parts.is_a?(Array)
         assertion_kind = assertion_parts[1]
-        if %i[positive negative].include?(assertion_kind) &&
-           assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
-          @hfa_literal_assertion_fast = assertion_parts.freeze
-        elsif assertion_kind == :positive_lookbehind &&
-              assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
+        if assertion_kind == :positive_lookbehind &&
+           assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
           @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
         elsif assertion_kind == :negative_lookbehind &&
               assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
@@ -180,7 +177,7 @@ module Onibi
 
       return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && @hfa_class_run_positive_lookahead_fast
 
-      return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil? if ascii_input && @hfa_literal_assertion_fast
+      return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
 
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
@@ -312,12 +309,6 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
-      if ascii_input && @hfa_literal_assertion_fast &&
-         %i[positive negative].include?(@hfa_literal_assertion_fast[1])
-        assertion = @hfa_literal_assertion_fast
-        return !hfa_literal_assertion_match_result(input, normalized_position, assertion).nil?
-      end
-
       return false if hfa_always_fails?
 
       return normalized_position <= input.bytesize if hfa_empty_absence_result_safe?
@@ -328,7 +319,7 @@ module Onibi
       end
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
-      return !hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast).nil? if ascii_input && @hfa_literal_assertion_fast
+      return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
       return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && @hfa_literal_conditional_fast
 
       if @hfa_negative_lookbehind_literal_fast
@@ -766,12 +757,6 @@ module Onibi
       end
       if ascii_input && hfa_nonword_boundary_literal_result_safe?
         result = hfa_nonword_boundary_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && @hfa_literal_assertion_fast
-        result = hfa_literal_assertion_match_result(input, normalized_position, @hfa_literal_assertion_fast)
         return hfa_match_data(result, input) if result
 
         return nil

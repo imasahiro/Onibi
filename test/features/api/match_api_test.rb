@@ -740,6 +740,17 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_negative_literal_lookahead_matches_mri_across_public_apis
+    regexp = Onibi::Regexp.new("cat(?!fish)")
+    input = "cat catfish cat"
+    mri = ::Regexp.new("cat(?!fish)")
+
+    assert_equal mri.match?(input), regexp.match?(input)
+    assert_equal mri.match(input).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
+  end
+
   def test_repeated_class_backreference_uses_early_constructor_dispatch
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 
