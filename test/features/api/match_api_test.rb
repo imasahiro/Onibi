@@ -1658,6 +1658,17 @@ class MatchApiTest < Minitest::Test
     assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
+  def test_class_lookbehind_matches_mri_across_public_apis
+    regexp = Onibi::Regexp.new("(?<=[a-z])cat")
+    input = "acat x1cat zcat"
+    mri = ::Regexp.new("(?<=[a-z])cat")
+
+    assert_equal mri.match?(input), regexp.match?(input)
+    assert_equal mri.match(input).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
+  end
+
   def test_negative_literal_lookbehind_match_question_uses_constructor_dispatch_metadata
     regexp = Onibi::Regexp.new("(?<!un)happy")
 
