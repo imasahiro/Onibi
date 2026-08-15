@@ -108,7 +108,7 @@ module Onibi
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_ascii_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_class_run_result_safe?
       return !hfa_captured_class_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_captured_class_run_chain_result_safe?
-      return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && hfa_anchored_class_run_result_safe?
+      return !hfa_anchored_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_anchored_class_run_result_safe?
 
       return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
 
