@@ -4116,14 +4116,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && (spec = hfa_alternation_literal_backref_spec)
-        position = 0
-        while (result = hfa_alternation_literal_backref_match_result(input, position, spec))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && (spec = hfa_repeated_literal_backref_spec)
         position = 0
         while (result = hfa_repeated_literal_backref_match_result(input, position, spec))
