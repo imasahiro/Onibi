@@ -62,6 +62,10 @@ module Onibi
         def component_graph
           CFG::Analysis.component_graph(cfg)
         end
+
+        def position_nfas
+          CFG::Analysis.position_nfas(cfg, facts)
+        end
       end
 
       # Abstract transformation contract.

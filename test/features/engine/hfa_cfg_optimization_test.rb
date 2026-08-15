@@ -133,4 +133,31 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert graph.edges.frozen?
     assert graph.accepts.frozen?
   end
+
+  def test_position_nfa_preserves_mri_results_across_three_bitset_segments
+    [511, 512, 513].each do |length|
+      source = "a" * length
+      onibi = Onibi::Regexp.new(source)
+      mri = Regexp.new(source)
+      input = "x#{source}y"
+
+      assert_equal mri.match?(input), onibi.match?(input)
+      assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+      unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+        Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+      )
+      nfa = unit.position_nfas.fetch(0)
+
+      assert nfa.frozen?
+      assert nfa.positions.all?(&:frozen?)
+      assert_equal length, nfa.positions.length
+      assert_equal [0], nfa.first
+      assert_equal [length - 1], nfa.last
+      assert_equal [1], nfa.follow.fetch(0)
+      assert_equal [length - 1], nfa.reach.fetch("a").last(1)
+      refute nfa.nullable
+      assert_equal (length + 511) / 512, nfa.segments.length
+    end
+  end
 end

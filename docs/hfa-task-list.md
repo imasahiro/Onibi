@@ -290,7 +290,7 @@ and complete CFG-region coverage.
 
 ## Phase 2: implement classical head-DFA/tail-NFA execution
 
-### HFA-020 - Lower regular regions to Glushkov position NFAs
+### HFA-020 - Lower regular regions to Glushkov position NFAs [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-012

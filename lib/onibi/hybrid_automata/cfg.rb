@@ -92,6 +92,8 @@ module Onibi
         ComponentEdge = Data.define(:source, :target, :minimum_offset, :maximum_offset, :activation,
                                     :priority, :effects)
         ComponentGraph = Data.define(:entry, :nodes, :edges, :accepts)
+        Position = Data.define(:id, :symbol, :operation)
+        PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
 
         module_function
 
@@ -152,6 +154,93 @@ module Onibi
         def component_graph(graph)
           node = ComponentNode.new(0, :tail_nfa, graph).freeze
           ComponentGraph.new(0, [node].freeze, [].freeze, [graph.exit].freeze).freeze
+        end
+
+        def position_nfas(graph, facts)
+          regions(graph, facts).filter_map do |region|
+            nfa = position_nfa_for(region)
+            nfa unless nfa.positions.empty?
+          end.freeze
+        end
+
+        def position_nfa_for(region)
+          builder = PositionBuilder.new
+          fragments = region.operations.map { |operation| builder.build(operation.operand) }
+          fragment = builder.sequence(fragments)
+          positions = builder.positions.freeze
+          follow = builder.follow.transform_values(&:freeze).freeze
+          reach = builder.reach.transform_values(&:freeze).freeze
+          segments = (0...((positions.length + 511) / 512)).map do |segment|
+            positions[segment * 512, 512].map(&:id).freeze
+          end.freeze
+          PositionNFA.new(positions, fragment.first.freeze, fragment.last.freeze, follow,
+                          fragment.nullable, reach, segments).freeze
+        end
+
+        class PositionBuilder
+          Fragment = Data.define(:first, :last, :nullable)
+
+          attr_reader :positions, :follow, :reach
+
+          def initialize
+            @positions = []
+            @follow = Hash.new { |hash, key| hash[key] = [] }
+            @reach = Hash.new { |hash, key| hash[key] = [] }
+          end
+
+          def build(node)
+            case node
+            when AST::Literal
+              literal(node)
+            when AST::Sequence
+              sequence(node.parts.map { |part| build(part) })
+            when AST::Alternation
+              alternatives(node.branches.map { |branch| build(branch) })
+            when AST::Quantifier
+              quantified(node)
+            else
+              Fragment.new([], [], true)
+            end
+          end
+
+          def sequence(fragments)
+            result = Fragment.new([], [], true)
+            fragments.each { |fragment| result = concatenate(result, fragment) }
+            result
+          end
+
+          private
+
+          def literal(node)
+            ids = node.value.each_char.map do |character|
+              id = @positions.length
+              position = Position.new(id, character, node).freeze
+              @positions << position
+              @reach[character] << id
+              id
+            end
+            ids.each_cons(2) { |left, right| @follow[left] << right }
+            Fragment.new(ids.first ? [ids.first] : [], ids.last ? [ids.last] : [], ids.empty?)
+          end
+
+          def alternatives(fragments)
+            Fragment.new(fragments.flat_map(&:first).uniq, fragments.flat_map(&:last).uniq,
+                         fragments.all?(&:nullable))
+          end
+
+          def quantified(node)
+            fragment = build(node.expression)
+            repeat = node.maximum.nil? || node.maximum > 1
+            fragment.last.product(fragment.first) { |left, right| @follow[left] << right } if repeat
+            Fragment.new(fragment.first, fragment.last, node.minimum.zero? || fragment.nullable)
+          end
+
+          def concatenate(left, right)
+            left.last.product(right.first) { |source, target| @follow[source] << target }
+            first = left.first + (left.nullable ? right.first : [])
+            last = right.last + (right.nullable ? left.last : [])
+            Fragment.new(first.uniq, last.uniq, left.nullable && right.nullable)
+          end
         end
 
         def node_facts(node)
