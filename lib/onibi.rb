@@ -327,7 +327,7 @@ module Onibi
       if ascii_input && (literal = hfa_match_reset_literal_combined_literal)
         return !input.index(literal, normalized_position).nil?
       end
-      return hfa_match_reset_literal_match?(input, normalized_position) if ascii_input && hfa_match_reset_literal_result_safe?
+      return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
       return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
 
