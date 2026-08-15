@@ -7,6 +7,21 @@ module Onibi
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
     def scan(input, &block)
+      if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
+         (spec = hfa_alternation_capture_scan_spec)
+        values = []
+        hfa_alternation_capture_each_scan_value(input, spec) do |value|
+          if block
+            block.call(value)
+          else
+            values << value
+          end
+        end
+        return input if block
+
+        return values
+      end
+
       if input.is_a?(String) && input.ascii_only? && hfa_capture_count.positive? &&
          (spec = hfa_capture_sequence_scan_spec)
         values = []
@@ -57,6 +72,27 @@ module Onibi
     def hfa_ascii_word_byte?(byte)
       (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) ||
         (byte >= 48 && byte <= 57) || byte == 95
+    end
+
+    def hfa_alternation_capture_each_scan_value(input, spec)
+      _capture_number, branches = spec
+      position = 0
+      while position < input.bytesize
+        start = nil
+        branches.each do |branch|
+          candidate = input.index(branch.first, position)
+          start = candidate if candidate && (start.nil? || candidate < start)
+        end
+        break unless start
+
+        finish = hfa_alternation_capture_match_result(input, start, branches)
+        if finish
+          yield [input.byteslice(start, finish - start)]
+          position = finish
+        else
+          position = start + 1
+        end
+      end
     end
 
     def hfa_capture_sequence_each_scan_value(input, spec)
