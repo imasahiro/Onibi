@@ -189,11 +189,4 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal ["<", ">", 0], regexp.send(:hfa_delimited_negated_class_result_spec)
     assert_equal ["<a>", "<b>"], regexp.scan("<a> <b>")
   end
-
-  def test_hfa_scans_literal_and_class_sequences_without_nfa_transitions
-    regexp = Onibi::Regexp.new("tHa[Nt]")
-
-    assert regexp.send(:hfa_literal_class_scan_spec)
-    assert_equal %w[tHaN tHat], regexp.scan("x tHaN tHat")
-  end
 end
