@@ -61,21 +61,21 @@ module Onibi
 
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       class_index = nil
-      prefix = +""
-      suffix = +""
       parts.each_with_index do |part, index|
         if part.is_a?(AST::CharacterClass)
           return @hfa_captureless_literal_class_scan_spec = false if class_index
 
           class_index = index
-        elsif part.is_a?(AST::Literal)
-          (class_index ? suffix : prefix) << part.value
-        else
+        elsif !part.is_a?(AST::Literal)
           return @hfa_captureless_literal_class_scan_spec = false
         end
       end
+      return @hfa_captureless_literal_class_scan_spec = false unless class_index&.positive?
+
+      prefix = parts.first(class_index).each_with_object(+"") { |part, result| result << part.value }
+      suffix = parts.drop(class_index + 1).each_with_object(+"") { |part, result| result << part.value }
       table = class_index && hfa_capture_class_table(parts[class_index])
-      valid = class_index && prefix.bytesize.positive? && table
+      valid = prefix.bytesize.positive? && table
       @hfa_captureless_literal_class_scan_spec = valid ? [prefix, table, suffix].freeze : false
     end
 
