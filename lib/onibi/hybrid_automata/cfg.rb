@@ -95,13 +95,14 @@ module Onibi
         Position = Data.define(:id, :symbol, :operation, :tags)
         TagOperation = Data.define(:kind, :capture, :position)
         CaptureTag = Data.define(:kind, :capture, :offset)
+        TailThread = Data.define(:history, :priority)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
         HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
           def border? = border
         end
         HeadDFA = Data.define(:entry, :states, :alphabet, :row_budget)
         TailActivation = Data.define(:component_id, :start_offset, :end_offset, :segments, :tags,
-                                     :semantic_state)
+                                     :semantic_state, :priority)
         MandatoryString = Data.define(:literals, :offsets)
         MandatoryCandidate = Data.define(:literals, :offsets)
         MandatoryFacts = Data.define(:nullable, :width, :candidates)
@@ -253,7 +254,7 @@ module Onibi
             active = nfa.first.filter_map do |id|
               next unless positions.fetch(id).symbol == chars[start]
 
-              [id, positions.fetch(id).tags]
+              [id, TailThread.new(positions.fetch(id).tags, id)]
             end.to_h
             accepts = []
             cursor = start
@@ -262,11 +263,13 @@ module Onibi
               cursor += 1
               break if cursor >= chars.length
 
-              active = active.each_with_object({}) do |(id, history), next_active|
+              active = active.each_with_object({}) do |(id, thread), next_active|
                 nfa.follow.fetch(id, []).each do |next_id|
                   next unless positions.fetch(next_id).symbol == chars[cursor]
 
-                  next_active[next_id] ||= history + positions.fetch(next_id).tags
+                  next_active[next_id] ||= TailThread.new(
+                    thread.history + positions.fetch(next_id).tags, thread.priority
+                  )
                 end
               end
             end
@@ -281,13 +284,14 @@ module Onibi
           segments = nfa.segments.each_index.map do |index|
             active.keys.select { |id| id / 512 == index }.freeze
           end.freeze
-          tags = accepted.values.first.uniq { |tag| [tag.kind, tag.capture] }
-                         .sort_by { |tag| [tag.position, tag.kind == :start ? 0 : 1, tag.capture] }
-                         .map do |tag|
+          thread = accepted.values.first
+          tags = thread.history.uniq { |tag| [tag.kind, tag.capture] }
+                       .sort_by { |tag| [tag.position, tag.kind == :start ? 0 : 1, tag.capture] }
+                       .map do |tag|
             offset = tag.kind == :start ? start : finish
             CaptureTag.new(tag.kind, tag.capture, offset).freeze
           end
-          [TailActivation.new(component_id, start, finish, segments, tags.freeze, {}.freeze).freeze]
+          [TailActivation.new(component_id, start, finish, segments, tags.freeze, {}, thread.priority).freeze]
         end
 
         def mandatory_facts(node)

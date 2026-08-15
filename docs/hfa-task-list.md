@@ -440,7 +440,7 @@ public result.
 duplicate-named, and multibyte captures compare values and character/byte
 offsets with MRI before and after HFA compilation.
 
-### HFA-041 - Preserve ordered choice and quantifier priority
+### HFA-041 - Preserve ordered choice and quantifier priority [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-040

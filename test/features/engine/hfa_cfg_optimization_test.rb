@@ -356,4 +356,33 @@ class HfaCfgOptimizationTest < Minitest::Test
       assert_equal expected&.named_captures, actual&.named_captures
     end
   end
+
+  def test_tail_activation_priority_matches_ordered_choice_and_public_results
+    cases = {
+      "aa|a" => ["aa"],
+      "a|aa" => ["a"],
+      "(a+)b" => %w[aab aa]
+    }
+
+    cases.each do |source, expected_captures|
+      input = "aab"
+      onibi = Onibi::Regexp.new(source)
+      mri = Regexp.new(source)
+      assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+      assert_equal expected_captures, onibi.match(input)&.to_a
+
+      unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+        Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+      )
+      activations = unit.tail_activations(input: input).select { |activation| activation.start_offset.zero? }
+
+      assert(activations.each_cons(2).all? { |left, right| left.priority <= right.priority })
+      assert(activations.all? { |activation| activation.priority.is_a?(Integer) })
+    end
+
+    ["(a+?)b", "(?>a|ab)", "a++a"].each do |source|
+      input = source == "a++a" ? "aa" : "aab"
+      assert_equal Regexp.new(source).match?(input), Onibi::Regexp.new(source).match?(input)
+    end
+  end
 end
