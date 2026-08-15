@@ -81,9 +81,6 @@ module Onibi
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
       @hfa_compilation_program_mutex = Mutex.new
       ignorecase = casefold?
-      literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
-      literal_unicode = literal && !literal.ascii_only? && literal.bytesize.positive?
-      @hfa_unicode_ignorecase_literal_fast = literal if literal_unicode && ignorecase
       single_quantified_expression = hfa_single_quantified_expression
       property_node = single_quantified_expression
       property_node = nil unless property_node.is_a?(AST::Property)
@@ -330,7 +327,7 @@ module Onibi
 
         return !result.nil?
       end
-      if !ascii_input && @hfa_unicode_ignorecase_literal_fast
+      if !ascii_input && hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         return hfa_unicode_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
 
