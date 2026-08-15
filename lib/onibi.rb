@@ -4141,24 +4141,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && (spec = hfa_delimited_negated_class_result_spec)
-        prefix, suffix, minimum = spec
-        position = 0
-        while (start = input.index(prefix, position))
-          finish = input.index(suffix, start + prefix.bytesize)
-          unless finish
-            position = start + prefix.bytesize
-            next
-          end
-          if finish - start - prefix.bytesize >= minimum
-            block.call([start, finish + suffix.bytesize, []])
-            position = finish + suffix.bytesize
-          else
-            position = start + prefix.bytesize
-          end
-        end
-        return true
-      end
       if !ascii_input && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
