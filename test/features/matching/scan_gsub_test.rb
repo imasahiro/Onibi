@@ -818,6 +818,20 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_linebreak_alternation_scan_uses_hfa_iterator
+    regexp = Onibi::Regexp.new(">.*\\n|\\n")
+
+    regexp.stub(:codegen_each_result, ->(*) { flunk "linebreak alternation should use HFA" }) do
+      assert_equal [">header\n", "\n"], regexp.scan(">header\nsequence\n")
+    end
+  end
+
+  def test_delimited_negated_class_gsub_uses_hfa_result_shape
+    regexp = Onibi::Regexp.new("<[^>]*>")
+
+    assert_equal "| |", regexp.gsub("<first> <second>", "|")
+  end
+
   def test_gsub_matches_mri_replacement_context_tokens
     replacement = "\\1-\\2-\\+-\\&-\\0-\\`-\\'-\\\\"
     expected = "a".gsub(/(a)(b)?/, replacement)
