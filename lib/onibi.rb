@@ -4245,14 +4245,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && repeat_literal_ast?
-        position = 0
-        while (result = hfa_repeated_literal_suffix_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && ascii_repeated_literal_run_ast?
         position = 0
         while (result = hfa_repeated_literal_run_match_result(input, position))
