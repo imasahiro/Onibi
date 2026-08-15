@@ -283,7 +283,7 @@ module Onibi
     end
 
     def replace_literal_matches(input, replacement)
-      result = String.new(capacity: input.bytesize, encoding: input.encoding)
+      result = String.new(encoding: input.encoding)
       cursor = 0
       each_result(input) do |raw|
         result << input.byteslice(cursor, raw[0] - cursor)
