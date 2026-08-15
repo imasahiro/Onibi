@@ -4333,14 +4333,6 @@ module Onibi
         end
         return true
       end
-      if hfa_negative_lookbehind_result_safe?
-        position = 0
-        while (result = hfa_negative_lookbehind_literal_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_casefold_class_lookbehind_parts
         position = 0
         while (result = hfa_casefold_class_lookbehind_match_result(input, position))
