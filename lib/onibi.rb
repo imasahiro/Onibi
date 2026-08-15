@@ -4140,15 +4140,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && (spec = hfa_literal_absence_suffix_spec)
-        position = 0
-        while (result = hfa_literal_absence_suffix_match_result(input, position, spec))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         position = 0
         while (result = hfa_bounded_sequence_direct_match_result(input, position))
