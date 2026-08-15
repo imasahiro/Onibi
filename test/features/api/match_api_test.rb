@@ -369,13 +369,16 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("12345")
   end
 
-  def test_ascii_unicode_property_run_match_question_uses_constructor_dispatch_metadata
-    regexp = Onibi::Regexp.new("\\p{Alpha}+")
+  def test_ascii_unicode_property_run_public_apis_match_mri
+    pattern = "\\p{Alpha}+"
+    input = "123 abc XYZ"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
 
-    regexp.stub(:hfa_ascii_unicode_run_result_safe?,
-                -> { flunk "ASCII Unicode property run should use constructor dispatch metadata" }) do
-      assert regexp.match?("prefix letters suffix")
-    end
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_ascii_unicode_property_tables_are_shared_between_regexp_instances
