@@ -105,8 +105,6 @@ module Onibi
                                finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
                            end
       @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
-      @hfa_empty_absence_fast = true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
-                                        @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
       @hfa_literal_conditional_fast = conditional_parts if conditional_parts.all?
       word_node = single_quantified_expression
@@ -125,7 +123,7 @@ module Onibi
       validate_encoding!(input, ascii_input: ascii_input)
       hfa_timeout_budget_guard!(input)
 
-      return true if @hfa_empty_absence_fast
+      return true if hfa_empty_absence_result_safe?
 
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
