@@ -5,12 +5,13 @@ module Onibi
   module RegexpEncodingValidation
     private
 
-    def validate_encoding!(input)
-      return if @pattern.ascii_only? && !fixed_encoding? && input.ascii_only?
+    def validate_encoding!(input, ascii_input: nil)
+      ascii_input = input.ascii_only? if ascii_input.nil?
+      return if @pattern.ascii_only? && !fixed_encoding? && ascii_input
 
       validate_input_encoding!(input)
       return if noencoding_input?(input)
-      return if compatible_ascii_input?(input)
+      return if compatible_ascii_input?(input, ascii_input: ascii_input)
       return if @pattern.encoding == input.encoding
 
       raise Encoding::CompatibilityError, "incompatible encoding regexp match"
@@ -26,10 +27,10 @@ module Onibi
       @options.include?("noencoding") && input.encoding == Encoding::ASCII_8BIT
     end
 
-    def compatible_ascii_input?(input)
+    def compatible_ascii_input?(input, ascii_input: nil)
       return true if @pattern.ascii_only? && !fixed_encoding?
 
-      input.ascii_only?
+      ascii_input.nil? ? input.ascii_only? : ascii_input
     end
   end
 end
