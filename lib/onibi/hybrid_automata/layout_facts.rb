@@ -13,10 +13,17 @@ module Onibi
             case node
             when AST::Literal
               value = node.value.dup.freeze
-              LayoutFact.new(:exact_literal, value.length, value[0], value[-1], value).freeze
+              LayoutFact.new(:exact_literal, value.length, value[0], value[-1], value, 0).freeze
             when AST::CharacterClass
               value = node.value.dup.freeze
-              LayoutFact.new(:first_byte_set, 1, nil, nil, value).freeze
+              LayoutFact.new(:first_byte_set, 1, nil, nil, value, 0).freeze
+            when AST::Alternation
+              values = node.branches.filter_map { |branch| literal_value(branch) }
+              next if values.empty? || values.length != node.branches.length
+
+              values = values.map(&:freeze).freeze
+              LayoutFact.new(:ordered_alternation, values.map(&:length).min, values.map { |value| value[0] },
+                             values.map { |value| value[-1] }, values, (0...values.length).to_a.freeze).freeze
             end
           end.freeze
         end
@@ -29,6 +36,13 @@ module Onibi
               result << part
             end
           end
+        end
+
+        def literal_value(node)
+          return node.value if node.is_a?(AST::Literal)
+          return unless node.is_a?(AST::Sequence) && node.parts.all? { |part| part.is_a?(AST::Literal) }
+
+          node.parts.map(&:value).join
         end
       end
     end

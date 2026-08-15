@@ -514,7 +514,7 @@ branch, and duplicated result iterator in the same PR.
 bytes, class membership, run length, delimiter, origin, encoding, and capture
 placement.
 
-### HFA-051 - Migrate alternation and capture-sequence optimizations
+### HFA-051 - Migrate alternation and capture-sequence optimizations [Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-050

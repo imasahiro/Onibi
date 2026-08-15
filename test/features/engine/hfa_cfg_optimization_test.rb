@@ -483,4 +483,23 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert facts.all?(&:frozen?)
     assert(facts.all? { |fact| fact.payload.frozen? })
   end
+
+  def test_ordered_alternation_facts_preserve_branch_priority_and_capture_results
+    source = "pre|prefix"
+    input = "prefix"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    fact = unit.layout_facts.fetch(0)
+
+    assert_equal :ordered_alternation, fact.kind
+    assert_equal %w[pre prefix], fact.payload
+    assert_equal [0, 1], fact.priority
+    assert fact.priority.frozen?
+  end
 end

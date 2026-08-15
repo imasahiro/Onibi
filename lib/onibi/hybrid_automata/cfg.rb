@@ -98,7 +98,7 @@ module Onibi
         TailThread = Data.define(:history, :priority)
         SemanticComponent = Data.define(:kind, :operation, :input_domains, :output_domains)
         RawResult = Data.define(:match_start_byte, :match_end_byte, :capture_byte_ranges)
-        LayoutFact = Data.define(:kind, :width, :first, :last, :payload)
+        LayoutFact = Data.define(:kind, :width, :first, :last, :payload, :priority)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
         HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
           def border? = border
