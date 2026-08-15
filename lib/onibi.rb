@@ -655,12 +655,6 @@ module Onibi
 
         return nil
       end
-      if ascii_input && hfa_greedy_bounded_sequence_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if ascii_input && hfa_atomic_literal_alternation_spec
         result = hfa_atomic_literal_alternation_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
@@ -675,12 +669,6 @@ module Onibi
       end
       if ascii_input && hfa_variable_any_backref_spec
         result = hfa_variable_any_backref_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_scoped_extended_literal_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
@@ -1940,8 +1928,6 @@ module Onibi
       return true if hfa_atomic_literal_result_safe?
       return true if hfa_match_reset_literal_result_safe?
       return true if hfa_anchor_result_safe?
-      return true if hfa_greedy_bounded_sequence_result_safe?
-      return true if hfa_scoped_extended_literal_result_safe?
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
 
@@ -2491,42 +2477,6 @@ module Onibi
                                 program.instance_variable_get(:@before_final_newline) ||
                                 program.instance_variable_get(:@line_anchor_start) ||
                                 program.instance_variable_get(:@line_anchor_end))
-    end
-
-    def hfa_greedy_bounded_sequence_result_safe?
-      return @hfa_greedy_bounded_sequence_safe if defined?(@hfa_greedy_bounded_sequence_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      @hfa_greedy_bounded_sequence_safe = parts.length > 1 &&
-                                          parts.all? { |part| hfa_greedy_result_node?(part) } &&
-                                          hfa_program
-    end
-
-    def hfa_greedy_result_node?(node)
-      return true if node.is_a?(AST::Literal) || node.is_a?(AST::Any) || node.is_a?(AST::CharacterClass)
-      return false unless node.is_a?(AST::Quantifier) && node.mode == :greedy
-      return false unless %i[? * + bounded].include?(node.kind)
-
-      node.expression.is_a?(AST::Literal) || node.expression.is_a?(AST::Any) ||
-        node.expression.is_a?(AST::CharacterClass)
-    end
-
-    def hfa_scoped_extended_literal_result_safe?
-      return @hfa_scoped_extended_literal_safe if defined?(@hfa_scoped_extended_literal_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = parts.any? && parts.all? { |part| hfa_extended_literal_node?(part) } &&
-              parts.any? { |part| part.is_a?(AST::OptionGroup) || part.is_a?(AST::Group) }
-      @hfa_scoped_extended_literal_safe = valid && hfa_program
-    end
-
-    def hfa_extended_literal_node?(node)
-      return true if node.is_a?(AST::Literal)
-      return node.parts.all? { |part| hfa_extended_literal_node?(part) } if node.is_a?(AST::Sequence)
-      return !node.capture && hfa_extended_literal_node?(node.body) if node.is_a?(AST::Group)
-      return false unless node.is_a?(AST::OptionGroup)
-
-      node.ignorecase.nil? && node.multiline.nil? && hfa_extended_literal_node?(node.body)
     end
 
     def hfa_possessive_literal_string_result_safe?
@@ -4968,14 +4918,6 @@ module Onibi
         end
         return true
       end
-      if hfa_greedy_bounded_sequence_result_safe? || hfa_scoped_extended_literal_result_safe?
-        position = 0
-        while (result = hfa_program.match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_positive_lookbehind_result_safe?
         position = 0
         while (result = hfa_positive_lookbehind_literal_match_result(input, position))
@@ -5137,8 +5079,7 @@ module Onibi
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
-                    hfa_anchor_result_safe? || hfa_greedy_bounded_sequence_result_safe? ||
-                    hfa_scoped_extended_literal_result_safe? ||
+                    hfa_anchor_result_safe? ||
                     hfa_negative_literal_guard_safe? ||
                     hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? ||
@@ -5177,8 +5118,6 @@ module Onibi
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
                      hfa_anchor_result_safe? ||
-                     hfa_greedy_bounded_sequence_result_safe? ||
-                     hfa_scoped_extended_literal_result_safe? ||
                      hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
