@@ -2993,17 +2993,6 @@ module Onibi
                                       prefix.bytesize.positive? && suffix.bytesize.positive?
     end
 
-    def hfa_match_reset_literal_match?(input, position)
-      prefix, suffix = hfa_match_reset_literal_parts
-      candidate = input.index(prefix, position)
-      while candidate
-        return true if input.byteslice(candidate + prefix.bytesize, suffix.bytesize) == suffix
-
-        candidate = input.index(prefix, candidate + 1)
-      end
-      false
-    end
-
     def hfa_match_reset_literal_match_result(input, position)
       prefix, suffix = hfa_match_reset_literal_parts
       candidate = input.index(prefix, position)
@@ -3059,20 +3048,6 @@ module Onibi
       left = ClassPredicates.compiled(run.expression.value).ascii_table
       right = ClassPredicates.compiled(guard.last.expression.value).ascii_table
       @hfa_class_run_positive_lookahead_tables = [left, guard.first.value, right].freeze
-    end
-
-    def hfa_class_run_positive_lookahead_match?(input, position)
-      left_table, separator, right_table = hfa_class_run_positive_lookahead_tables
-      separator_position = input.index(separator, position + 1)
-      while separator_position
-        left = separator_position
-        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
-        right = separator_position + separator.bytesize
-        return true if left < separator_position && right < input.bytesize && right_table[input.getbyte(right)]
-
-        separator_position = input.index(separator, separator_position + 1)
-      end
-      false
     end
 
     def hfa_class_run_positive_lookahead_match_result(input, position)
@@ -3174,23 +3149,6 @@ module Onibi
       layout[0][0] == :class_run && layout[1][0] == :literal && layout[2][0] == :class_run
     end
 
-    def hfa_captured_class_run_chain_match?(input, position, layout = hfa_simple_capture_layout)
-      left_table = layout[0][1]
-      separator = layout[1][1]
-      right_table = layout[2][1]
-      separator_position = input.index(separator, position)
-      while separator_position
-        left = separator_position
-        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
-        right = separator_position + separator.bytesize
-        right += 1 while right < input.bytesize && right_table[input.getbyte(right)]
-        return true if left < separator_position && right > separator_position + separator.bytesize
-
-        separator_position = input.index(separator, separator_position + 1)
-      end
-      false
-    end
-
     def hfa_captured_class_run_chain_match_result(input, position, layout = hfa_simple_capture_layout)
       left_table = layout[0][1]
       separator = layout[1][1]
@@ -3257,17 +3215,6 @@ module Onibi
       @hfa_ascii_unicode_run_table = hfa_capture_class_table(node.expression)
     end
 
-    def hfa_ascii_unicode_run_match?(input, position)
-      table = hfa_ascii_unicode_run_table
-      cursor = position
-      while cursor < input.bytesize
-        return true if table[input.getbyte(cursor)]
-
-        cursor += 1
-      end
-      false
-    end
-
     def hfa_ascii_unicode_run_match_result(input, position)
       table = hfa_ascii_unicode_run_table
       cursor = position
@@ -3329,28 +3276,6 @@ module Onibi
       @hfa_ascii_run_chain_tables = tables.all? ? tables.freeze : nil
     end
 
-    def hfa_ascii_run_chain_match?(input, position)
-      tables = hfa_ascii_run_chain_tables
-      cursor = position
-      while cursor < input.bytesize
-        starts = cursor
-        left = starts
-        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
-        if left > starts
-          middle = left
-          middle += 1 while middle < input.bytesize && tables[1][input.getbyte(middle)]
-          if middle > left
-            right = middle
-            right += 1 while right < input.bytesize && tables[2][input.getbyte(right)]
-            return true if right > middle
-          end
-        end
-
-        cursor = starts + 1
-      end
-      false
-    end
-
     def hfa_ascii_run_chain_match_result(input, position)
       tables = hfa_ascii_run_chain_tables
       cursor = position
@@ -3393,23 +3318,6 @@ module Onibi
       end
       @hfa_ascii_adjacent_run_tables = nil unless @hfa_ascii_adjacent_run_tables.all?
       @hfa_ascii_adjacent_run_tables&.freeze
-    end
-
-    def hfa_ascii_adjacent_run_match?(input, position)
-      tables = hfa_ascii_adjacent_run_tables
-      cursor = position
-      while cursor < input.bytesize
-        left = cursor
-        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
-        if left > cursor
-          right = left
-          right += 1 while right < input.bytesize && tables[1][input.getbyte(right)]
-          return true if right > left
-        end
-
-        cursor += 1
-      end
-      false
     end
 
     def hfa_ascii_adjacent_run_match_result(input, position)
@@ -3473,22 +3381,6 @@ module Onibi
               suffix.is_a?(AST::Literal) && prefix.value.ascii_only? && suffix.value.ascii_only? &&
               prefix.value.bytesize.positive? && suffix.value.bytesize.positive?
       @hfa_greedy_dot_star_literal_parts = valid ? [prefix.value, suffix.value, @options.include?("multiline")].freeze : nil
-    end
-
-    def hfa_greedy_dot_star_literal_match?(input, position, parts)
-      prefix, suffix, allow_newline = parts
-      candidate = input.index(prefix, position)
-      while candidate
-        suffix_position = input.index(suffix, candidate + prefix.bytesize)
-        while suffix_position
-          newline = input.index("\n", candidate + prefix.bytesize)
-          return true if allow_newline || newline.nil? || newline >= suffix_position
-
-          suffix_position = input.index(suffix, suffix_position + 1)
-        end
-        candidate = input.index(prefix, candidate + 1)
-      end
-      false
     end
 
     def hfa_greedy_dot_star_literal_match_result(input, position, parts)
@@ -3647,14 +3539,6 @@ module Onibi
                                        end
     end
 
-    def hfa_literal_conditional_match?(input, position)
-      yes, no = hfa_literal_conditional_parts
-      prefix = hfa_literal_conditional_prefix
-      yes_start = input.index(prefix + yes, position)
-      no_start = input.index(no, position)
-      !yes_start.nil? || !no_start.nil?
-    end
-
     def hfa_literal_conditional_match_result(input, position)
       yes, no = hfa_literal_conditional_parts
       prefix = hfa_literal_conditional_prefix
@@ -3721,10 +3605,6 @@ module Onibi
       @hfa_repeated_class_backref_parts = [table, separator_value].freeze
     end
 
-    def hfa_repeated_class_backref_match?(input, position)
-      !hfa_repeated_class_backref_match_result(input, position).nil?
-    end
-
     def hfa_repeated_class_backref_match_result(input, position)
       table, separator = hfa_repeated_class_backref_parts
       separator_position = input.index(separator, position + 1)
@@ -3762,10 +3642,6 @@ module Onibi
       return @hfa_anchored_class_run_table if defined?(@hfa_anchored_class_run_table)
 
       @hfa_anchored_class_run_table = ClassPredicates.compiled(@ast.parts[1].expression.value).ascii_table
-    end
-
-    def hfa_anchored_class_run_match?(input, position)
-      !hfa_anchored_class_run_match_result(input, position).nil?
     end
 
     def hfa_anchored_class_run_match_result(input, position)
@@ -4152,10 +4028,6 @@ module Onibi
       values.one? ? values.first.chr : nil
     end
 
-    def hfa_literal_alternation_match?(input, position)
-      hfa_literal_alternation_values.any? { |value| !input.index(value, position).nil? }
-    end
-
     def hfa_literal_alternation_match_result(input, position, byte_mode: false)
       best_start = nil
       best_value = nil
@@ -4195,10 +4067,6 @@ module Onibi
                                end
     end
 
-    def hfa_dot_literal_match?(input, position)
-      !hfa_dot_literal_match_result(input, position).nil?
-    end
-
     def hfa_dot_literal_match_result(input, position)
       prefix, suffix, allow_newline = hfa_dot_literal_parts
       candidate = input.index(prefix, position)
@@ -4234,28 +4102,6 @@ module Onibi
       normalized = node.name.sub("Is", "").sub("^", "")
       matcher = UnicodeProperties::PROPERTY_MATCHERS[normalized]
       @hfa_unicode_property_run_spec = matcher && [UnicodeProperties.method(matcher), node.negated].freeze
-    end
-
-    def hfa_unicode_property_run_match?(input, position)
-      predicate, negated = hfa_unicode_property_run_spec
-      property_name = @ast.parts.first.expression.name.sub("Is", "").sub("^", "")
-      if property_name == "Hiragana" && !negated
-        index = 0
-        input.each_codepoint do |codepoint|
-          return true if index >= position && codepoint.between?(0x3040, 0x309f)
-
-          index += 1
-        end
-        return false
-      end
-      index = 0
-      matcher = hfa_unicode_property_run_matcher
-      hfa_unicode_property_codepoint_events(input) do |codepoint, _bytesize|
-        return true if index >= position && (matcher.call(codepoint, predicate) ^ negated)
-
-        index += 1
-      end
-      false
     end
 
     def hfa_unicode_property_run_match_result(input, position)
@@ -4355,16 +4201,6 @@ module Onibi
                                          node.kind == :+ && node.mode == :greedy &&
                                          node.expression.is_a?(AST::CharacterClass) &&
                                          node.expression.value == "[:word:]"
-    end
-
-    def hfa_unicode_word_class_run_match?(input, position)
-      index = 0
-      input.each_codepoint do |codepoint|
-        return true if index >= position && hfa_unicode_word_codepoint?(codepoint)
-
-        index += 1
-      end
-      false
     end
 
     def hfa_unicode_word_class_run_match_result(input, position)
