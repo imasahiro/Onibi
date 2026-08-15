@@ -838,11 +838,6 @@ module Onibi
 
       boundary_spec = hfa_scan_boundary_spec
 
-      if ascii_input && (spec = hfa_direct_delimited_capture_spec)
-        hfa_direct_delimited_capture_each_result(input, spec) { |result| block.call(result) }
-        return true
-      end
-
       if ascii_input && (spec = hfa_capture_sequence_scan_spec)
         hfa_capture_sequence_each_result(input, spec) { |result| block.call(result) }
         return true
@@ -1102,92 +1097,6 @@ module Onibi
                                                  else
                                                    false
                                                  end
-    end
-
-    def hfa_direct_delimited_capture_spec
-      return @hfa_direct_delimited_capture_spec if defined?(@hfa_direct_delimited_capture_spec)
-      return @hfa_direct_delimited_capture_spec = false if casefold?
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
-      group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
-      group = group_index && parts[group_index]
-      body_parts = group&.body.is_a?(AST::Sequence) ? group.body.parts : []
-      first, delimiter, second, repeated = body_parts
-      first_table = hfa_direct_capture_run_table(first)
-      second_table = hfa_direct_capture_run_table(second)
-      repeated_body = repeated&.expression if repeated.is_a?(AST::Quantifier)
-      repeated_parts = repeated_body&.body&.parts if repeated_body.is_a?(AST::Group)
-      suffix_literal, suffix_run = repeated_parts if repeated_parts&.length == 2
-      suffix_table = hfa_direct_capture_run_table(suffix_run)
-      valid = group && parts[0...group_index].all? { |part| hfa_zero_width_node?(part) } &&
-              parts[(group_index + 1)..].to_a.all? { |part| hfa_zero_width_node?(part) } &&
-              delimiter.is_a?(AST::Literal) && delimiter.value.bytesize.positive? &&
-              first_table && second_table && suffix_literal.is_a?(AST::Literal) &&
-              suffix_literal.value.bytesize.positive? && suffix_table &&
-              repeated.is_a?(AST::Quantifier) && repeated.mode == :greedy &&
-              repeated.minimum.positive? && repeated.maximum.nil? &&
-              delimiter.value.bytes.all? { |byte| !first_table[byte] } &&
-              suffix_literal.value.bytes.all? { |byte| !second_table[byte] }
-      @hfa_direct_delimited_capture_spec = if valid
-                                             [group.number, delimiter.value, first_table,
-                                              second_table, suffix_literal.value, suffix_table].freeze
-                                           else
-                                             false
-                                           end
-    end
-
-    def hfa_direct_capture_run_table(node)
-      return unless node.is_a?(AST::Quantifier) && node.mode == :greedy &&
-                    node.minimum.positive? && node.maximum.nil?
-
-      hfa_capture_class_table(node.expression)
-    end
-
-    def hfa_direct_delimited_capture_each_result(input, spec)
-      hfa_direct_delimited_capture_each_match(input, spec) do |candidate, finish|
-        captures = Array.new(hfa_capture_count)
-        captures[spec[0] - 1] = [candidate, finish]
-        yield [candidate, finish, captures]
-      end
-    end
-
-    def hfa_direct_delimited_capture_each_match(input, spec)
-      _capture_number, delimiter, first_table, second_table, suffix, suffix_table = spec
-      boundary = hfa_scan_boundary_spec
-      position = 0
-      while (delimiter_start = input.index(delimiter, position))
-        candidate = delimiter_start
-        candidate -= 1 while candidate.positive? && first_table[input.getbyte(candidate - 1)]
-        candidate += 1 while candidate < delimiter_start &&
-                             !hfa_scan_boundary_start_match?(input, candidate, boundary)
-        if candidate < delimiter_start
-          second_start = delimiter_start + delimiter.bytesize
-          second_finish = hfa_direct_capture_run_end(input, second_start, second_table)
-          finish = second_finish
-          repetitions = 0
-          while finish && input.byteslice(finish, suffix.bytesize) == suffix
-            run_start = finish + suffix.bytesize
-            run_finish = hfa_direct_capture_run_end(input, run_start, suffix_table)
-            break unless run_finish && run_finish > run_start
-
-            finish = run_finish
-            repetitions += 1
-          end
-          if finish && second_finish > second_start && repetitions.positive? &&
-             hfa_scan_boundary_match?(input, candidate, finish, boundary)
-            yield candidate, finish
-            position = finish
-            next
-          end
-        end
-        position = delimiter_start + delimiter.bytesize
-      end
-    end
-
-    def hfa_direct_capture_run_end(input, position, table)
-      finish = position
-      finish += 1 while finish < input.bytesize && table[input.getbyte(finish)]
-      finish
     end
 
     def hfa_scan_boundary_spec

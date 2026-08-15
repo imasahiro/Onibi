@@ -37,18 +37,6 @@ module Onibi
         return values
       end
 
-      if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
-         (spec = hfa_direct_delimited_capture_spec)
-        values = []
-        hfa_direct_delimited_capture_each_match(input, spec) do |start_position, finish_position|
-          values << [input.byteslice(start_position, finish_position - start_position)]
-        end
-        return values unless block
-
-        values.each(&block)
-        return input
-      end
-
       if block
         scan_results(input) { |result| block.call(scan_value_from_result(result, input)) }
         return input
