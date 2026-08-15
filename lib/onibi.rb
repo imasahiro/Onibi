@@ -4285,10 +4285,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_nested_literal_capture_alternation_spec
-        hfa_nested_literal_capture_alternation_each_result(input, &block)
-        return true
-      end
       if ascii_input && hfa_atomic_literal_alternation_spec
         hfa_atomic_literal_alternation_each_result(input, &block)
         return true
