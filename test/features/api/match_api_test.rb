@@ -403,6 +403,15 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("漢字カタカナ漢字")
   end
 
+  def test_unicode_property_run_match_question_converts_character_position_for_results
+    pattern = "\\p{Hiragana}+"
+    input = "漢字ひらがな漢字"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
+
+    assert_equal input.match?(mri, 2), regexp.match?(input, 2)
+  end
+
   def test_single_unicode_property_match_question_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Han}")
 

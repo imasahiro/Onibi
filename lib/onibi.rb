@@ -296,9 +296,16 @@ module Onibi
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
         return with_timeout { !result.nil? }
       end
-      return hfa_unicode_property_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_property_run_result_safe?
+      if !ascii_input && hfa_unicode_property_run_result_safe?
+        byte_position = input[0, normalized_position].bytesize
+        return !hfa_unicode_property_run_match_result(input, byte_position).nil?
+      end
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
-      return hfa_unicode_word_class_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_word_class_run_result_safe?
+
+      if !ascii_input && hfa_unicode_word_class_run_result_safe?
+        byte_position = input[0, normalized_position].bytesize
+        return !hfa_unicode_word_class_run_match_result(input, byte_position).nil?
+      end
       return !hfa_ascii_unicode_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_unicode_run_result_safe?
       return !hfa_ascii_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_run_chain_result_safe?
       return !hfa_ascii_adjacent_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_adjacent_run_result_safe?
