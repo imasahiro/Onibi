@@ -271,7 +271,7 @@ module Onibi
         end
       end
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
-      return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && hfa_ascii_unicode_run_result_safe?
+      return !hfa_ascii_unicode_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_unicode_run_result_safe?
       return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && hfa_ascii_run_chain_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
@@ -299,7 +299,7 @@ module Onibi
       return hfa_unicode_property_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_property_run_result_safe?
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
       return hfa_unicode_word_class_run_match?(input, normalized_position) if !ascii_input && hfa_unicode_word_class_run_result_safe?
-      return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && hfa_ascii_unicode_run_result_safe?
+      return !hfa_ascii_unicode_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_unicode_run_result_safe?
       return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && hfa_ascii_run_chain_result_safe?
       return !hfa_ascii_adjacent_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_adjacent_run_result_safe?
       if ascii_input && (parts = hfa_greedy_dot_star_literal_parts)
