@@ -78,35 +78,29 @@ module Onibi
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       tokens = validate_pattern_syntax!(pattern, normalized_options)
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
+      ignorecase = casefold?
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
-      @hfa_exact_literal_fast = literal if literal&.ascii_only? && literal.bytesize.positive? &&
-                                           !@options.include?("ignorecase")
-      @hfa_ignorecase_literal_fast = literal if literal&.ascii_only? && literal.bytesize.positive? &&
-                                                @options.include?("ignorecase")
-      @hfa_unicode_exact_literal_fast = literal if literal && !literal.ascii_only? &&
-                                                   literal.bytesize.positive? &&
-                                                   !@options.include?("ignorecase")
-      @hfa_unicode_ignorecase_literal_fast = literal if literal && !literal.ascii_only? &&
-                                                        literal.bytesize.positive? &&
-                                                        @options.include?("ignorecase")
-      property_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
-                        node = @ast.parts.first
-                        node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
-                                           node.mode == :greedy && node.expression.is_a?(AST::Property)
-                      end
+      literal_ascii = literal&.ascii_only? && literal.bytesize.positive?
+      literal_unicode = literal && !literal.ascii_only? && literal.bytesize.positive?
+      @hfa_exact_literal_fast = literal if literal_ascii && !ignorecase
+      @hfa_ignorecase_literal_fast = literal if literal_ascii && ignorecase
+      @hfa_unicode_exact_literal_fast = literal if literal_unicode && !ignorecase
+      @hfa_unicode_ignorecase_literal_fast = literal if literal_unicode && ignorecase
+      property_node = hfa_single_quantified_expression
+      property_node = nil unless property_node.is_a?(AST::Property)
       @hfa_unicode_property_run_fast = property_node if property_node &&
                                                         property_node.name.sub("Is", "").sub("^", "") == "Hiragana" &&
-                                                        !@options.include?("ignorecase")
-      @hfa_ascii_unicode_run_fast = property_node if property_node && !@options.include?("ignorecase") &&
+                                                        !ignorecase
+      @hfa_ascii_unicode_run_fast = property_node if property_node && !ignorecase &&
                                                      hfa_capture_class_table(property_node)
-      chain_candidate = !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) &&
+      chain_candidate = !ignorecase && @ast.is_a?(AST::Sequence) &&
                         @ast.parts.length == 3 && @ast.parts.all? do |part|
                           part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
                             (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape))
                         end
       chain_tables = hfa_ascii_run_chain_tables if chain_candidate
       @hfa_ascii_run_chain_fast = chain_tables if chain_tables
-      anchored_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) &&
+      anchored_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) &&
                               @ast.parts.length == 3
                              start, run, finish = @ast.parts
                              start.is_a?(AST::Anchor) && start.kind == :anchor_absolute_start &&
@@ -115,18 +109,18 @@ module Onibi
                                finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
                            end
       @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
-      alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !@options.include?("ignorecase") && @ast.is_a?(AST::Alternation))
+      alternation_values = (@ast.branches.map { |branch| literal_ast_value(branch) } if !ignorecase && @ast.is_a?(AST::Alternation))
       @hfa_literal_alternation_fast = alternation_values.freeze if alternation_values && alternation_values.length > 1 &&
                                                                    alternation_values.all? { |value| value&.ascii_only? && value.bytesize.positive? }
       dot_candidate = @ast.is_a?(AST::Sequence) && @ast.parts.length == 3 &&
                       @ast.parts[0].is_a?(AST::Literal) && @ast.parts[1].is_a?(AST::Any) &&
                       @ast.parts[2].is_a?(AST::Literal) && @ast.parts[0].value.ascii_only? &&
                       @ast.parts[2].value.ascii_only? && @ast.parts[0].value.bytesize == 1 &&
-                      @ast.parts[2].value.bytesize == 1 && !@options.include?("ignorecase")
+                      @ast.parts[2].value.bytesize == 1 && !ignorecase
       @hfa_dot_literal_fast = hfa_dot_literal_parts if dot_candidate
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
-      assertion_parts = hfa_literal_assertion_result_safe? unless @options.include?("ignorecase")
+      assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
       if assertion_parts.is_a?(Array) && %i[positive negative].include?(assertion_parts[1]) &&
          assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
         @hfa_literal_assertion_fast = assertion_parts.freeze
@@ -150,7 +144,7 @@ module Onibi
       @hfa_casefold_class_lookbehind_fast = hfa_casefold_class_lookbehind_parts
       match_reset_literal = hfa_match_reset_literal_combined_literal
       @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
-      lookahead_candidate = if !@options.include?("ignorecase") && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
+      lookahead_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
                               run, assertion = @ast.parts
                               guard = assertion.body if assertion.is_a?(AST::Assertion)
                               guard_parts = guard.parts if guard.is_a?(AST::Sequence)
@@ -166,14 +160,10 @@ module Onibi
                                         @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
       @hfa_literal_conditional_fast = conditional_parts if conditional_parts.all?
-      word_node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
-                    node = @ast.parts.first
-                    node.expression if node.is_a?(AST::Quantifier) && node.kind == :+ &&
-                                       node.mode == :greedy && node.expression.is_a?(AST::CharacterClass) &&
-                                       node.expression.value == "[:word:]"
-                  end
-      @hfa_unicode_word_class_run_fast = word_node if word_node && !@options.include?("ignorecase")
-      captured_chain_candidate = !@options.include?("ignorecase") && hfa_captured_class_run_chain_candidate?
+      word_node = hfa_single_quantified_expression
+      word_node = nil unless word_node.is_a?(AST::CharacterClass) && word_node.value == "[:word:]"
+      @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
+      captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
       @hfa_repeated_class_backref_fast = true if hfa_repeated_class_backref_candidate?
       @hfa_bounded_literal_fast = true if hfa_bounded_literal_candidate?
@@ -1886,6 +1876,15 @@ module Onibi
     end
 
     private
+
+    def hfa_single_quantified_expression
+      return unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
+
+      node = @ast.parts.first
+      return unless node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy
+
+      node.expression
+    end
 
     def capture_names
       @capture_names ||= CaptureNameCollector.call(@ast)
