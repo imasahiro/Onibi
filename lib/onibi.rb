@@ -145,8 +145,6 @@ module Onibi
       end
       @hfa_class_lookbehind_fast = hfa_class_lookbehind_parts
       @hfa_casefold_class_lookbehind_fast = hfa_casefold_class_lookbehind_parts
-      match_reset_literal = hfa_match_reset_literal_combined_literal
-      @hfa_match_reset_literal_fast = match_reset_literal if match_reset_literal
       lookahead_candidate = if !ignorecase && @ast.is_a?(AST::Sequence) && @ast.parts.length == 2
                               run, assertion = @ast.parts
                               guard = assertion.body if assertion.is_a?(AST::Assertion)
@@ -195,8 +193,6 @@ module Onibi
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
-
-      return !input.index(@hfa_match_reset_literal_fast, normalized_position).nil? if ascii_input && @hfa_match_reset_literal_fast
 
       return hfa_dot_literal_match?(input, normalized_position) if ascii_input && @hfa_dot_literal_fast
       return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && @hfa_repeated_class_backref_fast
@@ -1287,6 +1283,8 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
       group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
       group = group_index && parts[group_index]
+      return @hfa_reverse_literal_capture_spec = false unless group
+
       body_parts = if group&.body.is_a?(AST::Sequence)
                      group.body.parts
                    elsif group
@@ -1319,13 +1317,13 @@ module Onibi
       return @hfa_reverse_top_level_capture_scan_spec if defined?(@hfa_reverse_top_level_capture_scan_spec)
 
       plan = hfa_top_level_capture_plan
-      first = plan&.first
-      delimiter = plan&.[](1)
+      first = plan.first if plan
+      delimiter = plan[1] if plan
       body = first.body if first.is_a?(AST::Group)
       body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
       table = hfa_capture_class_table(body.expression) if body.is_a?(AST::Quantifier) &&
                                                           body.kind == :+ && body.mode == :greedy
-      last = plan&.last
+      last = plan.last if plan
       last_body = last.body if last.is_a?(AST::Group)
       last_body = last_body.parts.first if last_body.is_a?(AST::Sequence) && last_body.parts.one?
       last_table = hfa_capture_class_table(last_body.expression) if last_body.is_a?(AST::Quantifier) &&
@@ -5377,17 +5375,6 @@ module Onibi
         return true
       end
 
-      if ascii_input && @hfa_match_reset_literal_fast
-        prefix, suffix = hfa_match_reset_literal_parts
-        combined = @hfa_match_reset_literal_fast
-        position = 0
-        while (start = input.index(combined, position))
-          match_start = start + prefix.bytesize
-          block.call([match_start, match_start + suffix.bytesize, []])
-          position = start + combined.bytesize
-        end
-        return true
-      end
       if ascii_input && @hfa_bounded_literal_fast
         position = 0
         while (result = hfa_bounded_literal_match_result(input, position))
@@ -5566,7 +5553,7 @@ module Onibi
         end
         return true
       end
-      if ascii_input && @hfa_match_reset_literal_fast
+      if ascii_input && hfa_match_reset_literal_result_safe?
         position = 0
         while (result = hfa_match_reset_literal_match_result(input, position))
           block.call(result)

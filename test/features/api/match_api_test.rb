@@ -695,13 +695,12 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match(" catx ")
   end
 
-  def test_match_reset_literal_match_question_uses_constructor_dispatch_metadata
+  def test_match_reset_literal_match_question_matches_mri_after_hfa_lowering
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 
-    regexp.stub(:hfa_match_reset_literal_combined_literal,
-                -> { flunk "Match-reset literal should use constructor dispatch metadata" }) do
-      assert regexp.match?("xxprefixsuffixyy")
-    end
+    input = "xxprefixsuffixyy"
+    expected = ::Regexp.new("prefix\\Ksuffix").match?(input)
+    assert_equal expected, regexp.match?(input)
   end
 
   def test_class_run_positive_lookahead_match_question_uses_boolean_path
