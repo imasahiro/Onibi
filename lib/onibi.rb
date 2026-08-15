@@ -4124,20 +4124,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_literal_subexpression_call_result_safe?
-        literal = hfa_literal_subexpression_call_literal
-        repeated = literal + literal
-        capture_number = @ast.parts.first.number
-        position = 0
-        while (start = input.index(repeated, position))
-          finish = start + repeated.bytesize
-          captures = Array.new(capture_number)
-          captures[capture_number - 1] = [start, start + literal.bytesize]
-          block.call([start, finish, captures])
-          position = finish
-        end
-        return true
-      end
       if ascii_input && hfa_literal_conditional_result_safe?
         position = 0
         while (result = hfa_literal_conditional_match_result(input, position))
