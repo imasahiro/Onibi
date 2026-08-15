@@ -551,6 +551,18 @@ class MatchApiTest < Minitest::Test
     assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
+  def test_ascii_ignorecase_literal_public_apis_match_mri
+    pattern = "case"
+    input = "xxCASEyy case"
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+    mri = Regexp.new(pattern, Regexp::IGNORECASE)
+
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
+  end
+
   def test_match_reset_literal_match_question_uses_adjacent_string_path
     regexp = Onibi::Regexp.new("prefix\\Ksuffix")
 

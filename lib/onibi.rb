@@ -82,9 +82,7 @@ module Onibi
       @hfa_compilation_program_mutex = Mutex.new
       ignorecase = casefold?
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
-      literal_ascii = literal&.ascii_only? && literal.bytesize.positive?
       literal_unicode = literal && !literal.ascii_only? && literal.bytesize.positive?
-      @hfa_ignorecase_literal_fast = literal if literal_ascii && ignorecase
       @hfa_unicode_ignorecase_literal_fast = literal if literal_unicode && ignorecase
       single_quantified_expression = hfa_single_quantified_expression
       property_node = single_quantified_expression
@@ -227,7 +225,7 @@ module Onibi
         return nil
       end
 
-      if ascii_input && @hfa_ignorecase_literal_fast
+      if ascii_input && hfa_ignorecase_literal_result_safe?
         return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
 
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
@@ -496,7 +494,7 @@ module Onibi
         return nil
       end
 
-      if ascii_input && @hfa_ignorecase_literal_fast
+      if ascii_input && hfa_ignorecase_literal_result_safe?
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -5427,9 +5425,9 @@ module Onibi
       end
       return true if ascii_input && hfa_unicode_repeated_literal_result_safe?
 
-      if ascii_input && @hfa_ignorecase_literal_fast
+      if ascii_input && hfa_ignorecase_literal_result_safe?
         folded_input = input.downcase
-        literal = @hfa_ignorecase_literal_fast.downcase
+        literal = literal_ast_value(@ast).downcase
         position = 0
         while (start = folded_input.index(literal, position))
           finish = start + literal.bytesize
@@ -5864,9 +5862,9 @@ module Onibi
         end
         return true
       end
-      if @hfa_ignorecase_literal_fast
+      if hfa_ignorecase_literal_result_safe?
         folded_input = input.downcase
-        literal = @hfa_ignorecase_literal_fast.downcase
+        literal = literal_ast_value(@ast).downcase
         position = 0
         while (start = folded_input.index(literal, position))
           finish = start + literal.bytesize
@@ -6006,7 +6004,7 @@ module Onibi
                     hfa_single_capture_literal_alternation_result_safe? ||
                     hfa_nested_literal_capture_alternation_spec || hfa_possessive_literal_string_result_safe? ||
                     hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                    @hfa_ignorecase_literal_fast || hfa_ignorecase_literal_result_safe? ||
+                    hfa_ignorecase_literal_result_safe? ||
                     hfa_positive_literal_guard_result_safe? || hfa_class_lookbehind_parts ||
                     hfa_casefold_class_lookbehind_parts ||
                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
@@ -6060,7 +6058,6 @@ module Onibi
                      hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
                      hfa_adjacent_nested_repeated_capture_result_safe? ||
                      hfa_unicode_repeated_literal_result_safe? || hfa_unicode_repeated_literal_capture_result_safe? ||
-                     @hfa_ignorecase_literal_fast ||
                      hfa_ignorecase_literal_result_safe? ||
                      hfa_unicode_ignorecase_literal_result_safe? ||
                      hfa_scoped_unicode_ignorecase_literal_value ||
