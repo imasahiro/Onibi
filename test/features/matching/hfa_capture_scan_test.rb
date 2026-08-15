@@ -66,6 +66,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert regexp.send(:hfa_literal_prefix_capture_scan_spec)
   end
 
+  def test_hfa_url_scan_returns_multiple_capture_values
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
+
+    assert_equal [["https://example.com"], ["https://example.org/docs/1"]],
+                 Onibi::Regexp.new(pattern).scan("https://example.com https://example.org/docs/1")
+  end
+
   def test_hfa_extracts_literal_prefix_inside_capturing_group
     pattern = "(?<url>https?://[A-Za-z0-9.-]+)"
     regexp = Onibi::Regexp.new(pattern)
