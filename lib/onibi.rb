@@ -190,7 +190,6 @@ module Onibi
 
       return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
 
-      return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
       end
@@ -324,7 +323,6 @@ module Onibi
       end
       return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
-      return !hfa_bounded_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_bounded_literal_result_safe?
 
       if !ascii_input && hfa_unicode_exact_literal_result_safe?
         literal = hfa_exact_literal_value
@@ -462,12 +460,6 @@ module Onibi
         return nil
       end
 
-      if ascii_input && hfa_bounded_literal_result_safe?
-        result = hfa_bounded_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         result = hfa_bounded_sequence_direct_match_result(input, normalized_position)
         if result
@@ -2612,63 +2604,6 @@ module Onibi
       finish
     end
 
-    def hfa_bounded_literal_result_safe?
-      return @hfa_bounded_literal_result_safe if defined?(@hfa_bounded_literal_result_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      quantifier = parts.one? && parts.first
-      @hfa_bounded_literal_result_safe = hfa_bounded_literal_quantifier?(quantifier)
-    end
-
-    def hfa_bounded_literal_quantifier?(quantifier)
-      return false unless quantifier.is_a?(AST::Quantifier) && quantifier.kind == :bounded
-      return false unless hfa_bounded_literal_bounds?(quantifier)
-
-      expression = quantifier.expression
-      expression.is_a?(AST::Literal) && hfa_bounded_literal_value?(expression.value)
-    end
-
-    def hfa_bounded_literal_bounds?(quantifier)
-      quantifier.mode == :greedy && quantifier.minimum.positive? &&
-        quantifier.maximum && quantifier.maximum >= quantifier.minimum
-    end
-
-    def hfa_bounded_literal_value?(value)
-      value.ascii_only? && value.bytesize.positive?
-    end
-
-    def hfa_bounded_literal_match_result(input, position)
-      quantifier = @ast.parts.first
-      unit = quantifier.expression.value
-      unit_bytesize = unit.bytesize
-      candidate = input.index(unit, position)
-      while candidate
-        count, cursor = hfa_bounded_literal_run(input, candidate, unit, unit_bytesize, quantifier.maximum)
-        return [candidate, cursor, []] if count >= quantifier.minimum
-
-        candidate = input.index(unit, candidate + 1)
-      end
-      nil
-    end
-
-    def hfa_bounded_literal_run(input, candidate, unit, unit_bytesize, maximum)
-      count = 0
-      cursor = candidate
-      if unit_bytesize == 1
-        byte = unit.getbyte(0)
-        while count < maximum && input.getbyte(cursor) == byte
-          count += 1
-          cursor += 1
-        end
-      else
-        while count < maximum && input.byteslice(cursor, unit_bytesize) == unit
-          count += 1
-          cursor += unit_bytesize
-        end
-      end
-      [count, cursor]
-    end
-
     def hfa_bounded_sequence_direct_spec
       return @hfa_bounded_sequence_direct_spec if defined?(@hfa_bounded_sequence_direct_spec)
 
@@ -4756,14 +4691,6 @@ module Onibi
         return true
       end
 
-      if ascii_input && hfa_bounded_literal_result_safe?
-        position = 0
-        while (result = hfa_bounded_literal_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         position = 0
         while (result = hfa_bounded_sequence_direct_match_result(input, position))
