@@ -2701,21 +2701,6 @@ module Onibi
       @hfa_subexpression_literal_match_literal = (literal + literal if literal&.ascii_only? && literal.bytesize.positive?)
     end
 
-    def hfa_repeated_literal_suffix_match_result(input, position)
-      repeat, suffix = @ast.parts
-      unit = repeat.expression.value
-      suffix_value = suffix.value
-      candidate = input.index(unit, position)
-      while candidate
-        finish = candidate
-        finish += unit.bytesize while input.byteslice(finish, unit.bytesize) == unit
-        return [candidate, finish + suffix_value.bytesize, []] if input.byteslice(finish, suffix_value.bytesize) == suffix_value
-
-        candidate = input.index(unit, candidate + 1)
-      end
-      nil
-    end
-
     def hfa_repeated_literal_run_match_result(input, position)
       unit = @ast.parts.first.expression.value
       candidate = input.index(unit, position)
