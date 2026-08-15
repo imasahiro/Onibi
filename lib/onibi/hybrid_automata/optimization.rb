@@ -79,6 +79,10 @@ module Onibi
           CFG::Analysis.result_reports(cfg, facts, input: input)
         end
 
+        def layout_facts
+          CFG::Analysis.layout_facts(ast)
+        end
+
         def mandatory_strings
           CFG::Analysis.mandatory_strings(ast)
         end

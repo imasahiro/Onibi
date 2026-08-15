@@ -464,4 +464,23 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert reports.all?(&:frozen?)
     assert(reports.all? { |report| report.capture_byte_ranges.frozen? })
   end
+
+  def test_literal_and_class_layouts_are_published_as_general_compiler_facts
+    source = "pre[0-9]post"
+    input = "xpre7posty"
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    facts = unit.layout_facts
+
+    assert_equal %i[exact_literal first_byte_set exact_literal], facts.map(&:kind)
+    assert_equal [3, 1, 4], facts.map(&:width)
+    assert facts.all?(&:frozen?)
+    assert(facts.all? { |fact| fact.payload.frozen? })
+  end
 end

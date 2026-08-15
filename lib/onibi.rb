@@ -6706,5 +6706,6 @@ end
 
 require_relative "onibi/hybrid_automata"
 require_relative "onibi/hybrid_automata/cfg"
+require_relative "onibi/hybrid_automata/layout_facts"
 require_relative "onibi/hybrid_automata/position_builder"
 require_relative "onibi/hybrid_automata/optimization"

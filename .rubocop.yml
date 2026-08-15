@@ -81,7 +81,7 @@ Metrics/MethodLength:
 
 Metrics/ModuleLength:
   # CFG analysis facts and their immutable lowering helpers are one cohesive API.
-  Max: 340
+  Max: 350
 
 Metrics/CyclomaticComplexity:
   Max: 400

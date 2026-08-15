@@ -497,7 +497,7 @@ replacement expansion, and encodings with MRI.
 
 ## Phase 5: migrate useful general optimizations and delete direct paths
 
-### HFA-050 - Migrate literal and class-run optimizations
+### HFA-050 - Migrate literal and class-run optimizations [Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-043
