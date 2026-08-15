@@ -84,7 +84,8 @@ module Onibi
       @hfa_ignorecase_literal_fast = literal if literal_ascii && ignorecase
       @hfa_unicode_exact_literal_fast = literal if literal_unicode && !ignorecase
       @hfa_unicode_ignorecase_literal_fast = literal if literal_unicode && ignorecase
-      property_node = hfa_single_quantified_expression
+      single_quantified_expression = hfa_single_quantified_expression
+      property_node = single_quantified_expression
       property_node = nil unless property_node.is_a?(AST::Property)
       @hfa_unicode_property_run_fast = property_node if property_node &&
                                                         property_node.name.sub("Is", "").sub("^", "") == "Hiragana" &&
@@ -119,16 +120,18 @@ module Onibi
       boundary_literal = hfa_word_boundary_literal_result_safe?
       @hfa_word_boundary_literal_fast = boundary_literal if boundary_literal.is_a?(String)
       assertion_parts = hfa_literal_assertion_result_safe? unless ignorecase
-      if assertion_parts.is_a?(Array) && %i[positive negative].include?(assertion_parts[1]) &&
-         assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
-        @hfa_literal_assertion_fast = assertion_parts.freeze
-      end
-      if assertion_parts.is_a?(Array) && assertion_parts[1] == :positive_lookbehind &&
-         assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
-        @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
-      elsif assertion_parts.is_a?(Array) && assertion_parts[1] == :negative_lookbehind &&
-            assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
-        @hfa_negative_lookbehind_literal_fast = [assertion_parts[0], assertion_parts[2]].freeze
+      if assertion_parts.is_a?(Array)
+        assertion_kind = assertion_parts[1]
+        if %i[positive negative].include?(assertion_kind) &&
+           assertion_parts[0].ascii_only? && assertion_parts[2].ascii_only?
+          @hfa_literal_assertion_fast = assertion_parts.freeze
+        elsif assertion_kind == :positive_lookbehind &&
+              assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
+          @hfa_positive_lookbehind_literal_fast = [assertion_parts[2], assertion_parts[0]].freeze
+        elsif assertion_kind == :negative_lookbehind &&
+              assertion_parts[0].bytesize.positive? && assertion_parts[2].bytesize.positive?
+          @hfa_negative_lookbehind_literal_fast = [assertion_parts[0], assertion_parts[2]].freeze
+        end
       end
       if hfa_positive_lookbehind_result_safe? && !@hfa_positive_lookbehind_literal_fast
         parts = hfa_literal_lookbehind_parts(:positive_lookbehind)
@@ -158,7 +161,7 @@ module Onibi
                                         @ast.parts.first.is_a?(AST::Absence)
       conditional_parts = hfa_literal_conditional_parts
       @hfa_literal_conditional_fast = conditional_parts if conditional_parts.all?
-      word_node = hfa_single_quantified_expression
+      word_node = single_quantified_expression
       word_node = nil unless word_node.is_a?(AST::CharacterClass) && word_node.value == "[:word:]"
       @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
       captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
