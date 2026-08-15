@@ -196,8 +196,16 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       tokens = parts.map { |part| hfa_capture_sequence_token(part) }
       prefix = tokens.first&.[](1) if tokens.first&.first == :literal
-      valid = prefix&.bytesize&.positive? && tokens.all? && tokens.length > 1
-      @hfa_capture_sequence_scan_spec = valid ? [tokens.freeze, prefix].freeze : false
+      anchor = if prefix&.bytesize&.positive?
+                 [:literal, prefix]
+               elsif tokens.first&.first == :capture && tokens[1]&.first == :literal
+                 operation = tokens.first[2].first
+                 delimiter = tokens[1][1]
+                 [:reverse, delimiter, operation[1]] if operation&.first == :class &&
+                                                        delimiter.bytes.all? { |byte| !operation[1][byte] }
+               end
+      valid = anchor && tokens.all? && tokens.length > 1
+      @hfa_capture_sequence_scan_spec = valid ? [tokens.freeze, anchor].freeze : false
     end
 
     def hfa_capture_sequence_token(node)
@@ -227,18 +235,33 @@ module Onibi
     end
 
     def hfa_capture_sequence_each_result(input, spec)
-      tokens, prefix = spec
+      tokens, anchor = spec
       position = 0
-      while (start = input.index(prefix, position))
+      while (start = hfa_capture_sequence_start(input, position, anchor))
         result = hfa_capture_sequence_match_result(input, start, tokens)
         if result
           finish, captures = result
           yield [start, finish, captures]
           position = finish
+        elsif anchor.first == :reverse
+          delimiter_start = input.index(anchor[1], start + 1)
+          position = delimiter_start ? delimiter_start + anchor[1].bytesize : input.bytesize
         else
-          position = start + prefix.bytesize
+          position = start + anchor[1].bytesize
         end
       end
+    end
+
+    def hfa_capture_sequence_start(input, position, anchor)
+      kind, value, table = anchor
+      return input.index(value, position) if kind == :literal
+
+      delimiter_start = input.index(value, position)
+      return unless delimiter_start
+
+      candidate = delimiter_start
+      candidate -= 1 while candidate.positive? && table[input.getbyte(candidate - 1)]
+      candidate
     end
 
     def hfa_capture_sequence_match_result(input, start, tokens)

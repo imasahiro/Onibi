@@ -1339,6 +1339,11 @@ module Onibi
         return true
       end
 
+      if input.ascii_only? && (spec = hfa_capture_sequence_scan_spec)
+        hfa_capture_sequence_each_result(input, spec) { |result| block.call(result) }
+        return true
+      end
+
       if input.ascii_only? && (spec = hfa_reverse_top_level_capture_scan_spec)
         delimiter, table = spec
         position = 0
