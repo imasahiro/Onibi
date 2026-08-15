@@ -270,7 +270,6 @@ module Onibi
         end
       end
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
-      return !hfa_ascii_unicode_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_unicode_run_result_safe?
       return !hfa_ascii_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_run_chain_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
@@ -305,7 +304,6 @@ module Onibi
         byte_position = input[0, normalized_position].bytesize
         return !hfa_unicode_word_class_run_match_result(input, byte_position).nil?
       end
-      return !hfa_ascii_unicode_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_unicode_run_result_safe?
       return !hfa_ascii_run_chain_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_run_chain_result_safe?
       return !hfa_ascii_adjacent_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_adjacent_run_result_safe?
       if ascii_input && (parts = hfa_greedy_dot_star_literal_parts)
@@ -5222,14 +5220,6 @@ module Onibi
       if ascii_input && hfa_ascii_run_chain_result_safe?
         position = 0
         while (result = hfa_ascii_run_chain_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if ascii_input && hfa_ascii_unicode_run_result_safe?
-        position = 0
-        while (result = hfa_ascii_unicode_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end
