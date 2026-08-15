@@ -831,18 +831,6 @@ class ScanGsubTest < Minitest::Test
                  Onibi::Regexp.new(pattern).gsub(input, "<4>")
   end
 
-  def test_literal_class_gsub_uses_captureless_hfa_ranges
-    regexp = Onibi::Regexp.new("tHa[Nt]")
-    input = "tHaN tHat other"
-    spec = regexp.send(:hfa_captureless_literal_class_scan_spec)
-
-    assert_equal %w[tHaN tHat], regexp.scan(input)
-    assert_equal "tHa", spec[0]
-    assert spec[1]["N".ord]
-    assert spec[1]["t".ord]
-    assert_equal "", spec[2]
-  end
-
   def test_linebreak_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new(">.*\\n|\\n")
 

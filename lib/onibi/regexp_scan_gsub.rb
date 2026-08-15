@@ -4,13 +4,9 @@ module Onibi
   # Provides opt-in scan and gsub operations for Onibi::Regexp.
   module RegexpScanGsub
     include RegexpReplacement
-    include RegexpCapturelessScanGsub
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
     def scan(input, &block)
-      captureless_scan = hfa_captureless_scan_api(input, block)
-      return captureless_scan if captureless_scan
-
       if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
          (spec = hfa_alternation_capture_scan_spec)
         values = []
@@ -191,9 +187,6 @@ module Onibi
     end
 
     def replace_matches(input, replacement, block)
-      captureless_replacement = hfa_captureless_replace_api(input, replacement, block)
-      return captureless_replacement if captureless_replacement
-
       if !block && replacement.index("\\").nil? && input.ascii_only? &&
          (spec = hfa_delimited_negated_class_result_spec)
         return [hfa_delimited_negated_class_replace_literal(input, replacement, spec), input.bytesize]
