@@ -255,7 +255,7 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
-      if !ascii_input && !hfa_unicode_property_run_result_safe? && !hfa_unicode_word_class_run_result_safe? &&
+      if !ascii_input && !hfa_unicode_property_run_result_safe? &&
          hfa_unicode_match_result_safe?
         hfa = hfa_program
         if hfa
@@ -294,10 +294,6 @@ module Onibi
       end
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
 
-      if !ascii_input && hfa_unicode_word_class_run_result_safe?
-        byte_position = input[0, normalized_position].bytesize
-        return !hfa_unicode_word_class_run_match_result(input, byte_position).nil?
-      end
       if ascii_input && (parts = hfa_greedy_dot_star_literal_parts)
         return !hfa_greedy_dot_star_literal_match_result(input, normalized_position, parts).nil?
       end
@@ -3819,40 +3815,6 @@ module Onibi
                                           end
     end
 
-    def hfa_unicode_word_class_run_result_safe?
-      return @hfa_unicode_word_class_run_safe if defined?(@hfa_unicode_word_class_run_safe)
-
-      node = @ast.is_a?(AST::Sequence) && @ast.parts.one? ? @ast.parts.first : nil
-      @hfa_unicode_word_class_run_safe = !casefold? && node.is_a?(AST::Quantifier) &&
-                                         node.kind == :+ && node.mode == :greedy &&
-                                         node.expression.is_a?(AST::CharacterClass) &&
-                                         node.expression.value == "[:word:]"
-    end
-
-    def hfa_unicode_word_class_run_match_result(input, position)
-      cursor = 0
-      start = nil
-      input.each_codepoint do |codepoint|
-        matched = cursor >= position && hfa_unicode_word_codepoint?(codepoint)
-        if matched
-          start ||= cursor
-        elsif start
-          return [start, cursor, []]
-        end
-        cursor += utf8_codepoint_bytesize(codepoint)
-      end
-      start && [start, cursor, []]
-    end
-
-    def hfa_unicode_word_codepoint?(codepoint)
-      return true if codepoint == 95 || codepoint.between?(48, 57) ||
-                     codepoint.between?(65, 90) || codepoint.between?(97, 122)
-      return true if codepoint.between?(0x3040, 0x30ff) || codepoint.between?(0x3400, 0x4dbf) ||
-                     codepoint.between?(0x4e00, 0x9fff) || codepoint.between?(0xac00, 0xd7af)
-
-      UnicodeProperties.letter?(codepoint.chr(Encoding::UTF_8))
-    end
-
     def hfa_unicode_simple_capture_result_safe?
       return @hfa_unicode_simple_capture_safe if defined?(@hfa_unicode_simple_capture_safe)
 
@@ -4823,14 +4785,6 @@ module Onibi
       if !ascii_input && hfa_unicode_property_run_result_safe?
         position = 0
         while (result = hfa_unicode_property_run_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if !ascii_input && hfa_unicode_word_class_run_result_safe?
-        position = 0
-        while (result = hfa_unicode_word_class_run_match_result(input, position))
           block.call(result)
           position = result[1]
         end
