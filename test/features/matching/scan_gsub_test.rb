@@ -836,6 +836,14 @@ class ScanGsubTest < Minitest::Test
     end
   end
 
+  def test_literal_class_gsub_matches_mri_with_preallocated_output
+    pattern = "tHa[Nt]"
+    input = "tHaN tHat other"
+
+    assert_equal input.gsub(::Regexp.new(pattern), "<4>"),
+                 Onibi::Regexp.new(pattern).gsub(input, "<4>")
+  end
+
   def test_linebreak_alternation_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new(">.*\\n|\\n")
 

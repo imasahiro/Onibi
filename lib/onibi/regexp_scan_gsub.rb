@@ -260,7 +260,7 @@ module Onibi
 
     def hfa_delimited_negated_class_replace_literal(input, replacement, spec)
       prefix, suffix, minimum = spec
-      result = String.new(encoding: input.encoding)
+      result = String.new(capacity: input.bytesize, encoding: input.encoding)
       cursor = 0
       position = 0
       while (start = input.index(prefix, position))
