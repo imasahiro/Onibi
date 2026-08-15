@@ -133,8 +133,6 @@ module Onibi
         return !hfa_literal_absence_suffix_match_result(input, normalized_position, spec).nil?
       end
 
-      return !hfa_program.match_result(input, normalized_position).nil? if ascii_input && hfa_anchor_result_safe?
-
       if hfa_positive_lookbehind_result_safe?
         prefix, literal = hfa_literal_lookbehind_parts(:positive_lookbehind)
         candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
@@ -619,12 +617,6 @@ module Onibi
       end
       if ascii_input && hfa_match_reset_literal_result_safe?
         result = hfa_match_reset_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_anchor_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
@@ -1919,7 +1911,6 @@ module Onibi
       return true if hfa_leading_literal_assertion_result_safe?
       return true if hfa_atomic_literal_result_safe?
       return true if hfa_match_reset_literal_result_safe?
-      return true if hfa_anchor_result_safe?
       return true if star_literal_ast? || lazy_star_literal_ast? || fixed_class_run_literal_ast? ||
                      dot_literal_ast? || repeat_literal_ast? || class_run_chain_ast? || class_run_triple_ast?
 
@@ -2452,23 +2443,6 @@ module Onibi
       captures = Array.new(number)
       captures[number - 1] = [position, position]
       [position, position, captures]
-    end
-
-    def hfa_anchor_result_safe?
-      return @hfa_anchor_result_safe if defined?(@hfa_anchor_result_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      has_anchor = parts.any? { |part| part.is_a?(AST::Anchor) }
-      return @hfa_anchor_result_safe = false unless has_anchor
-
-      program = hfa_program
-      @hfa_anchor_result_safe = program &&
-                                !program.instance_variable_get(:@anchored_class_spec) &&
-                                (program.instance_variable_get(:@anchored_start) ||
-                                program.instance_variable_get(:@anchored_end) ||
-                                program.instance_variable_get(:@before_final_newline) ||
-                                program.instance_variable_get(:@line_anchor_start) ||
-                                program.instance_variable_get(:@line_anchor_end))
     end
 
     def hfa_possessive_literal_string_result_safe?
@@ -5047,7 +5021,6 @@ module Onibi
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
                     hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
-                    hfa_anchor_result_safe? ||
                     hfa_negative_literal_guard_safe? ||
                     hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? ||
@@ -5085,7 +5058,6 @@ module Onibi
                      hfa_variable_any_backref_spec ||
                      hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? || hfa_atomic_literal_result_safe? ||
-                     hfa_anchor_result_safe? ||
                      hfa_lazy_literal_result_safe? ||
                      hfa_nonword_boundary_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
