@@ -59,6 +59,29 @@ module Onibi
         end
       end
 
+      # Shared structural walk for AST passes that preserve node identity when
+      # none of their children changed.
+      module RecursiveAstTransform
+        private
+
+        def transform(value)
+          return transform_sequence(value) if value.is_a?(AST::Sequence)
+          return transform_alternation(value) if value.is_a?(AST::Alternation)
+
+          value
+        end
+
+        def transform_sequence(sequence)
+          parts = sequence.parts.map { |part| transform(part) }
+          parts == sequence.parts ? sequence : AST::Sequence.new(parts)
+        end
+
+        def transform_alternation(alternation)
+          branches = alternation.branches.map { |branch| transform(branch) }
+          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
+        end
+      end
+
       # Removes alternatives that can be proven to fail without consuming input.
       class ImpossibleBranchElimination < Pass
         def name = :impossible_branch_elimination
@@ -122,6 +145,8 @@ module Onibi
 
       # Combines adjacent literals into the comparison unit already used by emission.
       class LiteralCoalescing < Pass
+        include RecursiveAstTransform
+
         def name = :literal_coalescing
 
         def call(ast, **_context)
@@ -130,21 +155,9 @@ module Onibi
 
         private
 
-        def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
-
-          value
-        end
-
         def transform_sequence(sequence)
           parts = coalesce_literals(sequence.parts)
           parts == sequence.parts ? sequence : AST::Sequence.new(parts)
-        end
-
-        def transform_alternation(alternation)
-          branches = alternation.branches.map { |branch| transform(branch) }
-          branches == alternation.branches ? alternation : AST::Alternation.new(branches)
         end
 
         def coalesce_literals(values)
@@ -165,6 +178,8 @@ module Onibi
 
       # Removes adjacent identical pure assertions without changing cursor state.
       class RedundantPredicateElimination < Pass
+        include RecursiveAstTransform
+
         def name = :redundant_predicate_elimination
 
         def call(ast, **_context)
@@ -172,13 +187,6 @@ module Onibi
         end
 
         private
-
-        def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
-
-          value
-        end
 
         def transform_sequence(sequence)
           parts = sequence.parts.each_with_object([]) do |part, result|
@@ -210,6 +218,8 @@ module Onibi
 
       # Hoists a common literal prefix out of side-effect-free alternatives.
       class BranchThreading < Pass
+        include RecursiveAstTransform
+
         def name = :branch_threading
 
         def call(ast, **_context)
@@ -217,13 +227,6 @@ module Onibi
         end
 
         private
-
-        def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
-
-          value
-        end
 
         def transform_sequence(sequence)
           parts = sequence.parts.map { |part| transform(part) }
@@ -265,6 +268,8 @@ module Onibi
 
       # Converts a literal quantifier to possessive when the following literal is disjoint.
       class AutoPossessification < Pass
+        include RecursiveAstTransform
+
         def name = :auto_possessification
 
         def call(ast, **context)
@@ -274,13 +279,6 @@ module Onibi
         end
 
         private
-
-        def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
-
-          value
-        end
 
         def transform_sequence(sequence)
           parts = sequence.parts.map { |part| transform(part) }
@@ -310,6 +308,8 @@ module Onibi
 
       # Marks fixed-count repeats as checkpoint-free because no count can be revisited.
       class DeadCheckpointElimination < Pass
+        include RecursiveAstTransform
+
         def name = :dead_checkpoint_elimination
 
         def call(ast, **context)
@@ -321,11 +321,9 @@ module Onibi
         private
 
         def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
           return transform_quantifier(value) if value.is_a?(AST::Quantifier)
 
-          value
+          super
         end
 
         def transform_sequence(sequence)
@@ -349,6 +347,8 @@ module Onibi
 
       # Recognizes terminal literal loops that have no suffix to backtrack into.
       class LoopIdiomRecognition < Pass
+        include RecursiveAstTransform
+
         def name = :loop_idiom_recognition
 
         def call(ast, **context)
@@ -358,13 +358,6 @@ module Onibi
         end
 
         private
-
-        def transform(value)
-          return transform_sequence(value) if value.is_a?(AST::Sequence)
-          return transform_alternation(value) if value.is_a?(AST::Alternation)
-
-          value
-        end
 
         def transform_sequence(sequence)
           parts = sequence.parts.map { |part| transform(part) }
