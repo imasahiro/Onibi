@@ -4098,15 +4098,6 @@ module Onibi
       return true if ascii_input && hfa_ascii_input_impossible_unicode_literal?
       return true if ascii_input && hfa_ascii_input_impossible_class?
 
-      if (class_source = hfa_unicode_class_direct_spec)
-        validate_encoding!(input, ascii_input: ascii_input)
-        position = 0
-        while (result = hfa_unicode_class_direct_match_result(input, position, class_source))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
