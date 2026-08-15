@@ -1042,7 +1042,7 @@ module Onibi
           position = normalize_position(input, position)
           return false if position.negative? || position > input.bytesize
 
-          return !input.index(@exact_literal, position).nil?
+          return !input.b.index(@exact_literal.b, position).nil?
         end
 
         return unicode_match?(input, position) if @unicode_spec && !ascii_input
@@ -1091,7 +1091,9 @@ module Onibi
         return linebreak_match_result(input, position) if @linebreak_spec
         return start_match_result(input, position) if @start_match
 
-        if @exact_literal && !@exact_literal.ascii_only?
+        if (exact_literal_search? && @span_masks.empty? && @exact_literal) ||
+           (@exact_literal && @span_masks.empty? && @prefix_literal == @exact_literal) ||
+           (@exact_literal && !@exact_literal.ascii_only?)
           start = input.b.index(@exact_literal.b, position)
           return start && [start, start + @exact_literal.bytesize, []]
         end

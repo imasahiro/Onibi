@@ -89,8 +89,6 @@ module Onibi
 
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
-      return !input.index(hfa_exact_literal_value, normalized_position).nil? if hfa_unicode_exact_literal_result_safe?
-
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
@@ -238,15 +236,6 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
 
-      if !ascii_input && !hfa_unicode_property_run_result_safe? &&
-         hfa_unicode_match_result_safe?
-        hfa = hfa_program
-        if hfa
-          return hfa.match?(input, normalized_position) if timeout_unconfigured?
-
-          return with_timeout { hfa.match?(input, normalized_position) }
-        end
-      end
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
@@ -291,11 +280,6 @@ module Onibi
       return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
-      if !ascii_input && hfa_unicode_exact_literal_result_safe?
-        literal = hfa_exact_literal_value
-        start_position = normalized_position
-        return !input.b.index(literal.b, start_position).nil?
-      end
       if !ascii_input && hfa_fixed_literal_capture_result_safe?
         literal = hfa_simple_capture_layout.map { |_kind, value, _number| value }.join
         return !input.b.index(literal.b, normalized_position).nil?
@@ -325,15 +309,15 @@ module Onibi
 
         return with_timeout { !result.nil? }
       end
-      if !ascii_input && (hfa_unicode_literal_result_safe? || hfa_unicode_simple_capture_result_safe? ||
-                                hfa_unicode_repeated_literal_result_safe?)
-        hfa = hfa_program
-        if hfa
-          return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if hfa_unicode_repeated_literal_result_safe?
-          return hfa.match?(input, normalized_position) if timeout_unconfigured?
-
-          return with_timeout { hfa.match?(input, normalized_position) }
+      if !ascii_input && hfa_unicode_repeated_literal_result_safe?
+        byte_position = input[0, normalized_position].bytesize
+        result = hfa_unicode_repeated_literal_match_result(input, byte_position)
+        if result
+          match_start, match_finish, captures = result
+          return MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
         end
+
+        return nil
       end
       if !ascii_input && hfa_linebreak_result_safe?
         result = hfa_program.match?(input, position)
@@ -359,17 +343,6 @@ module Onibi
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
       return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
-
-      if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
-        literal = hfa_exact_literal_value
-        search_input = ascii_input ? input : input.b
-        search_literal = ascii_input ? literal : literal.b
-        start_position = ascii_input ? normalized_position : input.byteslice(0, normalized_position).bytesize
-        start = search_input.index(search_literal, start_position)
-        return hfa_match_data([start, start + literal.bytesize, []], input) if start
-
-        return nil
-      end
 
       if (literal = hfa_start_match_literal_fast)
         return nil unless input[normalized_position, literal.length] == literal
@@ -607,14 +580,6 @@ module Onibi
 
         return nil
       end
-      if !ascii_input && hfa_unicode_exact_literal_result_safe?
-        literal = hfa_exact_literal_value
-        start_position = normalized_position
-        start = input.b.index(literal.b, start_position)
-        return hfa_match_data([start, start + literal.bytesize, []], input) if start
-
-        return nil
-      end
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         result = hfa_unicode_ignorecase_literal_match_result(input, position, literal)
         return hfa_match_data(result, input) if result
@@ -645,21 +610,14 @@ module Onibi
 
         return nil
       end
+      if !ascii_input && hfa_unicode_repeated_literal_result_safe?
+        result = hfa_unicode_repeated_literal_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+
+        return nil
+      end
       return nil if ascii_input && hfa_unicode_repeated_literal_result_safe?
 
-      if !ascii_input && (hfa_unicode_match_result_safe? || hfa_unicode_literal_result_safe? ||
-                                hfa_unicode_simple_capture_result_safe? ||
-                                hfa_unicode_repeated_literal_result_safe?)
-        if hfa_unicode_repeated_literal_result_safe?
-          result = hfa_unicode_repeated_literal_match_result(input, position)
-          return hfa_match_data(result, input) if result
-
-          return nil
-        end
-        result = with_timeout { hfa_program&.match_result(input, position) }
-        return hfa_match_data(result, input) if result
-        return nil if hfa_program
-      end
       if !ascii_input && hfa_linebreak_result_safe?
         result = with_timeout { hfa_program.match_result(input, position) }
         return hfa_linebreak_match_data(result, input) if result
@@ -726,7 +684,12 @@ module Onibi
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
       hfa_timeout_budget_guard!(input)
-      with_timeout { program.match?(input, normalize_match_position(input, position)) }
+      ascii_input = input.ascii_only?
+      start = normalize_match_position(input, position)
+      return false if start.negative?
+
+      start = hfa_byte_position(input, start, ascii_input: ascii_input)
+      with_timeout { program.match?(input, start) }
     end
 
     def hfa_generic_match(input, position = 0, ascii_input: nil)
@@ -736,14 +699,18 @@ module Onibi
       hfa_timeout_budget_guard!(input)
       ascii_input = input.ascii_only? if ascii_input.nil?
       start = normalize_match_position(input, position)
+      return nil if start.negative?
+
+      start = hfa_byte_position(input, start, ascii_input: ascii_input)
       result = with_timeout { program.match_result(input, start) }
       result ||= hfa_unicode_alternation_match_result(input, start)
       return nil unless result
 
-      if ascii_input
+      match_start, match_finish, captures = result
+      if ascii_input || (captures.empty? && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
+                                             hfa_capture_count.positive?))
         hfa_match_data(result, input)
       else
-        match_start, match_finish, captures = result
         MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
       end
     end
@@ -1203,6 +1170,14 @@ module Onibi
 
       position += input.length if position.negative?
       position
+    end
+
+    def hfa_byte_position(input, position, ascii_input: nil)
+      ascii_input = input.ascii_only? if ascii_input.nil?
+      return position if ascii_input || position.negative?
+      return input.bytesize + 1 if position > input.length
+
+      input[0, position].bytesize
     end
 
     def timeout_unconfigured?
