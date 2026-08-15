@@ -309,7 +309,6 @@ module Onibi
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_anchored_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_anchored_class_run_result_safe?
       return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
-      return !hfa_dot_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_dot_literal_result_safe?
       return !hfa_word_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_word_boundary_literal_result_safe?
       return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
       return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
@@ -3811,44 +3810,6 @@ module Onibi
       best_start && [best_start, best_start + best_value.bytesize, []]
     end
 
-    def hfa_dot_literal_result_safe?
-      return @hfa_dot_literal_safe if defined?(@hfa_dot_literal_safe)
-
-      prefix, suffix = hfa_dot_literal_parts
-      @hfa_dot_literal_safe = !casefold? && prefix&.ascii_only? && suffix&.ascii_only? &&
-                              prefix.bytesize == 1 && suffix.bytesize == 1
-    end
-
-    def hfa_dot_literal_parts
-      return @hfa_dot_literal_parts if defined?(@hfa_dot_literal_parts)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      prefix, wildcard, suffix = parts
-      valid = parts.length == 3 && prefix.is_a?(AST::Literal) && wildcard.is_a?(AST::Any) &&
-              suffix.is_a?(AST::Literal)
-      @hfa_dot_literal_parts = if valid
-                                 [prefix.value, suffix.value, @options.include?("multiline")].freeze
-                               else
-                                 [nil, nil, false].freeze
-                               end
-    end
-
-    def hfa_dot_literal_match_result(input, position)
-      prefix, suffix, allow_newline = hfa_dot_literal_parts
-      candidate = input.index(prefix, position)
-      while candidate
-        middle = candidate + 1
-        finish = candidate + 2
-        if finish < input.bytesize && (allow_newline || input.getbyte(middle) != 10) &&
-           input.getbyte(finish) == suffix.getbyte(0)
-          return [candidate, finish + 1, []]
-        end
-
-        candidate = input.index(prefix, candidate + 1)
-      end
-      nil
-    end
-
     def hfa_unicode_property_run_result_safe?
       return @hfa_unicode_property_run_safe if defined?(@hfa_unicode_property_run_safe)
 
@@ -5012,14 +4973,6 @@ module Onibi
       if ascii_input && hfa_match_reset_literal_result_safe?
         position = 0
         while (result = hfa_match_reset_literal_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if ascii_input && hfa_dot_literal_result_safe?
-        position = 0
-        while (result = hfa_dot_literal_match_result(input, position))
           block.call(result)
           position = result[1]
         end
