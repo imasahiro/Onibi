@@ -698,23 +698,6 @@ module Onibi
 
         return nil
       end
-      if ascii_input && (hfa_public_safe? && hfa_match_result_safe? ||
-                               hfa_scoped_ignorecase_literal_result_safe? ||
-                               hfa_scoped_multiline_any_result_safe? ||
-                               hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
-                               hfa_start_match_result_safe? ||
-                               hfa_linebreak_result_safe? ||
-                               hfa_simple_capture_result_safe? || hfa_literal_guard_result_safe? ||
-                               hfa_positive_literal_guard_result_safe? || hfa_positive_lookbehind_result_safe? ||
-                               hfa_negative_lookbehind_result_safe? || hfa_backref_result_safe? ||
-                               hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                               hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
-                               hfa_adjacent_nested_repeated_capture_result_safe? ||
-                               hfa_repeated_class_capture_result_safe?)
-        result = with_timeout { hfa_program&.match_result(input, position) }
-        return hfa_match_data(result, input) if result
-        return nil if hfa_program
-      end
       hfa_generic_match(input, position, ascii_input: ascii_input)
     end
 
