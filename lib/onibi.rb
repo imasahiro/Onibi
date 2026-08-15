@@ -1597,17 +1597,6 @@ module Onibi
       [position, input.bytesize, captures]
     end
 
-    def hfa_scoped_ignorecase_literal_result_safe?
-      return @hfa_scoped_ignorecase_literal_safe if defined?(@hfa_scoped_ignorecase_literal_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      group = parts.one? && parts.first
-      literal = group.body if group.is_a?(AST::OptionGroup) && group.ignorecase &&
-                              group.multiline.nil? && group.extended.nil?
-      literal = literal_ast_value(literal) if literal
-      @hfa_scoped_ignorecase_literal_safe = literal&.ascii_only? && literal.bytesize.positive? && hfa_program
-    end
-
     def hfa_scoped_unicode_ignorecase_literal_value
       return @hfa_scoped_unicode_ignorecase_literal if defined?(@hfa_scoped_unicode_ignorecase_literal)
 
@@ -4100,7 +4089,7 @@ module Onibi
 
       ascii_input = input.ascii_only?
       ascii_safe = ascii_input &&
-                   (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
+                   (hfa_exact_literal_result_safe? || hfa_public_safe? ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
@@ -4132,7 +4121,6 @@ module Onibi
     def hfa_iterator_safe?
       return true if hfa_encoding_neutral_scan_safe? || hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
                      hfa_unicode_property_result_safe? ||
-                     hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_variable_any_backref_spec ||
                      hfa_start_match_result_safe? ||
