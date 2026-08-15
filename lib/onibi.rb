@@ -3165,47 +3165,6 @@ module Onibi
                                                    end
     end
 
-    def hfa_ascii_run_chain_result_safe?
-      return @hfa_ascii_run_chain_safe if defined?(@hfa_ascii_run_chain_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      valid = !casefold? && parts.length == 3 && parts.all? do |part|
-        part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
-          (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape))
-      end
-      @hfa_ascii_run_chain_safe = valid && !hfa_ascii_run_chain_tables.nil?
-    end
-
-    def hfa_ascii_run_chain_tables
-      return @hfa_ascii_run_chain_tables if defined?(@hfa_ascii_run_chain_tables)
-
-      parts = @ast.parts
-      tables = parts.map { |part| hfa_capture_class_table(part.expression) }
-      @hfa_ascii_run_chain_tables = tables.all? ? tables.freeze : nil
-    end
-
-    def hfa_ascii_run_chain_match_result(input, position)
-      tables = hfa_ascii_run_chain_tables
-      cursor = position
-      while cursor < input.bytesize
-        starts = cursor
-        left = starts
-        left += 1 while left < input.bytesize && tables[0][input.getbyte(left)]
-        if left > starts
-          middle = left
-          middle += 1 while middle < input.bytesize && tables[1][input.getbyte(middle)]
-          if middle > left
-            right = middle
-            right += 1 while right < input.bytesize && tables[2][input.getbyte(right)]
-            return [starts, right, []] if right > middle
-          end
-        end
-
-        cursor = starts + 1
-      end
-      nil
-    end
-
     def hfa_ascii_adjacent_run_result_safe?
       return @hfa_ascii_adjacent_run_safe if defined?(@hfa_ascii_adjacent_run_safe)
 
