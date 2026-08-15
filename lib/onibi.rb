@@ -80,9 +80,6 @@ module Onibi
       tokens = validate_pattern_syntax!(pattern, normalized_options)
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
       @hfa_compilation_program_mutex = Mutex.new
-      ignorecase = casefold?
-      captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
-      @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
     end
 
@@ -111,7 +108,7 @@ module Onibi
 
       return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
       return hfa_ascii_class_run_match?(input, normalized_position) if ascii_input && hfa_ascii_class_run_result_safe?
-      return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && @hfa_captured_class_run_chain_fast
+      return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && hfa_captured_class_run_chain_result_safe?
       return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && hfa_anchored_class_run_result_safe?
 
       return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
@@ -3162,26 +3159,6 @@ module Onibi
       return @hfa_unicode_ignorecase_literal_fold if defined?(@hfa_unicode_ignorecase_literal_fold)
 
       @hfa_unicode_ignorecase_literal_fold = literal_ast_value(@ast)&.downcase
-    end
-
-    def hfa_captured_class_run_chain_candidate?
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length == 3
-
-      left, separator, right = @ast.parts
-      separator.is_a?(AST::Literal) && left.is_a?(AST::Group) && right.is_a?(AST::Group) &&
-        left.capture && right.capture && hfa_captured_class_run_group_candidate?(left) &&
-        hfa_captured_class_run_group_candidate?(right)
-    end
-
-    def hfa_captured_class_run_group_candidate?(group)
-      body = group.body
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      body.is_a?(AST::Quantifier) && body.kind == :+ && body.mode == :greedy &&
-        hfa_captured_class_run_expression_candidate?(body.expression)
-    end
-
-    def hfa_captured_class_run_expression_candidate?(expression)
-      expression.is_a?(AST::CharacterClass) || expression.is_a?(AST::Escape) || expression.is_a?(AST::Property)
     end
 
     def hfa_captured_class_run_chain_result_safe?
