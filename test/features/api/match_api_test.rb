@@ -388,13 +388,16 @@ class MatchApiTest < Minitest::Test
     assert_same first.send(:hfa_ascii_unicode_run_table), second.send(:hfa_ascii_unicode_run_table)
   end
 
-  def test_ascii_run_chain_match_question_uses_constructor_dispatch_metadata
-    regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
+  def test_ascii_run_chain_public_apis_match_mri
+    pattern = "\\w+\\s+\\d+"
+    input = "item 2026 next 42"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
 
-    regexp.stub(:hfa_ascii_run_chain_result_safe?,
-                -> { flunk "ASCII run chain should use constructor dispatch metadata" }) do
-      assert regexp.match?("item 2026")
-    end
+    assert_equal input.match?(mri), regexp.match?(input)
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_unicode_property_run_match_question_uses_direct_character_path

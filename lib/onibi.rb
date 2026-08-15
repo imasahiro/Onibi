@@ -81,13 +81,6 @@ module Onibi
       @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
       @hfa_compilation_program_mutex = Mutex.new
       ignorecase = casefold?
-      chain_candidate = !ignorecase && @ast.is_a?(AST::Sequence) &&
-                        @ast.parts.length == 3 && @ast.parts.all? do |part|
-                          part.is_a?(AST::Quantifier) && part.kind == :+ && part.mode == :greedy &&
-                            (part.expression.is_a?(AST::CharacterClass) || part.expression.is_a?(AST::Escape))
-                        end
-      chain_tables = hfa_ascii_run_chain_tables if chain_candidate
-      @hfa_ascii_run_chain_fast = chain_tables if chain_tables
       captured_chain_candidate = !ignorecase && hfa_captured_class_run_chain_candidate?
       @hfa_captured_class_run_chain_fast = true if captured_chain_candidate
       @hfa_ascii_adjacent_run_fast = true if hfa_ascii_adjacent_run_candidate?
@@ -283,7 +276,7 @@ module Onibi
       end
       return hfa_class_run_positive_lookahead_match?(input, normalized_position) if ascii_input && hfa_class_run_positive_lookahead_result_safe?
       return hfa_ascii_unicode_run_match?(input, normalized_position) if ascii_input && hfa_ascii_unicode_run_result_safe?
-      return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && @hfa_ascii_run_chain_fast
+      return hfa_ascii_run_chain_match?(input, normalized_position) if ascii_input && hfa_ascii_run_chain_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         normalized_position = normalize_match_position(input, position)
@@ -5485,7 +5478,7 @@ module Onibi
         end
         return true
       end
-      if ascii_input && @hfa_ascii_run_chain_fast
+      if ascii_input && hfa_ascii_run_chain_result_safe?
         position = 0
         while (result = hfa_ascii_run_chain_match_result(input, position))
           block.call(result)
