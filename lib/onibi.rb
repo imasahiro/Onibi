@@ -378,7 +378,7 @@ module Onibi
 
       return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
 
-      if hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?
+      if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
         literal = hfa_exact_literal_value
         search_input = ascii_input ? input : input.b
         search_literal = ascii_input ? literal : literal.b
