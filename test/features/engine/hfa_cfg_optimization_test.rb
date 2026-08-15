@@ -160,4 +160,26 @@ class HfaCfgOptimizationTest < Minitest::Test
       assert_equal (length + 511) / 512, nfa.segments.length
     end
   end
+
+  def test_head_dfa_budget_preserves_public_results_and_publishes_complete_rows
+    [0, 1, 4_096].each do |row_budget|
+      source = "ab|a"
+      input = "za"
+      onibi = Onibi::Regexp.new(source)
+      mri = Regexp.new(source)
+
+      assert_equal mri.match?(input), onibi.match?(input)
+      assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+
+      unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+        Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+      )
+      dfa = unit.head_dfa(row_budget: row_budget)
+
+      assert dfa.frozen?
+      assert dfa.states.all?(&:frozen?)
+      assert(dfa.states.all? { |state| state.transitions.length == dfa.alphabet.length })
+      assert dfa.states.any?(&:border?) if row_budget < 4_096
+    end
+  end
 end

@@ -308,7 +308,7 @@ because of the segment limit.
 alternations crossing 511, 512, and 513 position states and compare `match?`
 and `match` with MRI.
 
-### HFA-021 - Build a bounded head DFA and border states
+### HFA-021 - Build a bounded head DFA and border states [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-020

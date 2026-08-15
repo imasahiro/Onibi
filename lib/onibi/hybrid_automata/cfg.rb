@@ -94,6 +94,10 @@ module Onibi
         ComponentGraph = Data.define(:entry, :nodes, :edges, :accepts)
         Position = Data.define(:id, :symbol, :operation)
         PositionNFA = Data.define(:positions, :first, :last, :follow, :nullable, :reach, :segments)
+        HeadDFAState = Data.define(:id, :subset, :transitions, :accepts, :border) do
+          def border? = border
+        end
+        HeadDFA = Data.define(:entry, :states, :alphabet, :row_budget)
 
         module_function
 
@@ -161,6 +165,18 @@ module Onibi
             nfa = position_nfa_for(region)
             nfa unless nfa.positions.empty?
           end.freeze
+        end
+
+        def head_dfa(graph, facts, row_budget:)
+          nfas = position_nfas(graph, facts)
+          alphabet = nfas.flat_map { |nfa| nfa.reach.keys }.uniq.sort.freeze
+          initial = nfas.flat_map(&:first).uniq.freeze
+          border = row_budget < alphabet.length
+          initial_state = HeadDFAState.new(0, initial, {}, [], border)
+          transitions = alphabet.to_h { |symbol| [symbol, nil] }.freeze
+          state = HeadDFAState.new(initial_state.id, initial_state.subset, transitions,
+                                   nfas.flat_map(&:last).intersection(initial).freeze, border).freeze
+          HeadDFA.new(state.id, [state].freeze, alphabet, row_budget).freeze
         end
 
         def position_nfa_for(region)

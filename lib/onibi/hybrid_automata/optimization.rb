@@ -66,6 +66,10 @@ module Onibi
         def position_nfas
           CFG::Analysis.position_nfas(cfg, facts)
         end
+
+        def head_dfa(row_budget:)
+          CFG::Analysis.head_dfa(cfg, facts, row_budget: row_budget)
+        end
       end
 
       # Abstract transformation contract.
