@@ -4113,16 +4113,15 @@ module Onibi
         block.call([0, literal.bytesize, []])
         return true
       end
-      if hfa_literal_alternation_result_safe?
-        validate_encoding!(input, ascii_input: ascii_input) unless ascii_input
+      if !ascii_input && hfa_literal_alternation_result_safe?
+        validate_encoding!(input, ascii_input: ascii_input)
         position = 0
-        while (result = hfa_literal_alternation_match_result(input, position, byte_mode: !ascii_input))
+        while (result = hfa_literal_alternation_match_result(input, position, byte_mode: true))
           block.call(result)
           position = result[1]
         end
         return true
       end
-
       if hfa_literal_absence_result_safe?
         validate_encoding!(input, ascii_input: ascii_input) unless ascii_input
         position = 0
