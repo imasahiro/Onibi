@@ -9,7 +9,6 @@ require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/regexp_timeout"
 require_relative "onibi/regexp_replacement"
 require_relative "onibi/regexp_captureless_scan_gsub"
-require_relative "onibi/regexp_linebreak_scan_gsub"
 require_relative "onibi/regexp_scan_gsub"
 require_relative "onibi/regexp_capture_scan_optimizations"
 require_relative "onibi/regexp_captureless_alternation_scan"
@@ -4643,6 +4642,10 @@ module Onibi
           return hfa_offset_match_data(input, start, finish, capture_offsets, names)
         end
       end
+      if captures.empty? && hfa_capture_count.positive?
+        capture_offsets = hfa_whole_capture_offsets(start, finish)
+        return hfa_offset_match_data(input, start, finish, capture_offsets, hfa_result_names) if capture_offsets
+      end
       if captures.any? && captures.all? { |capture| capture.nil? || (capture.is_a?(Array) && capture.length == 2) }
         return hfa_offset_match_data(input, start, finish, captures, hfa_result_names)
       end
@@ -5723,11 +5726,6 @@ module Onibi
           block.call([start, finish, [[start, finish]]])
           position = finish
         end
-        return true
-      end
-
-      if ascii_input && (scan_spec = hfa_literal_prefix_capture_scan_spec)
-        hfa_literal_prefix_capture_each_result(input, scan_spec, &block)
         return true
       end
 

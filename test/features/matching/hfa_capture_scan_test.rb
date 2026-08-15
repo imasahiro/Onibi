@@ -81,7 +81,6 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["https://example.com/docs/0?lang=en."]],
                  regexp.scan("See https://example.com/docs/0?lang=en.")
-    assert regexp.send(:hfa_literal_prefix_capture_scan_spec)
   end
 
   def test_hfa_url_scan_returns_multiple_capture_values
@@ -89,6 +88,48 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [["https://example.com"], ["https://example.org/docs/1"]],
                  Onibi::Regexp.new(pattern).scan("https://example.com https://example.org/docs/1")
+  end
+
+  def test_url_capture_scan_uses_general_matching_for_all_literal_values
+    pattern = "(?<link>ftp://[A-Za-z0-9.-]+(?:~[A-Za-z0-9._~?=&%-]+)?)"
+    regexp = Onibi::Regexp.new(pattern)
+    input = "See ftp://example.com~docs?lang=en and ftp://example.org"
+    expected = input.scan(::Regexp.new(pattern))
+
+    regexp.stub(:hfa_literal_prefix_capture_each_result, ->(*) { flunk "legacy URL scanner called" }) do
+      assert_equal expected, regexp.scan(input)
+    end
+  end
+
+  def test_url_capture_scan_does_not_use_benchmark_literal_scanner
+    pattern = "(?<url>https?://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~/?=&%-]+)?)"
+    regexp = Onibi::Regexp.new(pattern)
+    input = "See https://example.com/docs?lang=en"
+
+    legacy_scanner = ->(*) { raise "legacy URL scanner called" }
+    regexp.define_singleton_method(:hfa_literal_prefix_capture_each_result, &legacy_scanner)
+    regexp.define_singleton_method(:hfa_literal_prefix_capture_each_scan_value, &legacy_scanner)
+
+    assert_equal input.scan(::Regexp.new(pattern)), regexp.scan(input)
+  end
+
+  def test_mutated_url_and_line_removal_families_match_mri_across_public_apis
+    cases = [
+      ["(?<link>ftp://[A-Za-z0-9.-]+(?:~[A-Za-z0-9._~?=&%-]+)?)",
+       "See ftp://example.com~docs?lang=en and ftp://example.org", "<link>"],
+      ["#.*\\n|\\n", "a#remove\nkeep\n", ""]
+    ]
+
+    cases.each do |pattern, input, replacement|
+      ruby_regexp = ::Regexp.new(pattern)
+      regexp = Onibi::Regexp.new(pattern)
+      expected_scan = input.scan(ruby_regexp)
+
+      assert_equal input.match(ruby_regexp)&.to_a, regexp.match(input)&.to_a, pattern
+      assert_equal !input.match(ruby_regexp).nil?, regexp.match?(input), pattern
+      assert_equal expected_scan, regexp.scan(input), pattern
+      assert_equal input.gsub(ruby_regexp, replacement), regexp.gsub(input, replacement), pattern
+    end
   end
 
   def test_hfa_extracts_literal_prefix_inside_capturing_group

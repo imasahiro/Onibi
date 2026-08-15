@@ -868,9 +868,18 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new(">.*\\n|\\n")
     input = ">header\nsequence\n"
 
-    assert_equal ["sequence", input.bytesize],
-                 regexp.send(:hfa_linebreak_replace_api, input, "", nil)
     assert_equal "sequence", regexp.gsub(input, "")
+  end
+
+  def test_linebreak_alternation_gsub_uses_general_matching
+    regexp = Onibi::Regexp.new(">.*\\n|\\n")
+    input = ">header\nsequence\n"
+
+    regexp.define_singleton_method(:hfa_linebreak_replace_api) do |*|
+      raise "legacy Regex Redux scanner called"
+    end
+
+    assert_equal input.gsub(::Regexp.new(">.*\\n|\\n"), ""), regexp.gsub(input, "")
   end
 
   def test_delimited_negated_class_gsub_uses_hfa_result_shape

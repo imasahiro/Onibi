@@ -5,7 +5,6 @@ module Onibi
   module RegexpScanGsub
     include RegexpReplacement
     include RegexpCapturelessScanGsub
-    include RegexpLinebreakScanGsub
     UNDEFINED_REPLACEMENT = Object.new.freeze
 
     def scan(input, &block)
@@ -16,21 +15,6 @@ module Onibi
          (spec = hfa_alternation_capture_scan_spec)
         values = []
         hfa_alternation_capture_each_scan_value(input, spec) do |value|
-          if block
-            block.call(value)
-          else
-            values << value
-          end
-        end
-        return input if block
-
-        return values
-      end
-
-      if input.is_a?(String) && input.ascii_only? && hfa_capture_count == 1 &&
-         (spec = hfa_literal_prefix_capture_scan_spec)
-        values = []
-        hfa_literal_prefix_capture_each_scan_value(input, spec) do |value|
           if block
             block.call(value)
           else
@@ -115,36 +99,6 @@ module Onibi
       end
     end
 
-    def hfa_literal_prefix_capture_each_scan_value(input, spec)
-      _capture_number, prefix, host_run, path_run = spec
-      host_table = host_run.first
-      path_table = path_run.first
-      position = 0
-      while (start = input.index(prefix, position))
-        cursor = start + prefix.bytesize
-        cursor += 1 if input.getbyte(cursor) == 115
-        unless input.index("://", cursor) == cursor
-          position = start + prefix.bytesize
-          next
-        end
-
-        host_start = cursor + 3
-        host_finish = hfa_literal_prefix_capture_run_end(input, host_start, host_table)
-        if host_finish == host_start
-          position = start + prefix.bytesize
-          next
-        end
-
-        finish = host_finish
-        if input.getbyte(finish) == 47
-          path_finish = hfa_literal_prefix_capture_run_end(input, finish + 1, path_table)
-          finish = path_finish if path_finish > finish + 1
-        end
-        yield [input.byteslice(start, finish - start)]
-        position = finish
-      end
-    end
-
     def hfa_capture_sequence_each_scan_value(input, spec)
       tokens, anchor = spec
       position = 0
@@ -185,7 +139,7 @@ module Onibi
         return position + table.bytesize
       end
 
-      finish = hfa_literal_prefix_capture_run_end(input, position, table)
+      finish = hfa_capture_run_end(input, position, table)
       finish - position >= minimum ? finish : nil
     end
 
@@ -240,8 +194,6 @@ module Onibi
       captureless_replacement = hfa_captureless_replace_api(input, replacement, block)
       return captureless_replacement if captureless_replacement
 
-      linebreak_replacement = hfa_linebreak_replace_api(input, replacement, block)
-      return linebreak_replacement if linebreak_replacement
       if !block && replacement.index("\\").nil? && input.ascii_only? &&
          (spec = hfa_delimited_negated_class_result_spec)
         return [hfa_delimited_negated_class_replace_literal(input, replacement, spec), input.bytesize]

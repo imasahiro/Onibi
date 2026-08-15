@@ -180,7 +180,7 @@ removed from active documentation.
 **Completion evidence:** all internal documentation links resolve; the full
 test, lint, and package gates pass without a library behavior change.
 
-### HFA-001 - Freeze, inventory, and remove benchmark-literal recognizers
+### HFA-001 - Freeze, inventory, and remove benchmark-literal recognizers [Complete]
 
 - **Priority:** P0
 - **Dependencies:** HFA-000
