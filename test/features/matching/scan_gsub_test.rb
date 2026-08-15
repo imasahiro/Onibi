@@ -746,6 +746,14 @@ class ScanGsubTest < Minitest::Test
     regexp = Onibi::Regexp.new("[cgt]gggtaaa|tttaccc[acg]")
 
     assert_equal %w[cgggtaaa tttaccca], regexp.scan("xxcgggtaaa yytttaccca")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
+  end
+
+  def test_captureless_middle_class_alternation_scan_uses_literal_anchor
+    regexp = Onibi::Regexp.new("a[act]ggtaaa|tttacc[agt]t")
+
+    assert_equal %w[acggtaaa tttaccgt], regexp.scan("xxacggtaaa yytttaccgt")
+    assert regexp.send(:hfa_captureless_alternation_scan_spec)
   end
 
   def test_repeated_alternation_scan_uses_hfa_iterator
