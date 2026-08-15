@@ -105,7 +105,7 @@ module Onibi
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
 
-      return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
+      return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_ascii_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_ascii_class_run_result_safe?
       return hfa_captured_class_run_chain_match?(input, normalized_position) if ascii_input && hfa_captured_class_run_chain_result_safe?
       return hfa_anchored_class_run_match?(input, normalized_position) if ascii_input && hfa_anchored_class_run_result_safe?
@@ -309,7 +309,7 @@ module Onibi
         return hfa_greedy_dot_star_literal_match?(input, normalized_position, parts)
       end
       return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && hfa_literal_conditional_result_safe?
-      return hfa_repeated_class_backref_match?(input, normalized_position) if ascii_input && hfa_repeated_class_backref_result_safe?
+      return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_anchored_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_anchored_class_run_result_safe?
       return hfa_literal_alternation_match?(input, normalized_position) if ascii_input && hfa_literal_alternation_result_safe?
       return hfa_dot_literal_match?(input, normalized_position) if ascii_input && hfa_dot_literal_result_safe?
