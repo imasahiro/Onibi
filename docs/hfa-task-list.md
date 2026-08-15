@@ -457,7 +457,7 @@ by this ordering.
 lazy repeats, atomic alternatives, possessive repeats, and equal-end matches
 with different captures.
 
-### HFA-042 - Lower nonregular constructs to typed semantic components [HFA-042a/b Complete]
+### HFA-042 - Lower nonregular constructs to typed semantic components [HFA-042a/b/c Complete]
 
 - **Priority:** P1
 - **Dependencies:** HFA-041

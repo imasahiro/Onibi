@@ -427,4 +427,24 @@ class HfaCfgOptimizationTest < Minitest::Test
     assert_equal %i[cursor captures], semantic.fetch(0).payload.output_domains
     assert unit.head_dfa(row_budget: 1).states.all?(&:border?)
   end
+
+  def test_conditional_uses_typed_semantic_component_for_both_capture_branches
+    source = "(a)?(?(1)b|c)"
+    inputs = %w[ab c]
+    onibi = Onibi::Regexp.new(source)
+    mri = Regexp.new(source)
+
+    inputs.each do |input|
+      assert_equal mri.match(input)&.to_a, onibi.match(input)&.to_a
+    end
+
+    unit = Onibi::HybridAutomata::Optimization::Pipeline.new([]).call(
+      Onibi::Parser.new(source).parse, options: [], encoding: Encoding::UTF_8
+    )
+    semantic = unit.component_graph.nodes.select { |node| node.kind == :semantic }
+
+    assert_equal [:conditional], semantic.map(&:payload).map(&:kind)
+    assert_equal %i[cursor captures], semantic.fetch(0).payload.input_domains
+    assert_equal %i[cursor captures], semantic.fetch(0).payload.output_domains
+  end
 end
