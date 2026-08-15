@@ -2877,26 +2877,6 @@ module Onibi
       literal_ast_value(@ast.parts.first.body)
     end
 
-    def hfa_scoped_ignorecase_multiline_sequence_result_safe?
-      return @hfa_scoped_ignorecase_multiline_sequence_safe if defined?(@hfa_scoped_ignorecase_multiline_sequence_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      group = parts.one? && parts.first
-      body = group.body if group.is_a?(AST::OptionGroup) && group.ignorecase == true &&
-                           group.multiline == true && group.extended.nil?
-      body = body.parts if body.is_a?(AST::Sequence)
-      literal, wildcard = body if body&.length == 2
-      valid = literal.is_a?(AST::Literal) && wildcard.is_a?(AST::Any) &&
-              literal.value.ascii_only? && literal.value.bytesize.positive?
-      @hfa_scoped_ignorecase_multiline_sequence_safe = valid && [literal.value].freeze
-    end
-
-    def hfa_scoped_ignorecase_multiline_sequence_match_result(input, position)
-      literal = hfa_scoped_ignorecase_multiline_sequence_result_safe?.first
-      start = input.downcase.index(literal.downcase, position)
-      start && [start, start + literal.bytesize + 1, []]
-    end
-
     def hfa_unicode_repeated_literal_capture_result_safe?
       return @hfa_unicode_repeated_capture_safe if defined?(@hfa_unicode_repeated_capture_safe)
 
@@ -4177,7 +4157,7 @@ module Onibi
       ascii_input = input.ascii_only?
       ascii_safe = ascii_input &&
                    (hfa_exact_literal_result_safe? || hfa_public_safe? || hfa_scoped_ignorecase_literal_result_safe? ||
-                    hfa_scoped_multiline_any_result_safe? || hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
+                    hfa_scoped_multiline_any_result_safe? ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
                     hfa_start_match_result_safe? ||
@@ -4212,7 +4192,6 @@ module Onibi
                      hfa_unicode_property_result_safe? ||
                      hfa_scoped_ignorecase_literal_result_safe? ||
                      hfa_scoped_multiline_any_result_safe? ||
-                     hfa_scoped_ignorecase_multiline_sequence_result_safe? ||
                      hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_variable_any_backref_spec ||
                      hfa_start_match_result_safe? ||
