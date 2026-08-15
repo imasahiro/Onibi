@@ -105,8 +105,6 @@ module Onibi
                                finish.is_a?(AST::Anchor) && finish.kind == :anchor_absolute_end
                            end
       @hfa_anchored_class_run_fast = hfa_anchored_class_run_table if anchored_candidate
-      conditional_parts = hfa_literal_conditional_parts
-      @hfa_literal_conditional_fast = conditional_parts if conditional_parts.all?
       word_node = single_quantified_expression
       word_node = nil unless word_node.is_a?(AST::CharacterClass) && word_node.value == "[:word:]"
       @hfa_unicode_word_class_run_fast = word_node if word_node && !ignorecase
@@ -275,7 +273,7 @@ module Onibi
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
       return !hfa_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_assertion_result_safe?
-      return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && @hfa_literal_conditional_fast
+      return hfa_literal_conditional_match?(input, normalized_position) if ascii_input && hfa_literal_conditional_result_safe?
 
       if hfa_negative_lookbehind_result_safe?
         literal, guard = hfa_literal_lookbehind_parts(:negative_lookbehind)
