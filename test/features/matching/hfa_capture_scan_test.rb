@@ -103,6 +103,13 @@ class HfaCaptureScanTest < Minitest::Test
     assert regexp.send(:hfa_alternation_capture_scan_spec)
   end
 
+  def test_hfa_alternation_scan_returns_single_capture_values_for_each_branch
+    regexp = Onibi::Regexp.new("(?<identifier>v[0-9]+\\.[0-9]+|api/[a-z]+/[0-9]+|pkg-[a-z0-9-]+)")
+
+    assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]],
+                 regexp.scan("v1.2 api/users/42 pkg-client")
+  end
+
   def test_hfa_alternation_scan_rejects_overlapping_greedy_class_steps
     regexp = Onibi::Regexp.new("(?<value>[a-z]+[a-z])")
 

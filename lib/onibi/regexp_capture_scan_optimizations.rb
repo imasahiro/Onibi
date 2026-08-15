@@ -163,13 +163,13 @@ module Onibi
 
     def hfa_alternation_capture_match_result(input, start, branches)
       branches.each do |prefix, steps|
-        next unless input.byteslice(start, prefix.bytesize) == prefix
+        next unless input.index(prefix, start) == start
 
         cursor = start + prefix.bytesize
         valid = true
         steps.each do |kind, value|
           if kind == :literal
-            unless input.byteslice(cursor, value.bytesize) == value
+            unless input.index(value, cursor) == cursor
               valid = false
               break
             end
