@@ -349,13 +349,6 @@ module Onibi
         return with_timeout { !result.nil? }
       end
 
-      hfa = hfa_program if ascii_input && (hfa_match_question_safe? || hfa_start_match_result_safe?)
-      if hfa
-        return hfa.match?(input, normalized_position) if timeout_unconfigured?
-
-        return with_timeout { hfa.match?(input, normalized_position) }
-      end
-
       hfa_generic_match?(input, position)
     end
 
@@ -1314,59 +1307,6 @@ module Onibi
                          else
                            hfa_public_safe_node?(@ast)
                          end
-    end
-
-    def hfa_match_question_safe?
-      return @hfa_match_question_safe if defined?(@hfa_match_question_safe)
-      return false unless @pattern.ascii_only?
-      return false if @timeout
-
-      program = hfa_program
-      @hfa_match_question_safe = if program && hfa_possessive_literal_safe?
-                                   program
-                                 elsif hfa_contains_possessive_quantifier? || hfa_always_fails?
-                                   false
-                                 else
-                                   program
-                                 end
-
-      @hfa_match_question_safe
-    end
-
-    def hfa_possessive_literal_safe?
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
-      return false unless parts.length <= 2
-
-      quantifier = parts.first
-      quantifier.is_a?(AST::Quantifier) && %i[+ * bounded].include?(quantifier.kind) &&
-        %i[possessive possessive_bounded].include?(quantifier.mode) &&
-        quantifier.expression.is_a?(AST::Literal) &&
-        quantifier.expression.value.ascii_only? &&
-        (quantifier.kind != :bounded || quantifier.maximum) &&
-        (parts.length == 1 || parts.last.is_a?(AST::Literal))
-    end
-
-    def hfa_contains_possessive_quantifier?
-      case @ast
-      when AST::Quantifier
-        @ast.mode == :possessive || hfa_contains_possessive_node?(@ast.expression)
-      else
-        hfa_contains_possessive_node?(@ast)
-      end
-    end
-
-    def hfa_contains_possessive_node?(node)
-      children = case node
-                 when AST::Sequence then node.parts
-                 when AST::Alternation then node.branches
-                 when AST::Group, AST::OptionGroup, AST::AtomicGroup, AST::Assertion,
-                      AST::Absence then [node.body]
-                 when AST::Quantifier then [node.expression]
-                 when AST::Conditional then [node.condition, node.yes_branch, node.no_branch]
-                 else []
-                 end
-      (node.is_a?(AST::Quantifier) && node.mode == :possessive) ||
-        children.any? { |child| hfa_contains_possessive_node?(child) }
     end
 
     def hfa_always_fails?

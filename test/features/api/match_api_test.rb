@@ -1278,30 +1278,6 @@ class MatchApiTest < Minitest::Test
     assert_equal [[1, 2], 2], [first[2], first[4]]
   end
 
-  def test_hfa_match_question_safety_analysis_is_cached
-    regexp = Onibi::Regexp.new("needle.")
-    calls = 0
-    original = regexp.method(:hfa_contains_possessive_quantifier?)
-    regexp.define_singleton_method(:hfa_contains_possessive_quantifier?) do
-      calls += 1
-      original.call
-    end
-
-    3.times { assert regexp.match?("needlex") }
-    assert_equal 1, calls
-  end
-
-  def test_match_question_dispatch_short_circuits_hfa_safety_conditions
-    regexp = Onibi::Regexp.new("needle.")
-    regexp.define_singleton_method(:hfa_match_question_safe?) { true }
-    failure = -> { flunk "unneeded HFA safety condition was evaluated" }
-    regexp.define_singleton_method(:hfa_start_match_result_safe?) do
-      failure.call
-    end
-
-    assert regexp.match?("needlex")
-  end
-
   def test_encoding_neutral_scan_safety_is_checked_once
     regexp = Onibi::Regexp.new("(?<=a)b")
     calls = 0
@@ -1312,14 +1288,6 @@ class MatchApiTest < Minitest::Test
 
     assert regexp.send(:hfa_scan_input_safe?, "ab")
     assert_equal 1, calls
-  end
-
-  def test_hfa_match_question_skips_timeout_wrapper_when_unconfigured
-    regexp = Onibi::Regexp.new("needle")
-
-    regexp.stub(:with_timeout, ->(*) { flunk "unconfigured HFA match? should skip timeout wrapper" }) do
-      assert regexp.match?("needle")
-    end
   end
 
   def test_unicode_hfa_safety_analysis_is_cached
