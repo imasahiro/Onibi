@@ -241,24 +241,25 @@ module Onibi
         if prepared.positive_prefix && exact_literal&.start_with?(prepared.positive_prefix)
           exact_literal = exact_literal.delete_prefix(prepared.positive_prefix)
         end
-        repeat_literal_spec = repeat_literal_spec(ast) unless constrained_match?(prepared)
-        dot_literal_spec = dot_literal_spec(ast) unless constrained_match?(prepared)
-        star_literal_spec = star_literal_spec(ast) unless constrained_match?(prepared)
-        bounded_literal_spec = bounded_literal_spec(ast) unless constrained_match?(prepared)
-        lazy_star_literal_spec = lazy_star_literal_spec(ast) unless constrained_match?(prepared)
+        constrained = constrained_match?(prepared)
+        repeat_literal_spec = repeat_literal_spec(ast) unless constrained
+        dot_literal_spec = dot_literal_spec(ast) unless constrained
+        star_literal_spec = star_literal_spec(ast) unless constrained
+        bounded_literal_spec = bounded_literal_spec(ast) unless constrained
+        lazy_star_literal_spec = lazy_star_literal_spec(ast) unless constrained
         anchored_class_spec = anchored_class_spec(ast, prepared)
-        alternation_literal_spec = alternation_literal_spec(ast) unless constrained_match?(prepared) || ignorecase?
-        repeated_alternation_literal_spec = repeated_alternation_literal_spec(ast) unless constrained_match?(prepared) || ignorecase?
-        class_run_literal_spec = class_run_literal_spec(ast) unless constrained_match?(prepared)
-        class_run_chain_spec = class_run_chain_spec(ast) unless constrained_match?(prepared)
-        adjacent_class_run_spec = adjacent_class_run_spec(ast) unless constrained_match?(prepared)
-        class_run_triple_spec = class_run_triple_spec(ast) unless constrained_match?(prepared)
-        literal_class_literal_spec = literal_class_literal_spec(ast) unless constrained_match?(prepared)
-        ascii_run_spec = ascii_run_spec(ast) unless constrained_match?(prepared)
+        alternation_literal_spec = alternation_literal_spec(ast) unless constrained || ignorecase?
+        repeated_alternation_literal_spec = repeated_alternation_literal_spec(ast) unless constrained || ignorecase?
+        class_run_literal_spec = class_run_literal_spec(ast) unless constrained
+        class_run_chain_spec = class_run_chain_spec(ast) unless constrained
+        adjacent_class_run_spec = adjacent_class_run_spec(ast) unless constrained
+        class_run_triple_spec = class_run_triple_spec(ast) unless constrained
+        literal_class_literal_spec = literal_class_literal_spec(ast) unless constrained
+        ascii_run_spec = ascii_run_spec(ast) unless constrained
         single_byte_spec = single_byte_spec(ast)
         linebreak_spec = linebreak_spec(ast)
         spec = unicode_spec(ast)
-        specialized = specialized_runtime?(prefix, exact_literal, prepared,
+        specialized = specialized_runtime?(prefix, exact_literal, constrained,
                                            repeat_literal_spec, dot_literal_spec, star_literal_spec,
                                            bounded_literal_spec, lazy_star_literal_spec,
                                            anchored_class_spec, alternation_literal_spec,
@@ -286,8 +287,8 @@ module Onibi
                                ignorecase: ignorecase?)
       end
 
-      def specialized_runtime?(prefix, exact_literal, prepared, *specs)
-        return true if exact_literal && prefix && !constrained_match?(prepared)
+      def specialized_runtime?(prefix, exact_literal, constrained, *specs)
+        return true if exact_literal && prefix && !constrained
 
         specs.any?
       end
@@ -1031,12 +1032,14 @@ module Onibi
         raise TypeError, "input must be a String" unless input.is_a?(String)
         return false if @negative_suffix == ""
 
+        ascii_input = input.ascii_only?
+
         if @exact_literal && @prefix_literal
           fast = fast_literal_match(input, position)
           return fast unless fast.nil?
         end
 
-        if input.ascii_only?
+        if ascii_input
           return class_run_chain_match?(input, position) if @class_run_chain_spec
           return adjacent_class_run_match?(input, position) if @adjacent_class_run_spec
           return class_run_triple_match?(input, position) if @class_run_triple_spec
@@ -1054,7 +1057,7 @@ module Onibi
           return !input.index(@exact_literal, position).nil?
         end
 
-        return unicode_match?(input, position) if @unicode_spec && !input.ascii_only?
+        return unicode_match?(input, position) if @unicode_spec && !ascii_input
         return linebreak_match?(input, position) if @linebreak_spec
         return !start_match_result(input, normalize_position(input, position)).nil? if @start_match
         return backref_match?(input, position) if @backref_spec
@@ -1094,7 +1097,9 @@ module Onibi
         position = normalize_position(input, position)
         return if position.negative? || position > input.bytesize
         return if @negative_suffix == ""
-        return unicode_match_result(input, position) if @unicode_spec && !input.ascii_only?
+
+        ascii_input = input.ascii_only?
+        return unicode_match_result(input, position) if @unicode_spec && !ascii_input
         return linebreak_match_result(input, position) if @linebreak_spec
         return start_match_result(input, position) if @start_match
 
@@ -1111,7 +1116,7 @@ module Onibi
 
         return word_boundary_literal_match_result(input, position) if word_boundary_literal_search?
 
-        return unless input.ascii_only?
+        return unless ascii_input
         return backref_match_result(input, position) if @backref_spec
 
         return anchored_class_match_result(input, position) if @anchored_class_spec
@@ -2194,10 +2199,11 @@ module Onibi
       end
 
       def search_unanchored(input, position)
+        ascii_input = input.ascii_only?
         return search_unanchored_single_span(input, position) if @single_span
         return search_required_literal_events(input, position) if @required_literals
-        return search_first_byte_events(input, position) if input.ascii_only? && !@ignorecase && static_first_byte
-        return search_first_byte_set_events(input, position) if input.ascii_only? && !@ignorecase && static_first_bytes
+        return search_first_byte_events(input, position) if ascii_input && !@ignorecase && static_first_byte
+        return search_first_byte_set_events(input, position) if ascii_input && !@ignorecase && static_first_bytes
 
         active = 0
         while position < input.bytesize
