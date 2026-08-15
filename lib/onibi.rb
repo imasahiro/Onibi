@@ -185,9 +185,9 @@ module Onibi
       end
 
       if ascii_input && hfa_ignorecase_literal_result_safe?
-        return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
-
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
+        return !result.nil? if timeout_unconfigured?
+
         return with_timeout { !result.nil? }
       end
 
@@ -291,9 +291,9 @@ module Onibi
       end
       if !ascii_input && hfa_unicode_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
-        return hfa_unicode_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
-
         result = hfa_unicode_ignorecase_literal_match_result(input, normalized_position)
+        return !result.nil? if timeout_unconfigured?
+
         return with_timeout { !result.nil? }
       end
       if !ascii_input && hfa_unicode_property_run_result_safe?
@@ -367,9 +367,9 @@ module Onibi
       end
       if ascii_input && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
-        return hfa_ignorecase_literal_match?(input, normalized_position) if timeout_unconfigured?
-
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
+        return !result.nil? if timeout_unconfigured?
+
         return with_timeout { !result.nil? }
       end
       if !ascii_input && (hfa_unicode_literal_result_safe? || hfa_unicode_simple_capture_result_safe? ||
@@ -2962,19 +2962,6 @@ module Onibi
       start && [start, start + literal.bytesize, []]
     end
 
-    def hfa_ignorecase_literal_match?(input, position)
-      literal = hfa_ignorecase_literal_value
-      hfa_ignorecase_literal_variants.any? do |variant|
-        candidate = input.index(variant, position)
-        while candidate
-          return true if input.byteslice(candidate, literal.bytesize).casecmp?(literal)
-
-          candidate = input.index(variant, candidate + 1)
-        end
-        false
-      end
-    end
-
     def hfa_ignorecase_literal_value
       return @hfa_ignorecase_literal_value if defined?(@hfa_ignorecase_literal_value)
 
@@ -3133,10 +3120,6 @@ module Onibi
         end
       end
       nil
-    end
-
-    def hfa_unicode_ignorecase_literal_match?(input, position)
-      input.downcase.index(hfa_unicode_ignorecase_literal_fold, position) != nil
     end
 
     def hfa_unicode_ignorecase_literal_fold
