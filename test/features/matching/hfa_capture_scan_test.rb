@@ -157,7 +157,6 @@ class HfaCaptureScanTest < Minitest::Test
 
     assert_equal [%w[v1.2], %w[api/users/42], %w[pkg-client]], regexp.scan("v1.2 api/users/42 pkg-client")
     assert_equal %w[v api/ pkg-], regexp.send(:hfa_top_level_capture_scan_spec)
-    assert regexp.send(:hfa_alternation_capture_scan_spec)
   end
 
   def test_hfa_alternation_scan_returns_single_capture_values_for_each_branch
@@ -171,7 +170,6 @@ class HfaCaptureScanTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?<value>[a-z]+[a-z])")
 
     assert_equal [["abcd"]], regexp.scan("abcd")
-    refute regexp.send(:hfa_alternation_capture_scan_spec)
   end
 
   def test_hfa_uses_delimiter_search_for_negated_class_runs

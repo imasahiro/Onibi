@@ -9,7 +9,6 @@ require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/regexp_timeout"
 require_relative "onibi/regexp_replacement"
 require_relative "onibi/regexp_scan_gsub"
-require_relative "onibi/regexp_capture_scan_optimizations"
 require_relative "onibi/regexp_captureless_alternation_scan"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
@@ -56,7 +55,6 @@ module Onibi
     include RegexpObjectSemantics
     include RegexpTimeout
     include RegexpScanGsub
-    include RegexpCaptureScanOptimizations
     include RegexpCapturelessAlternationScan
 
     IGNORECASE = 1
@@ -4527,11 +4525,6 @@ module Onibi
           block.call([start, finish, [[start, finish]]])
           position = finish
         end
-        return true
-      end
-
-      if ascii_input && (scan_spec = hfa_alternation_capture_scan_spec)
-        hfa_alternation_capture_each_result(input, scan_spec, &block)
         return true
       end
 
