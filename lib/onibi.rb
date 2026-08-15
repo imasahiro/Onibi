@@ -4219,14 +4219,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && (parts = hfa_lazy_dot_star_literal_parts)
-        position = 0
-        while (result = hfa_lazy_dot_star_literal_match_result(input, position, parts))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_variable_subexpression_capture_spec
         position = 0
         while (result = hfa_variable_subexpression_capture_match_result(input, position))
