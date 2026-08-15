@@ -31,6 +31,14 @@ class HfaCaptureScanTest < Minitest::Test
                  regexp.scan("request_id=00000000 timestamp=2026-08-10T00:00:00Z")
   end
 
+  def test_hfa_capture_sequence_uses_literal_delimiter_for_class_runs
+    regexp = Onibi::Regexp.new("request_id=(?<request_id>[0-9a-f]{8}) timestamp=(?<timestamp>[0-9T:-]+Z)")
+    table = regexp.send(:hfa_capture_sequence_scan_spec).first[1][2].first[1]
+
+    assert_equal 8, regexp.send(:hfa_capture_sequence_delimited_class_end,
+                                "00000000 timestamp=", 0, table, " timestamp=")
+  end
+
   def test_hfa_scan_returns_multiple_literal_captures
     assert_equal [%w[foo bar]], Onibi::Regexp.new("(?<first>foo)(?<second>bar)").scan("foobar")
   end

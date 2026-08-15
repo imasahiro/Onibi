@@ -184,6 +184,19 @@ module Onibi
       finish - position >= minimum ? finish : nil
     end
 
+    def hfa_capture_sequence_delimited_class_end(input, position, table, delimiter)
+      finish = input.index(delimiter, position)
+      return unless finish
+
+      cursor = position
+      while cursor < finish
+        return unless table[input.getbyte(cursor)]
+
+        cursor += 1
+      end
+      finish
+    end
+
     def hfa_scan_boundary_match?(input, start, finish, boundary)
       return true unless boundary
 

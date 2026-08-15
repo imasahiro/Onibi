@@ -269,7 +269,9 @@ module Onibi
       captures ||= Array.new(hfa_capture_count)
       captures.fill(nil)
       offsets ||= Array.new(hfa_capture_count) { [nil, nil] }
-      tokens.each do |token|
+      token_index = 0
+      while token_index < tokens.length
+        token = tokens[token_index]
         kind = token[0]
         case kind
         when :literal
@@ -292,6 +294,7 @@ module Onibi
           cursor = hfa_capture_sequence_single_operation_end(input, cursor, token[1])
           return unless cursor
         end
+        token_index += 1
       end
       if result_container
         result_container[0] = cursor
@@ -304,7 +307,9 @@ module Onibi
 
     def hfa_capture_sequence_operations_end(input, position, operations)
       cursor = position
-      operations.each_with_index do |operation, index|
+      index = 0
+      while index < operations.length
+        operation = operations[index]
         kind = operation[0]
         table = operation[1]
         minimum = operation[2]
@@ -312,6 +317,7 @@ module Onibi
           return unless input.byteslice(cursor, table.bytesize) == table
 
           cursor += table.bytesize
+          index += 1
           next
         end
 
@@ -321,16 +327,27 @@ module Onibi
 
             cursor += 1
           end
+          index += 1
+          next
+        end
+
+        next_operation = operations[index + 1]
+        if next_operation&.first == :literal && !table[next_operation[1].getbyte(0)]
+          finish = hfa_capture_sequence_delimited_class_end(input, cursor, table, next_operation[1])
+          return unless finish && finish - cursor >= minimum
+
+          cursor = finish
+          index += 1
           next
         end
 
         finish = hfa_literal_prefix_capture_run_end(input, cursor, table)
         return if finish - cursor < minimum
 
-        next_operation = operations[index + 1]
         return if next_operation&.first == :literal && table[next_operation[1].getbyte(0)]
 
         cursor = finish
+        index += 1
       end
       cursor
     end
