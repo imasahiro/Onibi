@@ -66,9 +66,15 @@ module Onibi
     end
 
     def hfa_captureless_alternation_each_result(input, spec, &block)
+      hfa_captureless_alternation_each_range(input, spec) do |start_position, finish_position|
+        block.call([start_position, finish_position, []])
+      end
+    end
+
+    def hfa_captureless_alternation_each_range(input, spec, &block)
       if spec.length == 2 && spec[0].first == :class && spec[0][1].bytesize == 1 &&
          spec[0][2].empty? && spec[1].first == :literal
-        hfa_captureless_two_branch_each_result(input, spec, &block)
+        hfa_captureless_two_branch_each_range(input, spec, &block)
         return
       end
 
@@ -96,7 +102,7 @@ module Onibi
 
         result = hfa_captureless_alternation_match_result(input, start, spec)
         if result
-          yield [start, result, []]
+          block.call(start, result)
           position = result
         else
           position = start + 1
@@ -104,13 +110,13 @@ module Onibi
       end
     end
 
-    def hfa_captureless_two_branch_each_result(input, spec)
+    def hfa_captureless_two_branch_each_range(input, spec)
       _kind, prefix, _suffix, table = spec[0]
       literal = spec[1][1]
       position = 0
+      literal_start = input.index(literal, position)
       while position < input.bytesize
         class_start = input.index(prefix, position)
-        literal_start = input.index(literal, position)
         start = if class_start && (literal_start.nil? || class_start <= literal_start)
                   class_start
                 else
@@ -126,14 +132,19 @@ module Onibi
           position = start + 1
           next
         end
-        yield [start, finish, []]
+        yield start, finish
         position = finish
+        literal_start = input.index(literal, position) if literal_start && literal_start < position
       end
     end
 
     def hfa_captureless_alternation_match_result(input, start, spec)
       spec.each do |branch|
-        return start + branch[1].bytesize if branch.first == :literal
+        if branch.first == :literal
+          return start + branch[1].bytesize if input.index(branch[1], start) == start
+
+          next
+        end
 
         _kind, prefix, suffix, table, anchor_side = branch
         class_position = start + prefix.bytesize
