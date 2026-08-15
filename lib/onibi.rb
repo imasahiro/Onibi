@@ -836,34 +836,6 @@ module Onibi
 
       boundary_spec = hfa_scan_boundary_spec
 
-      if ascii_input && (spec = hfa_reverse_top_level_capture_scan_spec)
-        delimiter, table = spec
-        position = 0
-        while (delimiter_start = input.index(delimiter, position))
-          candidate = delimiter_start
-          candidate -= 1 while candidate.positive? && table[input.getbyte(candidate - 1)]
-          line_end = input.index("\n", candidate) || input.bytesize
-          result = hfa_top_level_capture_match_result(input, candidate, line_end, allow_short: true)
-          if result && result[0] == candidate && result[1] > delimiter_start
-            block.call(result)
-            position = result[1]
-            next
-          end
-
-          result = program.match_result(input, candidate)
-          if result && result[0] == candidate
-            captures = hfa_top_level_capture_offsets(input, result[0], result[1]) ||
-                       hfa_generic_capture_offsets(input, result[0], result[1])
-            block.call([result[0], result[1], captures || result[2]])
-            position = result[1]
-            next
-          end
-
-          position = delimiter_start + delimiter.bytesize
-        end
-        return true
-      end
-
       if ascii_input && (spec = hfa_reverse_literal_capture_spec)
         delimiter, table = spec
         position = 0
@@ -1052,30 +1024,6 @@ module Onibi
                                           else
                                             false
                                           end
-    end
-
-    def hfa_reverse_top_level_capture_scan_spec
-      return @hfa_reverse_top_level_capture_scan_spec if defined?(@hfa_reverse_top_level_capture_scan_spec)
-
-      plan = hfa_top_level_capture_plan
-      first = plan.first if plan
-      delimiter = plan[1] if plan
-      body = first.body if first.is_a?(AST::Group)
-      body = body.parts.first if body.is_a?(AST::Sequence) && body.parts.one?
-      table = hfa_capture_class_table(body.expression) if body.is_a?(AST::Quantifier) &&
-                                                          body.kind == :+ && body.mode == :greedy
-      last = plan.last if plan
-      last_body = last.body if last.is_a?(AST::Group)
-      last_body = last_body.parts.first if last_body.is_a?(AST::Sequence) && last_body.parts.one?
-      last_table = hfa_capture_class_table(last_body.expression) if last_body.is_a?(AST::Quantifier) &&
-                                                                    last_body.kind == :+ && last_body.mode == :greedy
-      valid = first.is_a?(AST::Group) && first.capture && delimiter.is_a?(AST::Literal) &&
-              delimiter.value.bytesize.positive? && table && (!last_table || !last_table[10])
-      @hfa_reverse_top_level_capture_scan_spec = if valid
-                                                   [delimiter.value, table].freeze
-                                                 else
-                                                   false
-                                                 end
     end
 
     def hfa_scan_boundary_spec
