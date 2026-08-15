@@ -9,7 +9,6 @@ require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/regexp_timeout"
 require_relative "onibi/regexp_replacement"
 require_relative "onibi/regexp_scan_gsub"
-require_relative "onibi/regexp_captureless_alternation_scan"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -55,7 +54,6 @@ module Onibi
     include RegexpObjectSemantics
     include RegexpTimeout
     include RegexpScanGsub
-    include RegexpCapturelessAlternationScan
 
     IGNORECASE = 1
     EXTENDED = 2
@@ -4118,11 +4116,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_linebreak_alternation_scan_spec
-        hfa_linebreak_alternation_each_result(input, &block)
-        return true
-      end
-
       if ascii_input && (spec = hfa_fixed_literal_backref_spec)
         position = 0
         while (result = hfa_fixed_literal_backref_match_result(input, position, spec))
