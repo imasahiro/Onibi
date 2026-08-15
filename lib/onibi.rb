@@ -309,9 +309,8 @@ module Onibi
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_anchored_class_run_match_result(input, normalized_position).nil? if ascii_input && hfa_anchored_class_run_result_safe?
       return !hfa_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_alternation_result_safe?
-      return !hfa_word_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_word_boundary_literal_result_safe?
-      return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
       return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
+      return !hfa_nonword_boundary_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_nonword_boundary_literal_result_safe?
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
       if ascii_input && (literal = hfa_atomic_literal_result_safe?)
         return !input.index(literal, normalized_position).nil?
@@ -663,12 +662,6 @@ module Onibi
       end
       if ascii_input && hfa_anchor_result_safe?
         result = hfa_program.match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-      if ascii_input && hfa_word_boundary_literal_result_safe?
-        result = hfa_word_boundary_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
@@ -2202,35 +2195,6 @@ module Onibi
       return @hfa_exact_literal_value if defined?(@hfa_exact_literal_value)
 
       @hfa_exact_literal_value = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
-    end
-
-    def hfa_word_boundary_literal_result_safe?
-      return @hfa_word_boundary_literal_safe if defined?(@hfa_word_boundary_literal_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      @hfa_word_boundary_literal_safe = if parts.length >= 3 &&
-                                           parts.first.is_a?(AST::Escape) && parts.first.kind == :word_boundary &&
-                                           parts.last.is_a?(AST::Escape) && parts.last.kind == :word_boundary &&
-                                           parts[1...-1].all? { |part| part.is_a?(AST::Literal) } &&
-                                           @options.none? { |option| option == "ignorecase" }
-                                          parts[1...-1].map(&:value).join
-                                        else
-                                          false
-                                        end
-    end
-
-    def hfa_word_boundary_literal_match_result(input, position)
-      literal = hfa_word_boundary_literal_result_safe?
-      candidate = input.index(literal, position)
-      while candidate
-        finish = candidate + literal.bytesize
-        before_word = candidate.positive? && CharacterPredicates.word?(input.getbyte(candidate - 1).chr)
-        after_word = finish < input.bytesize && CharacterPredicates.word?(input.getbyte(finish).chr)
-        return [candidate, finish, []] unless before_word || after_word
-
-        candidate = input.index(literal, candidate + 1)
-      end
-      nil
     end
 
     def hfa_nonword_boundary_literal_result_safe?
@@ -5212,12 +5176,9 @@ module Onibi
         return true
       end
 
-      if hfa_word_boundary_literal_result_safe?
-        position = 0
-        while (result = hfa_word_boundary_literal_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
+      if hfa_anchored_class_run_result_safe?
+        result = hfa_anchored_class_run_match_result(input, 0)
+        block.call(result) if result
         return true
       end
       if hfa_nonword_boundary_literal_result_safe?
@@ -5226,11 +5187,6 @@ module Onibi
           block.call(result)
           position = result[1]
         end
-        return true
-      end
-      if hfa_anchored_class_run_result_safe?
-        result = hfa_anchored_class_run_match_result(input, 0)
-        block.call(result) if result
         return true
       end
       if hfa_possessive_literal_string_result_safe?
@@ -5431,7 +5387,7 @@ module Onibi
                     hfa_anchor_result_safe? || hfa_greedy_bounded_sequence_result_safe? ||
                     hfa_lazy_bounded_sequence_result_safe? || hfa_scoped_extended_literal_result_safe? ||
                     hfa_negative_literal_guard_safe? ||
-                    hfa_simple_capture_result_safe? || hfa_word_boundary_literal_result_safe? ||
+                    hfa_simple_capture_result_safe? ||
                     hfa_nonword_boundary_literal_result_safe? || hfa_anchored_class_run_result_safe? ||
                     hfa_literal_alternation_result_safe? ||
                     hfa_captureless_alternation_result_safe? || hfa_captureless_regular_sequence_result_safe? ||
@@ -5486,7 +5442,6 @@ module Onibi
                      hfa_literal_capture_before_alternation_result_safe? ||
                      hfa_single_capture_literal_alternation_result_safe? ||
                      hfa_nested_literal_capture_alternation_spec ||
-                     hfa_word_boundary_literal_result_safe? ||
                      hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
                      hfa_class_lookbehind_parts ||
                      hfa_casefold_class_lookbehind_parts ||
