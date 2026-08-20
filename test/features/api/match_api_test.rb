@@ -652,6 +652,14 @@ class MatchApiTest < Minitest::Test
     assert_equal "日本語EN", regexp.match("日本語END").to_s
   end
 
+  def test_literal_absence_suffix_matches_through_public_api
+    regexp = Onibi::Regexp.new("(?~END)tail")
+
+    assert_equal "ENtail", regexp.match("ENtail").to_s
+    assert_equal "xxENtail", regexp.match("xxENtail").to_s
+    assert_equal "NDtail", regexp.match("ENDtail").to_s
+  end
+
   def test_scan_safety_classifies_input_encoding_once
     input_class = Class.new(String) do
       attr_reader :ascii_only_calls
