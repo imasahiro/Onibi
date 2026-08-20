@@ -3410,19 +3410,6 @@ module Onibi
         node.expression.value == "^#{delimiter}"
     end
 
-    def hfa_negative_literal_guard_safe?
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2
-
-      body = @ast.parts[0...-1]
-      assertion = @ast.parts[-1]
-      return false unless assertion.is_a?(AST::Assertion) && assertion.kind == :negative
-
-      guard = assertion.body
-      guard_literal = guard.is_a?(AST::Literal) ||
-                      (guard.is_a?(AST::Sequence) && guard.parts.all? { |part| part.is_a?(AST::Literal) })
-      guard_literal && body.all? { |part| hfa_iterator_node?(part) }
-    end
-
     def hfa_positive_lookbehind_result_safe?
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2
 
