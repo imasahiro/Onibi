@@ -218,7 +218,6 @@ module Onibi
       end
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
-      return !hfa_literal_conditional_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_conditional_result_safe?
 
       if hfa_negative_lookbehind_result_safe?
         literal, guard = hfa_literal_lookbehind_parts(:negative_lookbehind)
@@ -262,7 +261,6 @@ module Onibi
       end
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
 
-      return !hfa_literal_conditional_match_result(input, normalized_position).nil? if ascii_input && hfa_literal_conditional_result_safe?
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
       return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
