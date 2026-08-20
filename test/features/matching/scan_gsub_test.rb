@@ -682,6 +682,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_property_run_gsub_preserves_byte_offsets
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+    regexp.define_singleton_method(:hfa_unicode_property_result_safe?) do
+      raise "legacy Unicode property scanner called"
+    end
 
     assert_equal "漢字<h> 終端", regexp.gsub("漢字ひらがな 終端", "<h>")
   end
