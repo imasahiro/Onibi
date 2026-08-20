@@ -284,8 +284,6 @@ module Onibi
       validate_encoding!(input, ascii_input: ascii_input)
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
-      return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -621,7 +619,7 @@ module Onibi
       return nil if start.negative?
 
       start = hfa_byte_position(input, start, ascii_input: ascii_input)
-      result = with_timeout { program.match_result(input, start) }
+      result = with_timeout { program.match_result(input, start, include_nullable: true) }
       result ||= hfa_unicode_alternation_match_result(input, start)
       return nil unless result
 
@@ -1069,34 +1067,6 @@ module Onibi
         @hfa_compilation_program = HybridAutomata::Optimization::CompilationProgram.new(
           unit.component_graph, unit.head_dfa(row_budget: 4_096)
         ).freeze
-      end
-    end
-
-    def hfa_nullable_empty_match_safe?
-      return @hfa_nullable_empty_match_safe if defined?(@hfa_nullable_empty_match_safe)
-
-      program = hfa_program
-      @hfa_nullable_empty_match_safe = program.is_a?(HybridAutomata::Program) &&
-                                       program.nullable? && !nullable_semantic_ast?(@ast)
-    end
-
-    def nullable_semantic_ast?(node)
-      case node
-      when AST::Sequence
-        node.parts.any? { |part| nullable_semantic_ast?(part) }
-      when AST::Alternation
-        node.branches.any? { |branch| nullable_semantic_ast?(branch) }
-      when AST::Group
-        node.capture || nullable_semantic_ast?(node.body)
-      when AST::OptionGroup, AST::AtomicGroup
-        nullable_semantic_ast?(node.body)
-      when AST::Quantifier
-        nullable_semantic_ast?(node.expression)
-      when AST::Assertion, AST::Anchor, AST::Backreference, AST::Conditional,
-           AST::SubexpressionCall, AST::Absence
-        true
-      else
-        false
       end
     end
 

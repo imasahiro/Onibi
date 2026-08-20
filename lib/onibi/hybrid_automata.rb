@@ -1077,7 +1077,7 @@ module Onibi
         match_from_position(input, position)
       end
 
-      def match_result(input, position = 0)
+      def match_result(input, position = 0, include_nullable: false)
         position = normalize_position(input, position)
         return if position.negative? || position > input.bytesize
         return if @negative_suffix == ""
@@ -1125,7 +1125,21 @@ module Onibi
         return lazy_star_literal_match_result(input, position) if @lazy_star_literal_spec
         return repeated_exact_literal_match_result(input, position) if repeated_exact_literal_topology?
         return guarded_literal_match_result(input, position) if @exact_literal && guarded_search?
-        return nfa_match_result(input, position) unless @exact_literal && @prefix_literal
+
+        unless @exact_literal && @prefix_literal
+          result = nfa_match_result(input, position)
+          if result
+            return [position, position, []] if include_nullable && result[0] > position &&
+                                               nullable_shortcut?(input, position) &&
+                                               nullable_match?(input, position)
+
+            return result
+          end
+          return [position, position, []] if include_nullable && nullable_shortcut?(input, position) &&
+                                             nullable_match?(input, position)
+
+          return
+        end
         return unless @exact_literal.ascii_only?
 
         start = input.index(@exact_literal, position)

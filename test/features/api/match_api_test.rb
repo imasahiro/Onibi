@@ -1496,6 +1496,14 @@ class MatchApiTest < Minitest::Test
     assert_equal [0, 0], empty.offset(1)
   end
 
+  def test_nullable_literal_match_uses_common_hfa_result
+    regexp = Onibi::Regexp.new("a*")
+
+    match = regexp.match("bbb")
+    assert_equal "", match[0]
+    assert_equal [0, 0], match.offset(0)
+  end
+
   def test_nested_empty_repeated_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(a*)*b")
 
