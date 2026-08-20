@@ -1500,6 +1500,9 @@ class MatchApiTest < Minitest::Test
 
   def test_optional_capture_match_uses_hfa_result_and_preserves_unmatched_offset
     regexp = Onibi::Regexp.new("(?<prefix>a)?b")
+    regexp.define_singleton_method(:hfa_literal_capture_sequence_spec) do
+      raise "legacy literal capture sequence matcher called"
+    end
 
     matched = regexp.match("ab")
     missing = regexp.match("b")

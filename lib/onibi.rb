@@ -99,7 +99,7 @@ module Onibi
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_casefold_class_direct_match_result(input, byte_position, spec).nil?
       end
-      if (spec = hfa_literal_capture_sequence_spec)
+      if !ascii_input && (spec = hfa_literal_capture_sequence_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_literal_capture_sequence_match_result(input, byte_position, spec).nil?
       end
@@ -126,14 +126,13 @@ module Onibi
 
         return nil
       end
-      if (spec = hfa_literal_capture_sequence_spec)
+      if !ascii_input && (spec = hfa_literal_capture_sequence_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_literal_capture_sequence_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
 
         return nil
       end
-
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
       end
@@ -243,14 +242,13 @@ module Onibi
 
         return nil
       end
-      if (spec = hfa_literal_capture_sequence_spec)
+      if !ascii_input && (spec = hfa_literal_capture_sequence_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_literal_capture_sequence_match_result(input, byte_position, spec)
         return hfa_match_data(result, input) if result
 
         return nil
       end
-
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         result = hfa_bounded_sequence_direct_match_result(input, normalized_position)
         if result
@@ -2535,7 +2533,9 @@ module Onibi
       return nil unless result
 
       start, finish, captures = result
-      return MatchData.from_byte_offsets(input, start, finish, captures, hfa_result_names, self) if hfa_literal_capture_sequence_spec && captures.any?
+      if input.bytesize != input.length && hfa_literal_capture_sequence_spec && captures.any?
+        return MatchData.from_byte_offsets(input, start, finish, captures, hfa_result_names, self)
+      end
 
       if captures.empty? && (strategy = hfa_capture_offset_strategy)
         capture_offsets = case strategy
