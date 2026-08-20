@@ -496,15 +496,6 @@ module Onibi
         end
         return nil
       end
-      if ascii_input && hfa_literal_subexpression_call_result_safe?
-        literal = hfa_literal_subexpression_call_literal
-        candidate = input.index(literal + literal, normalized_position)
-        if candidate
-          return hfa_match_data([candidate, candidate + literal.bytesize * 2,
-                                 [[candidate, candidate + literal.bytesize]]], input)
-        end
-        return nil
-      end
       if !ascii_input && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
@@ -2717,23 +2708,6 @@ module Onibi
               (first_quantifier.expression.is_a?(AST::Literal) || first_quantifier.expression.is_a?(AST::Any)) &&
               !casefold?
       @hfa_adjacent_greedy_capture_safe = valid && hfa_program
-    end
-
-    def hfa_literal_subexpression_call_result_safe?
-      return @hfa_literal_subexpression_safe if defined?(@hfa_literal_subexpression_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      group, call = parts
-      body = group.body if group.is_a?(AST::Group) && group.capture
-      valid = parts.length == 2 && group.is_a?(AST::Group) && group.capture &&
-              call.is_a?(AST::SubexpressionCall) && [group.number, group.name].include?(call.identifier) &&
-              (literal = literal_ast_value(body)) && literal.ascii_only? && literal.bytesize.positive? &&
-              !casefold?
-      @hfa_literal_subexpression_safe = valid
-    end
-
-    def hfa_literal_subexpression_call_literal
-      literal_ast_value(@ast.parts.first.body)
     end
 
     def hfa_unicode_repeated_literal_capture_result_safe?
