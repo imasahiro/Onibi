@@ -1397,6 +1397,13 @@ class MatchApiTest < Minitest::Test
     assert_equal %w[a a], regexp.match("aa").to_a
   end
 
+  def test_literal_capture_alternation_remains_generic_after_facade_cleanup
+    regexp = Onibi::Regexp.new("(?<word>red|green)")
+
+    assert_equal "green", regexp.match("green").named_captures.fetch("word")
+    assert_equal [["red"], ["green"]], regexp.scan("red green")
+  end
+
   def test_nested_literal_capture_alternation_match_uses_hfa
     regexp = Onibi::Regexp.new("(?:(a)|(b))c")
 

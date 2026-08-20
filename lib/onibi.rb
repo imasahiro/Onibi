@@ -2294,18 +2294,6 @@ module Onibi
       [start, finish, captures]
     end
 
-    def hfa_single_capture_literal_alternation_result_safe?
-      return @hfa_single_capture_alternation_safe if defined?(@hfa_single_capture_alternation_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      group = parts.one? && parts.first
-      alternation = group.body if group.is_a?(AST::Group) && group.capture && group.body.is_a?(AST::Alternation)
-      values = alternation&.branches&.map { |branch| literal_ast_value(branch) }
-      @hfa_single_capture_alternation_safe = values && values.length > 1 &&
-                                             values.all? { |value| value&.ascii_only? && value.bytesize.positive? } &&
-                                             hfa_program
-    end
-
     def hfa_adjacent_greedy_capture_result_safe?
       return @hfa_adjacent_greedy_capture_safe if defined?(@hfa_adjacent_greedy_capture_safe)
 
@@ -2775,10 +2763,6 @@ module Onibi
           break
         end
       end
-    end
-
-    def hfa_simple_capture_result_safe?
-      hfa_simple_capture_layout && hfa_program
     end
 
     def hfa_simple_capture_layout
@@ -3439,16 +3423,6 @@ module Onibi
       guard_literal && body.all? { |part| hfa_iterator_node?(part) }
     end
 
-    def hfa_positive_literal_guard_result_safe?
-      return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2
-
-      body = @ast.parts[0...-1]
-      assertion = @ast.parts[-1]
-      assertion.is_a?(AST::Assertion) && assertion.kind == :positive &&
-        assertion.body.is_a?(AST::Sequence) && assertion.body.parts.all? { |part| part.is_a?(AST::Literal) } &&
-        body.all? { |part| part.is_a?(AST::Literal) }
-    end
-
     def hfa_positive_lookbehind_result_safe?
       return false unless @ast.is_a?(AST::Sequence) && @ast.parts.length >= 2
 
@@ -3467,17 +3441,6 @@ module Onibi
       assertion.is_a?(AST::Assertion) && assertion.kind == :negative_lookbehind &&
         assertion.body.is_a?(AST::Sequence) && assertion.body.parts.all? { |part| part.is_a?(AST::Literal) } &&
         body.all? { |part| part.is_a?(AST::Literal) }
-    end
-
-    def hfa_backref_result_safe?
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      return false unless hfa_program
-      return false unless parts.length.between?(2, 3)
-      return false unless parts[0].is_a?(AST::Group) && parts[0].capture
-      return false unless parts[-1].is_a?(AST::Backreference)
-      return false unless parts.length == 2 || parts[1].is_a?(AST::Literal)
-
-      parts[0].body.is_a?(AST::Sequence)
     end
 
     def hfa_conditional_result_safe?
