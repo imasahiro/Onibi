@@ -231,10 +231,6 @@ module Onibi
 
         return with_timeout { !result.nil? }
       end
-      if !ascii_input && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
-        byte_position = input[0, normalized_position].bytesize
-        return !hfa_unicode_repeated_literal_capture_match_result(input, byte_position).nil?
-      end
       if ascii_input && hfa_ignorecase_literal_result_safe?
         normalized_position = normalize_match_position(input, position)
         result = hfa_ignorecase_literal_match_result(input, normalized_position)
