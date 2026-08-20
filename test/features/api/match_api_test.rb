@@ -417,6 +417,9 @@ class MatchApiTest < Minitest::Test
 
   def test_single_unicode_property_match_question_uses_hfa
     regexp = Onibi::Regexp.new("\\p{Han}")
+    regexp.define_singleton_method(:hfa_unicode_property_result_safe?) do
+      raise "legacy Unicode property direct scanner called"
+    end
 
     assert regexp.match?("漢")
     refute regexp.match?("あ")

@@ -953,7 +953,13 @@ module Onibi
       def unicode_character_matches?(spec, character)
         codepoint = CharacterPredicates.codepoint(character)
         return codepoint.between?(*@unicode_range) ^ @unicode_negated if @unicode_range
-        return unicode_property_fast_match(codepoint) ^ @unicode_negated if @unicode_matcher
+
+        if @unicode_matcher
+          return unicode_word_codepoint?(codepoint) ^ @unicode_negated if spec.kind == :class && @unicode_matcher == :word?
+
+          fast = unicode_property_fast_match(codepoint)
+          return fast ^ @unicode_negated unless fast.nil?
+        end
         return @unicode_class_predicate.matches?(character.chr(Encoding::UTF_8)) if spec.kind == :class
 
         fast = unicode_property_fast_match(codepoint)
