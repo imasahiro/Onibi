@@ -4312,19 +4312,6 @@ module Onibi
       values.all? && values.each_cons(2).all? { |left, right| left.bytesize >= right.bytesize } ? values.first : nil
     end
 
-    def hfa_repeated_match_lengths(node, input, start, finish)
-      cursor = start
-      lengths = []
-      while cursor < finish
-        length = hfa_nested_literal_match_length(node, input, cursor)
-        return unless length&.positive? && cursor + length <= finish
-
-        lengths << length
-        cursor += length
-      end
-      lengths if cursor == finish
-    end
-
     def hfa_repeated_match_span(node, input, start, finish)
       cursor = start
       last_length = nil
