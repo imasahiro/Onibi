@@ -3215,14 +3215,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_possessive_literal_string_result_safe?
-        position = 0
-        while (result = hfa_possessive_literal_string_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_literal_absence_result_safe?
         validate_encoding!(input, ascii_input: ascii_input) unless ascii_input
         position = 0
@@ -3391,14 +3383,6 @@ module Onibi
         return true
       end
 
-      if hfa_possessive_literal_string_result_safe?
-        position = 0
-        while (result = hfa_possessive_literal_string_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if hfa_leading_literal_assertion_result_safe?
         position = 0
         while (result = hfa_leading_literal_assertion_match_result(input, position))

@@ -184,6 +184,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_possessive_literal_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("a++b")
+    regexp.define_singleton_method(:hfa_possessive_literal_string_result_safe?) do
+      raise "legacy possessive literal scanner called"
+    end
 
     assert_equal %w[aaab aab], regexp.scan("xxaaab yyaab")
   end
