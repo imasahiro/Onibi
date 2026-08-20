@@ -89,8 +89,6 @@ module Onibi
 
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
-      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
-
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
         return !hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec).nil?
       end
