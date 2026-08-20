@@ -185,8 +185,6 @@ module Onibi
       return false if hfa_always_fails?
 
       return normalized_position <= input.bytesize if hfa_empty_absence_result_safe?
-      return false if ascii_input && hfa_ascii_input_impossible_class?
-
       if ascii_input && hfa_lookahead_alternation_backreference_spec
         return !hfa_lookahead_alternation_backreference_match_result(input, normalized_position).nil?
       end
@@ -359,8 +357,6 @@ module Onibi
 
         return nil
       end
-      return nil if ascii_input && hfa_ascii_input_impossible_class?
-
       if hfa_empty_nested_capture_spec
         result = hfa_empty_nested_capture_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
@@ -1466,22 +1462,6 @@ module Onibi
     def hfa_ascii_input_impossible_unicode_literal?
       literal = hfa_exact_literal_value
       literal&.bytesize&.positive? && !literal.ascii_only? && !casefold?
-    end
-
-    def hfa_ascii_input_impossible_class?
-      return false if casefold?
-
-      class_lookbehind = hfa_class_lookbehind_parts
-      return class_lookbehind[1].ascii_table.none? if class_lookbehind&.first == :positive_lookbehind
-
-      node = if @ast.is_a?(AST::Sequence) && @ast.parts.one?
-               @ast.parts.first
-             else
-               @ast
-             end
-      return false unless node.is_a?(AST::CharacterClass)
-
-      ClassPredicates.compiled(node.value).ascii_table.none?
     end
 
     def hfa_exact_literal_value
@@ -3315,7 +3295,6 @@ module Onibi
         return true
       end
       return true if ascii_input && hfa_ascii_input_impossible_unicode_literal?
-      return true if ascii_input && hfa_ascii_input_impossible_class?
 
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
