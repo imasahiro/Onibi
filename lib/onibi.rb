@@ -457,14 +457,6 @@ module Onibi
 
         return nil
       end
-      if ascii_input && hfa_single_capture_literal_alternation_result_safe?
-        result = hfa_program.match_result(input, normalized_position)
-        if result
-          start, finish, = result
-          return hfa_match_data([start, finish, [[start, finish]]], input)
-        end
-        return nil
-      end
       if ascii_input && hfa_adjacent_greedy_capture_result_safe?
         result = hfa_program.match_result(input, normalized_position)
         if result
