@@ -428,6 +428,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_repeated_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("(?:日本語)+")
+    regexp.define_singleton_method(:hfa_unicode_repeated_literal_result_safe?) do
+      raise "legacy Unicode repeated literal scan matcher called"
+    end
     input = "開始日本語日本語 終了日本語"
 
     assert_equal %w[日本語日本語 日本語], regexp.scan(input)

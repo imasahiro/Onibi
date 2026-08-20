@@ -1572,6 +1572,14 @@ module Onibi
           return
         end
 
+        if repeated_exact_literal_topology?
+          while (result = repeated_exact_literal_match_result(input, position))
+            yield result
+            position = result[1]
+          end
+          return
+        end
+
         unless ascii_input
           if @exact_literal && !@exact_literal.ascii_only?
             position = normalize_position(input, position)
@@ -1762,14 +1770,6 @@ module Onibi
 
         if @literal_class_literal_spec
           while (result = literal_class_literal_match_result(input, position))
-            yield result
-            position = result[1]
-          end
-          return
-        end
-
-        if repeated_exact_literal_topology?
-          while (result = repeated_exact_literal_match_result(input, position))
             yield result
             position = result[1]
           end
