@@ -1785,6 +1785,9 @@ class MatchApiTest < Minitest::Test
 
   def test_unicode_repeated_literal_capture_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?<word>é+)")
+    regexp.define_singleton_method(:hfa_unicode_repeated_literal_capture_result_safe?) do
+      raise "legacy Unicode repeated capture matcher called"
+    end
 
     match = regexp.match("aééz")
     assert_equal "éé", match[0]

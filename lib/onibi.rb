@@ -367,7 +367,7 @@ module Onibi
         end
         return nil
       end
-      if !ascii_input && input.encoding == Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
+      if !ascii_input && input.encoding != Encoding::UTF_8 && hfa_unicode_repeated_literal_capture_result_safe?
         result = hfa_unicode_repeated_literal_capture_match_result(input, position)
         return hfa_unicode_repeated_literal_capture_match_data(result, input) if result
 
@@ -551,6 +551,10 @@ module Onibi
       return nil unless result
 
       match_start, match_finish, captures = result
+      if captures.empty? && hfa_repeated_capture_common_result_safe?
+        capture_offsets = hfa_generic_capture_offsets(input, match_start, match_finish)
+        return MatchData.from_byte_offsets(input, match_start, match_finish, capture_offsets, hfa_result_names, self) if capture_offsets
+      end
       if ascii_input || (captures.empty? && (hfa_captureless_byte_result_safe? || hfa_exact_literal_result_safe? ||
                                              hfa_unicode_exact_literal_result_safe? || hfa_capture_count.positive?))
         hfa_match_data(result, input)
@@ -1373,6 +1377,15 @@ module Onibi
     end
 
     def hfa_captureless_byte_result_safe?
+      program = hfa_program
+      return false if program == false
+
+      program&.send(:repeated_exact_literal_topology?)
+    end
+
+    def hfa_repeated_capture_common_result_safe?
+      return false unless hfa_capture_count.positive?
+
       program = hfa_program
       return false if program == false
 
