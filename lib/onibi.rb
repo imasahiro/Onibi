@@ -229,13 +229,6 @@ module Onibi
 
         return with_timeout { !result.nil? }
       end
-      if ascii_input && hfa_ignorecase_literal_result_safe?
-        normalized_position = normalize_match_position(input, position)
-        result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return !result.nil? if timeout_unconfigured?
-
-        return with_timeout { !result.nil? }
-      end
       if ascii_input && ascii_repeated_literal_run_ast?
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
         return !result.nil? if timeout_unconfigured?
