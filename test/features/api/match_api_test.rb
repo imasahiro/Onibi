@@ -1163,6 +1163,16 @@ class MatchApiTest < Minitest::Test
     assert_equal %w[aaaa aa], regexp.match("aaaa").to_a
   end
 
+  def test_alternating_literal_backreference_matches_mri
+    regexp = Onibi::Regexp.new("(a|ab)\\1")
+    mri = ::Regexp.new("(a|ab)\\1")
+
+    %w[aa abab ababa].each do |input|
+      assert_equal mri.match(input)&.to_a, regexp.match(input)&.to_a
+      assert_equal !mri.match(input).nil?, regexp.match?(input)
+    end
+  end
+
   def test_scoped_casefold_backreference_match_uses_hfa
     regexp = Onibi::Regexp.new("(?<x>a)(?i:\\k<x>)")
 
