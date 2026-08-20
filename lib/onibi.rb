@@ -1582,14 +1582,6 @@ module Onibi
                             parts.first.kind == :linebreak && hfa_program
     end
 
-    def hfa_start_match_result_safe?
-      return @hfa_start_match_result_safe if defined?(@hfa_start_match_result_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      @hfa_start_match_result_safe = parts.first.is_a?(AST::Escape) &&
-                                     parts.first.kind == :start_match && hfa_program
-    end
-
     def hfa_start_match_literal_fast
       return @hfa_start_match_literal if defined?(@hfa_start_match_literal)
 
@@ -4006,7 +3998,6 @@ module Onibi
                    (hfa_exact_literal_result_safe? || hfa_public_safe? ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
-                    hfa_start_match_result_safe? ||
                     hfa_leading_literal_assertion_result_safe? ||
                     hfa_negative_literal_guard_safe? ||
                     hfa_simple_capture_result_safe? ||
@@ -4036,7 +4027,6 @@ module Onibi
                      hfa_unicode_property_result_safe? ||
                      hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                      hfa_variable_any_backref_spec ||
-                     hfa_start_match_result_safe? ||
                      hfa_leading_literal_assertion_result_safe? ||
                      hfa_lazy_literal_result_safe? ||
                      hfa_literal_absence_result_safe? ||
