@@ -1111,15 +1111,6 @@ module Onibi
 
     private
 
-    def hfa_single_quantified_expression
-      return unless @ast.is_a?(AST::Sequence) && @ast.parts.one?
-
-      node = @ast.parts.first
-      return unless node.is_a?(AST::Quantifier) && node.kind == :+ && node.mode == :greedy
-
-      node.expression
-    end
-
     def capture_names
       @capture_names ||= CaptureNameCollector.call(@ast)
     end
