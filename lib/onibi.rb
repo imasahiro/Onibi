@@ -3232,30 +3232,6 @@ module Onibi
       [start, finish, captures]
     end
 
-    def hfa_nested_literal_capture_alternation_each_result(input, &block)
-      branches, suffix = hfa_nested_literal_capture_alternation_spec
-      position = 0
-      loop do
-        candidate = nil
-        branch_value = nil
-        branches.each do |value, _number|
-          start = input.index(value + suffix, position)
-          next unless start && (!candidate || start < candidate)
-
-          candidate = start
-          branch_value = value
-        end
-        break unless candidate
-
-        finish = candidate + branch_value.bytesize + suffix.bytesize
-        captures = Array.new(branches.map(&:last).max)
-        number = branches.find { |value, _capture_number| value == branch_value }.last
-        captures[number - 1] = [candidate, candidate + branch_value.bytesize]
-        block.call([candidate, finish, captures])
-        position = finish
-      end
-    end
-
     def hfa_lookahead_alternation_backreference_spec
       return @hfa_lookahead_alternation_backreference_spec if defined?(@hfa_lookahead_alternation_backreference_spec)
 
