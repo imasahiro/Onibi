@@ -193,8 +193,6 @@ module Onibi
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
 
-      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
-
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         normalized_position = normalize_match_position(input, position)
         if hfa_unicode_simple_casefold_literal?(literal)
@@ -233,7 +231,6 @@ module Onibi
         return !input.index(literal, normalized_position).nil?
       end
       return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
-      return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         result = hfa_unicode_ignorecase_literal_match_result(input, position, literal)
