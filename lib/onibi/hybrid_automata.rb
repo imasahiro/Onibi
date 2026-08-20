@@ -1087,6 +1087,7 @@ module Onibi
         return unicode_match_result(input, position) if @unicode_spec && (!ascii_input || @unicode_spec.kind == :class)
         return linebreak_match_result(input, position) if @linebreak_spec
         return start_match_result(input, position) if @start_match
+        return repeated_exact_literal_match_result(input, position) if repeated_exact_literal_topology?
 
         if (exact_literal_search? && @span_masks.empty? && @exact_literal) ||
            (@exact_literal && @span_masks.empty? && @prefix_literal == @exact_literal) ||
@@ -1831,17 +1832,18 @@ module Onibi
 
         width = @exact_literal.bytesize
         width > 1 && @span_masks.length == 2 &&
-          @span_masks[width - 1] == 1 && @span_masks[-(width - 1)] == (1 << (width - 1))
+          @span_masks[1] == (1 << (width - 1)) - 1 &&
+          @span_masks[-(width - 1)] == (1 << (width - 1))
       end
 
       def repeated_exact_literal_match_result(input, position)
-        candidate = input.index(@exact_literal, position)
+        candidate = input.b.index(@exact_literal.b, position)
         while candidate
           cursor = candidate
           cursor += @exact_literal.bytesize while input.byteslice(cursor, @exact_literal.bytesize) == @exact_literal
           return [candidate, cursor, []] if cursor > candidate
 
-          candidate = input.index(@exact_literal, candidate + 1)
+          candidate = input.b.index(@exact_literal.b, candidate + 1)
         end
         nil
       end

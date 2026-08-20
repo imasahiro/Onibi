@@ -1047,6 +1047,9 @@ class MatchApiTest < Minitest::Test
 
   def test_unicode_repeated_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?:日本語)+")
+    regexp.define_singleton_method(:hfa_unicode_repeated_literal_result_safe?) do
+      raise "legacy Unicode repeated literal matcher called"
+    end
 
     match = regexp.match("開始日本語日本語終了")
     assert_equal "日本語日本語", match[0]

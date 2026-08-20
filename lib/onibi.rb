@@ -463,7 +463,7 @@ module Onibi
 
         return nil
       end
-      if !ascii_input && hfa_unicode_repeated_literal_result_safe?
+      if !ascii_input && input.encoding != Encoding::UTF_8 && hfa_unicode_repeated_literal_result_safe?
         result = hfa_unicode_repeated_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
@@ -551,8 +551,8 @@ module Onibi
       return nil unless result
 
       match_start, match_finish, captures = result
-      if ascii_input || (captures.empty? && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
-                                             hfa_capture_count.positive?))
+      if ascii_input || (captures.empty? && (hfa_captureless_byte_result_safe? || hfa_exact_literal_result_safe? ||
+                                             hfa_unicode_exact_literal_result_safe? || hfa_capture_count.positive?))
         hfa_match_data(result, input)
       else
         MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
@@ -1370,6 +1370,13 @@ module Onibi
       literal = hfa_exact_literal_value
       @hfa_exact_literal_safe = literal&.bytesize&.positive? && literal.ascii_only? &&
                                 !casefold?
+    end
+
+    def hfa_captureless_byte_result_safe?
+      program = hfa_program
+      return false if program == false
+
+      program&.send(:repeated_exact_literal_topology?)
     end
 
     def hfa_unicode_exact_literal_result_safe?
