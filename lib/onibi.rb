@@ -3372,14 +3372,15 @@ module Onibi
         return true
       end
 
-      if hfa_leading_literal_assertion_result_safe?
+      if !hfa_program && hfa_leading_literal_assertion_result_safe?
         position = 0
         while (result = hfa_leading_literal_assertion_match_result(input, position))
           block.call(result)
-          position = result[1]
+          position = [result[1], position + 1].max
         end
         return true
       end
+
       if hfa_positive_lookbehind_result_safe?
         position = 0
         while (result = hfa_positive_lookbehind_literal_match_result(input, position))

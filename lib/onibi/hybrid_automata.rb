@@ -1775,7 +1775,7 @@ module Onibi
         if @exact_literal && guarded_search?
           while (result = guarded_literal_match_result(input, position))
             yield result
-            position = result[1]
+            position = [result[1], position + 1].max
           end
           return
         end
@@ -1792,7 +1792,7 @@ module Onibi
           candidate_input = candidate_search_input(input)
           while (result = nfa_match_result(input, position, candidate_input))
             yield result
-            position = result[1]
+            position = [result[1], position + 1].max
           end
           return
         end
@@ -1801,7 +1801,7 @@ module Onibi
           candidate_input = candidate_search_input(input)
           while (result = nfa_match_result(input, position, candidate_input))
             yield result
-            position = result[1]
+            position = [result[1], position + 1].max
           end
           return
         end

@@ -193,6 +193,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_literal_assertion_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("cat(?!fish)")
+    regexp.define_singleton_method(:hfa_leading_literal_assertion_result_safe?) do
+      raise "legacy leading assertion scanner called"
+    end
 
     assert_equal %w[cat cat], regexp.scan("cat dog catfish cat")
   end

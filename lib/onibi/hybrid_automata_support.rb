@@ -1055,6 +1055,13 @@ module Onibi
       end
 
       def guarded_literal_match_result(input, position)
+        if @exact_literal.empty? && @positive_prefix
+          candidate = input.index(@positive_prefix, position)
+          return [candidate, candidate + @positive_prefix.bytesize, []] if candidate
+
+          return nil
+        end
+
         candidate = input.index(@exact_literal, position)
         while candidate
           finish = candidate + @exact_literal.bytesize
