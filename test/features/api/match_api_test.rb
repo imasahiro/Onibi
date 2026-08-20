@@ -1633,6 +1633,9 @@ class MatchApiTest < Minitest::Test
 
   def test_unicode_repeated_literal_rejects_ascii_input_without_fallback
     regexp = Onibi::Regexp.new("(?:日本語)+")
+    regexp.define_singleton_method(:hfa_unicode_repeated_literal_result_safe?) do
+      raise "legacy Unicode repeated literal ASCII guard called"
+    end
 
     assert_nil regexp.match("ascii only")
   end

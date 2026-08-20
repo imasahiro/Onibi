@@ -486,8 +486,6 @@ module Onibi
 
         return nil
       end
-      return nil if ascii_input && hfa_unicode_repeated_literal_result_safe?
-
       if ascii_input && ascii_repeated_literal_run_ast?
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
