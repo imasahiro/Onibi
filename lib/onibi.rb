@@ -261,6 +261,7 @@ module Onibi
       return !hfa_unicode_property_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_property_result_safe?
 
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
+      return !hfa_lazy_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_lazy_literal_result_safe?
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
       return !hfa_atomic_literal_alternation_match_result(input, normalized_position).nil? if ascii_input && hfa_atomic_literal_alternation_spec
       return !hfa_scoped_casefold_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_scoped_casefold_backref_spec
@@ -541,6 +542,12 @@ module Onibi
       end
       if ascii_input && hfa_variable_any_backref_spec
         result = hfa_variable_any_backref_match_result(input, normalized_position)
+        return hfa_match_data(result, input) if result
+
+        return nil
+      end
+      if ascii_input && hfa_lazy_literal_result_safe?
+        result = hfa_lazy_literal_match_result(input, normalized_position)
         return hfa_match_data(result, input) if result
 
         return nil
