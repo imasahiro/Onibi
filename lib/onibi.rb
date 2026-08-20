@@ -2399,51 +2399,6 @@ module Onibi
       nil
     end
 
-    def hfa_literal_conditional_result_safe?
-      return @hfa_literal_conditional_safe if defined?(@hfa_literal_conditional_safe)
-
-      yes, no = hfa_literal_conditional_parts
-      @hfa_literal_conditional_safe = yes&.ascii_only? && no&.ascii_only? &&
-                                      yes.bytesize.positive? && no.bytesize.positive?
-    end
-
-    def hfa_literal_conditional_parts
-      return @hfa_literal_conditional_parts if defined?(@hfa_literal_conditional_parts)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      optional, conditional = parts
-      capture = optional&.expression if optional.is_a?(AST::Quantifier) && optional.kind == :"?"
-      yes = conditional&.yes_branch if conditional.is_a?(AST::Conditional)
-      no = conditional&.no_branch if conditional.is_a?(AST::Conditional)
-      valid = parts.length == 2 && optional.is_a?(AST::Quantifier) && optional.kind == :"?" &&
-              optional.mode == :greedy && capture.is_a?(AST::Group) && capture.capture &&
-              conditional.is_a?(AST::Conditional) && conditional.condition == [capture.number, false]
-      @hfa_literal_conditional_parts = if valid
-                                         [literal_ast_value(yes), literal_ast_value(no)].freeze
-                                       else
-                                         [nil, nil].freeze
-                                       end
-    end
-
-    def hfa_literal_conditional_match_result(input, position)
-      yes, no = hfa_literal_conditional_parts
-      prefix = hfa_literal_conditional_prefix
-      yes_start = input.index(prefix + yes, position)
-      no_start = input.index(no, position)
-      start = [yes_start, no_start].compact.min
-      return unless start
-
-      literal = yes_start == start ? prefix + yes : no
-      [start, start + literal.bytesize, []]
-    end
-
-    def hfa_literal_conditional_prefix
-      return @hfa_literal_conditional_prefix if defined?(@hfa_literal_conditional_prefix)
-
-      optional = @ast.parts.first
-      @hfa_literal_conditional_prefix = literal_ast_value(optional.expression.body)
-    end
-
     def hfa_repeated_class_backref_result_safe?
       return @hfa_repeated_class_backref_safe if defined?(@hfa_repeated_class_backref_safe)
 
