@@ -199,10 +199,6 @@ module Onibi
 
       return !hfa_possessive_literal_string_match_result(input, normalized_position).nil? if ascii_input && hfa_possessive_literal_string_result_safe?
 
-      if ascii_input && (literal = hfa_atomic_literal_match_literal)
-        return !input.index(literal, normalized_position).nil?
-      end
-
       return false if hfa_always_fails?
 
       return normalized_position <= input.bytesize if hfa_empty_absence_result_safe?
@@ -2393,29 +2389,6 @@ module Onibi
         separator_position = input.index(separator, separator_position + 1)
       end
       nil
-    end
-
-    def hfa_atomic_literal_match_literal
-      return @hfa_atomic_literal_match_literal if defined?(@hfa_atomic_literal_match_literal)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      group, suffix = parts
-      branches = group.body.branches if group.is_a?(AST::AtomicGroup) &&
-                                        group.body.is_a?(AST::Alternation) && suffix.is_a?(AST::Literal)
-      values = branches&.map { |branch| literal_ast_value(branch) }
-      if values&.all? && values.first&.ascii_only? && suffix.value.ascii_only? && suffix.value.bytesize.positive?
-        first = values.first
-        @hfa_atomic_literal_match_literal = if values.all? do |value|
-          remainder = value.delete_prefix(first)
-          remainder.empty? ||
-          (remainder.bytesize % suffix.value.bytesize).zero? &&
-          remainder == suffix.value * (remainder.bytesize / suffix.value.bytesize)
-        end
-                                              first + suffix.value
-                                            end
-      else
-        @hfa_atomic_literal_match_literal = nil
-      end
     end
 
     def hfa_repeated_literal_run_match_result(input, position)
