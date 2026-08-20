@@ -14,7 +14,6 @@ class HfaCaptureScanTest < Minitest::Test
     assert_equal [["192.0.2.1", "10/Aug/2026:12:00:00 +0000", "GET",
                    "/api/v1/users/0?page=1&active=true", "200", "17049"]], regexp.scan(ACCESS_LOG)
     assert regexp.send(:hfa_top_level_capture_plan)
-    assert regexp.send(:hfa_reverse_literal_capture_spec)
     result = regexp.send(:hfa_program).match_result(ACCESS_LOG, 0)
     assert_equal regexp.send(:hfa_top_level_capture_offsets, ACCESS_LOG, result[0], result[1]),
                  regexp.send(:hfa_generic_capture_offsets, ACCESS_LOG, result[0], result[1])
@@ -54,7 +53,6 @@ class HfaCaptureScanTest < Minitest::Test
 
     regexp = Onibi::Regexp.new(pattern)
 
-    assert regexp.send(:hfa_reverse_literal_capture_spec)
     assert_equal [["user0@example.com"]], regexp.scan("Contact user0@example.com")
     assert_equal [["foo@example.com"]], regexp.scan(".foo@example.com")
   end

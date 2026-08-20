@@ -704,33 +704,25 @@ module Onibi
     def hfa_generic_each_result(input, &block)
       return enum_for(__method__, input) unless block
 
-      ascii_input = input.ascii_only?
       program = hfa_program
       raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
 
       boundary_spec = hfa_scan_boundary_spec
 
-      if ascii_input && (spec = hfa_reverse_literal_capture_spec)
-        delimiter, table = spec
+      if boundary_spec
         position = 0
-        while (delimiter_start = input.index(delimiter, position))
-          candidate = delimiter_start
-          candidate -= 1 while candidate.positive? && table[input.getbyte(candidate - 1)]
-          candidate += 1 while candidate < delimiter_start && !hfa_scan_boundary_start_match?(input, candidate, boundary_spec)
+        while position <= input.bytesize
+          result = program.match_result(input, position)
+          break unless result
 
-          if candidate < delimiter_start
-            result = program.match_result(input, candidate)
-            if result && result[0] == candidate && result[1] > delimiter_start &&
-               hfa_scan_boundary_match?(input, result[0], result[1], boundary_spec)
-              captures = (hfa_top_level_capture_offsets(input, result[0], result[1]) if hfa_top_level_capture_plan) ||
-                         hfa_generic_capture_offsets(input, result[0], result[1])
-              block.call([result[0], result[1], captures || result[2]])
-              position = result[1]
-              next
-            end
+          if hfa_scan_boundary_match?(input, result[0], result[1], boundary_spec)
+            captures = (hfa_top_level_capture_offsets(input, result[0], result[1]) if hfa_top_level_capture_plan) ||
+                       hfa_generic_capture_offsets(input, result[0], result[1])
+            block.call([result[0], result[1], captures || result[2]])
+            position = [result[1], position + 1].max
+          else
+            position = [result[0] + 1, position + 1].max
           end
-
-          position = delimiter_start + delimiter.bytesize
         end
         return true
       end
@@ -861,43 +853,6 @@ module Onibi
       position = cursor
       position += 1 while position < boundary && table[input.getbyte(position)]
       position == boundary ? boundary : nil
-    end
-
-    def hfa_reverse_literal_capture_spec
-      return @hfa_reverse_literal_capture_spec if defined?(@hfa_reverse_literal_capture_spec)
-      return @hfa_reverse_literal_capture_spec = false if casefold?
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : [@ast]
-      group_index = parts.index { |part| part.is_a?(AST::Group) && part.capture }
-      group = group_index && parts[group_index]
-      return @hfa_reverse_literal_capture_spec = false unless group
-
-      body_parts = if group&.body.is_a?(AST::Sequence)
-                     group.body.parts
-                   elsif group
-                     [group.body]
-                   else
-                     []
-                   end
-      run = body_parts.first
-      delimiter = body_parts[1] if body_parts.length >= 2
-      trailing_zero_width = true
-      if delimiter.nil? && body_parts.length == 1
-        delimiter = parts[group_index + 1]
-      else
-        trailing_zero_width = parts[(group_index + 1)..].to_a.all? { |part| hfa_zero_width_node?(part) }
-      end
-      valid = group && parts[0...group_index].all? { |part| hfa_zero_width_node?(part) } &&
-              trailing_zero_width &&
-              run.is_a?(AST::Quantifier) && run.mode == :greedy && run.minimum.positive? && run.maximum.nil? &&
-              run.expression.is_a?(AST::CharacterClass) && delimiter.is_a?(AST::Literal) &&
-              delimiter.value.bytesize.positive?
-      @hfa_reverse_literal_capture_spec = if valid
-                                            table = ClassPredicates.compiled(run.expression.value).ascii_table
-                                            [delimiter.value, table].freeze
-                                          else
-                                            false
-                                          end
     end
 
     def hfa_scan_boundary_spec
@@ -2919,7 +2874,9 @@ module Onibi
     def hfa_tagged_capture_result(input, result, strategy)
       start, finish, captures = result
       offsets = case strategy
-                when :simple then hfa_simple_capture_offsets(input, start, finish)
+                when :simple
+                  (hfa_top_level_capture_offsets(input, start, finish) if hfa_top_level_capture_plan) ||
+                  hfa_simple_capture_offsets(input, start, finish)
                 when :nested_literal then hfa_nested_literal_capture_offsets(input, start, finish)
                 when :nested_repeated then hfa_nested_repeated_capture_offsets(input, start, finish)
                 when :adjacent_nested_repeated then hfa_adjacent_nested_repeated_capture_offsets(input, start, finish)
@@ -3465,7 +3422,6 @@ module Onibi
 
       ascii_input = input.ascii_only?
       return true if hfa_always_fails?
-      return false if hfa_capture_count.positive? && hfa_top_level_capture_plan && hfa_reverse_literal_capture_spec
 
       if hfa_empty_absence_result_safe?
         block.call([input.bytesize, input.bytesize, []])
@@ -3720,6 +3676,8 @@ module Onibi
         end
         return true
       end
+
+      return false if hfa_capture_count.positive? && hfa_top_level_capture_plan && hfa_capture_offset_strategy == false
 
       program = hfa_program
       return false unless program

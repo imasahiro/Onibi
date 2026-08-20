@@ -51,19 +51,6 @@ module Onibi
       before == current && after_current == after
     end
 
-    def hfa_scan_boundary_start_match?(input, start, boundary)
-      return true unless boundary
-
-      if input.ascii_only?
-        before = start.positive? && hfa_ascii_word_byte?(input.getbyte(start - 1))
-        current = start < input.bytesize && hfa_ascii_word_byte?(input.getbyte(start))
-      else
-        before = start.positive? && CharacterPredicates.word?(input.getbyte(start - 1).chr)
-        current = start < input.bytesize && CharacterPredicates.word?(input.getbyte(start).chr)
-      end
-      boundary == :word_boundary ? before != current : before == current
-    end
-
     def replace_matches(input, replacement, block)
       if !block && replacement.index("\\").nil? && input.ascii_only? &&
          (spec = hfa_delimited_negated_class_result_spec)
