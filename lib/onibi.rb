@@ -2331,36 +2331,6 @@ module Onibi
       @hfa_unicode_ignorecase_literal_fold = literal_ast_value(@ast)&.downcase
     end
 
-    def hfa_captured_class_run_chain_result_safe?
-      layout = hfa_simple_capture_layout
-      return false unless layout.is_a?(Array) && layout.length == 3
-
-      layout[0][0] == :class_run && layout[1][0] == :literal && layout[2][0] == :class_run
-    end
-
-    def hfa_captured_class_run_chain_match_result(input, position, layout = hfa_simple_capture_layout)
-      left_table = layout[0][1]
-      separator = layout[1][1]
-      right_table = layout[2][1]
-      left_number = layout[0][2]
-      right_number = layout[2][2]
-      separator_position = input.index(separator, position)
-      while separator_position
-        left = separator_position
-        left -= 1 while left > position && left_table[input.getbyte(left - 1)]
-        right = separator_position + separator.bytesize
-        right += 1 while right < input.bytesize && right_table[input.getbyte(right)]
-        if left < separator_position && right > separator_position + separator.bytesize
-          captures = Array.new([left_number, right_number].max)
-          captures[left_number - 1] = [left, separator_position]
-          captures[right_number - 1] = [separator_position + separator.bytesize, right]
-          return [left, right, captures]
-        end
-        separator_position = input.index(separator, separator_position + 1)
-      end
-      nil
-    end
-
     def hfa_repeated_literal_run_match_result(input, position)
       unit = @ast.parts.first.expression.value
       candidate = input.index(unit, position)
