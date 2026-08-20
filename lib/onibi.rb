@@ -120,17 +120,6 @@ module Onibi
         return !hfa_literal_absence_suffix_match_result(input, normalized_position, spec).nil?
       end
 
-      if hfa_positive_lookbehind_result_safe?
-        prefix, literal = hfa_literal_lookbehind_parts(:positive_lookbehind)
-        candidate = input.b.index((prefix + literal).b, [normalized_position - prefix.bytesize, 0].max)
-        while candidate
-          return true if candidate + prefix.bytesize >= normalized_position
-
-          candidate = input.index(prefix + literal, candidate + 1)
-        end
-        return false
-      end
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
