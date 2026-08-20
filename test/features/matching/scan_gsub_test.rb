@@ -416,6 +416,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("こんにちは")
+    regexp.define_singleton_method(:hfa_unicode_exact_literal_result_safe?) do
+      raise "legacy Unicode exact literal scanner called"
+    end
 
     assert_equal %w[こんにちは こんにちは], regexp.scan("こんにちは 世界 こんにちは")
   end

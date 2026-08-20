@@ -1520,7 +1520,9 @@ module Onibi
       def each_match_result(input, position = 0, &block)
         return enum_for(__method__, input, position) unless block_given?
 
-        byte_mode = !input.ascii_only? && @alternation_literal_spec&.branches&.all?(&:ascii_only?)
+        byte_mode = !input.ascii_only? &&
+                    (@alternation_literal_spec&.branches&.all?(&:ascii_only?) ||
+                     @exact_literal&.ascii_only?)
         input = input.b if byte_mode
         ascii_input = input.ascii_only? || byte_mode
 

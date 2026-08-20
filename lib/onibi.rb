@@ -3350,20 +3350,6 @@ module Onibi
         return true
       end
 
-      if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
-        literal = hfa_exact_literal_value
-        validate_encoding!(input, ascii_input: ascii_input) if hfa_unicode_exact_literal_result_safe?
-        search_input = ascii_input ? input : input.b
-        search_literal = ascii_input ? literal : literal.b
-        position = 0
-        while (start = search_input.index(search_literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
-        end
-        return true
-      end
-
       if !hfa_program && hfa_leading_literal_assertion_result_safe?
         position = 0
         while (result = hfa_leading_literal_assertion_match_result(input, position))
