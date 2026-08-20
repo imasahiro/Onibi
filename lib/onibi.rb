@@ -2112,16 +2112,6 @@ module Onibi
       nil
     end
 
-    def hfa_match_reset_literal_combined_literal
-      return @hfa_match_reset_literal_combined_literal if defined?(@hfa_match_reset_literal_combined_literal)
-
-      prefix, suffix = hfa_match_reset_literal_parts
-      @hfa_match_reset_literal_combined_literal = if prefix&.ascii_only? && suffix&.ascii_only? &&
-                                                     prefix.bytesize.positive? && suffix.bytesize.positive?
-                                                    prefix + suffix
-                                                  end
-    end
-
     def hfa_match_reset_literal_parts
       return @hfa_match_reset_literal_parts if defined?(@hfa_match_reset_literal_parts)
 
