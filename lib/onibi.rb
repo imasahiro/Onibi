@@ -131,10 +131,6 @@ module Onibi
         return false
       end
 
-      if (literal = hfa_start_match_literal_fast)
-        return input[normalized_position, literal.length] == literal
-      end
-
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -323,12 +319,6 @@ module Onibi
 
       return hfa_match_data([normalized_position, normalized_position, []], input) if hfa_nullable_empty_match_safe?
 
-      if (literal = hfa_start_match_literal_fast)
-        return nil unless input[normalized_position, literal.length] == literal
-
-        start = input[0, normalized_position].bytesize
-        return hfa_match_data([start, start + literal.bytesize, []], input)
-      end
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
@@ -1559,17 +1549,6 @@ module Onibi
       parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
       @hfa_linebreak_safe = parts.one? && parts.first.is_a?(AST::Escape) &&
                             parts.first.kind == :linebreak && hfa_program
-    end
-
-    def hfa_start_match_literal_fast
-      return @hfa_start_match_literal if defined?(@hfa_start_match_literal)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      literal = parts[1..].map(&:value).join if parts.length > 1 && parts.first.is_a?(AST::Escape) &&
-                                                parts.first.kind == :start_match &&
-                                                parts[1..].all? { |part| part.is_a?(AST::Literal) }
-      @hfa_start_match_literal = literal if literal&.bytesize&.positive? &&
-                                            !casefold?
     end
 
     def hfa_linebreak_match_data(result, input)
