@@ -195,17 +195,6 @@ module Onibi
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
 
-      if hfa_negative_lookbehind_result_safe?
-        literal, guard = hfa_literal_lookbehind_parts(:negative_lookbehind)
-        candidate = input.b.index(literal.b, normalized_position)
-        while candidate
-          return true if candidate < guard.bytesize ||
-                         input.byteslice(candidate - guard.bytesize, guard.bytesize) != guard
-
-          candidate = input.index(literal, candidate + 1)
-        end
-        return false
-      end
       return !hfa_class_lookbehind_match_result(input, normalized_position).nil? if hfa_class_lookbehind_parts
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
