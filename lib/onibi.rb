@@ -94,7 +94,6 @@ module Onibi
       end
 
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
-      return !hfa_unicode_repeated_literal_match_result(input, normalized_position).nil? if !ascii_input && hfa_unicode_repeated_literal_result_safe?
 
       if (class_source = hfa_unicode_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
@@ -237,16 +236,6 @@ module Onibi
         return !result.nil? if timeout_unconfigured?
 
         return with_timeout { !result.nil? }
-      end
-      if !ascii_input && hfa_unicode_repeated_literal_result_safe?
-        byte_position = input[0, normalized_position].bytesize
-        result = hfa_unicode_repeated_literal_match_result(input, byte_position)
-        if result
-          match_start, match_finish, captures = result
-          return MatchData.from_byte_offsets(input, match_start, match_finish, captures, hfa_result_names, self)
-        end
-
-        return nil
       end
       if ascii_input && ascii_repeated_literal_run_ast?
         result = hfa_repeated_literal_run_match_result(input, normalized_position)

@@ -1042,15 +1042,18 @@ class MatchApiTest < Minitest::Test
 
   def test_unicode_repeated_literal_match_question_skips_program_compile
     regexp = Onibi::Regexp.new("(?:日本語)+")
+    regexp.define_singleton_method(:hfa_unicode_repeated_literal_result_safe?) do
+      raise "legacy Unicode repeated literal matcher called"
+    end
 
     assert regexp.match?("開始日本語日本語終了")
   end
 
-  def test_unicode_repeated_literal_unit_is_cached
+  def test_unicode_repeated_literal_match_question_preserves_public_behavior
     regexp = Onibi::Regexp.new("(?:日本語)+")
 
     assert regexp.match?("開始日本語終了")
-    assert_equal "日本語", regexp.instance_variable_get(:@hfa_unicode_repeated_literal_unit)
+    refute regexp.match?("開始ひらがな終了")
   end
 
   def test_unicode_literal_captures_use_hfa_result
