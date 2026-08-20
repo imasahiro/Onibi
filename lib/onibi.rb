@@ -1100,25 +1100,6 @@ module Onibi
       end
     end
 
-    def hfa_public_safe?
-      return @hfa_public_safe if defined?(@hfa_public_safe)
-
-      @hfa_public_safe = if !@pattern.ascii_only? || casefold?
-                           false
-                         elsif @ast.is_a?(AST::Sequence) && @ast.parts.length != 1 &&
-                               @ast.parts.any? { |part| class_run_result_node?(part) } &&
-                               !literal_class_literal_ast? && !class_run_chain_ast? &&
-                               !adjacent_class_run_ast? && !class_run_triple_ast?
-                           false
-                         elsif @ast.is_a?(AST::Sequence) && @ast.parts.length == 1 &&
-                               class_run_result_node?(@ast.parts.first) &&
-                               !selective_class_run_node?(@ast.parts.first)
-                           false
-                         else
-                           hfa_public_safe_node?(@ast)
-                         end
-    end
-
     def hfa_always_fails?
       return true if @ast.is_a?(AST::Sequence) && @ast.parts.one? &&
                      @ast.parts.first.is_a?(AST::Assertion) && @ast.parts.first.kind == :negative &&
@@ -3690,7 +3671,7 @@ module Onibi
 
       ascii_input = input.ascii_only?
       ascii_safe = ascii_input &&
-                   (hfa_exact_literal_result_safe? || hfa_public_safe? ||
+                   (hfa_exact_literal_result_safe? ||
                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
                     hfa_variable_any_backref_spec ||
                     hfa_leading_literal_assertion_result_safe? ||
@@ -4215,33 +4196,6 @@ module Onibi
       return node.parts.all? { |part| part.is_a?(AST::Literal) } if node.is_a?(AST::Sequence)
 
       false
-    end
-
-    def hfa_public_safe_node?(node)
-      case node
-      when AST::Literal, AST::CharacterClass, AST::Any
-        true
-      when AST::Property
-        UnicodeProperties::SUPPORTED.include?(node.name.sub("Is", "").sub("^", ""))
-      when AST::Sequence, AST::Alternation
-        children = node.is_a?(AST::Sequence) ? node.parts : node.branches
-        children.all? { |part| hfa_public_safe_node?(part) }
-      when AST::Group
-        !node.capture && hfa_public_safe_node?(node.body)
-      when AST::Quantifier
-        (node.mode == :greedy || star_literal_result_node?(node) ||
-         (node.kind == :* && node.mode == :lazy && node.expression.is_a?(AST::Any))) &&
-          (node.expression.is_a?(AST::Literal) || class_run_result_node?(node) ||
-           star_literal_result_node?(node) ||
-           (node.kind == :* && node.mode == :lazy && node.expression.is_a?(AST::Any))) &&
-          hfa_public_safe_node?(node.expression)
-      when AST::Escape
-        %i[word_boundary digit space word].include?(node.kind)
-      when AST::Assertion, AST::Anchor
-        false
-      else
-        false
-      end
     end
 
     def validate_pattern_type!(pattern)
