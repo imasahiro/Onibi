@@ -226,7 +226,6 @@ module Onibi
       return !hfa_leading_literal_assertion_match_result(input, normalized_position).nil? if ascii_input && hfa_leading_literal_assertion_result_safe?
       return !hfa_scoped_casefold_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_scoped_casefold_backref_spec
       return !hfa_variable_any_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_variable_any_backref_spec
-      return !hfa_match_reset_literal_match_result(input, normalized_position).nil? if ascii_input && hfa_match_reset_literal_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         result = hfa_unicode_ignorecase_literal_match_result(input, position, literal)
