@@ -288,6 +288,16 @@ class MatchApiTest < Minitest::Test
     end
   end
 
+  def test_lazy_literal_quantifier_match_question_uses_generic_hfa
+    regexp = Onibi::Regexp.new("a+?")
+    regexp.define_singleton_method(:hfa_lazy_literal_result_safe?) do
+      raise "legacy lazy literal matcher called"
+    end
+
+    assert regexp.match?("ba")
+    refute regexp.match?("bbb")
+  end
+
   def test_match_returns_nil_and_match_question_mark_returns_boolean
     regexp = Onibi::Regexp.new("cat")
 
