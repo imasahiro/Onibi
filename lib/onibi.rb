@@ -291,13 +291,6 @@ module Onibi
         return nil
       end
 
-      if ascii_input && hfa_ignorecase_literal_result_safe?
-        result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
-
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         result = hfa_bounded_sequence_direct_match_result(input, normalized_position)
         if result
