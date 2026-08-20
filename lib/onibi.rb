@@ -2529,17 +2529,6 @@ module Onibi
                                              hfa_program
     end
 
-    def hfa_single_capture_literal_alternation_match_result(_input, program_result)
-      result = program_result
-      return unless result
-
-      group = @ast.parts.first
-      start, finish, = result
-      captures = Array.new(group.number)
-      captures[group.number - 1] = [start, finish]
-      [start, finish, captures]
-    end
-
     def hfa_adjacent_greedy_capture_result_safe?
       return @hfa_adjacent_greedy_capture_safe if defined?(@hfa_adjacent_greedy_capture_safe)
 
