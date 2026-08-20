@@ -660,27 +660,6 @@ class MatchApiTest < Minitest::Test
     assert_equal "NDtail", regexp.match("ENDtail").to_s
   end
 
-  def test_scan_safety_classifies_input_encoding_once
-    input_class = Class.new(String) do
-      attr_reader :ascii_only_calls
-
-      def initialize(value)
-        super
-        @ascii_only_calls = 0
-      end
-
-      def ascii_only?
-        @ascii_only_calls += 1
-        super
-      end
-    end
-    regexp = Onibi::Regexp.new("cat")
-    input = input_class.new("cat")
-
-    assert regexp.send(:hfa_scan_input_safe?, input)
-    assert_equal 1, input.ascii_only_calls
-  end
-
   def test_generic_match_reuses_precomputed_input_encoding
     input_class = Class.new(String) do
       attr_reader :ascii_only_calls
@@ -1301,18 +1280,6 @@ class MatchApiTest < Minitest::Test
 
     assert_same first, second
     assert_equal [[1, 2], 2], [first[2], first[4]]
-  end
-
-  def test_encoding_neutral_scan_safety_is_checked_once
-    regexp = Onibi::Regexp.new("(?<=a)b")
-    calls = 0
-    regexp.define_singleton_method(:hfa_encoding_neutral_scan_safe?) do
-      calls += 1
-      true
-    end
-
-    assert regexp.send(:hfa_scan_input_safe?, "ab")
-    assert_equal 1, calls
   end
 
   def test_unicode_hfa_safety_analysis_is_cached

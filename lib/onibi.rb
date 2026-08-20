@@ -3547,8 +3547,6 @@ module Onibi
         return true
       end
 
-      return false unless hfa_scan_input_safe?(input)
-
       if !ascii_input && (hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe?)
         literal = hfa_exact_literal_value
         validate_encoding!(input, ascii_input: ascii_input) if hfa_unicode_exact_literal_result_safe?
@@ -3664,93 +3662,6 @@ module Onibi
     def hfa_negated_class_quantifier?(node, delimiter)
       node.is_a?(AST::Quantifier) && node.kind == :* && node.expression.is_a?(AST::CharacterClass) &&
         node.expression.value == "^#{delimiter}"
-    end
-
-    def hfa_scan_input_safe?(input)
-      return true if hfa_encoding_neutral_scan_safe?
-
-      ascii_input = input.ascii_only?
-      ascii_safe = ascii_input &&
-                   (hfa_exact_literal_result_safe? ||
-                    hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
-                    hfa_variable_any_backref_spec ||
-                    hfa_leading_literal_assertion_result_safe? ||
-                    hfa_negative_literal_guard_safe? ||
-                    hfa_simple_capture_result_safe? ||
-                    hfa_literal_alternation_result_safe? ||
-                    hfa_repeated_equal_length_literal_capture_result_safe? ||
-                    hfa_literal_capture_before_alternation_result_safe? ||
-                    hfa_single_capture_literal_alternation_result_safe? ||
-                    hfa_nested_literal_capture_alternation_spec || hfa_possessive_literal_string_result_safe? ||
-                    hfa_backref_result_safe? || hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                    hfa_ignorecase_literal_result_safe? ||
-                    hfa_positive_literal_guard_result_safe? || hfa_class_lookbehind_parts ||
-                    hfa_casefold_class_lookbehind_parts ||
-                    hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
-                    hfa_adjacent_nested_repeated_capture_result_safe? || hfa_repeated_class_capture_result_safe?)
-      unicode_safe = !ascii_input &&
-                     (hfa_exact_literal_result_safe? ||
-                      (input.encoding == Encoding::UTF_8 && hfa_unicode_property_result_safe?) ||
-                      hfa_unicode_ignorecase_literal_result_safe? ||
-                      hfa_class_lookbehind_parts ||
-                      hfa_unicode_repeated_literal_result_safe? ||
-                      hfa_unicode_repeated_literal_capture_result_safe? || hfa_scoped_unicode_ignorecase_literal_value)
-      (ascii_safe || unicode_safe) && hfa_iterator_safe?
-    end
-
-    def hfa_iterator_safe?
-      return true if hfa_encoding_neutral_scan_safe? || hfa_exact_literal_result_safe? || hfa_unicode_exact_literal_result_safe? ||
-                     hfa_unicode_property_result_safe? ||
-                     hfa_atomic_literal_alternation_spec || hfa_scoped_casefold_backref_spec ||
-                     hfa_variable_any_backref_spec ||
-                     hfa_leading_literal_assertion_result_safe? ||
-                     hfa_lazy_literal_result_safe? ||
-                     hfa_literal_absence_result_safe? ||
-                     hfa_possessive_literal_string_result_safe? ||
-                     hfa_literal_alternation_result_safe? ||
-                     hfa_repeated_equal_length_literal_capture_result_safe? ||
-                     hfa_literal_capture_before_alternation_result_safe? ||
-                     hfa_single_capture_literal_alternation_result_safe? ||
-                     hfa_nested_literal_capture_alternation_spec ||
-                     hfa_negative_literal_guard_safe? || hfa_positive_literal_guard_result_safe? ||
-                     hfa_class_lookbehind_parts ||
-                     hfa_casefold_class_lookbehind_parts ||
-                     hfa_simple_capture_result_safe? || hfa_backref_result_safe? ||
-                     hfa_conditional_result_safe? || hfa_subexpression_result_safe? ||
-                     hfa_nested_literal_capture_result_safe? || hfa_nested_repeated_capture_result_safe? ||
-                     hfa_adjacent_nested_repeated_capture_result_safe? ||
-                     hfa_unicode_repeated_literal_result_safe? || hfa_unicode_repeated_literal_capture_result_safe? ||
-                     hfa_ignorecase_literal_result_safe? ||
-                     hfa_unicode_ignorecase_literal_result_safe? ||
-                     hfa_scoped_unicode_ignorecase_literal_value ||
-                     hfa_repeated_class_capture_result_safe?
-
-      return true if hfa_fixed_class_alternation_ast?
-
-      return true if star_literal_ast? || lazy_star_literal_ast? || repeated_alternation_ast? ||
-                     fixed_class_run_literal_ast? || dot_literal_ast? || repeat_literal_ast? ||
-                     class_run_chain_ast? || class_run_triple_ast?
-
-      @ast.is_a?(AST::Literal) ||
-        @ast.is_a?(AST::CharacterClass) || @ast.is_a?(AST::Any) ||
-        (@ast.is_a?(AST::Quantifier) && @ast.mode == :greedy &&
-         (@ast.expression.is_a?(AST::Literal) || class_run_result_node?(@ast))) ||
-        (@ast.is_a?(AST::Alternation) && @ast.branches.all? { |part| hfa_iterator_node?(part) }) ||
-        (@ast.is_a?(AST::Sequence) &&
-          (@ast.parts.all? do |part|
-            part.is_a?(AST::Literal) ||
-           (part.is_a?(AST::Quantifier) && part.mode == :greedy && part.expression.is_a?(AST::Literal))
-          end ||
-           (@ast.parts.length == 3 && @ast.parts[0].is_a?(AST::Literal) &&
-            class_run_result_node?(@ast.parts[1]) && @ast.parts[2].is_a?(AST::Literal)) ||
-           (@ast.parts.length == 1 &&
-            (@ast.parts.first.is_a?(AST::CharacterClass) || @ast.parts.first.is_a?(AST::Any) ||
-            class_run_result_node?(@ast.parts.first)))))
-    end
-
-    def hfa_encoding_neutral_scan_safe?
-      hfa_linebreak_result_safe? || hfa_positive_lookbehind_result_safe? ||
-        hfa_negative_lookbehind_result_safe?
     end
 
     def hfa_negative_literal_guard_safe?
