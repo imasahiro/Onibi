@@ -886,7 +886,7 @@ module Onibi
         cursor = 0
         run_start = nil
         count = 0
-        input.each_char do |character|
+        String.instance_method(:each_char).bind_call(input) do |character|
           character_start = cursor
           cursor += character.bytesize
           next if character_start < position
@@ -913,7 +913,7 @@ module Onibi
 
         byte_position = 0
         index = 0
-        input.each_char do |character|
+        String.instance_method(:each_char).bind_call(input) do |character|
           break if index >= character_position
 
           byte_position += character.bytesize
@@ -927,7 +927,7 @@ module Onibi
 
         character_position = 0
         cursor = 0
-        input.each_char do |character|
+        String.instance_method(:each_char).bind_call(input) do |character|
           break if cursor >= byte_position
 
           cursor += character.bytesize

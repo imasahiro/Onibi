@@ -269,6 +269,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_unicode_property_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\p{Hiragana}+")
+    regexp.define_singleton_method(:hfa_unicode_property_run_result_safe?) do
+      raise "legacy Unicode property run scanner called"
+    end
 
     regexp.stub(:hfa_unicode_property_run_matcher,
                 -> { flunk "Hiragana property run should use specialized codepoint matching" }) do

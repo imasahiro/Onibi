@@ -3243,14 +3243,6 @@ module Onibi
         end
         return true
       end
-      if !ascii_input && hfa_unicode_property_run_result_safe?
-        position = 0
-        while (result = hfa_unicode_property_run_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
         unless hfa_unicode_simple_casefold_each_result(input, literal) { |result| block.call(result) }
           position = 0
