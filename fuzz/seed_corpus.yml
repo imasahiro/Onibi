@@ -2,5 +2,17 @@ schema: 1
 description: Reproducible v1 differential fuzz seeds; minimized failures are promoted to regression tests.
 seeds:
   - seed: 20260811
-    cases: 32
+    cases: 128
     status: smoke
+    families:
+      - literals
+      - alternation
+      - quantifiers
+      - groups
+      - lookaround
+      - character_classes
+      - escapes
+      - anchors
+      - options
+    excluded:
+      - grapheme_cluster (\\X)

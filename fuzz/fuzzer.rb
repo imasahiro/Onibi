@@ -6,9 +6,16 @@ require "yaml"
 
 ## Generates small, reproducible MRI-vs-Onibi differential cases.
 module Fuzzer
-  PATTERNS = ["a", "a+", "ab", "(?<word>a+)", "a|b", "a?", "[ab]+", "."].freeze
-  INPUTS = ["", "a", "A", "ab", "aaa", "bbb", "x"].freeze
-  OPTIONS = [0, Onibi::Regexp::IGNORECASE].freeze
+  # Keep this list aligned with the PEG coverage table.  Each item is small
+  # enough to produce a useful minimized differential failure.
+  PATTERNS = [
+    "a", "ab", "a|b", "a?", "a+", "a*?", "a{2,3}", "a++", "(?<word>a+)",
+    "(?:ab)", "(?>a|ab)", "(?=a)a", "(?!b)a", "(?<=a)b", "(?<!b)a",
+    "[ab]+", "[^a]", "[a-z&&[^m-z]]", "[[:digit:]]", "\\d+", "\\w+",
+    "\\s", "\\R", "\\101", "\\x41", "\\u0041", "^a$", "\\Aa\\z"
+  ].freeze
+  INPUTS = ["", "a", "A", "ab", "aaa", "bbb", "x", "A\n", "1", "a\r\n"].freeze
+  OPTIONS = [0, Onibi::Regexp::IGNORECASE, Onibi::Regexp::MULTILINE].freeze
 
   module_function
 
