@@ -524,12 +524,15 @@ class HybridAutomataTest < Minitest::Test
     assert_equal 3, program.send(:required_literal_candidate, "xxxcgggtaaa", 0)
   end
 
-  def test_small_single_span_uses_static_dfa
+  def test_fixed_class_run_matches_without_legacy_static_dfa_materialization
     program = compile("a[bc]{4}z")
+    program.define_singleton_method(:static_dfa_data) do
+      raise "legacy static DFA materialization called for class-run matching"
+    end
+
     assert program.match?("aabcbcz")
     refute program.match?("abcbx")
     assert program.match?(format("%saabcbcz", "x" * 64))
-    assert program.instance_variable_get(:@static_dfa_data)
   end
 
   def test_dynamic_dfa_cache_is_not_materialized

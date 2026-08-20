@@ -1418,8 +1418,6 @@ module Onibi
         spec = @class_run_literal_spec
         return false unless spec
 
-        static_dfa_data if @dfa_enabled && @static_dfa_data.nil?
-
         position = normalize_position(input, position)
         return false if position.negative? || position > input.bytesize
 
