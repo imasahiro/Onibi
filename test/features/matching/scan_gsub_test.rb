@@ -714,6 +714,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_lazy_star_literal_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("a.*?z")
+    regexp.define_singleton_method(:hfa_lazy_literal_result_safe?) do
+      raise "legacy lazy literal scanner called"
+    end
 
     assert_equal %w[a1z a2z], regexp.scan("a1z\na2z")
     assert_equal ["a1z"], regexp.scan("a1z2z")

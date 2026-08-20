@@ -3225,14 +3225,6 @@ module Onibi
         end
         return true
       end
-      if ascii_input && hfa_lazy_literal_result_safe?
-        position = 0
-        while (result = hfa_lazy_literal_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
       if !ascii_input && hfa_unicode_property_result_safe?
         position = 0
         while (result = hfa_unicode_property_match_result(input, position))
