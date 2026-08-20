@@ -146,13 +146,6 @@ module Onibi
         return nil
       end
 
-      if ascii_input && hfa_ignorecase_literal_result_safe?
-        result = hfa_ignorecase_literal_match_result(input, normalized_position)
-        return !result.nil? if timeout_unconfigured?
-
-        return with_timeout { !result.nil? }
-      end
-
       if (spec = hfa_bounded_sequence_direct_spec) && (ascii_input || spec[:table].nil?)
         return !hfa_bounded_sequence_direct_match_result(input, normalized_position).nil?
       end
