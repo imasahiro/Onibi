@@ -95,10 +95,6 @@ module Onibi
 
       return !hfa_repeated_class_backref_match_result(input, normalized_position).nil? if ascii_input && hfa_repeated_class_backref_result_safe?
 
-      if (class_source = hfa_unicode_class_direct_spec)
-        byte_position = input.byteslice(0, normalized_position).bytesize
-        return !hfa_unicode_class_direct_match_result(input, byte_position, class_source).nil?
-      end
       if (spec = hfa_casefold_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         return !hfa_casefold_class_direct_match_result(input, byte_position, spec).nil?
@@ -117,13 +113,6 @@ module Onibi
         return !hfa_literal_absence_suffix_match_result(input, normalized_position, spec).nil?
       end
 
-      if (class_source = hfa_unicode_class_direct_spec)
-        byte_position = input.byteslice(0, normalized_position).bytesize
-        result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if ascii_input && (spec = hfa_lookahead_literal_backreference_spec)
         result = hfa_lookahead_literal_backreference_match_result(input, normalized_position, spec)
         return hfa_match_data(result, input) if result
@@ -246,13 +235,6 @@ module Onibi
       validate_encoding!(input, ascii_input: ascii_input)
       normalized_position = position.is_a?(Integer) && position.zero? ? 0 : normalize_match_position(input, position)
 
-      if (class_source = hfa_unicode_class_direct_spec)
-        byte_position = input.byteslice(0, normalized_position).bytesize
-        result = hfa_unicode_class_direct_match_result(input, byte_position, class_source)
-        return hfa_match_data(result, input) if result
-
-        return nil
-      end
       if (spec = hfa_casefold_class_direct_spec)
         byte_position = input.byteslice(0, normalized_position).bytesize
         result = hfa_casefold_class_direct_match_result(input, byte_position, spec)
@@ -1047,28 +1029,6 @@ module Onibi
       else
         false
       end
-    end
-
-    def hfa_unicode_class_direct_spec
-      return @hfa_unicode_class_direct_spec if defined?(@hfa_unicode_class_direct_spec)
-      return @hfa_unicode_class_direct_spec = false if casefold?
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      node = parts.one? && parts.first
-      source = node.value if node.is_a?(AST::CharacterClass)
-      direct = source if source && (!source.ascii_only? || source.include?("\\p") || source.include?("\\P") ||
-                                   source.include?("\\u") || source.include?("\\M-") || source.include?("[:"))
-      @hfa_unicode_class_direct_spec = direct
-    end
-
-    def hfa_unicode_class_direct_match_result(input, byte_position, source)
-      offset = 0
-      input.each_char do |character|
-        return [offset, offset + character.bytesize, []] if offset >= byte_position && ClassPredicates.matches?(source, character)
-
-        offset += character.bytesize
-      end
-      nil
     end
 
     def hfa_casefold_class_direct_spec

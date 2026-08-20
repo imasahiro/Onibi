@@ -1583,6 +1583,16 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match("ascii")
   end
 
+  def test_unicode_class_matches_through_common_hfa_runtime
+    regexp = Onibi::Regexp.new("[é]")
+    regexp.define_singleton_method(:hfa_unicode_class_direct_spec) do
+      raise "legacy Unicode class direct scanner called"
+    end
+
+    assert_equal "é", regexp.match("café").to_s
+    assert_nil regexp.match("ascii")
+  end
+
   def test_lookahead_alternation_backreference_match_uses_hfa_result
     regexp = Onibi::Regexp.new("(?=(a|aa))\\1b")
 

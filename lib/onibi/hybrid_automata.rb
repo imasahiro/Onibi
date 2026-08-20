@@ -258,7 +258,8 @@ module Onibi
         ascii_run_spec = ascii_run_spec(ast) unless constrained
         single_byte_spec = single_byte_spec(ast)
         linebreak_spec = linebreak_spec(ast)
-        spec = unicode_spec(ast)
+        spec = unicode_spec(ast) unless ignorecase? || prepared.anchored_start || prepared.anchored_end ||
+                                        prepared.before_final_newline || prepared.start_match
         specialized = specialized_runtime?(prefix, exact_literal, constrained,
                                            repeat_literal_spec, dot_literal_spec, star_literal_spec,
                                            bounded_literal_spec, lazy_star_literal_spec,
@@ -1041,7 +1042,7 @@ module Onibi
           return !input.b.index(@exact_literal.b, position).nil?
         end
 
-        return unicode_match?(input, position) if @unicode_spec && !ascii_input
+        return unicode_match?(input, position) if @unicode_spec && (!ascii_input || @unicode_spec.kind == :class)
         return linebreak_match?(input, position) if @linebreak_spec
         return !start_match_result(input, normalize_position(input, position)).nil? if @start_match
         return backref_match?(input, position) if @backref_spec
@@ -1083,7 +1084,7 @@ module Onibi
         return if @negative_suffix == ""
 
         ascii_input = input.ascii_only?
-        return unicode_match_result(input, position) if @unicode_spec && !ascii_input
+        return unicode_match_result(input, position) if @unicode_spec && (!ascii_input || @unicode_spec.kind == :class)
         return linebreak_match_result(input, position) if @linebreak_spec
         return start_match_result(input, position) if @start_match
 

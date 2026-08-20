@@ -360,6 +360,20 @@ module Onibi
       private
 
       def unicode_spec(ast)
+        expression = if ast.is_a?(AST::CharacterClass) || ast.is_a?(AST::Property)
+                       ast
+                     elsif ast.is_a?(AST::Sequence) && ast.parts.one? &&
+                           (ast.parts.first.is_a?(AST::CharacterClass) || ast.parts.first.is_a?(AST::Property))
+                       ast.parts.first
+                     end
+        if expression
+          return if expression.is_a?(AST::CharacterClass) && expression.value.encoding == Encoding::ASCII_8BIT
+
+          kind = expression.is_a?(AST::Property) ? :property : :class
+          value = expression.is_a?(AST::Property) ? [expression.name, expression.negated] : expression.value
+          return UnicodeSpec.new(kind, value, 1, 1)
+        end
+
         quantifier = if ast.is_a?(AST::Sequence) && ast.parts.one?
                        ast.parts.first
                      else
