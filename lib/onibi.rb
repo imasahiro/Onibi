@@ -3769,15 +3769,6 @@ module Onibi
       @ast.parts.all? { |part| class_run_result_node?(part) }
     end
 
-    def hfa_iterator_node?(node)
-      return true if node.is_a?(AST::Literal) || node.is_a?(AST::CharacterClass) || node.is_a?(AST::Any)
-      return true if node.is_a?(AST::Quantifier) && node.mode == :greedy && node.expression.is_a?(AST::Literal)
-      return true if class_run_result_node?(node)
-      return node.parts.all? { |part| part.is_a?(AST::Literal) } if node.is_a?(AST::Sequence)
-
-      false
-    end
-
     def validate_pattern_type!(pattern)
       return if pattern.is_a?(String)
 
