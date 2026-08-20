@@ -127,6 +127,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_literal_alternation_scan_uses_hfa_on_unicode_input
     regexp = Onibi::Regexp.new("cat|dog")
+    regexp.define_singleton_method(:hfa_literal_alternation_result_safe?) do
+      raise "legacy literal alternation scanner called"
+    end
 
     assert_equal %w[cat dog], regexp.scan("日本語cat dog")
   end

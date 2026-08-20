@@ -2231,16 +2231,6 @@ module Onibi
       nil
     end
 
-    def hfa_literal_alternation_result_safe?
-      return @hfa_literal_alternation_safe if defined?(@hfa_literal_alternation_safe)
-      return @hfa_literal_alternation_safe = false if casefold?
-
-      alternatives = hfa_literal_alternation_values
-      @hfa_literal_alternation_safe = alternatives.length.positive? && alternatives.all? do |value|
-        value&.ascii_only? && value.bytesize.positive?
-      end
-    end
-
     def hfa_repeated_equal_length_literal_capture_result_safe?
       return @hfa_repeated_equal_length_capture_safe if defined?(@hfa_repeated_equal_length_capture_safe)
 
@@ -2388,56 +2378,6 @@ module Onibi
         end
       end
       cursor
-    end
-
-    def hfa_literal_alternation_values
-      return @hfa_literal_alternation_values if defined?(@hfa_literal_alternation_values)
-
-      branches = @ast.is_a?(AST::Alternation) ? @ast.branches : []
-      @hfa_literal_alternation_values = branches.each_with_object([]) do |branch, values|
-        value = hfa_alternation_literal_value(branch)
-        next if value.nil? && hfa_always_false_alternation_branch?(branch)
-
-        values << value
-      end.freeze
-    end
-
-    def hfa_always_false_alternation_branch?(branch)
-      return false unless branch.is_a?(AST::Sequence) && branch.parts.one?
-
-      assertion = branch.parts.first
-      assertion.is_a?(AST::Assertion) && assertion.kind == :negative &&
-        assertion.body.is_a?(AST::Sequence) && assertion.body.parts.empty?
-    end
-
-    def hfa_alternation_literal_value(branch)
-      literal = literal_ast_value(branch)
-      return literal if literal
-      return unless branch.is_a?(AST::Sequence) && branch.parts.one?
-
-      node = branch.parts.first
-      return unless node.is_a?(AST::CharacterClass) && node.value.ascii_only?
-
-      table = ClassPredicates.compiled(node.value).ascii_table
-      values = (0..255).select { |byte| table[byte] }
-      values.one? ? values.first.chr : nil
-    end
-
-    def hfa_literal_alternation_match_result(input, position, byte_mode: false)
-      best_start = nil
-      best_value = nil
-      hfa_literal_alternation_values.each do |value|
-        candidate = if byte_mode
-                      input.b.index(value.b, position)
-                    else
-                      input.index(value, position)
-                    end
-        next unless candidate && (best_start.nil? || candidate < best_start)
-
-        best_start = candidate
-        best_value = value
-      end
-      best_start && [best_start, best_start + best_value.bytesize, []]
     end
 
     def hfa_unicode_property_run_result_safe?
@@ -3278,15 +3218,6 @@ module Onibi
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
-          block.call(result)
-          position = result[1]
-        end
-        return true
-      end
-      if !ascii_input && hfa_literal_alternation_result_safe?
-        validate_encoding!(input, ascii_input: ascii_input)
-        position = 0
-        while (result = hfa_literal_alternation_match_result(input, position, byte_mode: true))
           block.call(result)
           position = result[1]
         end

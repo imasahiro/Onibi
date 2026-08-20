@@ -1520,6 +1520,10 @@ module Onibi
       def each_match_result(input, position = 0, &block)
         return enum_for(__method__, input, position) unless block_given?
 
+        byte_mode = !input.ascii_only? && @alternation_literal_spec&.branches&.all?(&:ascii_only?)
+        input = input.b if byte_mode
+        ascii_input = input.ascii_only? || byte_mode
+
         if @linebreak_spec
           position = normalize_position(input, position)
           return if position.negative? || position > input.bytesize
@@ -1553,7 +1557,7 @@ module Onibi
           return
         end
 
-        unless input.ascii_only?
+        unless ascii_input
           if @exact_literal && !@exact_literal.ascii_only?
             position = normalize_position(input, position)
             return if position.negative? || position > input.bytesize
