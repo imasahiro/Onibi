@@ -1374,8 +1374,6 @@ module Onibi
         spec = @repeated_alternation_literal_spec
         return false unless spec
 
-        observe_specialized_dfa
-
         position = normalize_position(input, position)
         return false if position.negative? || position > input.bytesize
 
@@ -1413,7 +1411,6 @@ module Onibi
         spec = @class_run_literal_spec
         return false unless spec
 
-        observe_specialized_dfa
         static_dfa_data if @dfa_enabled && @static_dfa_data.nil?
 
         position = normalize_position(input, position)

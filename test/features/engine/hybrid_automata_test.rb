@@ -341,6 +341,14 @@ class HybridAutomataTest < Minitest::Test
     refute program.match?("xxabacbdx")
   end
 
+  def test_repeated_alternation_does_not_observe_legacy_adaptive_dfa
+    program = Onibi::HybridAutomata.compile("(?:ab|ac|ad|ba|bc|bd)+z")
+
+    program.define_singleton_method(:observe_specialized_dfa) { flunk "legacy adaptive DFA observer called" }
+
+    assert program.match?("xxabacbdz")
+  end
+
   def test_fixed_class_run_exposes_a_suffix_event
     program = Onibi::HybridAutomata.compile("a[bc]{4}z")
 

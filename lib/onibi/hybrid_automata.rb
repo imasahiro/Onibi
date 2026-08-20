@@ -882,10 +882,6 @@ module Onibi
         candidates & @reach_masks[byte]
       end
 
-      def observe_specialized_dfa
-        nil
-      end
-
       def span_data(spans)
         entries = spans.to_a.freeze
         [spans, entries, entries.one? ? entries.first : nil]
