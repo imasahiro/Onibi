@@ -1295,11 +1295,16 @@ class MatchApiTest < Minitest::Test
     assert_equal [[1, 2], 2], [first[2], first[4]]
   end
 
-  def test_unicode_hfa_safety_analysis_is_cached
-    regexp = Onibi::Regexp.new("\\p{Letter}+")
+  def test_unicode_property_public_apis_match_mri_after_repeated_calls
+    pattern = "\\p{Letter}+"
+    input = "123 日本語 終端!"
+    regexp = Onibi::Regexp.new(pattern)
+    mri = Regexp.new(pattern)
 
-    3.times { assert regexp.match?("日本語") }
-    assert_equal true, regexp.instance_variable_get(:@hfa_unicode_match_safe)
+    3.times { assert_equal input.match?(mri), regexp.match?(input) }
+    assert_equal input.match(mri).to_s, regexp.match(input).to_s
+    assert_equal input.scan(mri), regexp.scan(input)
+    assert_equal input.gsub(mri, "<\\0>"), regexp.gsub(input, "<\\0>")
   end
 
   def test_unicode_letter_runtime_falls_back_outside_fast_ranges
