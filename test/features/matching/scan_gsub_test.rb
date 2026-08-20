@@ -208,6 +208,9 @@ class ScanGsubTest < Minitest::Test
 
   def test_ascii_ignorecase_scan_avoids_hfa_program_compile
     regexp = Onibi::Regexp.new("case", Onibi::Regexp::IGNORECASE)
+    regexp.define_singleton_method(:hfa_ignorecase_literal_result_safe?) do
+      raise "legacy ASCII ignorecase scanner called"
+    end
 
     assert_equal %w[CASE case], regexp.scan("CASE x case")
   end

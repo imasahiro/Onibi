@@ -3243,17 +3243,6 @@ module Onibi
       end
       return true if ascii_input && hfa_unicode_repeated_literal_result_safe?
 
-      if ascii_input && hfa_ignorecase_literal_result_safe?
-        folded_input = input.downcase
-        literal = literal_ast_value(@ast).downcase
-        position = 0
-        while (start = folded_input.index(literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
-        end
-        return true
-      end
       if !ascii_input && hfa_unicode_repeated_literal_result_safe?
         position = 0
         while (result = hfa_unicode_repeated_literal_match_result(input, position))
@@ -3415,18 +3404,6 @@ module Onibi
         end
         return true
       end
-      if hfa_ignorecase_literal_result_safe?
-        folded_input = input.downcase
-        literal = literal_ast_value(@ast).downcase
-        position = 0
-        while (start = folded_input.index(literal, position))
-          finish = start + literal.bytesize
-          block.call([start, finish, []])
-          position = finish
-        end
-        return true
-      end
-
       return false if hfa_capture_count.positive? && hfa_top_level_capture_plan && hfa_capture_offset_strategy == false
 
       program = hfa_program

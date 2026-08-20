@@ -1557,6 +1557,17 @@ module Onibi
           return
         end
 
+        if @ignorecase && @exact_literal&.ascii_only? && input.ascii_only?
+          literal = @exact_literal.downcase
+          folded_input = input.downcase
+          position = normalize_position(input, position)
+          while (start = folded_input.index(literal, position))
+            yield [start, start + literal.bytesize, []]
+            position = start + literal.bytesize
+          end
+          return
+        end
+
         unless ascii_input
           if @exact_literal && !@exact_literal.ascii_only?
             position = normalize_position(input, position)
