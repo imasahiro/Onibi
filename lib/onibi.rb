@@ -261,12 +261,6 @@ module Onibi
 
         return nil
       end
-      if !ascii_input && hfa_linebreak_result_safe?
-        result = hfa_program.match?(input, position)
-        return result if timeout_unconfigured?
-
-        return with_timeout { result }
-      end
       if ascii_input && ascii_repeated_literal_run_ast?
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
         return !result.nil? if timeout_unconfigured?
@@ -534,13 +528,6 @@ module Onibi
         return nil
       end
       return nil if ascii_input && hfa_unicode_repeated_literal_result_safe?
-
-      if !ascii_input && hfa_linebreak_result_safe?
-        result = with_timeout { hfa_program.match_result(input, position) }
-        return hfa_linebreak_match_data(result, input) if result
-
-        return nil
-      end
 
       if ascii_input && ascii_repeated_literal_run_ast?
         result = hfa_repeated_literal_run_match_result(input, normalized_position)
@@ -1397,22 +1384,6 @@ module Onibi
                            group.multiline.nil? && group.extended.nil?
       literal = literal_ast_value(body) if body
       @hfa_scoped_unicode_ignorecase_literal = literal if literal&.bytesize&.positive? && !literal.ascii_only?
-    end
-
-    def hfa_linebreak_result_safe?
-      return @hfa_linebreak_safe if defined?(@hfa_linebreak_safe)
-
-      parts = @ast.is_a?(AST::Sequence) ? @ast.parts : []
-      @hfa_linebreak_safe = parts.one? && parts.first.is_a?(AST::Escape) &&
-                            parts.first.kind == :linebreak && hfa_program
-    end
-
-    def hfa_linebreak_match_data(result, input)
-      start, finish, = result
-      char_start = input.byteslice(0, start).length
-      char_finish = input.byteslice(0, finish).length
-      MatchData.new(input.byteslice(start, finish - start), [], [[char_start, char_finish]], {},
-                    MatchData::Context.new(input, self))
     end
 
     def hfa_unicode_property_result_safe?
