@@ -1445,11 +1445,6 @@ module Onibi
                                         !casefold?
     end
 
-    def hfa_ascii_input_impossible_unicode_literal?
-      literal = hfa_exact_literal_value
-      literal&.bytesize&.positive? && !literal.ascii_only? && !casefold?
-    end
-
     def hfa_exact_literal_value
       return @hfa_exact_literal_value if defined?(@hfa_exact_literal_value)
 
@@ -3280,8 +3275,6 @@ module Onibi
         end
         return true
       end
-      return true if ascii_input && hfa_ascii_input_impossible_unicode_literal?
-
       if ascii_input && hfa_possessive_literal_string_result_safe?
         position = 0
         while (result = hfa_possessive_literal_string_match_result(input, position))
