@@ -195,7 +195,6 @@ module Onibi
 
       return !hfa_literal_absence_match_result(input, normalized_position, byte_mode: !ascii_input).nil? if hfa_literal_absence_result_safe?
 
-      return !hfa_class_lookbehind_match_result(input, normalized_position).nil? if hfa_class_lookbehind_parts
       return !hfa_class_run_positive_lookahead_match_result(input, normalized_position).nil? if ascii_input && hfa_class_run_positive_lookahead_result_safe?
 
       if (literal = hfa_scoped_unicode_ignorecase_literal_value)
