@@ -17,6 +17,11 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert Onibi::Regexp.new("\\u{41 42}").match?("AB")
   end
 
+  def test_octal_escapes_match_the_encoded_byte
+    assert Onibi::Regexp.new("\\101").match?("A")
+    assert Onibi::Regexp.new("\\141").match?("a")
+  end
+
   def test_invalid_hex_and_unicode_escapes_raise_regexp_error
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\x") }
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u12") }

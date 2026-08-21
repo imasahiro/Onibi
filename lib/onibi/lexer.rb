@@ -73,6 +73,7 @@ module Onibi
       escaped = @source[index + 1]
       raise RegexpError, "trailing escape" if escaped.nil?
 
+      return octal_escape_token(index) if octal_escape?(index)
       return special_escape_token(index, escaped) if special_escape_token(index, escaped)
       return character_escape_token(index, escaped) if character_escape_token(index, escaped)
 
@@ -91,6 +92,19 @@ module Onibi
 
     def digit_escape?(character)
       character >= "0" && character <= "9"
+    end
+
+    def octal_escape?(index)
+      digits = @source[(index + 1), 3]
+      digits&.length == 3 && digits.each_char.all? { |digit| digit >= "0" && digit <= "7" }
+    end
+
+    def octal_escape_token(index)
+      digits = @source[(index + 1), 3]
+      value = digits.to_i(8).chr(@source.encoding)
+      [Token.new(:literal, value, index), index + 4]
+    rescue RangeError, EncodingError
+      raise RegexpError, "invalid octal escape"
     end
 
     def class_token(index)

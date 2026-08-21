@@ -143,6 +143,13 @@ cases:
   input: .
   encoding: UTF-8
   outcome: match
+- name: octal escape
+  feature: escapes
+  pattern: "\\101"
+  options: []
+  input: A
+  encoding: UTF-8
+  outcome: match
 - name: beginning and end anchors
   feature: anchors
   pattern: "^cat$"

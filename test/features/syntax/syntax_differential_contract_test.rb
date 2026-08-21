@@ -19,6 +19,7 @@ class SyntaxDifferentialContractTest < Minitest::Test
     ["word boundary", "\\bcat\\b", 0, "a cat!"],
     ["class intersection", "[a-w&&[^c-g]z]", 0, "d"],
     ["digit shorthand", "\\d+", 0, "123"],
+    ["octal escape", "\\101", 0, "A"],
     ["lazy quantifier", "a+?", 0, "aaa"],
     ["possessive quantifier", "a++a", 0, "aaa"],
     ["lookahead", "(?=a)a", 0, "a"],
