@@ -89,6 +89,56 @@ class V2CompilerAstCfgTest < Minitest::Test
     assert_equal expected, compiled.graph.operations.first.operand
   end
 
+  def test_optimization_passes_transform_direct_ast_features
+    cases = [
+      [
+        :impossible_branch_elimination,
+        Onibi::AST::Alternation.new([sequence(Onibi::AST::Assertion.new(sequence, :negative)), sequence("a")]),
+        sequence("a")
+      ],
+      [
+        :duplicate_literal_branch_elimination,
+        Onibi::AST::Alternation.new([sequence("a"), sequence("a")]),
+        sequence("a")
+      ],
+      [
+        :redundant_predicate_elimination,
+        sequence(assertion("a"), assertion("a"), "b"),
+        sequence(assertion("a"), "b")
+      ],
+      [
+        :branch_threading,
+        Onibi::AST::Alternation.new([sequence("a", "b"), sequence("a", "c")]),
+        Onibi::AST::Sequence.new([
+                                   Onibi::AST::Literal.new("a"),
+                                   Onibi::AST::Alternation.new([sequence("b"), sequence("c")])
+                                 ])
+      ],
+      [
+        :auto_possessification,
+        sequence(quantifier, "b"),
+        sequence(quantifier(mode: :possessive), "b")
+      ],
+      [
+        :dead_checkpoint_elimination,
+        sequence(quantifier(kind: :bounded, minimum: 2, maximum: 2)),
+        sequence(quantifier(kind: :bounded, minimum: 2, maximum: 2, mode: :possessive))
+      ],
+      [
+        :loop_idiom_recognition,
+        sequence("z", quantifier),
+        sequence("z", quantifier(mode: :possessive))
+      ]
+    ]
+
+    cases.each do |pass_name, ast, expected|
+      compiled = Onibi::V2::Compiler.compile(ast, passes: [pass_name])
+
+      assert_equal expected, compiled.ast, pass_name.to_s
+      assert compiled.graph.operations.any? || compiled.graph.blocks.any?, pass_name.to_s
+    end
+  end
+
   private
 
   def compile(ast)
@@ -100,8 +150,16 @@ class V2CompilerAstCfgTest < Minitest::Test
     Onibi::AST::Sequence.new(parts)
   end
 
-  def quantifier
-    Onibi::AST::Quantifier.new(Onibi::AST::Literal.new("x"), :+, 1, nil, :greedy)
+  def quantifier(kind: :+, minimum: 1, maximum: nil, mode: :greedy)
+    quantifier_with(kind, minimum, maximum, mode)
+  end
+
+  def quantifier_with(kind, minimum, maximum, mode)
+    Onibi::AST::Quantifier.new(Onibi::AST::Literal.new("x"), kind, minimum, maximum, mode)
+  end
+
+  def assertion(value)
+    Onibi::AST::Assertion.new(sequence(value), :positive)
   end
 
   def edge_shape(block)
