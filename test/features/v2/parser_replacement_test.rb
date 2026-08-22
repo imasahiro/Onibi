@@ -8,4 +8,10 @@ class V2ParserReplacementTest < Minitest::Test
 
     assert_equal expected, Onibi::Parser.new("(?imx)cat").parse
   end
+
+  def test_hybrid_automata_uses_v2_parser_entry_point
+    compiled = Onibi::HybridAutomata.compile("(?imx)cat")
+
+    assert compiled
+  end
 end
