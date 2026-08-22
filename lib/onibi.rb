@@ -6662,3 +6662,4 @@ end
 require_relative "onibi/hybrid_automata"
 require_relative "onibi/hybrid_automata/cfg"
 require_relative "onibi/hybrid_automata/optimization"
+require_relative "onibi/v2"
