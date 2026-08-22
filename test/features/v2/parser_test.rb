@@ -21,4 +21,18 @@ class V2ParserTest < Minitest::Test
     assert_equal %w[ignorecase multiline], Onibi::V2::Parser.parse("a", options: "im").options
     assert_equal ["ignorecase"], Onibi::V2::Parser.parse("a", options: Onibi::Regexp::IGNORECASE).options
   end
+
+  def test_parse_accepts_global_inline_option_groups
+    result = Onibi::V2::Parser.parse("(?imx)cat")
+
+    assert_equal Onibi::AST::Sequence.new(%w[c a t].map { |value| Onibi::AST::Literal.new(value) }), result.ast
+    assert_equal %w[ignorecase multiline extended], result.options
+  end
+
+  def test_parse_accepts_global_disabled_inline_options
+    result = Onibi::V2::Parser.parse("(?-imx)cat", options: %w[ignorecase multiline extended])
+
+    assert_equal Onibi::AST::Sequence.new(%w[c a t].map { |value| Onibi::AST::Literal.new(value) }), result.ast
+    assert_equal [], result.options
+  end
 end

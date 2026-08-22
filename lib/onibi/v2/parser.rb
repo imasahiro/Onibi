@@ -16,7 +16,8 @@ module Onibi
         raise TypeError, "pattern must be a String" unless source.is_a?(String)
 
         normalized_options = normalize_options(options)
-        tokens = Onibi::Lexer.new(source, normalized_options).tokens
+        lex_source, normalized_options = normalize_inline_options(source, normalized_options)
+        tokens = Onibi::Lexer.new(lex_source, normalized_options).tokens
         ast = Onibi::Parser.new(tokens).parse
         Result.new(source: source, options: normalized_options, ast: ast)
       end
@@ -55,7 +56,46 @@ module Onibi
 
         bits.filter_map { |bit, name| name if (value & bit).positive? }
       end
-      private_class_method :normalize_options, :valid_option?, :flag_options, :integer_options
+
+      def normalize_inline_options(source, options)
+        pattern = source
+        normalized = options.dup
+        loop do
+          break unless pattern.start_with?("(?")
+
+          closing = pattern.index(")")
+          break unless closing
+
+          header = pattern[2...closing]
+          parsed = parse_inline_header(header)
+          break unless parsed
+
+          enabled, disabled = parsed
+          names = { "i" => "ignorecase", "m" => "multiline", "x" => "extended" }
+          enabled.each { |flag| normalized |= [names.fetch(flag)] }
+          disabled.each { |flag| normalized.delete(names.fetch(flag)) }
+          pattern = pattern[(closing + 1)..]
+        end
+        [pattern, normalized]
+      end
+
+      def parse_inline_header(header)
+        return if header.empty? || header.start_with?("#") || header.include?(":")
+
+        parts = header.split("-", -1)
+        return unless parts.length <= 2
+
+        enabled = parts.first.chars
+        disabled = parts.length == 2 ? parts.last.chars : []
+        flags = enabled + disabled
+        return unless !flags.empty? && flags.all? { |flag| %w[i m x].include?(flag) }
+        return if flags.uniq.length != flags.length
+        return if (enabled & disabled).any?
+
+        [enabled, disabled]
+      end
+      private_class_method :normalize_options, :valid_option?, :flag_options, :integer_options,
+                           :normalize_inline_options, :parse_inline_header
     end
   end
 end
