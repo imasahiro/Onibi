@@ -78,8 +78,8 @@ module Onibi
       pattern, options, timeout = normalize_constructor_pattern(pattern, options, timeout)
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
-      tokens = validate_pattern_syntax!(pattern, normalized_options)
-      @ast = HybridAutomata.normalize_ast(Parser.new(tokens).parse)
+      validate_pattern_syntax!(pattern, normalized_options)
+      @ast = HybridAutomata.normalize_ast(V2::Parser.parse(pattern, options: normalized_options).ast)
       ignorecase = casefold?
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
       literal_ascii = literal&.ascii_only? && literal.bytesize.positive?

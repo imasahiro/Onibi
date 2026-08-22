@@ -2,7 +2,7 @@
 
 module Onibi
   # Parses lexer tokens with alternation, concatenation, and quantifier precedence.
-  class Parser
+  class LegacyParser
     include ParserAssertions
     include ParserQuantifiers
     include ParserOptionGroups
@@ -123,6 +123,18 @@ module Onibi
       return consume if current_token&.type == type
 
       raise RegexpError, "expected #{type}"
+    end
+  end
+
+  # Compatibility entry point backed by the v2 parser.
+  class Parser
+    def initialize(source, options = [])
+      @source = source
+      @options = options
+    end
+
+    def parse
+      V2::Parser.parse(@source, options: @options).ast
     end
   end
 end

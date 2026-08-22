@@ -79,7 +79,7 @@ module Onibi
     def compile(pattern, options: [], dfa: true, string_matching: true, dfa_state_limit: 4096)
       raise TypeError, "pattern must be a String" unless pattern.is_a?(String)
 
-      ast = normalize_ast(Parser.new(pattern, options).parse)
+      ast = normalize_ast(V2::Parser.parse(pattern, options: options).ast)
       compile_ast(ast, options: options, dfa: dfa, string_matching: string_matching,
                        dfa_state_limit: dfa_state_limit)
     end

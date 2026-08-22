@@ -18,7 +18,7 @@ module Onibi
         normalized_options = normalize_options(options)
         lex_source, normalized_options = normalize_inline_options(source, normalized_options)
         tokens = Onibi::Lexer.new(lex_source, normalized_options).tokens
-        ast = Onibi::Parser.new(tokens).parse
+        ast = Onibi::LegacyParser.new(tokens).parse
         Result.new(source: source, options: normalized_options, ast: ast)
       end
 
