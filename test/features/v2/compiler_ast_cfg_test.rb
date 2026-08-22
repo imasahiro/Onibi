@@ -152,6 +152,58 @@ class V2CompilerAstCfgTest < Minitest::Test
     end
   end
 
+  def test_metadata_optimization_passes_preserve_the_exact_ast
+    ast = sequence("a", "b")
+    expected_cfg = [[%i[match_literal match_literal], :return, []]]
+    pass_names = %i[pure_failure_memoization state_dominance one_pass_region_lowering]
+
+    pass_names.each do |pass_name|
+      compiled = Onibi::V2::Compiler.compile(ast, passes: [pass_name])
+
+      assert_equal ast, compiled.ast, pass_name.to_s
+      assert_equal expected_cfg, cfg_signature(compiled.graph), pass_name.to_s
+    end
+  end
+
+  def test_default_pipeline_publishes_the_expected_optimized_ast
+    ast = sequence(
+      "a",
+      "b",
+      quantifier,
+      "z"
+    )
+    expected = sequence(
+      "ab",
+      quantifier(mode: :possessive),
+      "z"
+    )
+
+    compiled = Onibi::V2::Compiler.compile(ast)
+
+    assert_equal expected, compiled.ast
+    assert_equal Onibi::V2::Compiler::Pipeline::DEFAULT_PASS_NAMES, compiled.applied_passes
+    assert_equal [[%i[match_literal match_quantifier match_literal], :return, []]],
+                 cfg_signature(compiled.graph)
+  end
+
+  def test_ast_contracts_cover_every_registered_optimization_pass
+    covered = %i[
+      impossible_branch_elimination
+      duplicate_literal_branch_elimination
+      redundant_predicate_elimination
+      branch_threading
+      auto_possessification
+      dead_checkpoint_elimination
+      loop_idiom_recognition
+      pure_failure_memoization
+      state_dominance
+      one_pass_region_lowering
+      literal_coalescing
+    ]
+
+    assert_equal Onibi::V2::Compiler::Pipeline::DEFAULT_PASS_NAMES.sort, covered.sort
+  end
+
   private
 
   def compile(ast)
