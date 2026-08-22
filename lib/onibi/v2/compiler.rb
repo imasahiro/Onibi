@@ -3,6 +3,8 @@
 module Onibi
   module V2
     module Compiler
+      Pipeline = Optimization::Pipeline
+
       OptimizedCFG = Struct.new(:ast, :graph, :options, :encoding, :applied_passes, :source_ast,
                                 keyword_init: true) do
         def initialize(ast:, graph:, options:, encoding:, applied_passes:, source_ast: ast)
@@ -29,9 +31,9 @@ module Onibi
         raise TypeError, "expected an AST or parser result" unless ast
 
         pipeline = if passes.nil?
-                     Onibi::V2::Compiler::Optimization::Pipeline.default
+                     Onibi::V2::Compiler::Pipeline.default
                    else
-                     Onibi::V2::Compiler::Optimization::Pipeline.for(Array(passes))
+                     Onibi::V2::Compiler::Pipeline.for(Array(passes))
                    end
         unit = pipeline.call(ast, options: normalized_options, encoding: encoding || infer_encoding(parsed, ast))
         OptimizedCFG.new(ast: unit.ast, graph: unit.cfg, options: unit.options,
