@@ -46,6 +46,17 @@ class V2ParserCorpusTest < Minitest::Test
     end
   end
 
+  def test_encoding_fixture_patterns_reach_ast_generation
+    cases = YAML.load_file(File.join(FIXTURES_ROOT, "encoding/matrix.yml")).fetch("cases")
+
+    cases.each do |fixture|
+      pattern = fixture.fetch("pattern").encode(fixture.fetch("pattern_encoding"))
+      result = Onibi::V2::Parser.parse(pattern, options: fixture.fetch("options"))
+
+      assert_ast_node(result.ast, fixture.fetch("name"))
+    end
+  end
+
   private
 
   def assert_ast_node(node, label)
