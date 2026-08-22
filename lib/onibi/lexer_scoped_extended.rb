@@ -22,7 +22,7 @@ module Onibi
       raise RegexpError, "unterminated scoped extended group" unless ending
 
       body = source[(index + 4)...ending]
-      +"(?:" << strip_extended(normalize(body)) << ")"
+      +"(?x:" << strip_extended(normalize(body)) << ")"
     end
 
     def normalized_fragment_end(source, index)
