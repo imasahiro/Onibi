@@ -16,7 +16,7 @@ module Onibi
       def compile(input, options: [], encoding: nil)
         parsed = input.respond_to?(:ast) ? input : nil
         ast = parsed ? parsed.ast : input
-        normalized_options = parsed ? parsed.options : Array(options)
+        normalized_options = Onibi::V2::Parser.send(:normalize_options, parsed ? parsed.options : options)
         raise TypeError, "expected an AST or parser result" unless ast
 
         unit = Onibi::HybridAutomata::Optimization.compile(
@@ -29,10 +29,20 @@ module Onibi
       def infer_encoding(parsed, ast)
         return parsed.source.encoding if parsed
 
-        literal = ast.is_a?(Onibi::AST::Literal) ? ast : nil
-        literal&.value&.encoding || Encoding::UTF_8
+        literals = ast_values(ast).select { |node| node.is_a?(Onibi::AST::Literal) }
+        literals.first&.value&.encoding || Encoding::UTF_8
       end
       private_class_method :infer_encoding
+
+      def ast_values(node)
+        children = case node
+                   when Onibi::AST::Sequence then node.parts
+                   when Onibi::AST::Alternation then node.branches
+                   else []
+                   end
+        [node] + children.flat_map { |child| ast_values(child) }
+      end
+      private_class_method :ast_values
     end
   end
 end

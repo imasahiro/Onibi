@@ -20,8 +20,8 @@ module Onibi
           end.freeze
           @by_block = cfg.blocks.to_h { |block| [block.id, positions_for(block)] }
           @transitions = build_transitions(cfg).freeze
-          @start_positions = first_position(cfg.entry).then { |position| position ? [position.id] : [] }.freeze
-          @accept_positions = last_position(cfg.exit).then { |position| position ? [position.id] : [] }.freeze
+          @start_positions = entry_positions(cfg.entry).map(&:id).freeze
+          @accept_positions = accepting_positions(cfg).map(&:id).freeze
         end
 
         private
@@ -56,40 +56,60 @@ module Onibi
             next unless last
 
             block.successors.each do |edge|
-              target = first_position(edge.target)
-              transitions << Transition.new(from: last.id, to: target.id, operation: target.operation) if target
+              next_positions(edge.target).each do |target|
+                transitions << Transition.new(from: last.id, to: target.id, operation: target.operation)
+              end
             end
           end
           transitions
         end
 
-        def first_position(block_id, visited = {})
-          return if visited[block_id]
-
-          visited[block_id] = true
-          block = @cfg_blocks.find { |candidate| candidate.id == block_id }
-          return @by_block.fetch(block_id).first if @by_block.fetch(block_id).any?
-
-          block.successors.each do |edge|
-            position = first_position(edge.target, visited)
-            return position if position
-          end
-          nil
-        end
-
-        def last_position(block_id, visited = {})
-          return if visited[block_id]
+        def entry_positions(block_id, visited = {})
+          return [] if visited[block_id]
 
           visited[block_id] = true
           positions = @by_block.fetch(block_id)
-          return positions.last if positions.any?
+          return positions.first(1) unless positions.empty?
 
-          predecessors = @cfg_blocks.select { |block| block.successors.any? { |edge| edge.target == block_id } }
-          predecessors.reverse_each do |block|
-            position = last_position(block.id, visited)
-            return position if position
+          block_for(block_id).successors.flat_map { |edge| entry_positions(edge.target, visited) }.uniq
+        end
+
+        def next_positions(block_id, visited = {})
+          return [] if visited[block_id]
+
+          visited[block_id] = true
+          positions = @by_block.fetch(block_id)
+          return positions.first(1) unless positions.empty?
+
+          block_for(block_id).successors.flat_map { |edge| next_positions(edge.target, visited) }.uniq
+        end
+
+        def accepting_positions(cfg)
+          can_reach_exit = reachable_to_exit(cfg).freeze
+          @cfg_blocks.filter_map do |block|
+            positions = @by_block.fetch(block.id)
+            positions.last if positions.any? && can_reach_exit.include?(block.id)
           end
-          nil
+        end
+
+        def reachable_to_exit(cfg)
+          result = { cfg.exit => true }
+          loop do
+            changed = false
+            cfg.blocks.each do |block|
+              next if result[block.id]
+
+              if block.successors.any? { |edge| result[edge.target] }
+                result[block.id] = true
+                changed = true
+              end
+            end
+            break result.keys unless changed
+          end
+        end
+
+        def block_for(block_id)
+          @cfg_blocks.find { |block| block.id == block_id }
         end
       end
 
@@ -98,7 +118,7 @@ module Onibi
       end
 
       class DFA
-        attr_reader :states, :transitions, :start_state
+        attr_reader :states, :transitions, :start_state, :tnfa
 
         def self.from_tnfa(tnfa)
           new(tnfa)
@@ -114,7 +134,7 @@ module Onibi
 
         def build
           @states = []
-          @transitions = {}
+          pending = []
           queue = [tnfa.start_positions.sort]
           seen = {}
           until queue.empty?
@@ -129,9 +149,14 @@ module Onibi
             @states << state
             outgoing(subset).each do |label, target|
               target = target.sort.freeze
-              @transitions[[state.id, label]] = target
+              pending << [[state.id, label], target]
               queue << target unless seen.key?(target)
             end
+          end
+          state_ids = @states.to_h { |state| [state.positions, state.id] }
+          @transitions = pending.each_with_object({}) do |(key, target), result|
+            target_id = state_ids[target]
+            result[key] = target_id if target_id
           end
           @start_state = @states.first
           @states.freeze
@@ -149,8 +174,6 @@ module Onibi
         def label(operation)
           [operation.opcode, operation.operand]
         end
-
-        attr_reader :tnfa
       end
 
       class PartialDFA < DFA

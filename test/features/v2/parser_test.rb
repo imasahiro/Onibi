@@ -12,4 +12,10 @@ class V2ParserTest < Minitest::Test
     assert_equal "ab|c", result.source
     assert_equal [], result.options
   end
+
+  def test_parse_normalizes_public_option_forms
+    assert_equal ["ignorecase"], Onibi::V2::Parser.parse("a", options: true).options
+    assert_equal %w[ignorecase multiline], Onibi::V2::Parser.parse("a", options: "im").options
+    assert_equal ["ignorecase"], Onibi::V2::Parser.parse("a", options: Onibi::Regexp::IGNORECASE).options
+  end
 end

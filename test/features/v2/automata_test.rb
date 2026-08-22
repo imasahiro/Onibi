@@ -17,4 +17,21 @@ class V2AutomataTest < Minitest::Test
     assert_equal true, partial.partial?
     assert_operator partial.states.length, :<=, 1
   end
+
+  def test_alternation_keeps_all_start_and_accept_positions
+    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a|b"))
+    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+
+    assert_equal [0, 1], tnfa.start_positions
+    assert_equal [0, 1], tnfa.accept_positions
+    assert_equal [0, 1], Onibi::V2::Automata::DFA.from_tnfa(tnfa).start_state.positions
+  end
+
+  def test_dfa_transition_targets_are_state_ids
+    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a."))
+    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+
+    assert(dfa.transitions.values.all? { |target| target.is_a?(Integer) })
+  end
 end

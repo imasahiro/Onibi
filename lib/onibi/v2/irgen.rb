@@ -21,7 +21,7 @@ module Onibi
           dfa.states.each do |state|
             if state.id == dfa.start_state.id
               state.positions.each do |position|
-                instructions << Instruction.new(opcode: :match, operand: position)
+                instructions << Instruction.new(opcode: :match, operand: operation_label(dfa, position))
               end
             end
             dfa.transitions.each do |(source, label), target|
@@ -34,6 +34,12 @@ module Onibi
           end
           Program.new(instructions: instructions)
         end
+
+        def operation_label(dfa, position)
+          operation = dfa.tnfa.positions.fetch(position).operation
+          [operation.opcode, operation.operand]
+        end
+        private_class_method :operation_label
       end
     end
   end
