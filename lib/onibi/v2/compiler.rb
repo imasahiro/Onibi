@@ -3,11 +3,20 @@
 module Onibi
   module V2
     module Compiler
-      OptimizedCFG = Struct.new(:ast, :graph, :options, :encoding, :applied_passes, keyword_init: true) do
-        def initialize(ast:, graph:, options:, encoding:, applied_passes:)
+      OptimizedCFG = Struct.new(:ast, :graph, :options, :encoding, :applied_passes, :source_ast,
+                                keyword_init: true) do
+        def initialize(ast:, graph:, options:, encoding:, applied_passes:, source_ast: ast)
           super(ast: ast, graph: graph, options: options.freeze, encoding: encoding,
                 applied_passes: applied_passes.freeze)
+          self.source_ast = source_ast
           freeze
+        end
+
+        def runtime_program(dfa: true, string_matching: true, dfa_state_limit: 4096)
+          Onibi::HybridAutomata::RuntimeCompiler.new(
+            dfa: dfa, string_matching: string_matching,
+            dfa_state_limit: dfa_state_limit, options: options
+          ).compile(source_ast)
         end
       end
 
@@ -26,7 +35,7 @@ module Onibi
                    end
         unit = pipeline.call(ast, options: normalized_options, encoding: encoding || infer_encoding(parsed, ast))
         OptimizedCFG.new(ast: unit.ast, graph: unit.cfg, options: unit.options,
-                         encoding: unit.encoding, applied_passes: unit.applied_passes)
+                         encoding: unit.encoding, applied_passes: unit.applied_passes, source_ast: ast)
       end
 
       def infer_encoding(parsed, ast)

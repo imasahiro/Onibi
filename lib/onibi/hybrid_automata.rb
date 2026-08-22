@@ -80,22 +80,17 @@ module Onibi
       raise TypeError, "pattern must be a String" unless pattern.is_a?(String)
 
       ast = normalize_ast(V2::Parser.parse(pattern, options: options).ast)
-      compile_ast(ast, options: options, dfa: dfa, string_matching: string_matching,
-                       dfa_state_limit: dfa_state_limit)
+      V2::Compiler.compile(ast, options: options).runtime_program(
+        dfa: dfa, string_matching: string_matching, dfa_state_limit: dfa_state_limit
+      )
     end
 
     def compile_unit(unit, dfa: true, string_matching: true, dfa_state_limit: 4096)
       raise TypeError, "expected an AST compilation unit" unless unit.respond_to?(:ast) && unit.respond_to?(:options)
 
-      Compiler.new(dfa: dfa, string_matching: string_matching,
-                   dfa_state_limit: dfa_state_limit, options: unit.options).compile(normalize_ast(unit.ast))
-    end
-
-    def compile_ast(ast, options: [], dfa: true, string_matching: true, dfa_state_limit: 4096)
-      raise TypeError, "expected an AST" unless ast && AST.constants.any? { |name| ast.is_a?(AST.const_get(name)) }
-
-      Compiler.new(dfa: dfa, string_matching: string_matching,
-                   dfa_state_limit: dfa_state_limit, options: options).compile(normalize_ast(ast))
+      V2::Compiler.compile(normalize_ast(unit.ast), options: unit.options).runtime_program(
+        dfa: dfa, string_matching: string_matching, dfa_state_limit: dfa_state_limit
+      )
     end
 
     def validate_cfg!(cfg)
@@ -157,7 +152,7 @@ module Onibi
 
     # Immutable NFA topology builder. Quantifiers are expanded into position
     # states so the runtime can represent every active state in one Integer.
-    class Compiler
+    class RuntimeCompiler
       include GraphBuilder
       include PatternFacts
       include AnchorFacts
@@ -432,7 +427,7 @@ module Onibi
       end
 
       def validate_quantifier!(node)
-        raise UnsupportedPattern, "possessive quantifiers are outside the hybrid PoC subset" unless %i[greedy lazy].include?(node.mode)
+        raise UnsupportedPattern, "unsupported quantifier mode" unless %i[greedy lazy possessive].include?(node.mode)
         return unless node.maximum && node.maximum > MAX_BOUNDED_REPEAT
 
         raise UnsupportedPattern, "bounded repeat exceeds #{MAX_BOUNDED_REPEAT}"

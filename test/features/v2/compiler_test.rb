@@ -49,6 +49,15 @@ class V2CompilerTest < Minitest::Test
     assert_equal expected, cfg_shape(compiled.graph)
   end
 
+  def test_compiled_unit_keeps_source_ast_for_runtime_regressions
+    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a*b"))
+    program = compiled.runtime_program
+
+    assert program.match?("b")
+    assert program.match?("aaab")
+    refute program.match?("aaa")
+  end
+
   private
 
   def cfg_shape(graph)

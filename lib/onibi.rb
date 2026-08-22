@@ -1657,7 +1657,7 @@ module Onibi
     def hfa_program
       return @hfa_program if defined?(@hfa_program)
 
-      @hfa_program = HybridAutomata.compile_ast(@ast, options: @options)
+      @hfa_program = V2::Compiler.compile(@ast, options: @options).runtime_program
     rescue HybridAutomata::UnsupportedPattern
       @hfa_program = false
     end
