@@ -24,6 +24,16 @@ class V2ParserClassesEscapesTest < Minitest::Test
     assert_equal expected, Onibi::V2::Parser.parse("\\d\\D\\R\\b").ast
   end
 
+  def test_boundary_and_match_position_escapes_have_exact_kinds
+    expected = Onibi::AST::Sequence.new([
+                                          Onibi::AST::Escape.new(:not_word_boundary),
+                                          Onibi::AST::Escape.new(:start_match),
+                                          Onibi::AST::Escape.new(:match_reset)
+                                        ])
+
+    assert_equal expected, Onibi::V2::Parser.parse("\\B\\G\\K").ast
+  end
+
   def test_property_and_encoded_escape_nodes_have_exact_values
     expected = Onibi::AST::Sequence.new([
                                           Onibi::AST::Property.new("Alpha", false),
