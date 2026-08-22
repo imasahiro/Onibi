@@ -10,6 +10,38 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(program_for(literal))
   end
 
+  def test_nfa_and_dfa_modes_generate_different_code_for_a_literal
+    literal = Onibi::AST::Literal.new("a")
+    tnfa = tnfa_for(literal)
+    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+
+    assert_equal [
+      [:nfa_start, [0]],
+      [:nfa_match, [:start, 0, [:match_literal, literal]]],
+      [:nfa_accept, [0]]
+    ], instruction_signature(Onibi::V2::IRGen::YARVIR.generate(tnfa, mode: :nfa))
+    assert_equal [
+      [:start, 0], [:match, [:match_literal, literal]], [:jump, 1], [:accept, 1]
+    ], instruction_signature(Onibi::V2::IRGen::YARVIR.generate(dfa, mode: :dfa))
+  end
+
+  def test_nfa_mode_keeps_choice_edges_while_dfa_mode_merges_them_into_states
+    ast = Onibi::AST::Alternation.new([sequence("a"), sequence("b")])
+    tnfa = tnfa_for(ast)
+    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+    nfa_instructions = instruction_signature(Onibi::V2::IRGen::YARVIR.generate(tnfa, mode: :nfa))
+    dfa_instructions = instruction_signature(Onibi::V2::IRGen::YARVIR.generate(dfa, mode: :dfa))
+
+    assert_equal :nfa_start, nfa_instructions.first.first
+    assert_equal [0, 1], nfa_instructions.first.last
+    nfa_match_count = nfa_instructions.count { |opcode, _operand| opcode == :nfa_match }
+    dfa_match_count = dfa_instructions.count { |opcode, _operand| opcode == :match }
+    assert_equal 2, nfa_match_count
+    assert_equal 2, dfa_match_count
+    assert_equal %i[start match jump match jump accept accept], dfa_instructions.map(&:first)
+    refute_equal nfa_instructions, dfa_instructions
+  end
+
   def test_character_class_generates_exact_instruction_stream
     node = Onibi::AST::CharacterClass.new("a-z")
     assert_equal [
