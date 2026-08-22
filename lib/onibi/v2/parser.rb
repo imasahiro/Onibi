@@ -18,7 +18,7 @@ module Onibi
         normalized_options = normalize_options(options)
         lex_source, normalized_options = normalize_inline_options(source, normalized_options)
         tokens = Onibi::Lexer.new(lex_source, normalized_options).tokens
-        ast = Onibi::LegacyParser.new(tokens).parse
+        ast = Onibi::V2::ParserCore.new(tokens).parse
         Result.new(source: source, options: normalized_options, ast: ast)
       end
 
@@ -96,6 +96,18 @@ module Onibi
       end
       private_class_method :normalize_options, :valid_option?, :flag_options, :integer_options,
                            :normalize_inline_options, :parse_inline_header
+    end
+  end
+
+  # Compatibility entry point backed by the v2 parser.
+  class Parser
+    def initialize(source, options = [])
+      @source = source
+      @options = options
+    end
+
+    def parse
+      V2::Parser.parse(@source, options: @options).ast
     end
   end
 end

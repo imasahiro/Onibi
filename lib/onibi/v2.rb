@@ -6,6 +6,7 @@ module Onibi
   end
 end
 
+require_relative "v2/parser_core"
 require_relative "v2/parser"
 require_relative "v2/compiler"
 require_relative "v2/automata"
