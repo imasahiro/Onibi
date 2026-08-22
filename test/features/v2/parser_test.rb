@@ -35,4 +35,13 @@ class V2ParserTest < Minitest::Test
     assert_equal Onibi::AST::Sequence.new(%w[c a t].map { |value| Onibi::AST::Literal.new(value) }), result.ast
     assert_equal [], result.options
   end
+
+  def test_literal_concatenation_and_alternation_have_exact_ast_shape
+    expected = Onibi::AST::Alternation.new([
+                                             Onibi::AST::Sequence.new(%w[c a t].map { |value| Onibi::AST::Literal.new(value) }),
+                                             Onibi::AST::Sequence.new(%w[d o g].map { |value| Onibi::AST::Literal.new(value) })
+                                           ])
+
+    assert_equal expected, Onibi::V2::Parser.parse("cat|dog").ast
+  end
 end
