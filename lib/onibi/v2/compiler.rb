@@ -38,14 +38,18 @@ module Onibi
       private_class_method :infer_encoding
 
       def ast_values(node)
-        children = case node
-                   when Onibi::AST::Sequence then node.parts
-                   when Onibi::AST::Alternation then node.branches
-                   else []
-                   end
+        children = node.each_pair.flat_map { |_field, value| ast_children(value) }
         [node] + children.flat_map { |child| ast_values(child) }
       end
+
+      def ast_children(value)
+        return value.flat_map { |child| ast_children(child) } if value.is_a?(Array)
+        return [value] if Onibi::AST.constants.any? { |name| value.is_a?(Onibi::AST.const_get(name)) }
+
+        []
+      end
       private_class_method :ast_values
+      private_class_method :ast_children
     end
   end
 end
