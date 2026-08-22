@@ -6,9 +6,12 @@ class V2ParserTest < Minitest::Test
   def test_parse_returns_ast_with_source_options
     result = Onibi::V2::Parser.parse("ab|c", options: [])
 
-    assert_instance_of Onibi::AST::Alternation, result.ast
-    assert_equal "ab", result.ast.branches.first.parts.map(&:value).join
-    assert_equal "c", result.ast.branches.last.parts.first.value
+    expected = Onibi::AST::Alternation.new([
+                                             Onibi::AST::Sequence.new([Onibi::AST::Literal.new("a"), Onibi::AST::Literal.new("b")]),
+                                             Onibi::AST::Sequence.new([Onibi::AST::Literal.new("c")])
+                                           ])
+
+    assert_equal expected, result.ast
     assert_equal "ab|c", result.source
     assert_equal [], result.options
   end

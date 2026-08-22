@@ -48,7 +48,9 @@ module Onibi
         end
 
         def build_transitions(cfg)
-          transitions = []
+          transitions = entry_positions(cfg.entry).map do |position|
+            Transition.new(from: :start, to: position.id, operation: position.operation)
+          end
           cfg.blocks.each do |block|
             current = positions_for(block)
             current.each_cons(2) { |from, to| transitions << Transition.new(from: from.id, to: to.id, operation: to.operation) }
@@ -135,7 +137,7 @@ module Onibi
         def build
           @states = []
           pending = []
-          queue = [tnfa.start_positions.sort]
+          queue = [[]]
           seen = {}
           until queue.empty?
             subset = queue.shift
@@ -165,7 +167,7 @@ module Onibi
 
         def outgoing(subset)
           tnfa.transitions.each_with_object(Hash.new { |h, k| h[k] = [] }) do |edge, result|
-            next unless subset.include?(edge.from)
+            next unless subset.empty? ? edge.from == :start : subset.include?(edge.from)
 
             result[label(edge.operation)] << edge.to
           end.transform_values(&:uniq)

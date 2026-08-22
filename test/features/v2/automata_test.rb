@@ -18,13 +18,31 @@ class V2AutomataTest < Minitest::Test
     assert_operator partial.states.length, :<=, 1
   end
 
+  def test_tnfa_graph_has_expected_positions_and_opcodes
+    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a."))
+    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    expected_positions = [
+      [0, :match_literal, Onibi::AST::Literal.new("a")],
+      [1, :match_any, Onibi::AST::Any.new(".")]
+    ]
+    expected_edges = [
+      [:start, 0, :match_literal, Onibi::AST::Literal.new("a")],
+      [0, 1, :match_any, Onibi::AST::Any.new(".")]
+    ]
+
+    assert_equal(expected_positions, tnfa.positions.map { |position| [position.id, position.operation.opcode, position.operation.operand] })
+    assert_equal(expected_edges, tnfa.transitions.map { |edge| [edge.from, edge.to, edge.operation.opcode, edge.operation.operand] })
+  end
+
   def test_alternation_keeps_all_start_and_accept_positions
     compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a|b"))
     tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
 
     assert_equal [0, 1], tnfa.start_positions
     assert_equal [0, 1], tnfa.accept_positions
-    assert_equal [0, 1], Onibi::V2::Automata::DFA.from_tnfa(tnfa).start_state.positions
+    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+    assert_equal [], dfa.start_state.positions
+    assert_equal [[0], [1]], dfa.states.drop(1).map(&:positions)
   end
 
   def test_dfa_transition_targets_are_state_ids

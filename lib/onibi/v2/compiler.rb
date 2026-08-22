@@ -13,15 +13,18 @@ module Onibi
 
       module_function
 
-      def compile(input, options: [], encoding: nil)
+      def compile(input, options: [], encoding: nil, passes: nil)
         parsed = input.respond_to?(:ast) ? input : nil
         ast = parsed ? parsed.ast : input
         normalized_options = Onibi::V2::Parser.send(:normalize_options, parsed ? parsed.options : options)
         raise TypeError, "expected an AST or parser result" unless ast
 
-        unit = Onibi::HybridAutomata::Optimization.compile(
-          ast, normalized_options, encoding || infer_encoding(parsed, ast)
-        )
+        pipeline = if passes.nil?
+                     Onibi::HybridAutomata::Optimization::Pipeline.default
+                   else
+                     Onibi::HybridAutomata::Optimization::Pipeline.for(Array(passes))
+                   end
+        unit = pipeline.call(ast, options: normalized_options, encoding: encoding || infer_encoding(parsed, ast))
         OptimizedCFG.new(ast: unit.ast, graph: unit.cfg, options: unit.options,
                          encoding: unit.encoding, applied_passes: unit.applied_passes)
       end

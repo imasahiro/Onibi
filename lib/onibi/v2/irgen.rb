@@ -12,18 +12,18 @@ module Onibi
             super(instructions: instructions.freeze, entry: entry)
             freeze
           end
+
+          def iseq
+            self
+          end
         end
+        ISeq = Program
 
         module_function
 
         def generate(dfa)
           instructions = [Instruction.new(opcode: :start, operand: dfa.start_state.id)]
           dfa.states.each do |state|
-            if state.id == dfa.start_state.id
-              state.positions.each do |position|
-                instructions << Instruction.new(opcode: :match, operand: operation_label(dfa, position))
-              end
-            end
             dfa.transitions.each do |(source, label), target|
               next unless source == state.id
 
@@ -35,11 +35,9 @@ module Onibi
           Program.new(instructions: instructions)
         end
 
-        def operation_label(dfa, position)
-          operation = dfa.tnfa.positions.fetch(position).operation
-          [operation.opcode, operation.operand]
+        def generate_iseq(dfa)
+          generate(dfa)
         end
-        private_class_method :operation_label
       end
     end
   end
