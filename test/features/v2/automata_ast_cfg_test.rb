@@ -27,4 +27,21 @@ class V2AutomataAstCfgTest < Minitest::Test
                    [:start, 0], [0, 1], [1, 2], [2, 3], [3, 4]
                  ], tnfa.transitions.map { |edge| [edge.from, edge.to] })
   end
+
+  def test_nullable_alternation_keeps_epsilon_and_consuming_start_positions
+    sequence = ->(parts) { Onibi::AST::Sequence.new(parts) }
+    ast = Onibi::AST::Alternation.new([
+                                        sequence.call([]),
+                                        sequence.call([Onibi::AST::Literal.new("a")])
+                                      ])
+    compiled = Onibi::V2::Compiler.compile(ast, passes: [:pure_failure_memoization])
+    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+
+    assert_equal [0, 1], tnfa.start_positions
+    assert_equal [0, 1], tnfa.accept_positions
+    assert_equal([
+                   [:epsilon, nil],
+                   [:match_literal, Onibi::AST::Literal.new("a")]
+                 ], tnfa.positions.map { |position| [position.operation.opcode, position.operation.operand] })
+  end
 end
