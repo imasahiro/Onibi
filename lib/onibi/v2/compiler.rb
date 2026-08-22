@@ -29,9 +29,9 @@ module Onibi
         raise TypeError, "expected an AST or parser result" unless ast
 
         pipeline = if passes.nil?
-                     Onibi::HybridAutomata::Optimization::Pipeline.default
+                     Onibi::V2::Compiler::Optimization::Pipeline.default
                    else
-                     Onibi::HybridAutomata::Optimization::Pipeline.for(Array(passes))
+                     Onibi::V2::Compiler::Optimization::Pipeline.for(Array(passes))
                    end
         unit = pipeline.call(ast, options: normalized_options, encoding: encoding || infer_encoding(parsed, ast))
         OptimizedCFG.new(ast: unit.ast, graph: unit.cfg, options: unit.options,

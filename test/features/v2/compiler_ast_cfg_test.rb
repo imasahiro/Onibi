@@ -94,17 +94,20 @@ class V2CompilerAstCfgTest < Minitest::Test
       [
         :impossible_branch_elimination,
         Onibi::AST::Alternation.new([sequence(Onibi::AST::Assertion.new(sequence, :negative)), sequence("a")]),
-        sequence("a")
+        sequence("a"),
+        [[[:match_literal], :return, []]]
       ],
       [
         :duplicate_literal_branch_elimination,
         Onibi::AST::Alternation.new([sequence("a"), sequence("a")]),
-        sequence("a")
+        sequence("a"),
+        [[[:match_literal], :return, []]]
       ],
       [
         :redundant_predicate_elimination,
         sequence(assertion("a"), assertion("a"), "b"),
-        sequence(assertion("a"), "b")
+        sequence(assertion("a"), "b"),
+        [[%i[match_assertion match_literal], :return, []]]
       ],
       [
         :branch_threading,
@@ -112,30 +115,40 @@ class V2CompilerAstCfgTest < Minitest::Test
         Onibi::AST::Sequence.new([
                                    Onibi::AST::Literal.new("a"),
                                    Onibi::AST::Alternation.new([sequence("b"), sequence("c")])
-                                 ])
+                                 ]),
+        [
+          [[:match_literal], :jump, [[1, :flow, 0]]],
+          [[], :choice, [[3, :alternative, 0], [4, :alternative, 1]]],
+          [[], :return, []],
+          [[:match_literal], :jump, [[2, :flow, 0]]],
+          [[:match_literal], :jump, [[2, :flow, 0]]]
+        ]
       ],
       [
         :auto_possessification,
         sequence(quantifier, "b"),
-        sequence(quantifier(mode: :possessive), "b")
+        sequence(quantifier(mode: :possessive), "b"),
+        [[%i[match_quantifier match_literal], :return, []]]
       ],
       [
         :dead_checkpoint_elimination,
         sequence(quantifier(kind: :bounded, minimum: 2, maximum: 2)),
-        sequence(quantifier(kind: :bounded, minimum: 2, maximum: 2, mode: :possessive))
+        sequence(quantifier(kind: :bounded, minimum: 2, maximum: 2, mode: :possessive)),
+        [[[:match_quantifier], :return, []]]
       ],
       [
         :loop_idiom_recognition,
         sequence("z", quantifier),
-        sequence("z", quantifier(mode: :possessive))
+        sequence("z", quantifier(mode: :possessive)),
+        [[%i[match_literal match_quantifier], :return, []]]
       ]
     ]
 
-    cases.each do |pass_name, ast, expected|
+    cases.each do |pass_name, ast, expected, expected_cfg|
       compiled = Onibi::V2::Compiler.compile(ast, passes: [pass_name])
 
       assert_equal expected, compiled.ast, pass_name.to_s
-      assert compiled.graph.operations.any? || compiled.graph.blocks.any?, pass_name.to_s
+      assert_equal expected_cfg, cfg_signature(compiled.graph), pass_name.to_s
     end
   end
 
@@ -160,6 +173,13 @@ class V2CompilerAstCfgTest < Minitest::Test
 
   def assertion(value)
     Onibi::AST::Assertion.new(sequence(value), :positive)
+  end
+
+  def cfg_signature(graph)
+    graph.blocks.map do |block|
+      [block.operations.map(&:opcode), block.terminator.opcode,
+       block.successors.map { |edge| [edge.target, edge.kind, edge.priority] }]
+    end
   end
 
   def edge_shape(block)

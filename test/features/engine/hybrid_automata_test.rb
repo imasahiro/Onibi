@@ -123,7 +123,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_compilation_unit_is_the_backend_input
     ast = Onibi::Parser.new("a[0-9]+z").parse
-    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::V2::Compiler::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert_equal :cfg, program.input_ir
@@ -133,7 +133,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_cfg_operation_graph_can_drive_hfa_topology
     ast = Onibi::Parser.new("abc[0-9]+z").parse
-    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::V2::Compiler::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert_equal :cfg, program.input_ir
@@ -143,7 +143,7 @@ class HybridAutomataTest < Minitest::Test
 
   def test_cfg_choice_graph_can_drive_hfa_topology
     ast = Onibi::Parser.new("cat|dog").parse
-    unit = Onibi::HybridAutomata::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
+    unit = Onibi::V2::Compiler::Optimization.compile_prepared(ast, [], Encoding::US_ASCII)
     program = Onibi::HybridAutomata.compile_unit(unit)
 
     assert program.match?("a dog")

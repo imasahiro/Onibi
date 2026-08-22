@@ -24,7 +24,7 @@ class V2CompilerTest < Minitest::Test
 
   def test_every_declared_optimization_pass_has_a_stable_cfg_output
     expected = [0, 0, [[0, [[:match_literal, Onibi::AST::Literal.new("a")]], :return, []]]]
-    pass_names = Onibi::HybridAutomata::Optimization::Pipeline::DEFAULT_PASS_NAMES
+    pass_names = Onibi::V2::Compiler::Optimization::Pipeline::DEFAULT_PASS_NAMES
 
     pass_names.each do |pass_name|
       compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a"), passes: [pass_name])
