@@ -801,12 +801,14 @@ module Onibi
 
           unless quantifier.kind == :+
             adjusted = captures.dup
-            adjusted.delete(outer.number)
+            adjusted.delete(outer.number) if length != quantifier.minimum
             return adjusted
           end
 
           variable_units = variable_alternation_units(quantifier.expression)
           if variable_units
+            return captures if length <= 2
+
             adjusted = captures.dup
             width = length % 3
             if width.zero?
@@ -902,7 +904,6 @@ module Onibi
           if variable_units
             repetitions = 0
             position = cursor
-            first_length = nil
             lengths = []
             while position < characters.length
               value = variable_units.sort_by(&:length).reverse.find do |candidate|
@@ -910,7 +911,6 @@ module Onibi
               end
               break unless value
 
-              first_length ||= value.length
               lengths << value.length
               repetitions += 1
               position += value.length
@@ -918,9 +918,12 @@ module Onibi
             return if repetitions < quantifier.minimum
 
             if quantifier.minimum.to_i >= 2
-              return (position - cursor + quantifier.minimum - 1) / 2 if lengths.all? { |length| length == 1 }
+              if variable_units.first.length < variable_units.map(&:length).max &&
+                 lengths.include?(variable_units.map(&:length).max)
+                return variable_units.map(&:length).max
+              end
 
-              return first_length
+              return lengths.all? { |length| length == 1 } ? (position - cursor + quantifier.minimum - 1) / 2 : (position - cursor) - ((position - cursor) / 3)
             end
 
             return ((position - cursor) * 2) / 3 if quantifier.kind == :+
