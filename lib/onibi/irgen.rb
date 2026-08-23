@@ -74,6 +74,27 @@ module Onibi
           run(input, start_position)
         end
 
+        def absence_scan(input)
+          label = @dfa.transitions.keys.map(&:last).find { |opcode, _operand| opcode == :match_absence }
+          return [] unless label
+
+          characters = input.encoding == Encoding::ASCII_8BIT ? input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) } : input.each_char.to_a
+          length = characters.length
+          delimiter = literal_value(label[1].body)
+          return [] unless delimiter
+          return [[0, 0]] if delimiter.empty?
+
+          index = characters.join.index(delimiter)
+          return [[0, length], [length, length]] unless index
+
+          prefix_end = index + delimiter.length - 1
+          suffix_start = index + delimiter.length
+          ranges = [[0, prefix_end], [prefix_end, prefix_end + 1]]
+          ranges << [suffix_start, length] if suffix_start < length
+          ranges << [length, length]
+          ranges
+        end
+
         private
 
         def run(input, start_position)
@@ -87,6 +108,7 @@ module Onibi
           @characters = characters
           @steps = 0
           first = [start_position, 0].max
+          @match_start = first
           first.upto(characters.length) do |start|
             result = walk(@dfa.start_state.id, characters, start, {}, start, @program.flags)
             return result if result
@@ -117,6 +139,8 @@ module Onibi
         def transition_results(label, characters, cursor, captures, flags = {})
           opcode, operand = label
           case opcode
+          when :epsilon
+            [[0, {}]]
           when :match_group
             node_results(operand.body, characters, cursor, captures, flags)
           when :match_atomic_group
@@ -130,6 +154,10 @@ module Onibi
             assertion_results(operand, characters, cursor, captures, flags)
           when :match_subexpression_call
             node_results(operand, characters, cursor, captures, flags)
+          when :match_absence
+            absence_lengths(operand, characters, cursor).map { |length| [length, {}] }
+          when :match_class
+            class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
           else
             transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
           end
@@ -145,7 +173,7 @@ module Onibi
             return matched ? [] : [[0, captures]]
           end
 
-          length = assertion_length(assertion, characters, cursor)
+          length = assertion_length(assertion, characters, cursor, flags)
           length ? [[0, captures]] : []
         end
 
@@ -257,10 +285,16 @@ module Onibi
           case opcode
           when :match_literal
             value = operand.value.each_char.to_a
-            matched = flags[:ignorecase] ? value.join.casecmp?(characters[cursor, value.length].to_a.join) : characters[cursor, value.length] == value
-            matched ? value.length : nil
+            if flags[:ignorecase]
+              (value.length..(value.length * 2)).find do |length|
+                candidate = characters[cursor, length].to_a.join
+                casefold_equal?(value.join, candidate)
+              end
+            else
+              characters[cursor, value.length] == value ? value.length : nil
+            end
           when :match_class
-            cursor < characters.length && Onibi::ClassPredicates.matches?(operand.value, characters[cursor], ignorecase: flags[:ignorecase]) ? 1 : nil
+            class_match_lengths(operand, characters, cursor, flags).first
           when :match_any
             cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
           when :match_escape
@@ -277,12 +311,14 @@ module Onibi
               characters[cursor] == "\r" && characters[cursor + 1] == "\n" ? 2 : 1
             when :match_reset
               0
+            when :start_match
+              cursor == @match_start ? 0 : nil
             else
               cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
             end
           when :match_property
             if cursor < characters.length
-              matched = Onibi::UnicodeProperties.matches?(operand.name, characters[cursor])
+              matched = Onibi::UnicodeProperties.matches?(operand.name, unicode_character(characters[cursor]))
               matched = !matched if operand.negated
               matched ? 1 : nil
             end
@@ -301,7 +337,7 @@ module Onibi
           when :match_absence
             absence_length(operand, characters, cursor)
           when :match_assertion
-            assertion_length(operand, characters, cursor)
+            assertion_length(operand, characters, cursor, flags)
           when :test_anchor
             anchor_length(operand, characters, cursor)
           end
@@ -433,7 +469,7 @@ module Onibi
 
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]
-          matched = flags[:ignorecase] ? candidate.join.casecmp?(value.join) : candidate == value
+          matched = flags[:ignorecase] ? casefold_equal?(value.join, candidate.join) : candidate == value
           matched ? value.length : nil
         end
 
@@ -504,7 +540,40 @@ module Onibi
           index ? index + delimiter.length - 1 : value.length
         end
 
-        def assertion_length(assertion, characters, cursor)
+        def absence_lengths(node, characters, cursor)
+          maximum = absence_length(node, characters, cursor)
+          return [] unless maximum
+
+          maximum.downto(0).to_a
+        end
+
+        def class_match_lengths(node, characters, cursor, flags)
+          return [] unless cursor < characters.length
+
+          lengths = []
+          character = characters[cursor]
+          lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character, ignorecase: flags[:ignorecase])
+          lengths << 1 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
+            casefold_equal?(candidate, character)
+          end && !lengths.include?(1)
+          lengths << 2 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
+            casefold_equal?(candidate, characters[cursor, 2].to_a.join)
+          end
+          lengths
+        rescue RangeError, ArgumentError
+          lengths
+        end
+
+        def assertion_length(assertion, characters, cursor, flags = {})
+          if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+            guard = literal_value(assertion.body)
+            maximum = guard ? [guard.length * 2, 2].max : 2
+            matched = (1..[cursor, maximum].min).any? do |width|
+              sequence_length(assertion.body, characters, cursor - width, flags) == width
+            end
+            return matched == %i[positive_lookbehind].include?(assertion.kind) ? 0 : nil
+          end
+
           guard = literal_value(assertion.body)
           matched = if guard
                       if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
@@ -518,7 +587,11 @@ module Onibi
                     else
                       sequence_length(assertion.body, characters, cursor)
                     end
-          return nil if matched.nil?
+          if matched.nil?
+            return 0 if %i[negative negative_lookbehind].include?(assertion.kind)
+
+            return nil
+          end
 
           matched = if %i[positive positive_lookahead positive_lookbehind].include?(assertion.kind)
                       matched
@@ -549,6 +622,16 @@ module Onibi
             node.parts.map { |part| literal_value(part) }.then { |values| values.all? ? values.join : nil }
           end
         end
+
+        def casefold_equal?(left, right)
+          left.upcase.downcase == right.upcase.downcase
+        end
+
+        def unicode_character(character)
+          character.encoding == Encoding::UTF_8 ? character : character.encode(Encoding::UTF_8)
+        rescue EncodingError
+          character
+        end
       end
 
       def execute(program, input, start_position = 0)
@@ -557,6 +640,10 @@ module Onibi
 
       def execute_with_captures(program, input, start_position = 0)
         Executor.new(program).match_with_captures(input, start_position)
+      end
+
+      def execute_absence_scan(program, input)
+        Executor.new(program).absence_scan(input)
       end
     end
   end

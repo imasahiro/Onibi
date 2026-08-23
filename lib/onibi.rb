@@ -276,131 +276,21 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
-      return bytecode_match(input, start_position(position)) if bytecode_applicable?
-
-      if (absence = absence_match(input, start_position(position)))
-        return absence
-      end
-
-      if source.include?("(?i") || source.include?("(?m") || source.include?("(?x") || source.include?("(?-i") ||
-         source.include?("(?-m") || source.include?("(?-x")
-        return native_match_fallback(input, start_position(position))
-      end
-
-      if @effective_casefold && source == "ß"
-        index = input.index("SS", start_position(position)) || input.index("ß", start_position(position))
-        return Onibi::MatchData.captureless(input, index, index + (input[index, 2] == "SS" ? 2 : 1), self) if index
-      end
-
-      if @effective_casefold && source == "ſ"
-        index = input.index("S", start_position(position)) || input.index("ſ", start_position(position))
-        return Onibi::MatchData.captureless(input, index, index + 1, self) if index
-      end
-
-      if @effective_casefold && source == "[ß]"
-        index = input.index("SS", start_position(position)) || input.index("ß", start_position(position))
-        return Onibi::MatchData.captureless(input, index, index + (input[index, 2] == "SS" ? 2 : 1), self) if index
-      end
-
-      if (spec = simple_capture_variants(@ast))
-        return match_capture_variant(input, start_position(position), spec)
-      end
-
-      if (special = special_literal_match(input, start_position(position)))
-        return special
-      end
-
-      if (backref = literal_backreference_match(input, start_position(position)))
-        return backref
-      end
-
-      if (captures = capture_pair_match(input, start_position(position)))
-        return captures
-      end
-
-      if (conditional = conditional_literal_match(input, start_position(position)))
-        return conditional
-      end
-
-      if (atomic = atomic_literal_match(input, start_position(position)))
-        return atomic
-      end
-
-      if (simple = simple_runtime_match(input, start_position(position)))
-        return simple
-      end
-
       # rubocop:disable Layout/LineLength
       # if ascii_input && (hfa_captureless_regular_sequence_result_safe? || hfa_scoped_ignorecase_sequence_result_safe? || hfa_scoped_multiline_sequence_result_safe?)
       # rubocop:enable Layout/LineLength
+      return bytecode_match(input, start_position(position)) if bytecode_applicable?
 
-      if (native = native_match_fallback(input, start_position(position)))
-        return native
-      end
-
-      return nil if ast_contains_node?(@ast, Onibi::AST::Assertion)
-
-      literals = literal_candidates(@ast)
-      return nil if literals.empty?
-
-      start = position.is_a?(Integer) ? position : Integer(position)
-      start += input.length if start.negative?
-      start = 0 if start.negative?
-      searchable = input.each_char.to_a.join
-      match = literals.each_with_index.filter_map do |literal, order|
-        index = if @effective_casefold
-                  searchable.downcase.index(literal.downcase, start)
-                else
-                  searchable.index(literal, start)
-                end
-        [index, order, literal] if index
-      end.min_by { |index, order, _literal| [index, order] }
-      return nil unless match
-
-      index, _order, literal = match
-      literal_result(input, index, literal)
+      nil
     end
 
     def scan(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      if source.empty?
-        values = Array.new(input.length + 1, "")
-        values.each(&block) if block_given?
-        return block_given? ? input : values
-      end
-
-      if @effective_casefold && source == "ß"
-        values = []
-        characters = input.each_char.to_a
-        index = 0
-        while index < characters.length
-          if characters[index, 2].join == "SS"
-            values << "SS"
-            index += 2
-          elsif characters[index] == "ß"
-            values << "ß"
-            index += 1
-          else
-            index += 1
-          end
-        end
-        values.each { |value| block.call(value) } if block
-        return block ? input : values
-      end
-
-      if @effective_casefold && source.include?("(?<=[ß])x")
-        characters = input.each_char.to_a
-        values = characters.each_index.filter_map do |index|
-          previous = characters[[index - 2, 0].max, 2].join
-          "x" if characters[index] == "x" && (previous.upcase == "SS" || characters[index - 1] == "ß")
-        end
-        values.each { |value| block.call(value) } if block
-        return block ? input : values
-      end
-
-      if (absence = literal_absence_body) && hfa_capture_count.zero?
-        values = absence_scan_values(input, absence)
+      if @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
+         @ast.parts.first.is_a?(Onibi::AST::Absence) && hfa_capture_count.zero?
+        ranges = Onibi::IRGen::YARVIR.execute_absence_scan(bytecode_program, input)
+        values = ranges.map { |start, finish| input[start...finish] }
         values.each { |value| block.call(value) } if block
         return block ? input : values
       end
@@ -529,209 +419,10 @@ module Onibi
       end
     end
 
-    def literal_candidates(node)
-      case node
-      when Onibi::AST::Alternation
-        node.branches.flat_map { |branch| literal_candidates(branch) }
-      else
-        literal = literal_value(node)
-        literal ? [literal] : []
-      end
-    end
-
-    def simple_capture_variants(node)
-      return nil unless node.is_a?(Onibi::AST::Sequence)
-
-      variants = [["", []]]
-      node.parts.each do |part|
-        additions = sequence_part_variants(part)
-        return nil unless additions
-
-        variants = variants.flat_map do |prefix, captures|
-          additions.map do |suffix, suffix_captures|
-            [prefix + suffix, captures + suffix_captures.map { |capture| [capture[0] + prefix.length, capture[1], capture[2]] }]
-          end
-        end
-      end
-      variants
-    end
-
-    def sequence_part_variants(part)
-      return [[part.value, []]] if part.is_a?(Onibi::AST::Literal)
-
-      if part.is_a?(Onibi::AST::Group)
-        value = literal_value(part.body)
-        return value ? [[value, []]] : nil unless part.capture
-
-        return value ? [[value, [[0, value.length, part.number]]]] : nil
-      end
-      if part.is_a?(Onibi::AST::Quantifier) && part.kind == :"?" && part.expression.is_a?(Onibi::AST::Group)
-        value = literal_value(part.expression.body)
-        return value ? [[value, [[0, value.length, part.expression.number]]], ["", []]] : nil
-      end
-
-      nil
-    end
-
-    def match_capture_variant(input, start, variants)
-      searchable = input.each_char.to_a.join
-      found = variants.each_with_index.filter_map do |(literal, captures), order|
-        index = @effective_casefold ? searchable.downcase.index(literal.downcase, start) : searchable.index(literal, start)
-        [index, order, literal, captures] if index
-      end.min_by { |index, order, _literal, _captures| [index, order] }
-      return nil unless found
-
-      index, _order, literal, captures = found
-      offsets = Array.new(hfa_capture_count)
-      captures.each do |capture|
-        next unless capture
-
-        offset, length, number = capture
-        offsets[number - 1] = [index + offset, index + offset + length]
-      end
-      match_names = named_captures.transform_values(&:first)
-      if input.ascii_only?
-        Onibi::MatchData.from_offsets(input, index, index + literal.length, offsets, match_names, self)
-      else
-        to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
-        byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
-        Onibi::MatchData.from_raw_byte_offsets(input, to_bytes.call(index), to_bytes.call(index + literal.length),
-                                               byte_offsets, match_names, self)
-      end
-    end
-
     def start_position(position)
       start = position.is_a?(Integer) ? position : Integer(position)
       start += @source.length if start.negative?
       [start, 0].max
-    end
-
-    def simple_runtime_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      return nil unless parts&.length&.positive?
-
-      if parts.length == 1 && parts.first.is_a?(Onibi::AST::OptionGroup) &&
-         parts.first.body.is_a?(Onibi::AST::Sequence) && parts.first.body.parts.all? { |part| simple_runtime_part?(part) }
-        characters = input.each_char.to_a
-        start.upto(characters.length) do |index|
-          finish = match_sequence_parts(parts.first.body.parts, characters, index, 0)
-          return captureless_result(input, [index, finish]) if finish
-        end
-        return nil
-      end
-
-      if parts.length > 1 && parts.all? { |part| simple_runtime_part?(part) }
-        characters = input.each_char.to_a
-        start.upto(characters.length) do |index|
-          finish = match_sequence_parts(parts, characters, index, 0)
-          return captureless_result(input, [index, finish]) if finish
-        end
-        return nil
-      end
-
-      return nil unless parts.length == 1
-
-      part = parts.first
-      return nil unless simple_runtime_part?(part)
-
-      if part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
-        run = find_atom_run(input, start, part, 1, 1, :greedy)
-        return captureless_result(input, run) if run
-      elsif part.is_a?(Onibi::AST::Quantifier)
-        run = find_atom_run(input, start, part.expression, part.minimum, part.maximum, part.mode)
-        return captureless_result(input, run) if run
-      end
-      nil
-    end
-
-    def find_atom_run(input, start, expression, minimum, maximum, mode)
-      characters = input.each_char.to_a
-      start.upto(characters.length) do |index|
-        count = 0
-        while index + count < characters.length && atom_matches_character?(expression, characters[index + count]) &&
-              (maximum.nil? || count < maximum)
-          count += if expression.is_a?(Onibi::AST::Escape) && expression.kind == :linebreak &&
-                      characters[index + count] == "\r" && characters[index + count + 1] == "\n"
-                     2
-                   else
-                     1
-                   end
-        end
-        next if count < minimum
-
-        length = mode == :lazy ? minimum : count
-        return [index, index + length]
-      end
-      nil
-    end
-
-    def simple_runtime_part?(part)
-      return false if part.is_a?(Onibi::AST::Escape) &&
-                      %i[word_boundary not_word_boundary start_match match_reset].include?(part.kind)
-
-      return true if part.is_a?(Onibi::AST::Literal) || part.is_a?(Onibi::AST::CharacterClass) ||
-                     part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
-
-      part.is_a?(Onibi::AST::Quantifier) && simple_runtime_part?(part.expression)
-    end
-
-    def match_sequence_parts(parts, characters, index, part_index)
-      return index if part_index == parts.length
-
-      part = parts[part_index]
-      if part.is_a?(Onibi::AST::Quantifier)
-        limit = part.maximum || (characters.length - index)
-        count = 0
-        cursor = index
-        while count < limit && cursor < characters.length && atom_matches_character?(part.expression, characters[cursor])
-          count += 1
-          cursor += 1
-        end
-        counts = if part.mode == :lazy
-                   (part.minimum..count).to_a
-                 elsif part.mode == :possessive
-                   [count]
-                 else
-                   count.downto(part.minimum).to_a
-                 end
-        counts.each do |length|
-          result = match_sequence_parts(parts, characters, index + length, part_index + 1)
-          return result if result
-        end
-        return nil
-      end
-
-      return nil unless index < characters.length && atom_matches_character?(part, characters[index])
-
-      match_sequence_parts(parts, characters, index + 1, part_index + 1)
-    end
-
-    def atom_matches_character?(expression, character)
-      case expression
-      when Onibi::AST::Literal then @effective_casefold ? expression.value.casecmp?(character) : expression.value == character
-      when Onibi::AST::CharacterClass
-        Onibi::ClassPredicates.matches?(expression.value, character, ignorecase: @effective_casefold)
-      when Onibi::AST::Escape
-        return Onibi::CharacterPredicates.linebreak?(character) if expression.kind == :linebreak
-
-        Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
-      when Onibi::AST::Any
-        @effective_multiline || expression.value != "." || character != "\n"
-      else false
-      end
-    end
-
-    def captureless_result(input, range)
-      Onibi::MatchData.captureless(input, range[0], range[1], self)
-    end
-
-    def literal_result(input, character_start, literal)
-      return Onibi::MatchData.captureless(input, character_start, character_start + literal.length, self) if input.ascii_only?
-
-      to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
-      start = to_bytes.call(character_start)
-      finish = to_bytes.call(character_start + literal.length)
-      Onibi::MatchData.from_raw_byte_offsets(input, start, finish, [], {}, self)
     end
 
     def replacement_value(replacement, matched)
@@ -771,8 +462,11 @@ module Onibi
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
         unless @hfa_ascii_input
           return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self) if @hfa_input_encoding == Encoding::ASCII_8BIT
+          if @hfa_input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
+            return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
+          end
 
-          to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
+          to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
           return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
@@ -784,7 +478,11 @@ module Onibi
       unless @hfa_ascii_input
         return Onibi::MatchData.captureless(input, range[0], range[1], self) if @hfa_input_encoding == Encoding::ASCII_8BIT
 
-        to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
+        to_bytes = if @hfa_input_encoding == Encoding::UTF_8
+                     ->(position) { input.codepoints.take(position).pack("U*").bytesize }
+                   else
+                     ->(position) { input.each_char.take(position).join.bytesize }
+                   end
         constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
         return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
                                             [], hfa_result_names, self)
@@ -810,21 +508,26 @@ module Onibi
       captures
     end
 
-    def bytecode_applicable?
-      unicode_safe = !@hfa_ascii_input &&
-                     ((@hfa_input_encoding == Encoding::UTF_8 &&
-                       (source.ascii_only? || bytecode_unicode_absence_only?)) ||
-                      (@hfa_input_encoding == Encoding::ASCII_8BIT && bytecode_unicode_absence_only?)) &&
-                     bytecode_unicode_safe_node?(@ast)
-      ascii_safe = @hfa_ascii_input && source.ascii_only?
-      return false unless (ascii_safe || unicode_safe) &&
-                          bytecode_supported_node?(@ast)
-      return false if source.include?("(?-")
+    def bytecode_unicode_capture_byte_offsets?
+      return false if unicode_repeated_literal_capture?
 
-      if @ast.is_a?(Onibi::AST::Sequence)
-        parts = @ast.parts
-        return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Absence) }
+      literals = []
+      collect_bytecode_literal_values(@ast, literals)
+      literals.any? && literals.all? { |value| !value.ascii_only? }
+    end
+
+    def collect_bytecode_literal_values(node, values)
+      case node
+      when Onibi::AST::Literal then values << node.value
+      when Onibi::AST::Sequence then node.parts.each { |part| collect_bytecode_literal_values(part, values) }
+      when Onibi::AST::Alternation then node.branches.each { |branch| collect_bytecode_literal_values(branch, values) }
+      when Onibi::AST::Group then collect_bytecode_literal_values(node.body, values)
+      when Onibi::AST::Quantifier then collect_bytecode_literal_values(node.expression, values)
       end
+    end
+
+    def bytecode_applicable?
+      return false unless bytecode_supported_node?(@ast)
 
       bytecode_program
       true
@@ -834,13 +537,12 @@ module Onibi
 
     def bytecode_program
       @bytecode_program ||= begin
-        parsed = Onibi::Parser.parse(source, options: @options)
-        compiled = Onibi::Compiler.compile(parsed)
+        compiled = Onibi::Compiler.compile(@parsed)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
         Onibi::IRGen::YARVIR.generate(
-          dfa, flags: { ignorecase: casefold? || inline_global_flag?(:i),
-                        multiline: multiline? || inline_global_flag?(:m),
+          dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
+                        multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions }
         )
       end
@@ -848,6 +550,15 @@ module Onibi
 
     def inline_global_flag?(flag)
       inline_global_modifier? && source.start_with?("(?#{flag}")
+    end
+
+    def inline_global_flag_value(flag, default)
+      return default unless inline_global_modifier?
+
+      modifier = source[2...source.index(")")]
+      return false if modifier.include?("-#{flag}")
+
+      modifier.include?(flag.to_s) || default
     end
 
     def bytecode_supported_node?(node)
@@ -879,7 +590,7 @@ module Onibi
       when Onibi::AST::Anchor
         true
       when Onibi::AST::Escape
-        node.kind != :start_match
+        true
       else
         false
       end
@@ -946,323 +657,12 @@ module Onibi
     end
 
     def bytecode_unicode_safe_node?(node)
-      case node
-      when Onibi::AST::Literal then true
-      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_unicode_safe_node?(part) }
-      when Onibi::AST::Quantifier then bytecode_unicode_safe_node?(node.expression)
-      when Onibi::AST::Group then bytecode_unicode_safe_node?(node.body)
-      when Onibi::AST::Absence then !absence_literal_value(node.body).nil?
-      when Onibi::AST::Property then true
-      when Onibi::AST::Escape then !%i[start_match match_reset].include?(node.kind)
-      else false
-      end
+      bytecode_supported_node?(node)
     end
 
     def bytecode_unicode_absence_only?
       @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
         @ast.parts.first.is_a?(Onibi::AST::Absence) && !absence_literal_value(@ast.parts.first.body).nil?
-    end
-
-    def absence_match(input, start)
-      return nil unless @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-                        @ast.parts.first.is_a?(Onibi::AST::Absence)
-
-      native_options = 0
-      native_options |= ::Regexp::IGNORECASE if casefold?
-      native_options |= ::Regexp::MULTILINE if multiline?
-      native = ::Regexp.new(source.dup.force_encoding(input.encoding), native_options)
-      found = native.match(input, start)
-      return nil unless found
-
-      captures = found.captures.each_index.map do |index|
-        offset = found.offset(index + 1)
-        offset && offset[0].is_a?(Integer) ? offset : nil
-      end
-      names = named_captures.transform_values(&:first)
-      return Onibi::MatchData.from_offsets(input, found.begin(0), found.end(0), captures, names, self) if unicode_repeated_literal_capture?
-      return Onibi::MatchData.from_offsets(input, found.begin(0), found.end(0), captures, names, self) if captures.any?
-
-      byte_positioned_match_data(input, found, captures, names)
-    rescue ::RegexpError
-      nil
-    end
-
-    def native_match_fallback(input, start)
-      native_options = 0
-      native_options |= ::Regexp::IGNORECASE if casefold?
-      native_options |= ::Regexp::MULTILINE if multiline?
-      native = ::Regexp.new(source.dup.force_encoding(input.encoding), native_options)
-      found = native.match(input, start)
-      return nil unless found
-
-      captures = found.captures.each_index.map do |index|
-        offset = found.offset(index + 1)
-        offset && offset[0].is_a?(Integer) ? offset : nil
-      end
-      names = named_captures.transform_values(&:first)
-      return Onibi::MatchData.from_offsets(input, found.begin(0), found.end(0), captures, names, self) if unicode_repeated_literal_capture?
-
-      native_capture_result(input, found, captures, names)
-    rescue ::RegexpError, ArgumentError
-      nil
-    end
-
-    def native_capture_result(input, found, captures, names)
-      return Onibi::MatchData.from_offsets(input, found.begin(0), found.end(0), captures, names, self) if captures.any?
-
-      byte_positioned_match_data(input, found, captures, names)
-    end
-
-    def byte_positioned_match_data(input, native_match, captures, names)
-      to_bytes = lambda do |position|
-        input[0, position].to_s.bytesize
-      end
-      offsets = captures.map do |offset|
-        offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])]
-      end
-      Onibi::MatchData.from_raw_byte_offsets(input, to_bytes.call(native_match.begin(0)),
-                                             to_bytes.call(native_match.end(0)), offsets, names, self)
-    end
-
-    def literal_absence_body
-      return nil unless @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-                        @ast.parts.first.is_a?(Onibi::AST::Absence)
-
-      literal_value(@ast.parts.first.body)
-    end
-
-    def absence_scan_values(input, delimiter)
-      return [""] if delimiter.empty?
-
-      index = input.index(delimiter)
-      return [input, ""] unless index
-
-      prefix_end = index + delimiter.length - 1
-      suffix = input[(index + delimiter.length)..] || ""
-      values = [input[0, prefix_end], input[prefix_end, 1]]
-      values << suffix unless suffix.empty?
-      values << ""
-      values
-    end
-
-    def literal_backreference_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      return nil unless parts&.length&.between?(2, 3) && parts[0].is_a?(Onibi::AST::Group) &&
-                        (parts[-1].is_a?(Onibi::AST::Backreference) || parts[-1].is_a?(Onibi::AST::SubexpressionCall))
-
-      value = literal_value(parts[0].body)
-      parts[1]
-      reference = parts[-1]
-      matches_group = if reference.respond_to?(:named) && reference.named
-                        parts[0].name == reference.identifier
-                      else
-                        parts[0].number == reference.identifier
-                      end
-      return nil unless matches_group
-
-      if value.nil? && ((parts.length == 3 && parts[1].is_a?(Onibi::AST::Literal)) || parts.length == 2)
-        separator = parts.length == 3 ? parts[1].value : ""
-        return variable_literal_backreference_match(input, start, parts[0], separator)
-      end
-      return nil unless value
-
-      literal = value + value
-      index = input.each_char.to_a.join.index(literal, start)
-      return nil unless index
-
-      names = named_captures.transform_values(&:first)
-      offsets = Array.new(parts[0].number)
-      offsets[parts[0].number - 1] = [index, index + value.length]
-      Onibi::MatchData.from_offsets(input, index, index + literal.length, offsets, names, self)
-    end
-
-    def variable_literal_backreference_match(input, start, group, separator)
-      body = group.body
-      return nil unless body.is_a?(Onibi::AST::Sequence) && body.parts.length == 1 &&
-                        body.parts.first.is_a?(Onibi::AST::Quantifier)
-
-      quantifier = body.parts.first
-      characters = input.each_char.to_a
-      start.upto(characters.length) do |index|
-        max = quantifier.maximum || (characters.length - index)
-        lengths = quantifier.mode == :lazy ? (quantifier.minimum..max).to_a : max.downto(quantifier.minimum).to_a
-        lengths.each do |length|
-          value = characters[index, length].to_a.join
-          next unless value.length == length && value.each_char.all? { |character| atom_matches_character?(quantifier.expression, character) }
-          next unless characters[index + length, separator.length].to_a.join == separator
-          next unless characters[index + length + separator.length, length].to_a.join == value
-
-          offsets = Array.new(group.number)
-          offsets[group.number - 1] = [index, index + length]
-          names = named_captures.transform_values(&:first)
-          finish = index + length + separator.length + length
-          return Onibi::MatchData.from_offsets(input, index, finish, offsets, names, self)
-        end
-      end
-      nil
-    end
-
-    def capture_pair_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      return nil unless parts&.length == 3 && parts[0].is_a?(Onibi::AST::Group) &&
-                        parts[1].is_a?(Onibi::AST::Literal) && parts[2].is_a?(Onibi::AST::Group)
-
-      first = quantifier_group_spec(parts[0])
-      second = quantifier_group_spec(parts[2])
-      return nil unless first && second
-
-      characters = input.each_char.to_a
-      start.upto(characters.length) do |index|
-        first_length = run_length_at(characters, index, first[:expression], first[:minimum], first[:maximum])
-        next unless first_length
-
-        separator = parts[1].value
-        separator_end = index + first_length
-        next unless characters[separator_end, separator.length].to_a.join == separator
-
-        second_start = separator_end + separator.length
-        second_length = run_length_at(characters, second_start, second[:expression], second[:minimum], second[:maximum])
-        next unless second_length
-
-        offsets = Array.new([parts[0].number, parts[2].number].max)
-        offsets[parts[0].number - 1] = [index, separator_end]
-        offsets[parts[2].number - 1] = [second_start, second_start + second_length]
-        finish = second_start + second_length
-        names = named_captures.transform_values(&:first)
-        return Onibi::MatchData.from_offsets(input, index, finish, offsets, names, self)
-      end
-      nil
-    end
-
-    def conditional_literal_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      return nil unless parts&.length == 2 && parts[0].is_a?(Onibi::AST::Quantifier) &&
-                        parts[0].expression.is_a?(Onibi::AST::Group) && parts[1].is_a?(Onibi::AST::Conditional)
-
-      group = parts[0].expression
-      condition = parts[1].condition
-      condition_matches = condition.is_a?(Array) &&
-                          ((condition[1] && condition[0] == group.name) || (!condition[1] && condition[0] == group.number))
-      return nil unless parts[0].kind == :"?" && condition_matches
-
-      group_value = literal_value(group.body)
-      yes_value = literal_value(parts[1].yes_branch)
-      no_value = literal_value(parts[1].no_branch)
-      return nil unless group_value && yes_value && no_value
-
-      variants = [[group_value + yes_value, [[0, group_value.length, group.number]]], [no_value, []]]
-      match_capture_variant(input, start, variants)
-    end
-
-    def atomic_literal_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      return nil unless parts&.length == 2 && parts[0].is_a?(Onibi::AST::AtomicGroup) &&
-                        parts[0].body.is_a?(Onibi::AST::Alternation) && parts[1].is_a?(Onibi::AST::Literal)
-
-      branches = parts[0].body.branches.map { |branch| literal_value(branch) }
-      return nil unless branches.all? && branches.any?
-
-      suffix = parts[1].value
-      searchable = input.each_char.to_a.join
-      start.upto(searchable.length) do |index|
-        branches.each do |branch|
-          next unless searchable.index(branch, index) == index
-
-          literal = branch + suffix
-          return captureless_result(input, [index, index + literal.length]) if searchable.index(literal, index) == index
-
-          break
-        end
-      end
-      nil
-    end
-
-    def quantifier_group_spec(group)
-      body = group.body
-      return nil unless body.is_a?(Onibi::AST::Sequence) && body.parts.length == 1
-
-      quantifier = body.parts.first
-      return nil unless quantifier.is_a?(Onibi::AST::Quantifier)
-
-      { expression: quantifier.expression, minimum: quantifier.minimum, maximum: quantifier.maximum }
-    end
-
-    def run_length_at(characters, index, expression, minimum, maximum)
-      length = 0
-      limit = maximum || (characters.length - index)
-      while length < limit && index + length < characters.length &&
-            atom_matches_character?(expression, characters[index + length])
-        length += 1
-      end
-      length >= minimum ? length : nil
-    end
-
-    def special_literal_match(input, start)
-      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
-      allowed = parts&.all? do |part|
-        part.is_a?(Onibi::AST::Literal) || part.is_a?(Onibi::AST::Anchor) || part.is_a?(Onibi::AST::Assertion) ||
-          (part.is_a?(Onibi::AST::Escape) && %i[word_boundary not_word_boundary start_match].include?(part.kind))
-      end
-      return nil unless allowed && parts.any? do |part|
-        part.is_a?(Onibi::AST::Anchor) || part.is_a?(Onibi::AST::Assertion) ||
-        part.is_a?(Onibi::AST::Escape)
-      end
-      return nil if parts.each_with_index.any? do |part, index|
-        (part.is_a?(Onibi::AST::Anchor) && %i[anchor_start anchor_absolute_start].include?(part.kind) && index != 0) ||
-        (part.is_a?(Onibi::AST::Anchor) && %i[anchor_end anchor_absolute_end anchor_before_final_newline].include?(part.kind) && index != parts.length - 1)
-      end
-
-      literal = parts.filter_map { |part| part.value if part.is_a?(Onibi::AST::Literal) }.join
-      return nil if literal.empty?
-
-      characters = input.each_char.to_a
-      searchable = characters.join
-      input.each_char.with_index do |_character, index|
-        next if index < start
-        next unless searchable.index(literal, index) == index
-        next unless special_position_valid?(parts, input, index, literal.length, start)
-
-        return literal_result(input, index, literal)
-      end
-      nil
-    end
-
-    def special_position_valid?(parts, input, index, length, start)
-      parts.each do |part|
-        case part
-        when Onibi::AST::Anchor
-          return false if %i[anchor_start anchor_absolute_start].include?(part.kind) && index != 0
-
-          if part.kind == :anchor_before_final_newline
-            at_end = index + length == input.length
-            at_newline_end = input[index + length] == "\n" && index + length + 1 == input.length
-            return false unless at_end || at_newline_end
-          elsif %i[anchor_end anchor_absolute_end].include?(part.kind)
-            return false unless index + length == input.length
-          end
-        when Onibi::AST::Escape
-          return false if part.kind == :start_match && index != start
-
-          if %i[word_boundary not_word_boundary].include?(part.kind)
-            boundary = Onibi::CharacterPredicates.word_boundary?(input.each_char.to_a, index)
-            return false unless part.kind == :word_boundary ? boundary : !boundary
-          end
-        when Onibi::AST::Assertion
-          guard = literal_value(part.body)
-          return false unless guard
-
-          if %i[positive_lookbehind negative_lookbehind].include?(part.kind)
-            matched = index >= guard.length && input[index - guard.length, guard.length] == guard
-            return false if part.kind == :positive_lookbehind && !matched
-            return false if part.kind == :negative_lookbehind && matched
-          else
-            matched = input[index + length, guard.length] == guard
-            return false if part.kind == :positive && !matched
-            return false if part.kind == :negative && matched
-          end
-        end
-      end
-      true
     end
 
     # Compatibility helpers for the direct HFA test surface.
@@ -1336,7 +736,7 @@ module Onibi
     end
 
     def hfa_captureless_alternation_scan_spec
-      @hfa_captureless_alternation_scan_spec ||= [literal_candidates(@ast), {}]
+      @hfa_captureless_alternation_scan_spec ||= [[], {}]
     end
 
     def hfa_captureless_alternation_each_range(input, _spec)
