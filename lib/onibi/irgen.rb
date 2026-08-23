@@ -694,7 +694,13 @@ module Onibi
           return [] if zero_width_star_absence?(node.body, characters, cursor)
 
           quantified = quantified_absence_length(node.body, characters, cursor)
-          return quantified.downto(0).map { |length| [length, captures] } if quantified
+          if quantified
+            body_result = node_results(node.body, characters, cursor, captures, flags).first
+            body_captures = body_result ? body_result.last : captures
+            body_captures = captures if captureless_absence_body?(node.body)
+            body_captures = filter_nested_absence_captures(node.body, body_captures)
+            return quantified.downto(0).map { |length| [length, body_captures] }
+          end
 
           cursor.upto(characters.length) do |position|
             results = node_results(node.body, characters, position, captures, flags)
@@ -702,6 +708,7 @@ module Onibi
 
             length, inner_captures = results.first
             inner_captures = captures if captureless_absence_body?(node.body)
+            inner_captures = filter_nested_absence_captures(node.body, inner_captures)
             quantified_length = quantified_absence_length(node.body, characters, position)
             maximum = if quantified_length
                         position - cursor + quantified_length
@@ -741,6 +748,24 @@ module Onibi
                   end
           parts.length == 1 &&
             (parts.first.is_a?(Onibi::AST::Quantifier) || parts.first.is_a?(SemanticBytecode::Quantifier))
+        end
+
+        def filter_nested_absence_captures(body, captures)
+          parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+          outer = parts.first
+          return captures unless parts.length == 1 &&
+                                 (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+
+          nested = outer.body
+          nested_parts = nested.is_a?(Onibi::AST::Sequence) || nested.is_a?(SemanticBytecode::Sequence) ? nested.parts : [nested]
+          quantifier = nested_parts.first
+          return captures unless nested_parts.length == 1 &&
+                                 (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+
+          expression = quantifier.expression
+          return captures unless expression.is_a?(Onibi::AST::Group) || expression.is_a?(SemanticBytecode::Group)
+
+          captures.select { |key, _value| key == outer.number }
         end
 
         def generic_absence_length(node, characters, cursor, flags)
