@@ -745,7 +745,7 @@ module Onibi
             run += literal.length
             position += literal.length
           end
-          return characters.length - cursor if run.zero?
+          return if run.zero?
 
           run / 2
         end

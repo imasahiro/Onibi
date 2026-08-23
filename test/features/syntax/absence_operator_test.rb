@@ -38,4 +38,11 @@ class AbsenceOperatorTest < Minitest::Test
     end
     assert_equal ["", "a", "a", "aa", "aa"], actual
   end
+
+  def test_absence_operator_scans_for_a_greedy_body_match
+    regexp = Onibi::Regexp.new("(?~a+)")
+
+    assert_equal "b", regexp.match("ba")[0]
+    assert_equal "x", regexp.match("xaby")[0]
+  end
 end
