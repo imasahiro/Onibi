@@ -566,7 +566,13 @@ module Onibi
           count += 1
           cursor += 1
         end
-        counts = part.mode == :lazy ? (part.minimum..count).to_a : count.downto(part.minimum).to_a
+        counts = if part.mode == :lazy
+                   (part.minimum..count).to_a
+                 elsif part.mode == :possessive
+                   [count]
+                 else
+                   count.downto(part.minimum).to_a
+                 end
         counts.each do |length|
           result = match_sequence_parts(parts, characters, index + length, part_index + 1)
           return result if result
