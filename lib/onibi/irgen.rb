@@ -85,6 +85,7 @@ module Onibi
                          input.codepoints.map { |codepoint| codepoint.chr(input.encoding) }
                        end
           @characters = characters
+          @steps = 0
           first = [start_position, 0].max
           first.upto(characters.length) do |start|
             result = walk(@dfa.start_state.id, characters, start, {}, start, @program.flags)
@@ -149,6 +150,9 @@ module Onibi
         end
 
         def node_results(node, characters, cursor, captures, flags = {})
+          @steps += 1
+          return [] if @steps > 2_000_000
+
           case node
           when Onibi::AST::Sequence
             states = [[0, captures]]
@@ -201,11 +205,16 @@ module Onibi
           count = 0
           while count < limit
             next_frontier = frontier.flat_map do |consumed, state_captures|
-              node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
-                next if length.zero?
-
+              zero_results = []
+              nonzero_results = node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
+                if length.zero?
+                  zero_results << [consumed, inner]
+                  next
+                end
                 [consumed + length, inner]
               end
+              accepted.concat(zero_results) if count + 1 >= quantifier.minimum
+              nonzero_results
             end
             break if next_frontier.empty?
 
@@ -218,7 +227,11 @@ module Onibi
           accepted = accepted.uniq { |length, state| [length, state] }
           return [accepted.max_by(&:first)] if quantifier.mode == :possessive
 
-          quantifier.mode == :lazy ? accepted.sort_by(&:first) : accepted.sort_by(&:first).reverse
+          if quantifier.mode == :lazy
+            accepted.each_with_index.sort_by { |(state, index)| [state.first, index] }.map(&:first)
+          else
+            accepted.each_with_index.sort_by { |(state, index)| [-state.first, -index] }.map(&:first)
+          end
         end
 
         def transition_lengths(label, characters, cursor, captures, flags = {})

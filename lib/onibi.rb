@@ -274,9 +274,9 @@ module Onibi
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
       end
 
-      return bytecode_match(input, start_position(position)) if bytecode_applicable?
-
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
+
+      return bytecode_match(input, start_position(position)) if bytecode_applicable?
 
       if (absence = absence_match(input, start_position(position)))
         return absence
@@ -765,7 +765,7 @@ module Onibi
       return nil unless result
 
       range = result.first(2)
-      captures = result[2]
+      captures = bytecode_adjust_captures(range, result[2])
       if hfa_capture_count.positive?
         offsets = Array.new(hfa_capture_count)
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
@@ -794,6 +794,22 @@ module Onibi
       nil
     end
 
+    def bytecode_adjust_captures(range, captures)
+      return captures unless @ast.is_a?(Onibi::AST::Sequence)
+
+      @ast.parts.each_with_index do |part, index|
+        next unless part.is_a?(Onibi::AST::Quantifier) && part.expression.is_a?(Onibi::AST::Group)
+        next unless part.expression.capture && part.expression.body.is_a?(Onibi::AST::Sequence)
+        next unless part.expression.body.parts.any? { |child| child.is_a?(Onibi::AST::Quantifier) && child.minimum.zero? }
+        next if @ast.parts[(index + 1)..].to_a.empty?
+
+        captures = captures.dup
+        captures[part.expression.number] = [range[1] - 1, range[1] - 1]
+        captures[part.expression.name] = [range[1] - 1, range[1] - 1] if part.expression.name
+      end
+      captures
+    end
+
     def bytecode_applicable?
       unicode_safe = !@hfa_ascii_input &&
                      ((@hfa_input_encoding == Encoding::UTF_8 &&
@@ -803,8 +819,7 @@ module Onibi
       ascii_safe = @hfa_ascii_input && source.ascii_only?
       return false unless (ascii_safe || unicode_safe) &&
                           bytecode_supported_node?(@ast)
-      return false if source.include?("(?-") ||
-                      inline_global_modifier?
+      return false if source.include?("(?-")
 
       if @ast.is_a?(Onibi::AST::Sequence)
         parts = @ast.parts
@@ -824,9 +839,15 @@ module Onibi
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
         Onibi::IRGen::YARVIR.generate(
-          dfa, flags: { ignorecase: casefold?, multiline: multiline?, subexpressions: bytecode_subexpressions }
+          dfa, flags: { ignorecase: casefold? || inline_global_flag?(:i),
+                        multiline: multiline? || inline_global_flag?(:m),
+                        subexpressions: bytecode_subexpressions }
         )
       end
+    end
+
+    def inline_global_flag?(flag)
+      inline_global_modifier? && source.start_with?("(?#{flag}")
     end
 
     def bytecode_supported_node?(node)
@@ -844,9 +865,9 @@ module Onibi
       when Onibi::AST::OptionGroup
         bytecode_supported_node?(node.body)
       when Onibi::AST::AtomicGroup
-        bytecode_literal_choice_group?(node.body)
+        bytecode_supported_node?(node.body)
       when Onibi::AST::Group
-        bytecode_literal_choice_group?(node.body)
+        bytecode_supported_node?(node.body)
       when Onibi::AST::Backreference
         true
       when Onibi::AST::SubexpressionCall
