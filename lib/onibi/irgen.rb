@@ -838,12 +838,16 @@ module Onibi
           end
           return if positions.empty? || has_consuming_match
 
-          start = if positions.first == cursor
-                    [cursor + 1, characters.length].min
-                  else
-                    cursor
-                  end
-          finish = positions.find { |position| position > start } || characters.length
+          start = cursor.upto(characters.length).find do |position|
+            node_results(body, characters, position, captures, flags).none? { |length, _state| length.zero? }
+          end || characters.length
+          finish = if start == characters.length
+                     start
+                   else
+                     (start + 1).upto(characters.length).find do |position|
+                       node_results(body, characters, position, captures, flags).any? { |length, _state| length.zero? }
+                     end || characters.length
+                   end
           state = captures.dup
           state[:__match_start] = start if start != cursor
           [[finish - start, state]]

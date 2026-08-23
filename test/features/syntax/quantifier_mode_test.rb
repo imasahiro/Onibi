@@ -83,6 +83,15 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_zero_width_absence_searches_for_the_first_non_matching_position
+    %w[aa aba].each do |input|
+      expected = ::Regexp.new("(?~(?=a))").match(input)
+      actual = Onibi::Regexp.new("(?~(?=a))").match(input)
+      assert_equal expected.to_a, actual.to_a
+      assert_equal expected.offset(0), actual.offset(0)
+    end
+  end
+
   def test_nullable_nested_quantifier_keeps_the_empty_capture
     %w[a aa].each do |input|
       mri = Regexp.new("(a?)+").match(input)
