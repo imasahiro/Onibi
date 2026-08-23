@@ -148,6 +148,7 @@ module Onibi
                        node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
                          match_start = captures.delete(:__match_start) || start
                          match_reset = captures.delete(:__match_reset)
+                         captures.delete(:__end_zero_width)
                          finish = match_reset ? start + length : match_start + length
                          [match_start, finish, captures]
                        end
@@ -235,23 +236,41 @@ module Onibi
 
         def assertion_results(assertion, characters, cursor, captures, flags = {})
           if %i[positive positive_lookahead].include?(assertion.kind)
-            return node_results(assertion.body, characters, cursor, captures, flags).first(1).map { |_length, inner| [0, inner] }
+            results = node_results(assertion.body, characters, cursor, captures, flags).first(1).map do |_length, inner|
+              [0, inner]
+            end
+            return mark_end_zero_width(results, characters, cursor, flags)
           end
 
           if %i[negative negative_lookahead].include?(assertion.kind)
             matched = node_results(assertion.body, characters, cursor, captures, flags).any?
-            return matched ? [] : [[0, captures]]
+            return mark_end_zero_width(matched ? [] : [[0, captures]], characters, cursor, flags)
           end
 
-          return lookbehind_results(assertion.body, characters, cursor, captures, flags) if assertion.kind == :positive_lookbehind
+          if assertion.kind == :positive_lookbehind
+            return mark_end_zero_width(lookbehind_results(assertion.body, characters, cursor, captures, flags),
+                                       characters, cursor, flags)
+          end
 
           if assertion.kind == :negative_lookbehind
             matched = lookbehind_results(assertion.body, characters, cursor, captures, flags).any?
-            return matched ? [] : [[0, captures]]
+            return mark_end_zero_width(matched ? [] : [[0, captures]], characters, cursor, flags)
           end
 
           length = assertion_length(assertion, characters, cursor, flags)
-          length ? [[0, captures]] : []
+          mark_end_zero_width(length ? [[0, captures]] : [], characters, cursor, flags)
+        end
+
+        def mark_end_zero_width(results, characters, cursor, flags)
+          return results unless flags[:multiline] && cursor == characters.length
+
+          results.map do |length, state|
+            next [length, state] unless length.zero?
+
+            marked = state.dup
+            marked[:__end_zero_width] = true
+            [length, marked]
+          end
         end
 
         def lookbehind_results(body, characters, cursor, captures, flags)
@@ -323,11 +342,26 @@ module Onibi
               return [[length, next_captures]]
             end
 
+            if length.zero? && flags[:multiline] && cursor == characters.length &&
+               (node.is_a?(Onibi::AST::Anchor) || node.is_a?(SemanticBytecode::Anchor))
+              marked = captures.dup
+              marked[:__end_zero_width] = true
+              return [[length, marked]]
+            end
+
             [[length, captures]]
           end
         end
 
         def quantifier_results(quantifier, characters, cursor, captures, flags = {})
+          if captures[:__end_zero_width] && characters.join.bytesize > 1 && flags[:multiline] &&
+             quantifier.mode != :lazy &&
+             quantifier.minimum.zero? && quantifier.maximum.nil? &&
+             (quantifier.expression.is_a?(Onibi::AST::Any) || quantifier.expression.is_a?(SemanticBytecode::Any)) &&
+             quantifier.expression.value == "."
+            return []
+          end
+
           return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
 
           ordered_quantifier_results(quantifier, characters, cursor, captures, flags)

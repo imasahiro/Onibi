@@ -66,6 +66,23 @@ class QuantifierModeTest < Minitest::Test
     assert_equal expected.offset(1), actual.offset(1)
   end
 
+  def test_multiline_greedy_dot_after_terminal_assertion_matches_mri
+    pattern = "(?=\\z).*"
+
+    %w[x xy é xéy].each do |input|
+      expected = ::Regexp.new(pattern, ::Regexp::MULTILINE).match(input)
+      actual = Onibi::Regexp.new(pattern, Onibi::Regexp::MULTILINE).match(input)
+
+      if expected
+        refute_nil actual, input
+        assert_equal expected.to_a, actual.to_a, input
+        assert_equal expected.offset(0), actual.offset(0), input
+      else
+        assert_nil actual, input
+      end
+    end
+  end
+
   def test_nullable_nested_quantifier_keeps_the_empty_capture
     %w[a aa].each do |input|
       mri = Regexp.new("(a?)+").match(input)
