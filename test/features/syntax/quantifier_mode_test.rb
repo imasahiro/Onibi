@@ -58,6 +58,14 @@ class QuantifierModeTest < Minitest::Test
     assert_equal expected.offset(0), actual.offset(0)
   end
 
+  def test_zero_width_group_iteration_updates_the_last_capture
+    expected = ::Regexp.new("($|a)*").match("a")
+    actual = Onibi::Regexp.new("($|a)*").match("a")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
   def test_nullable_nested_quantifier_keeps_the_empty_capture
     %w[a aa].each do |input|
       mri = Regexp.new("(a?)+").match(input)

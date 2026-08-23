@@ -349,8 +349,15 @@ module Onibi
 
             node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
               if length.zero?
+                expression = quantifier.expression
+                expression = expression.body if expression.is_a?(Onibi::AST::Group) ||
+                                                expression.is_a?(SemanticBytecode::Group)
+                next if count.positive? && consumed.positive? &&
+                        (expression.is_a?(Onibi::AST::Sequence) ||
+                         expression.is_a?(SemanticBytecode::Sequence))
+
                 accepted << [consumed, inner] if count + 1 >= quantifier.minimum
-                visit.call(consumed, inner, count + 1) if count + 1 < limit
+                visit.call(consumed, inner, count + 1) if count + 1 < quantifier.minimum
                 next
               end
               visit.call(consumed + length, inner, count + 1)
@@ -1124,7 +1131,8 @@ module Onibi
 
         def anchor_length(anchor, characters, cursor)
           valid = case anchor.kind
-                  when :anchor_start then cursor.zero? || (cursor.positive? && characters[cursor - 1] == "\n")
+                  when :anchor_start
+                    cursor.zero? || (cursor.positive? && cursor < characters.length && characters[cursor - 1] == "\n")
                   when :anchor_absolute_start then cursor.zero?
                   when :anchor_end then cursor == characters.length || characters[cursor] == "\n"
                   when :anchor_absolute_end then cursor == characters.length
