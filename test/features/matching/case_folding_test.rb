@@ -3,6 +3,18 @@
 require "test_helper"
 
 class CaseFoldingTest < Minitest::Test
+  def test_ignorecase_does_not_match_a_negated_class_member
+    regexp = Onibi::Regexp.new("[^a]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("a")
+    refute regexp.match?("A")
+    assert regexp.match?("b")
+  end
+
+  def test_ignorecase_applies_to_class_ranges
+    assert Onibi::Regexp.new("[a-z]", Onibi::Regexp::IGNORECASE).match?("S")
+  end
+
   def test_ignorecase_matches_unicode_simple_case_folding
     assert Onibi::Regexp.new("k", ["ignorecase"]).match?("K")
   end

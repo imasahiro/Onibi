@@ -262,19 +262,18 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
-      bytecode_match(input, start_position(position))
+      start = if bytecode_nullable?
+                nullable_match_position(position, input.length)
+              else
+                start_position(position, input.length)
+              end
+      return nil unless start
+
+      bytecode_match(input, start)
     end
 
     def scan(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
-
-      if @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-         @ast.parts.first.is_a?(Onibi::AST::Absence) && capture_count.zero?
-        ranges = Onibi::IRGen::YARVIR.execute_absence_scan(bytecode_program, input)
-        values = ranges.map { |start, finish| input[start...finish] }
-        values.each { |value| block.call(value) } if block
-        return block ? input : values
-      end
 
       results = []
       position = 0
@@ -394,10 +393,24 @@ module Onibi
       end
     end
 
-    def start_position(position)
+    def start_position(position, input_length)
       start = position.is_a?(Integer) ? position : Integer(position)
-      start += @source.length if start.negative?
-      [start, 0].max
+      start += input_length if start.negative?
+      return nil if start.negative? || start > input_length
+
+      start
+    end
+
+    def nullable_match_position(position, input_length)
+      start = position.is_a?(Integer) ? position : Integer(position)
+      start += input_length if start.negative?
+      return nil if start.negative?
+
+      [start, input_length].min
+    end
+
+    def bytecode_nullable?
+      @bytecode_nullable ||= !Onibi::IRGen::YARVIR.execute(bytecode_program, "", 0).nil?
     end
 
     def replacement_value(replacement, matched)
@@ -414,11 +427,8 @@ module Onibi
       end
     end
 
-    def character_position_for_match(input, matched, endpoint = :end)
-      position = endpoint == :begin ? matched.begin(0) : matched.end(0)
-      return position unless matched.instance_variable_get(:@offsets_are_bytes)
-
-      input.byteslice(0, position).to_s.length
+    def character_position_for_match(_input, matched, endpoint = :end)
+      endpoint == :begin ? matched.begin(0) : matched.end(0)
     end
 
     def internal_match(input, position)
@@ -443,9 +453,8 @@ module Onibi
 
           to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
-          constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
-          return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                              byte_offsets, result_names, self)
+          return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                                    byte_offsets, result_names, self)
         end
         return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
       end
@@ -458,9 +467,8 @@ module Onibi
                    else
                      ->(position) { input.each_char.take(position).join.bytesize }
                    end
-        constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
-        return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                            [], result_names, self)
+        return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                                  [], result_names, self)
       end
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError

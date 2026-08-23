@@ -17,12 +17,12 @@ module Onibi
 
     def bytebegin(index)
       offset = offset_at(index)
-      offset && (@offsets_are_bytes ? offset.first : byte_position(offset.first))
+      offset && byte_position(offset.first)
     end
 
     def byteend(index)
       offset = offset_at(index)
-      offset && (@offsets_are_bytes ? offset.last : byte_position(offset.last))
+      offset && byte_position(offset.last)
     end
 
     def byteoffset(index)
@@ -33,7 +33,7 @@ module Onibi
       offset = offset_at(index)
       return nil unless offset
 
-      @offsets_are_bytes ? @string.byteslice(offset.first, offset.last - offset.first).to_s.length : offset.last - offset.first
+      offset.last - offset.first
     end
 
     private

@@ -74,32 +74,6 @@ module Onibi
           run(input, start_position)
         end
 
-        def absence_scan(input)
-          labels = if @automaton.is_a?(Onibi::Automata::DFA)
-                     @automaton.transitions.keys.map(&:last)
-                   else
-                     @automaton.transitions.map { |edge| [edge.operation.opcode, edge.operation.operand] }
-                   end
-          label = labels.find { |opcode, _operand| opcode == :match_absence }
-          return [] unless label
-
-          characters = input.encoding == Encoding::ASCII_8BIT ? input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) } : input.each_char.to_a
-          length = characters.length
-          delimiter = literal_value(label[1].body)
-          return [] unless delimiter
-          return [[0, 0]] if delimiter.empty?
-
-          index = characters.join.index(delimiter)
-          return [[0, length], [length, length]] unless index
-
-          prefix_end = index + delimiter.length - 1
-          suffix_start = index + delimiter.length
-          ranges = [[0, prefix_end], [prefix_end, prefix_end + 1]]
-          ranges << [suffix_start, length] if suffix_start < length
-          ranges << [length, length]
-          ranges
-        end
-
         private
 
         def run(input, start_position)
@@ -593,10 +567,10 @@ module Onibi
           lengths = []
           character = characters[cursor]
           lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character, ignorecase: flags[:ignorecase])
-          lengths << 1 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
+          lengths << 1 if flags[:ignorecase] && !node.value.start_with?("^") && node.value.each_char.any? do |candidate|
             casefold_equal?(candidate, character)
           end && !lengths.include?(1)
-          lengths << 2 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
+          lengths << 2 if flags[:ignorecase] && !node.value.start_with?("^") && node.value.each_char.any? do |candidate|
             casefold_equal?(candidate, characters[cursor, 2].to_a.join)
           end
           lengths
@@ -680,10 +654,6 @@ module Onibi
 
       def execute_with_captures(program, input, start_position = 0)
         Executor.new(program).match_with_captures(input, start_position)
-      end
-
-      def execute_absence_scan(program, input)
-        Executor.new(program).absence_scan(input)
       end
     end
   end

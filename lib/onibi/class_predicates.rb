@@ -43,7 +43,7 @@ module Onibi
       index = 0
       while index < source.length
         first, index = atom(source, index)
-        return true if range_matches?(source, index, first, character)
+        return true if range_matches?(source, index, first, character, ignorecase: ignorecase)
         return true if atom_matches?(first, character, ignorecase)
 
         index = range_end(source, index, first)
@@ -101,11 +101,18 @@ module Onibi
       [depth, false]
     end
 
-    def range_matches?(source, index, first, character)
+    def range_matches?(source, index, first, character, ignorecase: false)
       return false unless source[index] == "-" && index + 1 < source.length
 
       last, = atom(source, index + 1)
-      literal?(first) && literal?(last) && character.between?(first[1], last[1])
+      return false unless literal?(first) && literal?(last)
+
+      if ignorecase
+        character = character.downcase
+        first = [first[0], first[1].downcase]
+        last = [last[0], last[1].downcase]
+      end
+      character.between?(first[1], last[1])
     end
 
     def range_end(source, index, first)

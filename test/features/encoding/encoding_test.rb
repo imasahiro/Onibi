@@ -23,6 +23,13 @@ class EncodingTest < Minitest::Test
     assert Onibi::Regexp.new(".".encode(Encoding::UTF_8)).match?(valid_utf8)
   end
 
+  def test_utf8_match_offsets_use_character_positions
+    match = Onibi::Regexp.new(".").match("é")
+
+    assert_equal [0, 1], match.offset(0)
+    assert_equal [0, 2], match.byteoffset(0)
+  end
+
   def test_invalid_utf8_input_raises_argument_error
     invalid_utf8 = [0xff].pack("C*").force_encoding(Encoding::UTF_8)
 
@@ -163,7 +170,8 @@ class EncodingTest < Minitest::Test
 
     match = regexp.match(input)
     assert_equal "あい".encode(encoding), match.to_s
-    assert_equal input.byteslice(0, 2).bytesize, match.begin(0)
+    assert_equal 1, match.begin(0)
+    assert_equal input.byteslice(0, 2).bytesize, match.bytebegin(0)
   end
 
   def test_unicode_property_pattern_rejects_non_ascii_input_in_another_encoding

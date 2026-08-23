@@ -13,6 +13,29 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("dog")
   end
 
+  def test_match_position_uses_input_length_for_negative_positions
+    regexp = Onibi::Regexp.new("a")
+
+    assert_equal [1, 2], regexp.match("ba", -1).offset(0)
+    assert_nil regexp.match("a", -2)
+    assert_nil regexp.match("a", 2)
+  end
+
+  def test_empty_pattern_uses_mri_position_rules
+    regexp = Onibi::Regexp.new("")
+
+    assert_nil regexp.match("", -1)
+    assert_equal [1, 1], regexp.match("a", 1).offset(0)
+    assert_equal [1, 1], regexp.match("a", 10).offset(0)
+  end
+
+  def test_nullable_pattern_uses_mri_position_rules
+    regexp = Onibi::Regexp.new("a*")
+
+    assert_equal [0, 0], regexp.match("", 10).offset(0)
+    assert_equal [1, 1], regexp.match("a", 10).offset(0)
+  end
+
   def test_captures_and_names_come_from_vm_result
     match = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>").match("echo-echo")
 

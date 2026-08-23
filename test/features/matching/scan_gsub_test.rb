@@ -16,7 +16,7 @@ class ScanGsubTest < Minitest::Test
     assert_equal "word", Onibi::Regexp.new("(?<value>word)").gsub("word", '\\k<value>')
   end
 
-  def test_absence_scan_uses_compiled_program
-    assert_equal ["xxEN", "D", ""], Onibi::Regexp.new("(?~END)").scan("xxEND")
+  def test_absence_scan_uses_the_common_vm_match_path
+    assert_equal ["xxEN", "Dyy", ""], Onibi::Regexp.new("(?~END)").scan("xxENDyy")
   end
 end
