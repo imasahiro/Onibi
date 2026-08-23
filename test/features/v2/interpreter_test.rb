@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class InterpreterTest < Minitest::Test
+  def test_bytecode_spec_declares_each_instruction_transition
+    assert_equal %i[start match jump accept], Onibi::Interpreter::BYTECODE_SPEC.fetch(:dfa).keys
+    assert_equal %i[nfa_start nfa_match nfa_accept], Onibi::Interpreter::BYTECODE_SPEC.fetch(:tnfa).keys
+    assert_equal %i[match_literal match_class match_escape match_property match_any
+                    match_assertion test_anchor match_absence match_group match_quantifier
+                    match_atomic_group match_backreference match_conditional
+                    match_subexpression_call match_option_group],
+                 Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).keys
+  end
+
+  def test_interpreter_executes_dfa_start_match_jump_and_accept
+    program = dfa_program_for("ab")
+
+    assert_equal [2, 4], Onibi::Interpreter::Executor.new(program).match("xxabyy")
+    assert_equal %i[start match jump accept], program.instructions.map(&:opcode)
+  end
+
+  def test_interpreter_executes_tnfa_start_match_and_accept
+    program = nfa_program_for("ab")
+
+    assert_equal [2, 4], Onibi::Interpreter::Executor.new(program).match("xxabyy")
+    assert_equal :nfa_start, program.instructions.first.opcode
+    assert_equal :nfa_match, program.instructions[1].opcode
+    assert_equal :nfa_accept, program.instructions.last.opcode
+  end
+
+  def test_interpreter_evaluates_semantic_operands_with_stack_results
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)")
+    program = regexp.send(:bytecode_program)
+
+    result = Onibi::Interpreter::Executor.new(program).match_with_captures("--abc--")
+
+    assert_equal [2, 5], result.first(2)
+    assert_equal({ 1 => [2, 5], "word" => [2, 5] }, result[2])
+  end
+
+  private
+
+  def dfa_program_for(source)
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse(source)).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    Onibi::IRGen::YARVIR.generate(dfa)
+  end
+
+  def nfa_program_for(source)
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse(source)).graph
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(cfg)
+    Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
+  end
+end

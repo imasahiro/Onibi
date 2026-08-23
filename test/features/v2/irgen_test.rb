@@ -190,7 +190,8 @@ class V2IRGenTest < Minitest::Test
     assert_equal true, literal_flags[:literal_only]
     assert_equal false, literal_flags[:nullable]
     assert_equal true, nullable_flags[:nullable]
-    assert_equal Onibi::IRGen::YARVIR::Executor, Onibi::Interpreter::Executor
+    assert Onibi::Interpreter::Executor
+    refute Onibi::IRGen::YARVIR.const_defined?(:Executor, false)
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
