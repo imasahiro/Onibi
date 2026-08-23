@@ -711,9 +711,15 @@ module Onibi
           guard = literal_value(part.body)
           return false unless guard
 
-          matched = input[index + length, guard.length] == guard
-          return false if part.kind == :positive && !matched
-          return false if part.kind == :negative && matched
+          if %i[positive_lookbehind negative_lookbehind].include?(part.kind)
+            matched = index >= guard.length && input[index - guard.length, guard.length] == guard
+            return false if part.kind == :positive_lookbehind && !matched
+            return false if part.kind == :negative_lookbehind && matched
+          else
+            matched = input[index + length, guard.length] == guard
+            return false if part.kind == :positive && !matched
+            return false if part.kind == :negative && matched
+          end
         end
       end
       true
