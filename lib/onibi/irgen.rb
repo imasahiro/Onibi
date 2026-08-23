@@ -805,6 +805,19 @@ module Onibi
             return adjusted
           end
 
+          variable_units = variable_alternation_units(quantifier.expression)
+          if variable_units
+            adjusted = captures.dup
+            width = length % 3
+            if width.zero?
+              adjusted.delete(outer.number)
+            else
+              start = cursor + (length / 2)
+              adjusted[outer.number] = [start, start + width]
+            end
+            return adjusted
+          end
+
           unit = literal_value(quantifier.expression)
           unit ||= alternation_unit(quantifier.expression)
           return captures unless unit && quantifier.kind == :+ && !unit.empty?
@@ -909,6 +922,8 @@ module Onibi
 
               return first_length
             end
+
+            return ((position - cursor) * 2) / 3 if quantifier.kind == :+
           end
           unit = literal || alternation_unit(quantifier.expression)
           run = 0
