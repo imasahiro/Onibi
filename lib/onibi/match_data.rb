@@ -27,9 +27,9 @@ module Onibi
 
     def self.from_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       match_data = allocate
-      full_match = input.byteslice(start_position, finish_position - start_position)
+      full_match = input[start_position, finish_position - start_position]
       captures = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
+        offset && input[offset[0], offset[1] - offset[0]]
       end
       match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)

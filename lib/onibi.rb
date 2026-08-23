@@ -165,11 +165,12 @@ module Onibi
       start = position.is_a?(Integer) ? position : Integer(position)
       start += input.length if start.negative?
       start = 0 if start.negative?
+      searchable = input.each_char.to_a.join
       match = literals.each_with_index.filter_map do |literal, order|
         index = if casefold?
-                  input.downcase.index(literal.downcase, start)
+                  searchable.downcase.index(literal.downcase, start)
                 else
-                  input.index(literal, start)
+                  searchable.index(literal, start)
                 end
         [index, order, literal] if index
       end.min_by { |index, order, _literal| [index, order] }
@@ -193,6 +194,25 @@ module Onibi
         break if position > input.length
       end
       block_given? ? input : results
+    end
+
+    def gsub(input, replacement = nil)
+      raise TypeError, "no implicit conversion of nil into String" if !block_given? && replacement.nil?
+      raise TypeError, "no implicit conversion of #{replacement.class} into String" unless block_given? || replacement.is_a?(String)
+
+      output = String.new(encoding: input.encoding)
+      cursor = 0
+      while (matched = match(input, cursor))
+        start = matched.begin(0)
+        finish = matched.end(0)
+        output << input[cursor...start]
+        value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
+        output << value.to_s
+        cursor = finish > cursor ? finish : cursor + 1
+        break if cursor > input.length
+      end
+      output << input[cursor..] if cursor <= input.length
+      output
     end
 
     def ==(other)
@@ -308,8 +328,9 @@ module Onibi
     end
 
     def match_capture_variant(input, start, variants)
+      searchable = input.each_char.to_a.join
       found = variants.each_with_index.filter_map do |(literal, captures), order|
-        index = casefold? ? input.downcase.index(literal.downcase, start) : input.index(literal, start)
+        index = casefold? ? searchable.downcase.index(literal.downcase, start) : searchable.index(literal, start)
         [index, order, literal, captures] if index
       end.min_by { |index, order, _literal, _captures| [index, order] }
       return nil unless found
@@ -421,6 +442,10 @@ module Onibi
 
     def captureless_result(input, range)
       Onibi::MatchData.captureless(input, range[0], range[1], self)
+    end
+
+    def replacement_value(replacement, matched)
+      replacement.gsub(/\\([0&])/) { |token| ["\\0", "\\&"].include?(token) ? matched[0] : "" }
     end
 
     def literal_backreference_match(input, start)
