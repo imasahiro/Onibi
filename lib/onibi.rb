@@ -534,7 +534,12 @@ module Onibi
         count = 0
         while index + count < characters.length && atom_matches_character?(expression, characters[index + count]) &&
               (maximum.nil? || count < maximum)
-          count += 1
+          count += if expression.is_a?(Onibi::AST::Escape) && expression.kind == :linebreak &&
+                      characters[index + count] == "\r" && characters[index + count + 1] == "\n"
+                     2
+                   else
+                     1
+                   end
         end
         next if count < minimum
 
