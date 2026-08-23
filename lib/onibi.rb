@@ -791,7 +791,8 @@ module Onibi
 
     def bytecode_applicable?
       unicode_safe = !@hfa_ascii_input && source.ascii_only? && bytecode_unicode_safe_node?(@ast)
-      return false unless (@hfa_ascii_input || unicode_safe) && !casefold? && !multiline? &&
+      ascii_safe = @hfa_ascii_input && source.ascii_only?
+      return false unless (ascii_safe || unicode_safe) && !casefold? && !multiline? &&
                           bytecode_supported_node?(@ast)
       return false if source.include?("(?-") ||
                       (source.start_with?("(?i") && !source.start_with?("(?i:")) ||
@@ -846,7 +847,7 @@ module Onibi
       when Onibi::AST::Conditional
         bytecode_supported_node?(node.yes_branch) && bytecode_supported_node?(node.no_branch)
       when Onibi::AST::Assertion
-        !literal_value(node.body).nil?
+        bytecode_supported_node?(node.body)
       when Onibi::AST::Anchor
         !multiline?
       when Onibi::AST::Escape

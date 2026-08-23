@@ -372,13 +372,20 @@ module Onibi
 
         def assertion_length(assertion, characters, cursor)
           guard = literal_value(assertion.body)
-          return nil unless guard
-
-          matched = if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
-                      characters[[cursor - guard.length, 0].max, guard.length].to_a.join == guard && cursor >= guard.length
+          matched = if guard
+                      if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+                        characters[[cursor - guard.length, 0].max, guard.length].to_a.join == guard && cursor >= guard.length
+                      else
+                        characters[cursor, guard.length].to_a.join == guard
+                      end
+                    elsif %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+                      width = sequence_length(assertion.body, characters, 0)
+                      width && cursor >= width && sequence_length(assertion.body, characters, cursor - width) == width
                     else
-                      characters[cursor, guard.length].to_a.join == guard
+                      sequence_length(assertion.body, characters, cursor)
                     end
+          return nil if matched.nil?
+
           matched = if %i[positive positive_lookahead positive_lookbehind].include?(assertion.kind)
                       matched
                     else
