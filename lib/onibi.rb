@@ -8,11 +8,6 @@ require_relative "onibi/regexp_encoding_validation"
 require_relative "onibi/regexp_object_semantics"
 require_relative "onibi/regexp_timeout"
 require_relative "onibi/regexp_replacement"
-require_relative "onibi/regexp_captureless_scan_gsub"
-require_relative "onibi/regexp_linebreak_scan_gsub"
-require_relative "onibi/regexp_scan_gsub"
-require_relative "onibi/regexp_capture_scan_optimizations"
-require_relative "onibi/regexp_captureless_alternation_scan"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -57,9 +52,6 @@ module Onibi
     include RegexpEncodingValidation
     include RegexpObjectSemantics
     include RegexpTimeout
-    include RegexpScanGsub
-    include RegexpCaptureScanOptimizations
-    include RegexpCapturelessAlternationScan
 
     IGNORECASE = 1
     EXTENDED = 2
