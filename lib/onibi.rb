@@ -909,6 +909,11 @@ module Onibi
       when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_literal_choice_group?(part) }
       when Onibi::AST::Alternation then node.branches.all? { |branch| bytecode_literal_choice_group?(branch) }
       when Onibi::AST::Group then bytecode_literal_choice_group?(node.body)
+      when Onibi::AST::Quantifier
+        source.include?("\\k") &&
+          [Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Property].any? do |klass|
+            node.expression.is_a?(klass)
+          end
       else false
       end
     end
