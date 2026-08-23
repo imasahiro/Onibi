@@ -267,9 +267,14 @@ module Onibi
                     else
                       input.ascii_only?
                     end
+      @hfa_ascii_input = ascii_input
       raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if fixed_encoding? && !ascii_input && input.encoding != encoding
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
+      end
+
+      if (bytecode = bytecode_match(input, start_position(position)))
+        return bytecode
       end
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
@@ -735,6 +740,47 @@ module Onibi
       Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
     end
 
+    def bytecode_match(input, start)
+      return nil unless @hfa_ascii_input && !@effective_casefold && bytecode_supported_node?(@ast)
+
+      program = bytecode_program
+      range = Onibi::IRGen::YARVIR.execute(program, input, start)
+      return nil unless range
+
+      Onibi::MatchData.captureless(input, range[0], range[1], self)
+    rescue Onibi::Error, ArgumentError
+      nil
+    end
+
+    def bytecode_program
+      @bytecode_program ||= begin
+        parsed = Onibi::Parser.parse(source, options: @options)
+        compiled = Onibi::Compiler.compile(parsed)
+        tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+        dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+        Onibi::IRGen::YARVIR.generate(dfa)
+      end
+    end
+
+    def bytecode_supported_node?(node)
+      case node
+      when Onibi::AST::Sequence
+        node.parts.all? { |part| bytecode_supported_node?(part) }
+      when Onibi::AST::Alternation
+        node.branches.all? { |branch| bytecode_supported_node?(branch) }
+      when Onibi::AST::Quantifier
+        bytecode_supported_node?(node.expression)
+      when Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Any, Onibi::AST::Property
+        true
+      when Onibi::AST::Absence
+        !literal_value(node.body).nil?
+      when Onibi::AST::Escape
+        !%i[word_boundary not_word_boundary start_match match_reset linebreak].include?(node.kind)
+      else
+        false
+      end
+    end
+
     def absence_match(input, start)
       return nil unless @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
                         @ast.parts.first.is_a?(Onibi::AST::Absence)
@@ -1129,20 +1175,27 @@ module Onibi
       [gsub(input, replacement), input.bytesize]
     end
 
-    HfaProgram = Struct.new(:regexp) do
+    HfaProgram = Struct.new(:owner) do
       def prefix_literal
-        value = regexp.source[/\A(?:\\b)?\(\?<[^>]+>([^\\\[(?]+)/, 1] || regexp.source[/\A(?:\\b)?([^\\\[(?]+)/, 1]
-        value&.sub(/s\z/, "")
+        source = owner.source
+        source = source.sub("\\b", "")
+        if source.start_with?("(?<")
+          close = source.index(">")
+          source = source[(close + 1)..] if close
+        end
+        value = source.each_char.take_while { |character| !"\\[(?".include?(character) }.join
+        value = value[0...-1] if value.end_with?("s")
+        value
       end
 
       def match_result(input, position)
-        match = regexp.match(input, position)
+        match = owner.match(input, position)
         match ? [match.begin(0), match.end(0)] : nil
       end
     end
 
     def hfa_program
-      @hfa_program ||= HfaProgram.new(::Regexp.new(source.dup.force_encoding(Encoding::UTF_8)))
+      @hfa_program ||= HfaProgram.new(self)
     end
 
     def hfa_top_level_capture_plan
@@ -1192,11 +1245,10 @@ module Onibi
     end
 
     def hfa_top_level_capture_offsets(input, start_position, _finish_position)
-      native = ::Regexp.new(source.dup.force_encoding(input.encoding))
-      match = native.match(input, start_position)
+      match = self.match(input, start_position)
       return [] unless match
 
-      match.captures.each_index.map { |index| match.offset(index + 1) }
+      (1...match.length).map { |index| match.offset(index) }
     end
 
     alias hfa_generic_capture_offsets hfa_top_level_capture_offsets

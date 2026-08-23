@@ -155,6 +155,31 @@ class V2IRGenTest < Minitest::Test
                  program.instructions.select { |instruction| instruction.opcode == :match }.map(&:operand)
   end
 
+  def test_dedicated_executor_matches_literal_without_mri_regexp
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("cat")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+
+    assert_equal [2, 5], Onibi::IRGen::YARVIR.execute(program, "xxcatyy", 0)
+    assert_nil Onibi::IRGen::YARVIR.execute(program, "xxdogyy", 0)
+  end
+
+  def test_dedicated_executor_consumes_a_quantifier_run
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a+")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+
+    assert_equal [2, 5], Onibi::IRGen::YARVIR.execute(program, "xxaaaby", 0)
+  end
+
+  def test_dedicated_executor_handles_literal_absence
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("(?~END)")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+
+    assert_equal [0, 4], Onibi::IRGen::YARVIR.execute(program, "xxENDyy", 0)
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
