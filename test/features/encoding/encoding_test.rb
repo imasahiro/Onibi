@@ -155,6 +155,13 @@ class EncodingTest < Minitest::Test
     refute_nil regexp.match(input)
   end
 
+  def test_non_utf8_word_boundary_uses_unicode_character_classification
+    encoding = Encoding::EUC_JP
+    regexp = Onibi::Regexp.new("\\bあ\\b".encode(encoding))
+
+    assert regexp.match?("あ".encode(encoding))
+  end
+
   def test_non_utf8_unicode_property_scan_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
