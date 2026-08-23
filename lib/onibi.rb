@@ -143,6 +143,10 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
+      if (spec = simple_capture_variants(@ast))
+        return match_capture_variant(input, start_position(position), spec)
+      end
+
       literals = literal_candidates(@ast)
       return nil if literals.empty?
 
@@ -241,6 +245,58 @@ module Onibi
         literal = literal_value(node)
         literal ? [literal] : []
       end
+    end
+
+    def simple_capture_variants(node)
+      return nil unless node.is_a?(Onibi::AST::Sequence)
+
+      variants = [["", []]]
+      node.parts.each do |part|
+        additions = sequence_part_variants(part)
+        return nil unless additions
+
+        variants = variants.flat_map do |prefix, captures|
+          additions.map do |suffix, suffix_captures|
+            [prefix + suffix, captures + suffix_captures.map { |capture| [capture[0] + prefix.length, capture[1], capture[2]] }]
+          end
+        end
+      end
+      variants
+    end
+
+    def sequence_part_variants(part)
+      return [[part.value, []]] if part.is_a?(Onibi::AST::Literal)
+
+      if part.is_a?(Onibi::AST::Group)
+        value = literal_value(part.body)
+        return value ? [[value, [[0, value.length, part.number]]]] : nil
+      end
+      if part.is_a?(Onibi::AST::Quantifier) && part.kind == :"?" && part.expression.is_a?(Onibi::AST::Group)
+        value = literal_value(part.expression.body)
+        return value ? [[value, [[0, value.length, part.expression.number]]], ["", []]] : nil
+      end
+
+      nil
+    end
+
+    def match_capture_variant(input, start, variants)
+      found = variants.each_with_index.filter_map do |(literal, captures), order|
+        index = casefold? ? input.downcase.index(literal.downcase, start) : input.index(literal, start)
+        [index, order, literal, captures] if index
+      end.min_by { |index, order, _literal, _captures| [index, order] }
+      return nil unless found
+
+      index, _order, literal, captures = found
+      offsets = Array.new(named_captures.values.flatten.max || 0)
+      captures.each { |offset, length, number| offsets[number - 1] = [index + offset, index + offset + length] }
+      match_names = named_captures.transform_values(&:first)
+      Onibi::MatchData.from_offsets(input, index, index + literal.length, offsets, match_names, self)
+    end
+
+    def start_position(position)
+      start = position.is_a?(Integer) ? position : Integer(position)
+      start += @source.length if start.negative?
+      [start, 0].max
     end
 
     def walk_ast(node, &block)
