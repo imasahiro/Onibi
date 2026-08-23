@@ -791,7 +791,8 @@ module Onibi
     end
 
     def bytecode_applicable?
-      unicode_safe = !@hfa_ascii_input && @hfa_input_encoding == Encoding::UTF_8 && source.ascii_only? &&
+      unicode_safe = !@hfa_ascii_input && @hfa_input_encoding == Encoding::UTF_8 &&
+                     (source.ascii_only? || bytecode_unicode_absence_only?) &&
                      bytecode_unicode_safe_node?(@ast)
       ascii_safe = @hfa_ascii_input && source.ascii_only?
       return false unless (ascii_safe || unicode_safe) && !casefold? && !multiline? &&
@@ -885,6 +886,11 @@ module Onibi
       when Onibi::AST::Escape then !%i[start_match match_reset].include?(node.kind)
       else false
       end
+    end
+
+    def bytecode_unicode_absence_only?
+      @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
+        @ast.parts.first.is_a?(Onibi::AST::Absence) && !absence_literal_value(@ast.parts.first.body).nil?
     end
 
     def absence_match(input, start)
