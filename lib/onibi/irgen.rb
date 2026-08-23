@@ -892,7 +892,11 @@ module Onibi
                         internal_start - cursor
                       elsif internal_end
                         effective_length = internal_end - internal_start
-                        if prefix_zero_absence && internal_prefix&.positive? && effective_length.zero?
+                        prefix_length = internal_prefix || 0
+                        suffix_length = length - prefix_length - effective_length
+                        if suffix_length.positive?
+                          internal_end - cursor - 1
+                        elsif prefix_zero_absence && internal_prefix&.positive? && effective_length.zero?
                           0
                         elsif prefix_zero_absence && internal_prefix&.zero? && effective_length.positive?
                           internal_end - cursor - 1
