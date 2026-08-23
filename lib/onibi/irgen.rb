@@ -772,6 +772,12 @@ module Onibi
                      end
           return unless sequence.length == 1
 
+          if sequence.first.is_a?(Onibi::AST::Group) || sequence.first.is_a?(SemanticBytecode::Group)
+            nested = sequence.first.body
+            nested_parts = (nested.parts if nested.is_a?(Onibi::AST::Sequence) || nested.is_a?(SemanticBytecode::Sequence))
+            return quantified_absence_length(nested, characters, cursor) if nested_parts&.length == 1
+          end
+
           quantifier = sequence.first
           return unless quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)
           return unless quantifier.maximum.nil?
@@ -849,10 +855,13 @@ module Onibi
         end
 
         def alternation_unit(node)
-          branches = if node.is_a?(Onibi::AST::Alternation) || node.is_a?(SemanticBytecode::Alternation)
+          branches = case node
+                     when Onibi::AST::Alternation, SemanticBytecode::Alternation
                        node.branches
-                     elsif node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+                     when Onibi::AST::Group, SemanticBytecode::Group
                        return alternation_unit(node.body)
+                     when Onibi::AST::Sequence, SemanticBytecode::Sequence
+                       return alternation_unit(node.parts.first) if node.parts.length == 1
                      end
           return unless branches && !branches.empty?
 
@@ -865,6 +874,8 @@ module Onibi
         def variable_alternation_units(node)
           body = if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
                    node.body
+                 elsif node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+                   node.parts.length == 1 ? node.parts.first : node
                  else
                    node
                  end

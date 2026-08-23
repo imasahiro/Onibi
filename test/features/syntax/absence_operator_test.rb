@@ -96,4 +96,12 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "xab", match[0]
     assert_nil match[1]
   end
+
+  def test_absence_operator_handles_nested_equal_length_captures
+    match = Onibi::Regexp.new("(?~((a|b)){2,})").match("abab")
+
+    assert_equal "ab", match[0]
+    assert_nil match[1]
+    assert_nil match[2]
+  end
 end
