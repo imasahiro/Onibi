@@ -563,6 +563,7 @@ module Onibi
           dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
+                        named_capture_numbers: named_captures,
                         semantic_root: Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast) }
         )
       end

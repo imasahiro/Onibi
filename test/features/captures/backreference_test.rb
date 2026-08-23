@@ -18,6 +18,15 @@ class BackreferenceTest < Minitest::Test
     refute regexp.match?("abac")
   end
 
+  def test_duplicate_named_backreference_uses_the_first_matching_group
+    regexp = Onibi::Regexp.new("(?<x>a)(?<x>b)\\k<x>")
+
+    match = regexp.match("aba")
+    assert_equal "aba", match[0]
+    assert_equal "a", match[1]
+    assert_equal "b", match[2]
+  end
+
   def test_repeated_class_backreference_runs_in_the_vm
     regexp = Onibi::Regexp.new("([a-z]+)-\\1")
 

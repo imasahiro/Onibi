@@ -581,7 +581,12 @@ module Onibi
         end
 
         def backreference_length(reference, characters, cursor, captures, flags = {})
-          span = captures[reference.identifier]
+          identifiers = if reference.named && flags[:named_capture_numbers]
+                          flags[:named_capture_numbers][reference.identifier] || [reference.identifier]
+                        else
+                          [reference.identifier]
+                        end
+          span = identifiers.lazy.map { |identifier| captures[identifier] }.find(&:itself)
           return nil unless span
 
           value = characters[span[0]...span[1]]
