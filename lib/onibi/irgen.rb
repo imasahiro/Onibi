@@ -325,6 +325,39 @@ module Onibi
         def quantifier_results(quantifier, characters, cursor, captures, flags = {})
           return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
 
+          ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
+        end
+
+        def ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
+          limit = quantifier.maximum || characters.length - cursor
+          accepted = []
+          visit = lambda do |consumed, state_captures, count|
+            current = [consumed, state_captures]
+            if (count >= quantifier.minimum) && (quantifier.mode == :lazy)
+              accepted << current unless accepted.include?(current)
+              return if count >= limit
+            end
+            if count >= limit
+              accepted << current unless accepted.include?(current) || count < quantifier.minimum
+              return
+            end
+
+            node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
+              if length.zero?
+                accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+                next
+              end
+              visit.call(consumed + length, inner, count + 1)
+            end
+            accepted << current if quantifier.mode != :lazy && count >= quantifier.minimum && !accepted.include?(current)
+          end
+          visit.call(0, captures, 0)
+          return [] if accepted.empty?
+
+          accepted
+        end
+
+        def legacy_quantifier_results(quantifier, characters, cursor, captures, flags = {})
           limit = quantifier.maximum || characters.length - cursor
           frontier = [[0, captures]]
           accepted = quantifier.minimum.zero? ? frontier.dup : []

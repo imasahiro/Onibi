@@ -36,6 +36,13 @@ class QuantifierModeTest < Minitest::Test
     assert_equal "a", match[1]
   end
 
+  def test_greedy_quantifier_preserves_ordered_alternation
+    mri = Regexp.new("(a|ab)+").match("ab")
+    onibi = Onibi::Regexp.new("(a|ab)+").match("ab")
+
+    assert_equal mri.to_a, onibi.to_a
+  end
+
   def test_zero_width_quantifier_accepts_one_zero_width_iteration
     match = Onibi::Regexp.new("(?=a)+").match("ab")
 
