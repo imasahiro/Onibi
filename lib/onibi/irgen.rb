@@ -701,6 +701,7 @@ module Onibi
             next if results.empty?
 
             length, inner_captures = results.first
+            inner_captures = captures if captureless_absence_body?(node.body)
             quantified_length = quantified_absence_length(node.body, characters, position)
             maximum = if quantified_length
                         position - cursor + quantified_length
@@ -730,6 +731,16 @@ module Onibi
           literal = literal_value(quantifier.expression)
           literal && !literal.empty? && cursor < characters.length &&
             characters[cursor, literal.length].join != literal
+        end
+
+        def captureless_absence_body?(body)
+          parts = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+                    body.parts
+                  else
+                    [body]
+                  end
+          parts.length == 1 &&
+            (parts.first.is_a?(Onibi::AST::Quantifier) || parts.first.is_a?(SemanticBytecode::Quantifier))
         end
 
         def generic_absence_length(node, characters, cursor, flags)

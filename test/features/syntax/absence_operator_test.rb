@@ -89,4 +89,11 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal(%w[aa ab], %w[aaa abab].map { |input| regexp.match(input)[0] })
   end
+
+  def test_absence_operator_does_not_export_quantifier_body_captures
+    match = Onibi::Regexp.new("(?~(a|b){2,})").match("xabab")
+
+    assert_equal "xab", match[0]
+    assert_nil match[1]
+  end
 end
