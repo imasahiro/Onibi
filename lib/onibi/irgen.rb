@@ -62,6 +62,7 @@ module Onibi
         def initialize(program)
           @program = program
           @dfa = program.automaton
+          @subexpressions = program.flags[:subexpressions] || {}
         end
 
         def match(input, start_position = 0)
@@ -122,6 +123,8 @@ module Onibi
             quantifier_results(operand, characters, cursor, captures, flags)
           when :match_assertion
             assertion_results(operand, characters, cursor, captures, flags)
+          when :match_subexpression_call
+            node_results(operand, characters, cursor, captures, flags)
           else
             transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
           end
@@ -171,7 +174,16 @@ module Onibi
             node_results(node.body, characters, cursor, captures,
                          flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
           when Onibi::AST::Assertion
-            assertion_results(node, characters, cursor, captures)
+            assertion_results(node, characters, cursor, captures, flags)
+          when Onibi::AST::SubexpressionCall
+            body = @subexpressions[node.identifier]
+            return [] unless body
+            return [] if (@subexpression_depth ||= 0) > 32
+
+            @subexpression_depth += 1
+            results = node_results(body, characters, cursor, captures, flags)
+            @subexpression_depth -= 1
+            results
           else
             length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
             length ? [[length, captures]] : []

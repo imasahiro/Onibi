@@ -817,7 +817,9 @@ module Onibi
         compiled = Onibi::Compiler.compile(parsed)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
-        Onibi::IRGen::YARVIR.generate(dfa, flags: { ignorecase: casefold?, multiline: multiline? })
+        Onibi::IRGen::YARVIR.generate(
+          dfa, flags: { ignorecase: casefold?, multiline: multiline?, subexpressions: bytecode_subexpressions }
+        )
       end
     end
 
@@ -840,6 +842,8 @@ module Onibi
       when Onibi::AST::Group
         bytecode_literal_choice_group?(node.body)
       when Onibi::AST::Backreference
+        true
+      when Onibi::AST::SubexpressionCall
         true
       when Onibi::AST::Conditional
         bytecode_supported_node?(node.yes_branch) && bytecode_supported_node?(node.no_branch)
@@ -864,6 +868,29 @@ module Onibi
       end
     end
 
+    def bytecode_subexpressions
+      groups = {}
+      collect_bytecode_subexpressions(@ast, groups)
+      groups
+    end
+
+    def collect_bytecode_subexpressions(node, groups)
+      case node
+      when Onibi::AST::Sequence
+        node.parts.each { |part| collect_bytecode_subexpressions(part, groups) }
+      when Onibi::AST::Alternation
+        node.branches.each { |branch| collect_bytecode_subexpressions(branch, groups) }
+      when Onibi::AST::Group
+        groups[node.number] = node.body if node.capture
+        groups[node.name] = node.body if node.capture && node.name
+        collect_bytecode_subexpressions(node.body, groups)
+      when Onibi::AST::Quantifier
+        collect_bytecode_subexpressions(node.expression, groups)
+      when Onibi::AST::OptionGroup, Onibi::AST::AtomicGroup, Onibi::AST::Assertion
+        collect_bytecode_subexpressions(node.body, groups)
+      end
+    end
+
     def inline_global_modifier?
       return false unless source.start_with?("(?")
 
@@ -872,7 +899,8 @@ module Onibi
       return false if colon && close && colon < close
 
       modifier = source[2, (colon || close || source.length) - 2].to_s
-      modifier.empty? || modifier.each_char.any? { |character| %w[i m x].include?(character) }
+      !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
+        modifier.each_char.any? { |character| %w[i m x].include?(character) }
     end
 
     def bytecode_literal_choice_group?(node)
