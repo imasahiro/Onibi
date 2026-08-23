@@ -79,6 +79,7 @@ module Onibi
           return nil unless @dfa.is_a?(Onibi::Automata::DFA)
 
           characters = input.each_char.to_a
+          @characters = characters
           first = [start_position, 0].max
           first.upto(characters.length) do |start|
             result = walk(@dfa.start_state.id, characters, start, {}, start)
@@ -234,6 +235,10 @@ module Onibi
 
         def captures_for(label, cursor, length, captures)
           opcode, operand = label
+          if opcode == :match_absence
+            capture_absence(operand.body, cursor, length, captures)
+            return
+          end
           if opcode == :match_quantifier && operand.expression.is_a?(Onibi::AST::Group)
             group = operand.expression
             return unless group.capture && length.positive?
@@ -246,6 +251,23 @@ module Onibi
 
           captures[operand.number] = [cursor, cursor + length]
           captures[operand.name] = [cursor, cursor + length] if operand.name
+        end
+
+        def capture_absence(node, cursor, _length, captures)
+          return unless node.is_a?(Onibi::AST::Sequence)
+
+          group = node.parts.find { |part| part.is_a?(Onibi::AST::Group) && part.capture }
+          return unless group
+
+          value = literal_value(group.body)
+          return unless value
+
+          relative_start = @characters[cursor..]&.join.to_s.index(value)
+          return unless relative_start
+
+          delimiter_start = cursor + relative_start
+          captures[group.number] = [delimiter_start, delimiter_start + value.length]
+          captures[group.name] = [delimiter_start, delimiter_start + value.length] if group.name
         end
 
         def backreference_length(reference, characters, cursor, captures)
@@ -351,6 +373,7 @@ module Onibi
         def literal_value(node)
           case node
           when Onibi::AST::Literal then node.value
+          when Onibi::AST::Group then literal_value(node.body)
           when Onibi::AST::Sequence
             node.parts.map { |part| literal_value(part) }.then { |values| values.all? ? values.join : nil }
           end

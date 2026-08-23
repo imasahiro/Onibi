@@ -398,10 +398,10 @@ module Onibi
         return block ? input : values
       end
 
-      if (absence = literal_absence_body)
+      if (absence = literal_absence_body) && hfa_capture_count.zero?
         values = absence_scan_values(input, absence)
         values.each { |value| block.call(value) } if block
-        return block_given? ? input : values
+        return block ? input : values
       end
 
       results = []
@@ -416,6 +416,9 @@ module Onibi
         yield(value) if block_given?
         finish = character_position_for_match(input, matched)
         position = finish > position ? finish : position + 1
+        break if matched[0].empty? && @ast.is_a?(Onibi::AST::Sequence) &&
+                 @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Absence) &&
+                 (matched.captures.empty? || matched.captures.all?(&:nil?))
         break if position > input.length
       end
       block_given? ? input : results
@@ -521,6 +524,7 @@ module Onibi
       when Onibi::AST::Sequence
         values = node.parts.map { |part| literal_value(part) }
         values.all? ? values.join : nil
+      when Onibi::AST::Group then literal_value(node.body)
       when Onibi::AST::OptionGroup then literal_value(node.body)
       end
     end
@@ -762,7 +766,7 @@ module Onibi
 
       range = result.first(2)
       captures = result[2]
-      unless captures.empty?
+      if hfa_capture_count.positive?
         offsets = Array.new(hfa_capture_count)
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
         return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
