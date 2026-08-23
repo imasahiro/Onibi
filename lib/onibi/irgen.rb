@@ -87,7 +87,12 @@ module Onibi
           first = [start_position, 0].max
           @match_start = first
           first.upto(characters.length) do |start|
-            result = if @automaton.is_a?(Onibi::Automata::DFA)
+            result = if (root = @program.flags[:ast])
+                       node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
+                         match_start = captures.delete(:__match_start) || start
+                         [match_start, start + length, captures]
+                       end
+                     elsif @automaton.is_a?(Onibi::Automata::DFA)
                        walk_dfa(@automaton.start_state.id, characters, start, {}, start, @program.flags)
                      elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
                        walk_tnfa(:start, characters, start, {}, start, @program.flags)
@@ -106,7 +111,7 @@ module Onibi
             transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
               next_captures = captures.dup
               next_captures.merge!(inner_captures)
-              captures_for(label, cursor, length, next_captures)
+              captures_for(label, cursor, length, next_captures, characters, flags)
               next_start = if label[0] == :match_escape && label[1].kind == :match_reset
                              cursor
                            else
@@ -129,7 +134,7 @@ module Onibi
             transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
               next_captures = captures.dup
               next_captures.merge!(inner_captures)
-              captures_for(label, cursor, length, next_captures)
+              captures_for(label, cursor, length, next_captures, characters, flags)
               next_start = if label[0] == :match_escape && label[1].kind == :match_reset
                              cursor
                            else
@@ -231,6 +236,8 @@ module Onibi
           when Onibi::AST::OptionGroup
             node_results(node.body, characters, cursor, captures,
                          flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
+          when Onibi::AST::AtomicGroup
+            node_results(node.body, characters, cursor, captures, flags).first(1)
           when Onibi::AST::Assertion
             assertion_results(node, characters, cursor, captures, flags)
           when Onibi::AST::SubexpressionCall
@@ -242,9 +249,19 @@ module Onibi
             results = node_results(body, characters, cursor, captures, flags)
             @subexpression_depth -= 1
             results
+          when Onibi::AST::Absence
+            absence_lengths(node, characters, cursor).map { |length| [length, captures] }
           else
             length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
-            length ? [[length, captures]] : []
+            return [] unless length
+
+            if node.is_a?(Onibi::AST::Escape) && node.kind == :match_reset
+              next_captures = captures.dup
+              next_captures[:__match_start] = cursor
+              return [[length, next_captures]]
+            end
+
+            [[length, captures]]
           end
         end
 
@@ -330,8 +347,8 @@ module Onibi
           when :match_escape
             case operand.kind
             when :word_boundary, :not_word_boundary
-              left = cursor.positive? && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor - 1])
-              right = cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor])
+              left = cursor.positive? && boundary_word?(characters[cursor - 1])
+              right = cursor < characters.length && boundary_word?(characters[cursor])
               boundary = left != right
               boundary = !boundary if operand.kind == :not_word_boundary
               boundary ? 0 : nil
@@ -437,7 +454,7 @@ module Onibi
           quantifier.mode == :lazy ? lengths : lengths.reverse
         end
 
-        def captures_for(label, cursor, length, captures)
+        def captures_for(label, cursor, length, captures, characters = nil, flags = {})
           opcode, operand = label
           if opcode == :match_absence
             capture_absence(operand.body, cursor, length, captures)
@@ -455,25 +472,12 @@ module Onibi
 
           captures[operand.number] = [cursor, cursor + length]
           captures[operand.name] = [cursor, cursor + length] if operand.name
-          capture_nested_groups(operand.body, cursor, captures)
-        end
+          return unless characters
 
-        def capture_nested_groups(node, cursor, captures)
-          position = cursor
-          parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
-          parts.each do |part|
-            if part.is_a?(Onibi::AST::Group)
-              value = literal_value(part.body)
-              if part.capture && value
-                captures[part.number] = [position, position + value.length]
-                captures[part.name] = [position, position + value.length] if part.name
-              end
-              capture_nested_groups(part.body, position, captures)
-            else
-              value = literal_value(part)
-            end
-            position += value.length if value
+          nested = node_results(operand.body, characters, cursor, captures, flags).find do |inner_length, _inner|
+            inner_length == length
           end
+          captures.merge!(nested[1]) if nested
         end
 
         def capture_absence(node, cursor, _length, captures)
@@ -592,6 +596,12 @@ module Onibi
           lengths
         rescue RangeError, ArgumentError
           lengths
+        end
+
+        def boundary_word?(character)
+          return Onibi::CharacterPredicates.word?(character) if character.encoding == Encoding::ASCII_8BIT
+
+          Onibi::UnicodeProperties.word?(character)
         end
 
         def assertion_length(assertion, characters, cursor, flags = {})

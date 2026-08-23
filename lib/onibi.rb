@@ -543,7 +543,7 @@ module Onibi
         Onibi::IRGen::YARVIR.generate(
           dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
                         multiline: inline_global_flag_value(:m, multiline?),
-                        subexpressions: bytecode_subexpressions }
+                        subexpressions: bytecode_subexpressions, ast: @ast }
         )
       end
     end

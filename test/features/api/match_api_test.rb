@@ -65,6 +65,19 @@ class MatchApiTest < Minitest::Test
     assert_equal "b", match["name"]
   end
 
+  def test_vm_preserves_ordered_choice_and_repeat_priority
+    assert_equal "éa", Onibi::Regexp.new("éa+|é").match("éa")[0]
+    assert_equal "aa", Onibi::Regexp.new("a?a+|a?").match("aa")[0]
+    assert_equal "a", Onibi::Regexp.new("(?<!b)a|(?<!b)").match("a")[0]
+  end
+
+  def test_vm_uses_unicode_word_boundaries
+    match = Onibi::Regexp.new(".\\b").match("aé")
+
+    assert_equal "é", match[0]
+    assert_equal 1, match.begin(0)
+  end
+
   def test_captures_and_names_come_from_vm_result
     match = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>").match("echo-echo")
 
