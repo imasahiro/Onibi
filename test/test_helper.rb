@@ -17,14 +17,4 @@ end
 require "onibi"
 require_relative "support/fixtures"
 
-# Backend dispatch guards from the former migration suite are now no-op
-# assertions because HFA is the only production matcher.
-module Onibi
-  class Regexp
-    def stub(_name, _replacement = nil)
-      yield if block_given?
-    end
-  end
-end
-
 require "minitest/autorun"

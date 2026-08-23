@@ -15,7 +15,7 @@ module Onibi
 
     def self.captureless(input, start_position, finish_position, regexp)
       match_data = allocate
-      value = input.byteslice(start_position, finish_position - start_position)
+      value = input[start_position, finish_position - start_position]
       match_data.instance_variable_set(:@values, [value].freeze)
       match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
       match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)
@@ -27,9 +27,9 @@ module Onibi
 
     def self.from_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       match_data = allocate
-      full_match = input.byteslice(start_position, finish_position - start_position)
+      full_match = input[start_position, finish_position - start_position]
       captures = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
+        offset && input[offset[0], offset[1] - offset[0]]
       end
       match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)
@@ -61,6 +61,22 @@ module Onibi
       match_data.instance_variable_set(:@names, names.freeze)
       match_data.instance_variable_set(:@string, input)
       match_data.instance_variable_set(:@regexp, regexp)
+      match_data
+    end
+
+    def self.from_raw_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
+      match_data = allocate
+      full_match = input.byteslice(start_position, finish_position - start_position)
+      captures = capture_offsets.map do |offset|
+        offset && input.byteslice(offset[0], offset[1] - offset[0])
+      end
+      match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
+      match_data.instance_variable_set(:@captures, captures.freeze)
+      match_data.instance_variable_set(:@offsets, [[start_position, finish_position], *capture_offsets].freeze)
+      match_data.instance_variable_set(:@names, names.freeze)
+      match_data.instance_variable_set(:@string, input)
+      match_data.instance_variable_set(:@regexp, regexp)
+      match_data.instance_variable_set(:@offsets_are_bytes, true)
       match_data
     end
 

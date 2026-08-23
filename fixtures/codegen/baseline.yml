@@ -2,7 +2,7 @@
 schema_version: 1
 ruby_version: "4.0.6"
 recorded_on: "2026-08-11"
-engine: "hfa"
+engine: "onibi_bytecode"
 syntax_fixture: fixtures/syntax/core.yml
 ast_nodes:
 - Absence
@@ -48,9 +48,9 @@ benchmark_method:
   iterations: 1000
   reports: compile_time, first_match, warm_match, allocations, peak_memory
 baseline_observation:
-  status: hfa_public_matcher
+  status: bytecode_executor
   notes: >-
-    These workloads document the public HFA matcher and are checked against MRI
+    These workloads document the public bytecode matcher and are checked against MRI
     by the acceptance and differential suites.
 benchmark_cases:
   literal_short:
