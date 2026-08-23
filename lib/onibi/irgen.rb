@@ -701,7 +701,13 @@ module Onibi
             next if results.empty?
 
             length, inner_captures = results.first
-            maximum = [position - cursor + length - 1, 0].max
+            quantified_length = quantified_absence_length(node.body, characters, position)
+            maximum = if quantified_length
+                        position - cursor + quantified_length
+                      else
+                        position - cursor + length - 1
+                      end
+            maximum = [maximum, 0].max
             return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
           end
           maximum = characters.length - cursor
@@ -734,8 +740,10 @@ module Onibi
             results = node_results(node.body, characters, position, {}, flags)
             next if results.empty?
 
-            length = results.first[0]
-            return [position - cursor + length - 1, 0].max
+            quantified_length = quantified_absence_length(node.body, characters, position)
+            return quantified_length + position - cursor if quantified_length
+
+            return [position - cursor + results.first[0] - 1, 0].max
           end
           characters.length - cursor
         end
@@ -755,20 +763,35 @@ module Onibi
 
           quantifier = sequence.first
           return unless quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)
-          return unless %i[+ *].include?(quantifier.kind) && quantifier.maximum.nil?
+          return unless quantifier.maximum.nil?
+          return unless %i[+ *].include?(quantifier.kind) || quantifier.minimum.to_i >= 2
 
           literal = literal_value(quantifier.expression)
-          return unless literal && !literal.empty?
-
           run = 0
           position = cursor
-          while position < characters.length && characters[position, literal.length].join == literal
-            run += literal.length
-            position += literal.length
+          if literal && !literal.empty?
+            while position < characters.length && characters[position, literal.length].join == literal
+              run += literal.length
+              position += literal.length
+            end
+          elsif quantifier.expression.is_a?(Onibi::AST::CharacterClass) ||
+                quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
+            while position < characters.length && class_match_lengths(quantifier.expression, characters, position, {}).include?(1)
+              run += 1
+              position += 1
+            end
+          else
+            return
           end
           return if run.zero?
 
-          run / 2
+          if quantifier.minimum.to_i >= 2
+            return if run < quantifier.minimum
+
+            (run + quantifier.minimum - 1) / 2
+          else
+            run / 2
+          end
         end
 
         def class_match_lengths(node, characters, cursor, flags)

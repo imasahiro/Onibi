@@ -59,4 +59,16 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "", match[0]
     assert_equal [1, 1], match.offset(0)
   end
+
+  def test_absence_operator_handles_unbounded_range_bodies
+    regexp = Onibi::Regexp.new("(?~a{2,})")
+
+    assert_equal(%w[aa aaa], %w[aaaa aaaaa].map { |input| regexp.match(input)[0] })
+  end
+
+  def test_absence_operator_handles_unbounded_class_ranges
+    regexp = Onibi::Regexp.new("(?~[ab]{2,})")
+
+    assert_equal(%w[aa ab], %w[aaaa abab].map { |input| regexp.match(input)[0] })
+  end
 end
