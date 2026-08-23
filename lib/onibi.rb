@@ -524,7 +524,6 @@ module Onibi
       when Onibi::AST::Sequence
         values = node.parts.map { |part| literal_value(part) }
         values.all? ? values.join : nil
-      when Onibi::AST::Group then literal_value(node.body)
       when Onibi::AST::OptionGroup then literal_value(node.body)
       end
     end
@@ -820,7 +819,7 @@ module Onibi
       when Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Any, Onibi::AST::Property
         true
       when Onibi::AST::Absence
-        !literal_value(node.body).nil?
+        !absence_literal_value(node.body).nil?
       when Onibi::AST::OptionGroup
         bytecode_supported_node?(node.body) && !ast_contains_node?(node.body, Onibi::AST::Backreference)
       when Onibi::AST::AtomicGroup
@@ -839,6 +838,16 @@ module Onibi
         !%i[start_match match_reset linebreak].include?(node.kind)
       else
         false
+      end
+    end
+
+    def absence_literal_value(node)
+      case node
+      when Onibi::AST::Literal then node.value
+      when Onibi::AST::Group then absence_literal_value(node.body)
+      when Onibi::AST::Sequence
+        values = node.parts.map { |part| absence_literal_value(part) }
+        values.all? ? values.join : nil
       end
     end
 

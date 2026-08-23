@@ -251,6 +251,25 @@ module Onibi
 
           captures[operand.number] = [cursor, cursor + length]
           captures[operand.name] = [cursor, cursor + length] if operand.name
+          capture_nested_groups(operand.body, cursor, captures)
+        end
+
+        def capture_nested_groups(node, cursor, captures)
+          position = cursor
+          parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
+          parts.each do |part|
+            if part.is_a?(Onibi::AST::Group)
+              value = literal_value(part.body)
+              if part.capture && value
+                captures[part.number] = [position, position + value.length]
+                captures[part.name] = [position, position + value.length] if part.name
+              end
+              capture_nested_groups(part.body, position, captures)
+            else
+              value = literal_value(part)
+            end
+            position += value.length if value
+          end
         end
 
         def capture_absence(node, cursor, _length, captures)
