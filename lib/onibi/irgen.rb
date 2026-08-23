@@ -78,7 +78,7 @@ module Onibi
         def run(input, start_position)
           return nil unless @dfa.is_a?(Onibi::Automata::DFA)
 
-          characters = input.each_char.to_a
+          characters = input.codepoints.map { |codepoint| codepoint.chr(input.encoding) }
           @characters = characters
           first = [start_position, 0].max
           first.upto(characters.length) do |start|

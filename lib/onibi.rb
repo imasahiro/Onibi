@@ -770,7 +770,7 @@ module Onibi
         offsets = Array.new(hfa_capture_count)
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
         unless @hfa_ascii_input
-          to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
+          to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
           return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
@@ -780,7 +780,7 @@ module Onibi
       end
 
       unless @hfa_ascii_input
-        to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
+        to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
         constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
         return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
                                             [], hfa_result_names, self)
@@ -880,6 +880,7 @@ module Onibi
       case node
       when Onibi::AST::Literal then true
       when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_unicode_safe_node?(part) }
+      when Onibi::AST::Quantifier then bytecode_unicode_safe_node?(node.expression)
       when Onibi::AST::Group then bytecode_unicode_safe_node?(node.body)
       when Onibi::AST::Absence then !absence_literal_value(node.body).nil?
       when Onibi::AST::Property then true
