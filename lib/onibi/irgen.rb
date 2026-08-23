@@ -147,7 +147,9 @@ module Onibi
             result = if (root = @program.flags[:semantic_root])
                        node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
                          match_start = captures.delete(:__match_start) || start
-                         [match_start, start + length, captures]
+                         match_reset = captures.delete(:__match_reset)
+                         finish = match_reset ? start + length : match_start + length
+                         [match_start, finish, captures]
                        end
                      elsif @automaton.is_a?(Onibi::Automata::DFA)
                        walk_dfa(@automaton.start_state.id, characters, start, {}, start, @program.flags)
@@ -315,6 +317,7 @@ module Onibi
             if (node.is_a?(Onibi::AST::Escape) || node.is_a?(SemanticBytecode::Escape)) && node.kind == :match_reset
               next_captures = captures.dup
               next_captures[:__match_start] = cursor
+              next_captures[:__match_reset] = true
               return [[length, next_captures]]
             end
 
@@ -743,6 +746,9 @@ module Onibi
           delimiter = literal_value(node.body)
           return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
+          zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
+          return zero_width if zero_width
+
           return [] if zero_width_star_absence?(node.body, characters, cursor)
 
           quantified = quantified_absence_length(node.body, characters, cursor)
@@ -774,6 +780,27 @@ module Onibi
           end
           maximum = characters.length - cursor
           maximum.downto(0).map { |length| [length, captures] }
+        end
+
+        def zero_width_absence_results(body, characters, cursor, captures, flags)
+          positions = []
+          has_consuming_match = false
+          cursor.upto(characters.length) do |position|
+            results = node_results(body, characters, position, captures, flags)
+            positions << position if results.any? { |length, _state| length.zero? }
+            has_consuming_match ||= results.any? { |length, _state| length.positive? }
+          end
+          return if positions.empty? || has_consuming_match
+
+          start = if positions.first == cursor
+                    [cursor + 1, characters.length].min
+                  else
+                    cursor
+                  end
+          finish = positions.find { |position| position > start } || characters.length
+          state = captures.dup
+          state[:__match_start] = start if start != cursor
+          [[finish - start, state]]
         end
 
         def zero_width_star_absence?(body, characters, cursor)

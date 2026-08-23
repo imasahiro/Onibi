@@ -60,6 +60,16 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal [1, 1], match.offset(0)
   end
 
+  def test_absence_operator_handles_zero_width_body_positions
+    ["(?~^)", "(?~\\b)", "(?~(?=a))"].each do |pattern|
+      expected = ::Regexp.new(pattern).match("ab")
+      actual = Onibi::Regexp.new(pattern).match("ab")
+
+      assert_equal expected.to_a, actual.to_a, pattern
+      assert_equal expected.offset(0), actual.offset(0), pattern
+    end
+  end
+
   def test_absence_operator_handles_unbounded_range_bodies
     regexp = Onibi::Regexp.new("(?~a{2,})")
 
