@@ -543,7 +543,8 @@ module Onibi
         Onibi::IRGen::YARVIR.generate(
           dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
                         multiline: inline_global_flag_value(:m, multiline?),
-                        subexpressions: bytecode_subexpressions, ast: @ast }
+                        subexpressions: bytecode_subexpressions,
+                        semantic_root: Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast) }
         )
       end
     end
@@ -564,7 +565,7 @@ module Onibi
     def bytecode_subexpressions
       groups = {}
       collect_bytecode_subexpressions(@ast, groups)
-      groups
+      groups.transform_values { |body| Onibi::IRGen::YARVIR::SemanticBytecode.compile(body) }
     end
 
     def collect_bytecode_subexpressions(node, groups)

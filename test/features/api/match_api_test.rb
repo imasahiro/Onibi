@@ -104,5 +104,6 @@ class MatchApiTest < Minitest::Test
 
     assert_instance_of Onibi::IRGen::YARVIR::Program, program
     assert_equal [2, 5], Onibi::IRGen::YARVIR.execute(program, "xxabbyy", 0)
+    refute_instance_of Onibi::AST::Sequence, program.flags[:semantic_root]
   end
 end

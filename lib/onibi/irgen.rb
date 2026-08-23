@@ -3,6 +3,63 @@
 module Onibi
   module IRGen
     module YARVIR
+      module SemanticBytecode
+        Literal = Struct.new(:value)
+        CharacterClass = Struct.new(:value)
+        Escape = Struct.new(:kind)
+        Property = Struct.new(:name, :negated)
+        Backreference = Struct.new(:identifier, :named)
+        Assertion = Struct.new(:body, :kind)
+        Any = Struct.new(:value)
+        Anchor = Struct.new(:kind)
+        Sequence = Struct.new(:parts)
+        Alternation = Struct.new(:branches)
+        Group = Struct.new(:body, :number, :capture, :name)
+        OptionGroup = Struct.new(:body, :ignorecase, :multiline, :extended)
+        AtomicGroup = Struct.new(:body)
+        Conditional = Struct.new(:condition, :yes_branch, :no_branch)
+        SubexpressionCall = Struct.new(:identifier, :named)
+        Absence = Struct.new(:body)
+        Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
+
+        NODE_TYPES = {
+          Onibi::AST::Literal => Literal,
+          Onibi::AST::CharacterClass => CharacterClass,
+          Onibi::AST::Escape => Escape,
+          Onibi::AST::Property => Property,
+          Onibi::AST::Backreference => Backreference,
+          Onibi::AST::Assertion => Assertion,
+          Onibi::AST::Any => Any,
+          Onibi::AST::Anchor => Anchor,
+          Onibi::AST::Sequence => Sequence,
+          Onibi::AST::Alternation => Alternation,
+          Onibi::AST::Group => Group,
+          Onibi::AST::OptionGroup => OptionGroup,
+          Onibi::AST::AtomicGroup => AtomicGroup,
+          Onibi::AST::Conditional => Conditional,
+          Onibi::AST::SubexpressionCall => SubexpressionCall,
+          Onibi::AST::Absence => Absence,
+          Onibi::AST::Quantifier => Quantifier
+        }.freeze
+
+        module_function
+
+        def compile(node)
+          type = NODE_TYPES.fetch(node.class)
+          type.new(*node.each_pair.map { |_field, value| compile_value(value) })
+        end
+
+        def compile_value(value)
+          if value.respond_to?(:each_pair)
+            compile(value)
+          elsif value.is_a?(Array)
+            value.map { |item| compile_value(item) }
+          else
+            value
+          end
+        end
+      end
+
       Instruction = Struct.new(:opcode, :operand, keyword_init: true) do
         def initialize(opcode:, operand: nil) = super.freeze
       end
@@ -87,7 +144,7 @@ module Onibi
           first = [start_position, 0].max
           @match_start = first
           first.upto(characters.length) do |start|
-            result = if (root = @program.flags[:ast])
+            result = if (root = @program.flags[:semantic_root])
                        node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
                          match_start = captures.delete(:__match_start) || start
                          [match_start, start + length, captures]
@@ -209,7 +266,7 @@ module Onibi
           return [] if @steps > 2_000_000
 
           case node
-          when Onibi::AST::Sequence
+          when Onibi::AST::Sequence, SemanticBytecode::Sequence
             states = [[0, captures]]
             node.parts.each do |part|
               states = states.flat_map do |consumed, state_captures|
@@ -220,9 +277,9 @@ module Onibi
               return [] if states.empty?
             end
             states
-          when Onibi::AST::Alternation
+          when Onibi::AST::Alternation, SemanticBytecode::Alternation
             node.branches.flat_map { |branch| node_results(branch, characters, cursor, captures, flags) }
-          when Onibi::AST::Group
+          when Onibi::AST::Group, SemanticBytecode::Group
             node_results(node.body, characters, cursor, captures, flags).map do |length, inner|
               next_captures = inner.dup
               if node.capture
@@ -231,16 +288,16 @@ module Onibi
               end
               [length, next_captures]
             end
-          when Onibi::AST::Quantifier
+          when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
             quantifier_results(node, characters, cursor, captures, flags)
-          when Onibi::AST::OptionGroup
+          when Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup
             node_results(node.body, characters, cursor, captures,
                          flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
-          when Onibi::AST::AtomicGroup
+          when Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
             node_results(node.body, characters, cursor, captures, flags).first(1)
-          when Onibi::AST::Assertion
+          when Onibi::AST::Assertion, SemanticBytecode::Assertion
             assertion_results(node, characters, cursor, captures, flags)
-          when Onibi::AST::SubexpressionCall
+          when Onibi::AST::SubexpressionCall, SemanticBytecode::SubexpressionCall
             body = @subexpressions[node.identifier]
             return [] unless body
             return [] if (@subexpression_depth ||= 0) > 32
@@ -249,13 +306,13 @@ module Onibi
             results = node_results(body, characters, cursor, captures, flags)
             @subexpression_depth -= 1
             results
-          when Onibi::AST::Absence
+          when Onibi::AST::Absence, SemanticBytecode::Absence
             absence_lengths(node, characters, cursor).map { |length| [length, captures] }
           else
             length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
             return [] unless length
 
-            if node.is_a?(Onibi::AST::Escape) && node.kind == :match_reset
+            if (node.is_a?(Onibi::AST::Escape) || node.is_a?(SemanticBytecode::Escape)) && node.kind == :match_reset
               next_captures = captures.dup
               next_captures[:__match_start] = cursor
               return [[length, next_captures]]
@@ -391,7 +448,7 @@ module Onibi
         end
 
         def quantifier_length(quantifier, characters, cursor, flags = {})
-          if quantifier.expression.is_a?(Onibi::AST::Group)
+          if quantifier.expression.is_a?(Onibi::AST::Group) || quantifier.expression.is_a?(SemanticBytecode::Group)
             count = 0
             consumed = 0
             limit = quantifier.maximum || characters.length
@@ -419,7 +476,7 @@ module Onibi
         end
 
         def quantifier_lengths(quantifier, characters, cursor)
-          if quantifier.expression.is_a?(Onibi::AST::Group)
+          if quantifier.expression.is_a?(Onibi::AST::Group) || quantifier.expression.is_a?(SemanticBytecode::Group)
             unit = sequence_length(quantifier.expression.body, characters, cursor)
             return [] unless unit&.positive?
 
@@ -460,7 +517,8 @@ module Onibi
             capture_absence(operand.body, cursor, length, captures)
             return
           end
-          if opcode == :match_quantifier && operand.expression.is_a?(Onibi::AST::Group)
+          if opcode == :match_quantifier &&
+             (operand.expression.is_a?(Onibi::AST::Group) || operand.expression.is_a?(SemanticBytecode::Group))
             group = operand.expression
             return unless group.capture && length.positive?
 
@@ -481,9 +539,11 @@ module Onibi
         end
 
         def capture_absence(node, cursor, _length, captures)
-          return unless node.is_a?(Onibi::AST::Sequence)
+          return unless node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
 
-          group = node.parts.find { |part| part.is_a?(Onibi::AST::Group) && part.capture }
+          group = node.parts.find do |part|
+            (part.is_a?(Onibi::AST::Group) || part.is_a?(SemanticBytecode::Group)) && part.capture
+          end
           return unless group
 
           value = literal_value(group.body)
@@ -518,23 +578,33 @@ module Onibi
 
         def atom_matches?(expression, character, flags = {})
           case expression
-          when Onibi::AST::Literal
+          when Onibi::AST::Literal, SemanticBytecode::Literal
             flags[:ignorecase] ? expression.value.casecmp?(character) : expression.value == character
-          when Onibi::AST::CharacterClass then Onibi::ClassPredicates.matches?(expression.value, character)
-          when Onibi::AST::Escape then Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
-          when Onibi::AST::Property then Onibi::UnicodeProperties.matches?(expression.name, character)
-          when Onibi::AST::Any then flags[:multiline] || expression.value != "." || character != "\n"
+          when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass
+            Onibi::ClassPredicates.matches?(expression.value, character)
+          when Onibi::AST::Escape, SemanticBytecode::Escape
+            Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
+          when Onibi::AST::Property, SemanticBytecode::Property
+            Onibi::UnicodeProperties.matches?(expression.name, character)
+          when Onibi::AST::Any, SemanticBytecode::Any
+            flags[:multiline] || expression.value != "." || character != "\n"
           else false
           end
         end
 
         def sequence_length(node, characters, cursor, flags = {})
-          parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
+          parts = if node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+                    node.parts
+                  else
+                    [node]
+                  end
           position = cursor
           parts.each do |part|
             length = case part
-                     when Onibi::AST::Quantifier then quantifier_length(part, characters, position, flags)
-                     when Onibi::AST::Group then sequence_length(part.body, characters, position, flags)
+                     when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+                       quantifier_length(part, characters, position, flags)
+                     when Onibi::AST::Group, SemanticBytecode::Group
+                       sequence_length(part.body, characters, position, flags)
                      else transition_length([operation_for(part), part], characters, position, flags)
                      end
             return nil unless length
@@ -551,16 +621,16 @@ module Onibi
 
         def operation_for(node)
           case node
-          when Onibi::AST::Literal then :match_literal
-          when Onibi::AST::CharacterClass then :match_class
-          when Onibi::AST::Any then :match_any
-          when Onibi::AST::Escape then :match_escape
-          when Onibi::AST::Property then :match_property
-          when Onibi::AST::Backreference then :match_backreference
-          when Onibi::AST::Conditional then :match_conditional
-          when Onibi::AST::Absence then :match_absence
-          when Onibi::AST::Assertion then :match_assertion
-          when Onibi::AST::Anchor then :test_anchor
+          when Onibi::AST::Literal, SemanticBytecode::Literal then :match_literal
+          when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass then :match_class
+          when Onibi::AST::Any, SemanticBytecode::Any then :match_any
+          when Onibi::AST::Escape, SemanticBytecode::Escape then :match_escape
+          when Onibi::AST::Property, SemanticBytecode::Property then :match_property
+          when Onibi::AST::Backreference, SemanticBytecode::Backreference then :match_backreference
+          when Onibi::AST::Conditional, SemanticBytecode::Conditional then :match_conditional
+          when Onibi::AST::Absence, SemanticBytecode::Absence then :match_absence
+          when Onibi::AST::Assertion, SemanticBytecode::Assertion then :match_assertion
+          when Onibi::AST::Anchor, SemanticBytecode::Anchor then :test_anchor
           end
         end
 
@@ -656,9 +726,9 @@ module Onibi
 
         def literal_value(node)
           case node
-          when Onibi::AST::Literal then node.value
-          when Onibi::AST::Group then literal_value(node.body)
-          when Onibi::AST::Sequence
+          when Onibi::AST::Literal, SemanticBytecode::Literal then node.value
+          when Onibi::AST::Group, SemanticBytecode::Group then literal_value(node.body)
+          when Onibi::AST::Sequence, SemanticBytecode::Sequence
             node.parts.map { |part| literal_value(part) }.then { |values| values.all? ? values.join : nil }
           end
         end
