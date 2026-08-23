@@ -7,9 +7,9 @@ module Onibi
         def initialize(opcode:, operand: nil) = super.freeze
       end
 
-      Program = Struct.new(:instructions, :entry, :automaton, keyword_init: true) do
-        def initialize(instructions:, entry: 0, automaton: nil)
-          super(instructions: instructions.freeze, entry: entry, automaton: automaton)
+      Program = Struct.new(:instructions, :entry, :automaton, :flags, keyword_init: true) do
+        def initialize(instructions:, entry: 0, automaton: nil, flags: {})
+          super(instructions: instructions.freeze, entry: entry, automaton: automaton, flags: flags.freeze)
           freeze
         end
 
@@ -21,14 +21,14 @@ module Onibi
 
       module_function
 
-      def generate(automaton, mode: nil)
+      def generate(automaton, mode: nil, flags: {})
         mode ||= automaton.is_a?(Onibi::Automata::DFA) ? :dfa : :nfa
-        return generate_nfa(automaton) if mode == :nfa
+        return generate_nfa(automaton, flags: flags) if mode == :nfa
 
-        generate_dfa(automaton)
+        generate_dfa(automaton, flags: flags)
       end
 
-      def generate_dfa(dfa)
+      def generate_dfa(dfa, flags: {})
         instructions = [Instruction.new(opcode: :start, operand: dfa.start_state.id)]
         dfa.states.each do |state|
           dfa.transitions.each do |(source, label), target|
@@ -39,10 +39,10 @@ module Onibi
           end
           instructions << Instruction.new(opcode: :accept, operand: state.id) if state.accepting
         end
-        Program.new(instructions: instructions, automaton: dfa)
+        Program.new(instructions: instructions, automaton: dfa, flags: flags)
       end
 
-      def generate_nfa(tnfa)
+      def generate_nfa(tnfa, flags: {})
         instructions = [Instruction.new(opcode: :nfa_start, operand: tnfa.start_positions)]
         tnfa.transitions.each do |transition|
           instructions << Instruction.new(
@@ -51,7 +51,7 @@ module Onibi
           )
         end
         instructions << Instruction.new(opcode: :nfa_accept, operand: tnfa.accept_positions)
-        Program.new(instructions: instructions, automaton: tnfa)
+        Program.new(instructions: instructions, automaton: tnfa, flags: flags)
       end
 
       def generate_iseq(dfa)
@@ -82,17 +82,17 @@ module Onibi
           @characters = characters
           first = [start_position, 0].max
           first.upto(characters.length) do |start|
-            result = walk(@dfa.start_state.id, characters, start, {}, start)
+            result = walk(@dfa.start_state.id, characters, start, {}, start, @program.flags)
             return result if result
           end
           nil
         end
 
-        def walk(state, characters, cursor, captures, start)
+        def walk(state, characters, cursor, captures, start, flags)
           return [start, cursor, captures] if accepting?(state)
 
           transitions_for(state).each do |label, target|
-            transition_results(label, characters, cursor, captures).each do |length, inner_captures|
+            transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
               next_captures = captures.dup
               next_captures.merge!(inner_captures)
               captures_for(label, cursor, length, next_captures)
@@ -101,39 +101,39 @@ module Onibi
                            else
                              start
                            end
-              result = walk(target, characters, cursor + length, next_captures, next_start)
+              result = walk(target, characters, cursor + length, next_captures, next_start, flags)
               return result if result
             end
           end
           nil
         end
 
-        def transition_results(label, characters, cursor, captures)
+        def transition_results(label, characters, cursor, captures, flags = {})
           opcode, operand = label
           case opcode
           when :match_group
-            node_results(operand.body, characters, cursor, captures)
+            node_results(operand.body, characters, cursor, captures, flags)
           when :match_atomic_group
-            node_results(operand.body, characters, cursor, captures).first(1)
+            node_results(operand.body, characters, cursor, captures, flags).first(1)
           when :match_option_group
             node_results(operand.body, characters, cursor, captures,
-                         ignorecase: operand.ignorecase, multiline: operand.multiline)
+                         flags.merge(ignorecase: operand.ignorecase, multiline: operand.multiline))
           when :match_quantifier
-            quantifier_results(operand, characters, cursor, captures)
+            quantifier_results(operand, characters, cursor, captures, flags)
           when :match_assertion
-            assertion_results(operand, characters, cursor, captures)
+            assertion_results(operand, characters, cursor, captures, flags)
           else
-            transition_lengths(label, characters, cursor, captures).map { |length| [length, {}] }
+            transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
           end
         end
 
-        def assertion_results(assertion, characters, cursor, captures)
+        def assertion_results(assertion, characters, cursor, captures, flags = {})
           if %i[positive positive_lookahead].include?(assertion.kind)
-            return node_results(assertion.body, characters, cursor, captures).first(1).map { |_length, inner| [0, inner] }
+            return node_results(assertion.body, characters, cursor, captures, flags).first(1).map { |_length, inner| [0, inner] }
           end
 
           if %i[negative negative_lookahead].include?(assertion.kind)
-            matched = node_results(assertion.body, characters, cursor, captures).any?
+            matched = node_results(assertion.body, characters, cursor, captures, flags).any?
             return matched ? [] : [[0, captures]]
           end
 
@@ -205,11 +205,11 @@ module Onibi
           quantifier.mode == :lazy ? accepted.sort_by(&:first) : accepted.sort_by(&:first).reverse
         end
 
-        def transition_lengths(label, characters, cursor, captures)
+        def transition_lengths(label, characters, cursor, captures, flags = {})
           opcode, operand = label
           return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
 
-          length = transition_length(label, characters, cursor, {}, captures)
+          length = transition_length(label, characters, cursor, flags, captures)
           length ? [length] : []
         end
 

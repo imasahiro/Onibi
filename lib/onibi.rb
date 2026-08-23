@@ -795,7 +795,7 @@ module Onibi
                      (source.ascii_only? || bytecode_unicode_absence_only?) &&
                      bytecode_unicode_safe_node?(@ast)
       ascii_safe = @hfa_ascii_input && source.ascii_only?
-      return false unless (ascii_safe || unicode_safe) && !casefold? && !multiline? &&
+      return false unless (ascii_safe || unicode_safe) &&
                           bytecode_supported_node?(@ast)
       return false if source.include?("(?-") ||
                       (source.start_with?("(?i") && !source.start_with?("(?i:")) ||
@@ -819,7 +819,7 @@ module Onibi
         compiled = Onibi::Compiler.compile(parsed)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
-        Onibi::IRGen::YARVIR.generate(dfa)
+        Onibi::IRGen::YARVIR.generate(dfa, flags: { ignorecase: casefold?, multiline: multiline? })
       end
     end
 
@@ -848,7 +848,7 @@ module Onibi
       when Onibi::AST::Assertion
         bytecode_supported_node?(node.body)
       when Onibi::AST::Anchor
-        !multiline?
+        true
       when Onibi::AST::Escape
         node.kind != :start_match
       else
