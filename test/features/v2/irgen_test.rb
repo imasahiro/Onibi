@@ -180,6 +180,19 @@ class V2IRGenTest < Minitest::Test
     assert_nil Onibi::IRGen::YARVIR.execute(program, "xxdogyy", 0)
   end
 
+  def test_public_vm_passes_compiled_execution_facts_without_ast_lookup
+    literal = Onibi::Regexp.new("abc")
+    nullable = Onibi::Regexp.new("a*")
+
+    literal_flags = literal.send(:bytecode_program).flags
+    nullable_flags = nullable.send(:bytecode_program).flags
+
+    assert_equal true, literal_flags[:literal_only]
+    assert_equal false, literal_flags[:nullable]
+    assert_equal true, nullable_flags[:nullable]
+    assert_equal Onibi::IRGen::YARVIR::Executor, Onibi::Interpreter::Executor
+  end
+
   def test_dedicated_executor_consumes_a_quantifier_run
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a+")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))

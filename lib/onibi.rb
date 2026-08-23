@@ -264,6 +264,8 @@ module Onibi
     def match(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
+      program = bytecode_program
+
       ascii_input = input.ascii_only?
       @ascii_input = ascii_input
       @input_encoding = input.encoding
@@ -272,16 +274,16 @@ module Onibi
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
       end
 
-      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
+      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
 
-      start = if bytecode_nullable?
+      start = if program.flags[:nullable]
                 nullable_match_position(position, input.length)
               else
                 start_position(position, input.length)
               end
       return nil unless start
 
-      bytecode_match(input, start)
+      bytecode_match(input, start, program)
     end
 
     def scan(input, &block)
@@ -432,7 +434,7 @@ module Onibi
     end
 
     def bytecode_nullable?
-      @bytecode_nullable ||= minimum_match_width(@ast).zero?
+      bytecode_program.flags[:nullable]
     end
 
     def minimum_match_width(node)
@@ -475,8 +477,7 @@ module Onibi
       Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
     end
 
-    def bytecode_match(input, start)
-      program = bytecode_program
+    def bytecode_match(input, start, program = bytecode_program)
       result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start)
       return nil unless result
 
@@ -492,7 +493,7 @@ module Onibi
         end
         unless @ascii_input
           return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
-          if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !program.flags[:unicode_capture_byte_offsets]
+          if @input_encoding == Encoding::UTF_8 && !program.flags[:linebreak_escape] && !program.flags[:unicode_capture_byte_offsets]
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
@@ -549,6 +550,9 @@ module Onibi
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,
                         unicode_capture_byte_offsets: bytecode_unicode_capture_byte_offsets?,
+                        linebreak_escape: source.include?("\\R"),
+                        nullable: minimum_match_width(@ast).zero?,
+                        literal_only: !literal_value(@ast).nil?,
                         semantic_root: Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast) }
         )
       end
