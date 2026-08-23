@@ -33,7 +33,7 @@ class AbsenceOperatorTest < Minitest::Test
   def test_absence_operator_preserves_captures_from_a_failed_suffix
     pattern = "(?~(?:(a|b)a))"
 
-    %w[a ab b].each do |input|
+    %w[a ab b abc].each do |input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)
       assert_equal expected.to_a, actual.to_a, input
@@ -89,6 +89,15 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal expected.to_a, actual.to_a
     assert_equal expected.offset(0), actual.offset(0)
     assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_absence_operator_clears_empty_capture_at_input_end
+    pattern = "(?~(?:(?!a)(a?)))"
+    expected = ::Regexp.new(pattern).match("a")
+    actual = Onibi::Regexp.new(pattern).match("a")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(0), actual.offset(0)
   end
 
   def test_absence_operator_retries_after_a_nested_zero_width_body

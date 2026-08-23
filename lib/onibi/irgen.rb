@@ -865,7 +865,7 @@ module Onibi
             results = node_results(node.body, characters, position, captures, flags)
             if results.empty?
               candidate = sequence_failure_state(node.body, characters, position, captures, flags)
-              failure_state = candidate if candidate&.keys&.any? { |key| key.is_a?(Integer) }
+              failure_state = candidate.first if candidate && candidate.last == characters.length && candidate.first.keys.any? { |key| key.is_a?(Integer) }
               next
             end
 
@@ -951,7 +951,7 @@ module Onibi
                 [consumed + length, inner]
               end
             end
-            return states.max_by(&:first)&.last if next_states.empty?
+            return states.max_by(&:first)&.then { |consumed, state| [state, cursor + consumed] } if next_states.empty?
 
             states = next_states
           end
@@ -992,6 +992,11 @@ module Onibi
           state = (position_states[start] || position_states[finish] || captures).dup
           state = captures.dup unless contains_assertion?(body)
           state = captures.dup if state.keys.count { |key| key.is_a?(Integer) } > 1
+          if finish == characters.length
+            state.delete_if do |key, value|
+              key.is_a?(Integer) && value.is_a?(Array) && value[0] == value[1]
+            end
+          end
           state = filter_nested_absence_captures(body, state)
           state = filter_absence_capture_scope(body, state)
           if start != cursor
