@@ -785,6 +785,14 @@ module Onibi
           end
           return if run.zero?
 
+          if literal && literal.length > 1
+            units = run / literal.length
+            return if units < quantifier.minimum
+            return units + (units.even? ? 1 : 2) if quantifier.minimum.to_i >= 2
+
+            return units.even? ? units + 1 : units
+          end
+
           if quantifier.minimum.to_i >= 2
             return if run < quantifier.minimum
 
