@@ -846,6 +846,9 @@ module Onibi
 
           return [] if zero_width_star_absence?(node.body, characters, cursor)
 
+          quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures)
+          return quantified_suffix if quantified_suffix
+
           quantified = quantified_absence_length(node.body, characters, cursor)
           if quantified
             body_results = node_results(node.body, characters, cursor, captures, flags)
@@ -933,6 +936,61 @@ module Onibi
           end
           maximum = characters.length - cursor
           maximum.downto(0).map { |length| [length, captures] }
+        end
+
+        def quantified_suffix_absence_results(body, characters, cursor, captures)
+          parts = absence_sequence_parts(body)
+          quantifier = parts.first
+          return unless parts.length > 1 &&
+                        (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+          return unless quantifier.kind == :* && quantifier.maximum.nil? && !contains_absence_node?(body)
+
+          maximum = quantified_absence_length(quantifier, characters, cursor)
+          return unless maximum&.positive?
+
+          results = node_results(body, characters, cursor, captures, {})
+          target = results.find { |length, _state| length == maximum + 1 }
+          return unless target
+
+          state = target.last.dup
+          state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+          [[maximum, state]]
+        end
+
+        def contains_absence_node?(node)
+          case node
+          when Onibi::AST::Absence, SemanticBytecode::Absence
+            true
+          when Onibi::AST::Sequence, SemanticBytecode::Sequence
+            node.parts.any? { |part| contains_absence_node?(part) }
+          when Onibi::AST::Alternation, SemanticBytecode::Alternation
+            node.branches.any? { |branch| contains_absence_node?(branch) }
+          when Onibi::AST::Group, SemanticBytecode::Group,
+               Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
+               Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+               Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+            child = node.respond_to?(:body) ? node.body : node.expression
+            contains_absence_node?(child)
+          else
+            false
+          end
+        end
+
+        def absence_sequence_parts(node)
+          loop do
+            if (node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)) && !node.capture
+              node = node.body
+            elsif node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+              only = node.parts.one? && node.parts.first
+              if only && (only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)) && !only.capture
+                node = only.body
+                next
+              end
+              return node.parts
+            else
+              return [node]
+            end
+          end
         end
 
         def sequence_failure_state(body, characters, cursor, captures, flags)
