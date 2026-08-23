@@ -15,7 +15,7 @@ module Onibi
 
     def self.captureless(input, start_position, finish_position, regexp)
       match_data = allocate
-      value = input.byteslice(start_position, finish_position - start_position)
+      value = input[start_position, finish_position - start_position]
       match_data.instance_variable_set(:@values, [value].freeze)
       match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
       match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)

@@ -147,6 +147,10 @@ module Onibi
         return match_capture_variant(input, start_position(position), spec)
       end
 
+      if (special = special_literal_match(input, start_position(position)))
+        return special
+      end
+
       if (simple = simple_runtime_match(input, start_position(position)))
         return simple
       end
@@ -333,6 +337,8 @@ module Onibi
       end
 
       part = parts.first
+      return nil unless simple_runtime_part?(part)
+
       if part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
         run = find_atom_run(input, start, part, 1, 1, :greedy)
         return captureless_result(input, run) if run
@@ -360,6 +366,9 @@ module Onibi
     end
 
     def simple_runtime_part?(part)
+      return false if part.is_a?(Onibi::AST::Escape) &&
+                      %i[word_boundary not_word_boundary start_match].include?(part.kind)
+
       return true if part.is_a?(Onibi::AST::Literal) || part.is_a?(Onibi::AST::CharacterClass) ||
                      part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
 
@@ -408,6 +417,68 @@ module Onibi
 
     def captureless_result(input, range)
       Onibi::MatchData.captureless(input, range[0], range[1], self)
+    end
+
+    def special_literal_match(input, start)
+      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
+      allowed = parts&.all? do |part|
+        part.is_a?(Onibi::AST::Literal) || part.is_a?(Onibi::AST::Anchor) || part.is_a?(Onibi::AST::Assertion) ||
+          (part.is_a?(Onibi::AST::Escape) && %i[word_boundary not_word_boundary start_match].include?(part.kind))
+      end
+      return nil unless allowed && parts.any? do |part|
+        part.is_a?(Onibi::AST::Anchor) || part.is_a?(Onibi::AST::Assertion) ||
+        part.is_a?(Onibi::AST::Escape)
+      end
+      return nil if parts.each_with_index.any? do |part, index|
+        (part.is_a?(Onibi::AST::Anchor) && %i[anchor_start anchor_absolute_start].include?(part.kind) && index != 0) ||
+        (part.is_a?(Onibi::AST::Anchor) && %i[anchor_end anchor_absolute_end anchor_before_final_newline].include?(part.kind) && index != parts.length - 1)
+      end
+
+      literal = parts.filter_map { |part| part.value if part.is_a?(Onibi::AST::Literal) }.join
+      return nil if literal.empty?
+
+      characters = input.each_char.to_a
+      searchable = characters.join
+      input.each_char.with_index do |_character, index|
+        next if index < start
+        next unless searchable.index(literal, index) == index
+        next unless special_position_valid?(parts, input, index, literal.length, start)
+
+        return captureless_result(input, [index, index + literal.length])
+      end
+      nil
+    end
+
+    def special_position_valid?(parts, input, index, length, start)
+      parts.each do |part|
+        case part
+        when Onibi::AST::Anchor
+          return false if %i[anchor_start anchor_absolute_start].include?(part.kind) && index != 0
+
+          if part.kind == :anchor_before_final_newline
+            at_end = index + length == input.length
+            at_newline_end = input[index + length] == "\n" && index + length + 1 == input.length
+            return false unless at_end || at_newline_end
+          elsif %i[anchor_end anchor_absolute_end].include?(part.kind)
+            return false unless index + length == input.length
+          end
+        when Onibi::AST::Escape
+          return false if part.kind == :start_match && index != start
+
+          if %i[word_boundary not_word_boundary].include?(part.kind)
+            boundary = Onibi::CharacterPredicates.word_boundary?(input.each_char.to_a, index)
+            return false unless part.kind == :word_boundary ? boundary : !boundary
+          end
+        when Onibi::AST::Assertion
+          guard = literal_value(part.body)
+          return false unless guard
+
+          matched = input[index + length, guard.length] == guard
+          return false if part.kind == :positive && !matched
+          return false if part.kind == :negative && matched
+        end
+      end
+      true
     end
 
     def walk_ast(node, &block)
