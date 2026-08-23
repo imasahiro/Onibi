@@ -319,17 +319,6 @@ module Onibi
       raise TypeError, "no implicit conversion of nil into String" if !block_given? && replacement.nil?
       raise TypeError, "no implicit conversion of #{replacement.class} into String" unless block_given? || replacement.is_a?(String)
 
-      if source.empty?
-        output = String.new(encoding: input.encoding)
-        input.each_char.with_index do |character, index|
-          output << (block_given? ? yield("").to_s : replacement)
-          output << character
-          break if index == input.length - 1
-        end
-        output << (block_given? ? yield("").to_s : replacement)
-        return output
-      end
-
       output = String.new(encoding: input.encoding)
       cursor = 0
       while (matched = internal_match(input, cursor))
@@ -338,7 +327,12 @@ module Onibi
         output << input[cursor...start]
         value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
         output << value.to_s
-        cursor = finish > cursor ? finish : cursor + 1
+        if finish == start
+          output << input[cursor] if cursor < input.length
+          cursor += 1
+        else
+          cursor = finish
+        end
         break if cursor > input.length
       end
       output << input[cursor..] if cursor <= input.length
