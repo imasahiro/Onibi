@@ -46,4 +46,10 @@ module Onibi
   end
 end
 
-require_relative "onibi/v2"
+require_relative "onibi/parser_core"
+require_relative "onibi/parser"
+require_relative "onibi/cfg"
+require_relative "onibi/optimization"
+require_relative "onibi/compiler"
+require_relative "onibi/automata"
+require_relative "onibi/irgen"

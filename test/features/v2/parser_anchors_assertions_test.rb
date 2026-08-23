@@ -12,7 +12,7 @@ class V2ParserAnchorsAssertionsTest < Minitest::Test
                                           Onibi::AST::Anchor.new(:anchor_before_final_newline)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("^\\A$\\z\\Z").ast
+    assert_equal expected, Onibi::Parser.parse("^\\A$\\z\\Z").ast
   end
 
   def test_lookaround_nodes_have_exact_body_and_kind
@@ -23,7 +23,7 @@ class V2ParserAnchorsAssertionsTest < Minitest::Test
                                           assertion(:negative_lookbehind, "d")
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("(?=a)(?!b)(?<=c)(?<!d)").ast
+    assert_equal expected, Onibi::Parser.parse("(?=a)(?!b)(?<=c)(?<!d)").ast
   end
 
   private

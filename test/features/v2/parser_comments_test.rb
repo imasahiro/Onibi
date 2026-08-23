@@ -10,6 +10,6 @@ class V2ParserCommentsTest < Minitest::Test
                                           Onibi::AST::Literal.new("t")
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("(?# greeting)cat").ast
+    assert_equal expected, Onibi::Parser.parse("(?# greeting)cat").ast
   end
 end

@@ -13,24 +13,24 @@ class V2IRGenTest < Minitest::Test
   def test_nfa_and_dfa_modes_generate_different_code_for_a_literal
     literal = Onibi::AST::Literal.new("a")
     tnfa = tnfa_for(literal)
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
 
     assert_equal [
       [:nfa_start, [0]],
       [:nfa_match, [:start, 0, [:match_literal, literal]]],
       [:nfa_accept, [0]]
-    ], instruction_signature(Onibi::V2::IRGen::YARVIR.generate(tnfa, mode: :nfa))
+    ], instruction_signature(Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa))
     assert_equal [
       [:start, 0], [:match, [:match_literal, literal]], [:jump, 1], [:accept, 1]
-    ], instruction_signature(Onibi::V2::IRGen::YARVIR.generate(dfa, mode: :dfa))
+    ], instruction_signature(Onibi::IRGen::YARVIR.generate(dfa, mode: :dfa))
   end
 
   def test_nfa_mode_keeps_choice_edges_while_dfa_mode_merges_them_into_states
     ast = Onibi::AST::Alternation.new([sequence("a"), sequence("b")])
     tnfa = tnfa_for(ast)
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
-    nfa_instructions = instruction_signature(Onibi::V2::IRGen::YARVIR.generate(tnfa, mode: :nfa))
-    dfa_instructions = instruction_signature(Onibi::V2::IRGen::YARVIR.generate(dfa, mode: :dfa))
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+    nfa_instructions = instruction_signature(Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa))
+    dfa_instructions = instruction_signature(Onibi::IRGen::YARVIR.generate(dfa, mode: :dfa))
 
     assert_equal :nfa_start, nfa_instructions.first.first
     assert_equal [0, 1], nfa_instructions.first.last
@@ -137,17 +137,17 @@ class V2IRGenTest < Minitest::Test
   end
 
   def test_partial_dfa_generates_only_available_states
-    partial = Onibi::V2::Automata::PartialDFA.from_tnfa(tnfa_for(sequence("a", "b")), state_limit: 2)
+    partial = Onibi::Automata::PartialDFA.from_tnfa(tnfa_for(sequence("a", "b")), state_limit: 2)
     assert_equal [
       [:start, 0], [:match, [:match_literal, Onibi::AST::Literal.new("a")]], [:jump, 1]
-    ], instruction_signature(Onibi::V2::IRGen::YARVIR.generate_iseq(partial))
+    ], instruction_signature(Onibi::IRGen::YARVIR.generate_iseq(partial))
   end
 
   def test_dfa_lowers_to_dedicated_onibi_bytecode
-    cfg = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a")).graph
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(Onibi::V2::Automata::GlushkovTNFA.from_cfg(cfg))
-    program = Onibi::V2::IRGen::YARVIR.generate(dfa)
-    assert_instance_of Onibi::V2::IRGen::YARVIR::Program, program
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+    assert_instance_of Onibi::IRGen::YARVIR::Program, program
     assert_same program, program.iseq
     assert_equal :start, program.instructions.first.opcode
     assert_equal :accept, program.instructions.last.opcode
@@ -156,16 +156,16 @@ class V2IRGenTest < Minitest::Test
   end
 
   def test_ir_contains_state_id_jump_for_each_dfa_edge
-    cfg = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a.")).graph
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(Onibi::V2::Automata::GlushkovTNFA.from_cfg(cfg))
-    jumps = Onibi::V2::IRGen::YARVIR.generate(dfa).instructions.select { |instruction| instruction.opcode == :jump }
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    jumps = Onibi::IRGen::YARVIR.generate(dfa).instructions.select { |instruction| instruction.opcode == :jump }
     assert_equal [1, 2], jumps.map(&:operand)
   end
 
   def test_iseq_matches_the_complete_expected_instruction_stream
-    cfg = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a.")).graph
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(Onibi::V2::Automata::GlushkovTNFA.from_cfg(cfg))
-    program = Onibi::V2::IRGen::YARVIR.generate(dfa)
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
     expected = [
       [:start, 0], [:match, [:match_literal, Onibi::AST::Literal.new("a")]], [:jump, 1],
       [:match, [:match_any, Onibi::AST::Any.new(".")]], [:jump, 2], [:accept, 2]
@@ -176,13 +176,13 @@ class V2IRGenTest < Minitest::Test
   private
 
   def program_for(node)
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa_for(node))
-    Onibi::V2::IRGen::YARVIR.generate(dfa)
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa_for(node))
+    Onibi::IRGen::YARVIR.generate(dfa)
   end
 
   def tnfa_for(node)
-    compiled = Onibi::V2::Compiler.compile(node, passes: [:pure_failure_memoization])
-    Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(node, passes: [:pure_failure_memoization])
+    Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
   end
 
   def sequence(*values)

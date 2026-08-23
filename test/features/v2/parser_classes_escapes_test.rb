@@ -10,7 +10,7 @@ class V2ParserClassesEscapesTest < Minitest::Test
                                           Onibi::AST::CharacterClass.new("[:digit:]")
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("[a-z][^0-9][[:digit:]]").ast
+    assert_equal expected, Onibi::Parser.parse("[a-z][^0-9][[:digit:]]").ast
   end
 
   def test_escape_nodes_have_exact_kinds
@@ -21,7 +21,7 @@ class V2ParserClassesEscapesTest < Minitest::Test
                                           Onibi::AST::Escape.new(:word_boundary)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("\\d\\D\\R\\b").ast
+    assert_equal expected, Onibi::Parser.parse("\\d\\D\\R\\b").ast
   end
 
   def test_boundary_and_match_position_escapes_have_exact_kinds
@@ -31,7 +31,7 @@ class V2ParserClassesEscapesTest < Minitest::Test
                                           Onibi::AST::Escape.new(:match_reset)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("\\B\\G\\K").ast
+    assert_equal expected, Onibi::Parser.parse("\\B\\G\\K").ast
   end
 
   def test_property_and_encoded_escape_nodes_have_exact_values
@@ -42,6 +42,6 @@ class V2ParserClassesEscapesTest < Minitest::Test
                                           Onibi::AST::Literal.new("A")
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("\\p{Alpha}\\u0041\\x41\\101").ast
+    assert_equal expected, Onibi::Parser.parse("\\p{Alpha}\\u0041\\x41\\101").ast
   end
 end

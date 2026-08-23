@@ -15,7 +15,7 @@ class V2ParserBackreferencesConditionalsTest < Minitest::Test
                                           Onibi::AST::Backreference.new("word", true)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("(a)\\1(?<word>b)\\k<word>").ast
+    assert_equal expected, Onibi::Parser.parse("(a)\\1(?<word>b)\\k<word>").ast
   end
 
   def test_conditionals_have_exact_condition_and_branches
@@ -30,7 +30,7 @@ class V2ParserBackreferencesConditionalsTest < Minitest::Test
                                           condition
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("(?<letter>a)(?(<letter>)b|c)").ast
+    assert_equal expected, Onibi::Parser.parse("(?<letter>a)(?(<letter>)b|c)").ast
   end
 
   def test_subexpression_calls_have_exact_identifier_kind
@@ -39,6 +39,6 @@ class V2ParserBackreferencesConditionalsTest < Minitest::Test
                                           Onibi::AST::SubexpressionCall.new("letter", true)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("\\g1\\g<letter>").ast
+    assert_equal expected, Onibi::Parser.parse("\\g1\\g<letter>").ast
   end
 end

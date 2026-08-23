@@ -10,7 +10,7 @@ class V2ParserAdvancedGroupsTest < Minitest::Test
                                        ])
 
     assert_equal Onibi::AST::Sequence.new([Onibi::AST::AtomicGroup.new(body)]),
-                 Onibi::V2::Parser.parse("(?>a|ab)").ast
+                 Onibi::Parser.parse("(?>a|ab)").ast
   end
 
   def test_absence_group_has_exact_nested_body
@@ -21,13 +21,13 @@ class V2ParserAdvancedGroupsTest < Minitest::Test
                                     ])
 
     assert_equal Onibi::AST::Sequence.new([Onibi::AST::Absence.new(body)]),
-                 Onibi::V2::Parser.parse("(?~(a))").ast
+                 Onibi::Parser.parse("(?~(a))").ast
   end
 
   def test_scoped_option_group_has_exact_flags
     body = Onibi::AST::Sequence.new(%w[c a t].map { |value| Onibi::AST::Literal.new(value) })
     expected = Onibi::AST::Sequence.new([Onibi::AST::OptionGroup.new(body, true, nil, nil)])
 
-    assert_equal expected, Onibi::V2::Parser.parse("(?i:cat)").ast
+    assert_equal expected, Onibi::Parser.parse("(?i:cat)").ast
   end
 end

@@ -24,7 +24,7 @@ class V2ParserCorpusTest < Minitest::Test
     valid_cases = cases.reject { |fixture| fixture.fetch("outcome") == "error" }
 
     valid_cases.each do |fixture|
-      result = Onibi::V2::Parser.parse(fixture.fetch("pattern"), options: fixture.fetch("options"))
+      result = Onibi::Parser.parse(fixture.fetch("pattern"), options: fixture.fetch("options"))
 
       assert_instance_of Onibi::AST::Sequence, result.ast, fixture.fetch("name") unless result.ast.is_a?(Onibi::AST::Alternation)
       assert_ast_node(result.ast, fixture.fetch("name"))
@@ -40,7 +40,7 @@ class V2ParserCorpusTest < Minitest::Test
     patterns.concat(V1_PATTERNS)
 
     patterns.uniq.each do |pattern|
-      result = Onibi::V2::Parser.parse(pattern)
+      result = Onibi::Parser.parse(pattern)
 
       assert_ast_node(result.ast, pattern)
     end
@@ -51,7 +51,7 @@ class V2ParserCorpusTest < Minitest::Test
 
     cases.each do |fixture|
       pattern = fixture.fetch("pattern").encode(fixture.fetch("pattern_encoding"))
-      result = Onibi::V2::Parser.parse(pattern, options: fixture.fetch("options"))
+      result = Onibi::Parser.parse(pattern, options: fixture.fetch("options"))
 
       assert_ast_node(result.ast, fixture.fetch("name"))
     end

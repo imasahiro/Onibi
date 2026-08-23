@@ -4,10 +4,10 @@ require "test_helper"
 
 class V2CompilerTest < Minitest::Test
   def test_compile_returns_optimized_cfg
-    parsed = Onibi::V2::Parser.parse("a|a")
-    compiled = Onibi::V2::Compiler.compile(parsed)
+    parsed = Onibi::Parser.parse("a|a")
+    compiled = Onibi::Compiler.compile(parsed)
 
-    assert_instance_of Onibi::V2::Compiler::OptimizedCFG, compiled
+    assert_instance_of Onibi::Compiler::OptimizedCFG, compiled
     assert_equal Onibi::AST::Sequence.new([Onibi::AST::Literal.new("a")]), compiled.ast
     assert_equal [0, 0, [[0, [[:match_literal, Onibi::AST::Literal.new("a")]], :return, []]]], cfg_shape(compiled.graph)
     assert_includes compiled.applied_passes, :duplicate_literal_branch_elimination
@@ -16,7 +16,7 @@ class V2CompilerTest < Minitest::Test
   def test_each_optimization_pass_publishes_the_expected_cfg
     expected = [0, 0, [[0, [[:match_literal, Onibi::AST::Literal.new("ab")]], :return, []]]]
 
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("ab"), passes: [:literal_coalescing])
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("ab"), passes: [:literal_coalescing])
 
     assert_equal expected, cfg_shape(compiled.graph)
     assert_equal [:literal_coalescing], compiled.applied_passes
@@ -24,10 +24,10 @@ class V2CompilerTest < Minitest::Test
 
   def test_every_declared_optimization_pass_has_a_stable_cfg_output
     expected = [0, 0, [[0, [[:match_literal, Onibi::AST::Literal.new("a")]], :return, []]]]
-    pass_names = Onibi::V2::Compiler::Pipeline::DEFAULT_PASS_NAMES
+    pass_names = Onibi::Compiler::Pipeline::DEFAULT_PASS_NAMES
 
     pass_names.each do |pass_name|
-      compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a"), passes: [pass_name])
+      compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a"), passes: [pass_name])
 
       assert_equal expected, cfg_shape(compiled.graph), pass_name.to_s
       assert_equal [pass_name], compiled.applied_passes, pass_name.to_s
@@ -35,7 +35,7 @@ class V2CompilerTest < Minitest::Test
   end
 
   def test_cfg_shape_compares_branch_structure_and_opcodes
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a|b"))
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a|b"))
     expected = [
       0, 1,
       [

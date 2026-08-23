@@ -10,7 +10,7 @@ class V2ParserQuantifiersTest < Minitest::Test
                                           quantifier("a", :+, 1, nil, :possessive)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("a?a+?a++").ast
+    assert_equal expected, Onibi::Parser.parse("a?a+?a++").ast
   end
 
   def test_bounded_quantifiers_have_exact_bounds
@@ -20,7 +20,7 @@ class V2ParserQuantifiersTest < Minitest::Test
                                           quantifier("a", :bounded, 2, 2, :greedy)
                                         ])
 
-    assert_equal expected, Onibi::V2::Parser.parse("a{2,4}a{2,}a{2}").ast
+    assert_equal expected, Onibi::Parser.parse("a{2,4}a{2,}a{2}").ast
   end
 
   private

@@ -15,7 +15,7 @@ class HfaBackendSurfaceTest < Minitest::Test
   def test_compiler_optimization_namespace_drives_cfg_lowering
     ast = Onibi::Parser.new("a|ab").parse
 
-    unit = Onibi::V2::Compiler::Pipeline.default.call(
+    unit = Onibi::Compiler::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     )
 

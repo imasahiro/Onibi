@@ -11,8 +11,8 @@ class V2AutomataAstCfgTest < Minitest::Test
                                      Onibi::AST::Property.new("Alpha", false),
                                      Onibi::AST::Any.new(".")
                                    ])
-    compiled = Onibi::V2::Compiler.compile(ast, passes: [:pure_failure_memoization])
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(ast, passes: [:pure_failure_memoization])
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
 
     assert_equal [0], tnfa.start_positions
     assert_equal [4], tnfa.accept_positions
@@ -34,8 +34,8 @@ class V2AutomataAstCfgTest < Minitest::Test
                                         sequence.call([]),
                                         sequence.call([Onibi::AST::Literal.new("a")])
                                       ])
-    compiled = Onibi::V2::Compiler.compile(ast, passes: [:pure_failure_memoization])
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(ast, passes: [:pure_failure_memoization])
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
 
     assert_equal [0, 1], tnfa.start_positions
     assert_equal [0, 1], tnfa.accept_positions

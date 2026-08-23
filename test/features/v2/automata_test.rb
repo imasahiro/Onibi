@@ -149,7 +149,7 @@ class V2AutomataTest < Minitest::Test
 
   def test_partial_dfa_keeps_the_start_state_and_reports_truncation
     tnfa, full_dfa = automata_for(sequence("a", "b"))
-    partial = Onibi::V2::Automata::PartialDFA.from_tnfa(tnfa, state_limit: 2)
+    partial = Onibi::Automata::PartialDFA.from_tnfa(tnfa, state_limit: 2)
 
     assert_equal [0, 1], partial.states.map(&:id)
     assert_equal [[], [0]], partial.states.map(&:positions)
@@ -160,23 +160,23 @@ class V2AutomataTest < Minitest::Test
   end
 
   def test_cfg_converts_to_glushkov_tnfa_and_partial_dfa
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a."))
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a."))
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
 
     assert_equal 1, tnfa.start_positions.length
     assert_equal 2, tnfa.positions.length
     assert_equal 1, tnfa.accept_positions.length
 
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
-    partial = Onibi::V2::Automata::PartialDFA.from_tnfa(tnfa, state_limit: 1)
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+    partial = Onibi::Automata::PartialDFA.from_tnfa(tnfa, state_limit: 1)
     assert_operator dfa.states.length, :>=, 2
     assert_equal true, partial.partial?
     assert_operator partial.states.length, :<=, 1
   end
 
   def test_tnfa_graph_has_expected_positions_and_opcodes
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a."))
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a."))
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
     expected_positions = [
       [0, :match_literal, Onibi::AST::Literal.new("a")],
       [1, :match_any, Onibi::AST::Any.new(".")]
@@ -191,20 +191,20 @@ class V2AutomataTest < Minitest::Test
   end
 
   def test_alternation_keeps_all_start_and_accept_positions
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a|b"))
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a|b"))
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
 
     assert_equal [0, 1], tnfa.start_positions
     assert_equal [0, 1], tnfa.accept_positions
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
     assert_equal [], dfa.start_state.positions
     assert_equal [[0], [1]], dfa.states.drop(1).map(&:positions)
   end
 
   def test_dfa_transition_targets_are_state_ids
-    compiled = Onibi::V2::Compiler.compile(Onibi::V2::Parser.parse("a."))
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
-    dfa = Onibi::V2::Automata::DFA.from_tnfa(tnfa)
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a."))
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
 
     assert(dfa.transitions.values.all? { |target| target.is_a?(Integer) })
   end
@@ -212,9 +212,9 @@ class V2AutomataTest < Minitest::Test
   private
 
   def automata_for(node)
-    compiled = Onibi::V2::Compiler.compile(node, passes: [:pure_failure_memoization])
-    tnfa = Onibi::V2::Automata::GlushkovTNFA.from_cfg(compiled.graph)
-    [tnfa, Onibi::V2::Automata::DFA.from_tnfa(tnfa)]
+    compiled = Onibi::Compiler.compile(node, passes: [:pure_failure_memoization])
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+    [tnfa, Onibi::Automata::DFA.from_tnfa(tnfa)]
   end
 
   def sequence(*values)

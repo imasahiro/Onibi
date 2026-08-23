@@ -82,7 +82,7 @@ class V2CompilerAstCfgTest < Minitest::Test
 
   def test_literal_coalescing_rewrites_nested_group_ast
     ast = Onibi::AST::Group.new(sequence("a", "b"), 1, true, "word")
-    compiled = Onibi::V2::Compiler.compile(ast, passes: [:literal_coalescing])
+    compiled = Onibi::Compiler.compile(ast, passes: [:literal_coalescing])
     expected = Onibi::AST::Group.new(sequence("ab"), 1, true, "word")
 
     assert_equal expected, compiled.ast
@@ -145,7 +145,7 @@ class V2CompilerAstCfgTest < Minitest::Test
     ]
 
     cases.each do |pass_name, ast, expected, expected_cfg|
-      compiled = Onibi::V2::Compiler.compile(ast, passes: [pass_name])
+      compiled = Onibi::Compiler.compile(ast, passes: [pass_name])
 
       assert_equal expected, compiled.ast, pass_name.to_s
       assert_equal expected_cfg, cfg_signature(compiled.graph), pass_name.to_s
@@ -158,7 +158,7 @@ class V2CompilerAstCfgTest < Minitest::Test
     pass_names = %i[pure_failure_memoization state_dominance one_pass_region_lowering]
 
     pass_names.each do |pass_name|
-      compiled = Onibi::V2::Compiler.compile(ast, passes: [pass_name])
+      compiled = Onibi::Compiler.compile(ast, passes: [pass_name])
 
       assert_equal ast, compiled.ast, pass_name.to_s
       assert_equal expected_cfg, cfg_signature(compiled.graph), pass_name.to_s
@@ -178,10 +178,10 @@ class V2CompilerAstCfgTest < Minitest::Test
       "z"
     )
 
-    compiled = Onibi::V2::Compiler.compile(ast)
+    compiled = Onibi::Compiler.compile(ast)
 
     assert_equal expected, compiled.ast
-    assert_equal Onibi::V2::Compiler::Pipeline::DEFAULT_PASS_NAMES, compiled.applied_passes
+    assert_equal Onibi::Compiler::Pipeline::DEFAULT_PASS_NAMES, compiled.applied_passes
     assert_equal [[%i[match_literal match_quantifier match_literal], :return, []]],
                  cfg_signature(compiled.graph)
   end
@@ -201,13 +201,13 @@ class V2CompilerAstCfgTest < Minitest::Test
       literal_coalescing
     ]
 
-    assert_equal Onibi::V2::Compiler::Pipeline::DEFAULT_PASS_NAMES.sort, covered.sort
+    assert_equal Onibi::Compiler::Pipeline::DEFAULT_PASS_NAMES.sort, covered.sort
   end
 
   private
 
   def compile(ast)
-    Onibi::V2::Compiler.compile(ast, passes: [NOOP_PASS])
+    Onibi::Compiler.compile(ast, passes: [NOOP_PASS])
   end
 
   def sequence(*values)
