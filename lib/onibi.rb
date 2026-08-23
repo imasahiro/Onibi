@@ -803,7 +803,6 @@ module Onibi
 
       if @ast.is_a?(Onibi::AST::Sequence)
         parts = @ast.parts
-        return false if parts.any? { |part| part.is_a?(Onibi::AST::AtomicGroup) }
         return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Absence) }
       end
 
@@ -838,7 +837,7 @@ module Onibi
       when Onibi::AST::OptionGroup
         bytecode_supported_node?(node.body) && !ast_contains_node?(node.body, Onibi::AST::Backreference)
       when Onibi::AST::AtomicGroup
-        bytecode_supported_node?(node.body)
+        bytecode_literal_choice_group?(node.body)
       when Onibi::AST::Group
         bytecode_literal_choice_group?(node.body)
       when Onibi::AST::Backreference
