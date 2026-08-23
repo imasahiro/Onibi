@@ -184,12 +184,18 @@ module Onibi
       Onibi::MatchData.captureless(input, index, index + literal.length, self)
     end
 
-    def scan(input)
+    def scan(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
+      if source.empty?
+        values = Array.new(input.length + 1, "")
+        values.each(&block) if block_given?
+        return block_given? ? input : values
+      end
 
       results = []
       position = 0
-      while (matched = match(input, position))
+      while (matched = internal_match(input, position))
         value = named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
         results << value
         yield(value) if block_given?
@@ -204,9 +210,20 @@ module Onibi
       raise TypeError, "no implicit conversion of nil into String" if !block_given? && replacement.nil?
       raise TypeError, "no implicit conversion of #{replacement.class} into String" unless block_given? || replacement.is_a?(String)
 
+      if source.empty?
+        output = String.new(encoding: input.encoding)
+        input.each_char.with_index do |character, index|
+          output << (block_given? ? yield("").to_s : replacement)
+          output << character
+          break if index == input.length - 1
+        end
+        output << (block_given? ? yield("").to_s : replacement)
+        return output
+      end
+
       output = String.new(encoding: input.encoding)
       cursor = 0
-      while (matched = match(input, cursor))
+      while (matched = internal_match(input, cursor))
         start = matched.begin(0)
         finish = matched.end(0)
         output << input[cursor...start]
@@ -459,6 +476,10 @@ module Onibi
         else matched[token[1].to_i].to_s
         end
       end
+    end
+
+    def internal_match(input, position)
+      Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
     end
 
     def literal_backreference_match(input, start)
