@@ -1052,10 +1052,11 @@ module Onibi
                        end
                      end || characters.length
                    end
-          state = (position_states[start] || position_states[finish] || captures).dup
-          state = captures.dup unless contains_negative_assertion?(body)
+          first_zero_state = position_states[positions.first] if contains_positive_lookahead?(body)
+          state = (position_states[start] || position_states[finish] || first_zero_state || captures).dup
+          state = captures.dup unless contains_assertion?(body)
           state = captures.dup if state.keys.count { |key| key.is_a?(Integer) } > 1
-          if finish == characters.length
+          if finish == characters.length && !contains_positive_lookahead?(body)
             state.delete_if do |key, value|
               key.is_a?(Integer) && value.is_a?(Array) && value[0] == value[1]
             end
@@ -1090,21 +1091,21 @@ module Onibi
           end
         end
 
-        def contains_negative_assertion?(node)
+        def contains_positive_lookahead?(node)
           case node
           when Onibi::AST::Assertion, SemanticBytecode::Assertion
-            %i[negative negative_lookahead negative_lookbehind].include?(node.kind)
+            %i[positive positive_lookahead].include?(node.kind)
           when Onibi::AST::Sequence, SemanticBytecode::Sequence
-            node.parts.any? { |part| contains_negative_assertion?(part) }
+            node.parts.any? { |part| contains_positive_lookahead?(part) }
           when Onibi::AST::Alternation, SemanticBytecode::Alternation
-            node.branches.any? { |branch| contains_negative_assertion?(branch) }
+            node.branches.any? { |branch| contains_positive_lookahead?(branch) }
           when Onibi::AST::Group, SemanticBytecode::Group,
                Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
                Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
                Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup,
                Onibi::AST::Absence, SemanticBytecode::Absence
             child = node.respond_to?(:body) ? node.body : node.expression
-            contains_negative_assertion?(child)
+            contains_positive_lookahead?(child)
           else
             false
           end

@@ -91,6 +91,18 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal expected.offset(1), actual.offset(1)
   end
 
+  def test_absence_operator_keeps_capture_from_a_positive_lookahead_boundary
+    pattern = "(?~(?:(a?)(?=a)))"
+
+    %w[ab abb abc].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal expected.to_a, actual.to_a, input
+      assert_equal expected.offset(0), actual.offset(0), input
+    end
+  end
+
   def test_absence_operator_clears_empty_capture_at_input_end
     pattern = "(?~(?:(?!a)(a?)))"
     expected = ::Regexp.new(pattern).match("a")
