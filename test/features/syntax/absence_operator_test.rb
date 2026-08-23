@@ -128,4 +128,12 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal %w[a b], regexp.match("aba").to_a.first(2)
     assert_equal %w[aba ab], regexp.match("ababab").to_a.first(2)
   end
+
+  def test_absence_operator_clears_nested_bounded_captures
+    match = Onibi::Regexp.new("(?~((a|ab){2,}))").match("abab")
+
+    assert_equal "ab", match[0]
+    assert_nil match[1]
+    assert_nil match[2]
+  end
 end

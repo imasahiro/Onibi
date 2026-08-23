@@ -799,6 +799,12 @@ module Onibi
           return captures unless nested_parts.length == 1 &&
                                  (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
 
+          unless quantifier.kind == :+
+            adjusted = captures.dup
+            adjusted.delete(outer.number)
+            return adjusted
+          end
+
           unit = literal_value(quantifier.expression)
           unit ||= alternation_unit(quantifier.expression)
           return captures unless unit && quantifier.kind == :+ && !unit.empty?
