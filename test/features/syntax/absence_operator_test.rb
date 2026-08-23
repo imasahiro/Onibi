@@ -45,4 +45,18 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "b", regexp.match("ba")[0]
     assert_equal "x", regexp.match("xaby")[0]
   end
+
+  def test_absence_operator_backtracks_to_a_suffix
+    match = Onibi::Regexp.new("(?~a+)b").match("ab")
+
+    assert_equal "b", match[0]
+    assert_equal [1, 2], match.offset(0)
+  end
+
+  def test_absence_operator_retries_after_a_zero_width_star_body
+    match = Onibi::Regexp.new("(?~a*)").match("b")
+
+    assert_equal "", match[0]
+    assert_equal [1, 1], match.offset(0)
+  end
 end

@@ -691,6 +691,8 @@ module Onibi
           delimiter = literal_value(node.body)
           return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
+          return [] if zero_width_star_absence?(node.body, characters, cursor)
+
           quantified = quantified_absence_length(node.body, characters, cursor)
           return quantified.downto(0).map { |length| [length, captures] } if quantified
 
@@ -702,7 +704,26 @@ module Onibi
             maximum = [position - cursor + length - 1, 0].max
             return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
           end
-          [[characters.length - cursor, captures]]
+          maximum = characters.length - cursor
+          maximum.downto(0).map { |length| [length, captures] }
+        end
+
+        def zero_width_star_absence?(body, characters, cursor)
+          sequence = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+                       body.parts
+                     else
+                       [body]
+                     end
+          return false unless sequence.length == 1
+
+          quantifier = sequence.first
+          return false unless quantifier.is_a?(Onibi::AST::Quantifier) ||
+                              quantifier.is_a?(SemanticBytecode::Quantifier)
+          return false unless quantifier.kind == :* && quantifier.maximum.nil?
+
+          literal = literal_value(quantifier.expression)
+          literal && !literal.empty? && cursor < characters.length &&
+            characters[cursor, literal.length].join != literal
         end
 
         def generic_absence_length(node, characters, cursor, flags)
