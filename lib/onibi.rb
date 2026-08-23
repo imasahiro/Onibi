@@ -268,6 +268,7 @@ module Onibi
                       input.ascii_only?
                     end
       @hfa_ascii_input = ascii_input
+      @hfa_input_encoding = input.encoding
       raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if fixed_encoding? && !ascii_input && input.encoding != encoding
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
@@ -790,7 +791,8 @@ module Onibi
     end
 
     def bytecode_applicable?
-      unicode_safe = !@hfa_ascii_input && source.ascii_only? && bytecode_unicode_safe_node?(@ast)
+      unicode_safe = !@hfa_ascii_input && @hfa_input_encoding == Encoding::UTF_8 && source.ascii_only? &&
+                     bytecode_unicode_safe_node?(@ast)
       ascii_safe = @hfa_ascii_input && source.ascii_only?
       return false unless (ascii_safe || unicode_safe) && !casefold? && !multiline? &&
                           bytecode_supported_node?(@ast)
@@ -880,7 +882,8 @@ module Onibi
       when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_unicode_safe_node?(part) }
       when Onibi::AST::Group then bytecode_unicode_safe_node?(node.body)
       when Onibi::AST::Absence then !absence_literal_value(node.body).nil?
-      when Onibi::AST::Escape then node.kind == :linebreak
+      when Onibi::AST::Property then true
+      when Onibi::AST::Escape then !%i[start_match match_reset].include?(node.kind)
       else false
       end
     end
