@@ -8,13 +8,13 @@ Current guidance lives in:
 
 - [`../onibi-design.md`](../onibi-design.md) — product scope and architecture
   overview;
-- [`../hfa-design.md`](../hfa-design.md) — formal HFA definition and canonical
-  matcher architecture;
 - [`../cfg-optimization-pipeline.md`](../cfg-optimization-pipeline.md) — active
   compiler IR and optimization rules;
-- [`../hfa-task-list.md`](../hfa-task-list.md) — active migration plan;
 - [`../regexp-feature-coverage.md`](../regexp-feature-coverage.md) — current
-  compatibility snapshot.
+  compiler syntax coverage.
+
+The former HFA design and task-list files are retained as historical records.
+They do not define the current implementation.
 
 ## Records
 
