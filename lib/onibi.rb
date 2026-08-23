@@ -350,14 +350,24 @@ module Onibi
       if source.start_with?("(?") && source.include?(":") && source.end_with?(")")
         close = source.index(":")
         header = source[2...close]
-        if header.chars.all? { |flag| %w[i m x].include?(flag) }
-          enabled = ("mix".chars & (enabled.chars + header.chars)).join
-          body = source[(close + 1)...-1]
-        end
+        return to_s_without_scope unless header.each_char.all? { |flag| %w[i m x -].include?(flag) }
+
+        positive, negative = header.split("-", 2)
+        enabled_flags = enabled.chars + positive.to_s.chars
+        enabled_flags -= negative.to_s.chars
+        enabled = ("mix".chars & enabled_flags).join
+        body = source[(close + 1)...-1]
       end
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
       "(?#{scope}:#{body})"
+    end
+
+    def to_s_without_scope
+      enabled = mode_flags
+      disabled = ("mix".chars - enabled.chars).join
+      scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
+      "(?#{scope}:#{source})"
     end
 
     def inspect

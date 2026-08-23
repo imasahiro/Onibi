@@ -82,6 +82,12 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal "(?i-mx:cat)", regexp.to_s
   end
 
+  def test_to_s_merges_scoped_mode_changes_with_outer_options
+    regexp = Onibi::Regexp.new("(?i-m:a)", Onibi::Regexp::EXTENDED)
+
+    assert_equal "(?ix-m:a)", regexp.to_s
+  end
+
   def test_to_s_and_inspect_use_ruby_mode_flag_order
     regexp = Onibi::Regexp.new("cat", Onibi::Regexp::IGNORECASE |
       Onibi::Regexp::MULTILINE | Onibi::Regexp::EXTENDED)
