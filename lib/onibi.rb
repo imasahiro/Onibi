@@ -262,9 +262,7 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
-      return bytecode_match(input, start_position(position)) if bytecode_applicable?
-
-      nil
+      bytecode_match(input, start_position(position))
     end
 
     def scan(input, &block)
@@ -503,15 +501,6 @@ module Onibi
       end
     end
 
-    def bytecode_applicable?
-      return false unless bytecode_supported_node?(@ast)
-
-      bytecode_program
-      true
-    rescue Onibi::Error, ArgumentError
-      false
-    end
-
     def bytecode_program
       @bytecode_program ||= begin
         compiled = Onibi::Compiler.compile(@parsed)
@@ -536,51 +525,6 @@ module Onibi
       return false if modifier.include?("-#{flag}")
 
       modifier.include?(flag.to_s) || default
-    end
-
-    def bytecode_supported_node?(node)
-      case node
-      when Onibi::AST::Sequence
-        node.parts.all? { |part| bytecode_supported_node?(part) }
-      when Onibi::AST::Alternation
-        node.branches.all? { |branch| bytecode_supported_node?(branch) }
-      when Onibi::AST::Quantifier
-        bytecode_supported_node?(node.expression)
-      when Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Any, Onibi::AST::Property
-        true
-      when Onibi::AST::Absence
-        !absence_literal_value(node.body).nil?
-      when Onibi::AST::OptionGroup
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::AtomicGroup
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Group
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Backreference
-        true
-      when Onibi::AST::SubexpressionCall
-        true
-      when Onibi::AST::Conditional
-        bytecode_supported_node?(node.yes_branch) && bytecode_supported_node?(node.no_branch)
-      when Onibi::AST::Assertion
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Anchor
-        true
-      when Onibi::AST::Escape
-        true
-      else
-        false
-      end
-    end
-
-    def absence_literal_value(node)
-      case node
-      when Onibi::AST::Literal then node.value
-      when Onibi::AST::Group then absence_literal_value(node.body)
-      when Onibi::AST::Sequence
-        values = node.parts.map { |part| absence_literal_value(part) }
-        values.all? ? values.join : nil
-      end
     end
 
     def bytecode_subexpressions
@@ -616,30 +560,6 @@ module Onibi
       modifier = source[2, (colon || close || source.length) - 2].to_s
       !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
         modifier.each_char.any? { |character| %w[i m x].include?(character) }
-    end
-
-    def bytecode_literal_choice_group?(node)
-      case node
-      when Onibi::AST::Literal then true
-      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_literal_choice_group?(part) }
-      when Onibi::AST::Alternation then node.branches.all? { |branch| bytecode_literal_choice_group?(branch) }
-      when Onibi::AST::Group then bytecode_literal_choice_group?(node.body)
-      when Onibi::AST::Quantifier
-        source.include?("\\k") &&
-          [Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Property].any? do |klass|
-            node.expression.is_a?(klass)
-          end
-      else false
-      end
-    end
-
-    def bytecode_unicode_safe_node?(node)
-      bytecode_supported_node?(node)
-    end
-
-    def bytecode_unicode_absence_only?
-      @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-        @ast.parts.first.is_a?(Onibi::AST::Absence) && !absence_literal_value(@ast.parts.first.body).nil?
     end
 
     def unicode_repeated_literal_capture?
