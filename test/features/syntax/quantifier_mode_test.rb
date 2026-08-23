@@ -49,4 +49,12 @@ class QuantifierModeTest < Minitest::Test
     assert_equal "", match[0]
     assert_equal [0, 0], match.offset(0)
   end
+
+  def test_nullable_nested_quantifier_keeps_the_empty_capture
+    %w[a aa].each do |input|
+      mri = Regexp.new("(a?)+").match(input)
+      onibi = Onibi::Regexp.new("(a?)+").match(input)
+      assert_equal mri.to_a, onibi.to_a
+    end
+  end
 end

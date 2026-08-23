@@ -329,7 +329,7 @@ module Onibi
         end
 
         def ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
-          limit = quantifier.maximum || characters.length - cursor
+          limit = quantifier.maximum || characters.length - cursor + 1
           accepted = []
           visit = lambda do |consumed, state_captures, count|
             current = [consumed, state_captures]
@@ -354,7 +354,26 @@ module Onibi
           visit.call(0, captures, 0)
           return [] if accepted.empty?
 
+          if quantifier.mode != :lazy && nullable_single_quantifier?(quantifier.expression)
+            accepted = accepted.group_by(&:first).values.map(&:last).sort_by { |length, _state| -length }
+            group = quantifier.expression
+            accepted = accepted.map do |length, state|
+              next_state = state.dup
+              next_state[group.number] = [cursor + length, cursor + length]
+              [length, next_state]
+            end
+          end
+
           accepted
+        end
+
+        def nullable_single_quantifier?(node)
+          group = node if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+          body = group&.body
+          parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+          nested = parts.first
+          nested && (nested.is_a?(Onibi::AST::Quantifier) || nested.is_a?(SemanticBytecode::Quantifier)) &&
+            nested.minimum.zero? && nested.maximum == 1
         end
 
         def legacy_quantifier_results(quantifier, characters, cursor, captures, flags = {})
