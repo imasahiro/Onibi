@@ -830,9 +830,9 @@ module Onibi
       when Onibi::AST::Assertion
         !literal_value(node.body).nil?
       when Onibi::AST::Anchor
-        false
+        !multiline?
       when Onibi::AST::Escape
-        !%i[word_boundary not_word_boundary start_match match_reset linebreak].include?(node.kind)
+        !%i[start_match match_reset linebreak].include?(node.kind)
       else
         false
       end

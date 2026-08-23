@@ -131,7 +131,16 @@ module Onibi
           when :match_any
             cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
           when :match_escape
-            cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
+            case operand.kind
+            when :word_boundary, :not_word_boundary
+              left = cursor.positive? && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor - 1])
+              right = cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor])
+              boundary = left != right
+              boundary = !boundary if operand.kind == :not_word_boundary
+              boundary ? 0 : nil
+            else
+              cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
+            end
           when :match_property
             if cursor < characters.length
               matched = Onibi::UnicodeProperties.matches?(operand.name, characters[cursor])
@@ -328,8 +337,10 @@ module Onibi
 
         def anchor_length(anchor, characters, cursor)
           valid = case anchor.kind
-                  when :anchor_start, :anchor_absolute_start then cursor.zero?
-                  when :anchor_end, :anchor_absolute_end then cursor == characters.length
+                  when :anchor_start then cursor.zero? || (cursor.positive? && characters[cursor - 1] == "\n")
+                  when :anchor_absolute_start then cursor.zero?
+                  when :anchor_end then cursor == characters.length || characters[cursor] == "\n"
+                  when :anchor_absolute_end then cursor == characters.length
                   when :anchor_before_final_newline
                     cursor == characters.length || (characters[cursor] == "\n" && cursor + 1 == characters.length)
                   else false
