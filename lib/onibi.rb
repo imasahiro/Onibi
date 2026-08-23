@@ -143,19 +143,23 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
-      literal = literal_value(@ast)
-      return nil unless literal
+      literals = literal_candidates(@ast)
+      return nil if literals.empty?
 
       start = position.is_a?(Integer) ? position : Integer(position)
       start += input.length if start.negative?
       start = 0 if start.negative?
-      index = if casefold?
-                input.downcase.index(literal.downcase, start)
-              else
-                input.index(literal, start)
-              end
-      return nil unless index
+      match = literals.each_with_index.filter_map do |literal, order|
+        index = if casefold?
+                  input.downcase.index(literal.downcase, start)
+                else
+                  input.index(literal, start)
+                end
+        [index, order, literal] if index
+      end.min_by { |index, order, _literal| [index, order] }
+      return nil unless match
 
+      index, _order, literal = match
       Onibi::MatchData.captureless(input, index, index + literal.length, self)
     end
 
@@ -226,6 +230,16 @@ module Onibi
         values = node.parts.map { |part| literal_value(part) }
         values.all? ? values.join : nil
       when Onibi::AST::OptionGroup then literal_value(node.body)
+      end
+    end
+
+    def literal_candidates(node)
+      case node
+      when Onibi::AST::Alternation
+        node.branches.flat_map { |branch| literal_candidates(branch) }
+      else
+        literal = literal_value(node)
+        literal ? [literal] : []
       end
     end
 
