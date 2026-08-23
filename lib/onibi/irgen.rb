@@ -323,6 +323,8 @@ module Onibi
         end
 
         def quantifier_results(quantifier, characters, cursor, captures, flags = {})
+          return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
+
           limit = quantifier.maximum || characters.length - cursor
           frontier = [[0, captures]]
           accepted = quantifier.minimum.zero? ? frontier.dup : []
@@ -349,13 +351,34 @@ module Onibi
           return [] if count < quantifier.minimum
 
           accepted = accepted.uniq { |length, state| [length, state] }
-          return [accepted.max_by(&:first)] if quantifier.mode == :possessive
-
           if quantifier.mode == :lazy
             accepted.each_with_index.sort_by { |(state, index)| [state.first, index] }.map(&:first)
           else
             accepted.each_with_index.sort_by { |(state, index)| [-state.first, -index] }.map(&:first)
           end
+        end
+
+        def possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
+          limit = quantifier.maximum || characters.length - cursor
+          consumed = 0
+          current = captures
+          count = 0
+          accepted = quantifier.minimum.zero? ? [[0, current]] : []
+          while count < limit
+            result = node_results(quantifier.expression, characters, cursor + consumed, current, flags).find do |length, _state|
+              length.positive? || count + 1 >= quantifier.minimum
+            end
+            break unless result
+
+            length, current = result
+            consumed += length
+            count += 1
+            accepted << [consumed, current] if count >= quantifier.minimum
+            break if length.zero?
+          end
+          return [] if count < quantifier.minimum
+
+          [accepted.last]
         end
 
         def transition_lengths(label, characters, cursor, captures, flags = {})

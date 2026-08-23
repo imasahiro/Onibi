@@ -29,4 +29,10 @@ class QuantifierModeTest < Minitest::Test
       assert_equal Regexp.new("a{1,3}+a").match?(input), regexp.match?(input)
     end
   end
+
+  def test_possessive_quantifier_preserves_ordered_choice_for_equal_lengths
+    match = Onibi::Regexp.new("(a|aa)++").match("aa")
+
+    assert_equal "a", match[1]
+  end
 end
