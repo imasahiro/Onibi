@@ -737,7 +737,7 @@ module Onibi
         end
 
         def casefold_equal?(left, right)
-          left.upcase.downcase == right.upcase.downcase
+          left.upcase.downcase == right.upcase.downcase || left.downcase == right.downcase
         end
 
         def unicode_character(character)
