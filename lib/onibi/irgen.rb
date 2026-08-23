@@ -586,13 +586,16 @@ module Onibi
                         else
                           [reference.identifier]
                         end
-          span = identifiers.lazy.map { |identifier| captures[identifier] }.find(&:itself)
-          return nil unless span
+          identifiers.each do |identifier|
+            span = captures[identifier]
+            next unless span
 
-          value = characters[span[0]...span[1]]
-          candidate = characters[cursor, value.length]
-          matched = flags[:ignorecase] ? casefold_equal?(value.join, candidate.join) : candidate == value
-          matched ? value.length : nil
+            value = characters[span[0]...span[1]]
+            candidate = characters[cursor, value.length]
+            matched = flags[:ignorecase] ? casefold_equal?(value.join, candidate.join) : candidate == value
+            return value.length if matched
+          end
+          nil
         end
 
         def conditional_length(conditional, characters, cursor, captures)
