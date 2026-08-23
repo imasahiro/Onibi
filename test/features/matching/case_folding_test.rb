@@ -27,6 +27,13 @@ class CaseFoldingTest < Minitest::Test
     assert Onibi::Regexp.new("ß", ["ignorecase"]).match?("ẞ")
   end
 
+  def test_ignorecase_applies_to_unicode_property_case_classes
+    assert Onibi::Regexp.new("\\p{Upper}", ["ignorecase"]).match?("a")
+    assert Onibi::Regexp.new("\\p{Lower}", ["ignorecase"]).match?("A")
+    refute Onibi::Regexp.new("\\P{Upper}", ["ignorecase"]).match?("a")
+    assert Onibi::Regexp.new("[\\P{Upper}]", ["ignorecase"]).match?("A")
+  end
+
   def test_ignorecase_applies_to_character_classes
     assert Onibi::Regexp.new("[k]", ["ignorecase"]).match?("K")
   end

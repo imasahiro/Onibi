@@ -422,7 +422,7 @@ module Onibi
             end
           when :match_property
             if cursor < characters.length
-              matched = Onibi::UnicodeProperties.matches?(operand.name, unicode_character(characters[cursor]))
+              matched = property_matches?(operand.name, unicode_character(characters[cursor]), flags[:ignorecase])
               matched = !matched if operand.negated
               matched ? 1 : nil
             end
@@ -585,7 +585,8 @@ module Onibi
           when Onibi::AST::Escape, SemanticBytecode::Escape
             Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
           when Onibi::AST::Property, SemanticBytecode::Property
-            Onibi::UnicodeProperties.matches?(expression.name, character)
+            matched = property_matches?(expression.name, character, flags[:ignorecase] && !expression.negated)
+            expression.negated ? !matched : matched
           when Onibi::AST::Any, SemanticBytecode::Any
             flags[:multiline] || expression.value != "." || character != "\n"
           else false
@@ -738,6 +739,14 @@ module Onibi
 
         def casefold_equal?(left, right)
           left.upcase.downcase == right.upcase.downcase || left.downcase == right.downcase
+        end
+
+        def property_matches?(name, character, ignorecase)
+          return true if Onibi::UnicodeProperties.matches?(name, character)
+          return false unless ignorecase && %w[Lower Upper].include?(name)
+
+          opposite = name == "Lower" ? "Upper" : "Lower"
+          Onibi::UnicodeProperties.matches?(opposite, character)
         end
 
         def unicode_character(character)

@@ -145,14 +145,24 @@ module Onibi
       kind, value = atom
       return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
       return matches?(value, character, ignorecase: ignorecase) if kind == :nested
-      return property_matches?(value, character) if kind == :property
+
+      if kind == :property
+        name, negated = value
+        return true if ignorecase && negated && %w[Lower Upper].include?(name)
+
+        return property_matches?(value, character, ignorecase: ignorecase)
+      end
 
       escaped_matches?(value, character)
     end
 
-    def property_matches?(property, character)
+    def property_matches?(property, character, ignorecase: false)
       name, negated = property
       matched = UnicodeProperties.matches?(name, character)
+      if ignorecase && !negated && !matched && %w[Lower Upper].include?(name)
+        opposite = name == "Lower" ? "Upper" : "Lower"
+        matched = UnicodeProperties.matches?(opposite, character)
+      end
       negated ? !matched : matched
     end
 
