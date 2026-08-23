@@ -818,6 +818,12 @@ module Onibi
           return captures unless nested_parts.length == 1 &&
                                  (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
 
+          if length.zero?
+            adjusted = captures.dup
+            adjusted.delete(outer.number)
+            return adjusted
+          end
+
           unless quantifier.kind == :+
             adjusted = captures.dup
             adjusted.delete(outer.number) if length != quantifier.minimum
