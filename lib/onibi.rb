@@ -225,6 +225,10 @@ module Onibi
         return captures
       end
 
+      if (conditional = conditional_literal_match(input, start_position(position)))
+        return conditional
+      end
+
       if (simple = simple_runtime_match(input, start_position(position)))
         return simple
       end
@@ -635,6 +639,26 @@ module Onibi
         return Onibi::MatchData.from_offsets(input, index, finish, offsets, names, self)
       end
       nil
+    end
+
+    def conditional_literal_match(input, start)
+      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
+      return nil unless parts&.length == 2 && parts[0].is_a?(Onibi::AST::Quantifier) &&
+                        parts[0].expression.is_a?(Onibi::AST::Group) && parts[1].is_a?(Onibi::AST::Conditional)
+
+      group = parts[0].expression
+      condition = parts[1].condition
+      condition_matches = condition.is_a?(Array) &&
+                          ((condition[1] && condition[0] == group.name) || (!condition[1] && condition[0] == group.number))
+      return nil unless parts[0].kind == :"?" && condition_matches
+
+      group_value = literal_value(group.body)
+      yes_value = literal_value(parts[1].yes_branch)
+      no_value = literal_value(parts[1].no_branch)
+      return nil unless group_value && yes_value && no_value
+
+      variants = [[group_value + yes_value, [[0, group_value.length, group.number]]], [no_value, []]]
+      match_capture_variant(input, start, variants)
     end
 
     def quantifier_group_spec(group)
