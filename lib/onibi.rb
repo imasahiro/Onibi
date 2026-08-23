@@ -167,6 +167,22 @@ module Onibi
       Onibi::MatchData.captureless(input, index, index + literal.length, self)
     end
 
+    def scan(input)
+      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+
+      results = []
+      position = 0
+      while (matched = match(input, position))
+        value = named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
+        results << value
+        yield(value) if block_given?
+        finish = matched.end(0)
+        position = finish > position ? finish : position + 1
+        break if position > input.length
+      end
+      block_given? ? input : results
+    end
+
     def ==(other)
       other.is_a?(Regexp) && source == other.source && options == other.options
     end
