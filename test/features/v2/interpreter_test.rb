@@ -39,6 +39,22 @@ class InterpreterTest < Minitest::Test
     assert_equal({ 1 => [2, 5], "word" => [2, 5] }, result[2])
   end
 
+  def test_interpreter_executes_each_semantic_operand_kind
+    cases = [
+      ["a", "a"], ["[a]", "a"], ["\\d", "7"], ["\\p{Alpha}", "A"],
+      [".", "x"], ["(?=a)a", "a"], ["\\Aa", "a"], ["(?~a)", "b"],
+      ["(a)", "a"], ["a+", "aa"], ["(?>a)", "a"], ["(a)\\1", "aa"],
+      ["(a)?(?(1)b|c)", "ab"], ["(a)\\g1", "aa"], ["(?i:a)", "A"]
+    ]
+
+    cases.each do |pattern, input|
+      regexp = Onibi::Regexp.new(pattern)
+      result = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program)).match(input)
+
+      assert_equal [0, input.length], result, pattern
+    end
+  end
+
   private
 
   def dfa_program_for(source)
