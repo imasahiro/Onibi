@@ -83,4 +83,10 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal(%w[ab aba], %w[abab ababab].map { |input| regexp.match(input)[0] })
   end
+
+  def test_absence_operator_handles_variable_alternation_lengths
+    regexp = Onibi::Regexp.new("(?~(a|ab){2,})")
+
+    assert_equal(%w[aa ab], %w[aaa abab].map { |input| regexp.match(input)[0] })
+  end
 end

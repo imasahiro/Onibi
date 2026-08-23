@@ -767,6 +767,31 @@ module Onibi
           return unless %i[+ *].include?(quantifier.kind) || quantifier.minimum.to_i >= 2
 
           literal = literal_value(quantifier.expression)
+          variable_units = variable_alternation_units(quantifier.expression)
+          if variable_units
+            repetitions = 0
+            position = cursor
+            first_length = nil
+            lengths = []
+            while position < characters.length
+              value = variable_units.sort_by(&:length).reverse.find do |candidate|
+                characters[position, candidate.length].join == candidate
+              end
+              break unless value
+
+              first_length ||= value.length
+              lengths << value.length
+              repetitions += 1
+              position += value.length
+            end
+            return if repetitions < quantifier.minimum
+
+            if quantifier.minimum.to_i >= 2
+              return (position - cursor + quantifier.minimum - 1) / 2 if lengths.all? { |length| length == 1 }
+
+              return first_length
+            end
+          end
           unit = literal || alternation_unit(quantifier.expression)
           run = 0
           position = cursor
@@ -824,6 +849,21 @@ module Onibi
           return unless values.all? && values.map(&:length).uniq.one?
 
           values.first
+        end
+
+        def variable_alternation_units(node)
+          body = if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+                   node.body
+                 else
+                   node
+                 end
+          branches = (body.branches if body.is_a?(Onibi::AST::Alternation) || body.is_a?(SemanticBytecode::Alternation))
+          return unless branches
+
+          values = branches.map { |branch| literal_value(branch) }
+          return unless values.all? && values.map(&:length).uniq.length > 1
+
+          values
         end
 
         def class_match_lengths(node, characters, cursor, flags)
