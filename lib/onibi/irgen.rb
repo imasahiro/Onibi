@@ -960,11 +960,16 @@ module Onibi
 
         def zero_width_absence_results(body, characters, cursor, captures, flags)
           positions = []
+          position_states = {}
           has_consuming_match = false
           cursor.upto(characters.length) do |position|
             results = node_results(body, characters, position, captures, flags)
-            positions << position if results.any? do |length, state|
+            zero_width = results.find do |length, state|
               length.zero? && (state[:__match_start] || position) == position
+            end
+            if zero_width
+              positions << position
+              position_states[position] = zero_width.last
             end
             has_consuming_match ||= results.any? { |length, _state| length.positive? }
           end
@@ -984,13 +989,37 @@ module Onibi
                        end
                      end || characters.length
                    end
-          state = captures.dup
+          state = (position_states[start] || position_states[finish] || captures).dup
+          state = captures.dup unless contains_assertion?(body)
+          state = captures.dup if state.keys.count { |key| key.is_a?(Integer) } > 1
+          state = filter_nested_absence_captures(body, state)
+          state = filter_absence_capture_scope(body, state)
           if start != cursor
             state[:__match_start] = start
             state[:__match_end] = finish
             state[:__match_probe] = characters[start - 1] if start.positive?
           end
           [[finish - start, state]]
+        end
+
+        def contains_assertion?(node)
+          case node
+          when Onibi::AST::Assertion, SemanticBytecode::Assertion
+            true
+          when Onibi::AST::Sequence, SemanticBytecode::Sequence
+            node.parts.any? { |part| contains_assertion?(part) }
+          when Onibi::AST::Alternation, SemanticBytecode::Alternation
+            node.branches.any? { |branch| contains_assertion?(branch) }
+          when Onibi::AST::Group, SemanticBytecode::Group,
+               Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
+               Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+               Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup,
+               Onibi::AST::Absence, SemanticBytecode::Absence
+            child = node.respond_to?(:body) ? node.body : node.expression
+            contains_assertion?(child)
+          else
+            false
+          end
         end
 
         def zero_width_star_absence?(body, characters, cursor)
