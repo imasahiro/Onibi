@@ -10,15 +10,26 @@ module Onibi
     end
 
     def match_source(source, character, ignorecase)
-      posix = POSIX_PROPERTIES[source]
-      return UnicodeProperties.matches?(posix, character) if posix
+      negated = source.start_with?("^")
+      body = negated ? source[1..] : source
+      posix = POSIX_PROPERTIES[body]
+      if posix
+        result = posix_matches?(posix, character, ignorecase)
+        return negated ? !result : result
+      end
 
-      intersection = split_intersection(source)
+      intersection = split_intersection(body)
       return intersection_matches?(intersection, character, ignorecase) if intersection
 
-      negated = source.start_with?("^")
-      result = union_matches?(negated ? source[1..] : source, character, ignorecase)
+      result = union_matches?(body, character, ignorecase)
       negated ? !result : result
+    end
+
+    def posix_matches?(property, character, ignorecase)
+      return true if UnicodeProperties.matches?(property, character)
+      return false unless ignorecase && %w[Lower Upper].include?(property)
+
+      UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", character)
     end
 
     def intersection_matches?(intersection, character, ignorecase)

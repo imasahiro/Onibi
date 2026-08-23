@@ -658,7 +658,8 @@ module Onibi
           character = characters[cursor]
           lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character, ignorecase: flags[:ignorecase])
           casefold_source = flags[:ignorecase] && !node.value.start_with?("^") &&
-                            !node.value.include?("[") && !node.value.include?(":")
+                            !node.value.include?("[") && !node.value.include?(":") &&
+                            !node.value.include?("&&") && !node.value.include?("\\")
           lengths << 1 if casefold_source && node.value.each_char.any? do |candidate|
             casefold_equal?(candidate, character)
           end && !lengths.include?(1)
