@@ -99,16 +99,17 @@ module Onibi
           @dfa.states.any? { |candidate| candidate.id == state && candidate.accepting }
         end
 
-        def transition_length(label, characters, cursor)
+        def transition_length(label, characters, cursor, flags = {})
           opcode, operand = label
           case opcode
           when :match_literal
             value = operand.value.each_char.to_a
-            characters[cursor, value.length] == value ? value.length : nil
+            matched = flags[:ignorecase] ? value.join.casecmp?(characters[cursor, value.length].to_a.join) : characters[cursor, value.length] == value
+            matched ? value.length : nil
           when :match_class
-            cursor < characters.length && Onibi::ClassPredicates.matches?(operand.value, characters[cursor]) ? 1 : nil
+            cursor < characters.length && Onibi::ClassPredicates.matches?(operand.value, characters[cursor], ignorecase: flags[:ignorecase]) ? 1 : nil
           when :match_any
-            cursor < characters.length && (operand.value != "." || characters[cursor] != "\n") ? 1 : nil
+            cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
           when :match_escape
             cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
           when :match_property
@@ -121,16 +122,18 @@ module Onibi
             quantifier_length(operand, characters, cursor)
           when :match_group
             sequence_length(operand.body, characters, cursor)
+          when :match_option_group
+            option_group_length(operand, characters, cursor)
           when :match_absence
             absence_length(operand, characters, cursor)
           end
         end
 
-        def quantifier_length(quantifier, characters, cursor)
+        def quantifier_length(quantifier, characters, cursor, flags = {})
           count = 0
           limit = quantifier.maximum || (characters.length - cursor)
           while count < limit && cursor + count < characters.length &&
-                atom_matches?(quantifier.expression, characters[cursor + count])
+                atom_matches?(quantifier.expression, characters[cursor + count], flags)
             count += 1
           end
           return nil if count < quantifier.minimum
@@ -138,31 +141,37 @@ module Onibi
           quantifier.mode == :lazy ? quantifier.minimum : count
         end
 
-        def atom_matches?(expression, character)
+        def atom_matches?(expression, character, flags = {})
           case expression
-          when Onibi::AST::Literal then expression.value == character
+          when Onibi::AST::Literal
+            flags[:ignorecase] ? expression.value.casecmp?(character) : expression.value == character
           when Onibi::AST::CharacterClass then Onibi::ClassPredicates.matches?(expression.value, character)
           when Onibi::AST::Escape then Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
           when Onibi::AST::Property then Onibi::UnicodeProperties.matches?(expression.name, character)
-          when Onibi::AST::Any then expression.value != "." || character != "\n"
+          when Onibi::AST::Any then flags[:multiline] || expression.value != "." || character != "\n"
           else false
           end
         end
 
-        def sequence_length(node, characters, cursor)
+        def sequence_length(node, characters, cursor, flags = {})
           parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
           position = cursor
           parts.each do |part|
             length = case part
-                     when Onibi::AST::Quantifier then quantifier_length(part, characters, position)
-                     when Onibi::AST::Group then sequence_length(part.body, characters, position)
-                     else transition_length([operation_for(part), part], characters, position)
+                     when Onibi::AST::Quantifier then quantifier_length(part, characters, position, flags)
+                     when Onibi::AST::Group then sequence_length(part.body, characters, position, flags)
+                     else transition_length([operation_for(part), part], characters, position, flags)
                      end
             return nil unless length
 
             position += length
           end
           position - cursor
+        end
+
+        def option_group_length(group, characters, cursor)
+          sequence_length(group.body, characters, cursor,
+                          ignorecase: group.ignorecase, multiline: group.multiline)
         end
 
         def operation_for(node)

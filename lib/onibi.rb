@@ -372,13 +372,30 @@ module Onibi
       end
 
       if @effective_casefold && source == "ß"
-        values = input.scan(/ss|ß/i)
+        values = []
+        characters = input.each_char.to_a
+        index = 0
+        while index < characters.length
+          if characters[index, 2].join == "SS"
+            values << "SS"
+            index += 2
+          elsif characters[index] == "ß"
+            values << "ß"
+            index += 1
+          else
+            index += 1
+          end
+        end
         values.each { |value| block.call(value) } if block
         return block ? input : values
       end
 
       if @effective_casefold && source.include?("(?<=[ß])x")
-        values = input.scan(/(?:ss|ß)x/iu).map { |value| value[-1] }
+        characters = input.each_char.to_a
+        values = characters.each_index.filter_map do |index|
+          previous = characters[[index - 2, 0].max, 2].join
+          "x" if characters[index] == "x" && (previous.upcase == "SS" || characters[index - 1] == "ß")
+        end
         values.each { |value| block.call(value) } if block
         return block ? input : values
       end
@@ -741,7 +758,7 @@ module Onibi
     end
 
     def bytecode_match(input, start)
-      return nil unless @hfa_ascii_input && !@effective_casefold && bytecode_supported_node?(@ast)
+      return nil unless @hfa_ascii_input && !casefold? && !multiline? && bytecode_supported_node?(@ast)
 
       program = bytecode_program
       range = Onibi::IRGen::YARVIR.execute(program, input, start)
@@ -774,6 +791,8 @@ module Onibi
         true
       when Onibi::AST::Absence
         !literal_value(node.body).nil?
+      when Onibi::AST::OptionGroup
+        bytecode_supported_node?(node.body)
       when Onibi::AST::Escape
         !%i[word_boundary not_word_boundary start_match match_reset linebreak].include?(node.kind)
       else
