@@ -45,7 +45,12 @@ module Onibi
     end
 
     def named_index(index)
-      return @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
+      if index.is_a?(String) || index.is_a?(Symbol)
+        value = @names[index.to_s]
+        return value.reverse.find { |candidate| @values[candidate] } || value.last if value.is_a?(Array)
+
+        return value
+      end
 
       index
     end

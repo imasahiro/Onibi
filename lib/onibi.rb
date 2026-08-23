@@ -413,7 +413,25 @@ module Onibi
     end
 
     def bytecode_nullable?
-      @bytecode_nullable ||= !Onibi::IRGen::YARVIR.execute(bytecode_program, "", 0).nil?
+      @bytecode_nullable ||= minimum_match_width(@ast).zero?
+    end
+
+    def minimum_match_width(node)
+      case node
+      when Onibi::AST::Literal then node.value.length
+      when Onibi::AST::CharacterClass, Onibi::AST::Property, Onibi::AST::Any then 1
+      when Onibi::AST::Escape then %i[word_boundary not_word_boundary start_match].include?(node.kind) ? 0 : 1
+      when Onibi::AST::Anchor, Onibi::AST::Assertion, Onibi::AST::Absence then 0
+      when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall then 0
+      when Onibi::AST::Sequence then node.parts.sum { |part| minimum_match_width(part) }
+      when Onibi::AST::Alternation then node.branches.map { |branch| minimum_match_width(branch) }.min
+      when Onibi::AST::Group, Onibi::AST::AtomicGroup then minimum_match_width(node.body)
+      when Onibi::AST::OptionGroup then minimum_match_width(node.body)
+      when Onibi::AST::Conditional
+        [node.yes_branch, node.no_branch].compact.map { |branch| minimum_match_width(branch) }.min
+      when Onibi::AST::Quantifier then minimum_match_width(node.expression) * node.minimum
+      else 1
+      end
     end
 
     def replacement_value(replacement, matched)
@@ -447,7 +465,12 @@ module Onibi
       captures = bytecode_adjust_captures(range, result[2])
       if capture_count.positive?
         offsets = Array.new(capture_count)
-        captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
+        captures.each do |key, value|
+          next unless key.is_a?(Integer)
+
+          index = named_captures.empty? ? key : public_capture_numbers.index(key)&.+(1)
+          offsets[index - 1] = value if index
+        end
         unless @ascii_input
           return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
           if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
@@ -585,6 +608,8 @@ module Onibi
 
     def capture_count
       @capture_count ||= begin
+        return public_capture_numbers.length unless named_captures.empty?
+
         count = 0
         walk_ast(@ast) { |node| count += 1 if node.is_a?(Onibi::AST::Group) && node.capture }
         count
@@ -592,7 +617,19 @@ module Onibi
     end
 
     def result_names
-      @result_names ||= named_captures.transform_values(&:first)
+      @result_names ||= named_captures.transform_values do |indices|
+        indices.map { |index| public_capture_numbers.index(index) + 1 }
+      end
+    end
+
+    def public_capture_numbers
+      @public_capture_numbers ||= begin
+        numbers = []
+        walk_ast(@ast) do |node|
+          numbers << node.number if node.is_a?(Onibi::AST::Group) && node.capture && node.name
+        end
+        numbers
+      end
     end
 
     def ast_contains_node?(node, klass)

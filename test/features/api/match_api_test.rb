@@ -36,6 +36,35 @@ class MatchApiTest < Minitest::Test
     assert_equal [1, 1], regexp.match("a", 10).offset(0)
   end
 
+  def test_zero_width_lookbehind_uses_the_end_position_for_large_offsets
+    match = Onibi::Regexp.new("(?<=a)").match("ba", 99)
+
+    assert_equal "", match[0]
+    assert_equal 2, match.begin(0)
+  end
+
+  def test_lookbehind_captures_are_returned_by_the_vm
+    match = Onibi::Regexp.new("(?<=(ab))c").match("abc")
+
+    assert_equal "c", match[0]
+    assert_equal ["ab"], match.captures
+    assert_equal 0, match.begin(1)
+  end
+
+  def test_named_captures_define_the_public_capture_indexes
+    match = Onibi::Regexp.new("(?<name>(a))(b)").match("ab")
+
+    assert_equal %w[ab a], match.to_a
+    assert_equal "a", match["name"]
+    assert_nil match[2]
+  end
+
+  def test_duplicate_named_captures_use_the_last_named_value
+    match = Onibi::Regexp.new("(?<name>a)(?<name>b)").match("ab")
+
+    assert_equal "b", match["name"]
+  end
+
   def test_captures_and_names_come_from_vm_result
     match = Onibi::Regexp.new("(?<word>[a-z]+)-\\k<word>").match("echo-echo")
 

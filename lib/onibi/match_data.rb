@@ -179,6 +179,7 @@ module Onibi
 
         index = @names[name]
       end
+      index = index.reverse.find { |candidate| @values[candidate] } || index.last if index.is_a?(Array)
       return nil if index.is_a?(Integer) && index.negative? && index < -@captures.length
 
       @values[index]

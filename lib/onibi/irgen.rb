@@ -179,8 +179,24 @@ module Onibi
             return matched ? [] : [[0, captures]]
           end
 
+          return lookbehind_results(assertion.body, characters, cursor, captures, flags) if assertion.kind == :positive_lookbehind
+
+          if assertion.kind == :negative_lookbehind
+            matched = lookbehind_results(assertion.body, characters, cursor, captures, flags).any?
+            return matched ? [] : [[0, captures]]
+          end
+
           length = assertion_length(assertion, characters, cursor, flags)
           length ? [[0, captures]] : []
+        end
+
+        def lookbehind_results(body, characters, cursor, captures, flags)
+          0.upto(cursor).reverse_each do |width|
+            results = node_results(body, characters, cursor - width, captures, flags)
+            matching = results.select { |length, _inner| length == width }
+            return matching.map { |_length, inner| [0, inner] } unless matching.empty?
+          end
+          []
         end
 
         def node_results(node, characters, cursor, captures, flags = {})
