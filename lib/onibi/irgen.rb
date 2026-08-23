@@ -860,9 +860,14 @@ module Onibi
             return quantified.downto(0).map { |length| [length, body_captures] }
           end
 
+          failure_state = nil
           cursor.upto(characters.length) do |position|
             results = node_results(node.body, characters, position, captures, flags)
-            next if results.empty?
+            if results.empty?
+              candidate = sequence_failure_state(node.body, characters, position, captures, flags)
+              failure_state = candidate if candidate&.keys&.any? { |key| key.is_a?(Integer) }
+              next
+            end
 
             preferred = if results.any? { |_candidate, state| state.key?(:__match_alternative) }
                           results.find { |_candidate, state| !state.key?(:__match_start) }
@@ -915,8 +920,42 @@ module Onibi
             maximum = [maximum, 0].max
             return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
           end
+          if failure_state
+            failure_captures = filter_nested_absence_captures(node.body, failure_state)
+            failure_captures = filter_absence_capture_scope(node.body, failure_captures)
+            maximum = characters.length - cursor
+            return maximum.downto(0).map { |length| [length, failure_captures] }
+          end
           maximum = characters.length - cursor
           maximum.downto(0).map { |length| [length, captures] }
+        end
+
+        def sequence_failure_state(body, characters, cursor, captures, flags)
+          loop do
+            if (body.is_a?(Onibi::AST::Group) || body.is_a?(SemanticBytecode::Group)) && !body.capture
+              body = body.body
+            elsif body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+              only = body.parts.one? && body.parts.first
+              body = only.body if (only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)) && !only.capture
+              break
+            else
+              return
+            end
+          end
+          return unless body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+
+          states = [[0, captures]]
+          body.parts.each do |part|
+            next_states = states.flat_map do |consumed, state|
+              node_results(part, characters, cursor + consumed, state, flags).map do |length, inner|
+                [consumed + length, inner]
+              end
+            end
+            return states.max_by(&:first)&.last if next_states.empty?
+
+            states = next_states
+          end
+          nil
         end
 
         def zero_width_absence_results(body, characters, cursor, captures, flags)
