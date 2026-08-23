@@ -814,7 +814,8 @@ module Onibi
 
           quantified = quantified_absence_length(node.body, characters, cursor)
           if quantified
-            body_result = node_results(node.body, characters, cursor, captures, flags).first
+            body_results = node_results(node.body, characters, cursor, captures, flags)
+            body_result = body_results.find { |length, _state| length.positive? } || body_results.first
             body_captures = body_result ? body_result.last : captures
             body_captures = captures if captureless_absence_body?(node.body)
             body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
@@ -826,7 +827,7 @@ module Onibi
             results = node_results(node.body, characters, position, captures, flags)
             next if results.empty?
 
-            length, inner_captures = results.first
+            length, inner_captures = results.find { |candidate, _state| candidate.positive? } || results.first
             inner_captures = captures if captureless_absence_body?(node.body)
             inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
             inner_captures = filter_nested_absence_captures(node.body, inner_captures)
@@ -918,7 +919,7 @@ module Onibi
 
           unless quantifier.kind == :+
             adjusted = captures.dup
-            adjusted.delete(outer.number) if length != quantifier.minimum
+            adjusted.delete(outer.number) if length.zero? || quantifier.kind != :"?"
             return adjusted
           end
 

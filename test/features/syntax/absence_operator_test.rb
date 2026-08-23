@@ -81,6 +81,14 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_keeps_a_nullable_body_capture
+    match = Onibi::Regexp.new("(?~(a?))").match("a")
+
+    assert_equal ["", "a"], match.to_a
+    assert_equal [0, 0], match.offset(0)
+    assert_equal [0, 1], match.offset(1)
+  end
+
   def test_absence_operator_handles_unbounded_range_bodies
     regexp = Onibi::Regexp.new("(?~a{2,})")
 
