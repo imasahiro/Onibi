@@ -842,7 +842,7 @@ module Onibi
       when Onibi::AST::Absence
         !absence_literal_value(node.body).nil?
       when Onibi::AST::OptionGroup
-        bytecode_supported_node?(node.body) && !ast_contains_node?(node.body, Onibi::AST::Backreference)
+        bytecode_supported_node?(node.body)
       when Onibi::AST::AtomicGroup
         bytecode_literal_choice_group?(node.body)
       when Onibi::AST::Group

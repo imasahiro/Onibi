@@ -278,7 +278,7 @@ module Onibi
           when :match_group
             sequence_length(operand.body, characters, cursor)
           when :match_backreference
-            backreference_length(operand, characters, cursor, captures)
+            backreference_length(operand, characters, cursor, captures, flags)
           when :match_conditional
             conditional_length(operand, characters, cursor, captures)
           when :match_atomic_group
@@ -414,12 +414,14 @@ module Onibi
           captures[group.name] = [delimiter_start, delimiter_start + value.length] if group.name
         end
 
-        def backreference_length(reference, characters, cursor, captures)
+        def backreference_length(reference, characters, cursor, captures, flags = {})
           span = captures[reference.identifier]
           return nil unless span
 
           value = characters[span[0]...span[1]]
-          characters[cursor, value.length] == value ? value.length : nil
+          candidate = characters[cursor, value.length]
+          matched = flags[:ignorecase] ? candidate.join.casecmp?(value.join) : candidate == value
+          matched ? value.length : nil
         end
 
         def conditional_length(conditional, characters, cursor, captures)
