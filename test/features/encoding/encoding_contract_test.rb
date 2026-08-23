@@ -26,7 +26,7 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
-  def test_unicode_literal_full_casefold_uses_hfa_for_ascii_input
+  def test_unicode_literal_full_casefold_runs_in_the_vm_for_ascii_input
     regexp = Onibi::Regexp.new("ſ", "i")
 
     assert_equal "S", regexp.match("S").to_s

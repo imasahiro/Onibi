@@ -140,7 +140,7 @@ class EncodingTest < Minitest::Test
     end
   end
 
-  def test_non_utf8_unicode_property_match_uses_hfa
+  def test_non_utf8_unicode_property_match_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
     input = "あ".encode(encoding)
@@ -148,7 +148,7 @@ class EncodingTest < Minitest::Test
     refute_nil regexp.match(input)
   end
 
-  def test_non_utf8_unicode_property_scan_uses_hfa
+  def test_non_utf8_unicode_property_scan_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
     input = "漢あ字".encode(encoding)

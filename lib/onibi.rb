@@ -165,11 +165,6 @@ module Onibi
       @ast = @parsed.ast
       @effective_casefold = casefold? || scoped_casefold?(@ast)
       @effective_multiline = multiline? || scoped_multiline?(@ast)
-      @hfa_unicode_ignorecase_literal_fold = source if @effective_casefold && !source.ascii_only?
-      @hfa_unicode_match_safe = true if source.include?("\\p{")
-      if (repeated = @source.match(/\(\?:([^()]+)\)\+/))
-        @hfa_unicode_repeated_literal_unit = repeated[1]
-      end
       freeze_source_encoding
     end
 
@@ -235,10 +230,6 @@ module Onibi
     end
 
     def match?(input, position = 0)
-      unless instance_variable_defined?(:@hfa_match_question_safety_checked)
-        hfa_contains_possessive_quantifier?
-        @hfa_match_question_safety_checked = true
-      end
       !match(input, position).nil?
     end
 
@@ -261,14 +252,9 @@ module Onibi
     def match(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      ascii_input = if @hfa_precomputed_input.equal?(input)
-                      @hfa_precomputed_input = nil
-                      true
-                    else
-                      input.ascii_only?
-                    end
-      @hfa_ascii_input = ascii_input
-      @hfa_input_encoding = input.encoding
+      ascii_input = input.ascii_only?
+      @ascii_input = ascii_input
+      @input_encoding = input.encoding
       raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if fixed_encoding? && !ascii_input && input.encoding != encoding
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
@@ -276,9 +262,6 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
-      # rubocop:disable Layout/LineLength
-      # if ascii_input && (hfa_captureless_regular_sequence_result_safe? || hfa_scoped_ignorecase_sequence_result_safe? || hfa_scoped_multiline_sequence_result_safe?)
-      # rubocop:enable Layout/LineLength
       return bytecode_match(input, start_position(position)) if bytecode_applicable?
 
       nil
@@ -288,7 +271,7 @@ module Onibi
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
       if @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-         @ast.parts.first.is_a?(Onibi::AST::Absence) && hfa_capture_count.zero?
+         @ast.parts.first.is_a?(Onibi::AST::Absence) && capture_count.zero?
         ranges = Onibi::IRGen::YARVIR.execute_absence_scan(bytecode_program, input)
         values = ranges.map { |start, finish| input[start...finish] }
         values.each { |value| block.call(value) } if block
@@ -451,35 +434,35 @@ module Onibi
 
       range = result.first(2)
       captures = bytecode_adjust_captures(range, result[2])
-      if hfa_capture_count.positive?
-        offsets = Array.new(hfa_capture_count)
+      if capture_count.positive?
+        offsets = Array.new(capture_count)
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
-        unless @hfa_ascii_input
-          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self) if @hfa_input_encoding == Encoding::ASCII_8BIT
-          if @hfa_input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
-            return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
+        unless @ascii_input
+          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
+          if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
+            return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
           to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
           return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                              byte_offsets, hfa_result_names, self)
+                                              byte_offsets, result_names, self)
         end
-        return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
+        return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
       end
 
-      unless @hfa_ascii_input
-        return Onibi::MatchData.captureless(input, range[0], range[1], self) if @hfa_input_encoding == Encoding::ASCII_8BIT
+      unless @ascii_input
+        return Onibi::MatchData.captureless(input, range[0], range[1], self) if @input_encoding == Encoding::ASCII_8BIT
 
-        to_bytes = if @hfa_input_encoding == Encoding::UTF_8
+        to_bytes = if @input_encoding == Encoding::UTF_8
                      ->(position) { input.codepoints.take(position).pack("U*").bytesize }
                    else
                      ->(position) { input.each_char.take(position).join.bytesize }
                    end
         constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
         return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                            [], hfa_result_names, self)
+                                            [], result_names, self)
       end
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
@@ -659,184 +642,6 @@ module Onibi
         @ast.parts.first.is_a?(Onibi::AST::Absence) && !absence_literal_value(@ast.parts.first.body).nil?
     end
 
-    # Compatibility helpers for the direct HFA test surface.
-    def hfa_scan_input_safe?(input)
-      @hfa_scan_input_safe ||= begin
-        input.ascii_only?
-        hfa_encoding_neutral_scan_safe?
-        true
-      end
-    end
-
-    def hfa_generic_match(input, position, ascii_input: nil)
-      @hfa_precomputed_input = input if ascii_input && input.ascii_only?
-      match(input, position)
-    end
-
-    def hfa_capture_count
-      @hfa_capture_count ||= named_captures.values.flatten.max || count_captures(@ast)
-    end
-
-    def hfa_result_names
-      @hfa_result_names ||= named_captures.transform_values(&:first)
-    end
-
-    def hfa_simple_capture_count
-      @hfa_simple_capture_count ||= count_captures(@ast)
-    end
-
-    def hfa_nested_repeated_capture_parts
-      @hfa_nested_repeated_capture_parts ||= @ast
-    end
-
-    def hfa_nested_repeated_capture_spec
-      @hfa_nested_repeated_capture_spec ||= [hfa_nested_repeated_capture_parts, [], hfa_capture_count]
-    end
-
-    def hfa_nested_literal_capture_result_safe?
-      true
-    end
-
-    def hfa_repeated_class_capture_parts
-      @hfa_repeated_class_capture_parts ||= @ast
-    end
-
-    def hfa_adjacent_nested_repeated_capture_groups
-      @hfa_adjacent_nested_repeated_capture_groups ||= @ast
-    end
-
-    def hfa_offset_match_data(input, start_position, finish_position, offsets, names)
-      Onibi::MatchData.from_offsets(input, start_position, finish_position, offsets, names, self)
-    end
-
-    def hfa_capture_offset_strategy
-      @hfa_capture_offset_strategy ||= :simple
-    end
-
-    def hfa_repeated_match_span(_unit, _input, start_position, finish_position)
-      [finish_position - start_position, 2]
-    end
-
-    def hfa_adjacent_nested_repeated_capture_spec
-      @hfa_adjacent_nested_repeated_capture_spec ||= [nil, %w[ab cd], [1, 2, 3, 4], 4]
-    end
-
-    def hfa_repeated_class_capture_spec
-      @hfa_repeated_class_capture_spec ||= [nil, nil, [1, 2], nil, 2]
-    end
-
-    def hfa_unicode_repeated_literal_capture_character_offsets(_input, start_position, finish_position)
-      [start_position, start_position + (finish_position - start_position) / 2]
-    end
-
-    def hfa_captureless_alternation_scan_spec
-      @hfa_captureless_alternation_scan_spec ||= [[], {}]
-    end
-
-    def hfa_captureless_alternation_each_range(input, _spec)
-      position = 0
-      while (matched = internal_match(input, position))
-        yield matched.begin(0), matched.end(0)
-        finish = matched.end(0)
-        position = finish > position ? finish : position + 1
-        break if position > input.length
-      end
-    end
-
-    def hfa_captureless_literal_class_scan_spec
-      ["tHa", { "N".ord => true, "t".ord => true }, ""]
-    end
-
-    def hfa_linebreak_replace_api(input, replacement, _block)
-      [gsub(input, replacement), input.bytesize]
-    end
-
-    HfaProgram = Struct.new(:owner) do
-      def prefix_literal
-        source = owner.source
-        source = source.sub("\\b", "")
-        if source.start_with?("(?<")
-          close = source.index(">")
-          source = source[(close + 1)..] if close
-        end
-        value = source.each_char.take_while { |character| !"\\[(?".include?(character) }.join
-        value = value[0...-1] if value.end_with?("s")
-        value
-      end
-
-      def match_result(input, position)
-        match = owner.match(input, position)
-        match ? [match.begin(0), match.end(0)] : nil
-      end
-    end
-
-    def hfa_program
-      @hfa_program ||= HfaProgram.new(self)
-    end
-
-    def hfa_top_level_capture_plan
-      true
-    end
-
-    def hfa_reverse_literal_capture_spec
-      true
-    end
-
-    def hfa_reverse_top_level_capture_scan_spec
-      true
-    end
-
-    def hfa_direct_delimited_capture_spec
-      true
-    end
-
-    def hfa_literal_prefix_capture_scan_spec
-      true
-    end
-
-    def hfa_top_level_capture_scan_spec
-      source.include?("identifier") ? %w[v api/ pkg-] : true
-    end
-
-    def hfa_alternation_capture_scan_spec
-      return nil if source == "(?<value>[a-z]+[a-z])"
-
-      true
-    end
-
-    def hfa_capture_sequence_scan_spec
-      [[nil, [nil, nil, [[nil, {}]]]]]
-    end
-
-    def hfa_literal_class_scan_spec
-      hfa_captureless_literal_class_scan_spec
-    end
-
-    def hfa_delimited_negated_class_result_spec
-      ["<", ">", 0]
-    end
-
-    def hfa_capture_sequence_delimited_class_end(input, start_position, _table, delimiter, offset = 0)
-      input.index(delimiter, start_position + offset) || input.length
-    end
-
-    def hfa_top_level_capture_offsets(input, start_position, _finish_position)
-      match = self.match(input, start_position)
-      return [] unless match
-
-      (1...match.length).map { |index| match.offset(index) }
-    end
-
-    alias hfa_generic_capture_offsets hfa_top_level_capture_offsets
-
-    def hfa_whole_capture_offsets(start_position, finish_position)
-      [[start_position, finish_position]]
-    end
-
-    def hfa_whole_capture_group
-      @hfa_whole_capture_group ||= @ast
-    end
-
     def unicode_repeated_literal_capture?
       @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
         @ast.parts.first.is_a?(Onibi::AST::Group) &&
@@ -847,60 +652,16 @@ module Onibi
         !@ast.parts.first.body.parts.first.expression.value.ascii_only?
     end
 
-    def hfa_consume_capture_node(_node, input, start_position, _finish_position, _offsets)
-      input.ascii_only?
-      input.bytesize + start_position
-    end
-
-    def hfa_ascii_unicode_run_table
-      self.class.instance_variable_get(:@hfa_ascii_unicode_run_table) ||
-        self.class.instance_variable_set(:@hfa_ascii_unicode_run_table, {})
-    end
-
-    def count_captures(node)
-      count = node.is_a?(Onibi::AST::Group) && node.capture ? 1 : 0
-      node.each_pair.reduce(count) do |total, (_field, value)|
-        values = value.is_a?(Array) ? value : [value]
-        total + values.sum { |child| child.respond_to?(:each_pair) ? count_captures(child) : 0 }
+    def capture_count
+      @capture_count ||= begin
+        count = 0
+        walk_ast(@ast) { |node| count += 1 if node.is_a?(Onibi::AST::Group) && node.capture }
+        count
       end
     end
 
-    def hfa_contains_possessive_quantifier?
-      return @hfa_contains_possessive_quantifier if instance_variable_defined?(:@hfa_contains_possessive_quantifier)
-
-      @hfa_contains_possessive_quantifier = ast_contains_node?(@ast, Onibi::AST::Quantifier) &&
-                                            @source.include?("+")
-    end
-
-    def hfa_match_question_safe?
-      true
-    end
-
-    def hfa_encoding_neutral_scan_safe?
-      true
-    end
-
-    def hfa_each_result(input, &block)
-      # rubocop:disable Style/IdenticalConditionalBranches
-      if hfa_greedy_bounded_sequence_result_safe? || hfa_lazy_bounded_sequence_result_safe? ||
-         hfa_scoped_extended_literal_result_safe?
-        scan(input, &block)
-      else
-        scan(input, &block)
-      end
-      # rubocop:enable Style/IdenticalConditionalBranches
-    end
-
-    def hfa_greedy_bounded_sequence_result_safe?
-      false
-    end
-
-    def hfa_lazy_bounded_sequence_result_safe?
-      false
-    end
-
-    def hfa_scoped_extended_literal_result_safe?
-      false
+    def result_names
+      @result_names ||= named_captures.transform_values(&:first)
     end
 
     def ast_contains_node?(node, klass)
