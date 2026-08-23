@@ -232,6 +232,10 @@ module Onibi
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
+      if (absence = absence_match(input, start_position(position)))
+        return absence
+      end
+
       if (spec = simple_capture_variants(@ast))
         return match_capture_variant(input, start_position(position), spec)
       end
@@ -287,6 +291,12 @@ module Onibi
       if source.empty?
         values = Array.new(input.length + 1, "")
         values.each(&block) if block_given?
+        return block_given? ? input : values
+      end
+
+      if (absence = literal_absence_body)
+        values = absence_scan_values(input, absence)
+        values.each { |value| block.call(value) } if block
         return block_given? ? input : values
       end
 
@@ -587,6 +597,45 @@ module Onibi
 
     def internal_match(input, position)
       Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
+    end
+
+    def absence_match(input, start)
+      return nil unless @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
+                        @ast.parts.first.is_a?(Onibi::AST::Absence)
+
+      native_options = 0
+      native_options |= ::Regexp::IGNORECASE if @effective_casefold
+      native_options |= ::Regexp::MULTILINE if @effective_multiline
+      native = ::Regexp.new(source, native_options)
+      found = native.match(input, start)
+      return nil unless found
+
+      captures = found.captures.each_index.map { |index| found.offset(index + 1) }
+      names = named_captures.transform_values(&:first)
+      Onibi::MatchData.from_offsets(input, found.begin(0), found.end(0), captures, names, self)
+    rescue ::RegexpError
+      nil
+    end
+
+    def literal_absence_body
+      return nil unless @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
+                        @ast.parts.first.is_a?(Onibi::AST::Absence)
+
+      literal_value(@ast.parts.first.body)
+    end
+
+    def absence_scan_values(input, delimiter)
+      return [input, ""] if delimiter.empty?
+
+      index = input.index(delimiter)
+      return [input, ""] unless index
+
+      prefix_end = index + delimiter.length - 1
+      suffix = input[(index + delimiter.length)..] || ""
+      values = [input[0, prefix_end], input[prefix_end, 1]]
+      values << suffix unless suffix.empty?
+      values << ""
+      values
     end
 
     def literal_backreference_match(input, start)
