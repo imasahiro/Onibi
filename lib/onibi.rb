@@ -147,6 +147,10 @@ module Onibi
         return match_capture_variant(input, start_position(position), spec)
       end
 
+      if (simple = simple_runtime_match(input, start_position(position)))
+        return simple
+      end
+
       literals = literal_candidates(@ast)
       return nil if literals.empty?
 
@@ -313,6 +317,97 @@ module Onibi
       start = position.is_a?(Integer) ? position : Integer(position)
       start += @source.length if start.negative?
       [start, 0].max
+    end
+
+    def simple_runtime_match(input, start)
+      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
+      return nil unless parts&.length&.positive?
+
+      if parts.length > 1 && parts.all? { |part| simple_runtime_part?(part) }
+        characters = input.each_char.to_a
+        start.upto(characters.length) do |index|
+          finish = match_sequence_parts(parts, characters, index, 0)
+          return captureless_result(input, [index, finish]) if finish
+        end
+        return nil
+      end
+
+      part = parts.first
+      if part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
+        run = find_atom_run(input, start, part, 1, 1, :greedy)
+        return captureless_result(input, run) if run
+      elsif part.is_a?(Onibi::AST::Quantifier)
+        run = find_atom_run(input, start, part.expression, part.minimum, part.maximum, part.mode)
+        return captureless_result(input, run) if run
+      end
+      nil
+    end
+
+    def find_atom_run(input, start, expression, minimum, maximum, mode)
+      characters = input.each_char.to_a
+      start.upto(characters.length) do |index|
+        count = 0
+        while index + count < characters.length && atom_matches_character?(expression, characters[index + count]) &&
+              (maximum.nil? || count < maximum)
+          count += 1
+        end
+        next if count < minimum
+
+        length = mode == :lazy ? minimum : count
+        return [index, index + length]
+      end
+      nil
+    end
+
+    def simple_runtime_part?(part)
+      return true if part.is_a?(Onibi::AST::Literal) || part.is_a?(Onibi::AST::CharacterClass) ||
+                     part.is_a?(Onibi::AST::Escape) || part.is_a?(Onibi::AST::Any)
+
+      part.is_a?(Onibi::AST::Quantifier) && simple_runtime_part?(part.expression)
+    end
+
+    def match_sequence_parts(parts, characters, index, part_index)
+      return index if part_index == parts.length
+
+      part = parts[part_index]
+      if part.is_a?(Onibi::AST::Quantifier)
+        limit = part.maximum || (characters.length - index)
+        count = 0
+        cursor = index
+        while count < limit && cursor < characters.length && atom_matches_character?(part.expression, characters[cursor])
+          count += 1
+          cursor += 1
+        end
+        counts = part.mode == :lazy ? (part.minimum..count).to_a : count.downto(part.minimum).to_a
+        counts.each do |length|
+          result = match_sequence_parts(parts, characters, index + length, part_index + 1)
+          return result if result
+        end
+        return nil
+      end
+
+      return nil unless index < characters.length && atom_matches_character?(part, characters[index])
+
+      match_sequence_parts(parts, characters, index + 1, part_index + 1)
+    end
+
+    def atom_matches_character?(expression, character)
+      case expression
+      when Onibi::AST::Literal then expression.value == character
+      when Onibi::AST::CharacterClass
+        Onibi::ClassPredicates.matches?(expression.value, character, ignorecase: casefold?)
+      when Onibi::AST::Escape
+        return Onibi::CharacterPredicates.linebreak?(character) if expression.kind == :linebreak
+
+        Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
+      when Onibi::AST::Any
+        casefold? || expression.value != "." || character != "\n"
+      else false
+      end
+    end
+
+    def captureless_result(input, range)
+      Onibi::MatchData.captureless(input, range[0], range[1], self)
     end
 
     def walk_ast(node, &block)
