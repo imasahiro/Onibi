@@ -273,9 +273,7 @@ module Onibi
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
       end
 
-      if (bytecode = bytecode_match(input, start_position(position)))
-        return bytecode
-      end
+      return bytecode_match(input, start_position(position)) if bytecode_applicable?
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
 
@@ -758,8 +756,6 @@ module Onibi
     end
 
     def bytecode_match(input, start)
-      return nil unless @hfa_ascii_input && !casefold? && !multiline? && bytecode_supported_node?(@ast)
-
       program = bytecode_program
       result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start)
       return nil unless result
@@ -775,6 +771,33 @@ module Onibi
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
       nil
+    end
+
+    def bytecode_applicable?
+      return false unless @hfa_ascii_input && !casefold? && !multiline? && bytecode_supported_node?(@ast)
+      return false if source.include?("(?-") ||
+                      (source.start_with?("(?i") && !source.start_with?("(?i:")) ||
+                      (source.start_with?("(?m") && !source.start_with?("(?m:")) ||
+                      (source.start_with?("(?x") && !source.start_with?("(?x:"))
+      if ast_contains_node?(@ast, Onibi::AST::Quantifier) &&
+         !(@ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Quantifier))
+        return false
+      end
+
+      if @ast.is_a?(Onibi::AST::Sequence)
+        parts = @ast.parts
+        return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Quantifier) }
+        return false if parts.any? { |part| part.is_a?(Onibi::AST::AtomicGroup) }
+        return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Absence) }
+        return false if parts.any? do |part|
+          part.is_a?(Onibi::AST::Quantifier) && part.expression.is_a?(Onibi::AST::Group)
+        end
+      end
+
+      bytecode_program
+      true
+    rescue Onibi::Error, ArgumentError
+      false
     end
 
     def bytecode_program
@@ -800,13 +823,19 @@ module Onibi
       when Onibi::AST::Absence
         !literal_value(node.body).nil?
       when Onibi::AST::OptionGroup
-        bytecode_supported_node?(node.body)
+        bytecode_supported_node?(node.body) && !ast_contains_node?(node.body, Onibi::AST::Backreference)
       when Onibi::AST::AtomicGroup
         bytecode_supported_node?(node.body)
+      when Onibi::AST::Group
+        node.body.is_a?(Onibi::AST::Sequence) && node.body.parts.all? { |part| part.is_a?(Onibi::AST::Literal) }
+      when Onibi::AST::Backreference
+        true
+      when Onibi::AST::Conditional
+        bytecode_supported_node?(node.yes_branch) && bytecode_supported_node?(node.no_branch)
       when Onibi::AST::Assertion
         !literal_value(node.body).nil?
       when Onibi::AST::Anchor
-        true
+        false
       when Onibi::AST::Escape
         !%i[word_boundary not_word_boundary start_match match_reset linebreak].include?(node.kind)
       else

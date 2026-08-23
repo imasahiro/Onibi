@@ -81,22 +81,23 @@ module Onibi
           characters = input.each_char.to_a
           first = [start_position, 0].max
           first.upto(characters.length) do |start|
-            state = @dfa.start_state.id
-            cursor = start
-            captures = {}
-            loop do
-              transition = transitions_for(state).find do |label, _target|
-                transition_length(label, characters, cursor, {}, captures)
-              end
-              break unless transition
+            result = walk(@dfa.start_state.id, characters, start, {}, start)
+            return result if result
+          end
+          nil
+        end
 
-              label, target = transition
-              length = transition_length(label, characters, cursor, {}, captures)
-              captures_for(label, cursor, length, captures)
-              cursor += length
-              state = target
-              return [start, cursor, captures] if accepting?(state)
-            end
+        def walk(state, characters, cursor, captures, start)
+          return [start, cursor, captures] if accepting?(state)
+
+          transitions_for(state).each do |label, target|
+            length = transition_length(label, characters, cursor, {}, captures)
+            next unless length
+
+            next_captures = captures.dup
+            captures_for(label, cursor, length, next_captures)
+            result = walk(target, characters, cursor + length, next_captures, start)
+            return result if result
           end
           nil
         end
@@ -136,6 +137,8 @@ module Onibi
             sequence_length(operand.body, characters, cursor)
           when :match_backreference
             backreference_length(operand, characters, cursor, captures)
+          when :match_conditional
+            conditional_length(operand, characters, cursor, captures)
           when :match_atomic_group
             sequence_length(operand.body, characters, cursor)
           when :match_option_group
@@ -150,6 +153,22 @@ module Onibi
         end
 
         def quantifier_length(quantifier, characters, cursor, flags = {})
+          if quantifier.expression.is_a?(Onibi::AST::Group)
+            count = 0
+            consumed = 0
+            limit = quantifier.maximum || characters.length
+            while count < limit
+              unit = sequence_length(quantifier.expression.body, characters, cursor + consumed, flags)
+              break unless unit&.positive?
+
+              count += 1
+              consumed += unit
+            end
+            return nil if count < quantifier.minimum
+
+            return quantifier.mode == :lazy ? sequence_length(quantifier.expression.body, characters, cursor, flags) : consumed
+          end
+
           count = 0
           limit = quantifier.maximum || (characters.length - cursor)
           while count < limit && cursor + count < characters.length &&
@@ -163,6 +182,14 @@ module Onibi
 
         def captures_for(label, cursor, length, captures)
           opcode, operand = label
+          if opcode == :match_quantifier && operand.expression.is_a?(Onibi::AST::Group)
+            group = operand.expression
+            return unless group.capture && length.positive?
+
+            captures[group.number] = [cursor, cursor + length]
+            captures[group.name] = [cursor, cursor + length] if group.name
+            return
+          end
           return unless opcode == :match_group && operand.capture
 
           captures[operand.number] = [cursor, cursor + length]
@@ -175,6 +202,15 @@ module Onibi
 
           value = characters[span[0]...span[1]]
           characters[cursor, value.length] == value ? value.length : nil
+        end
+
+        def conditional_length(conditional, characters, cursor, captures)
+          condition = conditional.condition
+          key = condition.is_a?(Array) ? condition[0] : condition
+          branch = captures.key?(key) ? conditional.yes_branch : conditional.no_branch
+          return nil unless branch
+
+          sequence_length(branch, characters, cursor)
         end
 
         def atom_matches?(expression, character, flags = {})
