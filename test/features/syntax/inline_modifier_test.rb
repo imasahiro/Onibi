@@ -98,6 +98,15 @@ class InlineModifierTest < Minitest::Test
     end
   end
 
+  def test_scoped_modifier_inherits_unspecified_outer_flags
+    pattern = "(?x:(\\z|[^a]))"
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match("A")
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match("A")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
   private
 
   def option_names(options)

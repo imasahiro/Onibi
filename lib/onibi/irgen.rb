@@ -293,8 +293,10 @@ module Onibi
           when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
             quantifier_results(node, characters, cursor, captures, flags)
           when Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup
-            node_results(node.body, characters, cursor, captures,
-                         flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
+            scoped_flags = flags.dup
+            scoped_flags[:ignorecase] = node.ignorecase unless node.ignorecase.nil?
+            scoped_flags[:multiline] = node.multiline unless node.multiline.nil?
+            node_results(node.body, characters, cursor, captures, scoped_flags)
           when Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
             node_results(node.body, characters, cursor, captures, flags).first(1)
           when Onibi::AST::Assertion, SemanticBytecode::Assertion
@@ -348,6 +350,7 @@ module Onibi
             node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
               if length.zero?
                 accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+                visit.call(consumed, inner, count + 1) if count + 1 < limit
                 next
               end
               visit.call(consumed + length, inner, count + 1)
@@ -518,7 +521,7 @@ module Onibi
           when :match_atomic_group
             sequence_length(operand.body, characters, cursor)
           when :match_option_group
-            option_group_length(operand, characters, cursor)
+            option_group_length(operand, characters, cursor, flags)
           when :match_absence
             absence_length(operand, characters, cursor, flags)
           when :match_assertion
@@ -704,9 +707,11 @@ module Onibi
           position - cursor
         end
 
-        def option_group_length(group, characters, cursor)
-          sequence_length(group.body, characters, cursor,
-                          ignorecase: group.ignorecase, multiline: group.multiline)
+        def option_group_length(group, characters, cursor, flags = {})
+          scoped_flags = flags.dup
+          scoped_flags[:ignorecase] = group.ignorecase unless group.ignorecase.nil?
+          scoped_flags[:multiline] = group.multiline unless group.multiline.nil?
+          sequence_length(group.body, characters, cursor, scoped_flags)
         end
 
         def operation_for(node)

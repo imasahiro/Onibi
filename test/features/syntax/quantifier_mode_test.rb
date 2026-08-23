@@ -50,6 +50,14 @@ class QuantifierModeTest < Minitest::Test
     assert_equal [0, 0], match.offset(0)
   end
 
+  def test_finite_zero_width_quantifier_repeats_anchor
+    expected = ::Regexp.new("\\z{2}").match("a")
+    actual = Onibi::Regexp.new("\\z{2}").match("a")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
   def test_nullable_nested_quantifier_keeps_the_empty_capture
     %w[a aa].each do |input|
       mri = Regexp.new("(a?)+").match(input)
