@@ -223,7 +223,7 @@ module Onibi
           when :match_subexpression_call
             node_results(operand, characters, cursor, captures, flags)
           when :match_absence
-            absence_lengths(operand, characters, cursor).map { |length| [length, {}] }
+            absence_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
           when :match_class
             class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
           else
@@ -307,7 +307,7 @@ module Onibi
             @subexpression_depth -= 1
             results
           when Onibi::AST::Absence, SemanticBytecode::Absence
-            absence_lengths(node, characters, cursor).map { |length| [length, captures] }
+            absence_results(node, characters, cursor, captures, flags)
           else
             length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
             return [] unless length
@@ -465,7 +465,7 @@ module Onibi
           when :match_option_group
             option_group_length(operand, characters, cursor)
           when :match_absence
-            absence_length(operand, characters, cursor)
+            absence_length(operand, characters, cursor, flags)
           when :match_assertion
             assertion_length(operand, characters, cursor, flags)
           when :test_anchor
@@ -669,21 +669,48 @@ module Onibi
           end
         end
 
-        def absence_length(node, characters, cursor)
+        def absence_length(node, characters, cursor, flags = {})
           delimiter = literal_value(node.body)
-          return nil unless delimiter
-          return cursor == characters.length ? 0 : nil if delimiter.empty?
+          return generic_absence_length(node, characters, cursor, flags) unless delimiter
+          return 0 if delimiter.empty? && cursor == characters.length
+          return nil if delimiter.empty?
 
           value = characters[cursor..]&.join.to_s
           index = value.index(delimiter)
           index ? index + delimiter.length - 1 : value.length
         end
 
-        def absence_lengths(node, characters, cursor)
-          maximum = absence_length(node, characters, cursor)
-          return [] unless maximum
+        def absence_lengths(node, characters, cursor, flags = {})
+          maximum = absence_length(node, characters, cursor, flags)
+          return [] if maximum.nil?
 
           maximum.downto(0).to_a
+        end
+
+        def absence_results(node, characters, cursor, captures, flags)
+          delimiter = literal_value(node.body)
+          return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
+
+          cursor.upto(characters.length) do |position|
+            results = node_results(node.body, characters, position, captures, flags)
+            next if results.empty?
+
+            length, inner_captures = results.first
+            maximum = [position - cursor + length - 1, 0].max
+            return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
+          end
+          [[characters.length - cursor, captures]]
+        end
+
+        def generic_absence_length(node, characters, cursor, flags)
+          cursor.upto(characters.length) do |position|
+            results = node_results(node.body, characters, position, {}, flags)
+            next if results.empty?
+
+            length = results.first[0]
+            return [position - cursor + length - 1, 0].max
+          end
+          characters.length - cursor
         end
 
         def class_match_lengths(node, characters, cursor, flags)
