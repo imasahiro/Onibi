@@ -189,6 +189,15 @@ class V2IRGenTest < Minitest::Test
     assert_nil Onibi::IRGen::YARVIR.execute(program, "xxacyy", 0)
   end
 
+  def test_dedicated_executor_tracks_a_simple_capture_backreference
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)\\1")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+
+    assert_equal [2, 6, { 1 => [2, 4] }],
+                 Onibi::IRGen::YARVIR.execute_with_captures(program, "xxabab", 0)
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))

@@ -65,6 +65,17 @@ module Onibi
         end
 
         def match(input, start_position = 0)
+          result = run(input, start_position)
+          result&.first(2)
+        end
+
+        def match_with_captures(input, start_position = 0)
+          run(input, start_position)
+        end
+
+        private
+
+        def run(input, start_position)
           return nil unless @dfa.is_a?(Onibi::Automata::DFA)
 
           characters = input.each_char.to_a
@@ -72,22 +83,23 @@ module Onibi
           first.upto(characters.length) do |start|
             state = @dfa.start_state.id
             cursor = start
+            captures = {}
             loop do
               transition = transitions_for(state).find do |label, _target|
-                transition_length(label, characters, cursor)
+                transition_length(label, characters, cursor, {}, captures)
               end
               break unless transition
 
               label, target = transition
-              cursor += transition_length(label, characters, cursor)
+              length = transition_length(label, characters, cursor, {}, captures)
+              captures_for(label, cursor, length, captures)
+              cursor += length
               state = target
-              return [start, cursor] if accepting?(state)
+              return [start, cursor, captures] if accepting?(state)
             end
           end
           nil
         end
-
-        private
 
         def transitions_for(state)
           @dfa.transitions.filter_map do |(source, label), target|
@@ -99,7 +111,7 @@ module Onibi
           @dfa.states.any? { |candidate| candidate.id == state && candidate.accepting }
         end
 
-        def transition_length(label, characters, cursor, flags = {})
+        def transition_length(label, characters, cursor, flags = {}, captures = {})
           opcode, operand = label
           case opcode
           when :match_literal
@@ -122,6 +134,8 @@ module Onibi
             quantifier_length(operand, characters, cursor)
           when :match_group
             sequence_length(operand.body, characters, cursor)
+          when :match_backreference
+            backreference_length(operand, characters, cursor, captures)
           when :match_atomic_group
             sequence_length(operand.body, characters, cursor)
           when :match_option_group
@@ -145,6 +159,22 @@ module Onibi
           return nil if count < quantifier.minimum
 
           quantifier.mode == :lazy ? quantifier.minimum : count
+        end
+
+        def captures_for(label, cursor, length, captures)
+          opcode, operand = label
+          return unless opcode == :match_group && operand.capture
+
+          captures[operand.number] = [cursor, cursor + length]
+          captures[operand.name] = [cursor, cursor + length] if operand.name
+        end
+
+        def backreference_length(reference, characters, cursor, captures)
+          span = captures[reference.identifier]
+          return nil unless span
+
+          value = characters[span[0]...span[1]]
+          characters[cursor, value.length] == value ? value.length : nil
         end
 
         def atom_matches?(expression, character, flags = {})
@@ -239,6 +269,10 @@ module Onibi
 
       def execute(program, input, start_position = 0)
         Executor.new(program).match(input, start_position)
+      end
+
+      def execute_with_captures(program, input, start_position = 0)
+        Executor.new(program).match_with_captures(input, start_position)
       end
     end
   end

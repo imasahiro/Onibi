@@ -761,8 +761,16 @@ module Onibi
       return nil unless @hfa_ascii_input && !casefold? && !multiline? && bytecode_supported_node?(@ast)
 
       program = bytecode_program
-      range = Onibi::IRGen::YARVIR.execute(program, input, start)
-      return nil unless range
+      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start)
+      return nil unless result
+
+      range = result.first(2)
+      captures = result[2]
+      unless captures.empty?
+        offsets = Array.new(hfa_capture_count)
+        captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
+        return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
+      end
 
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
