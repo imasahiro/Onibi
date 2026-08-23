@@ -227,6 +227,22 @@ module Onibi
       !match(input, position).nil?
     end
 
+    def =~(input)
+      matched = match(input)
+      matched&.begin(0)
+    end
+
+    def ===(input)
+      match?(input)
+    end
+
+    def ~
+      input = eval("$_", TOPLEVEL_BINDING, __FILE__, __LINE__)
+      return nil unless input
+
+      self =~ input
+    end
+
     def match(input, position = 0)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
