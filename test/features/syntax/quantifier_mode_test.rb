@@ -35,4 +35,11 @@ class QuantifierModeTest < Minitest::Test
 
     assert_equal "a", match[1]
   end
+
+  def test_zero_width_quantifier_accepts_one_zero_width_iteration
+    match = Onibi::Regexp.new("(?=a)+").match("ab")
+
+    assert_equal "", match[0]
+    assert_equal [0, 0], match.offset(0)
+  end
 end

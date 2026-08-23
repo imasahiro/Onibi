@@ -342,7 +342,10 @@ module Onibi
               accepted.concat(zero_results) if count + 1 >= quantifier.minimum
               nonzero_results
             end
-            break if next_frontier.empty?
+            if next_frontier.empty?
+              count += 1 if count + 1 >= quantifier.minimum && accepted.any?
+              break
+            end
 
             count += 1
             frontier = next_frontier
