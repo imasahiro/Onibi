@@ -119,6 +119,20 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_preserves_alternation_branch_order
+    cases = [
+      ["(?~(?:b|(?~(?=a))))", "abb"],
+      ["(?~(?:(?~(?=a))|b))", "abb"]
+    ]
+
+    cases.each do |pattern, input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+      assert_equal expected.to_a, actual.to_a, input
+      assert_equal expected.offset(0), actual.offset(0), input
+    end
+  end
+
   def test_absence_operator_handles_unbounded_range_bodies
     regexp = Onibi::Regexp.new("(?~a{2,})")
 

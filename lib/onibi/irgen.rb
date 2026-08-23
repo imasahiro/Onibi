@@ -153,6 +153,7 @@ module Onibi
                          captures.delete(:__match_prefix)
                          captures.delete(:__match_prefix_value)
                          captures.delete(:__match_alternative)
+                         captures.delete(:__match_alternative_index)
                          captures.delete(:__zero_absence)
                          captures.delete(:__match_prefix_zero_absence)
                          captures.delete(:__end_zero_width)
@@ -315,12 +316,13 @@ module Onibi
             end
             states
           when Onibi::AST::Alternation, SemanticBytecode::Alternation
-            node.branches.flat_map do |branch|
+            node.branches.each_with_index.flat_map do |branch, branch_index|
               node_results(branch, characters, cursor, captures, flags).map do |length, state|
                 next [length, state] unless state.key?(:__match_start)
 
                 marked = state.dup
                 marked[:__match_alternative] = true
+                marked[:__match_alternative_index] = branch_index
                 [length, marked]
               end
             end
@@ -862,14 +864,18 @@ module Onibi
             results = node_results(node.body, characters, position, captures, flags)
             next if results.empty?
 
-            length, inner_captures = results.find { |candidate, _state| candidate.positive? } || results.first
+            preferred = if results.any? { |_candidate, state| state.key?(:__match_alternative) }
+                          results.find { |_candidate, state| !state.key?(:__match_start) }
+                        end
+            length, inner_captures = preferred || results.find { |candidate, _state| candidate.positive? } || results.first
             inner_captures = inner_captures.dup
             internal_start = inner_captures.delete(:__match_start)
             internal_end = inner_captures.delete(:__match_end)
             internal_prefix = inner_captures.delete(:__match_prefix)
             internal_prefix_value = inner_captures.delete(:__match_prefix_value)
             internal_probe = inner_captures.delete(:__match_probe)
-            internal_alternative = inner_captures.delete(:__match_alternative)
+            inner_captures.delete(:__match_alternative)
+            internal_alternative_index = inner_captures.delete(:__match_alternative_index)
             inner_captures.delete(:__zero_absence)
             prefix_zero_absence = inner_captures.delete(:__match_prefix_zero_absence)
             inner_captures = captures if captureless_absence_body?(node.body)
@@ -882,7 +888,7 @@ module Onibi
                         match_position - cursor + quantified_length
                       elsif length.zero? && match_position > cursor
                         characters.length - cursor
-                      elsif internal_alternative && internal_prefix.nil?
+                      elsif internal_alternative_index&.positive? && internal_prefix.nil?
                         internal_start - cursor
                       elsif internal_end
                         effective_length = internal_end - internal_start
