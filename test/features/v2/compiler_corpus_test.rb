@@ -12,7 +12,7 @@ class V2CompilerCorpusTest < Minitest::Test
       parsed = Onibi::V2::Parser.parse(pattern)
       compiled = Onibi::V2::Compiler.compile(parsed)
 
-      assert_instance_of Onibi::HybridAutomata::CFG::Graph, compiled.graph, pattern
+      assert_instance_of Onibi::V2::CFG::Graph, compiled.graph, pattern
       assert_operator compiled.graph.blocks.length, :>=, 1, pattern
       assert compiled.graph.blocks.all?(&:terminator), pattern
     end

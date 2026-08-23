@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
-  module HybridAutomata
+  module V2
     # Immutable control-flow representation used between parsing and Ruby emission.
     module CFG
       StateToken = Struct.new(:domain, :version, keyword_init: true) do

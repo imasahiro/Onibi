@@ -22,7 +22,7 @@ module Onibi
           optimized = Pipeline::COALESCING.call(ast)
           CompilationUnit.new(
             ast: optimized,
-            cfg: DeferredGraph.new(Onibi::HybridAutomata::CFG::Lowerer.new, optimized),
+            cfg: DeferredGraph.new(Onibi::V2::CFG::Lowerer.new, optimized),
             options: options,
             encoding: encoding,
             applied_passes: Pipeline::DEFAULT_PASS_NAMES
@@ -454,7 +454,7 @@ module Onibi
             klass.new
           end
 
-          def initialize(passes, lowerer: Onibi::HybridAutomata::CFG::Lowerer.new)
+          def initialize(passes, lowerer: Onibi::V2::CFG::Lowerer.new)
             @passes = passes.freeze
             @pass_names = @passes.map(&:name).freeze
             @lowerer = lowerer

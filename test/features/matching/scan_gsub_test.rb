@@ -228,13 +228,6 @@ class ScanGsubTest < Minitest::Test
     assert_equal %w[item2026 key7], regexp.scan("item2026 key7")
   end
 
-  def test_adjacent_class_runs_scan_uses_hfa_iterator
-    program = Onibi::HybridAutomata.compile("[a-z]+[0-9]+")
-
-    assert_equal [[0, 8, []], [9, 13, []]],
-                 program.each_match_result("item2026 key7").to_a
-  end
-
   def test_class_run_triple_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("\\w+\\s+\\d+")
 
@@ -666,13 +659,6 @@ class ScanGsubTest < Minitest::Test
     assert_equal %w[aaaa aa], regexp.scan("baaaacaa")
   end
 
-  def test_fixed_class_run_literal_scan_uses_hfa_iterator
-    program = Onibi::HybridAutomata.compile("a[bc]{4}z")
-
-    assert_equal [[3, 9, []], [12, 18, []]],
-                 program.each_match_result("xxaabcbcz yyabcbcz").to_a
-  end
-
   def test_single_class_run_scan_uses_hfa_iterator
     regexp = Onibi::Regexp.new("[0-9]+")
 
@@ -779,13 +765,6 @@ class ScanGsubTest < Minitest::Test
 
     assert_equal %w[aN BY], regexp.scan("aN xx BY")
     assert regexp.send(:hfa_captureless_alternation_scan_spec)
-  end
-
-  def test_repeated_alternation_scan_uses_hfa_iterator
-    program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
-
-    assert_equal [[2, 7, []], [10, 15, []]],
-                 program.each_match_result("xxabacz yyababz").to_a
   end
 
   def test_captureless_single_byte_class_scan_uses_hfa_iterator

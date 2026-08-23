@@ -47,6 +47,7 @@ require_relative "onibi/match_data"
 module Onibi
   class Error < StandardError; end
   class RegexpError < Error; end
+  class UnsupportedPattern < RegexpError; end
 
   # Minimal public regexp facade used while the engine is bootstrapped.
   class Regexp
@@ -78,7 +79,7 @@ module Onibi
       pattern, normalized_options = prepare_constructor_pattern(pattern, options)
       @timeout = RegexpTimeout.normalize_timeout(timeout)
       validate_pattern_syntax!(pattern, normalized_options)
-      @ast = HybridAutomata.normalize_ast(V2::Parser.parse(pattern, options: normalized_options).ast)
+      @ast = V2::Parser.parse(pattern, options: normalized_options).ast
       ignorecase = casefold?
       literal = (literal_ast_value(@ast) if @ast.is_a?(AST::Literal) || @ast.is_a?(AST::Sequence))
       literal_ascii = literal&.ascii_only? && literal.bytesize.positive?
@@ -1008,7 +1009,7 @@ module Onibi
 
     def hfa_generic_match?(input, position = 0)
       program = hfa_program
-      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+      raise UnsupportedPattern, "pattern is not supported by the current matcher" unless program
 
       hfa_timeout_budget_guard!(input)
       with_timeout { program.match?(input, normalize_match_position(input, position)) }
@@ -1016,7 +1017,7 @@ module Onibi
 
     def hfa_generic_match(input, position = 0, ascii_input: nil)
       program = hfa_program
-      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+      raise UnsupportedPattern, "pattern is not supported by the current matcher" unless program
 
       hfa_timeout_budget_guard!(input)
       ascii_input = input.ascii_only? if ascii_input.nil?
@@ -1072,7 +1073,7 @@ module Onibi
 
       ascii_input = input.ascii_only?
       program = hfa_program
-      raise HybridAutomata::UnsupportedPattern, "pattern is outside the hybrid automaton" unless program
+      raise UnsupportedPattern, "pattern is not supported by the current matcher" unless program
 
       boundary_spec = hfa_scan_boundary_spec
 
@@ -1657,8 +1658,6 @@ module Onibi
     def hfa_program
       return @hfa_program if defined?(@hfa_program)
 
-      @hfa_program = V2::Compiler.compile(@ast, options: @options).runtime_program
-    rescue HybridAutomata::UnsupportedPattern
       @hfa_program = false
     end
 
@@ -6658,7 +6657,4 @@ module Onibi
   end
 end
 
-require_relative "onibi/hybrid_automata"
-require_relative "onibi/hybrid_automata/cfg"
-require_relative "onibi/hybrid_automata/optimization"
 require_relative "onibi/v2"

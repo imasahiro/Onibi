@@ -13,13 +13,6 @@ module Onibi
           self.source_ast = source_ast
           freeze
         end
-
-        def runtime_program(dfa: true, string_matching: true, dfa_state_limit: 4096)
-          Onibi::HybridAutomata::RuntimeCompiler.new(
-            dfa: dfa, string_matching: string_matching,
-            dfa_state_limit: dfa_state_limit, options: options
-          ).compile(source_ast)
-        end
       end
 
       module_function
