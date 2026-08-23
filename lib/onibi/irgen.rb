@@ -832,6 +832,7 @@ module Onibi
             body_captures = captures if captureless_absence_body?(node.body)
             body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
             body_captures = filter_nested_absence_captures(node.body, body_captures)
+            body_captures = filter_absence_capture_scope(node.body, body_captures)
             return quantified.downto(0).map { |length| [length, body_captures] }
           end
 
@@ -847,6 +848,7 @@ module Onibi
             inner_captures = captures if captureless_absence_body?(node.body)
             inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
             inner_captures = filter_nested_absence_captures(node.body, inner_captures)
+            inner_captures = filter_absence_capture_scope(node.body, inner_captures)
             quantified_length = quantified_absence_length(node.body, characters, position)
             match_position = internal_start || position
             maximum = if quantified_length
@@ -1012,6 +1014,28 @@ module Onibi
           return captures unless expression.is_a?(Onibi::AST::Group) || expression.is_a?(SemanticBytecode::Group)
 
           captures.select { |key, _value| key == outer.number }
+        end
+
+        def filter_absence_capture_scope(body, captures)
+          scope = body
+          loop do
+            if (scope.is_a?(Onibi::AST::Group) || scope.is_a?(SemanticBytecode::Group)) && !scope.capture
+              scope = scope.body
+            elsif scope.is_a?(Onibi::AST::Sequence) || scope.is_a?(SemanticBytecode::Sequence)
+              only = scope.parts.one? && scope.parts.first
+              break unless only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)
+              break if only.capture
+
+              scope = only.body
+            else
+              break
+            end
+          end
+          parts = scope.is_a?(Onibi::AST::Sequence) || scope.is_a?(SemanticBytecode::Sequence) ? scope.parts : [scope]
+          direct_group = parts.any? do |part|
+            (part.is_a?(Onibi::AST::Group) || part.is_a?(SemanticBytecode::Group)) && part.capture
+          end
+          direct_group ? captures : {}
         end
 
         def generic_absence_length(node, characters, cursor, flags)
