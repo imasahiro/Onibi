@@ -798,9 +798,7 @@ module Onibi
       return false unless (ascii_safe || unicode_safe) &&
                           bytecode_supported_node?(@ast)
       return false if source.include?("(?-") ||
-                      (source.start_with?("(?i") && !source.start_with?("(?i:")) ||
-                      (source.start_with?("(?m") && !source.start_with?("(?m:")) ||
-                      (source.start_with?("(?x") && !source.start_with?("(?x:"))
+                      inline_global_modifier?
 
       if @ast.is_a?(Onibi::AST::Sequence)
         parts = @ast.parts
@@ -864,6 +862,17 @@ module Onibi
         values = node.parts.map { |part| absence_literal_value(part) }
         values.all? ? values.join : nil
       end
+    end
+
+    def inline_global_modifier?
+      return false unless source.start_with?("(?")
+
+      close = source.index(")")
+      colon = source.index(":")
+      return false if colon && close && colon < close
+
+      modifier = source[2, (colon || close || source.length) - 2].to_s
+      modifier.empty? || modifier.each_char.any? { |character| %w[i m x].include?(character) }
     end
 
     def bytecode_literal_choice_group?(node)
