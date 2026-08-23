@@ -792,6 +792,21 @@ module Onibi
           delimiter = literal_value(node.body)
           return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
+          body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
+          first_length = body_at_cursor.first&.first
+          zero_at_cursor = first_length&.zero?
+          consuming_at_cursor = first_length&.positive?
+          return [] if zero_at_cursor && consuming_at_cursor
+
+          if zero_at_cursor && !consuming_at_cursor
+            later_consuming = cursor.upto(characters.length).any? do |position|
+              node_results(node.body, characters, position, captures, flags).any? do |length, _state|
+                length.positive?
+              end
+            end
+            return [] if later_consuming
+          end
+
           zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
           return zero_width if zero_width
 
