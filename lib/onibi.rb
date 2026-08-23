@@ -156,6 +156,9 @@ module Onibi
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       @parsed = Onibi::Parser.parse(source, options: @options)
       @ast = @parsed.ast
+      @effective_casefold = casefold? || scoped_casefold?(@ast)
+      @effective_multiline = multiline? || scoped_multiline?(@ast)
+      @hfa_unicode_ignorecase_literal_fold = source if @effective_casefold && !source.ascii_only?
       freeze_source_encoding
     end
 
@@ -183,6 +186,26 @@ module Onibi
 
     def multiline?
       (@options & MULTILINE).positive?
+    end
+
+    def scoped_casefold?(node)
+      return true if node.is_a?(Onibi::AST::OptionGroup) && node.ignorecase
+      return false unless node.respond_to?(:each_pair)
+
+      node.each_pair.any? do |_field, value|
+        values = value.is_a?(Array) ? value : [value]
+        values.any? { |child| child.respond_to?(:each_pair) && scoped_casefold?(child) }
+      end
+    end
+
+    def scoped_multiline?(node)
+      return true if node.is_a?(Onibi::AST::OptionGroup) && node.multiline
+      return false unless node.respond_to?(:each_pair)
+
+      node.each_pair.any? do |_field, value|
+        values = value.is_a?(Array) ? value : [value]
+        values.any? { |child| child.respond_to?(:each_pair) && scoped_multiline?(child) }
+      end
     end
 
     def names
@@ -245,7 +268,7 @@ module Onibi
       start = 0 if start.negative?
       searchable = input.each_char.to_a.join
       match = literals.each_with_index.filter_map do |literal, order|
-        index = if casefold?
+        index = if @effective_casefold
                   searchable.downcase.index(literal.downcase, start)
                 else
                   searchable.index(literal, start)
@@ -425,7 +448,7 @@ module Onibi
     def match_capture_variant(input, start, variants)
       searchable = input.each_char.to_a.join
       found = variants.each_with_index.filter_map do |(literal, captures), order|
-        index = casefold? ? searchable.downcase.index(literal.downcase, start) : searchable.index(literal, start)
+        index = @effective_casefold ? searchable.downcase.index(literal.downcase, start) : searchable.index(literal, start)
         [index, order, literal, captures] if index
       end.min_by { |index, order, _literal, _captures| [index, order] }
       return nil unless found
@@ -446,6 +469,16 @@ module Onibi
     def simple_runtime_match(input, start)
       parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
       return nil unless parts&.length&.positive?
+
+      if parts.length == 1 && parts.first.is_a?(Onibi::AST::OptionGroup) &&
+         parts.first.body.is_a?(Onibi::AST::Sequence) && parts.first.body.parts.all? { |part| simple_runtime_part?(part) }
+        characters = input.each_char.to_a
+        start.upto(characters.length) do |index|
+          finish = match_sequence_parts(parts.first.body.parts, characters, index, 0)
+          return captureless_result(input, [index, finish]) if finish
+        end
+        return nil
+      end
 
       if parts.length > 1 && parts.all? { |part| simple_runtime_part?(part) }
         characters = input.each_char.to_a
@@ -522,15 +555,15 @@ module Onibi
 
     def atom_matches_character?(expression, character)
       case expression
-      when Onibi::AST::Literal then expression.value == character
+      when Onibi::AST::Literal then @effective_casefold ? expression.value.casecmp?(character) : expression.value == character
       when Onibi::AST::CharacterClass
-        Onibi::ClassPredicates.matches?(expression.value, character, ignorecase: casefold?)
+        Onibi::ClassPredicates.matches?(expression.value, character, ignorecase: @effective_casefold)
       when Onibi::AST::Escape
         return Onibi::CharacterPredicates.linebreak?(character) if expression.kind == :linebreak
 
         Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
       when Onibi::AST::Any
-        multiline? || expression.value != "." || character != "\n"
+        @effective_multiline || expression.value != "." || character != "\n"
       else false
       end
     end
