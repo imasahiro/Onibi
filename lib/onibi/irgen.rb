@@ -767,12 +767,22 @@ module Onibi
           return unless %i[+ *].include?(quantifier.kind) || quantifier.minimum.to_i >= 2
 
           literal = literal_value(quantifier.expression)
+          unit = literal || alternation_unit(quantifier.expression)
           run = 0
           position = cursor
-          if literal && !literal.empty?
-            while position < characters.length && characters[position, literal.length].join == literal
-              run += literal.length
-              position += literal.length
+          if unit && !unit.empty?
+            while position < characters.length
+              matched = if literal
+                          characters[position, unit.length].join == unit
+                        else
+                          node_results(quantifier.expression, characters, position, {}, {}).any? do |length, _captures|
+                            length == unit.length
+                          end
+                        end
+              break unless matched
+
+              run += unit.length
+              position += unit.length
             end
           elsif quantifier.expression.is_a?(Onibi::AST::CharacterClass) ||
                 quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
@@ -785,8 +795,8 @@ module Onibi
           end
           return if run.zero?
 
-          if literal && literal.length > 1
-            units = run / literal.length
+          if unit && unit.length > 1
+            units = run / unit.length
             return if units < quantifier.minimum
             return units + (units.even? ? 1 : 2) if quantifier.minimum.to_i >= 2
 
@@ -800,6 +810,20 @@ module Onibi
           else
             run / 2
           end
+        end
+
+        def alternation_unit(node)
+          branches = if node.is_a?(Onibi::AST::Alternation) || node.is_a?(SemanticBytecode::Alternation)
+                       node.branches
+                     elsif node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+                       return alternation_unit(node.body)
+                     end
+          return unless branches && !branches.empty?
+
+          values = branches.map { |branch| literal_value(branch) }
+          return unless values.all? && values.map(&:length).uniq.one?
+
+          values.first
         end
 
         def class_match_lengths(node, characters, cursor, flags)
