@@ -180,6 +180,15 @@ class V2IRGenTest < Minitest::Test
     assert_equal [0, 4], Onibi::IRGen::YARVIR.execute(program, "xxENDyy", 0)
   end
 
+  def test_dedicated_executor_evaluates_zero_width_assertions
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a(?=b)")).graph
+    dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    program = Onibi::IRGen::YARVIR.generate(dfa)
+
+    assert_equal [2, 3], Onibi::IRGen::YARVIR.execute(program, "xxabyy", 0)
+    assert_nil Onibi::IRGen::YARVIR.execute(program, "xxacyy", 0)
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))

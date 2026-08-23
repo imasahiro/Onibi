@@ -122,10 +122,16 @@ module Onibi
             quantifier_length(operand, characters, cursor)
           when :match_group
             sequence_length(operand.body, characters, cursor)
+          when :match_atomic_group
+            sequence_length(operand.body, characters, cursor)
           when :match_option_group
             option_group_length(operand, characters, cursor)
           when :match_absence
             absence_length(operand, characters, cursor)
+          when :match_assertion
+            assertion_length(operand, characters, cursor)
+          when :test_anchor
+            anchor_length(operand, characters, cursor)
           end
         end
 
@@ -192,6 +198,34 @@ module Onibi
           value = characters[cursor..]&.join.to_s
           index = value.index(delimiter)
           index ? index + delimiter.length - 1 : value.length
+        end
+
+        def assertion_length(assertion, characters, cursor)
+          guard = literal_value(assertion.body)
+          return nil unless guard
+
+          matched = if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+                      characters[[cursor - guard.length, 0].max, guard.length].to_a.join == guard && cursor >= guard.length
+                    else
+                      characters[cursor, guard.length].to_a.join == guard
+                    end
+          matched = if %i[positive positive_lookahead positive_lookbehind].include?(assertion.kind)
+                      matched
+                    else
+                      !matched
+                    end
+          matched ? 0 : nil
+        end
+
+        def anchor_length(anchor, characters, cursor)
+          valid = case anchor.kind
+                  when :anchor_start, :anchor_absolute_start then cursor.zero?
+                  when :anchor_end, :anchor_absolute_end then cursor == characters.length
+                  when :anchor_before_final_newline
+                    cursor == characters.length || (characters[cursor] == "\n" && cursor + 1 == characters.length)
+                  else false
+                  end
+          valid ? 0 : nil
         end
 
         def literal_value(node)

@@ -793,6 +793,12 @@ module Onibi
         !literal_value(node.body).nil?
       when Onibi::AST::OptionGroup
         bytecode_supported_node?(node.body)
+      when Onibi::AST::AtomicGroup
+        bytecode_supported_node?(node.body)
+      when Onibi::AST::Assertion
+        !literal_value(node.body).nil?
+      when Onibi::AST::Anchor
+        true
       when Onibi::AST::Escape
         !%i[word_boundary not_word_boundary start_match match_reset linebreak].include?(node.kind)
       else
