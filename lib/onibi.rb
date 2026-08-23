@@ -83,6 +83,15 @@ module Onibi
 
       alias quote escape
 
+      def regexp_scope(pattern)
+        enabled = [[::Regexp::IGNORECASE, "i"], [::Regexp::MULTILINE, "m"],
+                   [::Regexp::EXTENDED, "x"]].filter_map do |bit, flag|
+          flag if (pattern.options & bit).positive?
+        end.join
+        disabled = ("mix".chars - enabled.chars).join
+        "(?#{enabled}-#{disabled}:#{pattern.source})"
+      end
+
       def try_convert(object)
         return object if object.is_a?(Regexp)
         return nil unless object.respond_to?(:to_regexp)
@@ -97,16 +106,19 @@ module Onibi
         patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
         return new("(?!)") if patterns.empty?
 
+        return new(patterns.first.source, patterns.first.options) if
+          patterns.length == 1 && (patterns.first.is_a?(::Regexp) || patterns.first.is_a?(Regexp))
+
         options = 0
         has_string = false
         has_binary_string = false
         sources = patterns.map do |pattern|
           if pattern.is_a?(::Regexp)
-            options |= pattern.options
-            pattern.source
+            options |= pattern.options & FIXEDENCODING
+            regexp_scope(pattern)
           elsif pattern.is_a?(Regexp)
-            options |= pattern.options
-            pattern.source
+            options |= pattern.options & FIXEDENCODING
+            regexp_scope(pattern)
           else
             has_string = true
             has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
@@ -339,7 +351,7 @@ module Onibi
         close = source.index(":")
         header = source[2...close]
         if header.chars.all? { |flag| %w[i m x].include?(flag) }
-          enabled = (enabled.chars + header.chars).uniq.join
+          enabled = ("mix".chars & (enabled.chars + header.chars)).join
           body = source[(close + 1)...-1]
         end
       end

@@ -85,6 +85,13 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("CAT")
   end
 
+  def test_union_embeds_each_compiled_pattern_scope
+    regexp = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+
+    assert_equal "(?i-mx:a)|(?-mix:b)", regexp.source
+    assert_equal 0, regexp.options
+  end
+
   def test_union_preserves_compiled_multiline_and_extended_options
     multiline = Onibi::Regexp.union(::Regexp.new(".", ::Regexp::MULTILINE))
     extended = Onibi::Regexp.union(::Regexp.new("a b", ::Regexp::EXTENDED))
