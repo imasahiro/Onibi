@@ -151,6 +151,10 @@ module Onibi
         return special
       end
 
+      if (backref = literal_backreference_match(input, start_position(position)))
+        return backref
+      end
+
       if (simple = simple_runtime_match(input, start_position(position)))
         return simple
       end
@@ -417,6 +421,63 @@ module Onibi
 
     def captureless_result(input, range)
       Onibi::MatchData.captureless(input, range[0], range[1], self)
+    end
+
+    def literal_backreference_match(input, start)
+      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
+      return nil unless parts&.length&.between?(2, 3) && parts[0].is_a?(Onibi::AST::Group) &&
+                        (parts[-1].is_a?(Onibi::AST::Backreference) || parts[-1].is_a?(Onibi::AST::SubexpressionCall))
+
+      value = literal_value(parts[0].body)
+      parts[1]
+      reference = parts[-1]
+      matches_group = if reference.respond_to?(:named) && reference.named
+                        parts[0].name == reference.identifier
+                      else
+                        parts[0].number == reference.identifier
+                      end
+      return nil unless matches_group
+
+      if value.nil? && ((parts.length == 3 && parts[1].is_a?(Onibi::AST::Literal)) || parts.length == 2)
+        separator = parts.length == 3 ? parts[1].value : ""
+        return variable_literal_backreference_match(input, start, parts[0], separator)
+      end
+      return nil unless value
+
+      literal = value + value
+      index = input.each_char.to_a.join.index(literal, start)
+      return nil unless index
+
+      names = named_captures.transform_values(&:first)
+      offsets = Array.new(parts[0].number)
+      offsets[parts[0].number - 1] = [index, index + value.length]
+      Onibi::MatchData.from_offsets(input, index, index + literal.length, offsets, names, self)
+    end
+
+    def variable_literal_backreference_match(input, start, group, separator)
+      body = group.body
+      return nil unless body.is_a?(Onibi::AST::Sequence) && body.parts.length == 1 &&
+                        body.parts.first.is_a?(Onibi::AST::Quantifier)
+
+      quantifier = body.parts.first
+      characters = input.each_char.to_a
+      start.upto(characters.length) do |index|
+        max = quantifier.maximum || (characters.length - index)
+        lengths = quantifier.mode == :lazy ? (quantifier.minimum..max).to_a : max.downto(quantifier.minimum).to_a
+        lengths.each do |length|
+          value = characters[index, length].to_a.join
+          next unless value.length == length && value.each_char.all? { |character| atom_matches_character?(quantifier.expression, character) }
+          next unless characters[index + length, separator.length].to_a.join == separator
+          next unless characters[index + length + separator.length, length].to_a.join == value
+
+          offsets = Array.new(group.number)
+          offsets[group.number - 1] = [index, index + length]
+          names = named_captures.transform_values(&:first)
+          finish = index + length + separator.length + length
+          return Onibi::MatchData.from_offsets(input, index, finish, offsets, names, self)
+        end
+      end
+      nil
     end
 
     def special_literal_match(input, start)
