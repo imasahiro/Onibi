@@ -148,6 +148,7 @@ module Onibi
                        node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
                          match_start = captures.delete(:__match_start) || start
                          match_reset = captures.delete(:__match_reset)
+                         captures.delete(:__match_end)
                          captures.delete(:__end_zero_width)
                          finish = match_reset ? start + length : match_start + length
                          [match_start, finish, captures]
@@ -292,7 +293,14 @@ module Onibi
             node.parts.each do |part|
               states = states.flat_map do |consumed, state_captures|
                 node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
-                  [consumed + length, inner]
+                  next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
+                                 marked = inner.dup
+                                 marked[:__match_prefix] = consumed
+                                 marked
+                               else
+                                 inner
+                               end
+                  [consumed + length, next_state]
                 end
               end
               return [] if states.empty?
@@ -794,6 +802,7 @@ module Onibi
 
           body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
           first_length = body_at_cursor.first&.first
+          first_state = body_at_cursor.first&.last || {}
           zero_at_cursor = first_length&.zero?
           consuming_at_cursor = first_length&.positive?
           return [] if zero_at_cursor && consuming_at_cursor
@@ -804,7 +813,8 @@ module Onibi
                 length.positive?
               end
             end
-            return [] if later_consuming
+            shifted = first_state[:__match_start].is_a?(Integer) && first_state[:__match_start] > cursor
+            return [] if later_consuming && !shifted
           end
 
           zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
@@ -817,6 +827,8 @@ module Onibi
             body_results = node_results(node.body, characters, cursor, captures, flags)
             body_result = body_results.find { |length, _state| length.positive? } || body_results.first
             body_captures = body_result ? body_result.last : captures
+            body_captures = body_captures.dup
+            body_captures.delete(:__match_start)
             body_captures = captures if captureless_absence_body?(node.body)
             body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
             body_captures = filter_nested_absence_captures(node.body, body_captures)
@@ -828,14 +840,30 @@ module Onibi
             next if results.empty?
 
             length, inner_captures = results.find { |candidate, _state| candidate.positive? } || results.first
+            inner_captures = inner_captures.dup
+            internal_start = inner_captures.delete(:__match_start)
+            internal_end = inner_captures.delete(:__match_end)
+            internal_prefix = inner_captures.delete(:__match_prefix)
             inner_captures = captures if captureless_absence_body?(node.body)
             inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
             inner_captures = filter_nested_absence_captures(node.body, inner_captures)
             quantified_length = quantified_absence_length(node.body, characters, position)
+            match_position = internal_start || position
             maximum = if quantified_length
-                        position - cursor + quantified_length
+                        match_position - cursor + quantified_length
+                      elsif length.zero? && match_position > cursor
+                        characters.length - cursor
+                      elsif internal_end
+                        effective_length = internal_end - internal_start
+                        if internal_prefix&.zero? || effective_length.zero?
+                          characters.length - cursor
+                        else
+                          internal_end - cursor - 1
+                        end
+                      elsif internal_start && internal_start > position + length
+                        internal_start - cursor - 1
                       else
-                        position - cursor + length - 1
+                        match_position - cursor + length - 1
                       end
             maximum = [maximum, 0].max
             return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
@@ -849,23 +877,32 @@ module Onibi
           has_consuming_match = false
           cursor.upto(characters.length) do |position|
             results = node_results(body, characters, position, captures, flags)
-            positions << position if results.any? { |length, _state| length.zero? }
+            positions << position if results.any? do |length, state|
+              length.zero? && (state[:__match_start] || position) == position
+            end
             has_consuming_match ||= results.any? { |length, _state| length.positive? }
           end
           return if positions.empty? || has_consuming_match
 
           start = cursor.upto(characters.length).find do |position|
-            node_results(body, characters, position, captures, flags).none? { |length, _state| length.zero? }
+            node_results(body, characters, position, captures, flags).none? do |length, state|
+              length.zero? && (state[:__match_start] || position) == position
+            end
           end || characters.length
           finish = if start == characters.length
                      start
                    else
                      (start + 1).upto(characters.length).find do |position|
-                       node_results(body, characters, position, captures, flags).any? { |length, _state| length.zero? }
+                       node_results(body, characters, position, captures, flags).any? do |length, state|
+                         length.zero? && (state[:__match_start] || position) == position
+                       end
                      end || characters.length
                    end
           state = captures.dup
-          state[:__match_start] = start if start != cursor
+          if start != cursor
+            state[:__match_start] = start
+            state[:__match_end] = finish
+          end
           [[finish - start, state]]
         end
 
