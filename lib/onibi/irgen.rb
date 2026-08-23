@@ -153,6 +153,8 @@ module Onibi
                          captures.delete(:__match_prefix)
                          captures.delete(:__match_prefix_value)
                          captures.delete(:__match_alternative)
+                         captures.delete(:__zero_absence)
+                         captures.delete(:__match_prefix_zero_absence)
                          captures.delete(:__end_zero_width)
                          finish = match_reset ? start + length : match_start + length
                          [match_start, finish, captures]
@@ -301,6 +303,7 @@ module Onibi
                                  marked = inner.dup
                                  marked[:__match_prefix] = consumed
                                  marked[:__match_prefix_value] = characters[cursor, consumed].join
+                                 marked[:__match_prefix_zero_absence] = state_captures[:__zero_absence]
                                  marked
                                else
                                  inner
@@ -351,7 +354,13 @@ module Onibi
             @subexpression_depth -= 1
             results
           when Onibi::AST::Absence, SemanticBytecode::Absence
-            absence_results(node, characters, cursor, captures, flags)
+            absence_results(node, characters, cursor, captures, flags).map do |length, state|
+              next [length, state] unless length.zero?
+
+              marked = state.dup
+              marked[:__zero_absence] = true
+              [length, marked]
+            end
           else
             length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
             return [] unless length
@@ -861,6 +870,8 @@ module Onibi
             internal_prefix_value = inner_captures.delete(:__match_prefix_value)
             internal_probe = inner_captures.delete(:__match_probe)
             internal_alternative = inner_captures.delete(:__match_alternative)
+            inner_captures.delete(:__zero_absence)
+            prefix_zero_absence = inner_captures.delete(:__match_prefix_zero_absence)
             inner_captures = captures if captureless_absence_body?(node.body)
             inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
             inner_captures = filter_nested_absence_captures(node.body, inner_captures)
@@ -875,7 +886,11 @@ module Onibi
                         internal_start - cursor
                       elsif internal_end
                         effective_length = internal_end - internal_start
-                        if internal_prefix_value && internal_probe && internal_prefix_value == internal_probe
+                        if prefix_zero_absence && internal_prefix&.positive? && effective_length.zero?
+                          0
+                        elsif prefix_zero_absence && internal_prefix&.zero? && effective_length.positive?
+                          internal_end - cursor - 1
+                        elsif internal_prefix_value && internal_probe && internal_prefix_value == internal_probe
                           internal_end - cursor - 1
                         elsif internal_prefix&.zero? || effective_length.zero?
                           characters.length - cursor
