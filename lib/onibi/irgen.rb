@@ -900,11 +900,6 @@ module Onibi
           characters.length - cursor
         end
 
-        # Onigmo checks an unbounded greedy repeat one character at a time
-        # while it searches the absent endpoint.  The endpoint is the middle
-        # of a contiguous repeated literal run, not the end of the first
-        # greedy body match.  Keep this rule in bytecode generation so the VM
-        # does not need to inspect the source AST at run time.
         def quantified_absence_length(body, characters, cursor)
           sequence = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
                        body.parts
