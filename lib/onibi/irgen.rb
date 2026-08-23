@@ -92,8 +92,9 @@ module Onibi
           return [start, cursor, captures] if accepting?(state)
 
           transitions_for(state).each do |label, target|
-            transition_lengths(label, characters, cursor, captures).each do |length|
+            transition_results(label, characters, cursor, captures).each do |length, inner_captures|
               next_captures = captures.dup
+              next_captures.merge!(inner_captures)
               captures_for(label, cursor, length, next_captures)
               next_start = if label[0] == :match_escape && label[1].kind == :match_reset
                              cursor
@@ -105,6 +106,103 @@ module Onibi
             end
           end
           nil
+        end
+
+        def transition_results(label, characters, cursor, captures)
+          opcode, operand = label
+          case opcode
+          when :match_group
+            node_results(operand.body, characters, cursor, captures)
+          when :match_atomic_group
+            node_results(operand.body, characters, cursor, captures).first(1)
+          when :match_option_group
+            node_results(operand.body, characters, cursor, captures,
+                         ignorecase: operand.ignorecase, multiline: operand.multiline)
+          when :match_quantifier
+            quantifier_results(operand, characters, cursor, captures)
+          when :match_assertion
+            assertion_results(operand, characters, cursor, captures)
+          else
+            transition_lengths(label, characters, cursor, captures).map { |length| [length, {}] }
+          end
+        end
+
+        def assertion_results(assertion, characters, cursor, captures)
+          if %i[positive positive_lookahead].include?(assertion.kind)
+            return node_results(assertion.body, characters, cursor, captures).first(1).map { |_length, inner| [0, inner] }
+          end
+
+          if %i[negative negative_lookahead].include?(assertion.kind)
+            matched = node_results(assertion.body, characters, cursor, captures).any?
+            return matched ? [] : [[0, captures]]
+          end
+
+          length = assertion_length(assertion, characters, cursor)
+          length ? [[0, captures]] : []
+        end
+
+        def node_results(node, characters, cursor, captures, flags = {})
+          case node
+          when Onibi::AST::Sequence
+            states = [[0, captures]]
+            node.parts.each do |part|
+              states = states.flat_map do |consumed, state_captures|
+                node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
+                  [consumed + length, inner]
+                end
+              end
+              return [] if states.empty?
+            end
+            states
+          when Onibi::AST::Alternation
+            node.branches.flat_map { |branch| node_results(branch, characters, cursor, captures, flags) }
+          when Onibi::AST::Group
+            node_results(node.body, characters, cursor, captures, flags).map do |length, inner|
+              next_captures = inner.dup
+              if node.capture
+                next_captures[node.number] = [cursor, cursor + length]
+                next_captures[node.name] = [cursor, cursor + length] if node.name
+              end
+              [length, next_captures]
+            end
+          when Onibi::AST::Quantifier
+            quantifier_results(node, characters, cursor, captures, flags)
+          when Onibi::AST::OptionGroup
+            node_results(node.body, characters, cursor, captures,
+                         flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
+          when Onibi::AST::Assertion
+            assertion_results(node, characters, cursor, captures)
+          else
+            length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
+            length ? [[length, captures]] : []
+          end
+        end
+
+        def quantifier_results(quantifier, characters, cursor, captures, flags = {})
+          limit = quantifier.maximum || characters.length - cursor
+          frontier = [[0, captures]]
+          accepted = quantifier.minimum.zero? ? frontier.dup : []
+          count = 0
+          while count < limit
+            next_frontier = frontier.flat_map do |consumed, state_captures|
+              node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
+                next if length.zero?
+
+                [consumed + length, inner]
+              end
+            end
+            break if next_frontier.empty?
+
+            count += 1
+            frontier = next_frontier
+            accepted.concat(frontier) if count >= quantifier.minimum
+          end
+          return [] if count < quantifier.minimum
+
+          accepted = accepted.uniq { |length, state| [length, state] }
+          return [accepted.max_by(&:first)] if quantifier.mode == :possessive
+
+          quantifier.mode == :lazy ? accepted.sort_by(&:first) : accepted.sort_by(&:first).reverse
         end
 
         def transition_lengths(label, characters, cursor, captures)
@@ -357,6 +455,11 @@ module Onibi
           when Onibi::AST::Any then :match_any
           when Onibi::AST::Escape then :match_escape
           when Onibi::AST::Property then :match_property
+          when Onibi::AST::Backreference then :match_backreference
+          when Onibi::AST::Conditional then :match_conditional
+          when Onibi::AST::Absence then :match_absence
+          when Onibi::AST::Assertion then :match_assertion
+          when Onibi::AST::Anchor then :test_anchor
           end
         end
 

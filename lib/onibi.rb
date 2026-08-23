@@ -841,7 +841,7 @@ module Onibi
       when Onibi::AST::AtomicGroup
         bytecode_supported_node?(node.body)
       when Onibi::AST::Group
-        node.body.is_a?(Onibi::AST::Sequence) && node.body.parts.all? { |part| part.is_a?(Onibi::AST::Literal) }
+        bytecode_literal_choice_group?(node.body)
       when Onibi::AST::Backreference
         true
       when Onibi::AST::Conditional
@@ -864,6 +864,16 @@ module Onibi
       when Onibi::AST::Sequence
         values = node.parts.map { |part| absence_literal_value(part) }
         values.all? ? values.join : nil
+      end
+    end
+
+    def bytecode_literal_choice_group?(node)
+      case node
+      when Onibi::AST::Literal then true
+      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_literal_choice_group?(part) }
+      when Onibi::AST::Alternation then node.branches.all? { |branch| bytecode_literal_choice_group?(branch) }
+      when Onibi::AST::Group then bytecode_literal_choice_group?(node.body)
+      else false
       end
     end
 
