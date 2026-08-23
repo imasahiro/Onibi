@@ -100,6 +100,15 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal expected.offset(0), actual.offset(0)
   end
 
+  def test_absence_operator_clears_nullable_captures_on_suffix_failure_at_end
+    ["(?~(?:(a?)a))", "(?~(?:(a?)(a|b)))"].each do |pattern|
+      expected = ::Regexp.new(pattern).match("")
+      actual = Onibi::Regexp.new(pattern).match("")
+      assert_equal expected.to_a, actual.to_a, pattern
+      assert_equal expected.offset(0), actual.offset(0), pattern
+    end
+  end
+
   def test_absence_operator_retries_after_a_nested_zero_width_body
     %w[aa ab abc].each do |input|
       pattern = "(?~(?~a))"

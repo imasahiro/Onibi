@@ -923,6 +923,11 @@ module Onibi
           if failure_state
             failure_captures = filter_nested_absence_captures(node.body, failure_state)
             failure_captures = filter_absence_capture_scope(node.body, failure_captures)
+            if cursor == characters.length
+              failure_captures.delete_if do |key, value|
+                key.is_a?(Integer) && value.is_a?(Array) && value[0] == value[1]
+              end
+            end
             maximum = characters.length - cursor
             return maximum.downto(0).map { |length| [length, failure_captures] }
           end
@@ -990,7 +995,7 @@ module Onibi
                      end || characters.length
                    end
           state = (position_states[start] || position_states[finish] || captures).dup
-          state = captures.dup unless contains_assertion?(body)
+          state = captures.dup unless contains_negative_assertion?(body)
           state = captures.dup if state.keys.count { |key| key.is_a?(Integer) } > 1
           if finish == characters.length
             state.delete_if do |key, value|
@@ -1022,6 +1027,26 @@ module Onibi
                Onibi::AST::Absence, SemanticBytecode::Absence
             child = node.respond_to?(:body) ? node.body : node.expression
             contains_assertion?(child)
+          else
+            false
+          end
+        end
+
+        def contains_negative_assertion?(node)
+          case node
+          when Onibi::AST::Assertion, SemanticBytecode::Assertion
+            %i[negative negative_lookahead negative_lookbehind].include?(node.kind)
+          when Onibi::AST::Sequence, SemanticBytecode::Sequence
+            node.parts.any? { |part| contains_negative_assertion?(part) }
+          when Onibi::AST::Alternation, SemanticBytecode::Alternation
+            node.branches.any? { |branch| contains_negative_assertion?(branch) }
+          when Onibi::AST::Group, SemanticBytecode::Group,
+               Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
+               Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+               Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup,
+               Onibi::AST::Absence, SemanticBytecode::Absence
+            child = node.respond_to?(:body) ? node.body : node.expression
+            contains_negative_assertion?(child)
           else
             false
           end
