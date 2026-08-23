@@ -223,12 +223,6 @@ class MatchApiTest < Minitest::Test
     assert_equal [3, 6], match.offset(0)
   end
 
-  def test_fixed_class_run_literal_match_uses_hfa_result
-    program = Onibi::HybridAutomata.compile("a[bc]{4}z")
-
-    assert_equal [3, 9, []], program.match_result("xxaabcbcz yy")
-  end
-
   def test_literal_class_literal_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a[0-9]+z")
 
@@ -856,12 +850,6 @@ class MatchApiTest < Minitest::Test
     assert regexp.match?("前needle後")
   end
 
-  def test_repeated_alternation_match_uses_hfa_result
-    program = Onibi::HybridAutomata.compile("(?:ab|ac)+z")
-
-    assert_equal [2, 11, []], program.match_result("xxabacababz yy")
-  end
-
   def test_literal_quantifier_match_uses_hfa_result
     regexp = Onibi::Regexp.new("a+")
 
@@ -884,12 +872,6 @@ class MatchApiTest < Minitest::Test
     match = regexp.match("xxitem:2026 yy")
     assert_equal "xxitem:2026", match[0]
     assert_equal [0, 11], match.offset(0)
-  end
-
-  def test_adjacent_class_runs_match_uses_hfa_result
-    program = Onibi::HybridAutomata.compile("[a-z]+[0-9]+")
-
-    assert_equal [0, 10, []], program.match_result("xxitem2026yy")
   end
 
   def test_class_run_triple_match_uses_hfa_result

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Onibi
-  module HybridAutomata
+  module Compiler
     # Compiler passes that transform parsed structure before CFG publication.
     module Optimization
       module_function
@@ -21,7 +21,7 @@ module Onibi
         optimized = Pipeline::COALESCING.call(ast)
         CompilationUnit.new(
           ast: optimized,
-          cfg: DeferredGraph.new(CFG::Lowerer.new, optimized),
+          cfg: DeferredGraph.new(Onibi::CFG::Lowerer.new, optimized),
           options: options,
           encoding: encoding,
           applied_passes: Pipeline::DEFAULT_PASS_NAMES
@@ -67,8 +67,25 @@ module Onibi
         def transform(value)
           return transform_sequence(value) if value.is_a?(AST::Sequence)
           return transform_alternation(value) if value.is_a?(AST::Alternation)
+          return transform_struct(value) if ast_node?(value)
 
           value
+        end
+
+        def transform_struct(node)
+          values = node.to_a.map { |value| transform_value(value) }
+          values == node.to_a ? node : node.class.new(*values)
+        end
+
+        def transform_value(value)
+          return value.map { |child| transform_value(child) } if value.is_a?(Array)
+          return transform(value) if ast_node?(value)
+
+          value
+        end
+
+        def ast_node?(value)
+          AST.constants.any? { |name| value.is_a?(AST.const_get(name)) }
         end
 
         def transform_sequence(sequence)
@@ -436,7 +453,7 @@ module Onibi
           klass.new
         end
 
-        def initialize(passes, lowerer: CFG::Lowerer.new)
+        def initialize(passes, lowerer: Onibi::CFG::Lowerer.new)
           @passes = passes.freeze
           @pass_names = @passes.map(&:name).freeze
           @lowerer = lowerer

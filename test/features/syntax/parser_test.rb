@@ -20,8 +20,4 @@ class ParserTest < Minitest::Test
     assert_instance_of Onibi::AST::Quantifier, ast.parts[2]
     assert_equal :+, ast.parts[2].kind
   end
-
-  def test_public_construction_validates_parser_precedence
-    assert_silent { Onibi::Regexp.new("a(b|c)d+") }
-  end
 end

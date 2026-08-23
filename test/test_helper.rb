@@ -27,16 +27,4 @@ module Onibi
   end
 end
 
-module Onibi
-  module HybridAutomata
-    module MatchAdapter
-      module_function
-
-      def stub(_name, _replacement = nil)
-        yield if block_given?
-      end
-    end
-  end
-end
-
 require "minitest/autorun"

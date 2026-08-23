@@ -12,10 +12,10 @@ class HfaBackendSurfaceTest < Minitest::Test
     refute(Onibi::Regexp.public_instance_methods(false).any? { |name| name.to_s.start_with?("codegen_") })
   end
 
-  def test_cfg_optimization_namespace_remains_available_for_hfa_lowering
+  def test_compiler_optimization_namespace_drives_cfg_lowering
     ast = Onibi::Parser.new("a|ab").parse
 
-    unit = Onibi::HybridAutomata::Optimization::Pipeline.default.call(
+    unit = Onibi::Compiler::Pipeline.default.call(
       ast, options: [], encoding: Encoding::UTF_8
     )
 

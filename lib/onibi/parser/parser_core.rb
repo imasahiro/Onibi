@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module Onibi
-  # Parses lexer tokens with alternation, concatenation, and quantifier precedence.
-  class Parser
+  # Parses lexer tokens into the v2 AST.
+  class ParserCore
     include ParserAssertions
     include ParserQuantifiers
     include ParserOptionGroups
@@ -12,6 +12,7 @@ module Onibi
       open_positive_lookahead open_negative_lookahead
       open_positive_lookbehind open_negative_lookbehind
     ].freeze
+
     def initialize(source, options = [])
       @tokens = source.is_a?(Array) ? source : Lexer.new(source, options).tokens
       @index = 0
