@@ -771,16 +771,18 @@ module Onibi
         unless @hfa_ascii_input
           to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
-          return Onibi::MatchData.from_raw_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                                        byte_offsets, hfa_result_names, self)
+          constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
+          return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                              byte_offsets, hfa_result_names, self)
         end
         return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self)
       end
 
       unless @hfa_ascii_input
         to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
-        return Onibi::MatchData.from_raw_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                                      [], hfa_result_names, self)
+        constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
+        return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                            [], hfa_result_names, self)
       end
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
@@ -788,7 +790,7 @@ module Onibi
     end
 
     def bytecode_applicable?
-      unicode_safe = !@hfa_ascii_input && source.ascii_only? && bytecode_literal_only_node?(@ast)
+      unicode_safe = !@hfa_ascii_input && source.ascii_only? && bytecode_unicode_safe_node?(@ast)
       return false unless (@hfa_ascii_input || unicode_safe) && !casefold? && !multiline? &&
                           bytecode_supported_node?(@ast)
       return false if source.include?("(?-") ||
@@ -864,12 +866,13 @@ module Onibi
       end
     end
 
-    def bytecode_literal_only_node?(node)
+    def bytecode_unicode_safe_node?(node)
       case node
       when Onibi::AST::Literal then true
-      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_literal_only_node?(part) }
-      when Onibi::AST::Group then bytecode_literal_only_node?(node.body)
+      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_unicode_safe_node?(part) }
+      when Onibi::AST::Group then bytecode_unicode_safe_node?(node.body)
       when Onibi::AST::Absence then !absence_literal_value(node.body).nil?
+      when Onibi::AST::Escape then node.kind == :linebreak
       else false
       end
     end
