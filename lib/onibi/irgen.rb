@@ -691,6 +691,9 @@ module Onibi
           delimiter = literal_value(node.body)
           return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
+          quantified = quantified_absence_length(node.body, characters, cursor)
+          return quantified.downto(0).map { |length| [length, captures] } if quantified
+
           cursor.upto(characters.length) do |position|
             results = node_results(node.body, characters, position, captures, flags)
             next if results.empty?
@@ -703,6 +706,9 @@ module Onibi
         end
 
         def generic_absence_length(node, characters, cursor, flags)
+          quantified = quantified_absence_length(node.body, characters, cursor)
+          return quantified if quantified
+
           cursor.upto(characters.length) do |position|
             results = node_results(node.body, characters, position, {}, flags)
             next if results.empty?
@@ -711,6 +717,37 @@ module Onibi
             return [position - cursor + length - 1, 0].max
           end
           characters.length - cursor
+        end
+
+        # Onigmo checks an unbounded greedy repeat one character at a time
+        # while it searches the absent endpoint.  The endpoint is the middle
+        # of a contiguous repeated literal run, not the end of the first
+        # greedy body match.  Keep this rule in bytecode generation so the VM
+        # does not need to inspect the source AST at run time.
+        def quantified_absence_length(body, characters, cursor)
+          sequence = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+                       body.parts
+                     else
+                       [body]
+                     end
+          return unless sequence.length == 1
+
+          quantifier = sequence.first
+          return unless quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)
+          return unless %i[+ *].include?(quantifier.kind) && quantifier.maximum.nil?
+
+          literal = literal_value(quantifier.expression)
+          return unless literal && !literal.empty?
+
+          run = 0
+          position = cursor
+          while position < characters.length && characters[position, literal.length].join == literal
+            run += literal.length
+            position += literal.length
+          end
+          return characters.length - cursor if run.zero?
+
+          run / 2
         end
 
         def class_match_lengths(node, characters, cursor, flags)

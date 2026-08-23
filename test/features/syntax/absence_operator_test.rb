@@ -29,4 +29,13 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "x", match[0]
     assert_equal "a", match[1]
   end
+
+  def test_absence_operator_matches_mri_for_unbounded_greedy_body
+    regexp = Onibi::Regexp.new("(?~a+)")
+
+    actual = %w[a aa aaa aaaa aaaaa].map do |input|
+      regexp.match(input)[0]
+    end
+    assert_equal ["", "a", "a", "aa", "aa"], actual
+  end
 end
