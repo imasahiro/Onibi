@@ -770,6 +770,8 @@ module Onibi
         offsets = Array.new(hfa_capture_count)
         captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
         unless @hfa_ascii_input
+          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, hfa_result_names, self) if @hfa_input_encoding == Encoding::ASCII_8BIT
+
           to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
@@ -780,6 +782,8 @@ module Onibi
       end
 
       unless @hfa_ascii_input
+        return Onibi::MatchData.captureless(input, range[0], range[1], self) if @hfa_input_encoding == Encoding::ASCII_8BIT
+
         to_bytes = ->(position) { input.codepoints.take(position).pack("U*").bytesize }
         constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
         return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
@@ -791,8 +795,10 @@ module Onibi
     end
 
     def bytecode_applicable?
-      unicode_safe = !@hfa_ascii_input && @hfa_input_encoding == Encoding::UTF_8 &&
-                     (source.ascii_only? || bytecode_unicode_absence_only?) &&
+      unicode_safe = !@hfa_ascii_input &&
+                     ((@hfa_input_encoding == Encoding::UTF_8 &&
+                       (source.ascii_only? || bytecode_unicode_absence_only?)) ||
+                      (@hfa_input_encoding == Encoding::ASCII_8BIT && bytecode_unicode_absence_only?)) &&
                      bytecode_unicode_safe_node?(@ast)
       ascii_safe = @hfa_ascii_input && source.ascii_only?
       return false unless (ascii_safe || unicode_safe) &&
