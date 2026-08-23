@@ -481,7 +481,7 @@ module Onibi
       return nil unless result
 
       range = result.first(2)
-      captures = bytecode_adjust_captures(range, result[2])
+      captures = result[2]
       if capture_count.positive?
         offsets = Array.new(capture_count)
         captures.each do |key, value|
@@ -492,7 +492,7 @@ module Onibi
         end
         unless @ascii_input
           return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
-          if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
+          if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !program.flags[:unicode_capture_byte_offsets]
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
@@ -518,22 +518,6 @@ module Onibi
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
       nil
-    end
-
-    def bytecode_adjust_captures(range, captures)
-      return captures unless @ast.is_a?(Onibi::AST::Sequence)
-
-      @ast.parts.each_with_index do |part, index|
-        next unless part.is_a?(Onibi::AST::Quantifier) && part.expression.is_a?(Onibi::AST::Group)
-        next unless part.expression.capture && part.expression.body.is_a?(Onibi::AST::Sequence)
-        next unless part.expression.body.parts.any? { |child| child.is_a?(Onibi::AST::Quantifier) && child.minimum.zero? }
-        next if @ast.parts[(index + 1)..].to_a.empty?
-
-        captures = captures.dup
-        captures[part.expression.number] = [range[1] - 1, range[1] - 1]
-        captures[part.expression.name] = [range[1] - 1, range[1] - 1] if part.expression.name
-      end
-      captures
     end
 
     def bytecode_unicode_capture_byte_offsets?
@@ -564,6 +548,7 @@ module Onibi
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,
+                        unicode_capture_byte_offsets: bytecode_unicode_capture_byte_offsets?,
                         semantic_root: Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast) }
         )
       end
@@ -680,3 +665,4 @@ require_relative "onibi/optimization"
 require_relative "onibi/compiler"
 require_relative "onibi/automata"
 require_relative "onibi/irgen"
+require_relative "onibi/interpreter"

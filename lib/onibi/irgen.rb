@@ -1137,11 +1137,11 @@ module Onibi
       end
 
       def execute(program, input, start_position = 0)
-        Executor.new(program).match(input, start_position)
+        Onibi::Interpreter::Executor.new(program).match(input, start_position)
       end
 
       def execute_with_captures(program, input, start_position = 0)
-        Executor.new(program).match_with_captures(input, start_position)
+        Onibi::Interpreter::Executor.new(program).match_with_captures(input, start_position)
       end
     end
   end
