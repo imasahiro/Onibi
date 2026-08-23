@@ -61,7 +61,7 @@ module Onibi
       class Executor
         def initialize(program)
           @program = program
-          @dfa = program.automaton
+          @automaton = program.automaton
           @subexpressions = program.flags[:subexpressions] || {}
         end
 
@@ -75,7 +75,12 @@ module Onibi
         end
 
         def absence_scan(input)
-          label = @dfa.transitions.keys.map(&:last).find { |opcode, _operand| opcode == :match_absence }
+          labels = if @automaton.is_a?(Onibi::Automata::DFA)
+                     @automaton.transitions.keys.map(&:last)
+                   else
+                     @automaton.transitions.map { |edge| [edge.operation.opcode, edge.operation.operand] }
+                   end
+          label = labels.find { |opcode, _operand| opcode == :match_absence }
           return [] unless label
 
           characters = input.encoding == Encoding::ASCII_8BIT ? input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) } : input.each_char.to_a
@@ -98,8 +103,6 @@ module Onibi
         private
 
         def run(input, start_position)
-          return nil unless @dfa.is_a?(Onibi::Automata::DFA)
-
           characters = if input.encoding == Encoding::ASCII_8BIT
                          input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }
                        else
@@ -110,13 +113,19 @@ module Onibi
           first = [start_position, 0].max
           @match_start = first
           first.upto(characters.length) do |start|
-            result = walk(@dfa.start_state.id, characters, start, {}, start, @program.flags)
+            result = if @automaton.is_a?(Onibi::Automata::DFA)
+                       walk_dfa(@automaton.start_state.id, characters, start, {}, start, @program.flags)
+                     elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
+                       walk_tnfa(:start, characters, start, {}, start, @program.flags)
+                     end
             return result if result
           end
           nil
         end
 
-        def walk(state, characters, cursor, captures, start, flags)
+        def walk_dfa(state, characters, cursor, captures, start, flags)
+          @steps += 1
+          return nil if @steps > 2_000_000
           return [start, cursor, captures] if accepting?(state)
 
           transitions_for(state).each do |label, target|
@@ -129,7 +138,30 @@ module Onibi
                            else
                              start
                            end
-              result = walk(target, characters, cursor + length, next_captures, next_start, flags)
+              result = walk_dfa(target, characters, cursor + length, next_captures, next_start, flags)
+              return result if result
+            end
+          end
+          nil
+        end
+
+        def walk_tnfa(state, characters, cursor, captures, start, flags)
+          @steps += 1
+          return nil if @steps > 2_000_000
+          return [start, cursor, captures] if tnfa_accepting?(state)
+
+          transitions_for_tnfa(state).each do |edge|
+            label = [edge.operation.opcode, edge.operation.operand]
+            transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
+              next_captures = captures.dup
+              next_captures.merge!(inner_captures)
+              captures_for(label, cursor, length, next_captures)
+              next_start = if label[0] == :match_escape && label[1].kind == :match_reset
+                             cursor
+                           else
+                             start
+                           end
+              result = walk_tnfa(edge.to, characters, cursor + length, next_captures, next_start, flags)
               return result if result
             end
           end
@@ -271,13 +303,21 @@ module Onibi
         end
 
         def transitions_for(state)
-          @dfa.transitions.filter_map do |(source, label), target|
+          @automaton.transitions.filter_map do |(source, label), target|
             [label, target] if source == state
           end
         end
 
         def accepting?(state)
-          @dfa.states.any? { |candidate| candidate.id == state && candidate.accepting }
+          @automaton.states.any? { |candidate| candidate.id == state && candidate.accepting }
+        end
+
+        def transitions_for_tnfa(state)
+          @automaton.transitions.select { |edge| edge.from == state }
+        end
+
+        def tnfa_accepting?(state)
+          @automaton.accept_positions.include?(state)
         end
 
         def transition_length(label, characters, cursor, flags = {}, captures = {})

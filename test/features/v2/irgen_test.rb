@@ -25,6 +25,22 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(Onibi::IRGen::YARVIR.generate(dfa, mode: :dfa))
   end
 
+  def test_common_vm_executes_tnfa_bytecode
+    tnfa = tnfa_for(sequence("a", "b"))
+    program = Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
+
+    assert_equal [2, 4], Onibi::IRGen::YARVIR.execute(program, "xxabyy", 0)
+    assert_nil Onibi::IRGen::YARVIR.execute(program, "xxacyy", 0)
+  end
+
+  def test_common_vm_tracks_tnfa_captures
+    tnfa = tnfa_for(Onibi::AST::Group.new(sequence("a", "b"), 1, true, "pair"))
+    program = Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
+
+    assert_equal [2, 4, { 1 => [2, 4], "pair" => [2, 4] }],
+                 Onibi::IRGen::YARVIR.execute_with_captures(program, "xxabyy", 0)
+  end
+
   def test_nfa_mode_keeps_choice_edges_while_dfa_mode_merges_them_into_states
     ast = Onibi::AST::Alternation.new([sequence("a"), sequence("b")])
     tnfa = tnfa_for(ast)
