@@ -277,7 +277,7 @@ module Onibi
 
       results = []
       position = 0
-      while (matched = internal_match(input, position))
+      while position <= input.length && (matched = internal_match(input, position))
         value = if source.include?("?(1)")
                   matched[0]
                 else
@@ -285,8 +285,9 @@ module Onibi
                 end
         results << value
         yield(value) if block_given?
+        match_start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
-        position = finish > position ? finish : position + 1
+        position = finish > match_start ? finish : match_start + 1
         break if matched[0].empty? && @ast.is_a?(Onibi::AST::Sequence) &&
                  @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Absence) &&
                  (matched.captures.empty? || matched.captures.all?(&:nil?))
@@ -301,17 +302,19 @@ module Onibi
 
       output = String.new(encoding: input.encoding)
       cursor = 0
-      while (matched = internal_match(input, cursor))
+      search_position = 0
+      while search_position <= input.length && (matched = internal_match(input, search_position))
         start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
         output << input[cursor...start]
         value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
         output << value.to_s
         if finish == start
-          output << input[cursor] if cursor < input.length
-          cursor += 1
+          cursor = start
+          search_position = start + 1
         else
           cursor = finish
+          search_position = finish
         end
         break if cursor > input.length
       end
@@ -422,7 +425,7 @@ module Onibi
         when "\\'" then matched.post_match
         when "\\\\" then "\\"
         when /^\\k<(.+)>$/ then matched[token[3...-1]].to_s
-        else matched[token[1].to_i].to_s
+        else matched.names.empty? ? matched[token[1].to_i].to_s : ""
         end
       end
     end
