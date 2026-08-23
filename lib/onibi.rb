@@ -58,12 +58,74 @@ module Onibi
       attr_reader :timeout
 
       def escape(string)
-        raise TypeError, "no implicit conversion of #{string.class} into String" unless string.is_a?(String)
-
-        string.gsub(/([\\\[\]{}().*+?^$| #])/) { |match| "\\#{match}" }
+        value = if string.is_a?(String)
+                  string
+                elsif string.is_a?(Symbol)
+                  string.to_s
+                elsif string.respond_to?(:to_str)
+                  string.to_str
+                else
+                  raise TypeError, "no implicit conversion of #{string.class} into String"
+                end
+        escaped = value.each_char.map do |character|
+          case character
+          when "\t" then "\\t"
+          when "\n" then "\\n"
+          when "\v" then "\\v"
+          when "\f" then "\\f"
+          when "\r" then "\\r"
+          when /[\\\[\]{}().*+?^$| #-]/ then "\\#{character}"
+          else character
+          end
+        end.join
+        escaped.force_encoding(escaped.ascii_only? ? Encoding::US_ASCII : value.encoding)
       end
 
       alias quote escape
+
+      def try_convert(object)
+        return object if object.is_a?(Regexp)
+        return nil unless object.respond_to?(:to_regexp)
+
+        converted = object.to_regexp
+        return converted if converted.is_a?(Regexp)
+
+        raise TypeError, "can't convert #{object.class} into Onibi::Regexp"
+      end
+
+      def union(*patterns)
+        patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
+        return new("(?!)") if patterns.empty?
+
+        options = 0
+        has_string = false
+        has_binary_string = false
+        sources = patterns.map do |pattern|
+          if pattern.is_a?(::Regexp)
+            options |= pattern.options
+            pattern.source
+          elsif pattern.is_a?(Regexp)
+            options |= pattern.options
+            pattern.source
+          else
+            has_string = true
+            has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
+            escape(pattern)
+          end
+        end
+        options &= ~NOENCODING if has_string
+        options |= FIXEDENCODING if has_binary_string
+        result = new(sources.join("|"), options)
+        result.instance_variable_set(:@source, result.source.force_encoding(Encoding::ASCII_8BIT)) if has_binary_string
+        result
+      end
+
+      def linear_time?(pattern)
+        source = pattern.is_a?(::Regexp) || pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
+        !source.include?("\\k") && !source.include?("\\1") && !source.include?("(?=") &&
+          !source.include?("(?<=") && !source.include?("(?!") && !source.include?("(?<!") &&
+          !source.include?("(?>") && !source.include?("(?~")
+      end
 
       private
 
@@ -117,6 +179,10 @@ module Onibi
 
     def casefold?
       (@options & IGNORECASE).positive?
+    end
+
+    def multiline?
+      (@options & MULTILINE).positive?
     end
 
     def names
@@ -456,7 +522,7 @@ module Onibi
 
         Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
       when Onibi::AST::Any
-        casefold? || expression.value != "." || character != "\n"
+        multiline? || expression.value != "." || character != "\n"
       else false
       end
     end
