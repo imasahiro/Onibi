@@ -835,7 +835,7 @@ module Onibi
       when Onibi::AST::Anchor
         !multiline?
       when Onibi::AST::Escape
-        !%i[start_match match_reset linebreak].include?(node.kind)
+        node.kind != :start_match
       else
         false
       end

@@ -95,7 +95,12 @@ module Onibi
             transition_lengths(label, characters, cursor, captures).each do |length|
               next_captures = captures.dup
               captures_for(label, cursor, length, next_captures)
-              result = walk(target, characters, cursor + length, next_captures, start)
+              next_start = if label[0] == :match_escape && label[1].kind == :match_reset
+                             cursor
+                           else
+                             start
+                           end
+              result = walk(target, characters, cursor + length, next_captures, next_start)
               return result if result
             end
           end
@@ -139,6 +144,12 @@ module Onibi
               boundary = left != right
               boundary = !boundary if operand.kind == :not_word_boundary
               boundary ? 0 : nil
+            when :linebreak
+              return nil unless cursor < characters.length && Onibi::CharacterPredicates.linebreak?(characters[cursor])
+
+              characters[cursor] == "\r" && characters[cursor + 1] == "\n" ? 2 : 1
+            when :match_reset
+              0
             else
               cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
             end
