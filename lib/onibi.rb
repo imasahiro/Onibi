@@ -229,6 +229,10 @@ module Onibi
         return conditional
       end
 
+      if (atomic = atomic_literal_match(input, start_position(position)))
+        return atomic
+      end
+
       if (simple = simple_runtime_match(input, start_position(position)))
         return simple
       end
@@ -659,6 +663,29 @@ module Onibi
 
       variants = [[group_value + yes_value, [[0, group_value.length, group.number]]], [no_value, []]]
       match_capture_variant(input, start, variants)
+    end
+
+    def atomic_literal_match(input, start)
+      parts = @ast.parts if @ast.is_a?(Onibi::AST::Sequence)
+      return nil unless parts&.length == 2 && parts[0].is_a?(Onibi::AST::AtomicGroup) &&
+                        parts[0].body.is_a?(Onibi::AST::Alternation) && parts[1].is_a?(Onibi::AST::Literal)
+
+      branches = parts[0].body.branches.map { |branch| literal_value(branch) }
+      return nil unless branches.all? && branches.any?
+
+      suffix = parts[1].value
+      searchable = input.each_char.to_a.join
+      start.upto(searchable.length) do |index|
+        branches.each do |branch|
+          next unless searchable.index(branch, index) == index
+
+          literal = branch + suffix
+          return captureless_result(input, [index, index + literal.length]) if searchable.index(literal, index) == index
+
+          break
+        end
+      end
+      nil
     end
 
     def quantifier_group_spec(group)
