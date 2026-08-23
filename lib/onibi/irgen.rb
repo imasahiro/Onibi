@@ -800,11 +800,18 @@ module Onibi
                                  (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
 
           unit = literal_value(quantifier.expression)
+          unit ||= alternation_unit(quantifier.expression)
           return captures unless unit && quantifier.kind == :+ && !unit.empty?
 
           repetitions = length / unit.length
           adjusted = captures.dup
-          if repetitions.even?
+          if unit.length == 1
+            if repetitions >= 3
+              width = [repetitions - 2, 2].min
+              start = cursor + ((repetitions - 1) / 2)
+              adjusted[outer.number] = [start, start + width]
+            end
+          elsif repetitions.even?
             adjusted.delete(outer.number)
           else
             start = cursor + ((repetitions - 1) / 2) * unit.length

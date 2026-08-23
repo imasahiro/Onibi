@@ -121,4 +121,11 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "ab", odd[1]
     assert_nil even[1]
   end
+
+  def test_absence_operator_tracks_nested_alternation_captures
+    regexp = Onibi::Regexp.new("(?~((a|b)+))")
+
+    assert_equal %w[a b], regexp.match("aba").to_a.first(2)
+    assert_equal %w[aba ab], regexp.match("ababab").to_a.first(2)
+  end
 end
