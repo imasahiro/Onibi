@@ -91,15 +91,22 @@ module Onibi
           return [start, cursor, captures] if accepting?(state)
 
           transitions_for(state).each do |label, target|
-            length = transition_length(label, characters, cursor, {}, captures)
-            next unless length
-
-            next_captures = captures.dup
-            captures_for(label, cursor, length, next_captures)
-            result = walk(target, characters, cursor + length, next_captures, start)
-            return result if result
+            transition_lengths(label, characters, cursor, captures).each do |length|
+              next_captures = captures.dup
+              captures_for(label, cursor, length, next_captures)
+              result = walk(target, characters, cursor + length, next_captures, start)
+              return result if result
+            end
           end
           nil
+        end
+
+        def transition_lengths(label, characters, cursor, captures)
+          opcode, operand = label
+          return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
+
+          length = transition_length(label, characters, cursor, {}, captures)
+          length ? [length] : []
         end
 
         def transitions_for(state)
@@ -178,6 +185,42 @@ module Onibi
           return nil if count < quantifier.minimum
 
           quantifier.mode == :lazy ? quantifier.minimum : count
+        end
+
+        def quantifier_lengths(quantifier, characters, cursor)
+          if quantifier.expression.is_a?(Onibi::AST::Group)
+            unit = sequence_length(quantifier.expression.body, characters, cursor)
+            return [] unless unit&.positive?
+
+            count = 0
+            consumed = 0
+            limit = quantifier.maximum || characters.length
+            lengths = []
+            while count < limit
+              unit_length = sequence_length(quantifier.expression.body, characters, cursor + consumed)
+              break unless unit_length&.positive?
+
+              count += 1
+              consumed += unit_length
+              lengths << consumed if count >= quantifier.minimum
+            end
+            return [lengths.last] if quantifier.mode == :possessive
+
+            return quantifier.mode == :lazy ? lengths : lengths.reverse
+          end
+
+          count = 0
+          limit = quantifier.maximum || (characters.length - cursor)
+          while count < limit && cursor + count < characters.length &&
+                atom_matches?(quantifier.expression, characters[cursor + count])
+            count += 1
+          end
+          return [] if count < quantifier.minimum
+
+          lengths = (quantifier.minimum..count).to_a
+          return [lengths.last] if quantifier.mode == :possessive
+
+          quantifier.mode == :lazy ? lengths : lengths.reverse
         end
 
         def captures_for(label, cursor, length, captures)

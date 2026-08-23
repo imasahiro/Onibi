@@ -779,14 +779,9 @@ module Onibi
                       (source.start_with?("(?i") && !source.start_with?("(?i:")) ||
                       (source.start_with?("(?m") && !source.start_with?("(?m:")) ||
                       (source.start_with?("(?x") && !source.start_with?("(?x:"))
-      if ast_contains_node?(@ast, Onibi::AST::Quantifier) &&
-         !(@ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Quantifier))
-        return false
-      end
 
       if @ast.is_a?(Onibi::AST::Sequence)
         parts = @ast.parts
-        return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Quantifier) }
         return false if parts.any? { |part| part.is_a?(Onibi::AST::AtomicGroup) }
         return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Absence) }
         return false if parts.any? do |part|
