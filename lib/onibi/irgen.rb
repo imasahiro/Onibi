@@ -352,8 +352,8 @@ module Onibi
             group = operand.expression
             return unless group.capture && length.positive?
 
-            captures[group.number] = [cursor, cursor + length]
-            captures[group.name] = [cursor, cursor + length] if group.name
+            captures[group.number] ||= [cursor, cursor + length]
+            captures[group.name] ||= [cursor, cursor + length] if group.name
             return
           end
           return unless opcode == :match_group && operand.capture

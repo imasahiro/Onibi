@@ -803,9 +803,6 @@ module Onibi
         parts = @ast.parts
         return false if parts.any? { |part| part.is_a?(Onibi::AST::AtomicGroup) }
         return false if parts.length > 1 && parts.any? { |part| part.is_a?(Onibi::AST::Absence) }
-        return false if parts.any? do |part|
-          part.is_a?(Onibi::AST::Quantifier) && part.expression.is_a?(Onibi::AST::Group)
-        end
       end
 
       bytecode_program
