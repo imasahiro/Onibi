@@ -300,9 +300,6 @@ module Onibi
         match_start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
         position = finish > match_start ? finish : match_start + 1
-        break if matched[0].empty? && @ast.is_a?(Onibi::AST::Sequence) &&
-                 @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Absence) &&
-                 (matched.captures.empty? || matched.captures.all?(&:nil?))
         break if position > input.length
       end
       block_given? ? input : results
