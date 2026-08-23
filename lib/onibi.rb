@@ -353,7 +353,7 @@ module Onibi
         enabled_flags = enabled.chars + positive.to_s.chars
         enabled_flags -= negative.to_s.chars
         enabled = ("mix".chars & enabled_flags).join
-        body = source[(close + 1)...-1]
+        body = source[(close + 1)...-1].gsub("/", '\\/')
       end
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
@@ -364,7 +364,7 @@ module Onibi
       enabled = mode_flags
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
-      "(?#{scope}:#{source})"
+      "(?#{scope}:#{source.gsub("/", '\\/')})"
     end
 
     def inspect
