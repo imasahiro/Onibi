@@ -11,9 +11,12 @@ module Onibi
         value = consume.value
         mode, base = quantifier_mode(value)
         kind, minimum, maximum = quantifier_bounds(base)
-        mode = :possessive_bounded if mode == :possessive && kind == :bounded
-
-        expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode)
+        if mode == :possessive && kind == :bounded
+          bounded = AST::Quantifier.new(expression, kind, minimum, maximum, :greedy)
+          expression = AST::Quantifier.new(bounded, :+, 1, nil, :possessive)
+        else
+          expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode)
+        end
       end
       expression
     end

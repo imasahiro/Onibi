@@ -37,6 +37,14 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_bounded_possessive_units_repeat_until_input_end
+    expected = ::Regexp.new(".{0,2}+").match("aaab")
+    actual = Onibi::Regexp.new(".{0,2}+").match("aaab")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
   def test_possessive_quantifier_preserves_ordered_choice_for_equal_lengths
     match = Onibi::Regexp.new("(a|aa)++").match("aa")
 

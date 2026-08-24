@@ -1075,6 +1075,9 @@ module Onibi
       end
 
       def possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
+        return nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if
+          quantifier.expression.is_a?(SemanticBytecode::Quantifier)
+
         nullable_body = minimum_node_width(quantifier.expression)&.zero?
         limit = quantifier.maximum || [characters.length - cursor + (nullable_body ? 1 : 0), 1].max
         consumed = 0
@@ -1098,6 +1101,34 @@ module Onibi
         return [] if count < quantifier.minimum
 
         [accepted.last]
+      end
+
+      # MRI treats a bounded possessive suffix such as `{1,3}+` as a
+      # possessive repetition of the bounded unit. Keep all unit widths in
+      # the compiled execution path so a following operand can select the
+      # first valid greedy unit without reopening the outer repeat.
+      def nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
+        frontier = [[0, captures]]
+        accepted = []
+        limit = characters.length - cursor + 1
+        count = 0
+        while count < limit && !frontier.empty?
+          next_frontier = []
+          frontier.each do |consumed, state|
+            node_results(quantifier.expression, characters, cursor + consumed, state, flags).each do |length, inner|
+              next_count = count + 1
+              accepted << [consumed + length, inner] if next_count >= quantifier.minimum
+              next if length.zero?
+
+              next_frontier << [consumed + length, inner]
+            end
+          end
+          frontier = next_frontier
+          count += 1
+        end
+        return [] if accepted.empty?
+
+        accepted.uniq { |length, state| [length, state] }.sort_by { |length, _state| -length }
       end
 
       def transition_lengths(label, characters, cursor, captures, flags = {})
