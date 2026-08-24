@@ -67,7 +67,7 @@ module Onibi
       Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility
       CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms Emoticons Miscellaneous_Symbols Dingbats
       Mathematical_Operators Geometric_Shapes Letterlike_Symbols Currency_Symbols
-      General_Punctuation
+      General_Punctuation CJK_Symbols_and_Punctuation
     ].freeze
   end
 end
