@@ -50,6 +50,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InHiragana}", ["あ"], %w[ア A]],
     ["\\p{InEmoticons}", ["😀", "😎"], %w[A あ]],
     ["\\p{InMiscellaneous_Symbols}", ["☃", "☀"], %w[A 😀]],
+    ["\\p{InDingbats}", ["✂", "✈"], %w[A ☃]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
     ["[\\N{SNOWMAN}]", ["N"], ["☃", "x"]]
