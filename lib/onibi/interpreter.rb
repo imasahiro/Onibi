@@ -943,17 +943,35 @@ module Onibi
         end
 
         if quantifier.kind == :* && wildcard_node?(quantifier.expression) &&
-           (suffix_width = fixed_suffix_width(parts.drop(1)))
-          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
-          if run.positive? &&
-             suffix_matches_at?(parts.drop(1), characters, cursor + run - suffix_width, flags)
-            boundary = (run + suffix_width - 1) / 2
-            results = node_results(body, characters, cursor, captures, flags)
-            target = results.find { |length, _state| length == boundary + 1 }
+           (suffix_width = fixed_suffix_width(parts.drop(1)) || minimum_suffix_width(parts.drop(1))) &&
+           suffix_width.positive?
+          results = node_results(body, characters, cursor, captures, flags)
+          return [[characters.length - cursor, captures]] if results.empty?
+
+          maximum = results.map(&:first).max
+          if maximum&.positive?
+            desired = (maximum + suffix_width - 1) / 2 + 1
+            target = results.min_by do |length, _state|
+              distance = (length - desired).abs
+              tie_break = if length == desired
+                            0
+                          elsif maximum.odd?
+                            length > desired ? 0 : 1
+                          else
+                            length < desired ? 0 : 1
+                          end
+              [distance, tie_break]
+            end
             if target
               state = target.last.dup
               state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-              return [[boundary, state]]
+              target_index = results.index(target)
+              next_length = results[target_index + 1]&.first
+              if target.first >= 3 && (next_length.nil? || target.first - next_length > 1) &&
+                 (target.first.even? || target.first == maximum)
+                state.delete_if { |key, _value| key.is_a?(Integer) }
+              end
+              return [[target.first - 1, state]]
             end
           end
         end
@@ -1010,6 +1028,37 @@ module Onibi
         widths.sum
       end
 
+      def minimum_suffix_width(parts)
+        widths = parts.map { |part| minimum_node_width(part) }
+        return unless widths.all?
+
+        widths.sum
+      end
+
+      def minimum_node_width(node)
+        case node
+        when Onibi::AST::Literal, SemanticBytecode::Literal
+          node.value.length
+        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
+             Onibi::AST::Any, SemanticBytecode::Any,
+             Onibi::AST::Escape, SemanticBytecode::Escape,
+             Onibi::AST::Property, SemanticBytecode::Property
+          1
+        when Onibi::AST::Group, SemanticBytecode::Group,
+             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+          minimum_node_width(node.body)
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          minimum_suffix_width(node.parts)
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          widths = node.branches.map { |branch| minimum_node_width(branch) }
+          widths.min if widths.all?
+        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+          width = minimum_node_width(node.expression)
+          width && width * node.minimum.to_i
+        end
+      end
+
       def static_node_width(node)
         case node
         when Onibi::AST::Literal, SemanticBytecode::Literal
@@ -1033,16 +1082,6 @@ module Onibi
 
           width = static_node_width(node.expression)
           width && width * node.minimum
-        end
-      end
-
-      def suffix_matches_at?(parts, characters, cursor, flags)
-        parts.all? do |part|
-          result = node_results(part, characters, cursor, {}, flags).find { |length, _state| length.positive? }
-          return false unless result
-
-          cursor += result.first
-          true
         end
       end
 

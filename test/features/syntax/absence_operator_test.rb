@@ -216,9 +216,10 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_uses_fixed_width_wildcard_suffix_boundary
     {
-      "(?~(?:.*[ab]))" => %w[aaa aaaa aaaaa],
+      "(?~(?:.*[ab]))" => %w[aaa aaaa aaaaa aaac aaca abca aca acb],
       "(?~(?:.*aa))" => %w[aaa aaaa aaaaa],
-      "(?~(?:.*(a|b)))" => %w[aaa aaaa aaaaa]
+      "(?~(?:.*(a|b)))" => %w[aaa aaaa aaaaa aaac aaca abca aca acb],
+      "(?~(?:.*a+))" => %w[aaa baa aaaa aaab aaba baaa]
     }.each do |pattern, inputs|
       inputs.each do |input|
         expected = ::Regexp.new(pattern).match(input)
