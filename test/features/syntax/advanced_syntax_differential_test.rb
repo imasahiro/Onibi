@@ -14,6 +14,7 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
     ["(?<pair>ab)\\g<pair>", "abab"],
     ["(?~real)", "surrealist"],
     ["(?~real)ist", "surrealist"],
+    ["(?~(a|ab))*", "a"],
     ["a\\Kb", "ab"]
   ].freeze
 

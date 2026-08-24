@@ -928,6 +928,7 @@ module Onibi
           end
 
           node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
+            inner = clear_repeated_absence_captures(quantifier.expression, inner)
             if length.zero?
               expression = quantifier.expression
               expression = expression.body if expression.is_a?(SemanticBytecode::Group)
@@ -2443,6 +2444,16 @@ module Onibi
         else
           []
         end
+      end
+
+      def clear_repeated_absence_captures(node, captures)
+        body = node
+        body = body.body if body.is_a?(SemanticBytecode::Group)
+        return captures unless body.is_a?(SemanticBytecode::Absence)
+
+        cleaned = captures.dup
+        capture_numbers(body.body).each { |number| cleaned.delete(number) }
+        cleaned
       end
 
       def node_starts_with_selected_atom?(node, atom, captures)
