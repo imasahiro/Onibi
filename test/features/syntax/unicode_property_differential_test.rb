@@ -63,6 +63,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InSupplemental_Mathematical_Operators}", ["⨀", "⫷"], %w[A ∑]],
     ["\\p{InTransport_and_Map_Symbols}", ["🚀", "🛸"], %w[A 😀]],
     ["\\p{InEnclosed_Alphanumerics}", ["①", "ⓐ"], %w[A ²]],
+    ["\\p{InEnclosed_Alphanumeric_Supplement}", %w[🄰 🅰], %w[A 😀]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
     ["[\\N{SNOWMAN}]", ["N"], ["☃", "x"]]

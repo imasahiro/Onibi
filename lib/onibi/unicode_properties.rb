@@ -72,6 +72,7 @@ module Onibi
       Supplemental_Mathematical_Operators
       Transport_and_Map_Symbols
       Enclosed_Alphanumerics
+      Enclosed_Alphanumeric_Supplement
     ].freeze
   end
 end
