@@ -60,4 +60,14 @@ class LexerParserErrorBoundaryTest < Minitest::Test
       end
     end
   end
+
+  def test_unescaped_closing_bracket_after_class_is_literal_like_mri
+    assert Onibi::Regexp.new("]").match?("]")
+    expected = ::Regexp.new("[a]]")
+    actual = Onibi::Regexp.new("[a]]")
+
+    assert_equal expected.source, actual.source
+    assert_equal expected.match?("a]"), actual.match?("a]")
+    assert_equal expected.match?("b]"), actual.match?("b]")
+  end
 end
