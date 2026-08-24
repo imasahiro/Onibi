@@ -112,6 +112,13 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal 0, regexp.options
   end
 
+  def test_union_to_s_keeps_scopes_outside_the_outer_wrapper
+    expected = ::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+    actual = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+
+    assert_equal expected.to_s, actual.to_s
+  end
+
   def test_to_s_escapes_slashes_inside_scoped_modifiers
     regexp = Onibi::Regexp.new("(?imx:a/b)")
 

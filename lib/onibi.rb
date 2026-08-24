@@ -449,7 +449,7 @@ module Onibi
     def to_s
       enabled = mode_flags
       body = source.gsub("/", '\\/')
-      if source.start_with?("(?") && source.include?(":") && source.end_with?(")")
+      if single_inline_scope?
         close = source.index(":")
         header = source[2...close]
         return to_s_without_scope unless header.each_char.all? { |flag| %w[i m x -].include?(flag) }
@@ -479,6 +479,37 @@ module Onibi
     end
 
     private
+
+    def single_inline_scope?
+      return false unless source.start_with?("(?") && source.include?(":") && source.end_with?(")")
+
+      depth = 0
+      escaped = false
+      in_class = false
+      source.each_char.with_index do |character, index|
+        if escaped
+          escaped = false
+          next
+        end
+        if character == "\\"
+          escaped = true
+          next
+        end
+        if character == "["
+          in_class = true
+          next
+        end
+        in_class = false if character == "]"
+        next if in_class
+
+        depth += 1 if character == "("
+        next unless character == ")"
+
+        depth -= 1
+        return false if depth.zero? && index != source.length - 1
+      end
+      depth.zero?
+    end
 
     def raise_incompatible_encoding(input)
       pattern_encoding = encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : encoding.name
