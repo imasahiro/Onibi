@@ -69,6 +69,7 @@ module Onibi
       Mathematical_Operators Geometric_Shapes Letterlike_Symbols Currency_Symbols
       General_Punctuation CJK_Symbols_and_Punctuation Greek_Extended Latin_Extended_Additional
       Supplemental_Arrows_A
+      Supplemental_Mathematical_Operators
     ].freeze
   end
 end
