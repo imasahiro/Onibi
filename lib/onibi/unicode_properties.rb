@@ -92,7 +92,7 @@ module Onibi
       CJK_Unified_Ideographs_Extension_H
       CJK_Unified_Ideographs_Extension_I
       CJK_Unified_Ideographs_Extension_J
-      Vertical_Forms Kawi Tangsa Toto Wancho Medefaidrin Bassa_Vah Miao Bamum_Supplement Pahawh_Hmong Makasar Bamum Sundanese_Supplement Batak
+      Vertical_Forms Kawi Tangsa Toto Wancho Medefaidrin Bassa_Vah Miao Bamum_Supplement Pahawh_Hmong Makasar Bamum Sundanese_Supplement Batak Lisu
       NKo
       Coptic
       Cyrillic_Extended_A Cyrillic_Extended_B Cyrillic_Extended_C
