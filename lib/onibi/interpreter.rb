@@ -304,8 +304,10 @@ module Onibi
             value = node.parts.map(&:value).join
             first_expands = node.parts.first &&
                             node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
+            first_non_ascii = node.parts.first && !node.parts.first.value.ascii_only?
             has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
-            if !value.empty? && (value.ascii_only? || first_expands || has_mark)
+            reverse_fold = reverse_casefold_sequence?(value)
+            if !value.empty? && (value.ascii_only? || first_expands || first_non_ascii || has_mark || reverse_fold)
               folded_length = casefold_lengths(value, characters, cursor,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
@@ -329,8 +331,10 @@ module Onibi
                 index += 1
               end
               first_expands = run.first.downcase(:fold).length > run.first.length
+              first_non_ascii = !run.first.ascii_only?
               has_mark = run.join.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
-              if run.length > 1 && (run.join.ascii_only? || first_expands || has_mark)
+              reverse_fold = reverse_casefold_sequence?(run.join)
+              if run.length > 1 && (run.join.ascii_only? || first_expands || first_non_ascii || has_mark || reverse_fold)
                 part = SemanticBytecode::Literal.new(run.join)
               else
                 index = part_index + 1
@@ -485,6 +489,16 @@ module Onibi
             [width + length, inner]
           end
         end.flatten(1)
+      end
+
+      def reverse_casefold_sequence?(value)
+        @reverse_casefold_sequences ||= {}
+        return @reverse_casefold_sequences[value] if @reverse_casefold_sequences.key?(value)
+
+        @reverse_casefold_sequences[value] = Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
+          character = [codepoint].pack("U")
+          character.downcase(:fold) == value
+        end
       end
 
       def folded_atoms_match?(atoms, folded, flags, allow_fold_tail: false)

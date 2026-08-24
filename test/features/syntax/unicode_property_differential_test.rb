@@ -363,6 +363,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0), mri.to_a], [onibi[0], onibi.offset(0), onibi.to_a]
   end
 
+  def test_literal_casefold_sequences_cover_modifier_letter_expansions
+    { "ʼn" => "ŉ", "aʾ" => "ẚ" }.each do |pattern, input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+      assert_equal [input, [0, 1]], [mri[0], mri.offset(0)]
+      assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+    end
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)
