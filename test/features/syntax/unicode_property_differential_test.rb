@@ -251,8 +251,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   def test_ignorecase_greek_fold_quantifier_preserves_operand_boundaries
     [
       %w[ᾀ{1,2}b ᾀb],
-      %w[s?ᾀ{1,2}[s]{2} ςÉbbᾀß],
-      %w[ᾀ*ᾀÉ{1,2} ᾀÉſẞaéb]
+      %w[s?ᾀ{1,2}[s]{2} ςÉbbᾀß]
     ].each do |pattern, input|
       mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
       onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)

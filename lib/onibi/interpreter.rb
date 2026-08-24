@@ -418,12 +418,12 @@ module Onibi
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
               previous_part = part_index.positive? ? parts[part_index - 1] : nil
-              if !mri_fold_boundary_relaxed?(previous_part, part) &&
+              if !mri_fold_boundary_relaxed?(previous_part, part, consumed) &&
                  mri_multi_fold_literal_boundary?(part, parts[index], characters,
                                                   cursor + consumed, flags)
                 part_results = []
               end
-              if !mri_fold_boundary_relaxed?(previous_part, part) &&
+              if !mri_fold_boundary_relaxed?(previous_part, part, consumed) &&
                  mri_multi_fold_quantifier_boundary?(part, parts[index], characters,
                                                      cursor + consumed, flags)
                 part_results = []
@@ -674,9 +674,10 @@ module Onibi
         mri_multi_fold_literal_boundary?(node.expression, next_node, characters, cursor, flags)
       end
 
-      def mri_fold_boundary_relaxed?(previous_node, node)
+      def mri_fold_boundary_relaxed?(previous_node, node, consumed)
         return false unless previous_node.is_a?(SemanticBytecode::Quantifier)
         return false unless previous_node.minimum.zero?
+        return false unless consumed.positive?
 
         previous_expression = previous_node.expression
         current_expression = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
