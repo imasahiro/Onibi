@@ -52,7 +52,7 @@ module Onibi
     end
 
     def normalize_name(name)
-      normalized = name.sub("Is", "").sub("^", "")
+      normalized = name.sub("^", "")
       return normalized if normalized.start_with?("In") && BLOCKS.include?(normalized.delete_prefix("In"))
 
       normalized

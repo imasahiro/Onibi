@@ -49,7 +49,9 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InGreek_and_Coptic}", %w[α Ω], %w[A Ж]],
     ["\\p{InHiragana}", ["あ"], %w[ア A]],
     ["\\p{InEmoticons}", ["😀", "😎"], %w[A あ]],
-    ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]]
+    ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
+    ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
+    ["[\\N{SNOWMAN}]", ["N"], ["☃", "x"]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri
@@ -62,6 +64,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   def test_invalid_unicode_property_errors_match_mri
     assert_equal :error, outcome(Regexp, "\\p{NoSuchProperty}", "x")
     assert_equal :error, outcome(Onibi::Regexp, "\\p{NoSuchProperty}", "x")
+    assert_equal :error, outcome(Regexp, "\\p{IsLatin}", "x")
+    assert_equal :error, outcome(Onibi::Regexp, "\\p{IsLatin}", "x")
   end
 
   private

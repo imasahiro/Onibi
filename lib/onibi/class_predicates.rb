@@ -210,7 +210,7 @@ module Onibi
       ending = source.index("}", index + 3)
       raise RegexpError, "invalid Unicode character name" unless ending
 
-      [source[(index + 1)..ending], ending + 1]
+      [source[index + 1], index + 2]
     end
 
     def decode_control_escape(source, index)
