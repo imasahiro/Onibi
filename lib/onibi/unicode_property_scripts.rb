@@ -82,6 +82,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Georgian_Extended" => [[0x1C90, 0x1CBF]],
       "Arabic_Presentation_Forms_A" => [[0xFB50, 0xFDFF]],
       "Arabic_Extended_A" => [[0x08A0, 0x08FF]],
+      "Arabic_Extended_B" => [[0x0870, 0x089F]],
       "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
     }.freeze
 

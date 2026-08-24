@@ -96,6 +96,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InGeorgian_Extended}", %w[Ა Ჿ], %w[A Ж]],
     ["\\p{InArabic_Presentation_Forms_A}", %w[ﭐ ﷲ], %w[A ش]],
     ["\\p{InArabic_Extended_A}", %w[ࢠ ࣿ], %w[A ش]],
+    ["\\p{InArabic_Extended_B}", %w[ࡰ ࢟], %w[A ش]],
     ["\\p{InArabic_Presentation_Forms_B}", %w[ﹰ ﹶ], %w[A ش]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
