@@ -20,6 +20,13 @@ class QuantifierModeTest < Minitest::Test
     assert Onibi::Regexp.new("a++").match?("aaa")
   end
 
+  def test_possessive_quantifier_accepts_a_terminal_zero_width_iteration
+    expected = ::Regexp.new("a$++").match("a")
+    actual = Onibi::Regexp.new("a$++").match("a")
+
+    assert_equal expected.to_a, actual.to_a
+  end
+
   def test_possessive_bounded_quantifier_does_not_backtrack
     regexp = Onibi::Regexp.new("a{1,3}+a")
 

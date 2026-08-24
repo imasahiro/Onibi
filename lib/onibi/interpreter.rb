@@ -409,7 +409,7 @@ module Onibi
       def nullable_single_quantifier?(node)
         group = node if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
         body = group&.body
-        return false unless body && minimum_node_width(body).zero?
+        return false unless body && minimum_node_width(body)&.zero?
 
         parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
         nested = parts.first
@@ -455,7 +455,7 @@ module Onibi
       end
 
       def possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
-        limit = quantifier.maximum || characters.length - cursor
+        limit = quantifier.maximum || [characters.length - cursor, 1].max
         consumed = 0
         current = captures
         count = 0
