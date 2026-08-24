@@ -8,10 +8,19 @@ module Onibi
     def character_escape_token(index, escaped)
       return hex_escape_token(index) if escaped == "x"
       return unicode_escape_token(index) if escaped == "u"
+      return named_character_token(index) if escaped == "N"
       return control_escape_token(index, escaped) if %w[c C].include?(escaped)
       return meta_escape_token(index) if escaped == "M"
 
       nil
+    end
+
+    def named_character_token(index)
+      ending = @source.index("}", index + 3)
+      raise RegexpError, "invalid Unicode character name" unless ending
+
+      value = @source[(index + 1)..ending]
+      [Lexer::Token.new(:literal, value, index), ending + 1]
     end
 
     def meta_escape_token(index)

@@ -48,7 +48,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InBasic_Latin}", %w[A 7], %w[あ é]],
     ["\\p{InGreek_and_Coptic}", %w[α Ω], %w[A Ж]],
     ["\\p{InHiragana}", ["あ"], %w[ア A]],
-    ["\\p{InEmoticons}", ["😀", "😎"], %w[A あ]]
+    ["\\p{InEmoticons}", ["😀", "😎"], %w[A あ]],
+    ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri
