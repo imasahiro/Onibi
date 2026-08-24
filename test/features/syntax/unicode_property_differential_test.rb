@@ -373,6 +373,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_class_casefold_split_is_limited_to_sharp_s
+    { "[ß]s" => "sß", "[ﬆ]s" => "sﬆ" }.each do |pattern, input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+      assert_equal mri && [mri[0], mri.offset(0)], onibi && [onibi[0], onibi.offset(0)]
+    end
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

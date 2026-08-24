@@ -479,7 +479,9 @@ module Onibi
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
           folded = slice.join.downcase(:fold)
-          expanded_class = Array(prefix.first.casefolds).any?
+          expanded_class = Array(prefix.first.casefolds).any? do |source, value|
+            %w[ß ẞ].include?(source) && value == "ss"
+          end
           next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class)
 
           next [[width, captures.dup]] if prefix.length == parts.length
