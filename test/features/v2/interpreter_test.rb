@@ -20,17 +20,19 @@ class InterpreterTest < Minitest::Test
     assert_equal ".* body .*", absence.fetch(:wrapped_language)
     assert_equal :ordered_body_candidates, absence.fetch(:preserves)
     assert_equal :absent_frame, absence.fetch(:local)
+    assert_equal :probe_with_bounded_end, absence.fetch(:transition)
   end
 
   def test_absent_frame_contains_stack_checkpoint_fields
     frame = Onibi::Interpreter::AbsentFrame.new(
       absent_start: 0,
       absent_end: 3,
+      probe_position: 0,
       possible_points: [[0, {}]],
       body_checkpoints: [[0, [[1, {}]]]]
     )
 
-    assert_equal [0, 3, [[0, {}]], [[0, [[1, {}]]]]], frame.to_a
+    assert_equal [0, 3, 0, [[0, {}]], [[0, [[1, {}]]]]], frame.to_a
   end
 
   def test_interpreter_executes_dfa_start_match_jump_and_accept

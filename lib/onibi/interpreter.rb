@@ -6,11 +6,14 @@ module Onibi
     SemanticBytecode = Onibi::IRGen::YARVIR::SemanticBytecode
 
     # Runtime state for the Onigmo-style absence loop.
+    # `absent_end` is exclusive before a probe and becomes body_end - 1 after
+    # a body result. `probe_position` advances one character per iteration.
     # `possible_points` stores [cursor, captures] checkpoints.
     # `body_checkpoints` stores ordered body results for each point.
     AbsentFrame = Struct.new(
       :absent_start,
       :absent_end,
+      :probe_position,
       :possible_points,
       :body_checkpoints,
       keyword_init: true
@@ -49,7 +52,8 @@ module Onibi
           local: :absent_frame,
           language: :complement_of_wrapped_body,
           wrapped_language: ".* body .*",
-          preserves: :ordered_body_candidates
+          preserves: :ordered_body_candidates,
+          transition: :probe_with_bounded_end
         },
         match_group: { operand: :group, stack: :push_result, local: :capture_scope },
         match_quantifier: { operand: :quantifier, stack: :push_result, local: :repeat_and_merge },
@@ -771,6 +775,7 @@ module Onibi
         frame = AbsentFrame.new(
           absent_start: cursor,
           absent_end: characters.length,
+          probe_position: cursor,
           possible_points: [],
           body_checkpoints: []
         )
@@ -894,6 +899,7 @@ module Onibi
       end
 
       def record_absence_checkpoint(frame, position, results, captures)
+        frame.probe_position = position
         frame.possible_points << [position, captures]
         frame.body_checkpoints << [position, results]
       end
@@ -975,35 +981,9 @@ module Onibi
           suffix_width = fixed_suffix_width(parts.drop(1)) || minimum_suffix_width(parts.drop(1))
           suffix_width = 1 if suffix_width&.zero? && suffix_can_consume?(parts.drop(1))
           if suffix_width&.positive?
-            results = node_results(body, characters, cursor, captures, flags)
-            return [[characters.length - cursor, captures]] if results.empty?
-
-            maximum = results.map(&:first).max
-            if maximum&.positive?
-              desired = (maximum + suffix_width - 1) / 2 + 1
-              target = results.min_by do |length, _state|
-                distance = (length - desired).abs
-                tie_break = if length == desired
-                              0
-                            elsif maximum.odd?
-                              length > desired ? 0 : 1
-                            else
-                              length < desired ? 0 : 1
-                            end
-                [distance, tie_break]
-              end
-              if target
-                state = target.last.dup
-                state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-                target_index = results.index(target)
-                next_length = results[target_index + 1]&.first
-                if target.first >= 3 && (next_length.nil? || target.first - next_length > 1) &&
-                   (target.first.even? || target.first == maximum)
-                  state.delete_if { |key, _value| key.is_a?(Integer) }
-                end
-                return [[target.first - 1, state]]
-              end
-            end
+            return absence_wildcard_loop_results(
+              body, characters, cursor, captures, flags
+            )
           end
         end
 
@@ -1034,6 +1014,38 @@ module Onibi
         state = target.last.dup
         state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
         [[maximum, state]]
+      end
+
+      # Execute the two loops used by Onigmo's OP_ABSENT protocol.
+      # Each probe uses the current absent end as its input boundary.
+      def absence_wildcard_loop_results(body, characters, cursor, captures, flags)
+        frame = AbsentFrame.new(
+          absent_start: cursor,
+          absent_end: characters.length,
+          probe_position: cursor,
+          possible_points: [],
+          body_checkpoints: []
+        )
+        current_captures = captures
+        position = cursor
+        while position < frame.absent_end
+          frame.probe_position = position
+          bounded = characters[0...frame.absent_end]
+          results = node_results(body, bounded, position, captures, flags)
+          record_absence_checkpoint(frame, position, results, captures)
+          if results.empty?
+            current_captures = nil
+          else
+            length, state = results.first
+            frame.absent_end = [frame.absent_end, position + length - 1].min
+            current_captures = state
+          end
+          position += 1
+        end
+
+        state = (current_captures || captures).dup
+        state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+        [[frame.absent_end - cursor, state]]
       end
 
       def repeated_quantified_atom_suffix?(quantifier, suffix)

@@ -231,6 +231,19 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_replays_variable_suffix_backtracking
+    pattern = "(?~(?:.*(ab|a)))"
+    inputs = %w[aba aab aabaa abba xxaba xaba xxxaba xxxxaba]
+
+    inputs.each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal expected.to_a, actual.to_a, input
+      assert_equal expected.offset(0), actual.offset(0), input
+    end
+  end
+
   def test_absence_operator_uses_consuming_width_for_nullable_suffix
     ["(?~(?:.*a?))", "(?~(?:.*a*))"].each do |pattern|
       %w[aaa abac abba aabaa ac].each do |input|
