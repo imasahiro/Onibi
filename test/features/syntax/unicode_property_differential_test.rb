@@ -6,6 +6,9 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   CASES = [
     ["\\p{Alpha}", %w[A あ], %w[1]],
     ["\\p{Alphabetic}", %w[A あ Ω], %w[1 😀]],
+    ["\\p{Lowercase}", %w[a z], %w[A 1]],
+    ["\\p{Uppercase}", %w[A Z], %w[a 1]],
+    ["\\p{Punctuation}", [".", "!", "、"], %w[A 1]],
     ["\\P{Alpha}", %w[1], %w[A あ]],
     ["\\p{^Alpha}", %w[1], %w[A あ]],
     ["\\p{Hiragana}", ["あ"], ["ア"]],

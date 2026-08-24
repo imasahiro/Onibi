@@ -13,9 +13,9 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Alphabetic Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
-      Cased Extender ID_Compat_Math_Continue ID_Compat_Math_Start Ideographic Math Pattern_Syntax
-      Prepended_Concatenation_Mark Regional_Indicator Sentence_Terminal Soft_Dotted
-      Terminal_Punctuation Unified_Ideograph Variation_Selector
+      Cased Extender ID_Compat_Math_Continue ID_Compat_Math_Start Ideographic Lowercase Math Pattern_Syntax
+      Prepended_Concatenation_Mark Punctuation Regional_Indicator Sentence_Terminal Soft_Dotted
+      Terminal_Punctuation Unified_Ideograph Uppercase Variation_Selector
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
       XDigit Hex_Digit Dash ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
@@ -62,7 +62,8 @@ module Onibi
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
       "Cyrillic" => :cyrillic?, "Arabic" => :arabic?, "Alpha" => :alpha?,
       "Letter" => :letter?, "Alnum" => :alnum?, "Digit" => :digit?, "Nd" => :digit?,
-      "Number" => :number?, "Lower" => :lower?, "Upper" => :upper?, "Space" => :space?,
+      "Number" => :number?, "Lower" => :lower?, "Lowercase" => :lower?, "Upper" => :upper?,
+      "Uppercase" => :upper?, "Punctuation" => :punct?, "Space" => :space?,
       "Word" => :word?, "XDigit" => :xdigit?, "Blank" => :blank?, "Cntrl" => :cntrl?,
       "ASCII_Hex_Digit" => :xdigit?, "Hex_Digit" => :hex_digit?, "Dash" => :dash?,
       "Assigned" => :assigned?, "White_Space" => :space?,
