@@ -17,7 +17,7 @@ module Onibi
 
     def named_character_token(index)
       ending = @source.index("}", index + 3)
-      raise RegexpError, "invalid Unicode character name" unless ending
+      return [Lexer::Token.new(:literal, "N", index), index + 2] unless ending
 
       value = @source[(index + 1)..ending]
       [Lexer::Token.new(:literal, value, index), ending + 1]

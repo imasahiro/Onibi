@@ -71,4 +71,14 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     assert_equal expected.match?("a]"), actual.match?("a]")
     assert_equal expected.match?("b]"), actual.match?("b]")
   end
+
+  def test_bare_named_character_escape_is_literal_like_mri
+    ["\\N", "\\Nfoo", "\\N{"].each do |pattern|
+      expected = ::Regexp.new(pattern)
+      actual = Onibi::Regexp.new(pattern)
+
+      assert_equal expected.source, actual.source, pattern
+      assert_equal expected.match?("Nfoo{"), actual.match?("Nfoo{"), pattern
+    end
+  end
 end

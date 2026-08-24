@@ -269,7 +269,7 @@ module Onibi
 
     def named_character_escape(source, index)
       ending = source.index("}", index + 3)
-      raise RegexpError, "invalid Unicode character name" unless ending
+      return [source[index + 1], index + 2] unless ending
 
       [source[index + 1], index + 2]
     end
