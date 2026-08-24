@@ -408,7 +408,8 @@ module Onibi
         visit.call(0, captures, 0)
         return [] if accepted.empty?
 
-        if quantifier.mode != :lazy && nullable_single_quantifier?(quantifier.expression)
+        if quantifier.mode != :lazy && quantifier.maximum != quantifier.minimum &&
+           nullable_single_quantifier?(quantifier.expression)
           accepted = accepted.group_by(&:first).values.map(&:last).sort_by { |length, _state| -length }
           group = quantifier.expression
           accepted = accepted.map do |length, state|

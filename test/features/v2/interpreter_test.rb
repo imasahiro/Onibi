@@ -110,6 +110,14 @@ class InterpreterTest < Minitest::Test
                  [actual[0], actual.captures, actual.offset(1)]
   end
 
+  def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
+    expected = ::Regexp.new("(a?){2}").match("aa")
+    actual = Onibi::Regexp.new("(a?){2}").match("aa")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
   private
 
   def semantic_node?(value)

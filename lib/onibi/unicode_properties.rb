@@ -13,7 +13,7 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
-      XDigit Blank Cntrl Graph Print Punct L Lu Ll Lt Lm Lo M N P S Z C Mark
+      XDigit Blank Cntrl Graph Print Punct L Lu Ll Lt Lm Lo M N P S Z C Cn Mark
       Symbol Separator Other
     ].freeze
     PROPERTY_MATCHERS = {
@@ -27,7 +27,8 @@ module Onibi
       "L" => :letter?, "Lu" => :upper?, "Ll" => :lower?, "Lt" => :titlecase?,
       "Lm" => :modifier_letter?, "Lo" => :other_letter?, "M" => :mark?, "Mark" => :mark?,
       "N" => :number?, "P" => :punct?, "S" => :symbol?, "Symbol" => :symbol?,
-      "Z" => :separator?, "Separator" => :separator?, "C" => :other?, "Other" => :other?
+      "Z" => :separator?, "Separator" => :separator?, "C" => :other?, "Cn" => :unassigned?,
+      "Other" => :other?
     }.freeze
 
     def validate!(name)

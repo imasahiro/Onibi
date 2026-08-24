@@ -134,6 +134,11 @@ module Onibi
         UNICODE_POSIX_CN_RANGES.none? { |range| range[0] <= codepoint && codepoint <= range[1] }
     end
 
+    def unassigned?(character)
+      codepoint = character.codepoints.first
+      UNICODE_POSIX_CN_RANGES.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
+    end
+
     def punct?(character)
       codepoint = character.codepoints.first
       UNICODE_PUNCTUATION_RANGES.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
