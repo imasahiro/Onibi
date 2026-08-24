@@ -191,8 +191,13 @@ module Onibi
       end
 
       matched = UnicodeProperties.matches?(name, character)
-      if ignorecase && !negated && !matched && %w[Lower Upper].include?(name)
-        opposite = name == "Lower" ? "Upper" : "Lower"
+      if ignorecase && !negated && !matched && %w[Lower Upper Ll Lu].include?(name)
+        opposite = case name
+                   when "Lower" then "Upper"
+                   when "Upper" then "Lower"
+                   when "Ll" then "Lu"
+                   else "Ll"
+                   end
         matched = UnicodeProperties.matches?(opposite, character)
       end
       negated ? !matched : matched

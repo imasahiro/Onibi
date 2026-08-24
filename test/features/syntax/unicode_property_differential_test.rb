@@ -146,18 +146,25 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal :error, outcome(Onibi::Regexp, "\\p{IsLatin}", "x")
   end
 
+  def test_ignorecase_general_categories_match_both_letter_cases
+    [["\\p{Ll}", "A"], ["\\p{Lu}", "a"],
+     ["[\\p{Ll}]", "É"], ["[\\p{Lu}]", "é"]].each do |pattern, input|
+      assert_same_outcome(pattern, input, true, Regexp::IGNORECASE)
+    end
+  end
+
   private
 
-  def assert_same_outcome(pattern, input, expected)
-    mri = outcome(Regexp, pattern, input)
-    onibi = outcome(Onibi::Regexp, pattern, input)
+  def assert_same_outcome(pattern, input, expected, options = 0)
+    mri = outcome(Regexp, pattern, input, options)
+    onibi = outcome(Onibi::Regexp, pattern, input, options)
 
     assert_equal expected, mri, "MRI outcome for #{pattern.inspect} / #{input.inspect}"
     assert_equal mri, onibi, "Onibi outcome for #{pattern.inspect} / #{input.inspect}"
   end
 
-  def outcome(regexp_class, pattern, input)
-    regexp_class.new(pattern).match?(input) || false
+  def outcome(regexp_class, pattern, input, options = 0)
+    regexp_class.new(pattern, options).match?(input) || false
   rescue StandardError
     :error
   end

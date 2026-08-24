@@ -2498,9 +2498,14 @@ module Onibi
         return :incompatible if non_unicode_encoding && ascii_property?(name) && !character.ascii_only?
 
         return true if Onibi::UnicodeProperties.matches?(name, character)
-        return false unless ignorecase && %w[Lower Upper].include?(name)
+        return false unless ignorecase && %w[Lower Upper Ll Lu].include?(name)
 
-        opposite = name == "Lower" ? "Upper" : "Lower"
+        opposite = case name
+                   when "Lower" then "Upper"
+                   when "Upper" then "Lower"
+                   when "Ll" then "Lu"
+                   else "Ll"
+                   end
         Onibi::UnicodeProperties.matches?(opposite, character)
       end
 
