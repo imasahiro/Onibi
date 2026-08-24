@@ -2418,8 +2418,10 @@ module Onibi
             end
           end
         end
-        if flags[:ignorecase] && flags[:full_casefold] && !node.value.start_with?("^")
+        if flags[:ignorecase] && !node.value.start_with?("^")
           Array(node.casefolds).each do |_source, folded|
+            next if node.value.include?("[:") && folded.ascii_only? && !flags[:full_casefold]
+
             width = folded.length
             slice = characters[cursor, width]
             next unless slice && slice.length == width
