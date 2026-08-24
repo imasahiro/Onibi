@@ -255,6 +255,14 @@ module Onibi
 
         case node
         when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(Onibi::AST::Literal) || part.is_a?(SemanticBytecode::Literal) }
+            value = node.parts.map(&:value).join
+            folded_length = (value.length..(value.length * 2)).find do |length|
+              casefold_equal?(value, characters[cursor, length].to_a.join)
+            end
+            return folded_length ? [[folded_length, captures.dup]] : []
+          end
+
           states = [[0, captures]]
           node.parts.each do |part|
             states = states.flat_map do |consumed, state_captures|
@@ -2361,7 +2369,7 @@ module Onibi
       end
 
       def casefold_equal?(left, right)
-        left.upcase.downcase == right.upcase.downcase || left.downcase == right.downcase
+        left.downcase(:fold) == right.downcase(:fold)
       end
 
       def property_matches?(name, character, ignorecase)

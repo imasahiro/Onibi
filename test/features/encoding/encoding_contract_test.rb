@@ -18,7 +18,7 @@ class EncodingContractTest < Minitest::Test
   end
 
   def test_unicode_full_casefold_matches_mri_for_literals
-    [["ß", "SS"], ["ſ", "S"], ["[ß]", "SS"]].each do |pattern, input|
+    [["ß", "SS"], ["ſ", "S"], ["[ß]", "SS"], ["(?i:ss)", "ß"]].each do |pattern, input|
       expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)&.to_a
       actual = Onibi::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)&.to_a
 
