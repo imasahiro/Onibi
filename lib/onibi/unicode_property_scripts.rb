@@ -37,7 +37,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Bopomofo" => [[0x3100, 0x312F]], "CJK_Unified_Ideographs" => [[0x4E00, 0x9FFF]],
       "Yi" => [[0xA000, 0xA4CF]], "Hangul_Syllables" => [[0xAC00, 0xD7AF]],
       "CJK_Compatibility" => [[0x3300, 0x33FF]], "CJK_Compatibility_Forms" => [[0xFE30, 0xFE4F]],
-      "Halfwidth_and_Fullwidth_Forms" => [[0xFF00, 0xFFEF]]
+      "Halfwidth_and_Fullwidth_Forms" => [[0xFF00, 0xFFEF]], "Emoticons" => [[0x1F600, 0x1F64F]]
     }.freeze
 
     def script_match?(character, ranges)
