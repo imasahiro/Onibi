@@ -89,9 +89,23 @@ module Onibi
 
     def mark?(character)
       codepoint = character.codepoints.first
-      (0x300..0x36F).cover?(codepoint) || (0x1AB0..0x1AFF).cover?(codepoint) ||
-        (0x1DC0..0x1DFF).cover?(codepoint) || (0x20D0..0x20FF).cover?(codepoint) ||
-        (0xFE20..0xFE2F).cover?(codepoint)
+      (0x300..0x36F).cover?(codepoint) || (0x591..0x5BD).cover?(codepoint) ||
+        [0x5BF, 0x5C1, 0x5C2, 0x5C4, 0x5C5, 0x5C7].include?(codepoint) ||
+        (0x610..0x61A).cover?(codepoint) || (0x64B..0x65F).cover?(codepoint) ||
+        codepoint == 0x670 || (0x6D6..0x6ED).cover?(codepoint) ||
+        codepoint == 0x711 || (0x730..0x74A).cover?(codepoint) ||
+        (0x7A6..0x7B0).cover?(codepoint) || (0x816..0x819).cover?(codepoint) ||
+        (0x900..0x903).cover?(codepoint) || (0x93A..0x93C).cover?(codepoint) ||
+        (0x941..0x94D).cover?(codepoint) || (0x951..0x957).cover?(codepoint) ||
+        codepoint == 0x9BC || (0xA3C..0xA3C).cover?(codepoint) ||
+        (0xB3C..0xB3C).cover?(codepoint) || (0xBCA..0xBCD).cover?(codepoint) ||
+        (0xC3E..0xC40).cover?(codepoint) || (0xD3B..0xD3C).cover?(codepoint) ||
+        (0xDCA..0xDCA).cover?(codepoint) || (0xE31..0xE31).cover?(codepoint) ||
+        (0xEB1..0xEB1).cover?(codepoint) || (0xF71..0xF84).cover?(codepoint) ||
+        (0x1039..0x103A).cover?(codepoint) || (0x1712..0x1714).cover?(codepoint) ||
+        (0x1A75..0x1A7C).cover?(codepoint) || (0x1B34..0x1B34).cover?(codepoint) ||
+        (0x1AB0..0x1AFF).cover?(codepoint) || (0x1DC0..0x1DFF).cover?(codepoint) ||
+        (0x20D0..0x20FF).cover?(codepoint) || (0xFE20..0xFE2F).cover?(codepoint)
     end
 
     def symbol?(character)
