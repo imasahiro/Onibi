@@ -26,7 +26,9 @@ class SyntaxDifferentialContractTest < Minitest::Test
     ["backreference", "(a)\\1", 0, "aa"],
     ["named backreference", "(?<x>a)\\k<x>", 0, "aa"],
     ["atomic group", "(?>a|ab)b", 0, "ab"],
-    ["conditional group", "(a)?(?(1)b|c)", 0, "ac"]
+    ["conditional group", "(a)?(?(1)b|c)", 0, "ac"],
+    ["class and anchor bounded repetition", "(?:[ab]|^){2}", 0, "b"],
+    ["class and anchor bounded range", "(?:[ab]|^){2,3}", 0, "b"]
   ].freeze
 
   def test_capture_priority_matches_mri_before_and_after_warmup
