@@ -76,7 +76,7 @@ module Onibi
       Enclosed_Alphanumerics
       Enclosed_Alphanumeric_Supplement
       Mathematical_Alphanumeric_Symbols
-      CJK_Compatibility_Ideographs
+      CJK_Compatibility_Ideographs CJK_Compatibility_Ideographs_Supplement
       CJK_Strokes
       Ideographic_Description_Characters
       CJK_Radicals_Supplement

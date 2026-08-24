@@ -71,6 +71,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InEnclosed_Alphanumeric_Supplement}", %w[🄰 🅰], %w[A 😀]],
     ["\\p{InMathematical_Alphanumeric_Symbols}", %w[𝐀 𝛼], %w[A ∑]],
     ["\\p{InCJK_Compatibility_Ideographs}", %w[﨑 神], %w[A あ]],
+    ["\\p{InCJK_Compatibility_Ideographs_Supplement}", ["丽", "𯨟"], %w[A あ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
