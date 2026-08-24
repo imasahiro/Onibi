@@ -79,9 +79,7 @@ module Onibi
       raise RegexpError, "invalid hex escape" if digits.empty?
 
       codepoint = digits.to_i(16)
-      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f && escape_encoding != Encoding::ASCII_8BIT
-
-      [Lexer::Token.new(:literal, codepoint.chr(escape_encoding), index), cursor]
+      [Lexer::Token.new(:literal, escaped_byte(codepoint), index), cursor]
     end
 
     def unicode_escape_token(index)
@@ -117,7 +115,8 @@ module Onibi
     end
 
     def codepoint_character(codepoint)
-      codepoint.chr(escape_encoding)
+      encoding = codepoint > 0x7f ? Encoding::UTF_8 : escape_encoding
+      codepoint.chr(encoding)
     rescue RangeError, EncodingError
       raise RegexpError, "invalid Unicode escape"
     end
@@ -132,6 +131,17 @@ module Onibi
 
     def escape_encoding
       @noencoding ? Encoding::ASCII_8BIT : @source.encoding
+    end
+
+    def escaped_byte(codepoint)
+      encoding = escape_encoding
+      encoding = Encoding::ASCII_8BIT if codepoint > 0x7f && encoding == Encoding::US_ASCII
+      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f &&
+                                                       [Encoding::UTF_8, Encoding::EUC_JP].include?(encoding)
+
+      codepoint.chr(encoding)
+    rescue RangeError, EncodingError
+      raise RegexpError, "invalid multibyte escape"
     end
 
     def special_escape_token(index, escaped)

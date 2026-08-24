@@ -17,6 +17,35 @@ class EncodingTest < Minitest::Test
     assert Onibi::Regexp.new("\\d".b).match?("7".b)
   end
 
+  def test_windows31j_byte_escapes_keep_fixed_encoding
+    pattern = "\\xA4".encode(Encoding::Windows_31J)
+
+    expected = ::Regexp.new(pattern)
+    actual = Onibi::Regexp.new(pattern)
+
+    assert_equal expected.encoding, actual.encoding
+    assert_equal expected.fixed_encoding?, actual.fixed_encoding?
+    assert_equal expected.match?("a"), actual.match?("a")
+  end
+
+  def test_us_ascii_byte_escapes_reject_non_ascii_utf8_input
+    pattern = "\\xA4".encode(Encoding::US_ASCII)
+
+    assert_raises(ArgumentError) { Regexp.new(pattern).match?("é") }
+    assert_raises(ArgumentError) { Onibi::Regexp.new(pattern).match?("é") }
+  end
+
+  def test_unicode_escapes_promote_the_pattern_to_utf8
+    pattern = "\\u{3042}".encode(Encoding::Windows_31J)
+
+    expected = ::Regexp.new(pattern)
+    actual = Onibi::Regexp.new(pattern)
+
+    assert_equal expected.encoding, actual.encoding
+    assert_equal expected.fixed_encoding?, actual.fixed_encoding?
+    assert_equal expected.match?("あ"), actual.match?("あ")
+  end
+
   def test_valid_utf8_input_matches_normally
     valid_utf8 = "é".encode(Encoding::UTF_8)
 

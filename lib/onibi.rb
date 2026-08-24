@@ -183,6 +183,7 @@ module Onibi
       end
 
       @source = source
+      @source = @source.dup.force_encoding(Encoding::UTF_8) if @source.valid_encoding? && non_ascii_unicode_escape_pattern?
       @options = option_bits(options)
       raise RegexpError, "invalid pattern encoding" unless @source.valid_encoding?
       raise RegexpError, "non-ASCII pattern with no encoding" if no_encoding? && !@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT
@@ -202,6 +203,8 @@ module Onibi
       validate_property_encoding!
 
       @options |= FIXEDENCODING if (!@source.ascii_only? || @source.include?("\\p{")) && !no_encoding?
+      @options |= FIXEDENCODING if non_ascii_escape_pattern? && @source.encoding != Encoding::US_ASCII
+      @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       @parsed = Onibi::Parser.parse(source, options: @options)
       @ast = @parsed.ast
@@ -315,7 +318,14 @@ module Onibi
       @input_encoding = input.encoding
       return nil if requested_position.negative? && (requested_position + input.length).negative?
       raise ArgumentError, "invalid byte sequence in #{input.encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
-      if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT
+
+      if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT &&
+         !(@source.encoding == Encoding::US_ASCII && input.encoding == Encoding::Windows_31J)
+        if @source.encoding == Encoding::US_ASCII && !no_encoding? &&
+           [Encoding::UTF_8, Encoding::EUC_JP].include?(input.encoding)
+          raise ArgumentError, "regexp preprocess failed: invalid multibyte escape"
+        end
+
         raise Encoding::CompatibilityError, "incompatible character encodings"
       end
       if fixed_encoding? && !ascii_input && input.encoding != encoding
@@ -622,10 +632,21 @@ module Onibi
     end
 
     def binary_escape_pattern?
-      return false unless no_encoding? && @source.ascii_only?
+      return false unless @source.ascii_only? && (no_encoding? || @source.encoding == Encoding::US_ASCII)
 
+      non_ascii_escape_pattern?
+    end
+
+    def non_ascii_escape_pattern?
       source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
         source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
+    end
+
+    def non_ascii_unicode_escape_pattern?
+      source.scan(/\\u\{([^}]*)\}|\\u([0-9a-fA-F]{4})/).any? do |braced, fixed|
+        digits = braced || fixed
+        digits.to_i(16) > 0x7f
+      end
     end
 
     def inline_global_flag_value(flag, default)
