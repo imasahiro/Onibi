@@ -97,7 +97,8 @@ module Onibi
       Cyrillic_Extended_A Cyrillic_Extended_B Cyrillic_Extended_C
       Cyrillic_Extended_D
       Georgian_Extended
-      Arabic_Extended_A Arabic_Extended_B Arabic_Extended_C Arabic_Presentation_Forms_A
+      Arabic_Extended_A Arabic_Extended_B Arabic_Extended_C Arabic_Mathematical_Alphabetic_Symbols
+      Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
   end
