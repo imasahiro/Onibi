@@ -22,6 +22,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Emoji_Component}", ["#", "0", "\u200d", "\ufe0f", "🇯"], %w[A あ 😀]],
     ["\\p{Join_Control}", %w[‌ ‍], %w[A あ 😀]],
     ["\\p{Regional_Indicator}", ["🇯", "🇵"], %w[A あ 😀]],
+    ["\\p{Variation_Selector}", %w[️ ︎ 󠄀], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],

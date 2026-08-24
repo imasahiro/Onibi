@@ -12,7 +12,7 @@ module Onibi
 
     SUPPORTED = %w[
       ASCII Any Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
-      Emoji_Presentation Emoji_Modifier Join_Control Regional_Indicator
+      Emoji_Presentation Emoji_Modifier Join_Control Regional_Indicator Variation_Selector
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
       XDigit Hex_Digit Dash ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
@@ -36,6 +36,7 @@ module Onibi
       "Emoji_Component" => :emoji_component?,
       "Join_Control" => :join_control?,
       "Regional_Indicator" => :regional_indicator?,
+      "Variation_Selector" => :variation_selector?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
       "Extended_Pictographic" => :extended_pictographic?,
