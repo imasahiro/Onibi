@@ -27,4 +27,15 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
       assert_equal mri&.offset(0), onibi&.offset(0), pattern
     end
   end
+
+  def test_numeric_subexpression_calls_execute_from_bytecode
+    mri = Regexp.new("(a)\\g<1>").match("aa")
+    onibi = Onibi::Regexp.new("(a)\\g<1>").match("aa")
+
+    assert_equal mri&.to_a, onibi&.to_a
+  end
+
+  def test_undefined_subexpression_calls_fail_during_compilation
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\g<missing>").match("x") }
+  end
 end

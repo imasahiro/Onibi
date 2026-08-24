@@ -624,7 +624,17 @@ module Onibi
     def bytecode_subexpressions
       groups = {}
       collect_bytecode_subexpressions(@ast, groups)
+      validate_bytecode_subexpression_calls(groups)
       groups.transform_values { |body| Onibi::IRGen::YARVIR::SemanticBytecode.compile(body) }
+    end
+
+    def validate_bytecode_subexpression_calls(groups)
+      walk_ast(@ast) do |node|
+        next unless node.is_a?(Onibi::AST::SubexpressionCall)
+
+        key = groups.key?(node.identifier) ? node.identifier : node.identifier.to_i
+        raise RegexpError, "undefined subexpression call <#{node.identifier}>" unless groups.key?(key)
+      end
     end
 
     def collect_bytecode_subexpressions(node, groups)
@@ -637,6 +647,7 @@ module Onibi
         # A subexpression call re-enters the capturing group. Keep the Group
         # wrapper in bytecode, so the VM updates its capture span at call time.
         groups[node.number] = node if node.capture
+        groups[node.number.to_s] = node if node.capture
         groups[node.name] = node if node.capture && node.name
         collect_bytecode_subexpressions(node.body, groups)
       when Onibi::AST::Quantifier
