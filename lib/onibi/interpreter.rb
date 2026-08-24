@@ -842,7 +842,7 @@ module Onibi
           body_captures = captures if captureless_absence_body?(node.body)
           body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
           body_captures = filter_nested_absence_captures(node.body, body_captures)
-          body_captures = filter_quantifier_suffix_captures(node.body, body_captures, characters, flags)
+          body_captures = filter_quantifier_suffix_captures(node.body, body_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
           body_captures = filter_absence_capture_scope(node.body, body_captures)
           return quantified.downto(0).map { |length| [length, body_captures] }
         end
@@ -878,9 +878,7 @@ module Onibi
           inner_captures = discard_failed_quantified_suffix_captures(
             node.body, characters, cursor, inner_captures, flags
           )
-          inner_captures = filter_quantifier_suffix_captures(
-            node.body, inner_captures, characters, flags
-          )
+          inner_captures = filter_quantifier_suffix_captures(node.body, inner_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
           quantified_length = quantified_absence_length(node.body, characters, position)
           match_position = internal_start || position
           maximum = if quantified_length
@@ -916,9 +914,7 @@ module Onibi
         end
         if failure_state
           failure_captures = filter_nested_absence_captures(node.body, failure_state)
-          failure_captures = filter_quantifier_suffix_captures(
-            node.body, failure_captures, characters, flags
-          )
+          failure_captures = filter_quantifier_suffix_captures(node.body, failure_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
           failure_captures = filter_absence_capture_scope(node.body, failure_captures)
           if cursor == characters.length
             failure_captures.delete_if do |key, value|
@@ -990,32 +986,55 @@ module Onibi
       end
 
       def nested_quantifier_suffix_body?(body)
-        parts = absence_sequence_parts(body)
-        first = parts.first
+        first = absence_sequence_parts(body).first
         return false unless first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)
 
-        nested = absence_sequence_parts(first.body)
-        quantifier_node?(nested.first) && (nested.length > 1 || parts.length > 1)
+        scope = quantifier_suffix_scope(body)
+        scope && scope[1]
       end
 
       def quantifier_node?(node)
         node.is_a?(Onibi::AST::Quantifier) || node.is_a?(SemanticBytecode::Quantifier)
       end
 
+      def quantifier_suffix_scope(body)
+        parts = absence_sequence_parts(body)
+        suffix = parts.length > 1
+        depth = 0
+        parent = nil
+        loop do
+          first = parts.first
+          return [first, suffix, depth, parent] if quantifier_node?(first)
+          return nil unless first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)
+
+          parent = first
+          nested = absence_sequence_parts(first.body)
+          suffix ||= nested.length > 1
+          parts = nested
+          depth = (depth || 0) + 1
+        end
+      end
+
       def nested_quantifier_suffix_results(body, characters, cursor, captures, flags)
+        scope = quantifier_suffix_scope(body)
+        body_state = node_results(body, characters, cursor, captures, flags).first&.last
         absence_bounded_probe_results(body, characters, cursor, captures, flags,
                                       preserve_failed_capture: false).map do |length, state|
+          if state.empty? && body_state && scope&.fetch(2, 0).to_i > 1
+            parent = scope[3]
+            expression = scope.first.expression
+            value = body_state[capture_numbers(expression).first]
+            state = { parent.number => value } if parent && value
+          end
           [length, filter_quantifier_suffix_captures(body, state, characters, flags)]
         end
       end
 
       def filter_quantifier_suffix_captures(body, captures, characters, flags)
-        parts = absence_sequence_parts(body)
-        first = parts.first
-        if first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)
-          nested = absence_sequence_parts(first.body)
-          quantifier = nested.first
-          if quantifier_node?(quantifier) && (nested.length > 1 || parts.length > 1)
+        scope = quantifier_suffix_scope(body)
+        if scope
+          quantifier, suffix = scope
+          if suffix
             hidden = capture_numbers(quantifier.expression)
             return captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
           end
