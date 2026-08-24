@@ -500,6 +500,7 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal ["bc", nil, nil, "d"], regexp.match("bcd").to_a.first(4)
     assert_equal ["aa", "a", nil, nil], regexp.match("aad").to_a.first(4)
+    assert_equal ["bca", "a", nil, nil], regexp.match("bca").to_a.first(4)
   end
 
   def test_absence_operator_clears_nullable_nested_captures

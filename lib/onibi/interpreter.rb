@@ -1059,13 +1059,25 @@ module Onibi
 
         endpoint = cursor + length
         checkpoint = nil
+        checkpoint_position = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
           results = node_results(body, characters, position, captures, flags)
           target_end = endpoint + 1
           candidate = results.find { |body_length, _state| position + body_length == target_end }&.last
-          checkpoint = candidate if candidate
+          if candidate
+            checkpoint = candidate
+            checkpoint_position = position
+          end
         end
-        return state unless checkpoint
+        unless checkpoint
+          return restore_prefix_quantifier_checkpoint(
+            state, endpoint,
+            { body: body, characters: characters, cursor: cursor,
+              captures: captures, flags: flags, scope: scope }
+          )
+        end
+
+        suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
 
         parent = scope[3]
         expression_number = capture_numbers(scope.first.expression).first
@@ -1077,7 +1089,20 @@ module Onibi
         end
 
         hidden = capture_numbers(scope.first.expression)
-        if parent && !restored.key?(parent.number)
+        repetition_count = if parent&.number && checkpoint[parent.number].is_a?(Array)
+                             span = checkpoint[parent.number]
+                             quantifier_repetition_count(
+                               scope.first.expression, characters, span[0], span[1], flags
+                             )
+                           else
+                             0
+                           end
+        expression_reaches_checkpoint = suffix_numbers.any? &&
+                                        quantifier_repetition_count(
+                                          scope.first.expression, characters, cursor, checkpoint_position, flags
+                                        ).positive?
+        if parent && !restored.key?(parent.number) && (suffix_numbers.empty? || repetition_count == 1) &&
+           !expression_reaches_checkpoint
           checkpoint.each do |key, candidate|
             next unless key.is_a?(Integer) && key >= parent.number
             next if key == parent.number || hidden.include?(key)
@@ -1088,12 +1113,58 @@ module Onibi
         restored.empty? ? state : restored
       end
 
+      def restore_prefix_quantifier_checkpoint(state, endpoint, context)
+        body = context[:body]
+        characters = context[:characters]
+        cursor = context[:cursor]
+        captures = context[:captures]
+        flags = context[:flags]
+        scope = context[:scope]
+        parent = scope[3]
+        return state unless parent
+        return state if node_results(body, characters, cursor, captures, flags).any? do |length, _checkpoint|
+          cursor + length == endpoint
+        end
+
+        expression = scope.first.expression
+        minimum = minimum_node_width(expression)
+        wide_seen = false
+        candidate = nil
+        cursor.upto([endpoint - 1, characters.length].min) do |position|
+          node_results(expression, characters, position, captures, flags).each do |length, checkpoint|
+            wide_seen ||= length > minimum
+            next unless wide_seen && length == minimum
+
+            suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
+            next if suffix_numbers.any? &&
+                    position + length != endpoint
+
+            candidate = checkpoint[capture_numbers(expression).first]
+          end
+        end
+        value = candidate
+        value.is_a?(Array) && value.length == 2 ? { parent.number => value } : state
+      end
+
       def filter_quantifier_suffix_captures(body, captures, characters, flags)
         scope = quantifier_suffix_scope(body)
         if scope
           quantifier, suffix = scope
           if suffix
             hidden = capture_numbers(quantifier.expression)
+            parent = quantifier_suffix_scope(body)[3]
+            parent_span = parent && captures[parent.number]
+            if parent_span.is_a?(Array) && parent_span.length == 2
+              repetitions = quantifier_repetition_count(
+                quantifier.expression, characters, parent_span[0], parent_span[1], flags
+              )
+              if repetitions > 1
+                suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
+                return captures.reject do |key, _value|
+                  key.is_a?(Integer) && (hidden.include?(key) || suffix_numbers.include?(key))
+                end
+              end
+            end
             return captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
           end
         end
