@@ -211,6 +211,12 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_us_ascii_patterns_reject_non_ascii_unicode_properties
+    pattern = "\\p{Hiragana}".encode(Encoding::US_ASCII)
+
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new(pattern) }
+  end
+
   def test_noencoding_patterns_reject_unicode_properties
     assert_raises(Onibi::RegexpError) do
       Onibi::Regexp.new("\\p{Hiragana}", Onibi::Regexp::NOENCODING)

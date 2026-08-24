@@ -187,6 +187,8 @@ module Onibi
       end
       raise RegexpError, "Unicode property in binary pattern" if @source.encoding == Encoding::ASCII_8BIT && @source.include?("\\p{")
 
+      validate_property_encoding!
+
       @options |= FIXEDENCODING if (!@source.ascii_only? || @source.include?("\\p{")) && !no_encoding?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       @parsed = Onibi::Parser.parse(source, options: @options)
@@ -403,6 +405,16 @@ module Onibi
       normalized.sum do |name|
         { "ignorecase" => IGNORECASE, "extended" => EXTENDED, "multiline" => MULTILINE,
           "fixedencoding" => FIXEDENCODING, "noencoding" => NOENCODING }.fetch(name)
+      end
+    end
+
+    def validate_property_encoding!
+      return unless @source.encoding == Encoding::US_ASCII
+
+      @source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
+        next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
+
+        raise RegexpError, "Unicode property is not supported by US-ASCII"
       end
     end
 

@@ -17,6 +17,9 @@ module Onibi
       L Lu Ll Lt Lm Lo M N P S Z C Cn Mark
       Symbol Separator Other
     ].freeze
+    ASCII_ENCODING_PROPERTIES = %w[
+      ASCII Alpha Alnum Digit Lower Upper Space Word XDigit Blank Cntrl Graph Print Punct
+    ].freeze
     PROPERTY_MATCHERS = {
       "ASCII" => :ascii?, "Any" => :any?, "Han" => :han?, "Hiragana" => :hiragana?,
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
@@ -40,6 +43,10 @@ module Onibi
                 (normalized.start_with?("In") && BLOCK_LOOKUP.key?(normalized.delete_prefix("In")))
 
       raise RegexpError, "unknown Unicode property #{name}"
+    end
+
+    def valid_for_encoding?(name, encoding)
+      encoding != Encoding::US_ASCII || ASCII_ENCODING_PROPERTIES.include?(normalize_name(name))
     end
 
     def matches?(name, character)
