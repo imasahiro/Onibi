@@ -21,6 +21,17 @@ class MatchDataIndexTest < Minitest::Test
     assert_equal "a", match[-2]
   end
 
+  def test_match_value_access_supports_mri_slice_form
+    expected = Regexp.new("(a)(?<animal>b)?").match("ab")
+    actual = Onibi::Regexp.new("(a)(?<animal>b)?").match("ab")
+
+    assert_equal expected[0, 2], actual[0, 2]
+    assert_equal expected[1, 2], actual[1, 2]
+    assert_equal expected[0..1], actual[0..1]
+    assert_equal expected[0, nil], actual[0, nil]
+    assert_nil actual[5, 1]
+  end
+
   def test_match_values_at_normalizes_negative_range_bounds
     match = Onibi::Regexp.new("(a)(b)").match("ab")
 

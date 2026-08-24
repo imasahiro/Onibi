@@ -73,8 +73,11 @@ module Onibi
       @regexp = context&.regexp
     end
 
-    def [](index)
-      value_at(index)
+    def [](index, length = :__onibi_missing)
+      return @values[index] if length == :__onibi_missing && index.is_a?(Range)
+      return value_at(index) if length == :__onibi_missing || length.nil?
+
+      @values[index, length]
     end
 
     def match(index)
@@ -163,6 +166,7 @@ module Onibi
 
       return [] if first > last
 
+      last = [last, @values.length - 1].min
       (first..last).map { |index| value_at(index) }
     end
 
