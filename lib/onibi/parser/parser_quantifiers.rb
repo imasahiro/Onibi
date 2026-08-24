@@ -6,14 +6,16 @@ module Onibi
     private
 
     def parse_quantifier(atom)
-      return atom unless current_token&.type == :quantifier
+      expression = atom
+      while current_token&.type == :quantifier
+        value = consume.value
+        mode, base = quantifier_mode(value)
+        kind, minimum, maximum = quantifier_bounds(base)
+        mode = :possessive_bounded if mode == :possessive && kind == :bounded
 
-      value = consume.value
-      mode, base = quantifier_mode(value)
-      kind, minimum, maximum = quantifier_bounds(base)
-      mode = :possessive_bounded if mode == :possessive && kind == :bounded
-
-      AST::Quantifier.new(atom, kind, minimum, maximum, mode)
+        expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode)
+      end
+      expression
     end
 
     def quantifier_mode(value)
