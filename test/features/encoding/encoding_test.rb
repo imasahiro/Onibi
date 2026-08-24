@@ -240,6 +240,14 @@ class EncodingTest < Minitest::Test
     assert_equal Regexp.new("\\b").match?(input), Onibi::Regexp.new("\\b").match?(input)
   end
 
+  def test_incompatible_encoding_error_matches_mri
+    input = "\xFF".b
+    expected = assert_raises(Encoding::CompatibilityError) { Regexp.new("\\p{ASCII}").match(input) }
+    actual = assert_raises(Encoding::CompatibilityError) { Onibi::Regexp.new("\\p{ASCII}").match(input) }
+
+    assert_equal expected.message, actual.message
+  end
+
   def test_non_utf8_unicode_property_scan_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))

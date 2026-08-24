@@ -347,11 +347,9 @@ module Onibi
           raise ArgumentError, "regexp preprocess failed: invalid multibyte escape"
         end
 
-        raise Encoding::CompatibilityError, "incompatible character encodings"
+        raise_incompatible_encoding(input)
       end
-      if fixed_encoding? && !ascii_input && input.encoding != encoding
-        raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
-      end
+      raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && input.encoding != encoding
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
 
@@ -451,6 +449,13 @@ module Onibi
     end
 
     private
+
+    def raise_incompatible_encoding(input)
+      pattern_encoding = encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : encoding.name
+      input_encoding = input.encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : input.encoding.name
+      raise Encoding::CompatibilityError,
+            "incompatible encoding regexp match (#{pattern_encoding} regexp with #{input_encoding} string)"
+    end
 
     def option_bits(options)
       return IGNORECASE if options.is_a?(Symbol)
