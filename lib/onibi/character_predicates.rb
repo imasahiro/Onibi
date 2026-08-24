@@ -6,8 +6,8 @@ module Onibi
     UNICODE_WHITESPACE = [9, 10, 11, 12, 13, 32, 0x85, 0xA0, 0x1680, 0x2028,
                           0x2029, 0x202F, 0x205F, 0x3000].freeze
     ESCAPE_PREDICATES = {
-      digit: ->(character) { character >= "0" && character <= "9" },
-      not_digit: ->(character) { character < "0" || character > "9" },
+      digit: ->(character) { codepoint(character).between?(48, 57) },
+      not_digit: ->(character) { !codepoint(character).between?(48, 57) },
       space: ->(character) { whitespace?(character) },
       not_space: ->(character) { !whitespace?(character) },
       word: ->(character) { word?(character) },

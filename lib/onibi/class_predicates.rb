@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/ModuleLength
+
 module Onibi
   # Evaluates character class source without delegating to another regexp engine.
   module ClassPredicates
@@ -166,13 +168,14 @@ module Onibi
       last, = atom(source, index + 1)
       return false unless literal?(first) && literal?(last)
 
-      return true if character.between?(first[1], last[1])
+      character_value = character.codepoints.first
+      return true if character_value.between?(first[1].ord, last[1].ord)
       return false unless ignorecase
 
       variants = [character.downcase(:fold), character.downcase, character.upcase, character.capitalize]
       variants.concat(UnicodeProperties.reverse_casefold_variants(character))
       variants.any? do |variant|
-        variant.each_char.one? && variant.between?(first[1], last[1])
+        variant.each_char.one? && variant.codepoints.first.between?(first[1].ord, last[1].ord)
       end
     end
 
@@ -193,7 +196,9 @@ module Onibi
 
     def atom_matches?(atom, character, ignorecase, encoding)
       kind, value = atom
-      return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
+      if kind == :literal
+        return ignorecase ? value.casecmp?(character) : value.codepoints == character.codepoints
+      end
       return matches?(value, character, ignorecase: ignorecase, encoding: encoding) if kind == :nested
 
       if kind == :property
@@ -395,3 +400,5 @@ module Onibi
     end
   end
 end
+
+# rubocop:enable Metrics/ModuleLength
