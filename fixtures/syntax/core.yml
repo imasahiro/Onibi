@@ -187,3 +187,45 @@ cases:
   input: ""
   encoding: UTF-8
   outcome: error
+- name: atomic group
+  feature: atomic_groups
+  pattern: "(?>a|ab)b"
+  options: []
+  input: abb
+  encoding: UTF-8
+  outcome: match
+- name: backreference
+  feature: backreferences
+  pattern: "(a)\\1"
+  options: []
+  input: aa
+  encoding: UTF-8
+  outcome: match
+- name: lookahead
+  feature: lookarounds
+  pattern: "(?=a)a"
+  options: []
+  input: a
+  encoding: UTF-8
+  outcome: match
+- name: named capture
+  feature: named_captures
+  pattern: "(?<x>a)\\k<x>"
+  options: []
+  input: aa
+  encoding: UTF-8
+  outcome: match
+- name: possessive quantifier
+  feature: possessive_quantifiers
+  pattern: a++a
+  options: []
+  input: aaa
+  encoding: UTF-8
+  outcome: no_match
+- name: unicode property
+  feature: unicode_properties
+  pattern: "\\p{XID_Start}"
+  options: []
+  input: Ω
+  encoding: UTF-8
+  outcome: match
