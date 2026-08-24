@@ -98,5 +98,9 @@ class QuantifierModeTest < Minitest::Test
       onibi = Onibi::Regexp.new("(a?)+").match(input)
       assert_equal mri.to_a, onibi.to_a
     end
+
+    mri = Regexp.new("(a*)+").match("a")
+    onibi = Onibi::Regexp.new("(a*)+").match("a")
+    assert_equal mri.to_a, onibi.to_a
   end
 end

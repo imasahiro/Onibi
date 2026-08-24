@@ -375,9 +375,12 @@ module Onibi
               expression = quantifier.expression
               expression = expression.body if expression.is_a?(Onibi::AST::Group) ||
                                               expression.is_a?(SemanticBytecode::Group)
-              next if count.positive? && consumed.positive? &&
-                      (expression.is_a?(Onibi::AST::Sequence) ||
-                       expression.is_a?(SemanticBytecode::Sequence))
+              if count.positive? && consumed.positive? &&
+                 (expression.is_a?(Onibi::AST::Sequence) ||
+                  expression.is_a?(SemanticBytecode::Sequence))
+                accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+                next
+              end
 
               accepted << [consumed, inner] if count + 1 >= quantifier.minimum
               visit.call(consumed, inner, count + 1) if count + 1 < quantifier.minimum
