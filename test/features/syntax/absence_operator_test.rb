@@ -53,6 +53,20 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_keeps_all_probe_lengths_for_suffix_backtracking
+    [
+      ["(?~(?=a))\\w", "aba"],
+      ["(?~(?=a))b", "xaxbxaxb"],
+      ["(?~(?=a))A", "BAa"]
+    ].each do |pattern, input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal expected.to_a, actual.to_a, pattern
+      assert_equal expected.offset(0), actual.offset(0), pattern
+    end
+  end
+
   def test_absence_operator_rejects_nullable_body_before_a_suffix
     [0, Onibi::Regexp::IGNORECASE].each do |options|
       pattern = "(?~a?)b"

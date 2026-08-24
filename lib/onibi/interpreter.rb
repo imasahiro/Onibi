@@ -76,6 +76,7 @@ module Onibi
         @program = program
         @automaton = program.automaton
         @subexpressions = program.flags[:subexpressions] || {}
+        @retry_shifted_absence = shifted_absence_suffix?(program.flags[:semantic_root])
       end
 
       def match(input, start_position = 0)
@@ -138,9 +139,28 @@ module Onibi
                    elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
                      walk_tnfa(:start, characters, start, {}, start, runtime_flags)
                    end
+          next if result && @retry_shifted_absence && result.first > start
           return result if result
         end
         nil
+      end
+
+      def shifted_absence_suffix?(node)
+        case node
+        when SemanticBytecode::Sequence
+          node.parts.each_with_index.any? do |part, index|
+            index < node.parts.length - 1 && part.is_a?(SemanticBytecode::Absence)
+          end || node.parts.any? { |part| shifted_absence_suffix?(part) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup, SemanticBytecode::Quantifier,
+             SemanticBytecode::Absence
+          child = node.respond_to?(:body) ? node.body : node.expression
+          shifted_absence_suffix?(child)
+        when SemanticBytecode::Alternation
+          node.branches.any? { |branch| shifted_absence_suffix?(branch) }
+        else
+          false
+        end
       end
 
       def walk_dfa(state, characters, cursor, captures, start, flags)
@@ -2247,7 +2267,10 @@ module Onibi
         # Keep the zero-length probe as a backtracking candidate. A following
         # bytecode operand can match at the absence start before the first
         # forbidden zero-width body position.
-        results << [0, captures.dup] if start == cursor && finish > start
+        if start == cursor && finish > start
+          (finish - start - 1).downto(1) { |length| results << [length, captures.dup] }
+          results << [0, captures.dup]
+        end
         results
       end
 
