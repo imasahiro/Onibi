@@ -76,6 +76,7 @@ module Onibi
       Mathematical_Alphanumeric_Symbols
       CJK_Compatibility_Ideographs
       CJK_Strokes
+      Ideographic_Description_Characters
     ].freeze
   end
 end
