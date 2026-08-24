@@ -942,6 +942,22 @@ module Onibi
           end
         end
 
+        if quantifier.kind == :* && wildcard_node?(quantifier.expression) &&
+           (suffix_width = fixed_suffix_width(parts.drop(1)))
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          if run.positive? &&
+             suffix_matches_at?(parts.drop(1), characters, cursor + run - suffix_width, flags)
+            boundary = (run + suffix_width - 1) / 2
+            results = node_results(body, characters, cursor, captures, flags)
+            target = results.find { |length, _state| length == boundary + 1 }
+            if target
+              state = target.last.dup
+              state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+              return [[boundary, state]]
+            end
+          end
+        end
+
         if quantifier.kind == :* && parts.length == 2 && wildcard_node?(parts[1])
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
           if run.positive? && cursor + run < characters.length &&
@@ -954,19 +970,6 @@ module Onibi
               state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
               return [[boundary, state]]
             end
-          end
-        end
-
-        if quantifier.kind == :* && parts.length == 2 && wildcard_node?(quantifier.expression) &&
-           wildcard_node?(parts[1])
-          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
-          boundary = run / 2
-          results = node_results(body, characters, cursor, captures, flags)
-          target = results.find { |length, _state| length == boundary + 1 }
-          if target
-            state = target.last.dup
-            state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-            return [[boundary, state]]
           end
         end
 
@@ -996,6 +999,51 @@ module Onibi
         return unless values.all?
 
         values.sum(&:length)
+      end
+
+      def fixed_suffix_width(parts)
+        return if parts.empty?
+
+        widths = parts.map { |part| static_node_width(part) }
+        return unless widths.all?
+
+        widths.sum
+      end
+
+      def static_node_width(node)
+        case node
+        when Onibi::AST::Literal, SemanticBytecode::Literal
+          node.value.length
+        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
+             Onibi::AST::Any, SemanticBytecode::Any,
+             Onibi::AST::Escape, SemanticBytecode::Escape,
+             Onibi::AST::Property, SemanticBytecode::Property
+          1
+        when Onibi::AST::Group, SemanticBytecode::Group,
+             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+          static_node_width(node.body)
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          fixed_suffix_width(node.parts)
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          widths = node.branches.map { |branch| static_node_width(branch) }
+          widths.first if widths.all? && widths.uniq.one?
+        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+          return unless node.maximum && node.minimum == node.maximum
+
+          width = static_node_width(node.expression)
+          width && width * node.minimum
+        end
+      end
+
+      def suffix_matches_at?(parts, characters, cursor, flags)
+        parts.all? do |part|
+          result = node_results(part, characters, cursor, {}, flags).find { |length, _state| length.positive? }
+          return false unless result
+
+          cursor += result.first
+          true
+        end
       end
 
       def wildcard_node?(node)

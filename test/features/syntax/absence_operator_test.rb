@@ -214,6 +214,22 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_uses_fixed_width_wildcard_suffix_boundary
+    {
+      "(?~(?:.*[ab]))" => %w[aaa aaaa aaaaa],
+      "(?~(?:.*aa))" => %w[aaa aaaa aaaaa],
+      "(?~(?:.*(a|b)))" => %w[aaa aaaa aaaaa]
+    }.each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected.to_a, actual.to_a
+        assert_equal expected.offset(0), actual.offset(0)
+      end
+    end
+  end
+
   def test_absence_operator_retries_after_a_nested_zero_width_body
     %w[aa ab abc].each do |input|
       pattern = "(?~(?~a))"
