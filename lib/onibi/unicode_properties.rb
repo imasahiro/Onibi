@@ -19,7 +19,7 @@ module Onibi
     PROPERTY_MATCHERS = {
       "ASCII" => :ascii?, "Any" => :any?, "Han" => :han?, "Hiragana" => :hiragana?,
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
-      "Cyrillic" => :cyrillic?, "Arabic" => :arabic?, "Alpha" => :letter?,
+      "Cyrillic" => :cyrillic?, "Arabic" => :arabic?, "Alpha" => :alpha?,
       "Letter" => :letter?, "Alnum" => :alnum?, "Digit" => :digit?, "Nd" => :digit?,
       "Number" => :number?, "Lower" => :lower?, "Upper" => :upper?, "Space" => :space?,
       "Word" => :word?, "XDigit" => :xdigit?, "Blank" => :blank?, "Cntrl" => :cntrl?,
