@@ -11,7 +11,7 @@ module Onibi
     module_function
 
     SUPPORTED = %w[
-      ASCII Any Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
+      ASCII Any Alphabetic Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
       Cased Extender ID_Compat_Math_Continue ID_Compat_Math_Start Ideographic Math Pattern_Syntax
       Prepended_Concatenation_Mark Regional_Indicator Sentence_Terminal Soft_Dotted
@@ -30,7 +30,7 @@ module Onibi
       Cntrl Graph Print Punct
     ].freeze
     PROPERTY_MATCHERS = {
-      "ASCII" => :ascii?, "Any" => :any?, "Emoji" => :emoji?,
+      "ASCII" => :ascii?, "Any" => :any?, "Alphabetic" => :alpha?, "Emoji" => :emoji?,
       "Bidi_Control" => :bidi_control?,
       "Case_Ignorable" => :case_ignorable?,
       "Default_Ignorable_Code_Point" => :default_ignorable?,

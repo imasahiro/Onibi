@@ -5,6 +5,7 @@ require "test_helper"
 class UnicodePropertyDifferentialTest < Minitest::Test
   CASES = [
     ["\\p{Alpha}", %w[A あ], %w[1]],
+    ["\\p{Alphabetic}", %w[A あ Ω], %w[1 😀]],
     ["\\P{Alpha}", %w[1], %w[A あ]],
     ["\\p{^Alpha}", %w[1], %w[A あ]],
     ["\\p{Hiragana}", ["あ"], ["ア"]],
