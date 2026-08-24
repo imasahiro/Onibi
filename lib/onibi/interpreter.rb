@@ -821,7 +821,7 @@ module Onibi
         return [] if zero_width_star_absence?(node.body, characters, cursor)
 
         if nested_quantifier_suffix_body?(node.body) &&
-           node_results(node.body, characters, cursor, captures, flags).any?
+           body_match_exists_after_probe?(node.body, characters, cursor, captures, flags)
           return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags)
         end
 
@@ -997,6 +997,13 @@ module Onibi
         node.is_a?(Onibi::AST::Quantifier) || node.is_a?(SemanticBytecode::Quantifier)
       end
 
+      def body_match_exists_after_probe?(body, characters, cursor, captures, flags)
+        cursor.upto(characters.length) do |position|
+          return true if node_results(body, characters, position, captures, flags).any?
+        end
+        false
+      end
+
       def quantifier_suffix_scope(body)
         parts = absence_sequence_parts(body)
         suffix = parts.length > 1
@@ -1017,17 +1024,41 @@ module Onibi
 
       def nested_quantifier_suffix_results(body, characters, cursor, captures, flags)
         scope = quantifier_suffix_scope(body)
-        body_state = node_results(body, characters, cursor, captures, flags).first&.last
         absence_bounded_probe_results(body, characters, cursor, captures, flags,
                                       preserve_failed_capture: false).map do |length, state|
-          if state.empty? && body_state && scope&.fetch(2, 0).to_i > 1
-            parent = scope[3]
-            expression = scope.first.expression
-            value = body_state[capture_numbers(expression).first]
-            state = { parent.number => value } if parent && value
-          end
+          state = restore_nested_suffix_checkpoint(
+            state, length,
+            { body: body, characters: characters, cursor: cursor,
+              captures: captures, flags: flags, scope: scope }
+          )
           [length, filter_quantifier_suffix_captures(body, state, characters, flags)]
         end
+      end
+
+      def restore_nested_suffix_checkpoint(state, length, context)
+        body = context[:body]
+        characters = context[:characters]
+        cursor = context[:cursor]
+        captures = context[:captures]
+        flags = context[:flags]
+        scope = context[:scope]
+        return state unless state.empty? && scope&.fetch(2, 0).to_i > 1
+
+        endpoint = cursor + length
+        checkpoint = nil
+        cursor.upto([endpoint - 1, characters.length].min) do |position|
+          results = node_results(body, characters, position, captures, flags)
+          checkpoint = results.last&.last if results.any?
+        end
+        return state unless checkpoint
+
+        parent = scope[3]
+        expression_number = capture_numbers(scope.first.expression).first
+        value = checkpoint[expression_number]
+        return state unless parent && value.is_a?(Array) && value.length == 2
+        return state unless value[1] - value[0] == minimum_node_width(scope.first.expression)
+
+        { parent.number => value }
       end
 
       def filter_quantifier_suffix_captures(body, captures, characters, flags)
