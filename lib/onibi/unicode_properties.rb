@@ -73,6 +73,7 @@ module Onibi
       Transport_and_Map_Symbols
       Enclosed_Alphanumerics
       Enclosed_Alphanumeric_Supplement
+      Mathematical_Alphanumeric_Symbols
     ].freeze
   end
 end
