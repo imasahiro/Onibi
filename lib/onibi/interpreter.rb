@@ -308,7 +308,24 @@ module Onibi
           end
 
           states = [[0, captures]]
-          node.parts.each do |part|
+          parts = node.parts
+          index = 0
+          while index < parts.length
+            part = parts[index]
+            if flags[:ignorecase] && part.is_a?(SemanticBytecode::Literal)
+              # A UTF-8 case fold can consume several source literals, such
+              # as `ss` matching one `ß`. Keep the bytecode nodes intact for
+              # captures, but match one adjacent literal run as one operand.
+              run = [part.value]
+              index += 1
+              while index < parts.length && parts[index].is_a?(SemanticBytecode::Literal)
+                run << parts[index].value
+                index += 1
+              end
+              part = SemanticBytecode::Literal.new(run.join) if run.length > 1
+            else
+              index += 1
+            end
             states = states.flat_map do |consumed, state_captures|
               node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
                 next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
