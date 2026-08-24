@@ -32,6 +32,14 @@ class RegexpUtilityTest < Minitest::Test
     assert_raises(TypeError) { Onibi::Regexp.escape(1) }
   end
 
+  def test_escape_rejects_non_string_to_str_results_like_mri
+    value = Object.new
+    value.define_singleton_method(:to_str) { nil }
+
+    error = assert_raises(TypeError) { Onibi::Regexp.escape(value) }
+    assert_equal "can't convert Object to String (Object#to_str gives NilClass)", error.message
+  end
+
   def test_quote_is_an_alias_for_escape
     assert_equal Onibi::Regexp.escape("a+b"), Onibi::Regexp.quote("a+b")
     assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)

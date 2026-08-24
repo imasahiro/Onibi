@@ -64,7 +64,13 @@ module Onibi
                 elsif string.is_a?(Symbol)
                   string.to_s
                 elsif string.respond_to?(:to_str)
-                  string.to_str
+                  converted = string.to_str
+                  unless converted.is_a?(String)
+                    raise TypeError,
+                          "can't convert #{string.class} to String (#{string.class}#to_str gives #{converted.class})"
+                  end
+
+                  converted
                 else
                   type = string.nil? ? "nil" : string.class
                   raise TypeError, "no implicit conversion of #{type} into String"
