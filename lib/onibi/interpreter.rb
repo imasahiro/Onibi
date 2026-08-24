@@ -99,7 +99,11 @@ module Onibi
         @steps = 0
         # Character classes use the input encoding when an ASCII pattern can
         # match several encodings. MRI applies POSIX rules to this encoding.
-        runtime_flags = @program.flags.merge(encoding: input.encoding)
+        runtime_flags = @program.flags.merge(
+          encoding: input.encoding,
+          full_casefold: @program.flags[:full_casefold] ||
+                         (input.encoding == Encoding::UTF_8 && !input.ascii_only?)
+        )
         first = [start_position, 0].max
         @match_start = first
         first.upto(characters.length) do |start|

@@ -214,6 +214,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_non_ascii_utf8_input_enables_posix_ascii_full_fold_in_the_vm
+    pattern = "[[:alpha:]]\\b"
+    input = "éSS"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_equal ["SS", [1, 3]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)
