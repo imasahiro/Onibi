@@ -40,7 +40,7 @@ class EscapeAndBoundaryTest < Minitest::Test
   end
 
   def test_grapheme_escape_matches_extended_clusters
-    ["a\u0301", "🇯🇵", "क्\u200dष", "👩‍🚀"].each do |input|
+    ["a\u0301", "🇯🇵", "क्\u200dष", "👩‍🚀", "ς‍aςß"].each do |input|
       expected = Regexp.new("\\X").match(input)
       actual = Onibi::Regexp.new("\\X").match(input)
       assert_equal expected[0], actual[0], input.inspect

@@ -2374,6 +2374,7 @@ module Onibi
       def grapheme_cluster_lengths(characters, cursor)
         return nil if cursor >= characters.length
         return [2] if characters[cursor] == "\r" && characters[cursor + 1] == "\n"
+        return [1] if grapheme_control?(characters[cursor])
         return [2] if regional_indicator?(characters[cursor]) && regional_indicator?(characters[cursor + 1])
 
         position = cursor + 1
@@ -2383,7 +2384,10 @@ module Onibi
           break unless position < characters.length && characters[position] == "\u200D"
 
           position += 1
-          break if position >= characters.length
+          break if position >= characters.length ||
+                   !grapheme_zwj_target?(characters[position], characters[position - 2],
+                                         position - 3 >= cursor ? characters[position - 3] : nil,
+                                         characters[cursor])
 
           alternatives << position - cursor if grapheme_extension?(characters[cursor])
           position += 1
@@ -2396,14 +2400,41 @@ module Onibi
 
         codepoint = character.codepoints.first
         Onibi::UnicodeProperties.mark?(unicode_character(character)) ||
-          (0x900..0x90F).cover?(codepoint) || (0x930..0x93C).cover?(codepoint) ||
+          (0x900..0x90F).cover?(codepoint) ||
           codepoint == 0x94D || (0x9BC..0x9CD).cover?(codepoint) ||
           codepoint.between?(0xFE00, 0xFE0F) || codepoint.between?(0xE0100, 0xE01EF) ||
           codepoint.between?(0x1F3FB, 0x1F3FF)
       end
 
+      def grapheme_zwj_target?(character, preceding, base, root)
+        codepoint = character.codepoints.first
+        preceding_codepoint = preceding&.codepoints&.first
+        root_codepoint = root&.codepoints&.first
+        emoji_target = codepoint.between?(0x1F000, 0x1FAFF) || codepoint.between?(0x2600, 0x27BF)
+        emoji_context = [preceding_codepoint, base&.codepoints&.first, root_codepoint].compact.any? do |value|
+          value.between?(0x1F000, 0x1FAFF) || value.between?(0x2600, 0x27BF) ||
+            value.between?(0x1F3FB, 0x1F3FF)
+        end
+        indic = codepoint.between?(0x0900, 0x0DFF) || codepoint.between?(0x0F00, 0x109F)
+        repeated_zwj = codepoint == 0x200D && preceding_codepoint == 0x200D
+        grapheme_extension?(character) || repeated_zwj || (emoji_target && emoji_context) ||
+          (indic && indic_base?(base) && grapheme_extension?(preceding))
+      end
+
+      def indic_base?(character)
+        return false unless character
+
+        codepoint = character.codepoints.first
+        codepoint.between?(0x0900, 0x0DFF) || codepoint.between?(0x0F00, 0x109F)
+      end
+
       def regional_indicator?(character)
         character && character.codepoints.first.between?(0x1F1E6, 0x1F1FF)
+      end
+
+      def grapheme_control?(character)
+        codepoint = character.codepoints.first
+        codepoint <= 0x1F || codepoint.between?(0x7F, 0x9F)
       end
 
       def assertion_length(assertion, characters, cursor, flags = {})
