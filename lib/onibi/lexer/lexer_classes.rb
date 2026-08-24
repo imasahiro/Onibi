@@ -32,8 +32,11 @@ module Onibi
       name = @source[(index + 3)...ending]
       raise RegexpError, "invalid Unicode property" if name.empty?
 
-      negated = escaped == "P" || name.start_with?("^")
-      name = name.sub("^", "")
+      negated = escaped == "P"
+      if name.start_with?("^")
+        name = name[1..]
+        negated = !negated
+      end
       UnicodeProperties.validate!(name)
       [Lexer::Token.new(:property, [name, negated], index), ending + 1]
     end
