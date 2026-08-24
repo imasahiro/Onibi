@@ -923,7 +923,7 @@ module Onibi
         return false unless quantifier
 
         (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)) &&
-          quantifier.kind == :bounded && quantifier.maximum.nil?
+          quantifier.kind == :bounded
       end
 
       def bounded_absence_quantifier(node)
