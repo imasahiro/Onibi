@@ -942,6 +942,21 @@ module Onibi
           end
         end
 
+        if quantifier.kind == :* && parts.length == 2 && wildcard_node?(parts[1])
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          if run.positive? && cursor + run < characters.length &&
+             !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
+            boundary = (run + 1) / 2
+            results = node_results(body, characters, cursor, captures, flags)
+            target = results.find { |length, _state| length == boundary + 1 }
+            if target
+              state = target.last.dup
+              state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+              return [[boundary, state]]
+            end
+          end
+        end
+
         return unless quantifier.kind == :*
 
         maximum = quantified_absence_length(quantifier, characters, cursor)
@@ -968,6 +983,10 @@ module Onibi
         return unless values.all?
 
         values.sum(&:length)
+      end
+
+      def wildcard_node?(node)
+        node.is_a?(Onibi::AST::Any) || node.is_a?(SemanticBytecode::Any)
       end
 
       def quantified_atoms_equivalent?(left, right)
