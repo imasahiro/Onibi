@@ -55,6 +55,7 @@ class RegexpUtilityTest < Minitest::Test
   def test_last_match_matches_mri_and_match_question_does_not_change_it
     regexp = Onibi::Regexp.new("(a)")
 
+    Onibi::Regexp.new("never").match("x")
     assert_nil Onibi::Regexp.last_match
     matched = regexp.match("a")
     assert_equal matched, Onibi::Regexp.last_match
