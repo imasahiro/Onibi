@@ -101,6 +101,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InArabic_Mathematical_Alphabetic_Symbols}", ["𞸀", "𞹿"], %w[A ش]],
     ["\\p{InDevanagari_Extended}", %w[꣠ ꣿ], %w[A अ]],
     ["\\p{InDevanagari_Extended_A}", ["𑬀", "𑭟"], %w[A अ]],
+    ["\\p{InKana_Extended_A}", ["\u{1B100}", "\u{1B12F}"], %w[A あ]],
     ["\\p{InArabic_Presentation_Forms_B}", %w[ﹰ ﹶ], %w[A ش]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],

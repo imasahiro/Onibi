@@ -87,6 +87,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Arabic_Mathematical_Alphabetic_Symbols" => [[0x1EE00, 0x1EEFF]],
       "Devanagari_Extended" => [[0xA8E0, 0xA8FF]],
       "Devanagari_Extended_A" => [[0x11B00, 0x11B5F]],
+      "Kana_Extended_A" => [[0x1B100, 0x1B12F]],
       "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
     }.freeze
 
