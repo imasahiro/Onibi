@@ -315,11 +315,7 @@ module Onibi
       results = []
       position = 0
       while position <= input.length && (matched = internal_match(input, position))
-        value = if source.include?("?(1)")
-                  matched[0]
-                else
-                  named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
-                end
+        value = named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
         results << value
         yield(value) if block_given?
         match_start = character_position_for_match(input, matched, :begin)

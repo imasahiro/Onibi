@@ -92,6 +92,14 @@ class MatchApiTest < Minitest::Test
     assert_equal "xxXyzX", regexp.gsub("xxaaayzaa", "X")
   end
 
+  def test_scan_returns_captures_for_conditional_groups
+    pattern = "(a)?(?(1)b|c)"
+    expected = "ababa".scan(::Regexp.new(pattern))
+    actual = Onibi::Regexp.new(pattern).scan("ababa")
+
+    assert_equal expected, actual
+  end
+
   def test_options_assertions_and_unicode_are_executed_by_the_vm
     assert Onibi::Regexp.new("^cat$", Onibi::Regexp::MULTILINE).match?("cat")
     assert Onibi::Regexp.new("(?=cat)cat").match?("cat")
