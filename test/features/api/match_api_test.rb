@@ -24,6 +24,8 @@ class MatchApiTest < Minitest::Test
   def test_match_position_rejects_string_like_mri
     assert_raises(TypeError) { Regexp.new("a").match("ba", "1") }
     assert_raises(TypeError) { Onibi::Regexp.new("a").match("ba", "1") }
+    assert_equal "no implicit conversion from nil to integer",
+                 assert_raises(TypeError) { Onibi::Regexp.new("a").match("ba", nil) }.message
   end
 
   def test_match_uses_mri_string_conversion_rules

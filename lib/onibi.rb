@@ -515,6 +515,8 @@ module Onibi
       return position.to_i if position.is_a?(Float)
       return position.to_int if position.respond_to?(:to_int)
 
+      raise TypeError, "no implicit conversion from nil to integer" if position.nil?
+
       raise TypeError, "no implicit conversion of #{position.class} into Integer"
     end
 
