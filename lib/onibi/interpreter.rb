@@ -396,7 +396,15 @@ module Onibi
             end
             previous_states = states
             states = previous_states.flat_map do |consumed, state_captures|
-              node_results(part, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
+              part_results = node_results(part, characters, cursor + consumed, state_captures, flags)
+              optional_order = mri_casefold_optional_order?(part, parts[index], characters,
+                                                            cursor + consumed, flags)
+              if optional_order == :zero_only
+                part_results = part_results.select { |length, _inner| length.zero? }
+              elsif optional_order == :greedy
+                part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
+              end
+              part_results.filter_map do |length, inner|
                 if state_captures[:__zero_absence] &&
                    state_captures[:__match_start] == state_captures[:__match_end] &&
                    state_captures[:__match_start].is_a?(Integer) &&
@@ -550,6 +558,34 @@ module Onibi
             [width + length, inner]
           end
         end.flatten(1)
+      end
+
+      # MRI changes branch order for an optional folded literal. With no
+      # suffix it keeps the consuming branch first. With a different suffix,
+      # it keeps only the empty branch, as in `s?a` matching `a` in `ſa`.
+      def mri_casefold_optional_order?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase]
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
+
+        expression = node.expression
+        return false unless expression.is_a?(SemanticBytecode::Literal)
+
+        source = characters[cursor]
+        return false unless source && source != expression.value
+        return false unless source.downcase(:fold) == expression.value.downcase(:fold)
+        return :greedy unless next_node
+        return :greedy if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.zero?
+        return false if same_fold_literal?(next_node, expression)
+
+        :zero_only
+      end
+
+      def same_fold_literal?(node, expression)
+        literal = node
+        literal = node.expression if node.is_a?(SemanticBytecode::Quantifier)
+        literal.is_a?(SemanticBytecode::Literal) &&
+          literal.value.downcase(:fold) == expression.value.downcase(:fold)
       end
 
       def reverse_casefold_sequence?(value)
