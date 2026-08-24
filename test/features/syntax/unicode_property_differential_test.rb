@@ -87,6 +87,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InBamum_Supplement}", ["𖠀", "𖨿"], %w[A अ]],
     ["\\p{InPahawh_Hmong}", %w[𖬀 𖮏], %w[A अ]],
     ["\\p{InMakasar}", ["𑻠", "\u{11EFF}"], %w[A अ]],
+    ["\\p{InBamum}", ["ꚠ", "꛿"], %w[A अ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
