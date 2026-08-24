@@ -231,6 +231,18 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_uses_consuming_width_for_nullable_suffix
+    ["(?~(?:.*a?))", "(?~(?:.*a*))"].each do |pattern|
+      %w[aaa abac abba aabaa ac].each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected.to_a, actual.to_a, [pattern, input]
+        assert_equal expected.offset(0), actual.offset(0), [pattern, input]
+      end
+    end
+  end
+
   def test_absence_operator_retries_after_a_nested_zero_width_body
     %w[aa ab abc].each do |input|
       pattern = "(?~(?~a))"
