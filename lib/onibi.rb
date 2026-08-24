@@ -793,6 +793,7 @@ module Onibi
         identifier = node.identifier.to_s
         raise RegexpError, "numbered subexpression call is not allowed with named captures" if
           identifier.match?(/\A\d+\z/) && named_captures.any?
+        raise RegexpError, "never ending recursion: /#{@source}/" if identifier == "0"
 
         key = groups.key?(node.identifier) ? node.identifier : identifier.to_i
         raise RegexpError, "undefined subexpression call <#{node.identifier}>" unless groups.key?(key)

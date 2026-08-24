@@ -3,6 +3,12 @@
 require "test_helper"
 
 class SubexpressionCallTest < Minitest::Test
+  def test_root_subexpression_recursion_reports_mri_error
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\g<0>") }
+
+    assert_equal "never ending recursion: /\\g<0>/", error.message
+  end
+
   def test_numbered_subexpression_call_reuses_a_capturing_group
     regexp = Onibi::Regexp.new("(a)\\g<1>")
 
