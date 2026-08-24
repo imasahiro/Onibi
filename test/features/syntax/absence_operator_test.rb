@@ -456,6 +456,13 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal %w[aa ab], regexp.match("aaba").to_a.first(2)
   end
 
+  def test_absence_operator_tracks_nullable_nested_repeat_frames
+    regexp = Onibi::Regexp.new("(?~((ab|a)*))")
+
+    assert_equal ["a", ""], regexp.match("aba").to_a.first(2)
+    assert_equal ["aa", ""], regexp.match("aabaa").to_a.first(2)
+  end
+
   def test_absence_operator_tracks_bounded_variable_alternation
     regexp = Onibi::Regexp.new("(?~((ab|a){2,}))")
 
