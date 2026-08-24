@@ -32,7 +32,14 @@ module Onibi
         match_any: { operand: :dot, stack: :push_result, local: :consume_and_merge },
         match_assertion: { operand: :assertion, stack: :push_result, local: :zero_width },
         test_anchor: { operand: :anchor, stack: :push_result, local: :zero_width },
-        match_absence: { operand: :absence, stack: :push_result, local: :consume_and_merge },
+        match_absence: {
+          operand: :absence,
+          stack: :push_result,
+          local: :consume_and_merge,
+          language: :complement_of_wrapped_body,
+          wrapped_language: ".* body .*",
+          preserves: :ordered_body_candidates
+        },
         match_group: { operand: :group, stack: :push_result, local: :capture_scope },
         match_quantifier: { operand: :quantifier, stack: :push_result, local: :repeat_and_merge },
         match_atomic_group: { operand: :atomic_group, stack: :push_result, local: :atomic_scope },

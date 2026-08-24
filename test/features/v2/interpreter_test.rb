@@ -13,6 +13,14 @@ class InterpreterTest < Minitest::Test
                  Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).keys
   end
 
+  def test_bytecode_spec_defines_absence_as_complement_of_wrapped_body
+    absence = Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).fetch(:match_absence)
+
+    assert_equal :complement_of_wrapped_body, absence.fetch(:language)
+    assert_equal ".* body .*", absence.fetch(:wrapped_language)
+    assert_equal :ordered_body_candidates, absence.fetch(:preserves)
+  end
+
   def test_interpreter_executes_dfa_start_match_jump_and_accept
     program = dfa_program_for("ab")
 
