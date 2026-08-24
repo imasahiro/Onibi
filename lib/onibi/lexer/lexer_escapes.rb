@@ -136,12 +136,11 @@ module Onibi
     def escaped_byte(codepoint)
       encoding = escape_encoding
       encoding = Encoding::ASCII_8BIT if codepoint > 0x7f && encoding == Encoding::US_ASCII
-      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f &&
-                                                       [Encoding::UTF_8, Encoding::EUC_JP].include?(encoding)
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/" if codepoint > 0x7f && [Encoding::UTF_8, Encoding::EUC_JP].include?(encoding)
 
       codepoint.chr(encoding)
     rescue RangeError, EncodingError
-      raise RegexpError, "invalid multibyte escape"
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/"
     end
 
     def special_escape_token(index, escaped)

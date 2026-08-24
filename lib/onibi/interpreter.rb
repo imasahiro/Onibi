@@ -3075,7 +3075,7 @@ module Onibi
 
       def boundary_word?(character, encoding = nil)
         return Onibi::CharacterPredicates.word?(character) if character.encoding == Encoding::ASCII_8BIT
-        return true if encoding && encoding != Encoding::UTF_8 && encoding != Encoding::US_ASCII && !character.ascii_only?
+        return true if encoding && [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding) && !character.ascii_only?
 
         Onibi::UnicodeProperties.boundary_word?(unicode_character(character))
       end

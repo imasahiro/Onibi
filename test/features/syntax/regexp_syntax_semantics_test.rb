@@ -28,6 +28,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u{}") }
   end
 
+  def test_short_multibyte_hex_escape_matches_mri_error
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\xE9") }
+
+    assert_equal "too short escaped multibyte character: /\\xE9/", error.message
+  end
+
   def test_character_classes_decode_literal_escape_sequences
     assert Onibi::Regexp.new("[\\x41]").match?("A")
     assert Onibi::Regexp.new("[\\n]").match?("\n")

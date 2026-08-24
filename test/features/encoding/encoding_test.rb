@@ -233,6 +233,13 @@ class EncodingTest < Minitest::Test
     assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
   end
 
+  def test_single_byte_non_utf8_word_boundary_uses_character_classification
+    encoding = Encoding::ISO_8859_1
+    input = [0x82, 0xA0].pack("C*").force_encoding(encoding)
+
+    assert_equal Regexp.new("\\b").match?(input), Onibi::Regexp.new("\\b").match?(input)
+  end
+
   def test_non_utf8_unicode_property_scan_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
