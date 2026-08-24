@@ -80,6 +80,7 @@ module Onibi
       CJK_Radicals_Supplement
       Katakana_Phonetic_Extensions
       Kana_Supplement
+      CJK_Unified_Ideographs_Extension_A
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
