@@ -4,7 +4,7 @@ require "test_helper"
 
 class SubexpressionCallTest < Minitest::Test
   def test_numbered_subexpression_call_reuses_a_capturing_group
-    regexp = Onibi::Regexp.new("(a)\\g1")
+    regexp = Onibi::Regexp.new("(a)\\g<1>")
 
     assert_equal "aa", regexp.match("aa")[0]
   end

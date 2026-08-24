@@ -83,10 +83,12 @@ class LexerParserErrorBoundaryTest < Minitest::Test
   end
 
   def test_unknown_letter_escape_is_literal_like_mri
-    expected = ::Regexp.new("\\i")
-    actual = Onibi::Regexp.new("\\i")
+    ["\\i", "\\g", "\\g1", "\\k", "\\p"].each do |pattern|
+      expected = ::Regexp.new(pattern)
+      actual = Onibi::Regexp.new(pattern)
 
-    assert_equal expected.source, actual.source
-    assert_equal expected.match?("i"), actual.match?("i")
+      assert_equal expected.source, actual.source, pattern
+      assert_equal expected.match?(pattern.delete("\\")), actual.match?(pattern.delete("\\")), pattern
+    end
   end
 end

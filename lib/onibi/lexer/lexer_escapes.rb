@@ -135,10 +135,11 @@ module Onibi
     end
 
     def special_escape_token(index, escaped)
-      return backreference_token(index) if digit_escape?(escaped) || escaped == "k"
-      return subexpression_token(index) if escaped == "g"
+      return backreference_token(index) if digit_escape?(escaped) ||
+                                           (escaped == "k" && @source[index + 2] == "<")
+      return subexpression_token(index) if escaped == "g" && @source[index + 2] == "<"
 
-      property_token(index) if %w[p P].include?(escaped)
+      property_token(index) if %w[p P].include?(escaped) && @source[index + 2] == "{"
     end
 
     def escaped_type_token(type, escaped, index)

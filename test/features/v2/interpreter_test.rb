@@ -77,7 +77,7 @@ class InterpreterTest < Minitest::Test
       ["a", "a"], ["[a]", "a"], ["\\d", "7"], ["\\p{Alpha}", "A"],
       [".", "x"], ["(?=a)a", "a"], ["\\Aa", "a"], ["(?~a)", "b"],
       ["(a)", "a"], ["a+", "aa"], ["(?>a)", "a"], ["(a)\\1", "aa"],
-      ["(a)?(?(1)b|c)", "ab"], ["(a)\\g1", "aa"], ["(?i:a)", "A"]
+      ["(a)?(?(1)b|c)", "ab"], ["(a)\\g<1>", "aa"], ["(?i:a)", "A"]
     ]
 
     cases.each do |pattern, input|

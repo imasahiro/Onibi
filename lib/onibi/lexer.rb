@@ -103,7 +103,7 @@ module Onibi
     end
 
     def digit_escape?(character)
-      character >= "0" && character <= "9"
+      character && character >= "0" && character <= "9"
     end
 
     def octal_escape?(index)
