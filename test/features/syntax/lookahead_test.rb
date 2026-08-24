@@ -48,6 +48,13 @@ class LookaheadTest < Minitest::Test
     assert Onibi::Regexp.new(pattern).match?(input)
   end
 
+  def test_ignorecase_lookbehind_tracks_class_and_quantifier_widths
+    [["(?i:(?<=[ß])x)", "SSx"], ["(?i:(?<=[ß])x)", "ßx"],
+     ["(?i:(?<=[ß]{1})x)", "SSx"], ["(?i:(?<=[ß]{1})x)", "ßx"]].each do |pattern, input|
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
