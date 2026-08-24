@@ -699,10 +699,26 @@ module Onibi
       end
 
       def mri_multi_fold_literal_boundary?(node, next_node, characters, cursor, flags)
+        node = boundary_operand(node)
+        next_node = boundary_operand(next_node)
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless node.casefold && node.casefold.length > node.value.length
         return false unless characters[cursor] == node.value
         return false unless node.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+
+        next_source = characters[cursor + 1]
+        if next_source && next_source.downcase(:fold).length > 1 &&
+           next_source.downcase(:fold) == next_node_value(next_node)
+          return false
+        end
+
+        next_value = next_node_value(next_node)
+        if next_value && later_sequence_fold_candidate?(next_value, characters,
+                                                        cursor + 1 + next_value.length)
+          return false
+        end
+        return true if next_node.is_a?(SemanticBytecode::Sequence) &&
+                       next_node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
 
         if next_node.is_a?(SemanticBytecode::Quantifier)
           return false unless next_node.minimum.positive?
@@ -722,6 +738,23 @@ module Onibi
           !next_node.value.include?("\\") && !next_node.value.include?("&&")
       end
 
+      def next_node_value(node)
+        return node.casefold || node.value if node.is_a?(SemanticBytecode::Literal)
+        return node.parts.map { |part| part.casefold || part.value }.join if node.is_a?(SemanticBytecode::Sequence) &&
+                                                                             node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+
+        nil
+      end
+
+      def boundary_operand(node)
+        return node unless node.is_a?(SemanticBytecode::Group)
+
+        body = node.body
+        return body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
+
+        body
+      end
+
       def mri_fold_boundary_lookahead_relaxed?(previous_node, node, next_node, characters, cursor)
         return false unless previous_node.is_a?(SemanticBytecode::Quantifier)
         return false unless previous_node.minimum.zero?
@@ -738,6 +771,15 @@ module Onibi
       def later_fold_candidate?(literal, characters, cursor)
         fold = literal.casefold || literal.value
         characters.drop(cursor).any? { |character| character.downcase(:fold) == fold }
+      end
+
+      def later_sequence_fold_candidate?(fold, characters, cursor)
+        characters.each_index.any? do |index|
+          next false if index < cursor
+
+          slice = characters[index, [fold.length, characters.length - index].min]
+          slice && slice.join.downcase(:fold) == fold
+        end
       end
 
       def later_class_candidate?(character_class, characters, cursor, flags)
