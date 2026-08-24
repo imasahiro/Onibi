@@ -262,6 +262,22 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_restores_repeated_suffix_capture_frames
+    {
+      "(?~(?:a+(a|aa)))" => %w[aaa aab aaba baa bbaa baab],
+      "(?~(?:a+(ab|a)))" => %w[aaa aaba baab],
+      "(?~(?:b+(ab|a)))" => %w[bab baab bbaa]
+    }.each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected.to_a, actual.to_a, [pattern, input]
+        assert_equal expected.offset(0), actual.offset(0), [pattern, input]
+      end
+    end
+  end
+
   def test_absence_operator_uses_consuming_width_for_nullable_suffix
     ["(?~(?:.*a?))", "(?~(?:.*a*))"].each do |pattern|
       %w[aaa abac abba aabaa ac].each do |input|

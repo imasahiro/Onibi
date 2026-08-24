@@ -1208,10 +1208,42 @@ module Onibi
         return captures unless quantifier.kind == :+ && quantifier.maximum.nil?
 
         run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
-        return captures unless run.positive? && run.even? && cursor + run < characters.length
-        return captures if quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
+        suffix_starts_with_atom = parts.drop(1).any? do |part|
+          node_starts_with_atom?(part, quantifier.expression)
+        end
+        repeated_atom_capture = captures.values.any? do |value|
+          value.is_a?(Array) && value.length == 2 && value[1] - value[0] == 1 &&
+            run > 1 && value[0] == cursor + run
+        end
+        return captures.reject { |key, _value| key.is_a?(Integer) } if repeated_atom_capture
+        return captures unless suffix_starts_with_atom
+        return captures unless captures.values.any? do |value|
+          next false unless value.is_a?(Array) && value.length == 2
+
+          span = value[1] - value[0]
+          (run.positive? && (span > 1 || value[1] == characters.length)) ||
+          (span > 1 && value[1] == characters.length) ||
+          (run > 1 && span == 1 && value[0] == cursor + run)
+        end
 
         captures.reject { |key, _value| key.is_a?(Integer) }
+      end
+
+      def node_starts_with_atom?(node, atom)
+        case node
+        when Onibi::AST::Group, SemanticBytecode::Group,
+             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+          node_starts_with_atom?(node.body, atom)
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          node.parts.any? && node_starts_with_atom?(node.parts.first, atom)
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          node.branches.any? { |branch| node_starts_with_atom?(branch, atom) }
+        when Onibi::AST::Literal, SemanticBytecode::Literal
+          quantified_atoms_equivalent?(node, atom)
+        else
+          false
+        end
       end
 
       def quantified_atom_run_length(expression, characters, cursor, flags)
