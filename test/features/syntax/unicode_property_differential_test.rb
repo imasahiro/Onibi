@@ -14,6 +14,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Emoji_Modifier}", ["🏻", "🏿"], %w[A 😀]],
     ["\\p{Emoji_Modifier_Base}", ["👍", "🧑"], %w[A 😀]],
     ["\\p{Extended_Pictographic}", %w[© 😀 🀄], %w[A あ]],
+    ["\\p{Bidi_Control}", ["\u061c", "\u200e", "\u202e"], %w[A あ]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
