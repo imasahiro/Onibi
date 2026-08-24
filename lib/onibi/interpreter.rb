@@ -5,6 +5,17 @@ module Onibi
     # SemanticBytecode is the compiler-owned operand model.
     SemanticBytecode = Onibi::IRGen::YARVIR::SemanticBytecode
 
+    # Runtime state for the Onigmo-style absence loop.
+    # `possible_points` stores [cursor, captures] checkpoints.
+    # `body_checkpoints` stores ordered body results for each point.
+    AbsentFrame = Struct.new(
+      :absent_start,
+      :absent_end,
+      :possible_points,
+      :body_checkpoints,
+      keyword_init: true
+    )
+
     # Formal VM contract:
     # DFA: start(state), match(label), jump(state), accept(state).
     # TNFA: nfa_start(states), nfa_match([from, to, [opcode, operand]]),
@@ -35,7 +46,7 @@ module Onibi
         match_absence: {
           operand: :absence,
           stack: :push_result,
-          local: :consume_and_merge,
+          local: :absent_frame,
           language: :complement_of_wrapped_body,
           wrapped_language: ".* body .*",
           preserves: :ordered_body_candidates
@@ -757,6 +768,13 @@ module Onibi
         delimiter = literal_value(node.body)
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
+        frame = AbsentFrame.new(
+          absent_start: cursor,
+          absent_end: characters.length,
+          possible_points: [],
+          body_checkpoints: []
+        )
+
         body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
         first_length = body_at_cursor.first&.first
         first_state = body_at_cursor.first&.last || {}
@@ -799,6 +817,7 @@ module Onibi
         failure_state = nil
         cursor.upto(characters.length) do |position|
           results = node_results(node.body, characters, position, captures, flags)
+          record_absence_checkpoint(frame, position, results, captures)
           if results.empty?
             candidate = sequence_failure_state(node.body, characters, position, captures, flags)
             failure_state = candidate.first if candidate && candidate.last == characters.length && candidate.first.keys.any? { |key| key.is_a?(Integer) }
@@ -872,6 +891,11 @@ module Onibi
         end
         maximum = characters.length - cursor
         maximum.downto(0).map { |length| [length, captures] }
+      end
+
+      def record_absence_checkpoint(frame, position, results, captures)
+        frame.possible_points << [position, captures]
+        frame.body_checkpoints << [position, results]
       end
 
       def quantified_suffix_absence_results(body, characters, cursor, captures, flags = {})
