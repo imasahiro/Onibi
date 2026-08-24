@@ -353,7 +353,11 @@ module Onibi
           class_repetition = flags[:ignorecase] && flags[:casefold_repetition] &&
                              node.parts.length > 1 &&
                              node.parts.all? { |part| part.is_a?(SemanticBytecode::CharacterClass) } &&
-                             node.parts.none? { |part| part.value.start_with?("^") }
+                             node.parts.none? { |part| part.value.start_with?("^") } &&
+                             (node.parts.all? { |part| part.casefolds.empty? } ||
+                              node.parts.all? do |part|
+                                part.casefolds.any? && part.value.each_char.one?
+                              end)
           if class_repetition
             class_lengths = casefold_class_sequence_lengths(node.parts, characters, cursor, flags)
             return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
@@ -412,6 +416,10 @@ module Onibi
                 part_results = part_results.select { |length, _inner| length.zero? }
               elsif optional_order == :greedy
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
+              end
+              if mri_multi_fold_literal_boundary?(part, parts[index], characters,
+                                                  cursor + consumed, flags)
+                part_results = []
               end
               part_results.filter_map do |length, inner|
                 if state_captures[:__zero_absence] &&
@@ -626,6 +634,27 @@ module Onibi
         literal = node if node.is_a?(SemanticBytecode::CharacterClass) && node.casefolds.empty?
         (literal.is_a?(SemanticBytecode::Literal) || literal.is_a?(SemanticBytecode::CharacterClass)) &&
           literal.value.downcase(:fold) == expression.value.downcase(:fold)
+      end
+
+      def mri_multi_fold_literal_boundary?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
+        return false unless node.casefold && node.casefold.length > node.value.length
+        return false unless characters[cursor] == node.value
+
+        if next_node.is_a?(SemanticBytecode::Quantifier)
+          return false unless next_node.minimum.positive?
+          if next_node.expression.is_a?(SemanticBytecode::Literal) &&
+             next_node.expression.casefold&.length.to_i > next_node.expression.value.length
+            return false
+          end
+
+          next_node = next_node.expression
+        end
+        return true if next_node.is_a?(SemanticBytecode::Literal)
+        return false unless next_node.is_a?(SemanticBytecode::CharacterClass)
+
+        !next_node.value.include?("[") && !next_node.value.include?(":") &&
+          !next_node.value.include?("\\") && !next_node.value.include?("&&")
       end
 
       def reverse_casefold_sequence?(value)
