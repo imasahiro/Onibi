@@ -598,6 +598,16 @@ module Onibi
           return []
         end
 
+        if flags[:ignorecase] && quantifier.minimum == quantifier.maximum &&
+           quantifier.minimum > 1 && quantifier.expression.is_a?(SemanticBytecode::Literal)
+          # A fixed repetition is one logical literal sequence. Matching each
+          # operand alone would lose reverse folds such as `ſ{2}` versus `ß`.
+          repeated = SemanticBytecode::Sequence.new(
+            Array.new(quantifier.minimum, quantifier.expression)
+          )
+          return node_results(repeated, characters, cursor, captures, flags)
+        end
+
         return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
 
         ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
