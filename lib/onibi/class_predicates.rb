@@ -202,12 +202,17 @@ module Onibi
       end
 
       matched = UnicodeProperties.matches_normalized?(name, character)
-      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched
+      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched &&
+                                                             casefold_property?(name)
       negated ? !matched : matched
     end
 
     def casefold_property_match?(name, character)
       UnicodeProperties.casefold_matches?(name, character)
+    end
+
+    def casefold_property?(name)
+      %w[Lower Upper Ll Lu Lt].include?(UnicodeProperties.normalize_name(name))
     end
 
     def incompatible_property?(name, character, encoding)

@@ -49,6 +49,13 @@ class CaseFoldingTest < Minitest::Test
     assert Onibi::Regexp.new("[\\P{Upper}]", ["ignorecase"]).match?("A")
   end
 
+  def test_ignorecase_does_not_casefold_ascii_property_operands
+    assert_nil Regexp.new("\\p{ASCII}", Regexp::IGNORECASE).match("ſ")
+    assert_nil Onibi::Regexp.new("\\p{ASCII}", Regexp::IGNORECASE).match("ſ")
+    assert Regexp.new("\\P{ASCII}", Regexp::IGNORECASE).match?("ſ")
+    assert Onibi::Regexp.new("\\P{ASCII}", Regexp::IGNORECASE).match?("ſ")
+  end
+
   def test_ignorecase_applies_to_character_classes
     assert Onibi::Regexp.new("[k]", ["ignorecase"]).match?("K")
   end

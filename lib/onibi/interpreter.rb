@@ -2992,6 +2992,7 @@ module Onibi
         return true if matched
         return false unless flags[:ignorecase]
         return false if node.value.start_with?("^")
+        return false if node.value.include?("[") || node.value.include?(":") || node.value.include?("\\")
 
         folded = character.downcase(:fold)
         return false unless folded.each_char.one?
@@ -3175,7 +3176,7 @@ module Onibi
                                  character
                                end
         return true if Onibi::UnicodeProperties.matches_normalized?(normalized, normalized_character)
-        return false unless ignorecase
+        return false unless ignorecase && %w[Lower Upper Ll Lu Lt].include?(normalized)
 
         Onibi::UnicodeProperties.casefold_matches?(normalized, normalized_character)
       rescue EncodingError
