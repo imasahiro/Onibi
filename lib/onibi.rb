@@ -225,7 +225,7 @@ module Onibi
 
       validate_property_encoding!
 
-      @options |= FIXEDENCODING if (!@source.ascii_only? || @source.include?("\\p{")) && !no_encoding?
+      @options |= FIXEDENCODING if (!@source.ascii_only? || property_names.any?) && !no_encoding?
       @options |= FIXEDENCODING if non_ascii_escape_pattern? &&
                                    (no_encoding? || @source.encoding != Encoding::US_ASCII)
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?

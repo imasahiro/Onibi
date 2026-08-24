@@ -87,6 +87,14 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
   end
 
+  def test_negated_unicode_property_sets_fixed_encoding
+    regexp = Onibi::Regexp.new("\\P{L}")
+
+    assert_equal Onibi::Regexp::FIXEDENCODING, regexp.options
+    assert_equal Encoding::UTF_8, regexp.encoding
+    assert regexp.fixed_encoding?
+  end
+
   def test_named_capture_numbers_hide_unnamed_groups_like_mri
     expected = ::Regexp.new("(a)(?<name>b)")
     actual = Onibi::Regexp.new("(a)(?<name>b)")
