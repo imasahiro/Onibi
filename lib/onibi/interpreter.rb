@@ -1093,7 +1093,7 @@ module Onibi
         return false unless parts.length > 1 &&
                             (quantifier.is_a?(Onibi::AST::Quantifier) ||
                              quantifier.is_a?(SemanticBytecode::Quantifier))
-        return false unless quantifier.kind == :+ && quantifier.maximum.nil?
+        return false unless quantifier.maximum.nil? && %i[* +].include?(quantifier.kind)
 
         spans = state.values.filter_map do |value|
           value if value.is_a?(Array) && value.length == 2
@@ -1105,6 +1105,11 @@ module Onibi
         end
 
         repeat_count = spans.map { |start, finish| length - (finish - start) }.min
+        if quantifier.kind == :*
+          return repeat_count && repeat_count > 1 && repeat_count.odd? &&
+                 spans.any? { |start, finish| finish - start == 1 }
+        end
+
         return true if !prior_ambiguous && repeat_count && repeat_count > 1 &&
                        spans.any? { |start, finish| finish - start == 1 }
         return true if repeat_count&.positive? && repeat_count.even? && spans.any? do |start, finish|

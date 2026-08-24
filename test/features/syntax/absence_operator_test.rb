@@ -248,7 +248,7 @@ class AbsenceOperatorTest < Minitest::Test
     cases = [
       ["(?~(?:a?(ab|a)))", %w[aab aaba baab]],
       ["(?~(?:b+(ab|a)))", %w[bab baab]],
-      ["(?~(?:b*(a|aa)))", %w[ba baa bbaa]]
+      ["(?~(?:b*(a|aa)))", %w[ba baa bbaa bbba bbbaa]]
     ]
 
     cases.each do |pattern, inputs|
