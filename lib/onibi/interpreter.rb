@@ -873,25 +873,44 @@ module Onibi
                       (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
         return unless quantifier.maximum.nil? && !contains_absence_node?(body)
 
-        repeated_atom = quantifier.kind == :+ && repeated_quantified_atom_suffix?(quantifier, parts[1])
-        return unless quantifier.kind == :* || repeated_atom
+        repeated_atom = parts.length == 2 && quantifier.kind == :+ &&
+                        repeated_quantified_atom_suffix?(quantifier, parts[1])
+        return unless %i[* +].include?(quantifier.kind)
 
         if repeated_atom
           atom = literal_value(quantifier.expression)
-          run = repeated_atom_run_length(atom, characters, cursor)
-          return unless run >= quantifier.minimum && cursor + run < characters.length
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          return unless run >= quantifier.minimum &&
+                        (cursor + run < characters.length || atom.nil?)
 
           results = node_results(body, characters, cursor, captures, flags)
           target = results.find { |length, _state| length == run }
           return unless target
 
-          following = characters[cursor + run, atom.length].join
-          return if following == atom
+          return if quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
 
           state = target.last.dup
           state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
           return [[(run + 1) / 2, state]]
         end
+
+        if quantifier.kind == :+
+          atom = literal_value(quantifier.expression)
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          if run >= 3 && !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
+            boundary = atom.nil? && cursor + run == characters.length ? run / 2 : (run + 2) / 2
+            results = node_results(body, characters, cursor, captures, flags)
+            target = results.find { |length, _state| length == boundary + 1 }
+            if target
+              state = target.last.dup
+              state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+              state.delete_if { |key, _value| key.is_a?(Integer) } if cursor + run == characters.length || run.even?
+              return [[boundary, state]]
+            end
+          end
+        end
+
+        return unless quantifier.kind == :*
 
         maximum = quantified_absence_length(quantifier, characters, cursor)
         return unless maximum&.positive?
@@ -906,16 +925,31 @@ module Onibi
       end
 
       def repeated_quantified_atom_suffix?(quantifier, suffix)
-        atom = literal_value(quantifier.expression)
-        atom && literal_value(suffix) == atom
+        quantified_atoms_equivalent?(quantifier.expression, suffix)
       end
 
-      def repeated_atom_run_length(atom, characters, cursor)
-        return 0 unless atom && !atom.empty?
+      def quantified_atoms_equivalent?(left, right)
+        left == right || (literal_value(left) && literal_value(left) == literal_value(right))
+      end
+
+      def quantified_atom_run_length(expression, characters, cursor, flags)
+        atom = literal_value(expression)
+        return 0 if atom && atom.empty?
 
         position = cursor
-        position += atom.length while characters[position, atom.length].join == atom
+        if atom
+          position += atom.length while characters[position, atom.length].join == atom
+        else
+          position += 1 while node_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
+        end
         position - cursor
+      end
+
+      def quantified_atom_matches?(expression, characters, position, flags)
+        atom = literal_value(expression)
+        return characters[position, atom.length].join == atom if atom
+
+        node_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
       end
 
       def contains_absence_node?(node)
