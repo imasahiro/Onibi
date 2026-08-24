@@ -46,6 +46,11 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal "unknown regexp option: bad", error.message
   end
 
+  def test_constructor_masks_negative_integer_options_like_mri
+    assert_equal Regexp.new("a", -3).options, Onibi::Regexp.new("a", -3).options
+    assert_equal Regexp.new("a", -2).options, Onibi::Regexp.new("a", -2).options
+  end
+
   def test_extended_integer_flag_enables_extended_mode
     regexp = Onibi::Regexp.new("a b # comment\n c", Onibi::Regexp::EXTENDED)
 

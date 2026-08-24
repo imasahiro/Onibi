@@ -50,9 +50,8 @@ module Onibi
     def integer_options(value)
       bits = { 1 => "ignorecase", 2 => "extended", 4 => "multiline", 16 => "fixedencoding", 32 => "noencoding" }
       supported = bits.keys.sum
-      value = supported if value.negative?
 
-      bits.filter_map { |bit, name| name if (value & bit).positive? }
+      bits.filter_map { |bit, name| name if (value & supported & bit).positive? }
     end
 
     def normalize_inline_options(source, options)
