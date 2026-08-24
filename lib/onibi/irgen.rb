@@ -72,7 +72,7 @@ module Onibi
           when Literal
             node.value.downcase(:fold).length > node.value.length
           when Property
-            !node.negated && node.casefolds.any?
+            node.casefolds.any?
           when CharacterClass
             node.value.match?(/\\p/i) && node.casefolds.any?
           when Sequence

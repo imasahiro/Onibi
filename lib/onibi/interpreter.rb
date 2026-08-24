@@ -302,15 +302,18 @@ module Onibi
         when SemanticBytecode::Sequence
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
-            folded_length = casefold_lengths(value, characters, cursor,
-                                             expanded_only: flags[:lookbehind_casefold]).first
-            return folded_length ? [[folded_length, captures.dup]] : []
+            if value.ascii_only? || node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
+              folded_length = casefold_lengths(value, characters, cursor,
+                                               expanded_only: flags[:lookbehind_casefold]).first
+              return folded_length ? [[folded_length, captures.dup]] : []
+            end
           end
 
           states = [[0, captures]]
           parts = node.parts
           index = 0
           while index < parts.length
+            part_index = index
             part = parts[index]
             if flags[:ignorecase] && part.is_a?(SemanticBytecode::Literal)
               # A UTF-8 case fold can consume several source literals, such
@@ -322,11 +325,17 @@ module Onibi
                 run << parts[index].value
                 index += 1
               end
-              part = SemanticBytecode::Literal.new(run.join) if run.length > 1
+              first_expands = run.first.downcase(:fold).length > run.first.length
+              if run.length > 1 && (run.join.ascii_only? || first_expands)
+                part = SemanticBytecode::Literal.new(run.join)
+              else
+                index = part_index + 1
+              end
             else
               index += 1
             end
-            states = states.flat_map do |consumed, state_captures|
+            previous_states = states
+            states = previous_states.flat_map do |consumed, state_captures|
               node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
                 next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
                                marked = inner.dup
@@ -342,7 +351,12 @@ module Onibi
             end
             next unless states.empty?
 
-            folded = casefold_sequence_results(node.parts, characters, cursor, captures, flags)
+            folded = previous_states.flat_map do |consumed, state_captures|
+              casefold_sequence_results(parts.drop(part_index), characters,
+                                        cursor + consumed, state_captures, flags).map do |length, inner|
+                [consumed + length, inner]
+              end
+            end
             return folded unless folded.empty?
 
             return []
@@ -444,19 +458,21 @@ module Onibi
 
         prefix = []
         parts.each do |part|
-          break unless part.is_a?(SemanticBytecode::Literal) ||
-                       part.is_a?(SemanticBytecode::CharacterClass) ||
-                       part.is_a?(SemanticBytecode::Property)
+          break if prefix.length >= 2
+          break unless (prefix.empty? && part.is_a?(SemanticBytecode::CharacterClass)) ||
+                       (prefix.length == 1 && part.is_a?(SemanticBytecode::Literal) &&
+                        part.value.each_char.one? && part.value.downcase(:fold).each_char.one?)
 
           prefix << part
         end
-        return [] if prefix.length < 2
+        return [] if prefix.length < 2 || prefix.first.value.start_with?("^")
 
-        maximum = [characters.length - cursor, prefix.length * 3].min
+        maximum = [characters.length - cursor, prefix.length].min
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
           folded = slice.join.downcase(:fold)
-          next unless folded_atoms_match?(prefix, folded, flags)
+          expanded_class = Array(prefix.first.casefolds).any?
+          next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class)
 
           next [[width, captures.dup]] if prefix.length == parts.length
 
@@ -467,15 +483,16 @@ module Onibi
         end.flatten(1)
       end
 
-      def folded_atoms_match?(atoms, folded, flags)
-        return folded.empty? if atoms.empty?
+      def folded_atoms_match?(atoms, folded, flags, allow_fold_tail: false)
+        return folded.empty? || allow_fold_tail if atoms.empty?
 
         atom = atoms.first
         if atom.is_a?(SemanticBytecode::Literal)
           value = atom.value.downcase(:fold)
           return false unless folded.start_with?(value)
 
-          return folded_atoms_match?(atoms.drop(1), folded[value.length..], flags)
+          return folded_atoms_match?(atoms.drop(1), folded[value.length..], flags,
+                                     allow_fold_tail: allow_fold_tail)
         end
 
         character = folded.each_char.first
@@ -483,12 +500,14 @@ module Onibi
 
         matched = if atom.is_a?(SemanticBytecode::CharacterClass)
                     Onibi::ClassPredicates.matches?(atom.value, character,
-                                                    ignorecase: false,
-                                                    encoding: flags[:encoding])
+                                                    ignorecase: true,
+                                                    encoding: flags[:encoding]) ||
+                      Array(atom.casefolds).any? { |_source, value| value.start_with?(character) }
                   else
-                    property_matches?(atom.name, character, false, flags[:encoding])
+                    false
                   end
-        matched && folded_atoms_match?(atoms.drop(1), folded[character.length..], flags)
+        matched && folded_atoms_match?(atoms.drop(1), folded[character.length..], flags,
+                                       allow_fold_tail: allow_fold_tail)
       end
 
       def quantifier_results(quantifier, characters, cursor, captures, flags = {})

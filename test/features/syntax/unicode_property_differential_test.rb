@@ -254,6 +254,56 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_property_operands_do_not_split_one_unicode_character
+    pattern = "\\p{L}\\p{L}"
+    input = "ß"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_casefold_can_start_after_a_property_operand
+    pattern = "\\p{L}[s]s"
+    input = "sß"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_equal ["sß", [0, 2]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_adjacent_classes_do_not_split_one_unicode_character
+    pattern = "[s][s]"
+    input = "ß"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_literal_casefold_direction_is_preserved
+    pattern = "ßs"
+    input = "sß"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_equal ["sß", [0, 2]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_negated_property_enables_full_casefold_for_following_posix_class
+    pattern = "\\P{L}[[:alpha:]]\\b"
+    input = "_SS"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_equal ["_SS", [0, 3]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)
