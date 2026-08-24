@@ -42,7 +42,7 @@ module Onibi
 
     def flag_options(flags)
       names = { "i" => "ignorecase", "m" => "multiline", "x" => "extended" }
-      raise ArgumentError, "invalid options" unless flags.chars.all? { |flag| names.key?(flag) }
+      raise ArgumentError, "unknown regexp option: #{flags}" unless flags.chars.all? { |flag| names.key?(flag) }
 
       flags.chars.map { |flag| names.fetch(flag) }.uniq
     end

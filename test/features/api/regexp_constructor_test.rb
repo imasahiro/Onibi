@@ -40,6 +40,12 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", :i).options
   end
 
+  def test_constructor_reports_unknown_string_options_like_mri
+    error = assert_raises(ArgumentError) { Onibi::Regexp.new("cat", "bad") }
+
+    assert_equal "unknown regexp option: bad", error.message
+  end
+
   def test_extended_integer_flag_enables_extended_mode
     regexp = Onibi::Regexp.new("a b # comment\n c", Onibi::Regexp::EXTENDED)
 
