@@ -366,7 +366,7 @@ module Onibi
 
     def to_s
       enabled = mode_flags
-      body = source
+      body = source.gsub("/", '\\/')
       if source.start_with?("(?") && source.include?(":") && source.end_with?(")")
         close = source.index(":")
         header = source[2...close]

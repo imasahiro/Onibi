@@ -102,6 +102,10 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal "(?mix:a\\/b)", regexp.to_s
   end
 
+  def test_to_s_escapes_slashes_in_plain_patterns
+    assert_equal "(?-mix:a\\/b)", Onibi::Regexp.new("a/b").to_s
+  end
+
   def test_union_preserves_compiled_multiline_and_extended_options
     multiline = Onibi::Regexp.union(::Regexp.new(".", ::Regexp::MULTILINE))
     extended = Onibi::Regexp.union(::Regexp.new("a b", ::Regexp::EXTENDED))
