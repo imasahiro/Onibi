@@ -71,6 +71,10 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("cat")
   end
 
+  def test_union_rejects_symbol_mixed_with_multiple_patterns
+    assert_raises(TypeError) { Onibi::Regexp.union("a", :foo) }
+  end
+
   def test_union_accepts_compiled_regexp_patterns
     regexp = Onibi::Regexp.union(::Regexp.new("a|b"), "cat")
 

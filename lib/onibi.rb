@@ -106,6 +106,8 @@ module Onibi
         patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
         return new("(?!)") if patterns.empty?
 
+        raise TypeError, "no implicit conversion of Symbol into String" if patterns.length > 1 && patterns.any? { |pattern| pattern.is_a?(Symbol) }
+
         return new(patterns.first.source, patterns.first.options) if
           patterns.length == 1 && (patterns.first.is_a?(::Regexp) || patterns.first.is_a?(Regexp))
 
