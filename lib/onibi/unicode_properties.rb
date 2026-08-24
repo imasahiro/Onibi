@@ -92,7 +92,7 @@ module Onibi
       CJK_Unified_Ideographs_Extension_H
       CJK_Unified_Ideographs_Extension_I
       CJK_Unified_Ideographs_Extension_J
-      Vertical_Forms Kawi
+      Vertical_Forms Kawi Tangsa
       NKo
       Coptic
       Cyrillic_Extended_A Cyrillic_Extended_B Cyrillic_Extended_C
