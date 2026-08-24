@@ -818,6 +818,9 @@ module Onibi
           inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
           inner_captures = filter_nested_absence_captures(node.body, inner_captures)
           inner_captures = filter_absence_capture_scope(node.body, inner_captures)
+          inner_captures = discard_failed_quantified_suffix_captures(
+            node.body, characters, cursor, inner_captures, flags
+          )
           quantified_length = quantified_absence_length(node.body, characters, position)
           match_position = internal_start || position
           maximum = if quantified_length
@@ -898,8 +901,12 @@ module Onibi
           atom = literal_value(quantifier.expression)
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
           if run >= 3 && !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
-            boundary = atom.nil? && cursor + run == characters.length ? run / 2 : (run + 2) / 2
+            boundary = atom.nil? && cursor + run == characters.length ? (run + 1) / 2 : (run + 2) / 2
             results = node_results(body, characters, cursor, captures, flags)
+            if atom.nil?
+              minimum = results.map(&:first).min
+              boundary = [boundary, minimum].min if minimum
+            end
             target = results.find { |length, _state| length == boundary + 1 }
             if target
               state = target.last.dup
@@ -930,6 +937,21 @@ module Onibi
 
       def quantified_atoms_equivalent?(left, right)
         left == right || (literal_value(left) && literal_value(left) == literal_value(right))
+      end
+
+      def discard_failed_quantified_suffix_captures(body, characters, cursor, captures, flags)
+        parts = absence_sequence_parts(body)
+        quantifier = parts.first
+        return captures unless parts.length > 1 &&
+                               (quantifier.is_a?(Onibi::AST::Quantifier) ||
+                                quantifier.is_a?(SemanticBytecode::Quantifier))
+        return captures unless quantifier.kind == :+ && quantifier.maximum.nil?
+
+        run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+        return captures unless run.even? && cursor + run < characters.length
+        return captures if quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
+
+        captures.reject { |key, _value| key.is_a?(Integer) }
       end
 
       def quantified_atom_run_length(expression, characters, cursor, flags)
