@@ -20,8 +20,6 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "(?(",
     "(?#",
     "(?x:",
-    "a{",
-    "a{}",
     "a{2,1}",
     "*a",
     "a)",
@@ -41,6 +39,18 @@ class LexerParserErrorBoundaryTest < Minitest::Test
   def test_boundary_quantifiers_are_accepted_or_rejected_consistently
     assert Onibi::Regexp.new("a{0}").match?("")
     assert Onibi::Regexp.new("a{2,}").match?("aaa")
-    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("a{,x}") }
+    assert Onibi::Regexp.new("a{,2}").match?("aa")
+  end
+
+  def test_malformed_repeat_syntax_is_literal_like_mri
+    ["a{", "a{}", "a{,}", "a{,x}", "a{x}", "a{2", "a{2,x}"].each do |pattern|
+      expected = ::Regexp.new(pattern)
+      actual = Onibi::Regexp.new(pattern)
+
+      assert_equal expected.source, actual.source, pattern
+      ["a", "a{", "aa", pattern].each do |input|
+        assert_equal expected.match?(input), actual.match?(input), [pattern, input]
+      end
+    end
   end
 end

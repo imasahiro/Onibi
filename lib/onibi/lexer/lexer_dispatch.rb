@@ -22,6 +22,7 @@ module Onibi
       return parenthesis_token(index) if "()".include?(character)
       return simple_token(character, index) if Lexer::SIMPLE_TOKENS.key?(character)
       return quantifier_token(index) if "*+?{".include?(character)
+      return literal_token(character, index) if character == "}"
 
       raise RegexpError, "unexpected character class terminator"
     end

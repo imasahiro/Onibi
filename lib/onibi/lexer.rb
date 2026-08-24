@@ -68,7 +68,17 @@ module Onibi
     end
 
     def quantifier_token(index)
+      return literal_token("{", index) if @source[index] == "{" && !bounded_quantifier?(index)
+
       [Token.new(:quantifier, quantifier_value(index), index), quantifier_end(index)]
+    end
+
+    def bounded_quantifier?(index)
+      ending = @source.index("}", index + 1)
+      return false unless ending
+
+      body = @source[(index + 1)...ending]
+      body.match?(/\A(?:\d+|\d+,\d*|,\d+)\z/)
     end
 
     def escaped_token(index)
