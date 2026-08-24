@@ -968,9 +968,10 @@ module Onibi
            absence_sequence_parts(body).first.is_a?(SemanticBytecode::Group))
       end
 
-      def nested_unbounded_star_body?(body)
+      def nested_nullable_repeat_body?(body)
         quantifier = bounded_absence_quantifier(body)
-        quantifier && quantifier.maximum.nil? && quantifier.kind == :*
+        quantifier && quantifier.minimum.to_i.zero? &&
+          %i[* bounded].include?(quantifier.kind)
       end
 
       def nested_unbounded_quantifier_absence_results(body, characters, cursor, captures, flags)
@@ -1153,7 +1154,7 @@ module Onibi
                                                                prior_ambiguous)
             frame.capture_checkpoints << [position, length, state.dup, discard_capture,
                                           results.length > 1]
-            boundary = if length.zero? && nested_unbounded_star_body?(body)
+            boundary = if length.zero? && nested_nullable_repeat_body?(body)
                          position
                        else
                          position + length - 1

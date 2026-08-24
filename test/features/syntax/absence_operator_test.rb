@@ -475,6 +475,10 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal ["", "a"], regexp.match("a").to_a.first(2)
     assert_equal %w[aa ab], regexp.match("aaba").to_a.first(2)
+
+    nullable = Onibi::Regexp.new("(?~((ab|a){0,3}))")
+
+    assert_equal ["a", ""], nullable.match("aba").to_a.first(2)
   end
 
   def test_absence_operator_clears_nullable_nested_captures
