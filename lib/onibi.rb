@@ -388,7 +388,8 @@ module Onibi
               end
       return nil unless start
 
-      bytecode_match(input, start, program)
+      matched = bytecode_match(input, start, program)
+      matched && block_given? ? yield(matched) : matched
     end
 
     def scan(input, &block)

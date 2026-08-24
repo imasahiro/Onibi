@@ -110,6 +110,13 @@ class MatchApiTest < Minitest::Test
     assert_equal ["echo"], match.captures
   end
 
+  def test_match_yields_and_returns_the_block_value
+    result = Onibi::Regexp.new("a").match("ba") { |matched| [matched[0], matched.begin(0)] }
+
+    assert_equal ["a", 1], result
+    assert_nil Onibi::Regexp.new("z").match("a") { :unexpected }
+  end
+
   def test_scan_and_gsub_use_the_same_vm_match_path
     regexp = Onibi::Regexp.new("a+")
 
