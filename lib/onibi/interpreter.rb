@@ -331,6 +331,11 @@ module Onibi
             [length, marked]
           end
         else
+          if (node.is_a?(Onibi::AST::Escape) || node.is_a?(SemanticBytecode::Escape)) && node.kind == :grapheme
+            lengths = grapheme_cluster_lengths(characters, cursor)
+            return lengths.to_a.map { |length| [length, captures.dup] }
+          end
+
           length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
           return [] unless length
 
@@ -490,6 +495,7 @@ module Onibi
       def transition_lengths(label, characters, cursor, captures, flags = {})
         opcode, operand = label
         return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
+        return grapheme_cluster_lengths(characters, cursor) if opcode == :match_escape && operand.kind == :grapheme
 
         length = transition_length(label, characters, cursor, flags, captures)
         length ? [length] : []
@@ -2315,11 +2321,16 @@ module Onibi
       # marks, variation selectors, emoji modifiers, and ZWJ joins stay local
       # to this transition, so the VM does not need AST state at runtime.
       def grapheme_cluster_length(characters, cursor)
+        grapheme_cluster_lengths(characters, cursor)&.first
+      end
+
+      def grapheme_cluster_lengths(characters, cursor)
         return nil if cursor >= characters.length
-        return 2 if characters[cursor] == "\r" && characters[cursor + 1] == "\n"
-        return 2 if regional_indicator?(characters[cursor]) && regional_indicator?(characters[cursor + 1])
+        return [2] if characters[cursor] == "\r" && characters[cursor + 1] == "\n"
+        return [2] if regional_indicator?(characters[cursor]) && regional_indicator?(characters[cursor + 1])
 
         position = cursor + 1
+        alternatives = []
         loop do
           position += 1 while position < characters.length && grapheme_extension?(characters[position])
           break unless position < characters.length && characters[position] == "\u200D"
@@ -2327,9 +2338,10 @@ module Onibi
           position += 1
           break if position >= characters.length
 
+          alternatives << position - cursor if grapheme_extension?(characters[cursor])
           position += 1
         end
-        position - cursor
+        ([position - cursor] + alternatives).uniq.sort.reverse
       end
 
       def grapheme_extension?(character)

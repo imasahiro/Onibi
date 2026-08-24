@@ -48,6 +48,15 @@ class EscapeAndBoundaryTest < Minitest::Test
     end
   end
 
+  def test_grapheme_escape_backtracks_cluster_boundaries
+    input = "क्\u200dष"
+    expected = Regexp.new("\\X\\X").match(input)
+    actual = Onibi::Regexp.new("\\X\\X").match(input)
+
+    assert_equal expected[0], actual[0]
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
   def test_word_boundaries
     assert Onibi::Regexp.new("\\bcat\\b").match?("a cat!")
     refute Onibi::Regexp.new("\\bcat\\b").match?("scatter")
