@@ -64,6 +64,14 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute Onibi::Regexp.new("\\Bcat\\B").match?("a cat!")
   end
 
+  def test_word_boundaries_include_mri_numeric_symbols
+    pattern = "\\bx"
+    input = "²x"
+
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    assert_equal Regexp.new("\\Bx").match?(input), Onibi::Regexp.new("\\Bx").match?(input)
+  end
+
   def test_start_match_anchor
     assert Onibi::Regexp.new("\\Gcat").match?("cat nap")
     refute Onibi::Regexp.new("\\Gcat").match?("a cat")

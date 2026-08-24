@@ -2341,7 +2341,7 @@ module Onibi
       def boundary_word?(character)
         return Onibi::CharacterPredicates.word?(character) if character.encoding == Encoding::ASCII_8BIT
 
-        Onibi::UnicodeProperties.word?(unicode_character(character))
+        Onibi::UnicodeProperties.boundary_word?(unicode_character(character))
       end
 
       # Returns the number of characters in one extended grapheme cluster.

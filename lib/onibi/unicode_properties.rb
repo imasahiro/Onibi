@@ -85,6 +85,10 @@ module Onibi
       false
     end
 
+    def boundary_word?(character)
+      matches?("Word", character) || [0xb2, 0xb3, 0xb9, 0xbc, 0xbd, 0xbe].include?(character.codepoints.first)
+    end
+
     def normalize_name(name)
       normalized = name.sub("^", "")
       return normalized if normalized.start_with?("In") && BLOCK_LOOKUP.key?(normalized.delete_prefix("In"))
