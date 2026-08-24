@@ -1758,9 +1758,7 @@ module Onibi
       def discard_failed_quantified_suffix_captures(body, characters, cursor, captures, flags)
         parts = absence_sequence_parts(body)
         quantifier = parts.first
-        return captures unless parts.length > 1 &&
-                               (quantifier.is_a?(Onibi::AST::Quantifier) ||
-                                quantifier.is_a?(SemanticBytecode::Quantifier))
+        return captures unless parts.length > 1 && quantifier.is_a?(SemanticBytecode::Quantifier)
         return captures unless quantifier.kind == :+ && quantifier.maximum.nil?
 
         probe = captures[:__match_probe] || cursor
