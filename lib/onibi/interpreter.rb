@@ -774,7 +774,7 @@ module Onibi
 
         return [] if zero_width_star_absence?(node.body, characters, cursor)
 
-        quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures)
+        quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
         return quantified_suffix if quantified_suffix
 
         quantified = quantified_absence_length(node.body, characters, cursor)
@@ -866,23 +866,56 @@ module Onibi
         maximum.downto(0).map { |length| [length, captures] }
       end
 
-      def quantified_suffix_absence_results(body, characters, cursor, captures)
+      def quantified_suffix_absence_results(body, characters, cursor, captures, flags = {})
         parts = absence_sequence_parts(body)
         quantifier = parts.first
         return unless parts.length > 1 &&
                       (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
-        return unless quantifier.kind == :* && quantifier.maximum.nil? && !contains_absence_node?(body)
+        return unless quantifier.maximum.nil? && !contains_absence_node?(body)
+
+        repeated_atom = quantifier.kind == :+ && repeated_quantified_atom_suffix?(quantifier, parts[1])
+        return unless quantifier.kind == :* || repeated_atom
+
+        if repeated_atom
+          atom = literal_value(quantifier.expression)
+          run = repeated_atom_run_length(atom, characters, cursor)
+          return unless run >= quantifier.minimum && cursor + run < characters.length
+
+          results = node_results(body, characters, cursor, captures, flags)
+          target = results.find { |length, _state| length == run }
+          return unless target
+
+          following = characters[cursor + run, atom.length].join
+          return if following == atom
+
+          state = target.last.dup
+          state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+          return [[(run + 1) / 2, state]]
+        end
 
         maximum = quantified_absence_length(quantifier, characters, cursor)
         return unless maximum&.positive?
 
-        results = node_results(body, characters, cursor, captures, {})
+        results = node_results(body, characters, cursor, captures, flags)
         target = results.find { |length, _state| length == maximum + 1 }
         return unless target
 
         state = target.last.dup
         state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
         [[maximum, state]]
+      end
+
+      def repeated_quantified_atom_suffix?(quantifier, suffix)
+        atom = literal_value(quantifier.expression)
+        atom && literal_value(suffix) == atom
+      end
+
+      def repeated_atom_run_length(atom, characters, cursor)
+        return 0 unless atom && !atom.empty?
+
+        position = cursor
+        position += atom.length while characters[position, atom.length].join == atom
+        position - cursor
       end
 
       def contains_absence_node?(node)
