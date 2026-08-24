@@ -71,20 +71,16 @@ module Onibi
     def casefold_matches?(name, character)
       return true if matches?(name, character)
 
-      if %w[Lower Upper].include?(name)
-        opposite = name == "Lower" ? "Upper" : "Lower"
-        return matches?(opposite, character)
-      end
-      return false unless %w[Ll Lu Lt].include?(name)
-
       variants = [character.downcase, character.upcase, character.capitalize]
       return true if variants.any? do |variant|
         variant.length == 1 && character.casecmp?(variant) && matches?(name, variant)
       end
 
+      return false unless %w[Lower Upper Ll Lu Lt].include?(name)
+
       # These two Unicode mappings are multi-stage casefold closures in MRI.
       return true if name == "Ll" && character == "\u0345"
-      return true if name == "Lu" && character == "\u00DF"
+      return true if %w[Lu Upper].include?(name) && character == "\u00DF"
 
       false
     end

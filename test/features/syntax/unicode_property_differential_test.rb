@@ -149,6 +149,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   def test_ignorecase_general_categories_match_both_letter_cases
     [["\\p{Ll}", "A", true], ["\\p{Lu}", "a", true],
      ["\\p{Ll}", "ǅ", true], ["\\p{Lu}", "ı", false],
+     ["\\p{Greek}", "ͅ", true], ["\\p{Upper}", "ß", true],
+     ["\\p{Upper}", "ꝷ", false],
      ["[\\p{Ll}]", "É", true], ["[\\p{Lu}]", "é", true]].each do |pattern, input, expected|
       assert_same_outcome(pattern, input, expected, Regexp::IGNORECASE)
     end

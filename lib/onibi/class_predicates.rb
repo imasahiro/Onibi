@@ -191,8 +191,7 @@ module Onibi
       end
 
       matched = UnicodeProperties.matches?(name, character)
-      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched &&
-                                                             %w[Lower Upper Ll Lu Lt].include?(name)
+      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched
       negated ? !matched : matched
     end
 
