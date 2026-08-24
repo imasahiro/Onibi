@@ -1078,10 +1078,14 @@ module Onibi
         end
 
         suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
+        return state if suffix_numbers.empty? && scope[2].to_i == 1 && checkpoint_position != cursor
 
         parent = scope[3]
         expression_number = capture_numbers(scope.first.expression).first
         value = checkpoint[expression_number]
+        return state if suffix_numbers.empty? && scope[2].to_i == 1 &&
+                        value.is_a?(Array) && value[0] != cursor
+
         restored = {}
         if parent && value.is_a?(Array) && value.length == 2 &&
            value[1] - value[0] == minimum_node_width(scope.first.expression)

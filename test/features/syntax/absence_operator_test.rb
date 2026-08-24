@@ -485,6 +485,7 @@ class AbsenceOperatorTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?~((ab|a)+b))")
 
     assert_equal %w[a ab], regexp.match("ab").to_a.first(2)
+    assert_equal ["aa", nil], regexp.match("aab").to_a.first(2)
     assert_equal ["ab", nil], regexp.match("abb").to_a.first(2)
   end
 
