@@ -20,7 +20,9 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{L}", %w[A あ], %w[1 -]],
     ["\\p{M}", ["\u0301"], ["A"]],
     ["\\p{P}", ["-", "\u2014"], ["A"]],
-    ["\\p{Z}", [" ", "\u2003"], ["A"]]
+    ["\\p{Z}", [" ", "\u2003"], ["A"]],
+    ["\\p{N}", ["Ⅰ", "²", "①"], ["A"]],
+    ["\\p{S}", ["©", "€"], ["A"]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri

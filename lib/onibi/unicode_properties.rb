@@ -21,12 +21,12 @@ module Onibi
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
       "Cyrillic" => :cyrillic?, "Arabic" => :arabic?, "Alpha" => :letter?,
       "Letter" => :letter?, "Alnum" => :alnum?, "Digit" => :digit?, "Nd" => :digit?,
-      "Number" => :digit?, "Lower" => :lower?, "Upper" => :upper?, "Space" => :space?,
+      "Number" => :number?, "Lower" => :lower?, "Upper" => :upper?, "Space" => :space?,
       "Word" => :word?, "XDigit" => :xdigit?, "Blank" => :blank?, "Cntrl" => :cntrl?,
       "Graph" => :graph?, "Print" => :print?, "Punct" => :punct?,
       "L" => :letter?, "Lu" => :upper?, "Ll" => :lower?, "Lt" => :titlecase?,
       "Lm" => :modifier_letter?, "Lo" => :other_letter?, "M" => :mark?, "Mark" => :mark?,
-      "N" => :digit?, "P" => :punct?, "S" => :symbol?, "Symbol" => :symbol?,
+      "N" => :number?, "P" => :punct?, "S" => :symbol?, "Symbol" => :symbol?,
       "Z" => :separator?, "Separator" => :separator?, "C" => :other?, "Other" => :other?
     }.freeze
 

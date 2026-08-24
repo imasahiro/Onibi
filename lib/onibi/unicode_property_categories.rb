@@ -19,7 +19,7 @@ module Onibi
     ].freeze
 
     def letter?(character)
-      character.downcase != character.upcase || uncased_letter?(character)
+      !numeric_symbol?(character) && (character.downcase != character.upcase || uncased_letter?(character))
     end
 
     def uncased_letter?(character)
@@ -38,7 +38,7 @@ module Onibi
     end
 
     def alnum?(character)
-      letter?(character) || digit?(character)
+      letter?(character) || digit?(character) || numeric_symbol?(character)
     end
 
     def lower?(character)
@@ -80,7 +80,7 @@ module Onibi
 
     def punct?(character)
       codepoint = character.codepoints.first
-      codepoint.between?(33, 47) || codepoint.between?(58, 64) ||
+      codepoint == 0xB7 || codepoint.between?(33, 47) || codepoint.between?(58, 64) ||
         codepoint.between?(91, 96) || codepoint.between?(123, 126) ||
         codepoint == 0x66A || codepoint.between?(0x2010, 0x2027) ||
         codepoint.between?(0x2030, 0x2043) || codepoint.between?(0x3001, 0x303F) ||
@@ -108,8 +108,20 @@ module Onibi
     end
 
     def other?(character)
-      !letter?(character) && !digit?(character) && !mark?(character) && !space?(character) &&
+      !letter?(character) && !digit?(character) && !numeric_symbol?(character) && !mark?(character) && !space?(character) &&
         !punct?(character) && !symbol?(character)
+    end
+
+    def numeric_symbol?(character)
+      codepoint = character.codepoints.first
+      codepoint.between?(0xB2, 0xB3) || codepoint == 0xB9 || codepoint.between?(0xBC, 0xBD) ||
+        codepoint.between?(0xBF0, 0xBF2) || codepoint.between?(0x2070, 0x2079) ||
+        codepoint.between?(0x2080, 0x2089) || codepoint.between?(0x2150, 0x2182) ||
+        codepoint.between?(0x2460, 0x249B) || codepoint.between?(0x2776, 0x2793)
+    end
+
+    def number?(character)
+      digit?(character) || numeric_symbol?(character)
     end
 
     def titlecase?(character)
