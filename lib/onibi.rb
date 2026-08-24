@@ -179,7 +179,8 @@ module Onibi
       when String
         source = pattern.dup
       else
-        raise TypeError, "no implicit conversion of #{pattern.class} into String"
+        source = String.try_convert(pattern)
+        raise TypeError, "no implicit conversion of #{pattern.class} into String" unless source
       end
 
       @source = source

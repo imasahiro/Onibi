@@ -3,6 +3,13 @@
 require "test_helper"
 
 class RegexpConstructorTest < Minitest::Test
+  def test_constructor_accepts_to_str_pattern_like_mri
+    pattern = Object.new
+    pattern.define_singleton_method(:to_str) { "a+" }
+
+    assert Onibi::Regexp.new(pattern).match?("aaa")
+  end
+
   def test_new_and_compile_create_equivalent_regexp_instances
     from_new = Onibi::Regexp.new("cat", ["ignorecase"])
     from_compile = Onibi::Regexp.compile("cat", ["ignorecase"])
