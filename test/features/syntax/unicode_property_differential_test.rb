@@ -222,6 +222,19 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_fixed_character_class_quantifier_can_split_a_reverse_fold
+    [
+      %w[[s]{2} ß],
+      %w[[ſ]{2} ß],
+      %w[[ß]{2} ß]
+    ].each do |pattern, input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+  end
+
   def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary
     pattern = "[[:alpha:]]\\b\\p{Letter}?"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")

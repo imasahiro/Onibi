@@ -350,6 +350,15 @@ module Onibi
             end
           end
 
+          if flags[:ignorecase] && flags[:casefold_repetition] && node.parts.length > 1 &&
+             node.parts.all? do |part|
+               part.is_a?(SemanticBytecode::CharacterClass) && part.casefolds.empty?
+             end &&
+             node.parts.none? { |part| part.value.start_with?("^") }
+            class_lengths = casefold_class_sequence_lengths(node.parts, characters, cursor, flags)
+            return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
+          end
+
           states = [[0, captures]]
           parts = node.parts
           index = 0
@@ -560,6 +569,15 @@ module Onibi
         end.flatten(1)
       end
 
+      def casefold_class_sequence_lengths(parts, characters, cursor, flags)
+        maximum = characters.length - cursor
+        1.upto(maximum).filter_map do |width|
+          slice = characters[cursor, width]
+          folded = slice.join.downcase(:fold)
+          width if folded_atoms_match?(parts, folded, flags)
+        end
+      end
+
       # MRI changes branch order for an optional folded literal. With no
       # suffix it keeps the consuming branch first. With a different suffix,
       # it keeps only the empty branch, as in `s?a` matching `a` in `ſa`.
@@ -572,10 +590,27 @@ module Onibi
         return false unless expression.is_a?(SemanticBytecode::Literal)
 
         source = characters[cursor]
-        return false unless source && source != expression.value
+        return false unless source
+
+        expression_special = expression.value.downcase(:fold) != expression.value.downcase
+        return false unless source != expression.value || expression_special
         return false unless source.downcase(:fold) == expression.value.downcase(:fold)
         return :greedy unless next_node
+
+        special_source = source.downcase(:fold) != source.downcase ||
+                         (source == expression.value && expression_special)
+        return :greedy unless special_source
+        return :greedy if expression.value.downcase(:fold).length > expression.value.length
+        return :greedy unless next_node.is_a?(SemanticBytecode::Literal) ||
+                              next_node.is_a?(SemanticBytecode::CharacterClass) ||
+                              next_node.is_a?(SemanticBytecode::Quantifier)
         return :greedy if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.zero?
+        if next_node.is_a?(SemanticBytecode::Quantifier) &&
+           next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+           next_node.expression.casefolds.any?
+          return :greedy
+        end
+        return :zero_only if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.maximum != 1
         return false if same_fold_literal?(next_node, expression)
 
         :zero_only
@@ -584,7 +619,8 @@ module Onibi
       def same_fold_literal?(node, expression)
         literal = node
         literal = node.expression if node.is_a?(SemanticBytecode::Quantifier)
-        literal.is_a?(SemanticBytecode::Literal) &&
+        literal = node if node.is_a?(SemanticBytecode::CharacterClass) && node.casefolds.empty?
+        (literal.is_a?(SemanticBytecode::Literal) || literal.is_a?(SemanticBytecode::CharacterClass)) &&
           literal.value.downcase(:fold) == expression.value.downcase(:fold)
       end
 
@@ -635,13 +671,20 @@ module Onibi
         end
 
         if flags[:ignorecase] && quantifier.minimum == quantifier.maximum &&
-           quantifier.minimum > 1 && quantifier.expression.is_a?(SemanticBytecode::Literal)
+           quantifier.minimum > 1 &&
+           (quantifier.expression.is_a?(SemanticBytecode::Literal) ||
+            quantifier.expression.is_a?(SemanticBytecode::CharacterClass))
           # A fixed repetition is one logical literal sequence. Matching each
           # operand alone would lose reverse folds such as `ſ{2}` versus `ß`.
           repeated = SemanticBytecode::Sequence.new(
             Array.new(quantifier.minimum, quantifier.expression)
           )
-          return node_results(repeated, characters, cursor, captures, flags)
+          repetition_flags = if quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
+                               flags.merge(casefold_repetition: true)
+                             else
+                               flags
+                             end
+          return node_results(repeated, characters, cursor, captures, repetition_flags)
         end
 
         return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
