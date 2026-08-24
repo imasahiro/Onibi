@@ -226,7 +226,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     [
       %w[[s]{2} ß],
       %w[[ſ]{2} ß],
-      %w[[ß]{2} ß]
+      %w[[ß]{2} ß],
+      %w[[ß]{2} sßs]
     ].each do |pattern, input|
       mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
       onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)

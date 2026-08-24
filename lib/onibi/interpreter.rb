@@ -350,11 +350,11 @@ module Onibi
             end
           end
 
-          if flags[:ignorecase] && flags[:casefold_repetition] && node.parts.length > 1 &&
-             node.parts.all? do |part|
-               part.is_a?(SemanticBytecode::CharacterClass) && part.casefolds.empty?
-             end &&
-             node.parts.none? { |part| part.value.start_with?("^") }
+          class_repetition = flags[:ignorecase] && flags[:casefold_repetition] &&
+                             node.parts.length > 1 &&
+                             node.parts.all? { |part| part.is_a?(SemanticBytecode::CharacterClass) } &&
+                             node.parts.none? { |part| part.value.start_with?("^") }
+          if class_repetition
             class_lengths = casefold_class_sequence_lengths(node.parts, characters, cursor, flags)
             return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
           end
@@ -571,10 +571,14 @@ module Onibi
 
       def casefold_class_sequence_lengths(parts, characters, cursor, flags)
         maximum = characters.length - cursor
+        folded_pattern = parts.map { |part| part.value.downcase(:fold) }.join
+        expanded_classes = parts.any? { |part| part.casefolds.any? } &&
+                           parts.all? { |part| part.value.each_char.one? }
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
           folded = slice.join.downcase(:fold)
-          width if folded_atoms_match?(parts, folded, flags)
+          width if (expanded_classes && folded == folded_pattern) ||
+                   (!expanded_classes && folded_atoms_match?(parts, folded, flags))
         end
       end
 
