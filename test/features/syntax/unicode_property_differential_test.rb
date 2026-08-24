@@ -90,6 +90,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InNKo}", ["߀", "߷"], %w[A あ]],
     ["\\p{InCoptic}", ["Ⲁ", "⳹"], %w[A α]],
     ["\\p{InCyrillic_Extended_C}", %w[ᲀ ᲏], %w[A Ж]],
+    ["\\p{InCyrillic_Extended_A}", %w[ⷠ ⷿ], %w[A Ж]],
     ["\\p{InCyrillic_Extended_D}", %w[𞀰 𞂏], %w[A Ж]],
     ["\\p{InGeorgian_Extended}", %w[Ა Ჿ], %w[A Ж]],
     ["\\p{InArabic_Presentation_Forms_A}", %w[ﭐ ﷲ], %w[A ش]],
