@@ -66,6 +66,7 @@ module Onibi
       Ethiopic Cherokee Canadian_Aboriginal Ogham Runic Khmer Mongolian Hiragana Katakana
       Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility Kana_Extended_A
       CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms Emoticons Miscellaneous_Symbols Dingbats
+      Kana_Extended_B
       Mathematical_Operators Geometric_Shapes Letterlike_Symbols Currency_Symbols
       General_Punctuation CJK_Symbols_and_Punctuation Greek_Extended Latin_Extended_Additional
       Latin_Extended_C Latin_Extended_D Latin_Extended_E Latin_Extended_F Latin_Extended_G
