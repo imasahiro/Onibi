@@ -71,6 +71,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "NKo" => [[0x07C0, 0x07FF]],
       "Coptic" => [[0x2C80, 0x2CFF]],
       "Cyrillic_Extended_C" => [[0x1C80, 0x1C8F]],
+      "Cyrillic_Extended_D" => [[0x1E030, 0x1E08F]],
       "Arabic_Presentation_Forms_A" => [[0xFB50, 0xFDFF]],
       "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
     }.freeze

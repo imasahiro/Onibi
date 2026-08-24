@@ -94,6 +94,7 @@ module Onibi
       NKo
       Coptic
       Cyrillic_Extended_C
+      Cyrillic_Extended_D
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze

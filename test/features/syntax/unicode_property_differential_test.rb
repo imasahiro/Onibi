@@ -85,6 +85,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InNKo}", ["߀", "߷"], %w[A あ]],
     ["\\p{InCoptic}", ["Ⲁ", "⳹"], %w[A α]],
     ["\\p{InCyrillic_Extended_C}", %w[ᲀ ᲏], %w[A Ж]],
+    ["\\p{InCyrillic_Extended_D}", %w[𞀰 𞂏], %w[A Ж]],
     ["\\p{InArabic_Presentation_Forms_A}", %w[ﭐ ﷲ], %w[A ش]],
     ["\\p{InArabic_Presentation_Forms_B}", %w[ﹰ ﹶ], %w[A ش]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
