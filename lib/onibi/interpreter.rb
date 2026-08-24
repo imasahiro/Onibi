@@ -673,6 +673,14 @@ module Onibi
         if next_node.is_a?(SemanticBytecode::Quantifier) &&
            next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
            next_node.maximum && next_node.maximum > next_node.minimum &&
+           Onibi::ClassPredicates.matches?(next_node.expression.value,
+                                           expression.value.downcase(:fold),
+                                           ignorecase: true)
+          return :greedy
+        end
+        if next_node.is_a?(SemanticBytecode::Quantifier) &&
+           next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+           next_node.maximum && next_node.maximum > next_node.minimum &&
            same_fold_literal?(next_node, expression)
           return :greedy
         end
@@ -2921,8 +2929,17 @@ module Onibi
       end
 
       def class_match?(node, character, flags)
-        Onibi::ClassPredicates.matches?(node.value, character,
-                                        ignorecase: flags[:ignorecase],
+        matched = Onibi::ClassPredicates.matches?(node.value, character,
+                                                  ignorecase: flags[:ignorecase],
+                                                  encoding: flags[:encoding])
+        return true if matched
+        return false unless flags[:ignorecase]
+
+        folded = character.downcase(:fold)
+        return false unless folded.each_char.one?
+
+        Onibi::ClassPredicates.matches?(node.value, folded,
+                                        ignorecase: true,
                                         encoding: flags[:encoding])
       end
 
