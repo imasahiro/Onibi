@@ -257,9 +257,7 @@ module Onibi
         when SemanticBytecode::Sequence
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
-            folded_length = (value.length..(value.length * 2)).find do |length|
-              casefold_equal?(value, characters[cursor, length].to_a.join)
-            end
+            folded_length = casefold_lengths(value, characters, cursor).first
             return folded_length ? [[folded_length, captures.dup]] : []
           end
 
@@ -568,10 +566,7 @@ module Onibi
         when :match_literal
           value = operand.value.each_char.to_a
           if flags[:ignorecase]
-            (value.length..(value.length * 2)).find do |length|
-              candidate = characters[cursor, length].to_a.join
-              casefold_equal?(value.join, candidate)
-            end
+            casefold_lengths(value.join, characters, cursor).first
           else
             characters[cursor, value.length] == value ? value.length : nil
           end
@@ -2318,11 +2313,12 @@ module Onibi
         casefold_source = flags[:ignorecase] && !node.value.start_with?("^") &&
                           !node.value.include?("[") && !node.value.include?(":") &&
                           !node.value.include?("&&") && !node.value.include?("\\")
-        lengths << 1 if casefold_source && node.value.each_char.any? do |candidate|
-          casefold_equal?(candidate, character)
-        end && !lengths.include?(1)
-        lengths << 2 if casefold_source && node.value.each_char.any? do |candidate|
-          casefold_equal?(candidate, characters[cursor, 2].to_a.join)
+        if casefold_source
+          node.value.each_char do |candidate|
+            casefold_lengths(candidate, characters, cursor).each do |length|
+              lengths << length unless lengths.include?(length)
+            end
+          end
         end
         lengths
       rescue RangeError, ArgumentError
@@ -2471,6 +2467,13 @@ module Onibi
 
       def casefold_equal?(left, right)
         left.downcase(:fold) == right.downcase(:fold)
+      end
+
+      def casefold_lengths(value, characters, cursor)
+        maximum = value.downcase(:fold).length
+        (1..maximum).select do |length|
+          casefold_equal?(value, characters[cursor, length].to_a.join)
+        end
       end
 
       def property_matches?(name, character, ignorecase)

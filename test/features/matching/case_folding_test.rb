@@ -23,6 +23,11 @@ class CaseFoldingTest < Minitest::Test
     assert Onibi::Regexp.new("ß", ["ignorecase"]).match?("SS")
   end
 
+  def test_ignorecase_matches_unicode_ligature_case_folding
+    assert Onibi::Regexp.new("ﬃ", ["ignorecase"]).match?("ffi")
+    assert Onibi::Regexp.new("ffi", ["ignorecase"]).match?("ﬃ")
+  end
+
   def test_ignorecase_matches_sharp_s_case_pair
     assert Onibi::Regexp.new("ß", ["ignorecase"]).match?("ẞ")
   end

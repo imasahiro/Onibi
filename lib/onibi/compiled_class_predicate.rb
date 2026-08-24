@@ -171,7 +171,7 @@ module Onibi
       def expansion_mode(source, ignorecase)
         return :none unless ignorecase
 
-        source.include?("ß") ? :full_fold : :simple_casefold
+        source.each_char.any? { |character| character.downcase(:fold).length > 1 } ? :full_fold : :simple_casefold
       end
 
       def encoding_applicability(source)
