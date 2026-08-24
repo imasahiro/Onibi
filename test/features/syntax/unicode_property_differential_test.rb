@@ -169,6 +169,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_ignorecase_upper_posix_class_does_not_accept_expanding_lower_fold
+    pattern = "[[:upper:]]+"
+    %w[ᾀ ᾳ ß A].each do |input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+  end
+
   def test_ignorecase_bare_negated_property_uses_casefold_closure
     pattern = "\\P{Ll}\\z"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
@@ -270,6 +280,61 @@ class UnicodePropertyDifferentialTest < Minitest::Test
 
       assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
     end
+  end
+
+  def test_ignorecase_greek_fold_boundary_does_not_use_a_distant_candidate_alone
+    pattern = "ᾀἀ{1,2}"
+    input = "ᾀἀιéἀιSſ"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_ignorecase_greek_fold_quantifier_can_be_followed_by_a_class
+    pattern = "ᾀ{1,2}[s]+"
+    input = "ᾀssßÉSS"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_ignorecase_class_fold_alternate_preserves_following_quantifier_boundary
+    pattern = "[ſ]{1,2}ι{1,2}"
+    input = "sſιSιe"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_ignorecase_optional_fold_precedes_a_bounded_same_fold_class
+    pattern = "ſ?[s]{1,2}ß{1,2}"
+    input = "éſſSSS"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_ignorecase_optional_fold_precedes_an_expanding_class
+    pattern = "ſ?[ß]ᾀ?"
+    input = "éſſSSS"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_ignorecase_class_and_literal_can_join_expanding_fold_sequences
+    pattern = "[ß]ẞἀ+"
+    input = "sẞSἀιᾀÉ"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
   def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary

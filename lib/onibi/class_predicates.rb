@@ -50,7 +50,7 @@ module Onibi
       return true if UnicodeProperties.matches_normalized?(property, normalized_character)
       return false unless ignorecase && %w[Lower Upper].include?(property)
 
-      UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", normalized_character)
+      UnicodeProperties.casefold_matches?(property, normalized_character)
     rescue EncodingError
       false
     end

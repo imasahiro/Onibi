@@ -418,12 +418,16 @@ module Onibi
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
               previous_part = part_index.positive? ? parts[part_index - 1] : nil
-              if !mri_fold_boundary_relaxed?(previous_part, part, consumed) &&
+              boundary_relaxed = mri_fold_boundary_relaxed?(previous_part, part, consumed) ||
+                                 mri_fold_boundary_lookahead_relaxed?(previous_part, part,
+                                                                      parts[index], characters,
+                                                                      cursor + consumed)
+              if !boundary_relaxed &&
                  mri_multi_fold_literal_boundary?(part, parts[index], characters,
                                                   cursor + consumed, flags)
                 part_results = []
               end
-              if !mri_fold_boundary_relaxed?(previous_part, part, consumed) &&
+              if !boundary_relaxed &&
                  mri_multi_fold_quantifier_boundary?(part, parts[index], characters,
                                                      cursor + consumed, flags)
                 part_results = []
@@ -560,19 +564,34 @@ module Onibi
           break if prefix.length >= 2
           break unless (prefix.empty? && part.is_a?(SemanticBytecode::CharacterClass)) ||
                        (prefix.length == 1 && part.is_a?(SemanticBytecode::Literal) &&
-                        part.value.each_char.one? && part.value.downcase(:fold).each_char.one?)
+                        part.value.each_char.one?)
 
           prefix << part
         end
         return [] if prefix.length < 2 || prefix.first.value.start_with?("^")
 
-        maximum = [characters.length - cursor, prefix.length].min
+        maximum = [characters.length - cursor, casefold_prefix_width(prefix)].min
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
+          if prefix.first.is_a?(SemanticBytecode::CharacterClass) &&
+             prefix.first.casefolds.any? &&
+             slice.first.downcase(:fold).length == 1 &&
+             slice.first != slice.first.downcase(:fold)
+            next
+          end
+
           folded = slice.join.downcase(:fold)
           expanded_class = Array(prefix.first.casefolds).any? do |source, value|
             %w[ß ẞ].include?(source) && value == "ss"
           end
+          expected_fold_characters = prefix.flat_map do |part|
+            if part.is_a?(SemanticBytecode::Literal)
+              (part.casefold || part.value).each_char.to_a
+            else
+              part.casefolds.flat_map { |_source, value| value.each_char.to_a }
+            end
+          end.uniq
+          next unless folded.each_char.all? { |character| expected_fold_characters.include?(character) }
           next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class)
 
           next [[width, captures.dup]] if prefix.length == parts.length
@@ -582,6 +601,17 @@ module Onibi
             [width + length, inner]
           end
         end.flatten(1)
+      end
+
+      def casefold_prefix_width(parts)
+        parts.sum do |part|
+          if part.is_a?(SemanticBytecode::Literal)
+            (part.casefold || part.value).length
+          else
+            lengths = part.casefolds.map { |_source, folded| folded.length }
+            [1, *lengths].max
+          end
+        end
       end
 
       def casefold_class_sequence_lengths(parts, characters, cursor, flags)
@@ -634,11 +664,19 @@ module Onibi
            next_node.expression.casefold&.length.to_i > next_node.expression.value.length
           return :greedy
         end
-        return :zero_only if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.maximum != 1
         # Keep the consuming candidate when the following literal has an
         # expanding fold. For example, `s?ß` must match `ſẞ` from position 0.
         return :greedy if next_node.is_a?(SemanticBytecode::Literal) &&
                           next_node.casefold&.length.to_i > next_node.value.length
+        return :greedy if next_node.is_a?(SemanticBytecode::CharacterClass) &&
+                          next_node.casefolds.any?
+        if next_node.is_a?(SemanticBytecode::Quantifier) &&
+           next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+           next_node.maximum && next_node.maximum > next_node.minimum &&
+           same_fold_literal?(next_node, expression)
+          return :greedy
+        end
+        return :zero_only if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.maximum != 1
         return false if same_fold_literal?(next_node, expression)
 
         :zero_only
@@ -660,11 +698,6 @@ module Onibi
 
         if next_node.is_a?(SemanticBytecode::Quantifier)
           return false unless next_node.minimum.positive?
-          if next_node.maximum && next_node.maximum > next_node.minimum &&
-             next_node.expression.is_a?(SemanticBytecode::Literal) &&
-             later_fold_candidate?(next_node.expression, characters, cursor + 2)
-            return false
-          end
           if next_node.expression.is_a?(SemanticBytecode::Literal) &&
              next_node.expression.casefold&.length.to_i > next_node.expression.value.length
             return false
@@ -679,16 +712,70 @@ module Onibi
           !next_node.value.include?("\\") && !next_node.value.include?("&&")
       end
 
+      def mri_fold_boundary_lookahead_relaxed?(previous_node, node, next_node, characters, cursor)
+        return false unless previous_node.is_a?(SemanticBytecode::Quantifier)
+        return false unless previous_node.minimum.zero?
+        return false unless previous_node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless node.is_a?(SemanticBytecode::Literal)
+        return false unless previous_node.expression.value == node.value
+        return false unless next_node.is_a?(SemanticBytecode::Quantifier)
+        return false unless next_node.maximum && next_node.maximum > next_node.minimum
+        return false unless next_node.expression.is_a?(SemanticBytecode::Literal)
+
+        later_fold_candidate?(next_node.expression, characters, cursor + 2)
+      end
+
       def later_fold_candidate?(literal, characters, cursor)
         fold = literal.casefold || literal.value
         characters.drop(cursor).any? { |character| character.downcase(:fold) == fold }
+      end
+
+      def later_class_candidate?(character_class, characters, cursor, flags)
+        first = characters[cursor - 1]
+        characters.drop(cursor).any? do |character|
+          character != first &&
+            Onibi::ClassPredicates.matches?(character_class.value, character,
+                                            ignorecase: flags[:ignorecase],
+                                            encoding: flags[:encoding])
+        end
       end
 
       def mri_multi_fold_quantifier_boundary?(node, next_node, characters, cursor, flags)
         return false unless node.is_a?(SemanticBytecode::Quantifier)
         return false unless node.minimum.positive?
         return false if node.maximum.nil?
+        if node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+           node.expression.value.each_char.one? &&
+           node.expression.value.downcase(:fold) != node.expression.value &&
+           characters[cursor] != node.expression.value &&
+           characters[cursor] == characters[cursor]&.downcase(:fold) &&
+           characters[cursor]&.downcase(:fold) == node.expression.value.downcase(:fold) &&
+           next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.positive? &&
+           next_node.maximum && next_node.expression.is_a?(SemanticBytecode::Literal) &&
+           next_node.expression.value.downcase(:fold) != node.expression.value.downcase(:fold)
+          return true
+        end
         return false unless node.expression.is_a?(SemanticBytecode::Literal)
+        return false if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.zero?
+
+        next_expression = next_node.is_a?(SemanticBytecode::Quantifier) ? next_node.expression : next_node
+        if next_expression.is_a?(SemanticBytecode::CharacterClass)
+          return false unless node.expression.casefold &&
+                              node.expression.casefold.length > node.expression.value.length &&
+                              node.expression.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+          return false if next_expression.value.include?(":") || next_expression.value.include?("\\") ||
+                          next_expression.value.include?("&&") || next_expression.value.start_with?("^")
+
+          if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.maximum.nil?
+            first_class_character = characters[cursor + 1]
+            return true unless first_class_character &&
+                               first_class_character == first_class_character.downcase(:fold)
+
+            return !later_class_candidate?(next_expression, characters, cursor + 2, flags)
+          end
+        elsif !next_expression.is_a?(SemanticBytecode::Literal)
+          return false
+        end
 
         mri_multi_fold_literal_boundary?(node.expression, next_node, characters, cursor, flags)
       end
@@ -2803,9 +2890,7 @@ module Onibi
         lengths << 1 if !flags[:lookbehind_casefold] || !casefold_source || direct_casefold
         if lengths.any?
           lengths.select! do
-            Onibi::ClassPredicates.matches?(node.value, character,
-                                            ignorecase: flags[:ignorecase],
-                                            encoding: flags[:encoding])
+            class_match?(node, character, flags)
           end
         end
         if casefold_source
@@ -2833,6 +2918,12 @@ module Onibi
         lengths
       rescue RangeError, ArgumentError
         lengths
+      end
+
+      def class_match?(node, character, flags)
+        Onibi::ClassPredicates.matches?(node.value, character,
+                                        ignorecase: flags[:ignorecase],
+                                        encoding: flags[:encoding])
       end
 
       def boundary_word?(character, encoding = nil)
