@@ -493,6 +493,10 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal %w[a ac a], regexp.match("ac").to_a.first(3)
     assert_equal ["aa", nil, "a"], regexp.match("aac").to_a.first(3)
+
+    variable = Onibi::Regexp.new("(?~(((ab|a)+)c))")
+    assert_equal ["ab", nil, nil], variable.match("ab").to_a.first(3)
+    assert_equal ["aa", nil, "a"], variable.match("aac").to_a.first(3)
   end
 
   def test_absence_operator_restores_nested_suffix_group_captures

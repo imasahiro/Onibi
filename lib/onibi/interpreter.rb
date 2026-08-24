@@ -1155,6 +1155,27 @@ module Onibi
             hidden = capture_numbers(quantifier.expression)
             parent = quantifier_suffix_scope(body)[3]
             parent_span = parent && captures[parent.number]
+            if suffix_numbers.empty? && parent_span.is_a?(Array) &&
+               quantifier_repetition_count(
+                 quantifier.expression, characters, parent_span[0], parent_span[1], flags
+               ) > 1
+              return captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
+            end
+
+            outer = absence_sequence_parts(body).first
+            if suffix_numbers.empty? && scope[2].to_i > 1 && outer
+              nested_parts = absence_sequence_parts(outer.body)
+              suffix_body = nested_parts.drop(1)
+              suffix_matches = parent_span.is_a?(Array) && suffix_body.any? &&
+                               node_results(
+                                 Onibi::IRGen::YARVIR::SemanticBytecode::Sequence.new(suffix_body),
+                                 characters, parent_span[1], captures, flags
+                               ).any? { |length, _state| length.positive? }
+              unless suffix_matches
+                discard = hidden + [parent&.number]
+                return captures.reject { |key, _value| key.is_a?(Integer) && discard.include?(key) }
+              end
+            end
             if suffix_numbers.empty? && parent_span.is_a?(Array) && parent_span[1] == characters.length
               return captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
             end
