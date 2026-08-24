@@ -217,6 +217,14 @@ class EncodingTest < Minitest::Test
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new(pattern) }
   end
 
+  def test_non_utf8_patterns_reject_unicode_general_category_properties
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      pattern = "\\p{Any}".encode(encoding)
+
+      assert_raises(Onibi::RegexpError) { Onibi::Regexp.new(pattern) }
+    end
+  end
+
   def test_noencoding_patterns_reject_unicode_properties
     assert_raises(Onibi::RegexpError) do
       Onibi::Regexp.new("\\p{Hiragana}", Onibi::Regexp::NOENCODING)

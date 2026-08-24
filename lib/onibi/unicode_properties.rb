@@ -20,6 +20,10 @@ module Onibi
     ASCII_ENCODING_PROPERTIES = %w[
       ASCII Alpha Alnum Digit Lower Upper Space Word XDigit Blank Cntrl Graph Print Punct
     ].freeze
+    NON_UTF8_ENCODING_PROPERTIES = %w[
+      ASCII Han Hiragana Katakana Latin Greek Cyrillic Alpha Alnum Digit Lower Upper Space Word XDigit Blank
+      Cntrl Graph Print Punct
+    ].freeze
     PROPERTY_MATCHERS = {
       "ASCII" => :ascii?, "Any" => :any?, "Han" => :han?, "Hiragana" => :hiragana?,
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
@@ -46,7 +50,11 @@ module Onibi
     end
 
     def valid_for_encoding?(name, encoding)
-      encoding != Encoding::US_ASCII || ASCII_ENCODING_PROPERTIES.include?(normalize_name(name))
+      normalized = normalize_name(name)
+      return ASCII_ENCODING_PROPERTIES.include?(normalized) if encoding == Encoding::US_ASCII
+      return NON_UTF8_ENCODING_PROPERTIES.include?(normalized) if [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+
+      true
     end
 
     def matches?(name, character)

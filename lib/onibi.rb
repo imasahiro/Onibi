@@ -409,13 +409,17 @@ module Onibi
     end
 
     def validate_property_encoding!
-      return unless @source.encoding == Encoding::US_ASCII
+      return unless [Encoding::US_ASCII, Encoding::EUC_JP, Encoding::Windows_31J].include?(@source.encoding)
 
       @source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
         next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
 
-        raise RegexpError, "Unicode property is not supported by US-ASCII"
+        raise RegexpError, "Unicode property is not supported by #{encoding_name_for_property}"
       end
+    end
+
+    def encoding_name_for_property
+      @source.encoding.name
     end
 
     def normalize_timeout(value)
