@@ -55,6 +55,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InGeometric_Shapes}", ["●", "◆"], %w[A ☃]],
     ["\\p{InLetterlike_Symbols}", ["℉", "ℵ"], %w[A ☃]],
     ["\\p{InCurrency_Symbols}", ["€", "₿"], %w[A ☃]],
+    ["\\p{InGeneral_Punctuation}", ["—", "…"], %w[A €]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
     ["[\\N{SNOWMAN}]", ["N"], ["☃", "x"]]
