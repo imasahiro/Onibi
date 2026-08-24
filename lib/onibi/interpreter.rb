@@ -957,6 +957,19 @@ module Onibi
           end
         end
 
+        if quantifier.kind == :* && parts.length == 2 && wildcard_node?(quantifier.expression) &&
+           wildcard_node?(parts[1])
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          boundary = run / 2
+          results = node_results(body, characters, cursor, captures, flags)
+          target = results.find { |length, _state| length == boundary + 1 }
+          if target
+            state = target.last.dup
+            state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+            return [[boundary, state]]
+          end
+        end
+
         return unless quantifier.kind == :*
 
         maximum = quantified_absence_length(quantifier, characters, cursor)
