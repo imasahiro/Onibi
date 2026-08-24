@@ -75,6 +75,7 @@ module Onibi
       Enclosed_Alphanumeric_Supplement
       Mathematical_Alphanumeric_Symbols
       CJK_Compatibility_Ideographs
+      CJK_Strokes
     ].freeze
   end
 end
