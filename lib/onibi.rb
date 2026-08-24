@@ -307,7 +307,7 @@ module Onibi
       ascii_input = input.ascii_only?
       @ascii_input = ascii_input
       @input_encoding = input.encoding
-      requested_position = position.is_a?(Integer) ? position : Integer(position)
+      requested_position = normalize_match_position(position)
       return nil if requested_position.negative? && (requested_position + input.length).negative?
       raise ArgumentError, "invalid byte sequence in #{input.encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT
@@ -320,9 +320,9 @@ module Onibi
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
 
       start = if program.flags[:nullable]
-                nullable_match_position(position, input.length)
+                nullable_match_position(requested_position, input.length)
               else
-                start_position(position, input.length)
+                start_position(requested_position, input.length)
               end
       return nil unless start
 
@@ -480,6 +480,14 @@ module Onibi
       return nil if start.negative? || start > input_length
 
       start
+    end
+
+    def normalize_match_position(position)
+      return position if position.is_a?(Integer)
+      return position.to_i if position.is_a?(Float)
+      return position.to_int if position.respond_to?(:to_int)
+
+      raise TypeError, "no implicit conversion of #{position.class} into Integer"
     end
 
     def nullable_match_position(position, input_length)
