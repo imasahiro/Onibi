@@ -19,6 +19,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Default_Ignorable_Code_Point}", ["\u00ad", "\u200b", "\ufe0f"], %w[A あ]],
     ["\\p{Deprecated}", ["\u0149", "\u0673", "\u0f77", "\u0f79", "\u17a3", "\u206a", "\u2329", "\u{e0001}"], %w[A あ 😀]],
     ["\\p{Diacritic}", ["^", "\u0301", "\u05b0", "\u1ab0", "\u1ab5"], %w[A あ 😀]],
+    ["\\p{Emoji_Component}", ["#", "0", "\u200d", "\ufe0f", "🇯"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
