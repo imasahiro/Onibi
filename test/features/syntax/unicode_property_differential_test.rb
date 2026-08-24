@@ -35,6 +35,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Prepended_Concatenation_Mark}", ["\u0600", "\u0601", "\u06dd"], %w[A あ 😀]],
     ["\\p{Ideographic}", %w[一 漢 𠀀], %w[A あ 😀]],
     ["\\p{Unified_Ideograph}", %w[一 漢 𠀀], %w[A あ 😀]],
+    ["\\p{ID_Compat_Math_Start}", ["∂", "∇", "∞"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
