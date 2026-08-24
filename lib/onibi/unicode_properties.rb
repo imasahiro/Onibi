@@ -77,6 +77,7 @@ module Onibi
       CJK_Compatibility_Ideographs
       CJK_Strokes
       Ideographic_Description_Characters
+      CJK_Radicals_Supplement
     ].freeze
   end
 end
