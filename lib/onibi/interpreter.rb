@@ -2487,7 +2487,8 @@ module Onibi
       end
 
       def property_matches?(name, character, ignorecase, encoding = nil)
-        return :incompatible if encoding && encoding != Encoding::UTF_8 && ascii_property?(name) && !character.ascii_only?
+        non_unicode_encoding = encoding && ![Encoding::UTF_8, Encoding::US_ASCII].include?(encoding)
+        return :incompatible if non_unicode_encoding && ascii_property?(name) && !character.ascii_only?
 
         return true if Onibi::UnicodeProperties.matches?(name, character)
         return false unless ignorecase && %w[Lower Upper].include?(name)
