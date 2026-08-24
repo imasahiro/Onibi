@@ -14,4 +14,12 @@ class SubexpressionCallTest < Minitest::Test
 
     assert_equal "aa", regexp.match("aa")[0]
   end
+
+  def test_subexpression_call_updates_capture_span_at_call_site
+    expected = Regexp.new("(?<pair>ab)\\g<pair>").match("abab")
+    actual = Onibi::Regexp.new("(?<pair>ab)\\g<pair>").match("abab")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
 end

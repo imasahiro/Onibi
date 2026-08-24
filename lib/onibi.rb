@@ -598,8 +598,10 @@ module Onibi
       when Onibi::AST::Alternation
         node.branches.each { |branch| collect_bytecode_subexpressions(branch, groups) }
       when Onibi::AST::Group
-        groups[node.number] = node.body if node.capture
-        groups[node.name] = node.body if node.capture && node.name
+        # A subexpression call re-enters the capturing group. Keep the Group
+        # wrapper in bytecode, so the VM updates its capture span at call time.
+        groups[node.number] = node if node.capture
+        groups[node.name] = node if node.capture && node.name
         collect_bytecode_subexpressions(node.body, groups)
       when Onibi::AST::Quantifier
         collect_bytecode_subexpressions(node.expression, groups)
