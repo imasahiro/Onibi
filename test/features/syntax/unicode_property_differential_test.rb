@@ -49,6 +49,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InGreek_and_Coptic}", %w[α Ω], %w[A Ж]],
     ["\\p{InHiragana}", ["あ"], %w[ア A]],
     ["\\p{InEmoticons}", ["😀", "😎"], %w[A あ]],
+    ["\\p{InMiscellaneous_Symbols}", ["☃", "☀"], %w[A 😀]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],
     ["\\Qabc\\E", ["QabcE"], ["abc", "\\Qabc\\E"]],
     ["[\\N{SNOWMAN}]", ["N"], ["☃", "x"]]
