@@ -744,7 +744,7 @@ module Onibi
 
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]
-          matched = flags[:ignorecase] ? casefold_equal?(value.join, candidate.join) : candidate == value
+          matched = flags[:ignorecase] ? simple_casefold_equal?(value.join, candidate.join) : candidate == value
           return value.length if matched
         end
         nil
@@ -2467,6 +2467,10 @@ module Onibi
 
       def casefold_equal?(left, right)
         left.downcase(:fold) == right.downcase(:fold)
+      end
+
+      def simple_casefold_equal?(left, right)
+        left.downcase == right.downcase
       end
 
       def casefold_lengths(value, characters, cursor)
