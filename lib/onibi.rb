@@ -291,7 +291,12 @@ module Onibi
     end
 
     def match?(input, position = 0)
-      !match(input, position).nil?
+      requested_position = normalize_match_position(position)
+      matched = match(input, requested_position)
+      return false unless matched
+      return false if requested_position >= 0 && requested_position > match_input_length(input)
+
+      true
     end
 
     define_method("=".dup << "~") do |input|
@@ -513,12 +518,32 @@ module Onibi
       raise TypeError, "no implicit conversion of #{position.class} into Integer"
     end
 
+    def match_input_length(input)
+      return input.length if input.is_a?(String)
+      return 0 if input.nil? || input.is_a?(Symbol)
+
+      String.try_convert(input).length
+    end
+
     def nullable_match_position(position, input_length)
       start = position.is_a?(Integer) ? position : Integer(position)
       start += input_length if start.negative?
       return nil if start.negative?
+      return nil if input_length.zero? && start.positive? && !nullable_position_clamp?(input_length)
+      return start_position(position, input_length) unless nullable_position_clamp?(input_length)
 
       [start, input_length].min
+    end
+
+    def nullable_position_clamp?(input_length)
+      return false if @source.empty? && input_length.zero?
+
+      nodes = []
+      walk_ast(@ast) do |node|
+        nodes << node if node.is_a?(Onibi::AST::Anchor) ||
+                         node.is_a?(Onibi::AST::Assertion) || node.is_a?(Onibi::AST::Escape)
+      end
+      nodes.empty?
     end
 
     def bytecode_nullable?
