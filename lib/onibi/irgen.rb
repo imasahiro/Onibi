@@ -4,9 +4,9 @@ module Onibi
   module IRGen
     module YARVIR
       module SemanticBytecode
-        # `casefold` is the compiler-owned folded literal. Nil means that the
-        # literal has no alternate Unicode fold and keeps the operand compact.
-        Literal = Struct.new(:value, :casefold)
+        # `casefold` is the compiler-owned folded literal. `casefold_segments`
+        # keeps each source character boundary for VM backtracking.
+        Literal = Struct.new(:value, :casefold, :casefold_segments)
         # `casefolds` contains reverse multi-character folds for this class.
         CharacterClass = Struct.new(:value, :casefolds)
         Escape = Struct.new(:kind)
@@ -58,7 +58,11 @@ module Onibi
           end
           if node.is_a?(Onibi::AST::Literal)
             folded = node.value.downcase(:fold)
-            return type.new(node.value, folded == node.value ? nil : folded)
+            segments = node.value.each_char.map do |character|
+              [character, character.downcase(:fold)]
+            end
+            segments = nil if segments.all? { |source, value| source == value }
+            return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze)
           end
           return type.new(node.value, class_casefold_sequences(node.value)) if node.is_a?(Onibi::AST::CharacterClass)
 

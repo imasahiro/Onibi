@@ -208,6 +208,7 @@ class V2IRGenTest < Minitest::Test
     root = regexp.send(:bytecode_program).flags[:semantic_root]
 
     assert_equal "ἀι", root.parts.first.casefold
+    assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
