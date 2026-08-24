@@ -23,6 +23,25 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "cd", regexp.match("cd")[0]
   end
 
+  def test_absence_operator_applies_casefold_to_literal_delimiters
+    pattern = "(?~a)"
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match("A")
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match("A")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
+  def test_absence_operator_casefolds_unbounded_quantifiers
+    ["(?~a+)", "(?~a*)"].each do |pattern|
+      expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match("aA")
+      actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match("aA")
+
+      assert_equal expected.to_a, actual.to_a, pattern
+      assert_equal expected.offset(0), actual.offset(0), pattern
+    end
+  end
+
   def test_absence_operator_preserves_body_captures
     match = Onibi::Regexp.new("(?~(a|b))").match("xaby")
 

@@ -1069,7 +1069,10 @@ module Onibi
       def absence_results(node, characters, cursor, captures, flags)
         # A literal delimiter is a safe fast path only when its body has no
         # capture. The wrapped body still owns capture state in MRI.
-        delimiter = literal_value(node.body) unless capture_numbers(node.body).any?
+        # The literal delimiter shortcut performs exact string search. Case-folded
+        # absence must use the bytecode probe, because the forbidden body may match
+        # a different code point or a multi-codepoint fold.
+        delimiter = literal_value(node.body) unless capture_numbers(node.body).any? || flags[:ignorecase]
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
         frame = AbsentFrame.new(
@@ -1082,8 +1085,9 @@ module Onibi
         )
 
         body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
-        first_length = body_at_cursor.first&.first
-        first_state = body_at_cursor.first&.last || {}
+        first_result = body_at_cursor.find { |length, _state| length.positive? } || body_at_cursor.first
+        first_length = first_result&.first
+        first_state = first_result&.last || {}
         zero_at_cursor = first_length&.zero?
         consuming_at_cursor = first_length&.positive?
         return [] if zero_at_cursor && consuming_at_cursor
@@ -1098,6 +1102,8 @@ module Onibi
           return [] if later_consuming && !shifted
         end
 
+        return [] if zero_width_quantifier_absence?(node.body, characters, cursor, flags)
+
         zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
         if zero_width
           unless nested_quantifier_suffix_body?(node.body)
@@ -1111,24 +1117,26 @@ module Onibi
           end
         end
 
-        return [] if zero_width_star_absence?(node.body, characters, cursor)
-
-        if nested_quantifier_suffix_body?(node.body) &&
+        if !flags[:ignorecase] && nested_quantifier_suffix_body?(node.body) &&
            (body_match_exists_after_probe?(node.body, characters, cursor, captures, flags) ||
             prefix_quantifier_match_exists?(node.body, characters, cursor, captures, flags))
           return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags)
         end
 
-        return outer_quantifier_suffix_absence_results(node.body, characters, cursor, captures, flags) if outer_quantifier_suffix_body?(node.body)
+        if !flags[:ignorecase] && outer_quantifier_suffix_body?(node.body)
+          return outer_quantifier_suffix_absence_results(node.body, characters, cursor, captures, flags)
+        end
 
-        return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if bounded_quantifier_body?(node.body)
+        return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if !flags[:ignorecase] && bounded_quantifier_body?(node.body)
 
-        return nested_unbounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if nested_unbounded_quantifier_body?(node.body)
+        if !flags[:ignorecase] && nested_unbounded_quantifier_body?(node.body)
+          return nested_unbounded_quantifier_absence_results(node.body, characters, cursor, captures, flags)
+        end
 
-        quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
+        quantified_suffix = flags[:ignorecase] ? nil : quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
         return quantified_suffix if quantified_suffix
 
-        quantified = quantified_absence_length(node.body, characters, cursor)
+        quantified = quantified_absence_length(node.body, characters, cursor, flags)
         if quantified
           body_results = node_results(node.body, characters, cursor, captures, flags)
           body_result = body_results.find { |length, _state| length.positive? } || body_results.first
@@ -1158,6 +1166,11 @@ module Onibi
                         results.find { |_candidate, state| !state.key?(:__match_start) }
                       end
           length, inner_captures = preferred || results.find { |candidate, _state| candidate.positive? } || results.first
+          if flags[:ignorecase] && length.zero? && results.none? { |candidate, _state| candidate.positive? }
+            next if position < characters.length
+
+            return [[characters.length - cursor, inner_captures]]
+          end
           inner_captures = inner_captures.dup
           internal_start = inner_captures.delete(:__match_start)
           internal_end = inner_captures.delete(:__match_end)
@@ -1177,7 +1190,7 @@ module Onibi
             node.body, characters, cursor, inner_captures, flags
           )
           inner_captures = filter_quantifier_suffix_captures(node.body, inner_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
-          quantified_length = quantified_absence_length(node.body, characters, position)
+          quantified_length = quantified_absence_length(node.body, characters, position, flags)
           match_position = internal_start || position
           maximum = if quantified_length
                       match_position - cursor + quantified_length
@@ -2252,7 +2265,7 @@ module Onibi
         end
       end
 
-      def zero_width_star_absence?(body, characters, cursor)
+      def zero_width_quantifier_absence?(body, characters, cursor, flags = {})
         sequence = if body.is_a?(SemanticBytecode::Sequence)
                      body.parts
                    else
@@ -2262,11 +2275,19 @@ module Onibi
 
         quantifier = sequence.first
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
-        return false unless quantifier.kind == :* && quantifier.maximum.nil?
+        return false unless quantifier.maximum.nil?
+        return false unless quantifier.kind == :* || (flags[:ignorecase] && quantifier.kind == :"?")
 
         literal = literal_value(quantifier.expression)
-        literal && !literal.empty? && cursor < characters.length &&
-          characters[cursor, literal.length].join != literal
+        return false unless literal && !literal.empty? && cursor < characters.length
+
+        if flags[:ignorecase]
+          return node_results(body, characters, cursor, {}, flags).none? do |length, _state|
+            length.positive?
+          end
+        end
+
+        characters[cursor, literal.length].join != literal
       end
 
       def captureless_absence_body?(body)
@@ -2395,7 +2416,7 @@ module Onibi
         characters.length - cursor
       end
 
-      def quantified_absence_length(body, characters, cursor)
+      def quantified_absence_length(body, characters, cursor, flags = {})
         sequence = if body.is_a?(SemanticBytecode::Sequence)
                      body.parts
                    else
@@ -2406,7 +2427,7 @@ module Onibi
         if sequence.first.is_a?(SemanticBytecode::Group)
           nested = sequence.first.body
           nested_parts = (nested.parts if nested.is_a?(SemanticBytecode::Sequence))
-          return quantified_absence_length(nested, characters, cursor) if nested_parts&.length == 1
+          return quantified_absence_length(nested, characters, cursor, flags) if nested_parts&.length == 1
         end
 
         quantifier = sequence.first
@@ -2415,6 +2436,21 @@ module Onibi
         return unless %i[+ *].include?(quantifier.kind) || quantifier.minimum.to_i >= 2
 
         literal = literal_value(quantifier.expression)
+        if flags[:ignorecase] && literal && !literal.empty?
+          run = 0
+          position = cursor
+          while position < characters.length
+            length = node_results(quantifier.expression, characters, position, {}, flags).map(&:first).select(&:positive?).max
+            break unless length
+
+            run += length
+            position += length
+          end
+          return if run.zero?
+          return if quantifier.minimum.to_i.positive? && run < quantifier.minimum
+
+          return quantifier.minimum.to_i >= 2 ? (run + quantifier.minimum - 1) / 2 : run / 2
+        end
         variable_units = variable_alternation_units(quantifier.expression)
         if variable_units
           repetitions = 0
