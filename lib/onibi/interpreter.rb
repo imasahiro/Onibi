@@ -302,8 +302,10 @@ module Onibi
         when SemanticBytecode::Sequence
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
-            if !value.empty? &&
-               (value.ascii_only? || node.parts.first.value.downcase(:fold).length > node.parts.first.value.length)
+            first_expands = node.parts.first &&
+                            node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
+            has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
+            if !value.empty? && (value.ascii_only? || first_expands || has_mark)
               folded_length = casefold_lengths(value, characters, cursor,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
@@ -327,7 +329,8 @@ module Onibi
                 index += 1
               end
               first_expands = run.first.downcase(:fold).length > run.first.length
-              if run.length > 1 && (run.join.ascii_only? || first_expands)
+              has_mark = run.join.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
+              if run.length > 1 && (run.join.ascii_only? || first_expands || has_mark)
                 part = SemanticBytecode::Literal.new(run.join)
               else
                 index = part_index + 1

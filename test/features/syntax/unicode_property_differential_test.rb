@@ -353,6 +353,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal mri, onibi
   end
 
+  def test_casefolded_literal_sequence_matches_composed_dotted_i
+    pattern = "(i\\u0307)"
+    input = "İ"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+
+    assert_equal ["İ", [0, 1], %w[İ İ]], [mri[0], mri.offset(0), mri.to_a]
+    assert_equal [mri[0], mri.offset(0), mri.to_a], [onibi[0], onibi.offset(0), onibi.to_a]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)
