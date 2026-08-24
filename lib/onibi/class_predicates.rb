@@ -5,36 +5,52 @@ module Onibi
   module ClassPredicates
     module_function
 
-    def matches?(source, character, ignorecase: false)
+    def matches?(source, character, ignorecase: false, encoding: nil)
+      return match_source(source, character, ignorecase, encoding) if non_utf8_encoding?(encoding)
+
       compiled(source, ignorecase: ignorecase).matches?(character)
     end
 
-    def match_source(source, character, ignorecase)
+    def match_source(source, character, ignorecase, encoding = nil)
       negated = source.start_with?("^")
       body = negated ? source[1..] : source
       posix = POSIX_PROPERTIES[body]
       if posix
-        result = posix_matches?(posix, character, ignorecase)
+        result = posix_matches?(posix, character, ignorecase, encoding)
+        return negated if result == :incompatible
+
         return negated ? !result : result
       end
 
       intersection = split_intersection(body)
-      return intersection_matches?(intersection, character, ignorecase) if intersection
+      if intersection
+        result = intersection_matches?(intersection, character, ignorecase, encoding)
+        return negated if result == :incompatible
 
-      result = union_matches?(body, character, ignorecase)
+        return negated ? !result : result
+      end
+
+      result = union_matches?(body, character, ignorecase, encoding)
+      return negated if result == :incompatible
+
       negated ? !result : result
     end
 
-    def posix_matches?(property, character, ignorecase)
+    def posix_matches?(property, character, ignorecase, encoding)
+      return :incompatible if incompatible_property?(property, character, encoding)
+      return true if property == "Word" && !character.ascii_only?
+
       return true if UnicodeProperties.matches?(property, character)
       return false unless ignorecase && %w[Lower Upper].include?(property)
 
       UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", character)
     end
 
-    def intersection_matches?(intersection, character, ignorecase)
-      left = matches?(intersection[0], character, ignorecase: ignorecase)
-      right = matches?(intersection[1], character, ignorecase: ignorecase)
+    def intersection_matches?(intersection, character, ignorecase, encoding)
+      left = matches?(intersection[0], character, ignorecase: ignorecase, encoding: encoding)
+      right = matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
+      return :incompatible if left == :incompatible || right == :incompatible
+
       left && right
     end
 
@@ -50,17 +66,22 @@ module Onibi
       nil
     end
 
-    def union_matches?(source, character, ignorecase)
+    def union_matches?(source, character, ignorecase, encoding)
       index = 0
+      incompatible = false
       while index < source.length
         first, index = atom(source, index)
         return true if range_matches?(source, index, first, character, ignorecase: ignorecase)
-        return true if atom_matches?(first, character, ignorecase)
+
+        result = atom_matches?(first, character, ignorecase, encoding)
+        return true if result == true
+
+        incompatible = true if result == :incompatible
 
         index = range_end(source, index, first)
       end
 
-      false
+      incompatible ? :incompatible : false
     end
 
     def atom(source, index)
@@ -141,29 +162,43 @@ module Onibi
       [depth, cursor + 1]
     end
 
-    def atom_matches?(atom, character, ignorecase)
+    def atom_matches?(atom, character, ignorecase, encoding)
       kind, value = atom
       return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
-      return matches?(value, character, ignorecase: ignorecase) if kind == :nested
+      return matches?(value, character, ignorecase: ignorecase, encoding: encoding) if kind == :nested
 
       if kind == :property
         name, negated = value
         return true if ignorecase && negated && %w[Lower Upper].include?(name)
 
-        return property_matches?(value, character, ignorecase: ignorecase)
+        return property_matches?(value, character, ignorecase: ignorecase, encoding: encoding)
       end
 
       escaped_matches?(value, character)
     end
 
-    def property_matches?(property, character, ignorecase: false)
+    def property_matches?(property, character, ignorecase: false, encoding: nil)
       name, negated = property
+      if incompatible_property?(name, character, encoding)
+        return negated ? true : :incompatible
+      end
+
       matched = UnicodeProperties.matches?(name, character)
       if ignorecase && !negated && !matched && %w[Lower Upper].include?(name)
         opposite = name == "Lower" ? "Upper" : "Lower"
         matched = UnicodeProperties.matches?(opposite, character)
       end
       negated ? !matched : matched
+    end
+
+    def incompatible_property?(name, character, encoding)
+      non_utf8_encoding?(encoding) &&
+        %w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Graph Print Punct].include?(name) &&
+        !character.ascii_only?
+    end
+
+    def non_utf8_encoding?(encoding)
+      [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
     end
 
     def property_escape(source, index)

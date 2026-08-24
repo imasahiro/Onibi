@@ -246,4 +246,15 @@ class EncodingTest < Minitest::Test
       assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
     end
   end
+
+  def test_non_utf8_posix_character_classes_are_ascii_only
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      ["[[:alpha:]]", "[^[:alpha:]]"].each do |source|
+        pattern = source.encode(encoding)
+        input = "あ".encode(encoding)
+
+        assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+      end
+    end
+  end
 end

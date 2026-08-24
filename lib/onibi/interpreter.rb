@@ -97,11 +97,14 @@ module Onibi
                      end
         @characters = characters
         @steps = 0
+        # Character classes use the input encoding when an ASCII pattern can
+        # match several encodings. MRI applies POSIX rules to this encoding.
+        runtime_flags = @program.flags.merge(encoding: input.encoding)
         first = [start_position, 0].max
         @match_start = first
         first.upto(characters.length) do |start|
           result = if (root = @program.flags[:semantic_root])
-                     node_results(root, characters, start, {}, @program.flags).first&.then do |length, captures|
+                     node_results(root, characters, start, {}, runtime_flags).first&.then do |length, captures|
                        match_start = captures.delete(:__match_start) || start
                        match_reset = captures.delete(:__match_reset)
                        captures.delete(:__match_end)
@@ -117,9 +120,9 @@ module Onibi
                        [match_start, finish, captures]
                      end
                    elsif @automaton.is_a?(Onibi::Automata::DFA)
-                     walk_dfa(@automaton.start_state.id, characters, start, {}, start, @program.flags)
+                     walk_dfa(@automaton.start_state.id, characters, start, {}, start, runtime_flags)
                    elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
-                     walk_tnfa(:start, characters, start, {}, start, @program.flags)
+                     walk_tnfa(:start, characters, start, {}, start, runtime_flags)
                    end
           return result if result
         end
@@ -776,7 +779,9 @@ module Onibi
         when SemanticBytecode::Literal
           flags[:ignorecase] ? expression.value.casecmp?(character) : expression.value == character
         when SemanticBytecode::CharacterClass
-          Onibi::ClassPredicates.matches?(expression.value, character)
+          Onibi::ClassPredicates.matches?(expression.value, character,
+                                          ignorecase: flags[:ignorecase],
+                                          encoding: flags[:encoding])
         when SemanticBytecode::Escape
           Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
         when SemanticBytecode::Property
@@ -2315,7 +2320,9 @@ module Onibi
 
         lengths = []
         character = characters[cursor]
-        lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character, ignorecase: flags[:ignorecase])
+        lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character,
+                                                        ignorecase: flags[:ignorecase],
+                                                        encoding: flags[:encoding])
         casefold_source = flags[:ignorecase] && !node.value.start_with?("^") &&
                           !node.value.include?("[") && !node.value.include?(":") &&
                           !node.value.include?("&&") && !node.value.include?("\\")
