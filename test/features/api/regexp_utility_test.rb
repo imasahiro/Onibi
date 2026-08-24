@@ -4,7 +4,7 @@ require "test_helper"
 
 class RegexpUtilityTest < Minitest::Test
   UNSAFE_PATTERNS = [
-    "(?<word>a)\\k<word>", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?>a|ab)", "(?~a)"
+    "(?<word>a)\\k<word>", "(?~a)"
   ].freeze
   def test_escape_quotes_regexp_metacharacters
     assert_equal "a\\.b\\[c\\]\\ \\(x\\)\\\\", Onibi::Regexp.escape("a.b[c] (x)\\")
@@ -139,7 +139,7 @@ class RegexpUtilityTest < Minitest::Test
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
     refute Onibi::Regexp.linear_time?("(a*)\\1")
-    refute Onibi::Regexp.linear_time?("(?=a)b")
+    assert Onibi::Regexp.linear_time?("(?=a)b")
     refute Onibi::Regexp.linear_time?("(?~a)")
   end
 

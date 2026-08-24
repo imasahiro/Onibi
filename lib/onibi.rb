@@ -134,9 +134,25 @@ module Onibi
 
       def linear_time?(pattern)
         source = pattern.is_a?(::Regexp) || pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
-        !source.include?("\\k") && !source.include?("\\1") && !source.include?("(?=") &&
-          !source.include?("(?<=") && !source.include?("(?!") && !source.include?("(?<!") &&
-          !source.include?("(?>") && !source.include?("(?~")
+        linear_time_ast?(Onibi::Parser.parse(source).ast)
+      end
+
+      def linear_time_ast?(node)
+        case node
+        when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall, Onibi::AST::Absence
+          false
+        when Onibi::AST::Sequence
+          node.parts.all? { |part| linear_time_ast?(part) }
+        when Onibi::AST::Alternation
+          node.branches.all? { |branch| linear_time_ast?(branch) }
+        when Onibi::AST::Group, Onibi::AST::AtomicGroup, Onibi::AST::OptionGroup,
+             Onibi::AST::Quantifier, Onibi::AST::Assertion
+          linear_time_ast?(node.respond_to?(:body) ? node.body : node.expression)
+        when Onibi::AST::Conditional
+          linear_time_ast?(node.yes_branch) && (!node.no_branch || linear_time_ast?(node.no_branch))
+        else
+          true
+        end
       end
 
       private
