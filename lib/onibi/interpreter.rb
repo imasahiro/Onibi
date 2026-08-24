@@ -1091,14 +1091,14 @@ module Onibi
         hidden = capture_numbers(scope.first.expression)
         repetition_count = if parent&.number && checkpoint[parent.number].is_a?(Array)
                              span = checkpoint[parent.number]
-                             quantifier_repetition_count(
+                             quantifier_repetition_path_count(
                                scope.first.expression, characters, span[0], span[1], flags
                              )
                            else
                              0
                            end
         expression_reaches_checkpoint = suffix_numbers.any? &&
-                                        quantifier_repetition_count(
+                                        quantifier_repetition_path_count(
                                           scope.first.expression, characters, cursor, checkpoint_position, flags
                                         ).positive?
         if parent && !restored.key?(parent.number) && (suffix_numbers.empty? || repetition_count == 1) &&
@@ -1151,15 +1151,19 @@ module Onibi
         if scope
           quantifier, suffix = scope
           if suffix
+            suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
             hidden = capture_numbers(quantifier.expression)
             parent = quantifier_suffix_scope(body)[3]
             parent_span = parent && captures[parent.number]
+            if suffix_numbers.empty? && parent_span.is_a?(Array) && parent_span[1] == characters.length
+              return captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
+            end
+
             if parent_span.is_a?(Array) && parent_span.length == 2
               repetitions = quantifier_repetition_count(
                 quantifier.expression, characters, parent_span[0], parent_span[1], flags
               )
               if repetitions > 1
-                suffix_numbers = absence_sequence_parts(body).drop(1).flat_map { |part| capture_numbers(part) }
                 return captures.reject do |key, _value|
                   key.is_a?(Integer) && (hidden.include?(key) || suffix_numbers.include?(key))
                 end
@@ -1608,6 +1612,24 @@ module Onibi
           count += 1
         end
         position == finish ? count : 0
+      end
+
+      def quantifier_repetition_path_count(expression, characters, start, finish, flags)
+        memo = {}
+        minimum_count = lambda do |position|
+          return 0 if position == finish
+          return memo[position] if memo.key?(position)
+
+          counts = node_results(expression, characters, position, {}, flags).filter_map do |length, _state|
+            next unless length.positive? && position + length <= finish
+
+            tail = minimum_count.call(position + length)
+            tail.zero? && position + length != finish ? nil : tail + 1
+          end
+          memo[position] = counts.min || 0
+        end
+
+        minimum_count.call(start)
       end
 
       def capture_numbers(node)
