@@ -168,6 +168,7 @@ module Onibi
                         end.freeze
                       end
         copy.instance_variable_set(:@transitions, transitions)
+        copy.instance_variable_set(:@tnfa, nil) if automaton.is_a?(Onibi::Automata::DFA)
         copy
       end
 

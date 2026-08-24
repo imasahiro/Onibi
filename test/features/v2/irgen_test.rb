@@ -243,6 +243,7 @@ class V2IRGenTest < Minitest::Test
 
     assert(labels.all? { |label| semantic_operand?(label[1]) })
     refute(labels.any? { |label| label[1].is_a?(Onibi::AST::Literal) })
+    assert_nil program.automaton.tnfa
   end
 
   def test_ir_contains_state_id_jump_for_each_dfa_edge
