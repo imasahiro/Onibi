@@ -206,7 +206,7 @@ module Onibi
     end
 
     def non_utf8_encoding?(encoding)
-      [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+      [Encoding::ASCII_8BIT, Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
     end
 
     def property_escape(source, index)
