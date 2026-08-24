@@ -19,6 +19,7 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "[]",
     "[^]",
     "[z-a]",
+    "[\\d-[b]]",
     "[[:foo:]]",
     "[\\p{Foo}]",
     "(?<x>a)\\g<1>",

@@ -26,6 +26,10 @@ module Onibi
             validate!(value[1...-1])
           end
         end
+        if kind != :literal && source[after] == "-" && after + 1 < source.length
+          nested, = atom(source, after + 1)
+          raise RegexpError, "invalid character class range" if nested && nested[0] == :nested
+        end
         index = range_end(source, after, current)
         index = after if index <= after
       end
