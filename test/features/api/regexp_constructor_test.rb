@@ -10,6 +10,11 @@ class RegexpConstructorTest < Minitest::Test
     assert Onibi::Regexp.new(pattern).match?("aaa")
   end
 
+  def test_constructor_treats_truthy_scalar_options_like_mri
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("a", 1.2).options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("a", Object.new).options
+  end
+
   def test_new_and_compile_create_equivalent_regexp_instances
     from_new = Onibi::Regexp.new("cat", ["ignorecase"])
     from_compile = Onibi::Regexp.compile("cat", ["ignorecase"])

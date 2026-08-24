@@ -453,6 +453,11 @@ module Onibi
     private
 
     def option_bits(options)
+      unless options.nil? || options == false || options == true ||
+             options.is_a?(Integer) || options.is_a?(String) || options.is_a?(Symbol) || options.is_a?(Array)
+        return IGNORECASE
+      end
+
       normalized = Onibi::Parser.send(:normalize_options, options)
       normalized.sum do |name|
         { "ignorecase" => IGNORECASE, "extended" => EXTENDED, "multiline" => MULTILINE,
