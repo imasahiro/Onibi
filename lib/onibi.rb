@@ -270,6 +270,9 @@ module Onibi
       @ascii_input = ascii_input
       @input_encoding = input.encoding
       raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
+      if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT
+        raise Encoding::CompatibilityError, "incompatible character encodings"
+      end
       if fixed_encoding? && !ascii_input && input.encoding != encoding
         raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
       end
@@ -550,6 +553,7 @@ module Onibi
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,
                         unicode_capture_byte_offsets: bytecode_unicode_capture_byte_offsets?,
+                        binary_escape: binary_escape_pattern?,
                         linebreak_escape: source.include?("\\R"),
                         nullable: minimum_match_width(@ast).zero?,
                         literal_only: !literal_value(@ast).nil?,
@@ -560,6 +564,13 @@ module Onibi
 
     def inline_global_flag?(flag)
       inline_global_modifier? && source.start_with?("(?#{flag}")
+    end
+
+    def binary_escape_pattern?
+      return false unless no_encoding? && @source.ascii_only?
+
+      source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
+        source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
     end
 
     def inline_global_flag_value(flag, default)

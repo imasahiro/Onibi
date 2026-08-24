@@ -139,6 +139,15 @@ class EncodingTest < Minitest::Test
     assert regexp.match?(byte)
   end
 
+  def test_noencoding_byte_escapes_reject_unicode_input
+    ["\\xFF", "\\377"].each do |pattern|
+      regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::NOENCODING)
+
+      assert_raises(Encoding::CompatibilityError) { regexp.match?("é") }
+      assert regexp.match?("\xFF".b)
+    end
+  end
+
   def test_match_decodes_non_utf8_unicode_properties
     [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
       regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))

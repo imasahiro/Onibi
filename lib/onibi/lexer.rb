@@ -49,6 +49,7 @@ module Onibi
     def initialize(source, options = [])
       @source = LexerScopedExtended.normalize(source)
       @extended = options.include?("extended")
+      @noencoding = options.include?("noencoding")
       @extended_scopes = []
     end
 
@@ -104,9 +105,9 @@ module Onibi
       digits = @source[(index + 1), 3]
       codepoint = digits.to_i(8)
       raise RegexpError, "invalid escape code" if codepoint > 0xFF
-      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f && @source.encoding != Encoding::ASCII_8BIT
+      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f && escape_encoding != Encoding::ASCII_8BIT
 
-      value = codepoint.chr(@source.encoding)
+      value = codepoint.chr(escape_encoding)
       [Token.new(:literal, value, index), index + 4]
     rescue RangeError, EncodingError
       raise RegexpError, "invalid octal escape"
