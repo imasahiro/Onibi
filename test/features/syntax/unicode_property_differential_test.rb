@@ -25,6 +25,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Variation_Selector}", %w[️ ︎ 󠄀], %w[A あ 😀]],
     ["\\p{Noncharacter_Code_Point}", ["\ufffe", "\uffff", "\u{fdd0}", "\u{10ffff}"], %w[A あ 😀]],
     ["\\p{Pattern_White_Space}", ["\t", "\n", " ", "\u0085", "\u200e"], %w[A あ 😀]],
+    ["\\p{Quotation_Mark}", ["\"", "'", "«", "“", "「"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
