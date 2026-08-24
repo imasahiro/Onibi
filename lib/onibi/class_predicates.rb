@@ -80,6 +80,17 @@ module Onibi
       incompatible = false
       while index < source.length
         first, index = atom(source, index)
+        if literal?(first) && source[index] == "-" && index + 1 < source.length
+          nested, nested_end = atom(source, index + 1)
+          if nested && nested[0] == :nested
+            result = atom_matches?(nested, character, ignorecase, encoding)
+            return true if result == true
+
+            incompatible = true if result == :incompatible
+            index = nested_end
+            next
+          end
+        end
         return true if range_matches?(source, index, first, character, ignorecase: ignorecase)
 
         result = atom_matches?(first, character, ignorecase, encoding)

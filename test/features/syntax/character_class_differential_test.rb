@@ -9,6 +9,7 @@ class CharacterClassDifferentialTest < Minitest::Test
     ["[\\-\\]]", ["-", "]"], %w[a]],
     ["[\\x41]", ["A"], ["a"]],
     ["[\\u{1F600}]", ["😀"], ["a"]],
+    ["[a-[b]]", ["b"], %w[a -]],
     ["[a&&b]", [], %w[a b]],
     ["[^[:digit:]]", [], %w[0 9]],
     ["[[:upper:]]", %w[A], %w[a]]
