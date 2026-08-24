@@ -32,6 +32,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Math}", ["+", "<", "∑", "∞", "𝑖"], %w[A あ 😀]],
     ["\\p{Cased}", %w[A a Ω Ж], %w[1 あ 😀]],
     ["\\p{Sentence_Terminal}", [".", "!", "?", "。", "؟"], %w[A あ 😀]],
+    ["\\p{Prepended_Concatenation_Mark}", ["\u0600", "\u0601", "\u06dd"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],

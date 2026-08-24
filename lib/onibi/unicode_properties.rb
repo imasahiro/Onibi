@@ -13,7 +13,7 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
-      Cased Extender Math Regional_Indicator Sentence_Terminal Soft_Dotted Terminal_Punctuation Variation_Selector
+      Cased Extender Math Prepended_Concatenation_Mark Regional_Indicator Sentence_Terminal Soft_Dotted Terminal_Punctuation Variation_Selector
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
       XDigit Hex_Digit Dash ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
@@ -47,6 +47,7 @@ module Onibi
       "Math" => :math?,
       "Cased" => :cased?,
       "Sentence_Terminal" => :sentence_terminal?,
+      "Prepended_Concatenation_Mark" => :prepended_concatenation_mark?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
       "Extended_Pictographic" => :extended_pictographic?,
