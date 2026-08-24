@@ -757,12 +757,15 @@ module Onibi
       end
 
       def boundary_operand(node)
-        return node unless node.is_a?(SemanticBytecode::Group)
-
-        body = node.body
-        return body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
-
-        body
+        loop do
+          if node.is_a?(SemanticBytecode::Group)
+            node = node.body
+          elsif node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
+            node = node.parts.first
+          else
+            return node
+          end
+        end
       end
 
       def mri_fold_boundary_lookahead_relaxed?(previous_node, node, next_node, characters, cursor)
