@@ -88,6 +88,7 @@ module Onibi
       CJK_Unified_Ideographs_Extension_F
       CJK_Unified_Ideographs_Extension_G
       CJK_Unified_Ideographs_Extension_H
+      CJK_Unified_Ideographs_Extension_I
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze

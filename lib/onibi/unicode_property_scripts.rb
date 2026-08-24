@@ -65,6 +65,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "CJK_Unified_Ideographs_Extension_F" => [[0x2CEB0, 0x2EBEF]],
       "CJK_Unified_Ideographs_Extension_G" => [[0x30000, 0x3134F]],
       "CJK_Unified_Ideographs_Extension_H" => [[0x31350, 0x323AF]],
+      "CJK_Unified_Ideographs_Extension_I" => [[0x2EBF0, 0x2EE5F]],
       "Arabic_Presentation_Forms_A" => [[0xFB50, 0xFDFF]],
       "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
     }.freeze
