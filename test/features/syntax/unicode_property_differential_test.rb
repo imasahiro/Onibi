@@ -597,6 +597,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_alternation_keeps_expanded_fold_branch_order
+    pattern = "(?<x>ᾀ)a|é"
+    input = "ᾀa"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri&.to_a, mri&.offset(0)], [onibi&.to_a, onibi&.offset(0)]
+  end
+
   def test_longest_reverse_fold_prefix_is_selected
     pattern = "\\bὒa"
     input = "ὒa"

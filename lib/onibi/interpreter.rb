@@ -474,8 +474,9 @@ module Onibi
         when SemanticBytecode::Conditional
           conditional_results(node, characters, cursor, captures, flags)
         when SemanticBytecode::Alternation
+          branch_flags = flags.merge(fold_alternation: true)
           node.branches.each_with_index.flat_map do |branch, branch_index|
-            node_results(branch, characters, cursor, captures, flags).map do |length, state|
+            node_results(branch, characters, cursor, captures, branch_flags).map do |length, state|
               marked = state.dup
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
@@ -708,6 +709,8 @@ module Onibi
       end
 
       def mri_multi_fold_literal_boundary?(node, next_node, characters, cursor, flags)
+        return false if flags[:fold_alternation]
+
         node = boundary_operand(node)
         next_node = boundary_operand(next_node)
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
@@ -806,6 +809,7 @@ module Onibi
       end
 
       def mri_multi_fold_quantifier_boundary?(node, next_node, characters, cursor, flags)
+        return false if flags[:fold_alternation]
         return false unless node.is_a?(SemanticBytecode::Quantifier)
         return false unless node.minimum.positive?
         return false if node.maximum.nil?
