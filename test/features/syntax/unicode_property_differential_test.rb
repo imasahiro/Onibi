@@ -44,6 +44,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{ID_Compat_Math_Continue}", ["²", "⁴", "∂", "∞"], %w[A あ 😀]],
     ["\\p{Grapheme_Extend}", %w[́ ⃝ 󠄀], %w[A あ 😀]],
     ["\\p{Grapheme_Base}", %w[A あ 一 😀], ["\u0301"]],
+    ["\\p{ID_Start}", %w[A Ω Ж 漢], %w[1 😀]],
     ["\\p{Pattern_Syntax}", ["!", "[", "~", "→", "⟨"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
