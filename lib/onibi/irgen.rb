@@ -6,7 +6,9 @@ module Onibi
       module SemanticBytecode
         # `casefold` is the compiler-owned folded literal. `casefold_segments`
         # keeps each source character boundary for VM backtracking.
-        Literal = Struct.new(:value, :casefold, :casefold_segments)
+        # `fold_boundary_sensitive` tells the VM that MRI keeps this expanded
+        # fold aligned with the following operand during backtracking.
+        Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive)
         # `casefolds` contains reverse multi-character folds for this class.
         CharacterClass = Struct.new(:value, :casefolds)
         Escape = Struct.new(:kind)
@@ -62,7 +64,10 @@ module Onibi
               [character, character.downcase(:fold)]
             end
             segments = nil if segments.all? { |source, value| source == value }
-            return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze)
+            boundary_sensitive = folded.length > node.value.length &&
+                                 folded.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+            return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
+                            boundary_sensitive)
           end
           return type.new(node.value, class_casefold_sequences(node.value)) if node.is_a?(Onibi::AST::CharacterClass)
 

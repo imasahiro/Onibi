@@ -399,10 +399,12 @@ module Onibi
                 prefix = run.first(reverse_prefix)
                 prefix_value = prefix.map(&:value).join
                 prefix_fold = prefix.map { |literal| literal.casefold || literal.value }.join
-                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold)
+                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold,
+                                                     nil, false)
               elsif run.length > 1 &&
                     (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
-                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run)
+                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run,
+                                                     nil, false)
               else
                 index = part_index + 1
               end
@@ -708,7 +710,7 @@ module Onibi
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless node.casefold && node.casefold.length > node.value.length
         return false unless characters[cursor] == node.value
-        return false unless node.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+        return false unless node.fold_boundary_sensitive
 
         next_source = characters[cursor + 1]
         if next_source && next_source.downcase(:fold).length > 1 &&
@@ -818,7 +820,7 @@ module Onibi
         if next_expression.is_a?(SemanticBytecode::CharacterClass)
           return false unless node.expression.casefold &&
                               node.expression.casefold.length > node.expression.value.length &&
-                              node.expression.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+                              node.expression.fold_boundary_sensitive
           return false if next_expression.casefolds.any?
           return false if next_expression.value.include?(":") || next_expression.value.include?("\\") ||
                           next_expression.value.include?("&&") || next_expression.value.start_with?("^")

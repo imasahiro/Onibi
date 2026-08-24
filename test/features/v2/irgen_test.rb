@@ -209,6 +209,10 @@ class V2IRGenTest < Minitest::Test
 
     assert_equal "ἀι", root.parts.first.casefold
     assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
+    assert root.parts.first.fold_boundary_sensitive
+
+    ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
+    refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
