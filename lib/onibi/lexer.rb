@@ -102,7 +102,11 @@ module Onibi
 
     def octal_escape_token(index)
       digits = @source[(index + 1), 3]
-      value = digits.to_i(8).chr(@source.encoding)
+      codepoint = digits.to_i(8)
+      raise RegexpError, "invalid escape code" if codepoint > 0xFF
+      raise RegexpError, "invalid multibyte escape" if codepoint > 0x7f && @source.encoding != Encoding::ASCII_8BIT
+
+      value = codepoint.chr(@source.encoding)
       [Token.new(:literal, value, index), index + 4]
     rescue RangeError, EncodingError
       raise RegexpError, "invalid octal escape"
