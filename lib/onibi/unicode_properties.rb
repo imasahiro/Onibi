@@ -41,6 +41,21 @@ module Onibi
       "Other" => :other?
     }.freeze
 
+    # Onigmo expands these Unicode case folds while it compiles a property
+    # operand. Keep the code points in generated-table form, then derive the
+    # short immutable sequences only for properties used by a bytecode program.
+    MULTI_CHAR_CASEFOLD_CODEPOINTS = [
+      223, 304, 329, 496, 912, 944, 1415, 7830, 7831, 7832, 7833, 7834, 7838,
+      8016, 8018, 8020, 8022, 8064, 8065, 8066, 8067, 8068, 8069, 8070, 8071,
+      8072, 8073, 8074, 8075, 8076, 8077, 8078, 8079, 8080, 8081, 8082, 8083,
+      8084, 8085, 8086, 8087, 8088, 8089, 8090, 8091, 8092, 8093, 8094, 8095,
+      8096, 8097, 8098, 8099, 8100, 8101, 8102, 8103, 8104, 8105, 8106, 8107,
+      8108, 8109, 8110, 8111, 8114, 8115, 8116, 8118, 8119, 8124, 8130, 8131,
+      8132, 8134, 8135, 8140, 8146, 8147, 8150, 8151, 8162, 8163, 8164, 8166,
+      8167, 8178, 8179, 8180, 8182, 8183, 8188, 64_256, 64_257, 64_258, 64_259,
+      64_260, 64_261, 64_262, 64_275, 64_276, 64_277, 64_278, 64_279
+    ].freeze
+
     def validate!(name)
       normalized = normalize_name(name)
       return if SUPPORTED.include?(normalized) ||
@@ -83,6 +98,19 @@ module Onibi
       return true if %w[Lu Upper].include?(name) && character == "\u00DF"
 
       false
+    end
+
+    def casefold_sequences(name)
+      normalized = normalize_name(name)
+      @casefold_sequences ||= {}
+      return @casefold_sequences[normalized] if @casefold_sequences.key?(normalized)
+
+      sequences = MULTI_CHAR_CASEFOLD_CODEPOINTS.filter_map do |codepoint|
+        source = [codepoint].pack("U")
+        folded = source.downcase(:fold)
+        [source, folded] if matches?(normalized, source)
+      end
+      @casefold_sequences[normalized] = sequences.freeze
     end
 
     def boundary_word?(character)

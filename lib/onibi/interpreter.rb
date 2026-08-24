@@ -199,6 +199,8 @@ module Onibi
           absence_results(operand, characters, cursor, captures, flags)
         when :match_class
           class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
+        when :match_property
+          property_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
         else
           transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
         end
@@ -389,6 +391,12 @@ module Onibi
             marked = captures.dup
             marked[:__end_zero_width] = true
             return [[length, marked]]
+          end
+
+          if node.is_a?(SemanticBytecode::Property)
+            return property_match_lengths(node, characters, cursor, flags).map do |property_length|
+              [property_length, captures]
+            end
           end
 
           [[length, captures]]
@@ -637,13 +645,7 @@ module Onibi
             cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
           end
         when :match_property
-          if cursor < characters.length
-            matched = property_matches?(operand.name, unicode_character(characters[cursor]), flags[:ignorecase], flags[:encoding])
-            return operand.negated ? 1 : nil if matched == :incompatible
-
-            matched = !matched if operand.negated
-            matched ? 1 : nil
-          end
+          property_match_lengths(operand, characters, cursor, flags).first
         when :match_quantifier
           quantifier_length(operand, characters, cursor)
         when :match_group
@@ -831,6 +833,36 @@ module Onibi
           flags[:multiline] || expression.value != "." || character != "\n"
         else false
         end
+      end
+
+      # Return all lengths that one property bytecode operand can consume.
+      # MRI keeps these reverse case-fold edges in its generated Onigmo table.
+      # The direct edge stays first, so an unconstrained match keeps MRI's
+      # leftmost-shortest result. Backtracking can then try a fold expansion
+      # when a following anchor or assertion requires it.
+      def property_match_lengths(operand, characters, cursor, flags)
+        return [] if cursor >= characters.length
+
+        character = unicode_character(characters[cursor])
+        # A bare negated property also receives MRI's case-fold closure.
+        # Character-class negation is handled separately by ClassPredicates.
+        matched = property_matches?(operand.name, character, flags[:ignorecase], flags[:encoding])
+        lengths = []
+        if matched == :incompatible
+          return operand.negated ? [1] : []
+        end
+
+        lengths << 1 if operand.negated ? !matched : matched
+        return lengths unless flags[:ignorecase] && !operand.negated
+
+        Array(operand.casefolds).each do |_source, folded|
+          width = folded.length
+          candidate = characters[cursor, width]&.join
+          next unless candidate && casefold_equal?(folded, candidate)
+
+          lengths << width unless lengths.include?(width)
+        end
+        lengths
       end
 
       def sequence_length(node, characters, cursor, flags = {})

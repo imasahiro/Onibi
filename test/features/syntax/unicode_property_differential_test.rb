@@ -160,6 +160,24 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_property_can_use_a_multi_character_fold_before_an_anchor
+    pattern = "\\p{Lu}\\b"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+
+    assert_equal ["SS", [0, 2]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_ignorecase_bare_negated_property_uses_casefold_closure
+    pattern = "\\P{Ll}\\z"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

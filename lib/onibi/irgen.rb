@@ -7,7 +7,9 @@ module Onibi
         Literal = Struct.new(:value)
         CharacterClass = Struct.new(:value)
         Escape = Struct.new(:kind)
-        Property = Struct.new(:name, :negated)
+        # `casefolds` is compiler output. It prevents the interpreter from
+        # consulting AST or rebuilding Unicode fold candidates at run time.
+        Property = Struct.new(:name, :negated, :casefolds)
         Backreference = Struct.new(:identifier, :named)
         Assertion = Struct.new(:body, :kind, :widths)
         Any = Struct.new(:value)
@@ -47,6 +49,10 @@ module Onibi
         def compile(node)
           type = NODE_TYPES.fetch(node.class)
           return type.new(compile_value(node.body), node.kind, Onibi::WidthAnalysis.widths(node.body)) if node.is_a?(Onibi::AST::Assertion)
+          if node.is_a?(Onibi::AST::Property)
+            return type.new(node.name, node.negated,
+                            Onibi::UnicodeProperties.casefold_sequences(node.name))
+          end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
         end
