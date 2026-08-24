@@ -97,6 +97,15 @@ class QuantifierModeTest < Minitest::Test
     assert_equal expected.to_a, actual.to_a
   end
 
+  def test_bounded_possessive_alternation_keeps_first_zero_width_branch
+    source = "(?<value>(?:(?=.)|(?:[ab]|c)){0,2}+)\\g<value>"
+    expected = ::Regexp.new(source).match("aba")
+    actual = Onibi::Regexp.new(source).match("aba")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
   def test_lazy_suffix_keeps_bounded_possessive_minimum
     source = "(?:\\b){1,3}+?"
     expected = ::Regexp.new(source).match("")

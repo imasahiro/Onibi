@@ -1116,6 +1116,7 @@ module Onibi
       def nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
         frontier = [[0, captures]]
         accepted = quantifier.minimum.zero? ? [[0, captures]] : []
+        ordered_zero = nil
         limit = characters.length - cursor + 1
         count = 0
         while count < limit && !frontier.empty?
@@ -1128,6 +1129,12 @@ module Onibi
               end
 
               next_count = count + 1
+              zero_width_state = inner != state || inner.key?(:__match_alternative)
+              ordered_zero = [consumed + length, inner] if count.zero? && length.zero? &&
+                                                           zero_width_state && ordered_zero.nil? &&
+                                                           !(quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
+                                                             quantifier.expression.mode == :lazy &&
+                                                             quantifier.expression.minimum.zero?)
               accepted << [consumed + length, inner] if next_count >= quantifier.minimum
               next if length.zero?
 
@@ -1138,6 +1145,7 @@ module Onibi
           count += 1
         end
         return [] if accepted.empty?
+        return [ordered_zero] if ordered_zero
 
         # A zero-width nested unit can update captures without changing the
         # cursor. Prefer the state with the most capture data at an equal
