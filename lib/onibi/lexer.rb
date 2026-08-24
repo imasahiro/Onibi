@@ -99,7 +99,7 @@ module Onibi
       type = ESCAPED_TYPES[escaped]
       return escaped_type_token(type, escaped, index) if type || ESCAPED_LITERALS.include?(escaped)
 
-      raise RegexpError, "unknown escape \\#{escaped}"
+      [Token.new(:literal, escaped, index), index + 2]
     end
 
     def digit_escape?(character)

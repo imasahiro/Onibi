@@ -23,7 +23,10 @@ class LexerTest < Minitest::Test
     assert_equal [[:literal, "."], [:literal, "*"]], actual
   end
 
-  def test_malformed_escape_raises_public_error
-    assert_raises(Onibi::RegexpError) { Onibi::Lexer.new("\\q").tokens }
+  def test_unknown_escape_is_a_literal_token
+    token = Onibi::Lexer.new("\\q").tokens.first
+
+    assert_equal :literal, token.type
+    assert_equal "q", token.value
   end
 end
