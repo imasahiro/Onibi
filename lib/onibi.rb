@@ -563,7 +563,8 @@ module Onibi
         unicode_capture_byte_offsets =
           Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
         Onibi::IRGen::YARVIR.generate(
-          dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
+          dfa, flags: { encoding: @source.encoding,
+                        ignorecase: inline_global_flag_value(:i, casefold?),
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,

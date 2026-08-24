@@ -229,4 +229,13 @@ class EncodingTest < Minitest::Test
     error = assert_raises(ArgumentError) { Onibi::Regexp.new(".").match(input) }
     assert_equal "invalid byte sequence in UTF-8", error.message
   end
+
+  def test_non_utf8_posix_properties_are_ascii_only
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      pattern = "\\p{Lower}".encode(encoding)
+      input = "あ".encode(encoding)
+
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
 end

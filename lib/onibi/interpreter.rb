@@ -598,7 +598,7 @@ module Onibi
           end
         when :match_property
           if cursor < characters.length
-            matched = property_matches?(operand.name, unicode_character(characters[cursor]), flags[:ignorecase])
+            matched = property_matches?(operand.name, unicode_character(characters[cursor]), flags[:ignorecase], flags[:encoding])
             matched = !matched if operand.negated
             matched ? 1 : nil
           end
@@ -778,7 +778,8 @@ module Onibi
         when SemanticBytecode::Escape
           Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
         when SemanticBytecode::Property
-          matched = property_matches?(expression.name, character, flags[:ignorecase] && !expression.negated)
+          matched = property_matches?(expression.name, character, flags[:ignorecase] && !expression.negated,
+                                      flags[:encoding])
           expression.negated ? !matched : matched
         when SemanticBytecode::Any
           flags[:multiline] || expression.value != "." || character != "\n"
@@ -2481,12 +2482,18 @@ module Onibi
         end
       end
 
-      def property_matches?(name, character, ignorecase)
+      def property_matches?(name, character, ignorecase, encoding = nil)
+        return false if encoding && encoding != Encoding::UTF_8 && ascii_property?(name) && !character.ascii_only?
+
         return true if Onibi::UnicodeProperties.matches?(name, character)
         return false unless ignorecase && %w[Lower Upper].include?(name)
 
         opposite = name == "Lower" ? "Upper" : "Lower"
         Onibi::UnicodeProperties.matches?(opposite, character)
+      end
+
+      def ascii_property?(name)
+        %w[ASCII Alpha Alnum Digit Lower Upper Space Word XDigit Blank Cntrl Graph Print Punct].include?(name)
       end
 
       def unicode_character(character)
