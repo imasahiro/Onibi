@@ -43,4 +43,8 @@ class LookaheadTest < Minitest::Test
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
+
+  def test_lookbehind_rejects_variable_width_linebreak_escape
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=\\R).") }
+  end
 end

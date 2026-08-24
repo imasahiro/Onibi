@@ -12,6 +12,8 @@ module Onibi
       when AST::CharacterClass, AST::Property, AST::Any then [1]
       when AST::Anchor, AST::Assertion then [0]
       when AST::Escape
+        return nil if node.kind == :linebreak
+
         next_width = zero_width_escape?(node.kind) ? 0 : 1
         node.kind == :grapheme ? nil : [next_width]
       when AST::Sequence then combine(node.parts)
