@@ -196,6 +196,14 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_casefold_candidate_cannot_extend_past_the_input_end
+    pattern = "[ßé]\\b"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match("ß")
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match("ß")
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

@@ -74,7 +74,7 @@ module Onibi
           when Property
             !node.negated && node.casefolds.any?
           when CharacterClass
-            node.value.include?("\\p") && node.casefolds.any?
+            node.value.match?(/\\p/i) && node.casefolds.any?
           when Sequence
             node.parts.any? { |part| full_casefold?(part) }
           when Alternation

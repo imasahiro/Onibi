@@ -863,8 +863,11 @@ module Onibi
 
         Array(operand.casefolds).each do |_source, folded|
           width = folded.length
-          candidate = characters[cursor, width]&.join
-          next unless candidate && casefold_equal?(folded, candidate)
+          slice = characters[cursor, width]
+          next unless slice && slice.length == width
+
+          candidate = slice.join
+          next unless casefold_equal?(folded, candidate)
 
           lengths << width unless lengths.include?(width)
         end
@@ -2418,8 +2421,11 @@ module Onibi
         if flags[:ignorecase] && flags[:full_casefold] && !node.value.start_with?("^")
           Array(node.casefolds).each do |_source, folded|
             width = folded.length
-            candidate = characters[cursor, width]&.join
-            next unless candidate && casefold_equal?(folded, candidate)
+            slice = characters[cursor, width]
+            next unless slice && slice.length == width
+
+            candidate = slice.join
+            next unless casefold_equal?(folded, candidate)
 
             lengths << width unless lengths.include?(width)
           end
@@ -2581,7 +2587,8 @@ module Onibi
         maximum = value.downcase(:fold).length
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
         (minimum..maximum).select do |length|
-          casefold_equal?(value, characters[cursor, length].to_a.join)
+          slice = characters[cursor, length]
+          slice && slice.length == length && casefold_equal?(value, slice.join)
         end
       end
 
