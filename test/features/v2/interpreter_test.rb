@@ -63,6 +63,15 @@ class InterpreterTest < Minitest::Test
     assert_equal({ 1 => [2, 5], "word" => [2, 5] }, result[2])
   end
 
+  def test_bytecode_program_embeds_semantic_operands_without_ast_nodes
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)(?(1)!|c)")
+    program = regexp.send(:bytecode_program)
+
+    assert program.flags[:semantic_root]
+    assert(program.flags[:subexpressions].values.all? { |body| semantic_node?(body) })
+    assert semantic_node?(program.flags[:semantic_root])
+  end
+
   def test_interpreter_executes_each_semantic_operand_kind
     cases = [
       ["a", "a"], ["[a]", "a"], ["\\d", "7"], ["\\p{Alpha}", "A"],
@@ -94,6 +103,14 @@ class InterpreterTest < Minitest::Test
   end
 
   private
+
+  def semantic_node?(value)
+    return value.all? { |item| semantic_node?(item) } if value.is_a?(Array)
+    return true unless value.respond_to?(:each_pair)
+
+    refute value.class.name.start_with?("Onibi::AST::")
+    value.each_pair.all? { |_field, child| semantic_node?(child) }
+  end
 
   def dfa_program_for(source)
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse(source)).graph
