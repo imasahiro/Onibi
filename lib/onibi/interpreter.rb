@@ -883,8 +883,7 @@ module Onibi
         if repeated_atom
           atom = literal_value(quantifier.expression)
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
-          return unless run >= quantifier.minimum &&
-                        (cursor + run < characters.length || atom.nil?)
+          return unless run >= quantifier.minimum
 
           results = node_results(body, characters, cursor, captures, flags)
           target = results.find { |length, _state| length == run }
@@ -901,17 +900,25 @@ module Onibi
           atom = literal_value(quantifier.expression)
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
           if run >= 3 && !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
-            boundary = atom.nil? && cursor + run == characters.length ? (run + 1) / 2 : (run + 2) / 2
             results = node_results(body, characters, cursor, captures, flags)
-            if atom.nil?
-              minimum = results.map(&:first).min
-              boundary = [boundary, minimum].min if minimum
-            end
+            minimum = results.map(&:first).min
+            boundary = if cursor + run == characters.length && minimum
+                         minimum
+                       elsif atom.nil? && cursor + run == characters.length
+                         (run + 1) / 2
+                       else
+                         (run + 2) / 2
+                       end
             target = results.find { |length, _state| length == boundary + 1 }
             if target
               state = target.last.dup
               state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-              state.delete_if { |key, _value| key.is_a?(Integer) } if cursor + run == characters.length || run.even?
+              clear_capture = if cursor + run == characters.length
+                                run.odd?
+                              else
+                                run.even?
+                              end
+              state.delete_if { |key, _value| key.is_a?(Integer) } if clear_capture
               return [[boundary, state]]
             end
           end
@@ -936,6 +943,9 @@ module Onibi
       end
 
       def quantified_atoms_equivalent?(left, right)
+        return quantified_atoms_equivalent?(left, right.expression) if
+          right.is_a?(Onibi::AST::Quantifier) || right.is_a?(SemanticBytecode::Quantifier)
+
         left == right || (literal_value(left) && literal_value(left) == literal_value(right))
       end
 

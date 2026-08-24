@@ -140,12 +140,13 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_preserves_repeated_atom_boundary
     pattern = "(?~(?:a+a))"
-    input = "aaaab"
-    expected = ::Regexp.new(pattern).match(input)
-    actual = Onibi::Regexp.new(pattern).match(input)
+    %w[aaaab aaaa].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
 
-    assert_equal expected.to_a, actual.to_a
-    assert_equal expected.offset(0), actual.offset(0)
+      assert_equal expected.to_a, actual.to_a
+      assert_equal expected.offset(0), actual.offset(0)
+    end
   end
 
   def test_absence_operator_preserves_quantified_suffix_boundary
@@ -154,7 +155,8 @@ class AbsenceOperatorTest < Minitest::Test
       ["(?~(?:[ab]+[ab]))", "aaaab"],
       ["(?~(?:[ab]+a))", "aaaab"],
       ["(?~(?:[ab]+a))", "aaa"],
-      ["(?~(?:a+aa))", "aaaab"]
+      ["(?~(?:a+aa))", "aaaab"],
+      ["(?~(?:a+a+))", "aaaab"]
     ].each do |pattern, input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)
@@ -166,12 +168,13 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_discards_capture_from_failed_quantified_suffix
     pattern = "(?~(?:a+(a|b)))"
-    input = "aab"
-    expected = ::Regexp.new(pattern).match(input)
-    actual = Onibi::Regexp.new(pattern).match(input)
+    %w[aab aaaa].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
 
-    assert_equal expected.to_a, actual.to_a
-    assert_equal expected.offset(0), actual.offset(0)
+      assert_equal expected.to_a, actual.to_a
+      assert_equal expected.offset(0), actual.offset(0)
+    end
   end
 
   def test_absence_operator_retries_after_a_nested_zero_width_body
