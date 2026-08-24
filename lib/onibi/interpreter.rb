@@ -735,8 +735,8 @@ module Onibi
           when :grapheme
             grapheme_cluster_length(characters, cursor)
           when :word_boundary, :not_word_boundary
-            left = cursor.positive? && boundary_word?(characters[cursor - 1])
-            right = cursor < characters.length && boundary_word?(characters[cursor])
+            left = cursor.positive? && boundary_word?(characters[cursor - 1], flags[:encoding])
+            right = cursor < characters.length && boundary_word?(characters[cursor], flags[:encoding])
             boundary = left != right
             boundary = !boundary if operand.kind == :not_word_boundary
             boundary ? 0 : nil
@@ -2541,8 +2541,9 @@ module Onibi
         lengths
       end
 
-      def boundary_word?(character)
+      def boundary_word?(character, encoding = nil)
         return Onibi::CharacterPredicates.word?(character) if character.encoding == Encoding::ASCII_8BIT
+        return true if encoding && encoding != Encoding::UTF_8 && encoding != Encoding::US_ASCII && !character.ascii_only?
 
         Onibi::UnicodeProperties.boundary_word?(unicode_character(character))
       end
