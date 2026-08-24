@@ -821,7 +821,8 @@ module Onibi
         return [] if zero_width_star_absence?(node.body, characters, cursor)
 
         if nested_quantifier_suffix_body?(node.body) &&
-           body_match_exists_after_probe?(node.body, characters, cursor, captures, flags)
+           (body_match_exists_after_probe?(node.body, characters, cursor, captures, flags) ||
+            prefix_quantifier_match_exists?(node.body, characters, cursor, captures, flags))
           return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags)
         end
 
@@ -1004,6 +1005,18 @@ module Onibi
         false
       end
 
+      def prefix_quantifier_match_exists?(body, characters, cursor, captures, flags)
+        scope = quantifier_suffix_scope(body)
+        return false unless scope
+
+        minimum = minimum_node_width(scope.first.expression)
+        cursor.upto(characters.length) do |position|
+          results = node_results(scope.first.expression, characters, position, captures, flags)
+          return true if results.any? { |length, _state| length > minimum }
+        end
+        false
+      end
+
       def quantifier_suffix_scope(body)
         parts = absence_sequence_parts(body)
         suffix = parts.length > 1
@@ -1042,23 +1055,37 @@ module Onibi
         captures = context[:captures]
         flags = context[:flags]
         scope = context[:scope]
-        return state unless state.empty? && scope&.fetch(2, 0).to_i > 1
+        return state unless state.empty? && scope&.fetch(2, 0).to_i.positive?
 
         endpoint = cursor + length
         checkpoint = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
           results = node_results(body, characters, position, captures, flags)
-          checkpoint = results.first&.last if results.any?
+          target_end = endpoint + 1
+          candidate = results.find { |body_length, _state| position + body_length == target_end }&.last
+          checkpoint = candidate if candidate
         end
         return state unless checkpoint
 
         parent = scope[3]
         expression_number = capture_numbers(scope.first.expression).first
         value = checkpoint[expression_number]
-        return state unless parent && value.is_a?(Array) && value.length == 2
-        return state unless value[1] - value[0] == minimum_node_width(scope.first.expression)
+        restored = {}
+        if parent && value.is_a?(Array) && value.length == 2 &&
+           value[1] - value[0] == minimum_node_width(scope.first.expression)
+          restored[parent.number] = value
+        end
 
-        { parent.number => value }
+        hidden = capture_numbers(scope.first.expression)
+        if parent && !restored.key?(parent.number)
+          checkpoint.each do |key, candidate|
+            next unless key.is_a?(Integer) && key >= parent.number
+            next if key == parent.number || hidden.include?(key)
+
+            restored[key] = candidate
+          end
+        end
+        restored.empty? ? state : restored
       end
 
       def filter_quantifier_suffix_captures(body, captures, characters, flags)
