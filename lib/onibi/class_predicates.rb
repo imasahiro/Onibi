@@ -155,12 +155,13 @@ module Onibi
       last, = atom(source, index + 1)
       return false unless literal?(first) && literal?(last)
 
-      if ignorecase
-        character = character.downcase
-        first = [first[0], first[1].downcase]
-        last = [last[0], last[1].downcase]
-      end
-      character.between?(first[1], last[1])
+      return true if character.between?(first[1], last[1])
+      return false unless ignorecase
+
+      folded = character.downcase(:fold)
+      return false unless folded.each_char.one?
+
+      folded.between?(first[1].downcase(:fold), last[1].downcase(:fold))
     end
 
     def range_end(source, index, first)

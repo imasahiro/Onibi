@@ -2991,6 +2991,7 @@ module Onibi
                                                   encoding: flags[:encoding])
         return true if matched
         return false unless flags[:ignorecase]
+        return false if node.value.start_with?("^")
 
         folded = character.downcase(:fold)
         return false unless folded.each_char.one?

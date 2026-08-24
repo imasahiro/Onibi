@@ -15,6 +15,16 @@ class CaseFoldingTest < Minitest::Test
     assert Onibi::Regexp.new("[a-z]", Onibi::Regexp::IGNORECASE).match?("S")
   end
 
+  def test_ignorecase_class_ranges_follow_mri_unicode_fold_boundaries
+    regexp = Onibi::Regexp.new("[a-z]", Onibi::Regexp::IGNORECASE)
+    negated = Onibi::Regexp.new("[^a-z]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("İ")
+    assert regexp.match?("ſ")
+    assert negated.match?("İ")
+    refute negated.match?("ſ")
+  end
+
   def test_ignorecase_matches_unicode_simple_case_folding
     assert Onibi::Regexp.new("k", ["ignorecase"]).match?("K")
   end
