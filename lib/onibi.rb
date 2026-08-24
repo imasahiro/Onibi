@@ -453,8 +453,10 @@ module Onibi
     private
 
     def option_bits(options)
+      return IGNORECASE if options.is_a?(Symbol)
+
       unless options.nil? || options == false || options == true ||
-             options.is_a?(Integer) || options.is_a?(String) || options.is_a?(Symbol) || options.is_a?(Array)
+             options.is_a?(Integer) || options.is_a?(String) || options.is_a?(Array)
         return IGNORECASE
       end
 

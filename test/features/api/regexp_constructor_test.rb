@@ -51,6 +51,11 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal Regexp.new("a", -2).options, Onibi::Regexp.new("a", -2).options
   end
 
+  def test_constructor_treats_all_symbols_as_truthy_options_like_mri
+    assert_equal Regexp.new("a", :bad).options, Onibi::Regexp.new("a", :bad).options
+    assert_equal Regexp.new("a", :imx).options, Onibi::Regexp.new("a", :imx).options
+  end
+
   def test_extended_integer_flag_enables_extended_mode
     regexp = Onibi::Regexp.new("a b # comment\n c", Onibi::Regexp::EXTENDED)
 

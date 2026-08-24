@@ -23,7 +23,7 @@ class PublicErrorsTest < Minitest::Test
   end
 
   def test_invalid_options_raise_argument_error
-    error = assert_raises(ArgumentError) { Onibi::Regexp.new("a", :unsupported) }
+    error = assert_raises(ArgumentError) { Onibi::Regexp.new("a", "unsupported") }
 
     refute_empty error.message
   end
