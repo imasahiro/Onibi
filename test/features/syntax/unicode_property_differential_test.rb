@@ -81,6 +81,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InAdlam}", ["\u{1E900}", "\u{1E95F}"], %w[A अ]],
     ["\\p{InMedefaidrin}", ["\u{16E40}", "\u{16E9F}"], %w[A अ]],
     ["\\p{InMende_Kikakui}", ["\u{1E800}", "\u{1E8DF}"], %w[A अ]],
+    ["\\p{InNyiakeng_Puachue_Hmong}", ["\u{1E100}", "\u{1E14F}"], %w[A अ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
