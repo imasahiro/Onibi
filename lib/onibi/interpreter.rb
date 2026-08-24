@@ -337,7 +337,12 @@ module Onibi
             has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
             reverse_fold = reverse_casefold_sequence?(value)
             folded_value = node.parts.map { |part| part.casefold || part.value }.join
-            if !value.empty? && (value.ascii_only? || first_expands || has_mark || reverse_fold || folded_value != value)
+            fold_boundary_sensitive = node.parts.each_cons(2).any? do |left, right|
+              left.casefold && left.casefold.length == left.value.length &&
+                right.casefold && right.casefold.length > right.value.length
+            end
+            if !value.empty? && !fold_boundary_sensitive && (value.ascii_only? || first_expands ||
+              has_mark || reverse_fold || folded_value != value)
               folded_length = casefold_lengths(value, characters, cursor,
                                                folded: folded_value,
                                                expanded_only: flags[:lookbehind_casefold]).first
@@ -358,6 +363,11 @@ module Onibi
               run = [part]
               index += 1
               while index < parts.length && parts[index].is_a?(SemanticBytecode::Literal)
+                first_expands = (run.first.casefold || run.first.value).length > run.first.value.length
+                next_literal = parts[index]
+                next_expands = (next_literal.casefold || next_literal.value).length > next_literal.value.length
+                break if !first_expands && next_expands
+
                 run << parts[index]
                 index += 1
               end
