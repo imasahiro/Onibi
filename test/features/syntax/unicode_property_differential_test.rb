@@ -314,6 +314,26 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_ascii8bit_non_ascii_bytes_do_not_match_space_escape
+    pattern = "\\s"
+    input = "\xA0".b
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_windows31j_word_class_uses_the_decoded_character
+    pattern = "[[:word:]]"
+    input = "\xA9".b.force_encoding(Encoding::Windows_31J)
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal [input, [0, 1]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

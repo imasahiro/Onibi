@@ -53,7 +53,9 @@ module Onibi
       character.is_a?(Integer) ? character : character.codepoints.first
     end
 
-    def escape_matches?(kind, character)
+    def escape_matches?(kind, character, encoding: nil)
+      return false if encoding == Encoding::ASCII_8BIT && !character.ascii_only? && kind == :space
+
       ESCAPE_PREDICATES.fetch(kind).call(character)
     end
   end

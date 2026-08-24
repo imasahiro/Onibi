@@ -39,10 +39,18 @@ module Onibi
     def posix_matches?(property, character, ignorecase, encoding)
       return :incompatible if incompatible_property?(property, character, encoding)
 
-      return true if UnicodeProperties.matches_normalized?(property, character)
+      normalized_character = if property == "Word" && encoding && encoding != Encoding::UTF_8 &&
+                                encoding != Encoding::ASCII_8BIT
+                               character.encode(Encoding::UTF_8)
+                             else
+                               character
+                             end
+      return true if UnicodeProperties.matches_normalized?(property, normalized_character)
       return false unless ignorecase && %w[Lower Upper].include?(property)
 
-      UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", character)
+      UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", normalized_character)
+    rescue EncodingError
+      false
     end
 
     def intersection_matches?(intersection, character, ignorecase, encoding)
@@ -201,7 +209,8 @@ module Onibi
 
     def incompatible_property?(name, character, encoding)
       non_utf8_encoding?(encoding) &&
-        %w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Graph Print Punct].include?(name) &&
+        (%w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Graph Print Punct].include?(name) ||
+         (name == "Word" && encoding == Encoding::ASCII_8BIT)) &&
         !character.ascii_only?
     end
 

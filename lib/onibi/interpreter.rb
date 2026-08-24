@@ -749,7 +749,10 @@ module Onibi
           when :start_match
             cursor == @match_start ? 0 : nil
           else
-            cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
+            if cursor < characters.length &&
+               Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor], encoding: flags[:encoding])
+              1
+            end
           end
         when :match_property
           property_match_lengths(operand, characters, cursor, flags).first
@@ -929,7 +932,7 @@ module Onibi
                                           ignorecase: flags[:ignorecase],
                                           encoding: flags[:encoding])
         when SemanticBytecode::Escape
-          Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
+          Onibi::CharacterPredicates.escape_matches?(expression.kind, character, encoding: flags[:encoding])
         when SemanticBytecode::Property
           matched = property_matches?(expression.name, character, flags[:ignorecase] && !expression.negated,
                                       flags[:encoding])
