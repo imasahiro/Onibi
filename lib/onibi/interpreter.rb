@@ -814,6 +814,8 @@ module Onibi
 
         return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if bounded_quantifier_body?(node.body)
 
+        return nested_unbounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if nested_unbounded_quantifier_body?(node.body)
+
         quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
         return quantified_suffix if quantified_suffix
 
@@ -955,6 +957,24 @@ module Onibi
         first = absence_sequence_parts(node).first
         (first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)) &&
           bounded_quantifier_body?(node)
+      end
+
+      def nested_unbounded_quantifier_body?(body)
+        quantifier = bounded_absence_quantifier(body)
+        return false unless quantifier
+
+        quantifier.maximum.nil? && %i[* +].include?(quantifier.kind) &&
+          (absence_sequence_parts(body).first.is_a?(Onibi::AST::Group) ||
+           absence_sequence_parts(body).first.is_a?(SemanticBytecode::Group))
+      end
+
+      def nested_unbounded_quantifier_absence_results(body, characters, cursor, captures, flags)
+        result = absence_bounded_probe_results(body, characters, cursor, captures, flags,
+                                               preserve_failed_capture: false).first
+        return [] unless result && result.first >= 0
+
+        length, state = result
+        [[length, filter_bounded_absence_captures(body, state)]]
       end
 
       def filter_bounded_absence_captures(body, state)

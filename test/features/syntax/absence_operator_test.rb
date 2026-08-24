@@ -452,6 +452,8 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal %w[ab a], regexp.match("abab").to_a.first(2)
     assert_equal %w[abab], regexp.match("ababab").to_a.first(1)
+    assert_equal %w[a a], regexp.match("aaa").to_a.first(2)
+    assert_equal %w[aa ab], regexp.match("aaba").to_a.first(2)
   end
 
   def test_absence_operator_tracks_bounded_variable_alternation
@@ -466,5 +468,6 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal ["", nil, nil], regexp.match("").to_a
     assert_equal ["", nil, nil], regexp.match("b").to_a
+    assert_equal %w[a a], regexp.match("baaa").to_a.first(2)
   end
 end
