@@ -17,6 +17,38 @@ class EncodingContractTest < Minitest::Test
     assert_equal REQUIRED_ENCODINGS.length**2, ascii_pairs.length
   end
 
+  def test_non_ascii_compatible_pattern_encoding_is_preserved
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "a".encode(encoding)
+      input = "a".encode(encoding)
+      mri = Regexp.new(pattern)
+      onibi = Onibi::Regexp.new(pattern)
+
+      assert_equal mri.encoding, onibi.encoding
+      assert_equal mri.match?(input), onibi.match?(input)
+    end
+  end
+
+  def test_non_ascii_compatible_unicode_literals_keep_vm_match_offsets
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "(あ+)".encode(encoding)
+      input = "xああ".encode(encoding)
+      mri = Regexp.new(pattern).match(input)
+      onibi = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal [mri.to_a, mri.offset(0), mri.offset(1)],
+                   [onibi.to_a, onibi.offset(0), onibi.offset(1)]
+    end
+  end
+
+  def test_non_ascii_compatible_pattern_rejects_other_input_encodings
+    pattern = "a".encode(Encoding::UTF_16LE)
+    [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |encoding|
+      input = "a".encode(encoding)
+      assert_raises(Encoding::CompatibilityError) { Onibi::Regexp.new(pattern).match?(input) }
+    end
+  end
+
   def test_unicode_full_casefold_matches_mri_for_literals
     [["ß", "SS"], ["ſ", "S"], ["[ß]", "SS"], ["(?i:ss)", "ß"]].each do |pattern, input|
       expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)&.to_a

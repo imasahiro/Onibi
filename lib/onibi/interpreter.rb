@@ -1225,7 +1225,8 @@ module Onibi
                              folded: operand.casefold,
                              expanded_only: flags[:lookbehind_casefold]).first
           else
-            characters[cursor, value.length] == value ? value.length : nil
+            input_codepoints = characters[cursor, value.length]&.map(&:ord)
+            input_codepoints == value.map(&:ord) ? value.length : nil
           end
         when :match_class
           class_match_lengths(operand, characters, cursor, flags).first
@@ -3318,7 +3319,9 @@ module Onibi
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
         (minimum..maximum).select do |length|
           slice = characters[cursor, length]
-          slice && slice.length == length && folded_value == slice.join.downcase(:fold)
+          next false unless slice && slice.length == length
+
+          folded_value == slice.join.encode(Encoding::UTF_8).downcase(:fold)
         end
       end
 

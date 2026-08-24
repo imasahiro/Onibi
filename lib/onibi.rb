@@ -236,7 +236,9 @@ module Onibi
                                    (no_encoding? || @source.encoding != Encoding::US_ASCII)
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
-      @parsed = Onibi::Parser.parse(source, options: @options)
+      # The parser consumes Unicode scalar text. Keep the original pattern
+      # encoding on the regexp object, but compile a UTF-8 view for the AST.
+      @parsed = Onibi::Parser.parse(analysis_source, options: @options)
       @ast = @parsed.ast
       Onibi::Compiler.validate(@ast)
       validate_subexpression_calls!
@@ -265,7 +267,7 @@ module Onibi
     end
 
     def property_names
-      @property_names ||= @source.scan(/\\[pP]\{([^}]+)\}/).flatten.map do |name|
+      @property_names ||= analysis_source.scan(/\\[pP]\{([^}]+)\}/).flatten.map do |name|
         Onibi::UnicodeProperties.normalize_name(name)
       end
     end
@@ -399,6 +401,7 @@ module Onibi
         raise_incompatible_encoding(input)
       end
       raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && input.encoding != encoding
+      raise_incompatible_encoding(input) if !encoding.ascii_compatible? && input.encoding != encoding
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
 
@@ -558,7 +561,7 @@ module Onibi
     def validate_property_encoding!
       return unless [Encoding::US_ASCII, Encoding::EUC_JP, Encoding::Windows_31J].include?(@source.encoding)
 
-      @source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
+      analysis_source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
         next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
 
         raise RegexpError, "Unicode property is not supported by #{encoding_name_for_property}"
@@ -584,6 +587,7 @@ module Onibi
         @source = @source.dup.force_encoding(Encoding::US_ASCII)
         return
       end
+      return unless @source.encoding.ascii_compatible?
       return if fixed_encoding? || !@source.ascii_only?
 
       @source = @source.dup.force_encoding(Encoding::US_ASCII)
@@ -776,7 +780,7 @@ module Onibi
                         named_capture_numbers: raw_named_captures,
                         unicode_capture_byte_offsets: unicode_capture_byte_offsets,
                         binary_escape: binary_escape_pattern?,
-                        linebreak_escape: source.include?("\\R"),
+                        linebreak_escape: analysis_source.include?("\\R"),
                         nullable: minimum_match_width(@ast).zero?,
                         literal_only: !literal_value(@ast).nil?,
                         semantic_root: semantic_root }
@@ -785,7 +789,7 @@ module Onibi
     end
 
     def inline_global_flag?(flag)
-      inline_global_modifier? && source.start_with?("(?#{flag}")
+      inline_global_modifier? && analysis_source.start_with?("(?#{flag}")
     end
 
     def binary_escape_pattern?
@@ -795,12 +799,12 @@ module Onibi
     end
 
     def non_ascii_escape_pattern?
-      source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
-        source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
+      analysis_source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
+        analysis_source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
     end
 
     def non_ascii_unicode_escape_pattern?
-      source.scan(/\\u\{([^}]*)\}|\\u([0-9a-fA-F]{4})/).any? do |braced, fixed|
+      analysis_source.scan(/\\u\{([^}]*)\}|\\u([0-9a-fA-F]{4})/).any? do |braced, fixed|
         digits = braced || fixed
         digits.to_i(16) > 0x7f
       end
@@ -873,14 +877,18 @@ module Onibi
       end
     end
 
-    def inline_global_modifier?
-      return false unless source.start_with?("(?")
+    def analysis_source
+      @analysis_source ||= @source.encode(Encoding::UTF_8)
+    end
 
-      close = source.index(")")
-      colon = source.index(":")
+    def inline_global_modifier?
+      return false unless analysis_source.start_with?("(?")
+
+      close = analysis_source.index(")")
+      colon = analysis_source.index(":")
       return false if colon && close && colon < close
 
-      modifier = source[2, (colon || close || source.length) - 2].to_s
+      modifier = analysis_source[2, (colon || close || analysis_source.length) - 2].to_s
       !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
         modifier.each_char.any? { |character| %w[i m x].include?(character) }
     end
