@@ -409,6 +409,8 @@ module Onibi
       def nullable_single_quantifier?(node)
         group = node if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
         body = group&.body
+        return false unless body && minimum_node_width(body).zero?
+
         parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
         nested = parts.first
         nested && (nested.is_a?(Onibi::AST::Quantifier) || nested.is_a?(SemanticBytecode::Quantifier)) &&
