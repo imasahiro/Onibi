@@ -57,6 +57,8 @@ module Onibi
       value = node.value
       raise RegexpError, "empty character class" if ["", "^"].include?(value)
 
+      Onibi::ClassPredicates.validate!(value)
+
       metadata = Onibi::ClassPredicates::Normalizer.normalize(value)
       return unless metadata.kind == :ascii
       return unless metadata.ranges.any? { |first, last| first.ord > last.ord }
