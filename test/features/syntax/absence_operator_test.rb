@@ -156,7 +156,8 @@ class AbsenceOperatorTest < Minitest::Test
       ["(?~(?:[ab]+a))", "aaaab"],
       ["(?~(?:[ab]+a))", "aaa"],
       ["(?~(?:a+aa))", "aaaab"],
-      ["(?~(?:a+a+))", "aaaab"]
+      ["(?~(?:a+a+))", "aaaab"],
+      ["(?~(?:a+a*))", "aaab"]
     ].each do |pattern, input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)

@@ -893,7 +893,10 @@ module Onibi
 
           state = target.last.dup
           state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-          return [[(run + 1) / 2, state]]
+          suffix = parts[1]
+          boundary = suffix.is_a?(Onibi::AST::Quantifier) || suffix.is_a?(SemanticBytecode::Quantifier)
+          boundary = boundary && suffix.kind == :* ? run / 2 : (run + 1) / 2
+          return [[boundary, state]]
         end
 
         if quantifier.kind == :+
