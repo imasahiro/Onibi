@@ -178,6 +178,24 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary
+    pattern = "[[:alpha:]]\\b\\p{Letter}?"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+    onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
+
+    assert_equal ["SS", [0, 2]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
+  def test_property_fold_metadata_does_not_change_case_sensitive_classes
+    pattern = "c*\\b{1,2}[ßé]?\\p{Ll}?"
+    mri = Regexp.new(pattern).match("SS")
+    onibi = Onibi::Regexp.new(pattern).match("SS")
+
+    assert_equal ["", [0, 0]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

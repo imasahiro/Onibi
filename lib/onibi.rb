@@ -564,11 +564,13 @@ module Onibi
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
         semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast)
+        full_casefold = Onibi::IRGen::YARVIR::SemanticBytecode.full_casefold?(semantic_root)
         unicode_capture_byte_offsets =
           Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
         Onibi::IRGen::YARVIR.generate(
           dfa, flags: { encoding: @source.encoding,
                         ignorecase: inline_global_flag_value(:i, casefold?),
+                        full_casefold: full_casefold,
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,

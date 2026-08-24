@@ -5,7 +5,8 @@ module Onibi
     module YARVIR
       module SemanticBytecode
         Literal = Struct.new(:value)
-        CharacterClass = Struct.new(:value)
+        # `casefolds` contains reverse multi-character folds for this class.
+        CharacterClass = Struct.new(:value, :casefolds)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -53,8 +54,38 @@ module Onibi
             return type.new(node.name, node.negated,
                             Onibi::UnicodeProperties.casefold_sequences(node.name))
           end
+          return type.new(node.value, class_casefold_sequences(node.value)) if node.is_a?(Onibi::AST::CharacterClass)
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
+        end
+
+        def class_casefold_sequences(source)
+          Onibi::UnicodeProperties.casefold_codepoints.filter_map do |codepoint|
+            character = [codepoint].pack("U")
+            folded = character.downcase(:fold)
+            [character, folded] if Onibi::ClassPredicates.matches?(source, character)
+          end.freeze
+        end
+
+        def full_casefold?(node)
+          case node
+          when Literal
+            node.value.downcase(:fold).length > node.value.length
+          when Property
+            !node.negated && node.casefolds.any?
+          when CharacterClass
+            node.value.include?("\\p") && node.casefolds.any?
+          when Sequence
+            node.parts.any? { |part| full_casefold?(part) }
+          when Alternation
+            node.branches.any? { |branch| full_casefold?(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion
+            full_casefold?(node.body)
+          when Quantifier
+            full_casefold?(node.expression)
+          else
+            false
+          end
         end
 
         def compile_value(value)

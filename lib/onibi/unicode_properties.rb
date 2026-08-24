@@ -113,6 +113,10 @@ module Onibi
       @casefold_sequences[normalized] = sequences.freeze
     end
 
+    def casefold_codepoints
+      MULTI_CHAR_CASEFOLD_CODEPOINTS
+    end
+
     def boundary_word?(character)
       matches?("Word", character) || [0xb2, 0xb3, 0xb9, 0xbc, 0xbd, 0xbe].include?(character.codepoints.first)
     end

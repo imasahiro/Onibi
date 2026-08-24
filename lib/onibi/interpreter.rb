@@ -399,6 +399,12 @@ module Onibi
             end
           end
 
+          if node.is_a?(SemanticBytecode::CharacterClass)
+            return class_match_lengths(node, characters, cursor, flags).map do |class_length|
+              [class_length, captures]
+            end
+          end
+
           [[length, captures]]
         end
       end
@@ -2407,6 +2413,15 @@ module Onibi
                              expanded_only: flags[:lookbehind_casefold]).each do |length|
               lengths << length unless lengths.include?(length)
             end
+          end
+        end
+        if flags[:ignorecase] && flags[:full_casefold] && !node.value.start_with?("^")
+          Array(node.casefolds).each do |_source, folded|
+            width = folded.length
+            candidate = characters[cursor, width]&.join
+            next unless candidate && casefold_equal?(folded, candidate)
+
+            lengths << width unless lengths.include?(width)
           end
         end
         lengths
