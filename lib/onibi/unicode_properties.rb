@@ -61,7 +61,7 @@ module Onibi
     BLOCKS = %w[
       Basic_Latin Latin_1_Supplement Latin_Extended_A Latin_Extended_B IPA_Extensions
       Spacing_Modifier_Letters Combining_Diacritical_Marks Greek_and_Coptic Cyrillic
-      Armenian Hebrew Arabic Syriac Arabic_Supplement Devanagari Bengali Gurmukhi Gujarati
+      Armenian Hebrew Arabic Syriac Arabic_Supplement Devanagari Devanagari_Extended Bengali Gurmukhi Gujarati
       Oriya Tamil Telugu Kannada Malayalam Thai Lao Tibetan Myanmar Georgian Hangul_Jamo
       Ethiopic Cherokee Canadian_Aboriginal Ogham Runic Khmer Mongolian Hiragana Katakana
       Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility
