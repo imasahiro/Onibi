@@ -28,7 +28,8 @@ class SyntaxDifferentialContractTest < Minitest::Test
     ["atomic group", "(?>a|ab)b", 0, "ab"],
     ["conditional group", "(a)?(?(1)b|c)", 0, "ac"],
     ["class and anchor bounded repetition", "(?:[ab]|^){2}", 0, "b"],
-    ["class and anchor bounded range", "(?:[ab]|^){2,3}", 0, "b"]
+    ["class and anchor bounded range", "(?:[ab]|^){2,3}", 0, "b"],
+    ["absolute anchor bounded range", "(?:a|\\A){2,3}", 0, "ab"]
   ].freeze
 
   def test_capture_priority_matches_mri_before_and_after_warmup

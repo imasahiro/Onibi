@@ -424,10 +424,9 @@ module Onibi
         zero_width ? [zero_width] : accepted
       end
 
-      # MRI keeps the zero-width anchor branch when an exact repetition of a
-      # character-class/anchor alternation cannot complete all repetitions.
-      # Preserve that ordered VM candidate instead of returning a partial class
-      # match. This is a bytecode choice rule, not a parser rewrite.
+      # MRI keeps the zero-width anchor branch when a bounded repetition of an
+      # anchor alternation cannot complete its minimum count. Preserve that
+      # ordered VM candidate instead of returning a partial match.
       def mri_anchor_class_quantifier_fallback?(quantifier, accepted)
         return false unless quantifier.kind == :bounded && quantifier.maximum
         return false unless quantifier.minimum && quantifier.minimum > 1
@@ -441,10 +440,16 @@ module Onibi
         branch_parts = body.branches.map do |branch|
           branch.is_a?(Onibi::AST::Sequence) || branch.is_a?(SemanticBytecode::Sequence) ? branch.parts : [branch]
         end
-        branch_parts.any? { |parts| parts.any? { |part| part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(SemanticBytecode::CharacterClass) } } &&
+        consuming_branch = lambda do |part|
+          part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(SemanticBytecode::CharacterClass) ||
+            (quantifier.maximum != quantifier.minimum &&
+             (part.is_a?(Onibi::AST::Literal) || part.is_a?(SemanticBytecode::Literal)))
+        end
+        branch_parts.any? { |parts| parts.any?(&consuming_branch) } &&
           branch_parts.any? do |parts|
             parts.any? do |part|
-              (part.is_a?(Onibi::AST::Anchor) || part.is_a?(SemanticBytecode::Anchor)) && part.kind == :anchor_start
+              (part.is_a?(Onibi::AST::Anchor) || part.is_a?(SemanticBytecode::Anchor)) &&
+                %i[anchor_start anchor_absolute_start].include?(part.kind)
             end
           end
       end
