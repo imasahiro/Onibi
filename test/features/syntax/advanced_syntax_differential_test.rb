@@ -38,4 +38,8 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
   def test_undefined_subexpression_calls_fail_during_compilation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\g<missing>").match("x") }
   end
+
+  def test_numeric_subexpression_calls_are_rejected_with_named_captures
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<x>a)\\g<1>").match("aa") }
+  end
 end
