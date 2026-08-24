@@ -74,6 +74,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InCJK_Compatibility_Ideographs_Supplement}", ["丽", "𯨟"], %w[A あ]],
     ["\\p{InKawi}", ["\u{11F00}", "\u{11F5F}"], %w[A あ]],
     ["\\p{InNag_Mundari}", ["\u{1E4D0}", "\u{1E4FF}"], %w[A अ]],
+    ["\\p{InOl_Onal}", ["\u{1E5D0}", "\u{1E5FF}"], %w[A अ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
