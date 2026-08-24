@@ -580,6 +580,11 @@ module Onibi
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
           if prefix.first.is_a?(SemanticBytecode::CharacterClass) &&
+             slice.first&.downcase(:fold)&.length.to_i > 1 &&
+             !prefix.first.split_casefold && !prefix.first.value.each_char.one?
+            next
+          end
+          if prefix.first.is_a?(SemanticBytecode::CharacterClass) &&
              prefix.first.casefolds.any? &&
              slice.first.downcase(:fold).length == 1 &&
              slice.first != slice.first.downcase(:fold)

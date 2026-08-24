@@ -66,7 +66,8 @@ module Onibi
             end
             segments = nil if segments.all? { |source, value| source == value }
             boundary_sensitive = folded.length > node.value.length &&
-                                 folded.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+                                 folded.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) } &&
+                                 folded.each_char.none? { |character| character.match?(/\p{M}/) }
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive)
           end

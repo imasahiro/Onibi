@@ -569,6 +569,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_expanded_fold_with_combining_marks_keeps_following_class_operand
+    pattern = "ΐ[a-z]"
+    input = "ΐa"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+  end
+
   def test_longest_reverse_fold_prefix_is_selected
     pattern = "\\bὒa"
     input = "ὒa"
