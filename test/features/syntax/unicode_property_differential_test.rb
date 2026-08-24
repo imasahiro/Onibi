@@ -62,6 +62,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InLatin_Extended_C}", %w[Ⱡ Ɀ], %w[A Ж]],
     ["\\p{InLatin_Extended_D}", ["꜠", "ꟿ"], %w[A Ж]],
     ["\\p{InLatin_Extended_E}", %w[ꬰ ꭟ], %w[A Ж]],
+    ["\\p{InLatin_Extended_F}", %w[𐞀 𐞁], %w[A Ж]],
     ["\\p{InSupplemental_Arrows_A}", ["⟰", "⟿"], %w[A ∑]],
     ["\\p{InSupplemental_Mathematical_Operators}", ["⨀", "⫷"], %w[A ∑]],
     ["\\p{InTransport_and_Map_Symbols}", ["🚀", "🛸"], %w[A 😀]],
