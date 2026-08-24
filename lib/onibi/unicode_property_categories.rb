@@ -140,6 +140,11 @@ module Onibi
       range_member?(UNICODE_POSIX_UPPER_RANGES, codepoint)
     end
 
+    def uppercase?(character)
+      codepoint = character.codepoints.first
+      range_member?(UNICODE_UPPERCASE_RANGES, codepoint)
+    end
+
     def caseable_letter?(character)
       letter?(character) && character.downcase != character.upcase
     end

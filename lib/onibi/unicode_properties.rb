@@ -27,7 +27,7 @@ module Onibi
       "ASCII_Hex_Digit" => :xdigit?, "Hex_Digit" => :hex_digit?, "Dash" => :dash?,
       "Assigned" => :assigned?, "White_Space" => :space?,
       "Graph" => :graph?, "Print" => :print?, "Punct" => :punct?,
-      "L" => :letter?, "Lu" => :upper?, "Ll" => :lowercase?, "Lt" => :titlecase?,
+      "L" => :letter?, "Lu" => :uppercase?, "Ll" => :lowercase?, "Lt" => :titlecase?,
       "Lm" => :modifier_letter?, "Lo" => :other_letter?, "M" => :mark?, "Mark" => :mark?,
       "N" => :number?, "P" => :punct?, "S" => :symbol?, "Symbol" => :symbol?,
       "Z" => :separator?, "Separator" => :separator?, "C" => :other?, "Cn" => :unassigned?,

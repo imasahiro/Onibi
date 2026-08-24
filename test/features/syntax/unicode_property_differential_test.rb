@@ -37,6 +37,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{N}", ["Ⅰ", "²", "①"], ["A"]],
     ["\\p{S}", ["©", "€"], ["A"]],
     ["\\p{Lu}", %w[A Ж], %w[a あ]],
+    ["\\p{Lu}", ["\u{1D400}"], ["\u{1F187}"]],
     ["\\p{Ll}", %w[a ж], %w[A あ]],
     ["\\p{Ll}", %W[\u{AB60} \u{AB68}], %W[\u{AB5C} \u{AB5D} \u{AB5E} \u{AB5F} \u{AB69}]],
     ["\\p{Lo}", %w[あ 漢], %w[A 1]],
