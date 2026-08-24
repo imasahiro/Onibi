@@ -1056,7 +1056,8 @@ module Onibi
       end
 
       def possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
-        limit = quantifier.maximum || [characters.length - cursor, 1].max
+        nullable_body = minimum_node_width(quantifier.expression)&.zero?
+        limit = quantifier.maximum || [characters.length - cursor + (nullable_body ? 1 : 0), 1].max
         consumed = 0
         current = captures
         count = 0

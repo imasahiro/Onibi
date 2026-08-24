@@ -6,7 +6,8 @@ class SyntaxDifferentialContractTest < Minitest::Test
   CAPTURE_CASES = [
     ["alternation capture priority", "(a|aa)", 0, "aa"],
     ["repeated capture priority", "(a*)(a*)", 0, "aaa"],
-    ["adjacent greedy captures", "(.*)(.*)", 0, "ab"]
+    ["adjacent greedy captures", "(.*)(.*)", 0, "ab"],
+    ["possessive nullable capture", "(a*)++", 0, "a"]
   ].freeze
 
   LINEBREAK_CASES = ["\r", "\n", "\r\n", "\u0085", "\u2028", "\u2029"].freeze
