@@ -660,6 +660,11 @@ module Onibi
 
         if next_node.is_a?(SemanticBytecode::Quantifier)
           return false unless next_node.minimum.positive?
+          if next_node.maximum && next_node.maximum > next_node.minimum &&
+             next_node.expression.is_a?(SemanticBytecode::Literal) &&
+             later_fold_candidate?(next_node.expression, characters, cursor + 2)
+            return false
+          end
           if next_node.expression.is_a?(SemanticBytecode::Literal) &&
              next_node.expression.casefold&.length.to_i > next_node.expression.value.length
             return false
@@ -672,6 +677,11 @@ module Onibi
 
         !next_node.value.include?("[") && !next_node.value.include?(":") &&
           !next_node.value.include?("\\") && !next_node.value.include?("&&")
+      end
+
+      def later_fold_candidate?(literal, characters, cursor)
+        fold = literal.casefold || literal.value
+        characters.drop(cursor).any? { |character| character.downcase(:fold) == fold }
       end
 
       def mri_multi_fold_quantifier_boundary?(node, next_node, characters, cursor, flags)
