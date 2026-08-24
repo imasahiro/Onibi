@@ -10,12 +10,16 @@ module Onibi
     # a body result. `probe_position` advances one character per iteration.
     # `possible_points` stores [cursor, captures] checkpoints.
     # `body_checkpoints` stores ordered body results for each point.
+    # `capture_checkpoints` stores the repeat-frame state selected by the
+    # bounded body pass. The interpreter restores this state after a failed
+    # suffix, like OP_ABSENT_END popping to its absent frame.
     AbsentFrame = Struct.new(
       :absent_start,
       :absent_end,
       :probe_position,
       :possible_points,
       :body_checkpoints,
+      :capture_checkpoints,
       keyword_init: true
     )
 
@@ -53,6 +57,7 @@ module Onibi
           language: :complement_of_wrapped_body,
           wrapped_language: ".* body .*",
           preserves: :ordered_body_candidates,
+          capture_checkpoint: :repeat_frame_state,
           transition: :probe_with_bounded_end
         },
         match_group: { operand: :group, stack: :push_result, local: :capture_scope },
@@ -780,7 +785,8 @@ module Onibi
           absent_end: characters.length,
           probe_position: cursor,
           possible_points: [],
-          body_checkpoints: []
+          body_checkpoints: [],
+          capture_checkpoints: []
         )
 
         body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
@@ -1043,7 +1049,8 @@ module Onibi
           absent_end: characters.length,
           probe_position: cursor,
           possible_points: [],
-          body_checkpoints: []
+          body_checkpoints: [],
+          capture_checkpoints: []
         )
         current_captures = captures
         position = cursor
@@ -1056,6 +1063,7 @@ module Onibi
             current_captures = nil unless preserve_failed_capture
           else
             length, state = results.first
+            frame.capture_checkpoints << [position, length, state.dup]
             frame.absent_end = [frame.absent_end, position + length - 1].min
             current_captures = state
           end
