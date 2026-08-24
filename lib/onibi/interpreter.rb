@@ -1078,7 +1078,13 @@ module Onibi
         return nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if
           quantifier.expression.is_a?(SemanticBytecode::Quantifier)
 
-        nullable_body = minimum_node_width(quantifier.expression)&.zero?
+        # A minimum-width analysis can be unknown for an alternation that
+        # contains an anchor. Probe the compiled operand at input end too.
+        # This lets a possessive repeat keep its terminal zero-width unit.
+        nullable_body = minimum_node_width(quantifier.expression)&.zero? ||
+                        node_results(quantifier.expression, characters, characters.length, captures, flags).any? do |length, _state|
+                          length.zero?
+                        end
         limit = quantifier.maximum || [characters.length - cursor + (nullable_body ? 1 : 0), 1].max
         consumed = 0
         current = captures
@@ -1109,7 +1115,7 @@ module Onibi
       # first valid greedy unit without reopening the outer repeat.
       def nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
         frontier = [[0, captures]]
-        accepted = []
+        accepted = quantifier.minimum.zero? ? [[0, captures]] : []
         limit = characters.length - cursor + 1
         count = 0
         while count < limit && !frontier.empty?
@@ -1133,7 +1139,26 @@ module Onibi
         end
         return [] if accepted.empty?
 
-        accepted.uniq { |length, state| [length, state] }.sort_by { |length, _state| -length }
+        # A zero-width nested unit can update captures without changing the
+        # cursor. Prefer the state with the most capture data at an equal
+        # width. Keep the latest state when capture data has the same shape.
+        accepted.group_by(&:first).values.map do |candidates|
+          if quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
+             quantifier.expression.mode == :lazy && quantifier.expression.minimum.zero?
+            candidates.first
+          else
+            candidates.each_with_index.max_by do |(_length, state), index|
+              [state.count { |key, _value| key.is_a?(Integer) || key.is_a?(String) }, index]
+            end.first
+          end
+        end.sort_by do |length, _state|
+          if quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
+             quantifier.expression.mode == :lazy && quantifier.expression.minimum.zero?
+            length
+          else
+            -length
+          end
+        end
       end
 
       def zero_width_nested_unit_valid?(node, characters, cursor, captures, flags)

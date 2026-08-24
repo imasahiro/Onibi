@@ -45,6 +45,58 @@ class QuantifierModeTest < Minitest::Test
     assert_equal expected.offset(0), actual.offset(0)
   end
 
+  def test_possessive_nullable_unit_keeps_terminal_anchor_capture
+    source = "((?<value>(?:$|.))*+)"
+    expected = ::Regexp.new(source).match("ab")
+    actual = Onibi::Regexp.new(source).match("ab")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_nested_possessive_quantifier_keeps_zero_repetitions
+    source = "(\\s)+?*+"
+    expected = ::Regexp.new(source).match("xyz")
+    actual = Onibi::Regexp.new(source).match("xyz")
+
+    assert_equal expected.to_a, actual&.to_a
+  end
+
+  def test_nested_possessive_zero_width_unit_keeps_capture_state
+    source = "(?=(?<value>.))+?*+"
+    expected = ::Regexp.new(source).match("a\nb")
+    actual = Onibi::Regexp.new(source).match("a\nb")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_bounded_possessive_zero_width_unit_keeps_capture_state
+    source = "(\\b){0,2}+"
+    expected = ::Regexp.new(source).match("123")
+    actual = Onibi::Regexp.new(source).match("123")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_nested_lazy_nullable_unit_keeps_the_shortest_candidate
+    source = "(?<value>(?:\\w|\\p{L})*?++)"
+    expected = ::Regexp.new(source).match("É")
+    actual = Onibi::Regexp.new(source).match("É")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_nested_lazy_zero_repetition_does_not_create_a_capture
+    source = "(?:(\\b)*?)*?++"
+    expected = ::Regexp.new(source).match("123")
+    actual = Onibi::Regexp.new(source).match("123")
+
+    assert_equal expected.to_a, actual.to_a
+  end
+
   def test_lazy_suffix_keeps_bounded_possessive_minimum
     source = "(?:\\b){1,3}+?"
     expected = ::Regexp.new(source).match("")
