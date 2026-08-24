@@ -334,7 +334,13 @@ module Onibi
               first_non_ascii = !run.first.ascii_only?
               has_mark = run.join.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
               reverse_fold = reverse_casefold_sequence?(run.join)
-              if run.length > 1 && (run.join.ascii_only? || first_expands || first_non_ascii || has_mark || reverse_fold)
+              reverse_prefix = run.each_index.drop(1).reverse.find do |length|
+                reverse_casefold_sequence?(run.first(length).join)
+              end
+              if reverse_prefix
+                index = part_index + reverse_prefix
+                part = SemanticBytecode::Literal.new(run.first(reverse_prefix).join)
+              elsif run.length > 1 && (run.join.ascii_only? || first_expands || first_non_ascii || has_mark || reverse_fold)
                 part = SemanticBytecode::Literal.new(run.join)
               else
                 index = part_index + 1
