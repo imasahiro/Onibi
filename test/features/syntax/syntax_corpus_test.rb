@@ -13,7 +13,12 @@ class SyntaxCorpusTest < Minitest::Test
     concatenation
     escapes
     literals
+    atomic_groups
+    backreferences
+    lookarounds
+    named_captures
     options
+    possessive_quantifiers
     quantifiers
     unicode
     unicode_properties
@@ -37,13 +42,7 @@ class SyntaxCorpusTest < Minitest::Test
   def test_unsupported_features_are_explicitly_recorded
     corpus = TestFixtures.load(CORPUS)
 
-    assert_equal %w[
-      backreferences
-      atomic_groups
-      lookarounds
-      named_captures
-      possessive_quantifiers
-    ].sort, corpus.fetch("unsupported_features").sort
+    assert_equal %w[].sort, corpus.fetch("unsupported_features").sort
   end
 
   private

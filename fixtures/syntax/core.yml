@@ -6,16 +6,16 @@ supported_features:
 - concatenation
 - escapes
 - literals
-- options
-- quantifiers
-- unicode
-- unicode_properties
-unsupported_features:
 - atomic_groups
 - backreferences
 - lookarounds
 - named_captures
+- options
 - possessive_quantifiers
+- quantifiers
+- unicode
+- unicode_properties
+unsupported_features: []
 cases:
 - name: literal match
   feature: literals
