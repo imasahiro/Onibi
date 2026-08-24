@@ -300,6 +300,7 @@ module Onibi
     end
 
     def match(input, position = 0)
+      requested_position = normalize_match_position(position)
       return nil if input.nil? || input.is_a?(Symbol)
 
       unless input.is_a?(String)
@@ -312,7 +313,6 @@ module Onibi
       ascii_input = input.ascii_only?
       @ascii_input = ascii_input
       @input_encoding = input.encoding
-      requested_position = normalize_match_position(position)
       return nil if requested_position.negative? && (requested_position + input.length).negative?
       raise ArgumentError, "invalid byte sequence in #{input.encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT

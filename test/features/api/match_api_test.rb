@@ -33,6 +33,7 @@ class MatchApiTest < Minitest::Test
     assert_equal ["a"], Onibi::Regexp.new("a").match(string_like).to_a
     assert_nil Onibi::Regexp.new("a").match(nil)
     assert_nil Onibi::Regexp.new("a").match(:symbol)
+    assert_raises(TypeError) { Onibi::Regexp.new("a").match(nil, "1") }
     assert_raises(TypeError) { Onibi::Regexp.new("a").match(1) }
   end
 
