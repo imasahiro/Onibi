@@ -714,6 +714,7 @@ module Onibi
         return false unless node.casefold && node.casefold.length > node.value.length
         return false unless characters[cursor] == node.value
         return false unless node.fold_boundary_sensitive
+        return false if next_node.is_a?(SemanticBytecode::CharacterClass)
 
         next_source = characters[cursor + 1]
         if next_source && next_source.downcase(:fold).length > 1 &&
