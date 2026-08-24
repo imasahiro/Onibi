@@ -13,7 +13,7 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Alphabetic Bidi_Control Case_Ignorable Decimal_Number Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
-      Cased Changes_When_Casefolded Changes_When_Casemapped Extender Grapheme_Base Grapheme_Extend ID_Compat_Math_Continue
+      Cased Changes_When_Casefolded Changes_When_Casemapped Changes_When_Lowercased Extender Grapheme_Base Grapheme_Extend ID_Compat_Math_Continue
       ID_Compat_Math_Start ID_Continue ID_Start Ideographic Lowercase Math Pattern_Syntax
       Prepended_Concatenation_Mark Punctuation Regional_Indicator Sentence_Terminal Soft_Dotted
       Terminal_Punctuation Unified_Ideograph Uppercase Variation_Selector
@@ -61,6 +61,7 @@ module Onibi
       "ID_Continue" => :id_continue?,
       "Changes_When_Casefolded" => :changes_when_casefolded?,
       "Changes_When_Casemapped" => :changes_when_casemapped?,
+      "Changes_When_Lowercased" => :changes_when_lowercased?,
       "Pattern_Syntax" => :pattern_syntax?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
