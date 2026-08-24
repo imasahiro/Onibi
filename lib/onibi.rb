@@ -369,10 +369,11 @@ module Onibi
       raise ArgumentError, "invalid byte sequence in #{input.encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
 
       if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT &&
-         !(@source.encoding == Encoding::US_ASCII && input.encoding == Encoding::Windows_31J)
+         !(@source.encoding == Encoding::US_ASCII && !no_encoding? &&
+           input.encoding == Encoding::ISO_8859_1)
         if @source.encoding == Encoding::US_ASCII && !no_encoding? &&
-           [Encoding::UTF_8, Encoding::EUC_JP].include?(input.encoding)
-          raise ArgumentError, "regexp preprocess failed: invalid multibyte escape"
+           [Encoding::UTF_8, Encoding::EUC_JP, Encoding::Windows_31J].include?(input.encoding)
+          raise ArgumentError, "regexp preprocess failed: too short escaped multibyte character"
         end
 
         raise_incompatible_encoding(input)

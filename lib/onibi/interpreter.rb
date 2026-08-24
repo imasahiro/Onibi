@@ -91,7 +91,9 @@ module Onibi
       private
 
       def run(input, start_position)
-        characters = if input.encoding == Encoding::ASCII_8BIT
+        byte_input = input.encoding == Encoding::ASCII_8BIT ||
+                     (@program.flags[:binary_escape] && input.encoding == Encoding::ISO_8859_1)
+        characters = if byte_input
                        input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }
                      else
                        input.codepoints.map { |codepoint| codepoint.chr(input.encoding) }

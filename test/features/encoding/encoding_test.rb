@@ -202,6 +202,20 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_us_ascii_byte_escape_uses_mri_encoding_rules
+    pattern = "\\xE9".dup.force_encoding(Encoding::US_ASCII)
+    regexp = Onibi::Regexp.new(pattern)
+    iso_input = "\xE9".b.force_encoding(Encoding::ISO_8859_1)
+
+    assert_equal [iso_input], regexp.match(iso_input).to_a
+    [Encoding::UTF_8, Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      input = "é".dup.force_encoding(encoding)
+      error = assert_raises(ArgumentError) { regexp.match(input) }
+
+      assert_equal "regexp preprocess failed: too short escaped multibyte character", error.message
+    end
+  end
+
   def test_match_decodes_non_utf8_unicode_properties
     [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
       regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))
