@@ -92,6 +92,7 @@ module Onibi
       CJK_Unified_Ideographs_Extension_J
       Vertical_Forms
       NKo
+      Coptic
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
