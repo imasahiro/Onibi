@@ -77,7 +77,7 @@ module Onibi
       Enclosed_Alphanumeric_Supplement
       Mathematical_Alphanumeric_Symbols
       CJK_Compatibility_Ideographs CJK_Compatibility_Ideographs_Supplement
-      CJK_Strokes Nag_Mundari Ol_Onal
+      CJK_Strokes Nag_Mundari Ol_Onal Mende_Kikakui
       Ideographic_Description_Characters
       CJK_Radicals_Supplement
       Katakana_Phonetic_Extensions
