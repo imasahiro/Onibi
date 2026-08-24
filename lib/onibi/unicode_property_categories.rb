@@ -130,6 +130,11 @@ module Onibi
       range_member?(UNICODE_POSIX_LOWER_RANGES, codepoint)
     end
 
+    def lowercase?(character)
+      codepoint = character.codepoints.first
+      range_member?(UNICODE_LOWERCASE_RANGES, codepoint)
+    end
+
     def upper?(character)
       codepoint = character.codepoints.first
       range_member?(UNICODE_POSIX_UPPER_RANGES, codepoint)
