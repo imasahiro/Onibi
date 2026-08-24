@@ -26,6 +26,16 @@ class MatchApiTest < Minitest::Test
     assert_raises(TypeError) { Onibi::Regexp.new("a").match("ba", "1") }
   end
 
+  def test_match_uses_mri_string_conversion_rules
+    string_like = Object.new
+    string_like.define_singleton_method(:to_str) { "ba" }
+
+    assert_equal ["a"], Onibi::Regexp.new("a").match(string_like).to_a
+    assert_nil Onibi::Regexp.new("a").match(nil)
+    assert_nil Onibi::Regexp.new("a").match(:symbol)
+    assert_raises(TypeError) { Onibi::Regexp.new("a").match(1) }
+  end
+
   def test_empty_pattern_uses_mri_position_rules
     regexp = Onibi::Regexp.new("")
 

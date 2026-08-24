@@ -300,7 +300,12 @@ module Onibi
     end
 
     def match(input, position = 0)
-      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+      return nil if input.nil? || input.is_a?(Symbol)
+
+      unless input.is_a?(String)
+        input = String.try_convert(input)
+        raise TypeError, "no implicit conversion into String" unless input
+      end
 
       program = bytecode_program
 
