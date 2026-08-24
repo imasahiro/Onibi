@@ -17,13 +17,18 @@ module Onibi
 
     module_function
 
+    def validate(ast)
+      validate_quantifier_bounds(ast)
+      true
+    end
+
     def compile(input, options: [], encoding: nil, passes: nil)
       parsed = input.respond_to?(:ast) ? input : nil
       ast = parsed ? parsed.ast : input
       normalized_options = Onibi::Parser.send(:normalize_options, parsed ? parsed.options : options)
       raise TypeError, "expected an AST or parser result" unless ast
 
-      validate_quantifier_bounds(ast)
+      validate(ast)
 
       pipeline = if passes.nil?
                    Onibi::Compiler::Pipeline.default
@@ -37,6 +42,8 @@ module Onibi
 
     def validate_quantifier_bounds(ast)
       ast_values(ast).each do |node|
+        raise RegexpError, "empty character class" if node.is_a?(Onibi::AST::CharacterClass) && ["", "^"].include?(node.value)
+
         next unless node.is_a?(Onibi::AST::Quantifier)
         next if node.minimum <= MAX_REPEAT_COUNT &&
                 (node.maximum.nil? || node.maximum <= MAX_REPEAT_COUNT)

@@ -204,6 +204,7 @@ module Onibi
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       @parsed = Onibi::Parser.parse(source, options: @options)
       @ast = @parsed.ast
+      Onibi::Compiler.validate(@ast)
       @effective_casefold = casefold? || scoped_casefold?(@ast)
       @effective_multiline = multiline? || scoped_multiline?(@ast)
       freeze_source_encoding

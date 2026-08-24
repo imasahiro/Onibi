@@ -16,6 +16,8 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "\\M-",
     "\\C-",
     "[",
+    "[]",
+    "[^]",
     "(?<",
     "(?(",
     "(?#",
