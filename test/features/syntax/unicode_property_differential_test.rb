@@ -344,6 +344,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_empty_pattern_keeps_empty_matches_under_ignorecase
+    input = "éé"
+    mri = input.scan(Regexp.new("", Regexp::IGNORECASE))
+    onibi = Onibi::Regexp.new("", Regexp::IGNORECASE).scan(input)
+
+    assert_equal ["", "", ""], mri
+    assert_equal mri, onibi
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

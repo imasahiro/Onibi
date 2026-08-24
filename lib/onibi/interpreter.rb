@@ -302,7 +302,8 @@ module Onibi
         when SemanticBytecode::Sequence
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
-            if value.ascii_only? || node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
+            if !value.empty? &&
+               (value.ascii_only? || node.parts.first.value.downcase(:fold).length > node.parts.first.value.length)
               folded_length = casefold_lengths(value, characters, cursor,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
