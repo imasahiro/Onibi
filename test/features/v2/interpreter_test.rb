@@ -102,6 +102,14 @@ class InterpreterTest < Minitest::Test
     assert_equal([1, 0, 1], results.map { |_length, state| state[:__match_alternative_index] })
   end
 
+  def test_absence_literal_fast_path_preserves_wrapped_capture
+    expected = ::Regexp.new("(?~(a))").match("ba")
+    actual = Onibi::Regexp.new("(?~(a))").match("ba")
+
+    assert_equal [expected[0], expected.captures, expected.offset(1)],
+                 [actual[0], actual.captures, actual.offset(1)]
+  end
+
   private
 
   def semantic_node?(value)

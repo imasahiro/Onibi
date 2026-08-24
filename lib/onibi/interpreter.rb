@@ -845,7 +845,9 @@ module Onibi
       # The VM dispatch keeps all OP_ABSENT state transitions in one method.
       # rubocop:disable Metrics/BlockLength
       def absence_results(node, characters, cursor, captures, flags)
-        delimiter = literal_value(node.body)
+        # A literal delimiter is a safe fast path only when its body has no
+        # capture. The wrapped body still owns capture state in MRI.
+        delimiter = literal_value(node.body) unless capture_numbers(node.body).any?
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
         frame = AbsentFrame.new(
