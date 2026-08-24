@@ -1331,14 +1331,13 @@ module Onibi
         parts = absence_sequence_parts(body)
         outer = parts.first
         return captures unless parts.length > 1 &&
-                               (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+                               outer.is_a?(SemanticBytecode::Group)
         return captures unless minimum_suffix_width(parts.drop(1))&.positive?
 
         nested = absence_sequence_parts(outer.body)
         quantifier = nested.first
         return captures unless nested.length == 1 &&
-                               (quantifier.is_a?(Onibi::AST::Quantifier) ||
-                                quantifier.is_a?(SemanticBytecode::Quantifier))
+                               quantifier.is_a?(SemanticBytecode::Quantifier)
         return captures unless static_node_width(quantifier.expression)
 
         outer_span = captures[outer.number]
@@ -1387,13 +1386,12 @@ module Onibi
         parts = absence_sequence_parts(body)
         outer = parts.first
         return state unless parts.length > 1 &&
-                            (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+                            outer.is_a?(SemanticBytecode::Group)
 
         nested = absence_sequence_parts(outer.body)
         quantifier = nested.first
         return state unless nested.length == 1 &&
-                            (quantifier.is_a?(Onibi::AST::Quantifier) ||
-                             quantifier.is_a?(SemanticBytecode::Quantifier))
+                            quantifier.is_a?(SemanticBytecode::Quantifier)
         return state unless static_node_width(quantifier.expression)
         return state if parts.drop(1).any? { |part| capture_numbers(part).any? }
 
@@ -1415,7 +1413,7 @@ module Onibi
 
       def filter_bounded_absence_captures(body, state)
         capture = absence_sequence_parts(body).first
-        keep = (capture.number if capture.is_a?(Onibi::AST::Group) || capture.is_a?(SemanticBytecode::Group))
+        keep = (capture.number if capture.is_a?(SemanticBytecode::Group))
         state.reject { |key, _value| key.is_a?(Integer) && key != keep }
       end
 
@@ -1431,7 +1429,7 @@ module Onibi
         parts = absence_sequence_parts(body)
         quantifier = parts.first
         return unless parts.length > 1 &&
-                      (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+                      quantifier.is_a?(SemanticBytecode::Quantifier)
         return if contains_absence_node?(body)
 
         suffix_minimum = minimum_suffix_width(parts.drop(1))
@@ -1464,7 +1462,7 @@ module Onibi
           state = target.last.dup
           state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
           suffix = parts[1]
-          boundary = suffix.is_a?(Onibi::AST::Quantifier) || suffix.is_a?(SemanticBytecode::Quantifier)
+          boundary = suffix.is_a?(SemanticBytecode::Quantifier)
           boundary = boundary && suffix.kind == :* ? run / 2 : (run + 1) / 2
           return [[boundary, state]]
         end
@@ -1609,8 +1607,7 @@ module Onibi
         parts = absence_sequence_parts(body)
         quantifier = parts.first
         return false unless parts.length > 1 &&
-                            (quantifier.is_a?(Onibi::AST::Quantifier) ||
-                             quantifier.is_a?(SemanticBytecode::Quantifier))
+                            quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless quantifier.maximum.nil? && %i[* +].include?(quantifier.kind)
 
         spans = state.values.filter_map do |value|
@@ -1680,23 +1677,20 @@ module Onibi
 
       def minimum_node_width(node)
         case node
-        when Onibi::AST::Literal, SemanticBytecode::Literal
+        when SemanticBytecode::Literal
           node.value.length
-        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
-             Onibi::AST::Any, SemanticBytecode::Any,
-             Onibi::AST::Escape, SemanticBytecode::Escape,
-             Onibi::AST::Property, SemanticBytecode::Property
+        when SemanticBytecode::CharacterClass, SemanticBytecode::Any,
+             SemanticBytecode::Escape, SemanticBytecode::Property
           1
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
           minimum_node_width(node.body)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           minimum_suffix_width(node.parts)
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           widths = node.branches.map { |branch| minimum_node_width(branch) }
           widths.min if widths.all?
-        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+        when SemanticBytecode::Quantifier
           width = minimum_node_width(node.expression)
           width && width * node.minimum.to_i
         end
@@ -1708,22 +1702,19 @@ module Onibi
 
       def node_can_consume?(node)
         case node
-        when Onibi::AST::Literal, SemanticBytecode::Literal
+        when SemanticBytecode::Literal
           !node.value.empty?
-        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
-             Onibi::AST::Any, SemanticBytecode::Any,
-             Onibi::AST::Escape, SemanticBytecode::Escape,
-             Onibi::AST::Property, SemanticBytecode::Property
+        when SemanticBytecode::CharacterClass, SemanticBytecode::Any,
+             SemanticBytecode::Escape, SemanticBytecode::Property
           true
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
           node_can_consume?(node.body)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? { |part| node_can_consume?(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.any? { |branch| node_can_consume?(branch) }
-        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+        when SemanticBytecode::Quantifier
           node.maximum != 0 && node_can_consume?(node.expression)
         else
           false
@@ -1732,23 +1723,20 @@ module Onibi
 
       def static_node_width(node)
         case node
-        when Onibi::AST::Literal, SemanticBytecode::Literal
+        when SemanticBytecode::Literal
           node.value.length
-        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
-             Onibi::AST::Any, SemanticBytecode::Any,
-             Onibi::AST::Escape, SemanticBytecode::Escape,
-             Onibi::AST::Property, SemanticBytecode::Property
+        when SemanticBytecode::CharacterClass, SemanticBytecode::Any,
+             SemanticBytecode::Escape, SemanticBytecode::Property
           1
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
           static_node_width(node.body)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           fixed_suffix_width(node.parts)
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           widths = node.branches.map { |branch| static_node_width(branch) }
           widths.first if widths.all? && widths.uniq.one?
-        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+        when SemanticBytecode::Quantifier
           return unless node.maximum && node.minimum == node.maximum
 
           width = static_node_width(node.expression)
@@ -1757,12 +1745,12 @@ module Onibi
       end
 
       def wildcard_node?(node)
-        node.is_a?(Onibi::AST::Any) || node.is_a?(SemanticBytecode::Any)
+        node.is_a?(SemanticBytecode::Any)
       end
 
       def quantified_atoms_equivalent?(left, right)
         return quantified_atoms_equivalent?(left, right.expression) if
-          right.is_a?(Onibi::AST::Quantifier) || right.is_a?(SemanticBytecode::Quantifier)
+          right.is_a?(SemanticBytecode::Quantifier)
 
         left == right || (literal_value(left) && literal_value(left) == literal_value(right))
       end
@@ -1800,13 +1788,12 @@ module Onibi
 
       def filter_nested_quantifier_suffix_captures(body, captures, characters, flags)
         outer = absence_sequence_parts(body).first
-        return captures unless outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group)
+        return captures unless outer.is_a?(SemanticBytecode::Group)
 
         nested = absence_sequence_parts(outer.body)
         quantifier = nested.first
         return captures unless nested.length > 1 &&
-                               (quantifier.is_a?(Onibi::AST::Quantifier) ||
-                                quantifier.is_a?(SemanticBytecode::Quantifier))
+                               quantifier.is_a?(SemanticBytecode::Quantifier)
 
         outer_span = captures[outer.number]
         suffix_width = minimum_suffix_width(nested.drop(1))
@@ -1856,13 +1843,13 @@ module Onibi
 
       def capture_numbers(node)
         case node
-        when Onibi::AST::Group, SemanticBytecode::Group
+        when SemanticBytecode::Group
           [node.number] + capture_numbers(node.body)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.flat_map { |part| capture_numbers(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.flat_map { |branch| capture_numbers(branch) }
-        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+        when SemanticBytecode::Quantifier
           capture_numbers(node.expression)
         else
           []
@@ -1871,17 +1858,16 @@ module Onibi
 
       def node_starts_with_selected_atom?(node, atom, captures)
         case node
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
           node_starts_with_selected_atom?(node.body, atom, captures)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? && node_starts_with_selected_atom?(node.parts.first, atom, captures)
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           index = captures[:__match_alternative_index]
           branch = index.is_a?(Integer) ? node.branches[index] : node.branches.first
           branch && node_starts_with_selected_atom?(branch, atom, captures)
-        when Onibi::AST::Literal, SemanticBytecode::Literal
+        when SemanticBytecode::Literal
           quantified_atoms_equivalent?(node, atom)
         else
           false
@@ -1910,16 +1896,14 @@ module Onibi
 
       def contains_absence_node?(node)
         case node
-        when Onibi::AST::Absence, SemanticBytecode::Absence
+        when SemanticBytecode::Absence
           true
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? { |part| contains_absence_node?(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.any? { |branch| contains_absence_node?(branch) }
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+        when SemanticBytecode::Group, SemanticBytecode::Quantifier,
+             SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
           child = node.respond_to?(:body) ? node.body : node.expression
           contains_absence_node?(child)
         else
@@ -1929,11 +1913,11 @@ module Onibi
 
       def absence_sequence_parts(node)
         loop do
-          if (node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)) && !node.capture
+          if node.is_a?(SemanticBytecode::Group) && !node.capture
             node = node.body
-          elsif node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+          elsif node.is_a?(SemanticBytecode::Sequence)
             only = node.parts.one? && node.parts.first
-            if only && (only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)) && !only.capture
+            if only.is_a?(SemanticBytecode::Group) && !only.capture
               node = only.body
               next
             end
@@ -1946,17 +1930,17 @@ module Onibi
 
       def sequence_failure_state(body, characters, cursor, captures, flags)
         loop do
-          if (body.is_a?(Onibi::AST::Group) || body.is_a?(SemanticBytecode::Group)) && !body.capture
+          if body.is_a?(SemanticBytecode::Group) && !body.capture
             body = body.body
-          elsif body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+          elsif body.is_a?(SemanticBytecode::Sequence)
             only = body.parts.one? && body.parts.first
-            body = only.body if (only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)) && !only.capture
+            body = only.body if only.is_a?(SemanticBytecode::Group) && !only.capture
             break
           else
             return
           end
         end
-        return unless body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+        return unless body.is_a?(SemanticBytecode::Sequence)
 
         states = [[0, captures]]
         body.parts.each do |part|
@@ -2024,17 +2008,15 @@ module Onibi
 
       def contains_assertion?(node)
         case node
-        when Onibi::AST::Assertion, SemanticBytecode::Assertion
+        when SemanticBytecode::Assertion
           true
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? { |part| contains_assertion?(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.any? { |branch| contains_assertion?(branch) }
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup,
-             Onibi::AST::Absence, SemanticBytecode::Absence
+        when SemanticBytecode::Group, SemanticBytecode::Quantifier,
+             SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup,
+             SemanticBytecode::Absence
           child = node.respond_to?(:body) ? node.body : node.expression
           contains_assertion?(child)
         else
@@ -2044,17 +2026,15 @@ module Onibi
 
       def contains_positive_lookahead?(node)
         case node
-        when Onibi::AST::Assertion, SemanticBytecode::Assertion
+        when SemanticBytecode::Assertion
           %i[positive positive_lookahead].include?(node.kind)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? { |part| contains_positive_lookahead?(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.any? { |branch| contains_positive_lookahead?(branch) }
-        when Onibi::AST::Group, SemanticBytecode::Group,
-             Onibi::AST::Quantifier, SemanticBytecode::Quantifier,
-             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
-             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup,
-             Onibi::AST::Absence, SemanticBytecode::Absence
+        when SemanticBytecode::Group, SemanticBytecode::Quantifier,
+             SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup,
+             SemanticBytecode::Absence
           child = node.respond_to?(:body) ? node.body : node.expression
           contains_positive_lookahead?(child)
         else
@@ -2063,7 +2043,7 @@ module Onibi
       end
 
       def zero_width_star_absence?(body, characters, cursor)
-        sequence = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+        sequence = if body.is_a?(SemanticBytecode::Sequence)
                      body.parts
                    else
                      [body]
@@ -2071,8 +2051,7 @@ module Onibi
         return false unless sequence.length == 1
 
         quantifier = sequence.first
-        return false unless quantifier.is_a?(Onibi::AST::Quantifier) ||
-                            quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless quantifier.kind == :* && quantifier.maximum.nil?
 
         literal = literal_value(quantifier.expression)
@@ -2081,28 +2060,28 @@ module Onibi
       end
 
       def captureless_absence_body?(body)
-        parts = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+        parts = if body.is_a?(SemanticBytecode::Sequence)
                   body.parts
                 else
                   [body]
                 end
         parts.length == 1 &&
-          (parts.first.is_a?(Onibi::AST::Quantifier) || parts.first.is_a?(SemanticBytecode::Quantifier))
+          parts.first.is_a?(SemanticBytecode::Quantifier)
       end
 
       def adjust_nested_repeat_capture(body, captures, length, cursor)
         return captures unless length
 
-        parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+        parts = body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
         outer = parts.first
         return captures unless parts.length == 1 &&
-                               (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+                               outer.is_a?(SemanticBytecode::Group)
 
         nested = outer.body
-        nested_parts = nested.is_a?(Onibi::AST::Sequence) || nested.is_a?(SemanticBytecode::Sequence) ? nested.parts : [nested]
+        nested_parts = nested.is_a?(SemanticBytecode::Sequence) ? nested.parts : [nested]
         quantifier = nested_parts.first
         return captures unless nested_parts.length == 1 &&
-                               (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+                               quantifier.is_a?(SemanticBytecode::Quantifier)
 
         if length.zero?
           adjusted = captures.dup
@@ -2151,19 +2130,19 @@ module Onibi
       end
 
       def filter_nested_absence_captures(body, captures)
-        parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+        parts = body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
         outer = parts.first
         return captures unless parts.length == 1 &&
-                               (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+                               outer.is_a?(SemanticBytecode::Group)
 
         nested = outer.body
-        nested_parts = nested.is_a?(Onibi::AST::Sequence) || nested.is_a?(SemanticBytecode::Sequence) ? nested.parts : [nested]
+        nested_parts = nested.is_a?(SemanticBytecode::Sequence) ? nested.parts : [nested]
         quantifier = nested_parts.first
         return captures unless nested_parts.length == 1 &&
-                               (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+                               quantifier.is_a?(SemanticBytecode::Quantifier)
 
         expression = quantifier.expression
-        return captures unless expression.is_a?(Onibi::AST::Group) || expression.is_a?(SemanticBytecode::Group)
+        return captures unless expression.is_a?(SemanticBytecode::Group)
 
         captures.select { |key, _value| key == outer.number }
       end
@@ -2171,11 +2150,11 @@ module Onibi
       def filter_absence_capture_scope(body, captures)
         scope = body
         loop do
-          if (scope.is_a?(Onibi::AST::Group) || scope.is_a?(SemanticBytecode::Group)) && !scope.capture
+          if scope.is_a?(SemanticBytecode::Group) && !scope.capture
             scope = scope.body
-          elsif scope.is_a?(Onibi::AST::Sequence) || scope.is_a?(SemanticBytecode::Sequence)
+          elsif scope.is_a?(SemanticBytecode::Sequence)
             only = scope.parts.one? && scope.parts.first
-            break unless only.is_a?(Onibi::AST::Group) || only.is_a?(SemanticBytecode::Group)
+            break unless only.is_a?(SemanticBytecode::Group)
             break if only.capture
 
             scope = only.body
@@ -2183,9 +2162,9 @@ module Onibi
             break
           end
         end
-        parts = scope.is_a?(Onibi::AST::Sequence) || scope.is_a?(SemanticBytecode::Sequence) ? scope.parts : [scope]
+        parts = scope.is_a?(SemanticBytecode::Sequence) ? scope.parts : [scope]
         direct_group = parts.any? do |part|
-          (part.is_a?(Onibi::AST::Group) || part.is_a?(SemanticBytecode::Group)) && part.capture
+          part.is_a?(SemanticBytecode::Group) && part.capture
         end
         direct_group ? captures : {}
       end
@@ -2207,21 +2186,21 @@ module Onibi
       end
 
       def quantified_absence_length(body, characters, cursor)
-        sequence = if body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence)
+        sequence = if body.is_a?(SemanticBytecode::Sequence)
                      body.parts
                    else
                      [body]
                    end
         return unless sequence.length == 1
 
-        if sequence.first.is_a?(Onibi::AST::Group) || sequence.first.is_a?(SemanticBytecode::Group)
+        if sequence.first.is_a?(SemanticBytecode::Group)
           nested = sequence.first.body
-          nested_parts = (nested.parts if nested.is_a?(Onibi::AST::Sequence) || nested.is_a?(SemanticBytecode::Sequence))
+          nested_parts = (nested.parts if nested.is_a?(SemanticBytecode::Sequence))
           return quantified_absence_length(nested, characters, cursor) if nested_parts&.length == 1
         end
 
         quantifier = sequence.first
-        return unless quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)
+        return unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return unless quantifier.maximum.nil?
         return unless %i[+ *].include?(quantifier.kind) || quantifier.minimum.to_i >= 2
 
@@ -2271,8 +2250,7 @@ module Onibi
             run += unit.length
             position += unit.length
           end
-        elsif quantifier.expression.is_a?(Onibi::AST::CharacterClass) ||
-              quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
+        elsif quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
           while position < characters.length && class_match_lengths(quantifier.expression, characters, position, {}).include?(1)
             run += 1
             position += 1
@@ -2301,11 +2279,11 @@ module Onibi
 
       def alternation_unit(node)
         branches = case node
-                   when Onibi::AST::Alternation, SemanticBytecode::Alternation
+                   when SemanticBytecode::Alternation
                      node.branches
-                   when Onibi::AST::Group, SemanticBytecode::Group
+                   when SemanticBytecode::Group
                      return alternation_unit(node.body)
-                   when Onibi::AST::Sequence, SemanticBytecode::Sequence
+                   when SemanticBytecode::Sequence
                      return alternation_unit(node.parts.first) if node.parts.length == 1
                    end
         return unless branches && !branches.empty?
@@ -2317,14 +2295,14 @@ module Onibi
       end
 
       def variable_alternation_units(node)
-        body = if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+        body = if node.is_a?(SemanticBytecode::Group)
                  node.body
-               elsif node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+               elsif node.is_a?(SemanticBytecode::Sequence)
                  node.parts.length == 1 ? node.parts.first : node
                else
                  node
                end
-        branches = (body.branches if body.is_a?(Onibi::AST::Alternation) || body.is_a?(SemanticBytecode::Alternation))
+        branches = (body.branches if body.is_a?(SemanticBytecode::Alternation))
         return unless branches
 
         values = branches.map { |branch| literal_value(branch) }
@@ -2486,9 +2464,9 @@ module Onibi
 
       def literal_value(node)
         case node
-        when Onibi::AST::Literal, SemanticBytecode::Literal then node.value
-        when Onibi::AST::Group, SemanticBytecode::Group then literal_value(node.body)
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Literal then node.value
+        when SemanticBytecode::Group then literal_value(node.body)
+        when SemanticBytecode::Sequence
           node.parts.map { |part| literal_value(part) }.then { |values| values.all? ? values.join : nil }
         end
       end
