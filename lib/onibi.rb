@@ -183,10 +183,17 @@ module Onibi
       end
 
       @source = source
-      @source = @source.dup.force_encoding(Encoding::UTF_8) if @source.valid_encoding? && non_ascii_unicode_escape_pattern?
+      unicode_escape = @source.valid_encoding? && non_ascii_unicode_escape_pattern?
+      source_encoding = @source.encoding
+      @source = @source.dup.force_encoding(Encoding::UTF_8) if unicode_escape
       @options = option_bits(options)
       raise RegexpError, "invalid pattern encoding" unless @source.valid_encoding?
-      raise RegexpError, "non-ASCII pattern with no encoding" if no_encoding? && !@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT
+      raise RegexpError, "incompatible character encoding" if unicode_escape &&
+                                                              source_encoding != Encoding::UTF_8 && fixed_encoding?
+      if no_encoding? && ((!@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT) ||
+                          non_ascii_unicode_escape_pattern?)
+        raise RegexpError, "non-ASCII pattern with no encoding"
+      end
 
       if no_encoding? && property_names.any?
         unless property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
@@ -203,7 +210,8 @@ module Onibi
       validate_property_encoding!
 
       @options |= FIXEDENCODING if (!@source.ascii_only? || @source.include?("\\p{")) && !no_encoding?
-      @options |= FIXEDENCODING if non_ascii_escape_pattern? && @source.encoding != Encoding::US_ASCII
+      @options |= FIXEDENCODING if non_ascii_escape_pattern? &&
+                                   (no_encoding? || @source.encoding != Encoding::US_ASCII)
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       @parsed = Onibi::Parser.parse(source, options: @options)

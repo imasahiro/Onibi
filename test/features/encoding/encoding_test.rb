@@ -35,6 +35,17 @@ class EncodingTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Regexp.new(pattern).match?("é") }
   end
 
+  def test_noencoding_byte_escapes_promote_us_ascii_to_binary
+    pattern = "\\xA4".encode(Encoding::US_ASCII)
+
+    expected = ::Regexp.new(pattern, ::Regexp::NOENCODING)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::NOENCODING)
+
+    assert_equal expected.encoding, actual.encoding
+    assert_equal expected.options, actual.options
+    assert_equal expected.fixed_encoding?, actual.fixed_encoding?
+  end
+
   def test_unicode_escapes_promote_the_pattern_to_utf8
     pattern = "\\u{3042}".encode(Encoding::Windows_31J)
 
