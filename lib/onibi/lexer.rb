@@ -83,7 +83,7 @@ module Onibi
 
     def escaped_token(index)
       escaped = @source[index + 1]
-      raise RegexpError, "trailing escape" if escaped.nil?
+      raise RegexpError, "too short escape sequence: /#{@source}/" if escaped.nil?
 
       return octal_escape_token(index) if octal_escape?(index)
       return special_escape_token(index, escaped) if special_escape_token(index, escaped)
