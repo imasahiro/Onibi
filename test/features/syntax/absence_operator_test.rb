@@ -499,6 +499,7 @@ class AbsenceOperatorTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?~((a|bc)+)(d|e))")
 
     assert_equal ["bc", nil, nil, "d"], regexp.match("bcd").to_a.first(4)
+    assert_equal ["babc", nil, nil, nil], regexp.match("babcd").to_a.first(4)
     assert_equal ["aa", "a", nil, nil], regexp.match("aad").to_a.first(4)
     assert_equal ["bca", "a", nil, nil], regexp.match("bca").to_a.first(4)
   end

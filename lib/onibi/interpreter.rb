@@ -1064,7 +1064,7 @@ module Onibi
           results = node_results(body, characters, position, captures, flags)
           target_end = endpoint + 1
           candidate = results.find { |body_length, _state| position + body_length == target_end }&.last
-          if candidate
+          if candidate && checkpoint.nil?
             checkpoint = candidate
             checkpoint_position = position
           end
