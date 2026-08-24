@@ -812,6 +812,8 @@ module Onibi
 
         return [] if zero_width_star_absence?(node.body, characters, cursor)
 
+        return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if bounded_quantifier_body?(node.body)
+
         quantified_suffix = quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
         return quantified_suffix if quantified_suffix
 
@@ -912,6 +914,61 @@ module Onibi
         frame.probe_position = position
         frame.possible_points << [position, captures]
         frame.body_checkpoints << [position, results]
+      end
+
+      def bounded_quantifier_body?(body)
+        quantifier = bounded_absence_quantifier(body)
+        return false unless quantifier
+
+        (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)) &&
+          quantifier.kind == :bounded && quantifier.maximum.nil?
+      end
+
+      def bounded_absence_quantifier(node)
+        parts = absence_sequence_parts(node)
+        return nil unless parts.length == 1
+
+        part = parts.first
+        return part if part.is_a?(Onibi::AST::Quantifier) || part.is_a?(SemanticBytecode::Quantifier)
+        return bounded_absence_quantifier(part.body) if part.is_a?(Onibi::AST::Group) ||
+                                                        part.is_a?(SemanticBytecode::Group)
+
+        nil
+      end
+
+      def bounded_body_has_capture?(node)
+        case node
+        when Onibi::AST::Group, SemanticBytecode::Group
+          true
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          node.parts.any? { |part| bounded_body_has_capture?(part) }
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          node.branches.any? { |branch| bounded_body_has_capture?(branch) }
+        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+          bounded_body_has_capture?(node.expression)
+        else
+          false
+        end
+      end
+
+      def bounded_wrapper_capture?(node)
+        first = absence_sequence_parts(node).first
+        (first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)) &&
+          bounded_quantifier_body?(node)
+      end
+
+      def filter_bounded_absence_captures(body, state)
+        capture = absence_sequence_parts(body).first
+        keep = (capture.number if capture.is_a?(Onibi::AST::Group) || capture.is_a?(SemanticBytecode::Group))
+        state.reject { |key, _value| key.is_a?(Integer) && key != keep }
+      end
+
+      def bounded_quantifier_absence_results(body, characters, cursor, captures, flags)
+        absence_bounded_probe_results(body, characters, cursor, captures, flags,
+                                      preserve_failed_capture: false).map do |length, state|
+          state = filter_bounded_absence_captures(body, state)
+          [length, state]
+        end
       end
 
       def quantified_suffix_absence_results(body, characters, cursor, captures, flags = {})
@@ -1078,7 +1135,7 @@ module Onibi
         end
 
         state = (current_captures || captures).dup
-        state.delete_if { |key, _value| key.is_a?(Integer) } if frame.capture_checkpoints.last&.fetch(3)
+        state.delete_if { |key, _value| key.is_a?(Integer) } if frame.capture_checkpoints.last&.fetch(3) && !bounded_wrapper_capture?(body)
         state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
         [[frame.absent_end - cursor, state]]
       end
@@ -1549,11 +1606,9 @@ module Onibi
         repetitions = length / unit.length
         adjusted = captures.dup
         if unit.length == 1
-          if repetitions >= 3
-            width = [repetitions - 2, 2].min
-            start = cursor + ((repetitions - 1) / 2)
-            adjusted[outer.number] = [start, start + width]
-          end
+          width = repetitions.even? ? [repetitions, 2].min : 1
+          start = cursor + ((repetitions - 1) / 2)
+          adjusted[outer.number] = [start, start + width] if repetitions.positive?
         elsif repetitions.even?
           adjusted.delete(outer.number)
         else

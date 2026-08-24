@@ -390,7 +390,7 @@ class AbsenceOperatorTest < Minitest::Test
   def test_absence_operator_handles_variable_alternation_lengths
     regexp = Onibi::Regexp.new("(?~(a|ab){2,})")
 
-    assert_equal(%w[aa ab], %w[aaa abab].map { |input| regexp.match(input)[0] })
+    assert_equal(%w[aa ab ab], %w[aaa abab ababa].map { |input| regexp.match(input)[0] })
   end
 
   def test_absence_operator_does_not_export_quantifier_body_captures
@@ -430,6 +430,8 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal %w[a b], regexp.match("aba").to_a.first(2)
     assert_equal %w[aba ab], regexp.match("ababab").to_a.first(2)
+    assert_equal %w[aa a], regexp.match("aaaaa").to_a.first(2)
+    assert_equal %w[aa a], regexp.match("aaaba").to_a.first(2)
   end
 
   def test_absence_operator_clears_nested_bounded_captures
@@ -437,6 +439,11 @@ class AbsenceOperatorTest < Minitest::Test
 
     assert_equal "ab", match[0]
     assert_nil match[1]
+    assert_nil match[2]
+
+    match = Onibi::Regexp.new("(?~((a|ab){2,}))").match("aa")
+
+    assert_equal %w[a aa], match.to_a.first(2)
     assert_nil match[2]
   end
 
