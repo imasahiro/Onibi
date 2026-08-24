@@ -27,7 +27,7 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "a)",
     "(a",
     "(?<=a*)",
-    "(?<!a|bb)"
+    "(?<=a(?:b|cd))"
   ].freeze
 
   def test_invalid_lexer_and_parser_input_raises_regexp_error
