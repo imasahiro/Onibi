@@ -49,6 +49,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Changes_When_Casefolded}", %w[A Ω Ж], %w[1 あ 😀]],
     ["\\p{Changes_When_Casemapped}", %w[A Ω Ж], %w[1 あ 😀]],
     ["\\p{Changes_When_Lowercased}", %w[A Ω Ж], %w[1 あ 😀]],
+    ["\\p{Changes_When_Uppercased}", %w[a ω ж], %w[1 あ 😀]],
+    ["\\p{Changes_When_Titlecased}", %w[a ω ж], %w[1 あ 😀]],
     ["\\p{Pattern_Syntax}", ["!", "[", "~", "→", "⟨"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
