@@ -100,7 +100,7 @@ module Onibi
       Georgian_Extended
       Arabic_Extended_A Arabic_Extended_B Arabic_Extended_C Arabic_Mathematical_Alphabetic_Symbols
       Arabic_Presentation_Forms_A
-      Arabic_Presentation_Forms_B
+      Arabic_Presentation_Forms_B Adlam
     ].freeze
   end
 end

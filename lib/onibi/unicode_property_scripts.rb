@@ -96,7 +96,8 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Devanagari_Extended_A" => [[0x11B00, 0x11B5F]],
       "Kana_Extended_A" => [[0x1B100, 0x1B12F]],
       "Kana_Extended_B" => [[0x1AFF0, 0x1AFFF]],
-      "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
+      "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]],
+      "Adlam" => [[0x1E900, 0x1E95F]]
     }.freeze
 
     def script_match?(character, ranges)
