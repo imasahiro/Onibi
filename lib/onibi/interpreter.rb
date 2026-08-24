@@ -532,6 +532,8 @@ module Onibi
           cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
         when :match_escape
           case operand.kind
+          when :grapheme
+            grapheme_cluster_length(characters, cursor)
           when :word_boundary, :not_word_boundary
             left = cursor.positive? && boundary_word?(characters[cursor - 1])
             right = cursor < characters.length && boundary_word?(characters[cursor])
@@ -2306,6 +2308,43 @@ module Onibi
         return Onibi::CharacterPredicates.word?(character) if character.encoding == Encoding::ASCII_8BIT
 
         Onibi::UnicodeProperties.word?(unicode_character(character))
+      end
+
+      # Returns the number of characters in one extended grapheme cluster.
+      # The bytecode escape consumes one cluster, not one codepoint. Combining
+      # marks, variation selectors, emoji modifiers, and ZWJ joins stay local
+      # to this transition, so the VM does not need AST state at runtime.
+      def grapheme_cluster_length(characters, cursor)
+        return nil if cursor >= characters.length
+        return 2 if characters[cursor] == "\r" && characters[cursor + 1] == "\n"
+        return 2 if regional_indicator?(characters[cursor]) && regional_indicator?(characters[cursor + 1])
+
+        position = cursor + 1
+        loop do
+          position += 1 while position < characters.length && grapheme_extension?(characters[position])
+          break unless position < characters.length && characters[position] == "\u200D"
+
+          position += 1
+          break if position >= characters.length
+
+          position += 1
+        end
+        position - cursor
+      end
+
+      def grapheme_extension?(character)
+        return false unless character
+
+        codepoint = character.codepoints.first
+        Onibi::UnicodeProperties.mark?(unicode_character(character)) ||
+          (0x900..0x90F).cover?(codepoint) || (0x930..0x93C).cover?(codepoint) ||
+          codepoint == 0x94D || (0x9BC..0x9CD).cover?(codepoint) ||
+          codepoint.between?(0xFE00, 0xFE0F) || codepoint.between?(0xE0100, 0xE01EF) ||
+          codepoint.between?(0x1F3FB, 0x1F3FF)
+      end
+
+      def regional_indicator?(character)
+        character && character.codepoints.first.between?(0x1F1E6, 0x1F1FF)
       end
 
       def assertion_length(assertion, characters, cursor, flags = {})

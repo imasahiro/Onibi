@@ -18,6 +18,7 @@ module Onibi
       not_word_boundary: ->(token) { AST::Escape.new(token.type) },
       start_match: ->(token) { AST::Escape.new(token.type) },
       match_reset: ->(token) { AST::Escape.new(token.type) },
+      grapheme: ->(token) { AST::Escape.new(token.type) },
       property: ->(token) { AST::Property.new(token.value[0], token.value[1]) },
       backreference: ->(token) { AST::Backreference.new(token.value, token.value.is_a?(String)) },
       subexpression_call: ->(token) { AST::SubexpressionCall.new(token.value[0], token.value[1]) },

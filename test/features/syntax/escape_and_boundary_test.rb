@@ -39,6 +39,15 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute regexp.match?("x")
   end
 
+  def test_grapheme_escape_matches_extended_clusters
+    ["a\u0301", "🇯🇵", "क्\u200dष", "👩‍🚀"].each do |input|
+      expected = Regexp.new("\\X").match(input)
+      actual = Onibi::Regexp.new("\\X").match(input)
+      assert_equal expected[0], actual[0], input.inspect
+      assert_equal expected.offset(0), actual.offset(0), input.inspect
+    end
+  end
+
   def test_word_boundaries
     assert Onibi::Regexp.new("\\bcat\\b").match?("a cat!")
     refute Onibi::Regexp.new("\\bcat\\b").match?("scatter")

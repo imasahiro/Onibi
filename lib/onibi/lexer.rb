@@ -32,6 +32,7 @@ module Onibi
       "B" => :not_word_boundary,
       "G" => :start_match,
       "K" => :match_reset,
+      "X" => :grapheme,
       "A" => :anchor_absolute_start,
       "Z" => :anchor_before_final_newline,
       "z" => :anchor_absolute_end

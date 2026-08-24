@@ -43,6 +43,8 @@ module Onibi
     end
 
     def escape_width(node)
+      return nil if node.kind == :grapheme
+
       zero_width_escape?(node.kind) ? 0 : 1
     end
 
