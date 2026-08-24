@@ -42,7 +42,7 @@ module Onibi
 
     def validate_quantifier_bounds(ast)
       ast_values(ast).each do |node|
-        raise RegexpError, "empty character class" if node.is_a?(Onibi::AST::CharacterClass) && ["", "^"].include?(node.value)
+        validate_character_class(node) if node.is_a?(Onibi::AST::CharacterClass)
 
         next unless node.is_a?(Onibi::AST::Quantifier)
         next if node.minimum <= MAX_REPEAT_COUNT &&
@@ -52,6 +52,18 @@ module Onibi
       end
     end
     private_class_method :validate_quantifier_bounds
+
+    def validate_character_class(node)
+      value = node.value
+      raise RegexpError, "empty character class" if ["", "^"].include?(value)
+
+      metadata = Onibi::ClassPredicates::Normalizer.normalize(value)
+      return unless metadata.kind == :ascii
+      return unless metadata.ranges.any? { |first, last| first.ord > last.ord }
+
+      raise RegexpError, "invalid character class range"
+    end
+    private_class_method :validate_character_class
 
     def infer_encoding(parsed, ast)
       return parsed.source.encoding if parsed
