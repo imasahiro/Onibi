@@ -151,6 +151,10 @@ class UnicodePropertyDifferentialTest < Minitest::Test
      ["[\\p{Ll}]", "É"], ["[\\p{Lu}]", "é"]].each do |pattern, input|
       assert_same_outcome(pattern, input, true, Regexp::IGNORECASE)
     end
+
+    [["[\\P{Ll}]", "a"], ["[\\P{Lu}]", "A"]].each do |pattern, input|
+      assert_same_outcome(pattern, input, true, Regexp::IGNORECASE)
+    end
   end
 
   private

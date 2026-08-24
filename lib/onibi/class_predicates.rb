@@ -176,7 +176,7 @@ module Onibi
 
       if kind == :property
         name, negated = value
-        return true if ignorecase && negated && %w[Lower Upper].include?(name)
+        return true if ignorecase && negated && %w[Lower Upper Ll Lu].include?(name)
 
         return property_matches?(value, character, ignorecase: ignorecase, encoding: encoding)
       end
