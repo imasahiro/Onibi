@@ -1048,7 +1048,7 @@ module Onibi
         checkpoint = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
           results = node_results(body, characters, position, captures, flags)
-          checkpoint = results.last&.last if results.any?
+          checkpoint = results.first&.last if results.any?
         end
         return state unless checkpoint
 
