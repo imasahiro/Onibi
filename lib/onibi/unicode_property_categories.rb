@@ -49,7 +49,7 @@ module Onibi
     end
 
     def word?(character)
-      CharacterPredicates.word?(character) || letter?(character)
+      CharacterPredicates.word?(character) || letter?(character) || digit?(character)
     end
 
     def blank?(character)

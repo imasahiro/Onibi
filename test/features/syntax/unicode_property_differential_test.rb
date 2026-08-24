@@ -13,7 +13,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["[[:digit:]]", %w[0 9], %w[a]],
     ["[[:alpha:]]", %w[A z], %w[1]],
     ["[[:ascii:]]", ["A"], ["あ"]],
-    ["[[:word:]]", %w[A 0 _], %w[-]]
+    ["[[:word:]]", %w[A 0 _ ١], ["-"]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri
