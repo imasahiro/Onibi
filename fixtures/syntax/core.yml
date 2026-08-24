@@ -9,13 +9,13 @@ supported_features:
 - options
 - quantifiers
 - unicode
+- unicode_properties
 unsupported_features:
 - atomic_groups
 - backreferences
 - lookarounds
 - named_captures
 - possessive_quantifiers
-- unicode_properties
 cases:
 - name: literal match
   feature: literals

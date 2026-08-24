@@ -16,6 +16,7 @@ class SyntaxCorpusTest < Minitest::Test
     options
     quantifiers
     unicode
+    unicode_properties
   ].freeze
 
   TYPED_FIELDS = {
@@ -42,7 +43,6 @@ class SyntaxCorpusTest < Minitest::Test
       lookarounds
       named_captures
       possessive_quantifiers
-      unicode_properties
     ].sort, corpus.fetch("unsupported_features").sort
   end
 
