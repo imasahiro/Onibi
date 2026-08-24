@@ -249,8 +249,9 @@ module Onibi
           folded_widths = casefold_widths(assertion.body)
           widths = folded_widths unless folded_widths.empty?
         end
+        lookbehind_flags = flags.merge(lookbehind_casefold: true)
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
-          results = node_results(assertion.body, characters, cursor - width, captures, flags)
+          results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
           return matching.map { |_length, inner| [0, inner] } unless matching.empty?
         end
@@ -295,7 +296,8 @@ module Onibi
         when SemanticBytecode::Sequence
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
-            folded_length = casefold_lengths(value, characters, cursor).first
+            folded_length = casefold_lengths(value, characters, cursor,
+                                             expanded_only: flags[:lookbehind_casefold]).first
             return folded_length ? [[folded_length, captures.dup]] : []
           end
 
@@ -604,7 +606,8 @@ module Onibi
         when :match_literal
           value = operand.value.each_char.to_a
           if flags[:ignorecase]
-            casefold_lengths(value.join, characters, cursor).first
+            casefold_lengths(value.join, characters, cursor,
+                             expanded_only: flags[:lookbehind_casefold]).first
           else
             characters[cursor, value.length] == value ? value.length : nil
           end
@@ -2354,15 +2357,22 @@ module Onibi
 
         lengths = []
         character = characters[cursor]
-        lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character,
-                                                        ignorecase: flags[:ignorecase],
-                                                        encoding: flags[:encoding])
         casefold_source = flags[:ignorecase] && !node.value.start_with?("^") &&
                           !node.value.include?("[") && !node.value.include?(":") &&
                           !node.value.include?("&&") && !node.value.include?("\\")
+        direct_casefold = node.value.each_char.any? { |candidate| candidate.downcase(:fold).length == 1 }
+        lengths << 1 if !flags[:lookbehind_casefold] || !casefold_source || direct_casefold
+        if lengths.any?
+          lengths.select! do
+            Onibi::ClassPredicates.matches?(node.value, character,
+                                            ignorecase: flags[:ignorecase],
+                                            encoding: flags[:encoding])
+          end
+        end
         if casefold_source
           node.value.each_char do |candidate|
-            casefold_lengths(candidate, characters, cursor).each do |length|
+            casefold_lengths(candidate, characters, cursor,
+                             expanded_only: flags[:lookbehind_casefold]).each do |length|
               lengths << length unless lengths.include?(length)
             end
           end
@@ -2520,9 +2530,10 @@ module Onibi
         left.downcase == right.downcase
       end
 
-      def casefold_lengths(value, characters, cursor)
+      def casefold_lengths(value, characters, cursor, expanded_only: false)
         maximum = value.downcase(:fold).length
-        (1..maximum).select do |length|
+        minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
+        (minimum..maximum).select do |length|
           casefold_equal?(value, characters[cursor, length].to_a.join)
         end
       end

@@ -53,6 +53,9 @@ class LookaheadTest < Minitest::Test
      ["(?i:(?<=[ß]{1})x)", "SSx"], ["(?i:(?<=[ß]{1})x)", "ßx"]].each do |pattern, input|
       assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
     end
+
+    pattern = "(?i:(?<=[aß])x)"
+    assert_equal Regexp.new(pattern).match?("aßx"), Onibi::Regexp.new(pattern).match?("aßx")
   end
 
   def test_lookbehind_rejects_nested_variable_width_alternation
