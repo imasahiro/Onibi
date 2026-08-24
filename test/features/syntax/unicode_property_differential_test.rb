@@ -70,6 +70,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
     ["\\p{InKatakana_Phonetic_Extensions}", %w[ㇰ ㇱ], %w[A ア]],
+    ["\\p{InKana_Supplement}", %w[𛀀 𛀁], %w[A あ]],
     ["\\p{InArabic_Presentation_Forms_A}", %w[ﭐ ﷲ], %w[A ش]],
     ["\\p{InArabic_Presentation_Forms_B}", %w[ﹰ ﹶ], %w[A ش]],
     ["\\N{SNOWMAN}", ["N{SNOWMAN}"], ["☃", "A"]],

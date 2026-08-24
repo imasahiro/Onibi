@@ -79,6 +79,7 @@ module Onibi
       Ideographic_Description_Characters
       CJK_Radicals_Supplement
       Katakana_Phonetic_Extensions
+      Kana_Supplement
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
