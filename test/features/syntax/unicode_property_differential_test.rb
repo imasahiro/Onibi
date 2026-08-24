@@ -248,6 +248,19 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_greek_fold_quantifier_preserves_operand_boundaries
+    [
+      %w[ᾀ{1,2}b ᾀb],
+      %w[s?ᾀ{1,2}[s]{2} ςÉbbᾀß],
+      %w[ᾀ*ᾀÉ{1,2} ᾀÉſẞaéb]
+    ].each do |pattern, input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+  end
+
   def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary
     pattern = "[[:alpha:]]\\b\\p{Letter}?"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")

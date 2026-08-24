@@ -417,8 +417,15 @@ module Onibi
               elsif optional_order == :greedy
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
-              if mri_multi_fold_literal_boundary?(part, parts[index], characters,
+              previous_part = part_index.positive? ? parts[part_index - 1] : nil
+              if !mri_fold_boundary_relaxed?(previous_part, part) &&
+                 mri_multi_fold_literal_boundary?(part, parts[index], characters,
                                                   cursor + consumed, flags)
+                part_results = []
+              end
+              if !mri_fold_boundary_relaxed?(previous_part, part) &&
+                 mri_multi_fold_quantifier_boundary?(part, parts[index], characters,
+                                                     cursor + consumed, flags)
                 part_results = []
               end
               part_results.filter_map do |length, inner|
@@ -640,6 +647,7 @@ module Onibi
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless node.casefold && node.casefold.length > node.value.length
         return false unless characters[cursor] == node.value
+        return false unless node.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
 
         if next_node.is_a?(SemanticBytecode::Quantifier)
           return false unless next_node.minimum.positive?
@@ -655,6 +663,26 @@ module Onibi
 
         !next_node.value.include?("[") && !next_node.value.include?(":") &&
           !next_node.value.include?("\\") && !next_node.value.include?("&&")
+      end
+
+      def mri_multi_fold_quantifier_boundary?(node, next_node, characters, cursor, flags)
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum.positive?
+        return false if node.maximum.nil?
+        return false unless node.expression.is_a?(SemanticBytecode::Literal)
+
+        mri_multi_fold_literal_boundary?(node.expression, next_node, characters, cursor, flags)
+      end
+
+      def mri_fold_boundary_relaxed?(previous_node, node)
+        return false unless previous_node.is_a?(SemanticBytecode::Quantifier)
+        return false unless previous_node.minimum.zero?
+
+        previous_expression = previous_node.expression
+        current_expression = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        previous_expression.is_a?(SemanticBytecode::Literal) &&
+          current_expression.is_a?(SemanticBytecode::Literal) &&
+          previous_expression.value == current_expression.value
       end
 
       def reverse_casefold_sequence?(value)
