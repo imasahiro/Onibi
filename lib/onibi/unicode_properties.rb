@@ -70,6 +70,7 @@ module Onibi
       General_Punctuation CJK_Symbols_and_Punctuation Greek_Extended Latin_Extended_Additional
       Supplemental_Arrows_A
       Supplemental_Mathematical_Operators
+      Transport_and_Map_Symbols
     ].freeze
   end
 end
