@@ -706,6 +706,8 @@ module Onibi
 
         if next_node.is_a?(SemanticBytecode::Quantifier)
           return false unless next_node.minimum.positive?
+          return false if next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+                          next_node.expression.casefolds.any?
           if next_node.expression.is_a?(SemanticBytecode::Literal) &&
              next_node.expression.casefold&.length.to_i > next_node.expression.value.length
             return false
@@ -771,6 +773,7 @@ module Onibi
           return false unless node.expression.casefold &&
                               node.expression.casefold.length > node.expression.value.length &&
                               node.expression.casefold.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) }
+          return false if next_expression.casefolds.any?
           return false if next_expression.value.include?(":") || next_expression.value.include?("\\") ||
                           next_expression.value.include?("&&") || next_expression.value.start_with?("^")
 
