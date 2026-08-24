@@ -78,6 +78,7 @@ module Onibi
       CJK_Strokes
       Ideographic_Description_Characters
       CJK_Radicals_Supplement
+      Arabic_Presentation_Forms_A
     ].freeze
   end
 end
