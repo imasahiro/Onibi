@@ -248,6 +248,13 @@ class EncodingTest < Minitest::Test
     assert_equal expected.message, actual.message
   end
 
+  def test_binary_unicode_property_error_matches_mri
+    expected = assert_raises(RegexpError) { Regexp.new("\\p{L}".b) }
+    actual = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\p{L}".b) }
+
+    assert_equal expected.message, actual.message
+  end
+
   def test_non_utf8_unicode_property_scan_uses_vm
     encoding = Encoding::EUC_JP
     regexp = Onibi::Regexp.new("\\p{Hiragana}".encode(encoding))

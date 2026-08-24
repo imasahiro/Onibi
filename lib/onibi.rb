@@ -212,7 +212,10 @@ module Onibi
       end
       if @source.encoding == Encoding::ASCII_8BIT && property_names.any? &&
          !property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
-        raise RegexpError, "Unicode property in binary pattern"
+        invalid_name = property_names.find do |name|
+          !Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII)
+        end
+        raise RegexpError, "invalid character property name {#{invalid_name}}: /#{@source}/"
       end
 
       validate_property_encoding!
