@@ -191,16 +191,16 @@ module Onibi
       end
 
       matched = UnicodeProperties.matches?(name, character)
-      if ignorecase && !negated && !matched && %w[Lower Upper Ll Lu].include?(name)
-        opposite = case name
-                   when "Lower" then "Upper"
-                   when "Upper" then "Lower"
-                   when "Ll" then "Lu"
-                   else "Ll"
-                   end
-        matched = UnicodeProperties.matches?(opposite, character)
-      end
+      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched &&
+                                                             %w[Lower Upper Ll Lu].include?(name)
       negated ? !matched : matched
+    end
+
+    def casefold_property_match?(name, character)
+      return UnicodeProperties.matches?(name == "Lower" ? "Upper" : "Lower", character) if %w[Lower Upper].include?(name)
+
+      folded = name == "Ll" ? character.downcase : character.upcase
+      folded.length == 1 && character.casecmp?(folded) && UnicodeProperties.matches?(name, folded)
     end
 
     def incompatible_property?(name, character, encoding)
