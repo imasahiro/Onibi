@@ -50,7 +50,7 @@ module Onibi
     def integer_options(value)
       bits = { 1 => "ignorecase", 2 => "extended", 4 => "multiline", 16 => "fixedencoding", 32 => "noencoding" }
       supported = bits.keys.sum
-      raise ArgumentError, "invalid options" if value.negative? || (value & ~supported).positive?
+      value = supported if value.negative?
 
       bits.filter_map { |bit, name| name if (value & bit).positive? }
     end
