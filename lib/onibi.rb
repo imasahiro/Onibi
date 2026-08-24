@@ -106,7 +106,7 @@ module Onibi
       end
 
       def try_convert(object)
-        return object if object.is_a?(Regexp)
+        return object if object.is_a?(Regexp) || object.is_a?(::Regexp)
         return nil unless object.respond_to?(:to_regexp)
 
         converted = object.to_regexp

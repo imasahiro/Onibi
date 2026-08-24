@@ -60,6 +60,8 @@ class RegexpUtilityTest < Minitest::Test
     invalid.define_singleton_method(:to_regexp) { "not a regexp" }
 
     assert_same regexp, Onibi::Regexp.try_convert(regexp)
+    native = ::Regexp.new("a")
+    assert_same native, Onibi::Regexp.try_convert(native)
     assert_same regexp, Onibi::Regexp.try_convert(convertible)
     assert_nil Onibi::Regexp.try_convert(Object.new)
     assert_raises(TypeError) { Onibi::Regexp.try_convert(invalid) }
