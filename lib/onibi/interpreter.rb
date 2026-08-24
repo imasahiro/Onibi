@@ -340,7 +340,12 @@ module Onibi
                 [consumed + length, next_state]
               end
             end
-            return [] if states.empty?
+            next unless states.empty?
+
+            folded = casefold_sequence_results(node.parts, characters, cursor, captures, flags)
+            return folded unless folded.empty?
+
+            return []
           end
           states
         when SemanticBytecode::Conditional
@@ -428,6 +433,62 @@ module Onibi
 
           [[length, captures]]
         end
+      end
+
+      # Onigmo can split one expanded fold across adjacent operands. For
+      # example, `[s]s` matches one `ß` under `/i`. The normal cursor model
+      # cannot split a Unicode character, so compare the operand run with its
+      # virtual folded input and consume the original character width.
+      def casefold_sequence_results(parts, characters, cursor, captures, flags)
+        return [] unless flags[:ignorecase]
+
+        prefix = []
+        parts.each do |part|
+          break unless part.is_a?(SemanticBytecode::Literal) ||
+                       part.is_a?(SemanticBytecode::CharacterClass) ||
+                       part.is_a?(SemanticBytecode::Property)
+
+          prefix << part
+        end
+        return [] if prefix.length < 2
+
+        maximum = [characters.length - cursor, prefix.length * 3].min
+        1.upto(maximum).filter_map do |width|
+          slice = characters[cursor, width]
+          folded = slice.join.downcase(:fold)
+          next unless folded_atoms_match?(prefix, folded, flags)
+
+          next [[width, captures.dup]] if prefix.length == parts.length
+
+          suffix = SemanticBytecode::Sequence.new(parts.drop(prefix.length))
+          node_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
+            [width + length, inner]
+          end
+        end.flatten(1)
+      end
+
+      def folded_atoms_match?(atoms, folded, flags)
+        return folded.empty? if atoms.empty?
+
+        atom = atoms.first
+        if atom.is_a?(SemanticBytecode::Literal)
+          value = atom.value.downcase(:fold)
+          return false unless folded.start_with?(value)
+
+          return folded_atoms_match?(atoms.drop(1), folded[value.length..], flags)
+        end
+
+        character = folded.each_char.first
+        return false unless character
+
+        matched = if atom.is_a?(SemanticBytecode::CharacterClass)
+                    Onibi::ClassPredicates.matches?(atom.value, character,
+                                                    ignorecase: false,
+                                                    encoding: flags[:encoding])
+                  else
+                    property_matches?(atom.name, character, false, flags[:encoding])
+                  end
+        matched && folded_atoms_match?(atoms.drop(1), folded[character.length..], flags)
       end
 
       def quantifier_results(quantifier, characters, cursor, captures, flags = {})
