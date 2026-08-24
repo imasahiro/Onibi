@@ -473,45 +473,66 @@ module Onibi
 
     def to_s
       enabled = mode_flags
-      body = source.gsub("/", '\\/')
+      display_source = source_for_display
+      body = display_source.gsub("/", '\\/')
       if single_inline_scope?
-        close = source.index(":")
-        header = source[2...close]
+        close = display_source.index(":")
+        header = display_source[2...close]
         return to_s_without_scope unless header.each_char.all? { |flag| %w[i m x -].include?(flag) }
 
         positive, negative = header.split("-", 2)
         enabled_flags = enabled.chars + positive.to_s.chars
         enabled_flags -= negative.to_s.chars
         enabled = ("mix".chars & enabled_flags).join
-        body = source[(close + 1)...-1].gsub("/", '\\/')
+        body = display_source[(close + 1)...-1].gsub("/", '\\/')
       end
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
-      "(?#{scope}:#{body})"
+      rendered = "(?#{scope}:#{body})"
+      encoding.ascii_compatible? ? rendered : rendered.encode(encoding)
     end
 
     def to_s_without_scope
       enabled = mode_flags
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
-      "(?#{scope}:#{source.gsub("/", '\\/')})"
+      rendered = "(?#{scope}:#{source_for_display.gsub("/", '\\/')})"
+      encoding.ascii_compatible? ? rendered : rendered.encode(encoding)
     end
 
     def inspect
       flags = mode_flags
       flags += "n" if no_encoding?
-      "/#{source.gsub("/", '\\/')}/#{flags}"
+      "/#{inspect_source}/#{flags}"
     end
 
     private
 
+    def source_for_display
+      @source.encoding.ascii_compatible? ? source : source.encode(Encoding::UTF_8)
+    end
+
+    def inspect_source
+      source_for_display.each_char.map do |character|
+        codepoint = character.codepoints.first
+        if codepoint < 128
+          character == "/" ? "\\/" : character
+        elsif codepoint <= 0xffff
+          format("\\u%04X", codepoint)
+        else
+          format("\\u{%X}", codepoint)
+        end
+      end.join
+    end
+
     def single_inline_scope?
-      return false unless source.start_with?("(?") && source.include?(":") && source.end_with?(")")
+      display_source = source_for_display
+      return false unless display_source.start_with?("(?") && display_source.include?(":") && display_source.end_with?(")")
 
       depth = 0
       escaped = false
       in_class = false
-      source.each_char.with_index do |character, index|
+      display_source.each_char.with_index do |character, index|
         if escaped
           escaped = false
           next

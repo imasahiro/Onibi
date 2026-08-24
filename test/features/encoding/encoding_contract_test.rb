@@ -62,6 +62,18 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_non_ascii_compatible_rendering_preserves_to_s_encoding
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "あ".encode(encoding)
+      mri = Regexp.new(pattern)
+      onibi = Onibi::Regexp.new(pattern)
+
+      assert_equal mri.to_s, onibi.to_s
+      assert_equal mri.to_s.encoding, onibi.to_s.encoding
+      assert_equal mri.inspect, onibi.inspect
+    end
+  end
+
   def test_unicode_full_casefold_matches_mri_for_literals
     [["ß", "SS"], ["ſ", "S"], ["[ß]", "SS"], ["(?i:ss)", "ß"]].each do |pattern, input|
       expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)&.to_a
