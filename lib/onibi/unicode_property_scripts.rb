@@ -50,7 +50,8 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Transport_and_Map_Symbols" => [[0x1F680, 0x1F6FF]],
       "Enclosed_Alphanumerics" => [[0x2460, 0x24FF]],
       "Enclosed_Alphanumeric_Supplement" => [[0x1F100, 0x1F1FF]],
-      "Mathematical_Alphanumeric_Symbols" => [[0x1D400, 0x1D7FF]]
+      "Mathematical_Alphanumeric_Symbols" => [[0x1D400, 0x1D7FF]],
+      "CJK_Compatibility_Ideographs" => [[0xF900, 0xFAFF]]
     }.freeze
 
     def script_match?(character, ranges)
