@@ -90,6 +90,7 @@ module Onibi
       CJK_Unified_Ideographs_Extension_H
       CJK_Unified_Ideographs_Extension_I
       CJK_Unified_Ideographs_Extension_J
+      Vertical_Forms
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
