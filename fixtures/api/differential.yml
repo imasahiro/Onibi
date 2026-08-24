@@ -41,7 +41,7 @@ fixtures:
     target: Regexp
     kind: class_method
     name: last_match
-  status: excluded
+  status: supported
   cases: *1
 - inventory:
     target: Regexp
