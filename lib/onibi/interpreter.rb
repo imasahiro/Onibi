@@ -340,9 +340,6 @@ module Onibi
             if !value.empty? && (value.ascii_only? || first_expands || has_mark || reverse_fold || folded_value != value)
               folded_length = casefold_lengths(value, characters, cursor,
                                                folded: folded_value,
-                                               segments: node.parts.flat_map do |literal|
-                                                 literal.casefold_segments || [[literal.value, literal.value]]
-                                               end,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
             end
@@ -377,18 +374,10 @@ module Onibi
                 prefix = run.first(reverse_prefix)
                 prefix_value = prefix.map(&:value).join
                 prefix_fold = prefix.map { |literal| literal.casefold || literal.value }.join
-                prefix_segments = prefix.flat_map do |literal|
-                  literal.casefold_segments || [[literal.value, literal.value]]
-                end
-                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold,
-                                                     prefix_segments)
+                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold)
               elsif run.length > 1 &&
                     (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
-                run_segments = run.flat_map do |literal|
-                  literal.casefold_segments || [[literal.value, literal.value]]
-                end
-                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run,
-                                                     run_segments)
+                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run)
               else
                 index = part_index + 1
               end
@@ -803,7 +792,6 @@ module Onibi
           if flags[:ignorecase]
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
-                             segments: operand.casefold_segments,
                              expanded_only: flags[:lookbehind_casefold]).first
           else
             characters[cursor, value.length] == value ? value.length : nil
@@ -2816,24 +2804,14 @@ module Onibi
         left.downcase == right.downcase
       end
 
-      def casefold_lengths(value, characters, cursor, folded: nil, segments: nil, expanded_only: false)
+      def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false)
         folded_value = folded || value.downcase(:fold)
         maximum = folded_value.length
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
         (minimum..maximum).select do |length|
           slice = characters[cursor, length]
-          next false unless slice && slice.length == length
-          next false if fold_boundary_crossed?(segments, slice)
-
-          folded_value == slice.join.downcase(:fold)
+          slice && slice.length == length && folded_value == slice.join.downcase(:fold)
         end
-      end
-
-      def fold_boundary_crossed?(segments, input)
-        return false unless segments && input.length > 1
-        return false unless input.first.downcase(:fold).length > input.first.length
-
-        segments.drop(1).any? { |_source, folded| folded.length > 1 }
       end
 
       def property_matches?(name, character, ignorecase, encoding = nil)

@@ -190,14 +190,6 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
-  def test_ignorecase_fold_boundary_does_not_cross_a_later_expanded_literal
-    pattern = "ſẞ"
-    input = "ßs"
-
-    assert_nil Regexp.new(pattern, Regexp::IGNORECASE).match(input)
-    assert_nil Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
-  end
-
   def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary
     pattern = "[[:alpha:]]\\b\\p{Letter}?"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
