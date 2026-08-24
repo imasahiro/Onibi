@@ -222,4 +222,11 @@ class EncodingTest < Minitest::Test
       Onibi::Regexp.new("\\p{Hiragana}", Onibi::Regexp::NOENCODING)
     end
   end
+
+  def test_invalid_input_encoding_reports_mri_message
+    input = [0xff].pack("C").force_encoding(Encoding::UTF_8)
+
+    error = assert_raises(ArgumentError) { Onibi::Regexp.new(".").match(input) }
+    assert_equal "invalid byte sequence in UTF-8", error.message
+  end
 end
