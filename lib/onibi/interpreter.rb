@@ -245,12 +245,37 @@ module Onibi
 
       def lookbehind_results(assertion, characters, cursor, captures, flags)
         widths = assertion.widths || (0..cursor).to_a
+        widths = (widths + casefold_widths(assertion.body)).uniq if flags[:ignorecase]
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
           results = node_results(assertion.body, characters, cursor - width, captures, flags)
           matching = results.select { |length, _inner| length == width }
           return matching.map { |_length, inner| [0, inner] } unless matching.empty?
         end
         []
+      end
+
+      def casefold_widths(node)
+        case node
+        when SemanticBytecode::Literal
+          (node.value.length..node.value.downcase(:fold).length).to_a
+        when SemanticBytecode::Sequence
+          node.parts.reduce([0]) do |widths, part|
+            widths.product(casefold_widths(part)).map { |left, right| left + right }.uniq
+          end
+        when SemanticBytecode::Alternation
+          node.branches.flat_map { |branch| casefold_widths(branch) }.uniq
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup, SemanticBytecode::Assertion
+          casefold_widths(node.body)
+        when SemanticBytecode::Quantifier
+          body_widths = casefold_widths(node.expression)
+          maximum = node.maximum || node.minimum
+          (node.minimum..maximum).flat_map do |count|
+            body_widths.repeated_combination(count).map(&:sum)
+          end.uniq
+        else
+          []
+        end
       end
 
       def node_results(node, characters, cursor, captures, flags = {})

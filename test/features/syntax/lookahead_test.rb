@@ -40,6 +40,14 @@ class LookaheadTest < Minitest::Test
     assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
   end
 
+  def test_ignorecase_lookbehind_uses_casefold_consumption_width
+    pattern = "(?i:(?<=ß)c)"
+    input = "SSc"
+
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    assert Onibi::Regexp.new(pattern).match?(input)
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
