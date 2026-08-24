@@ -11,7 +11,7 @@ module Onibi
     module_function
 
     SUPPORTED = %w[
-      ASCII Any Han Hiragana Katakana Latin Greek Cyrillic Arabic
+      ASCII Any Emoji Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
       XDigit Hex_Digit Dash ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
       L Lu Ll Lt Lm Lo M N P S Z C Cn Mark
@@ -25,7 +25,7 @@ module Onibi
       Cntrl Graph Print Punct
     ].freeze
     PROPERTY_MATCHERS = {
-      "ASCII" => :ascii?, "Any" => :any?, "Han" => :han?, "Hiragana" => :hiragana?,
+      "ASCII" => :ascii?, "Any" => :any?, "Emoji" => :emoji?, "Han" => :han?, "Hiragana" => :hiragana?,
       "Katakana" => :katakana?, "Latin" => :latin?, "Greek" => :greek?,
       "Cyrillic" => :cyrillic?, "Arabic" => :arabic?, "Alpha" => :alpha?,
       "Letter" => :letter?, "Alnum" => :alnum?, "Digit" => :digit?, "Nd" => :digit?,
