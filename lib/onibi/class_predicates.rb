@@ -39,6 +39,8 @@ module Onibi
     def posix_matches?(property, character, ignorecase, encoding)
       return :incompatible if incompatible_property?(property, character, encoding)
 
+      return true if property == "Word" && encoding && encoding != Encoding::UTF_8 && encoding != Encoding::ASCII_8BIT && !character.ascii_only?
+
       normalized_character = if property == "Word" && encoding && encoding != Encoding::UTF_8 &&
                                 encoding != Encoding::ASCII_8BIT
                                character.encode(Encoding::UTF_8)
