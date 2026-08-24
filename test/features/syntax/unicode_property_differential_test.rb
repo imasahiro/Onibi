@@ -10,6 +10,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Hiragana}", ["あ"], ["ア"]],
     ["\\p{Katakana}", ["ア"], ["あ"]],
     ["\\p{Emoji}", %w[# © 😀 🇯🇵], %w[A あ]],
+    ["\\p{Emoji_Presentation}", %w[😀 🚀], %w[A # ©]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
