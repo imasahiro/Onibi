@@ -184,7 +184,10 @@ module Onibi
         when :match_subexpression_call
           node_results(operand, characters, cursor, captures, flags)
         when :match_absence
-          absence_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
+          # The absence operand returns both its bounded complement length and
+          # the capture state restored by the last body checkpoint. Do not
+          # reduce this to lengths: the bytecode edge carries semantic state.
+          absence_results(operand, characters, cursor, captures, flags)
         when :match_class
           class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
         else
@@ -1205,7 +1208,7 @@ module Onibi
         return captures unless quantifier.kind == :+ && quantifier.maximum.nil?
 
         run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
-        return captures unless run.even? && cursor + run < characters.length
+        return captures unless run.positive? && run.even? && cursor + run < characters.length
         return captures if quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
 
         captures.reject { |key, _value| key.is_a?(Integer) }
