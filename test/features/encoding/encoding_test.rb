@@ -257,4 +257,25 @@ class EncodingTest < Minitest::Test
       end
     end
   end
+
+  def test_non_utf8_nested_posix_classes_keep_following_atoms
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      ["[[:alpha:]a]", "[^[:alpha:]a]", "[[:alpha:][:digit:]]"].each do |source|
+        pattern = source.encode(encoding)
+        %w[A あ 1].each do |value|
+          input = value.encode(encoding)
+          assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+        end
+      end
+    end
+  end
+
+  def test_non_utf8_negative_unicode_properties_match_non_ascii_characters
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      pattern = "\\P{Alpha}".encode(encoding)
+      input = "あ".encode(encoding)
+
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
 end

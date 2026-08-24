@@ -93,7 +93,9 @@ module Onibi
 
     def nested_atom(source, index)
       ending = nested_end(source, index)
-      [[:nested, source[(index + 1)...ending]], ending + 1]
+      value = source[(index + 1)...ending]
+      value = "[#{value}]" if source[index, 2] == "[:"
+      [[:nested, value], ending + 1]
     end
 
     def escaped_atom(source, index)
@@ -111,6 +113,11 @@ module Onibi
     end
 
     def nested_end(source, index)
+      if source[index, 2] == "[:"
+        closing = source.index(":]", index + 2)
+        return closing + 1 if closing
+      end
+
       depth = 1
       cursor = index + 1
       loop do
