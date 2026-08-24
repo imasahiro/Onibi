@@ -68,6 +68,7 @@ module Onibi
       CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms Emoticons Miscellaneous_Symbols Dingbats
       Mathematical_Operators Geometric_Shapes Letterlike_Symbols Currency_Symbols
       General_Punctuation CJK_Symbols_and_Punctuation Greek_Extended Latin_Extended_Additional
+      Supplemental_Arrows_A
     ].freeze
   end
 end
