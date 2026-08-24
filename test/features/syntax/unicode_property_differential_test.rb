@@ -16,6 +16,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Extended_Pictographic}", %w[© 😀 🀄], %w[A あ]],
     ["\\p{Bidi_Control}", ["\u061c", "\u200e", "\u202e"], %w[A あ]],
     ["\\p{Case_Ignorable}", ["'", "\u0301", "\u200c"], %w[A あ]],
+    ["\\p{Default_Ignorable_Code_Point}", ["\u00ad", "\u200b", "\ufe0f"], %w[A あ]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],

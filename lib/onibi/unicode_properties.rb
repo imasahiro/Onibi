@@ -11,7 +11,7 @@ module Onibi
     module_function
 
     SUPPORTED = %w[
-      ASCII Any Bidi_Control Case_Ignorable Emoji Emoji_Presentation Emoji_Modifier
+      ASCII Any Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Emoji Emoji_Presentation Emoji_Modifier
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
       XDigit Hex_Digit Dash ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
@@ -29,6 +29,7 @@ module Onibi
       "ASCII" => :ascii?, "Any" => :any?, "Emoji" => :emoji?,
       "Bidi_Control" => :bidi_control?,
       "Case_Ignorable" => :case_ignorable?,
+      "Default_Ignorable_Code_Point" => :default_ignorable?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
       "Extended_Pictographic" => :extended_pictographic?,
