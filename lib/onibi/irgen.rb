@@ -128,7 +128,7 @@ module Onibi
           end
           instructions << Instruction.new(opcode: :accept, operand: state.id) if state.accepting
         end
-        Program.new(instructions: instructions, automaton: dfa, flags: flags)
+        Program.new(instructions: instructions, automaton: semantic_automaton(dfa), flags: flags)
       end
 
       def generate_nfa(tnfa, flags: {})
@@ -140,7 +140,49 @@ module Onibi
           )
         end
         instructions << Instruction.new(opcode: :nfa_accept, operand: tnfa.accept_positions)
-        Program.new(instructions: instructions, automaton: tnfa, flags: flags)
+        Program.new(instructions: instructions, automaton: semantic_automaton(tnfa), flags: flags)
+      end
+
+      # Automata are compiler output. Convert their operands before the
+      # program reaches the interpreter. The VM then consumes semantic
+      # operands and does not need AST objects at runtime.
+      def semantic_automaton(automaton)
+        copy = automaton.dup
+        transitions = if automaton.is_a?(Onibi::Automata::DFA)
+                        automaton.transitions.transform_keys do |(source, label)|
+                          [source, semantic_label(label)]
+                        end.freeze
+                      else
+                        automaton.transitions.map do |edge|
+                          operation = edge.operation
+                          semantic_operation = Onibi::CFG::Operation.new(
+                            opcode: operation.opcode,
+                            operand: semantic_value(operation.operand),
+                            effects: operation.effects,
+                            state_in: operation.state_in,
+                            state_out: operation.state_out
+                          )
+                          Onibi::Automata::Transition.new(
+                            from: edge.from, to: edge.to, operation: semantic_operation
+                          )
+                        end.freeze
+                      end
+        copy.instance_variable_set(:@transitions, transitions)
+        copy
+      end
+
+      def semantic_label(label)
+        [label[0], semantic_value(label[1])]
+      end
+
+      def semantic_value(value)
+        if value.respond_to?(:each_pair)
+          SemanticBytecode.compile(value)
+        elsif value.is_a?(Array)
+          value.map { |item| semantic_value(item) }
+        else
+          value
+        end
       end
 
       def generate_iseq(dfa)

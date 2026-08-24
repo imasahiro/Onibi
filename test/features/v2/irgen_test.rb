@@ -237,6 +237,14 @@ class V2IRGenTest < Minitest::Test
                  Onibi::IRGen::YARVIR.execute_with_captures(program, "xxabab", 0)
   end
 
+  def test_program_automaton_contains_semantic_operands
+    program = program_for(Onibi::AST::Literal.new("a"))
+    labels = program.automaton.transitions.keys.map(&:last)
+
+    assert(labels.all? { |label| semantic_operand?(label[1]) })
+    refute(labels.any? { |label| label[1].is_a?(Onibi::AST::Literal) })
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
@@ -274,5 +282,9 @@ class V2IRGenTest < Minitest::Test
 
   def instruction_signature(program)
     program.instructions.map { |instruction| [instruction.opcode, instruction.operand] }
+  end
+
+  def semantic_operand?(operand)
+    operand.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Literal)
   end
 end
