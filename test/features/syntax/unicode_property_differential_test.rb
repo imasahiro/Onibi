@@ -84,6 +84,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InNyiakeng_Puachue_Hmong}", ["\u{1E100}", "\u{1E14F}"], %w[A अ]],
     ["\\p{InBassa_Vah}", ["\u{16AD0}", "\u{16AFF}"], %w[A अ]],
     ["\\p{InMiao}", %w[𖼀 𖾟], %w[A अ]],
+    ["\\p{InBamum_Supplement}", ["𖠀", "𖨿"], %w[A अ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
