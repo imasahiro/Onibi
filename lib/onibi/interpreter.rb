@@ -298,7 +298,7 @@ module Onibi
         case node
         when SemanticBytecode::Literal
           source_length = node.value.length
-          folded_length = node.value.downcase(:fold).length
+          folded_length = (node.casefold || node.value).length
           folded_length > source_length ? [folded_length] : [source_length]
         when SemanticBytecode::CharacterClass
           return [1] if node.value.match?(/[\\\[\]:&^]/)
@@ -336,9 +336,10 @@ module Onibi
                             node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
             has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
             reverse_fold = reverse_casefold_sequence?(value)
-            folded_value = value.downcase(:fold)
+            folded_value = node.parts.map { |part| part.casefold || part.value }.join
             if !value.empty? && (value.ascii_only? || first_expands || has_mark || reverse_fold || folded_value != value)
               folded_length = casefold_lengths(value, characters, cursor,
+                                               folded: folded_value,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
             end
@@ -354,25 +355,29 @@ module Onibi
               # A UTF-8 case fold can consume several source literals, such
               # as `ss` matching one `ß`. Keep the bytecode nodes intact for
               # captures, but match one adjacent literal run as one operand.
-              run = [part.value]
+              run = [part]
               index += 1
               while index < parts.length && parts[index].is_a?(SemanticBytecode::Literal)
-                run << parts[index].value
+                run << parts[index]
                 index += 1
               end
-              first_expands = run.first.downcase(:fold).length > run.first.length
-              has_mark = run.join.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
-              reverse_fold = reverse_casefold_sequence?(run.join)
-              folded_run = run.join.downcase(:fold)
+              run_value = run.map(&:value).join
+              first_expands = (run.first.casefold || run.first.value).length > run.first.value.length
+              has_mark = run_value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
+              reverse_fold = reverse_casefold_sequence?(run_value)
+              folded_run = run.map { |literal| literal.casefold || literal.value }.join
               reverse_prefix = run.each_index.drop(1).reverse.find do |length|
-                reverse_casefold_sequence?(run.first(length).join)
+                reverse_casefold_sequence?(run.first(length).map(&:value).join)
               end
               if reverse_prefix
                 index = part_index + reverse_prefix
-                part = SemanticBytecode::Literal.new(run.first(reverse_prefix).join)
+                prefix = run.first(reverse_prefix)
+                prefix_value = prefix.map(&:value).join
+                prefix_fold = prefix.map { |literal| literal.casefold || literal.value }.join
+                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold)
               elsif run.length > 1 &&
-                    (run.join.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run.join)
-                part = SemanticBytecode::Literal.new(run.join)
+                    (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
+                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run)
               else
                 index = part_index + 1
               end
@@ -786,6 +791,7 @@ module Onibi
           value = operand.value.each_char.to_a
           if flags[:ignorecase]
             casefold_lengths(value.join, characters, cursor,
+                             folded: operand.casefold,
                              expanded_only: flags[:lookbehind_casefold]).first
           else
             characters[cursor, value.length] == value ? value.length : nil
@@ -2798,12 +2804,13 @@ module Onibi
         left.downcase == right.downcase
       end
 
-      def casefold_lengths(value, characters, cursor, expanded_only: false)
-        maximum = value.downcase(:fold).length
+      def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false)
+        folded_value = folded || value.downcase(:fold)
+        maximum = folded_value.length
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
         (minimum..maximum).select do |length|
           slice = characters[cursor, length]
-          slice && slice.length == length && casefold_equal?(value, slice.join)
+          slice && slice.length == length && folded_value == slice.join.downcase(:fold)
         end
       end
 

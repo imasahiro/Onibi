@@ -203,6 +203,13 @@ class V2IRGenTest < Minitest::Test
     refute literal.respond_to?(:bytecode_unicode_capture_byte_offsets?, true)
   end
 
+  def test_literal_casefold_is_embedded_in_semantic_bytecode
+    regexp = Onibi::Regexp.new("ᾀ")
+    root = regexp.send(:bytecode_program).flags[:semantic_root]
+
+    assert_equal "ἀι", root.parts.first.casefold
+  end
+
   def test_dedicated_executor_consumes_a_quantifier_run
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a+")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
