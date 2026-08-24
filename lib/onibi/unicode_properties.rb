@@ -93,6 +93,7 @@ module Onibi
       Vertical_Forms
       NKo
       Coptic
+      Cyrillic_Extended_C
       Arabic_Presentation_Forms_A
       Arabic_Presentation_Forms_B
     ].freeze
