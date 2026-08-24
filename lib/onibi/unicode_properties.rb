@@ -66,6 +66,29 @@ module Onibi
       send(PROPERTY_MATCHERS.fetch(normalized), character)
     end
 
+    # MRI applies simple casefold closure before it evaluates Ll, Lu, and Lt.
+    # Keep the closure here so every bytecode property operand uses one rule.
+    def casefold_matches?(name, character)
+      return true if matches?(name, character)
+
+      if %w[Lower Upper].include?(name)
+        opposite = name == "Lower" ? "Upper" : "Lower"
+        return matches?(opposite, character)
+      end
+      return false unless %w[Ll Lu Lt].include?(name)
+
+      variants = [character.downcase, character.upcase, character.capitalize]
+      return true if variants.any? do |variant|
+        variant.length == 1 && character.casecmp?(variant) && matches?(name, variant)
+      end
+
+      # These two Unicode mappings are multi-stage casefold closures in MRI.
+      return true if name == "Ll" && character == "\u0345"
+      return true if name == "Lu" && character == "\u00DF"
+
+      false
+    end
+
     def normalize_name(name)
       normalized = name.sub("^", "")
       return normalized if normalized.start_with?("In") && BLOCK_LOOKUP.key?(normalized.delete_prefix("In"))

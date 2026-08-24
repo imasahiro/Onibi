@@ -176,7 +176,7 @@ module Onibi
 
       if kind == :property
         name, negated = value
-        return true if ignorecase && negated && %w[Lower Upper Ll Lu].include?(name)
+        return true if ignorecase && negated && %w[Lower Upper Ll Lu Lt].include?(name)
 
         return property_matches?(value, character, ignorecase: ignorecase, encoding: encoding)
       end
@@ -192,15 +192,12 @@ module Onibi
 
       matched = UnicodeProperties.matches?(name, character)
       matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched &&
-                                                             %w[Lower Upper Ll Lu].include?(name)
+                                                             %w[Lower Upper Ll Lu Lt].include?(name)
       negated ? !matched : matched
     end
 
     def casefold_property_match?(name, character)
-      return UnicodeProperties.matches?(name == "Lower" ? "Upper" : "Lower", character) if %w[Lower Upper].include?(name)
-
-      folded = name == "Ll" ? character.downcase : character.upcase
-      folded.length == 1 && character.casecmp?(folded) && UnicodeProperties.matches?(name, folded)
+      UnicodeProperties.casefold_matches?(name, character)
     end
 
     def incompatible_property?(name, character, encoding)

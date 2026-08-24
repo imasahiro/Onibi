@@ -2500,15 +2500,7 @@ module Onibi
         return true if Onibi::UnicodeProperties.matches?(name, character)
         return false unless ignorecase && %w[Lower Upper Ll Lu].include?(name)
 
-        if %w[Lower Upper].include?(name)
-          opposite = name == "Lower" ? "Upper" : "Lower"
-          return Onibi::UnicodeProperties.matches?(opposite, character)
-        end
-
-        casefolded = name == "Ll" ? character.downcase : character.upcase
-        return false unless casefolded.length == 1 && character.casecmp?(casefolded)
-
-        Onibi::UnicodeProperties.matches?(name, casefolded)
+        Onibi::UnicodeProperties.casefold_matches?(name, character)
       end
 
       def ascii_property?(name)
