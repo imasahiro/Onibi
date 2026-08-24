@@ -58,6 +58,38 @@ module Onibi
             value
           end
         end
+
+        # MatchData needs byte offsets when every literal is non-ASCII.
+        # Keep this fact in the semantic bytecode, so the interpreter does
+        # not need to inspect compiler AST nodes at runtime.
+        def unicode_capture_byte_offsets?(node)
+          return false if repeated_literal_capture?(node)
+
+          literals = literal_values(node)
+          literals.any? && literals.all? { |value| !value.ascii_only? }
+        end
+
+        def literal_values(node)
+          case node
+          when Literal then [node.value]
+          when Sequence then node.parts.flat_map { |part| literal_values(part) }
+          when Alternation then node.branches.flat_map { |branch| literal_values(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion then literal_values(node.body)
+          when Quantifier then literal_values(node.expression)
+          else []
+          end
+        end
+
+        def repeated_literal_capture?(node)
+          return false unless node.is_a?(Sequence) && node.parts.length == 1
+
+          group = node.parts.first
+          return false unless group.is_a?(Group) && group.body.is_a?(Sequence) && group.body.parts.length == 1
+
+          quantifier = group.body.parts.first
+          quantifier.is_a?(Quantifier) && quantifier.expression.is_a?(Literal) &&
+            !quantifier.expression.value.ascii_only?
+        end
       end
 
       Instruction = Struct.new(:opcode, :operand, keyword_init: true) do

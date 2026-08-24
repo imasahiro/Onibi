@@ -194,6 +194,15 @@ class V2IRGenTest < Minitest::Test
     refute Onibi::IRGen::YARVIR.const_defined?(:Executor, false)
   end
 
+  def test_unicode_capture_offset_fact_is_embedded_in_semantic_bytecode
+    literal = Onibi::Regexp.new("é")
+    repeated_capture = Onibi::Regexp.new("(é+)")
+
+    assert_equal true, literal.send(:bytecode_program).flags[:unicode_capture_byte_offsets]
+    assert_equal false, repeated_capture.send(:bytecode_program).flags[:unicode_capture_byte_offsets]
+    refute literal.respond_to?(:bytecode_unicode_capture_byte_offsets?, true)
+  end
+
   def test_dedicated_executor_consumes_a_quantifier_run
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a+")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))

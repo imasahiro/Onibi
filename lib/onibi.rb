@@ -542,40 +542,25 @@ module Onibi
       nil
     end
 
-    def bytecode_unicode_capture_byte_offsets?
-      return false if unicode_repeated_literal_capture?
-
-      literals = []
-      collect_bytecode_literal_values(@ast, literals)
-      literals.any? && literals.all? { |value| !value.ascii_only? }
-    end
-
-    def collect_bytecode_literal_values(node, values)
-      case node
-      when Onibi::AST::Literal then values << node.value
-      when Onibi::AST::Sequence then node.parts.each { |part| collect_bytecode_literal_values(part, values) }
-      when Onibi::AST::Alternation then node.branches.each { |branch| collect_bytecode_literal_values(branch, values) }
-      when Onibi::AST::Group then collect_bytecode_literal_values(node.body, values)
-      when Onibi::AST::Quantifier then collect_bytecode_literal_values(node.expression, values)
-      end
-    end
-
     def bytecode_program
       @bytecode_program ||= begin
         compiled = Onibi::Compiler.compile(@parsed)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+        semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast)
+        unicode_capture_byte_offsets =
+          Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
         Onibi::IRGen::YARVIR.generate(
           dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
                         named_capture_numbers: named_captures,
-                        unicode_capture_byte_offsets: bytecode_unicode_capture_byte_offsets?,
+                        unicode_capture_byte_offsets: unicode_capture_byte_offsets,
                         binary_escape: binary_escape_pattern?,
                         linebreak_escape: source.include?("\\R"),
                         nullable: minimum_match_width(@ast).zero?,
                         literal_only: !literal_value(@ast).nil?,
-                        semantic_root: Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast) }
+                        semantic_root: semantic_root }
         )
       end
     end
@@ -633,16 +618,6 @@ module Onibi
       modifier = source[2, (colon || close || source.length) - 2].to_s
       !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
         modifier.each_char.any? { |character| %w[i m x].include?(character) }
-    end
-
-    def unicode_repeated_literal_capture?
-      @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-        @ast.parts.first.is_a?(Onibi::AST::Group) &&
-        @ast.parts.first.body.is_a?(Onibi::AST::Sequence) &&
-        @ast.parts.first.body.parts.length == 1 &&
-        @ast.parts.first.body.parts.first.is_a?(Onibi::AST::Quantifier) &&
-        @ast.parts.first.body.parts.first.expression.is_a?(Onibi::AST::Literal) &&
-        !@ast.parts.first.body.parts.first.expression.value.ascii_only?
     end
 
     def capture_count
