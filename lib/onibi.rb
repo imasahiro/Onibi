@@ -269,6 +269,8 @@ module Onibi
       ascii_input = input.ascii_only?
       @ascii_input = ascii_input
       @input_encoding = input.encoding
+      requested_position = position.is_a?(Integer) ? position : Integer(position)
+      return nil if requested_position.negative? && (requested_position + input.length).negative?
       raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
       if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT
         raise Encoding::CompatibilityError, "incompatible character encodings"

@@ -53,6 +53,12 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_invalid_negative_position_precedes_encoding_check
+    regexp = Onibi::Regexp.new("é")
+
+    assert_nil regexp.match("\xFF".b, -3)
+  end
+
   def test_non_ascii_pattern_accepts_ascii_only_input_in_another_encoding
     pattern = "é".encode(Encoding::UTF_8)
     input = "a".encode(Encoding::EUC_JP)
