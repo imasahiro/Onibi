@@ -10,9 +10,10 @@ module Onibi
     # a body result. `probe_position` advances one character per iteration.
     # `possible_points` stores [cursor, captures] checkpoints.
     # `body_checkpoints` stores ordered body results for each point.
-    # `capture_checkpoints` stores the repeat-frame state selected by the
-    # bounded body pass. The interpreter restores this state after a failed
-    # suffix, like OP_ABSENT_END popping to its absent frame.
+    # `capture_checkpoints` stores
+    # [probe_position, body_length, captures, discard_capture, ambiguous].
+    # The interpreter restores this state after a failed suffix, like
+    # OP_ABSENT_END popping to its absent frame.
     AbsentFrame = Struct.new(
       :absent_start,
       :absent_end,
@@ -1063,7 +1064,13 @@ module Onibi
             current_captures = nil unless preserve_failed_capture
           else
             length, state = results.first
-            frame.capture_checkpoints << [position, length, state.dup]
+            state = state.dup
+            state[:__match_probe] = position
+            prior_ambiguous = frame.capture_checkpoints.any? { |checkpoint| checkpoint[4] }
+            discard_capture = repeat_capture_discard_required?(body, results, state, length,
+                                                               prior_ambiguous)
+            frame.capture_checkpoints << [position, length, state.dup, discard_capture,
+                                          results.length > 1]
             frame.absent_end = [frame.absent_end, position + length - 1].min
             current_captures = state
           end
@@ -1071,11 +1078,41 @@ module Onibi
         end
 
         state = (current_captures || captures).dup
+        state.delete_if { |key, _value| key.is_a?(Integer) } if frame.capture_checkpoints.last&.fetch(3)
         state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-        state = discard_failed_quantified_suffix_captures(
-          body, characters, cursor, state, flags
-        )
         [[frame.absent_end - cursor, state]]
+      end
+
+      # OP_ABSENT_END restores a repeat frame after a body candidate fails.
+      # A one-character suffix after an even repeat count is restored to the
+      # frame entry. Multiple body candidates restore the ambiguous suffix
+      # frame as a whole. The checkpoint stores this VM decision.
+      def repeat_capture_discard_required?(body, results, state, length, prior_ambiguous)
+        parts = absence_sequence_parts(body)
+        quantifier = parts.first
+        return false unless parts.length > 1 &&
+                            (quantifier.is_a?(Onibi::AST::Quantifier) ||
+                             quantifier.is_a?(SemanticBytecode::Quantifier))
+        return false unless quantifier.kind == :+ && quantifier.maximum.nil?
+
+        spans = state.values.filter_map do |value|
+          value if value.is_a?(Array) && value.length == 2
+        end
+        return false if spans.empty?
+
+        suffix_starts_with_atom = parts.drop(1).any? do |part|
+          node_starts_with_selected_atom?(part, quantifier.expression, state)
+        end
+
+        repeat_count = spans.map { |start, finish| length - (finish - start) }.min
+        return true if !prior_ambiguous && repeat_count && repeat_count > 1 &&
+                       spans.any? { |start, finish| finish - start == 1 }
+        return true if repeat_count&.positive? && repeat_count.even? && spans.any? do |start, finish|
+          finish - start == 1
+        end
+
+        results.length > 1 && spans.any? { |start, finish| finish - start > 1 } &&
+          suffix_starts_with_atom
       end
 
       # A repeat frame restores captures when its failed suffix crosses an
@@ -1215,13 +1252,14 @@ module Onibi
                                 quantifier.is_a?(SemanticBytecode::Quantifier))
         return captures unless quantifier.kind == :+ && quantifier.maximum.nil?
 
-        run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+        probe = captures[:__match_probe] || cursor
+        run = quantified_atom_run_length(quantifier.expression, characters, probe, flags)
         suffix_starts_with_atom = parts.drop(1).any? do |part|
-          node_starts_with_atom?(part, quantifier.expression)
+          node_starts_with_selected_atom?(part, quantifier.expression, captures)
         end
         repeated_atom_capture = captures.values.any? do |value|
           value.is_a?(Array) && value.length == 2 && value[1] - value[0] == 1 &&
-            run > 1 && value[0] == cursor + run
+            run > 1 && value[0] == probe + run
         end
         return captures.reject { |key, _value| key.is_a?(Integer) } if repeated_atom_capture
         return captures unless suffix_starts_with_atom
@@ -1229,24 +1267,26 @@ module Onibi
           next false unless value.is_a?(Array) && value.length == 2
 
           span = value[1] - value[0]
-          (run.positive? && (span > 1 || value[1] == characters.length)) ||
+          (run.positive? && (span > 1 || (value[1] == characters.length && run.odd?))) ||
           (span > 1 && value[1] == characters.length) ||
-          (run > 1 && span == 1 && value[0] == cursor + run)
+          (run > 1 && span == 1 && value[0] == probe + run)
         end
 
         captures.reject { |key, _value| key.is_a?(Integer) }
       end
 
-      def node_starts_with_atom?(node, atom)
+      def node_starts_with_selected_atom?(node, atom, captures)
         case node
         when Onibi::AST::Group, SemanticBytecode::Group,
              Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
              Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
-          node_starts_with_atom?(node.body, atom)
+          node_starts_with_selected_atom?(node.body, atom, captures)
         when Onibi::AST::Sequence, SemanticBytecode::Sequence
-          node.parts.any? && node_starts_with_atom?(node.parts.first, atom)
+          node.parts.any? && node_starts_with_selected_atom?(node.parts.first, atom, captures)
         when Onibi::AST::Alternation, SemanticBytecode::Alternation
-          node.branches.any? { |branch| node_starts_with_atom?(branch, atom) }
+          index = captures[:__match_alternative_index]
+          branch = index.is_a?(Integer) ? node.branches[index] : node.branches.first
+          branch && node_starts_with_selected_atom?(branch, atom, captures)
         when Onibi::AST::Literal, SemanticBytecode::Literal
           quantified_atoms_equivalent?(node, atom)
         else
