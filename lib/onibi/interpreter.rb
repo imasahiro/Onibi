@@ -358,7 +358,14 @@ module Onibi
             end
             previous_states = states
             states = previous_states.flat_map do |consumed, state_captures|
-              node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
+              node_results(part, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
+                if state_captures[:__zero_absence] &&
+                   state_captures[:__match_start] == state_captures[:__match_end] &&
+                   state_captures[:__match_start].is_a?(Integer) &&
+                   state_captures[:__match_start] > cursor + consumed
+                  next
+                end
+
                 next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
                                marked = inner.dup
                                marked[:__match_prefix] = consumed

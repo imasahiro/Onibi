@@ -53,6 +53,17 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_rejects_nullable_body_before_a_suffix
+    [0, Onibi::Regexp::IGNORECASE].each do |options|
+      pattern = "(?~a?)b"
+      expected = ::Regexp.new(pattern, options).match("b")
+      actual = Onibi::Regexp.new(pattern, options).match("b")
+
+      assert_nil expected
+      assert_nil actual
+    end
+  end
+
   def test_absence_operator_preserves_body_captures
     match = Onibi::Regexp.new("(?~(a|b))").match("xaby")
 
