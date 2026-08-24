@@ -212,7 +212,7 @@ module Onibi
     end
 
     def casefold_property?(name)
-      %w[Lower Upper Ll Lu Lt].include?(UnicodeProperties.normalize_name(name))
+      UnicodeProperties.normalize_name(name) != "ASCII"
     end
 
     def incompatible_property?(name, character, encoding)

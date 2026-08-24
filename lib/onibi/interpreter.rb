@@ -3176,7 +3176,7 @@ module Onibi
                                  character
                                end
         return true if Onibi::UnicodeProperties.matches_normalized?(normalized, normalized_character)
-        return false unless ignorecase && %w[Lower Upper Ll Lu Lt].include?(normalized)
+        return false unless ignorecase && normalized != "ASCII"
 
         Onibi::UnicodeProperties.casefold_matches?(normalized, normalized_character)
       rescue EncodingError
