@@ -347,8 +347,17 @@ module Onibi
       return nil if input.nil? || input.is_a?(Symbol)
 
       unless input.is_a?(String)
-        input = String.try_convert(input)
-        raise TypeError, "no implicit conversion into String" unless input
+        original_input = input
+        input = String.try_convert(original_input)
+        unless input
+          type = case original_input
+                 when nil then "nil"
+                 when true then "true"
+                 when false then "false"
+                 else original_input.class
+                 end
+          raise TypeError, "no implicit conversion of #{type} into String"
+        end
       end
 
       program = bytecode_program
