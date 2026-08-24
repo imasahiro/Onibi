@@ -37,7 +37,7 @@ module Onibi
     def validate!(name)
       normalized = normalize_name(name)
       return if SUPPORTED.include?(normalized) ||
-                (normalized.start_with?("In") && BLOCKS.include?(normalized.delete_prefix("In")))
+                (normalized.start_with?("In") && BLOCK_LOOKUP.key?(normalized.delete_prefix("In")))
 
       raise RegexpError, "unknown Unicode property #{name}"
     end
@@ -53,54 +53,13 @@ module Onibi
 
     def normalize_name(name)
       normalized = name.sub("^", "")
-      return normalized if normalized.start_with?("In") && BLOCKS.include?(normalized.delete_prefix("In"))
+      return normalized if normalized.start_with?("In") && BLOCK_LOOKUP.key?(normalized.delete_prefix("In"))
 
       normalized
     end
 
-    BLOCKS = %w[
-      Basic_Latin Latin_1_Supplement Latin_Extended_A Latin_Extended_B IPA_Extensions
-      Spacing_Modifier_Letters Combining_Diacritical_Marks Greek_and_Coptic Cyrillic
-      Armenian Hebrew Arabic Syriac Arabic_Supplement Devanagari Devanagari_Extended Devanagari_Extended_A Bengali Gurmukhi Gujarati
-      Oriya Tamil Telugu Kannada Malayalam Thai Lao Tibetan Myanmar Georgian Hangul_Jamo
-      Ethiopic Cherokee Canadian_Aboriginal Ogham Runic Khmer Mongolian Hiragana Katakana
-      Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility Kana_Extended_A
-      CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms Emoticons Miscellaneous_Symbols Dingbats
-      Kana_Extended_B
-      Mathematical_Operators Geometric_Shapes Letterlike_Symbols Currency_Symbols
-      General_Punctuation CJK_Symbols_and_Punctuation Greek_Extended Latin_Extended_Additional
-      Latin_Extended_C Latin_Extended_D Latin_Extended_E Latin_Extended_F Latin_Extended_G
-      Supplemental_Arrows_A
-      Supplemental_Mathematical_Operators
-      Transport_and_Map_Symbols
-      Enclosed_Alphanumerics
-      Enclosed_Alphanumeric_Supplement
-      Mathematical_Alphanumeric_Symbols
-      CJK_Compatibility_Ideographs CJK_Compatibility_Ideographs_Supplement
-      CJK_Strokes Nag_Mundari Ol_Onal Mende_Kikakui Nyiakeng_Puachue_Hmong
-      Ideographic_Description_Characters
-      CJK_Radicals_Supplement
-      Katakana_Phonetic_Extensions
-      Kana_Supplement
-      CJK_Unified_Ideographs_Extension_A
-      CJK_Unified_Ideographs_Extension_B
-      CJK_Unified_Ideographs_Extension_C
-      CJK_Unified_Ideographs_Extension_D
-      CJK_Unified_Ideographs_Extension_E
-      CJK_Unified_Ideographs_Extension_F
-      CJK_Unified_Ideographs_Extension_G
-      CJK_Unified_Ideographs_Extension_H
-      CJK_Unified_Ideographs_Extension_I
-      CJK_Unified_Ideographs_Extension_J
-      Vertical_Forms Kawi Tangsa Toto Wancho Medefaidrin Bassa_Vah Miao Bamum_Supplement Pahawh_Hmong Makasar Bamum Sundanese_Supplement Batak Lisu Ol_Chiki
-      NKo
-      Coptic
-      Cyrillic_Extended_A Cyrillic_Extended_B Cyrillic_Extended_C
-      Cyrillic_Extended_D
-      Georgian_Extended
-      Arabic_Extended_A Arabic_Extended_B Arabic_Extended_C Arabic_Mathematical_Alphabetic_Symbols
-      Arabic_Presentation_Forms_A
-      Arabic_Presentation_Forms_B Adlam
-    ].freeze
+    # MRI maps normalized property names to generated ctype entries.
+    # The range table is the single source for block names in this VM.
+    BLOCK_LOOKUP = UNICODE_BLOCK_RANGES.each_key.to_h { |name| [name, true] }.freeze
   end
 end
