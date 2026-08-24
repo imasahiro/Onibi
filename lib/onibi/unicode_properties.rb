@@ -15,7 +15,7 @@ module Onibi
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
       Cased Changes_When_Casefolded Changes_When_Casemapped Changes_When_Lowercased Changes_When_Uppercased
       Changes_When_Titlecased Extender Grapheme_Base Grapheme_Extend ID_Compat_Math_Continue
-      ID_Compat_Math_Start ID_Continue ID_Start Ideographic Lowercase Math Pattern_Syntax
+      ID_Compat_Math_Start ID_Continue ID_Start XID_Continue XID_Start Ideographic Lowercase Math Pattern_Syntax
       Prepended_Concatenation_Mark Punctuation Regional_Indicator Sentence_Terminal Soft_Dotted
       Terminal_Punctuation Unified_Ideograph Uppercase Variation_Selector
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
@@ -65,6 +65,7 @@ module Onibi
       "Changes_When_Lowercased" => :changes_when_lowercased?,
       "Changes_When_Uppercased" => :changes_when_uppercased?,
       "Changes_When_Titlecased" => :changes_when_titlecased?,
+      "XID_Start" => :xid_start?, "XID_Continue" => :xid_continue?,
       "Pattern_Syntax" => :pattern_syntax?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
