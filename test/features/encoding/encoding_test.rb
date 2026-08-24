@@ -239,6 +239,16 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_noencoding_accepts_ascii_unicode_properties
+    regexp = Onibi::Regexp.new("\\p{Alpha}", Onibi::Regexp::NOENCODING)
+
+    assert_equal Encoding::ASCII_8BIT, regexp.encoding
+    assert regexp.fixed_encoding?
+    assert regexp.match?("a")
+    assert regexp.match?("a".b)
+    refute regexp.match?("1")
+  end
+
   def test_invalid_input_encoding_reports_mri_message
     input = [0xff].pack("C").force_encoding(Encoding::UTF_8)
 

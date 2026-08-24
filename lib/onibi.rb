@@ -184,10 +184,19 @@ module Onibi
       @source = source
       @options = option_bits(options)
       raise RegexpError, "invalid pattern encoding" unless @source.valid_encoding?
-      if no_encoding? && ((!@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT) || @source.include?("\\p{"))
-        raise RegexpError, "non-ASCII pattern with no encoding"
+      raise RegexpError, "non-ASCII pattern with no encoding" if no_encoding? && !@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT
+
+      if no_encoding? && property_names.any?
+        unless property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
+          raise RegexpError, "non-ASCII pattern with no encoding"
+        end
+
+        @options |= FIXEDENCODING
       end
-      raise RegexpError, "Unicode property in binary pattern" if @source.encoding == Encoding::ASCII_8BIT && @source.include?("\\p{")
+      if @source.encoding == Encoding::ASCII_8BIT && property_names.any? &&
+         !property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
+        raise RegexpError, "Unicode property in binary pattern"
+      end
 
       validate_property_encoding!
 
@@ -216,6 +225,12 @@ module Onibi
 
     def no_encoding?
       (@options & NOENCODING).positive?
+    end
+
+    def property_names
+      @property_names ||= @source.scan(/\\[pP]\{([^}]+)\}/).flatten.map do |name|
+        Onibi::UnicodeProperties.normalize_name(name)
+      end
     end
 
     def casefold?
@@ -427,6 +442,10 @@ module Onibi
     end
 
     def freeze_source_encoding
+      if no_encoding? && property_names.any?
+        @source = @source.dup.force_encoding(Encoding::ASCII_8BIT)
+        return
+      end
       if no_encoding?
         @source = @source.dup.force_encoding(Encoding::US_ASCII)
         return

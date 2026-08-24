@@ -51,7 +51,6 @@ module Onibi
       bits = { 1 => "ignorecase", 2 => "extended", 4 => "multiline", 16 => "fixedencoding", 32 => "noencoding" }
       supported = bits.keys.sum
       raise ArgumentError, "invalid options" if value.negative? || (value & ~supported).positive?
-      raise ArgumentError, "invalid options" if (value & 48) == 48
 
       bits.filter_map { |bit, name| name if (value & bit).positive? }
     end
