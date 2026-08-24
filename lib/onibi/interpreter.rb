@@ -336,7 +336,8 @@ module Onibi
                             node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
             has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
             reverse_fold = reverse_casefold_sequence?(value)
-            if !value.empty? && (value.ascii_only? || first_expands || has_mark || reverse_fold)
+            folded_value = value.downcase(:fold)
+            if !value.empty? && (value.ascii_only? || first_expands || has_mark || reverse_fold || folded_value != value)
               folded_length = casefold_lengths(value, characters, cursor,
                                                expanded_only: flags[:lookbehind_casefold]).first
               return folded_length ? [[folded_length, captures.dup]] : []
@@ -362,13 +363,15 @@ module Onibi
               first_expands = run.first.downcase(:fold).length > run.first.length
               has_mark = run.join.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
               reverse_fold = reverse_casefold_sequence?(run.join)
+              folded_run = run.join.downcase(:fold)
               reverse_prefix = run.each_index.drop(1).reverse.find do |length|
                 reverse_casefold_sequence?(run.first(length).join)
               end
               if reverse_prefix
                 index = part_index + reverse_prefix
                 part = SemanticBytecode::Literal.new(run.first(reverse_prefix).join)
-              elsif run.length > 1 && (run.join.ascii_only? || first_expands || has_mark || reverse_fold)
+              elsif run.length > 1 &&
+                    (run.join.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run.join)
                 part = SemanticBytecode::Literal.new(run.join)
               else
                 index = part_index + 1

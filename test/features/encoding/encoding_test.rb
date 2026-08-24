@@ -89,6 +89,14 @@ class EncodingTest < Minitest::Test
     refute noencoding.fixed_encoding?
   end
 
+  def test_fixed_noencoding_uses_binary_encoding
+    regexp = Onibi::Regexp.new("a", Onibi::Regexp::FIXEDENCODING | Onibi::Regexp::NOENCODING)
+
+    assert_equal Encoding::ASCII_8BIT, regexp.encoding
+    assert regexp.fixed_encoding?
+    refute regexp.match?("\xE9".b)
+  end
+
   def test_non_ascii_patterns_report_implicit_fixed_encoding
     regexp = Onibi::Regexp.new("あ")
 

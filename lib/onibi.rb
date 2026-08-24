@@ -442,7 +442,7 @@ module Onibi
     end
 
     def freeze_source_encoding
-      if no_encoding? && property_names.any?
+      if no_encoding? && fixed_encoding?
         @source = @source.dup.force_encoding(Encoding::ASCII_8BIT)
         return
       end

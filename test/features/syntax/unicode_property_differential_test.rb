@@ -178,6 +178,18 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_ignorecase_literal_runs_use_multi_character_fold_closure
+    [
+      %w[ſss ßſ],
+      %w[SSς ßς]
+    ].each do |pattern, input|
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+    end
+  end
+
   def test_ignorecase_full_fold_is_available_to_a_class_before_a_boundary
     pattern = "[[:alpha:]]\\b\\p{Letter}?"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match("SS")
