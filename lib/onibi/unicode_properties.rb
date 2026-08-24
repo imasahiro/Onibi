@@ -56,6 +56,14 @@ module Onibi
       64_260, 64_261, 64_262, 64_275, 64_276, 64_277, 64_278, 64_279
     ].freeze
 
+    # Unicode Simple_Case_Folding has one compatibility code point that is
+    # not reached by String#upcase/downcase from its ASCII base character.
+    # Keep it in compiler-owned Unicode data so range operands can close over
+    # the same reverse fold as MRI.
+    REVERSE_SIMPLE_CASEFOLDS = {
+      "k" => ["K"], "K" => ["K"], "K" => %w[k K]
+    }.freeze
+
     def validate!(name)
       normalized = normalize_name(name)
       return if SUPPORTED.include?(normalized) ||
@@ -124,6 +132,12 @@ module Onibi
     def casefold_codepoints
       MULTI_CHAR_CASEFOLD_CODEPOINTS
     end
+
+    def reverse_casefold_variants(character)
+      REVERSE_SIMPLE_CASEFOLDS.fetch(character, EMPTY_ARRAY)
+    end
+
+    EMPTY_ARRAY = [].freeze
 
     def boundary_word?(character)
       matches?("Word", character) || [0xb2, 0xb3, 0xb9, 0xbc, 0xbd, 0xbe].include?(character.codepoints.first)

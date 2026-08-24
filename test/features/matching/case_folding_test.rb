@@ -25,6 +25,16 @@ class CaseFoldingTest < Minitest::Test
     refute negated.match?("ſ")
   end
 
+  def test_ignorecase_class_ranges_close_over_variants_inside_the_range
+    regexp = Onibi::Regexp.new("[f-ς]", Onibi::Regexp::IGNORECASE)
+
+    assert_equal Regexp.new("[f-ς]", Regexp::IGNORECASE).match?("ω"), regexp.match?("ω")
+    assert regexp.match?("ς")
+
+    assert_equal Regexp.new("[A-f]", Regexp::IGNORECASE).match?("K"),
+                 Onibi::Regexp.new("[A-f]", Onibi::Regexp::IGNORECASE).match?("K")
+  end
+
   def test_ignorecase_matches_unicode_simple_case_folding
     assert Onibi::Regexp.new("k", ["ignorecase"]).match?("K")
   end

@@ -158,10 +158,11 @@ module Onibi
       return true if character.between?(first[1], last[1])
       return false unless ignorecase
 
-      folded = character.downcase(:fold)
-      return false unless folded.each_char.one?
-
-      folded.between?(first[1].downcase(:fold), last[1].downcase(:fold))
+      variants = [character.downcase(:fold), character.downcase, character.upcase, character.capitalize]
+      variants.concat(UnicodeProperties.reverse_casefold_variants(character))
+      variants.any? do |variant|
+        variant.each_char.one? && variant.between?(first[1], last[1])
+      end
     end
 
     def range_end(source, index, first)
