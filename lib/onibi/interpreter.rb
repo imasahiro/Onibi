@@ -599,6 +599,8 @@ module Onibi
         when :match_property
           if cursor < characters.length
             matched = property_matches?(operand.name, unicode_character(characters[cursor]), flags[:ignorecase], flags[:encoding])
+            return nil if matched == :incompatible
+
             matched = !matched if operand.negated
             matched ? 1 : nil
           end
@@ -780,6 +782,8 @@ module Onibi
         when SemanticBytecode::Property
           matched = property_matches?(expression.name, character, flags[:ignorecase] && !expression.negated,
                                       flags[:encoding])
+          return false if matched == :incompatible
+
           expression.negated ? !matched : matched
         when SemanticBytecode::Any
           flags[:multiline] || expression.value != "." || character != "\n"
@@ -2483,7 +2487,7 @@ module Onibi
       end
 
       def property_matches?(name, character, ignorecase, encoding = nil)
-        return false if encoding && encoding != Encoding::UTF_8 && ascii_property?(name) && !character.ascii_only?
+        return :incompatible if encoding && encoding != Encoding::UTF_8 && ascii_property?(name) && !character.ascii_only?
 
         return true if Onibi::UnicodeProperties.matches?(name, character)
         return false unless ignorecase && %w[Lower Upper].include?(name)
