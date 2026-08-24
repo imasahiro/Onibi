@@ -916,8 +916,8 @@ module Onibi
            (suffix_minimum&.positive? || suffix_can_consume?(parts.drop(1)))
           return absence_bounded_probe_results(
             body, characters, cursor, captures, flags,
-            preserve_failed_capture: !wildcard_node?(quantifier.expression) &&
-                                     fixed_suffix_width(parts.drop(1)).nil?
+            preserve_failed_capture: preserve_quantifier_capture?(quantifier, parts, characters,
+                                                                  cursor, flags)
           )
         end
 
@@ -997,8 +997,8 @@ module Onibi
           if suffix_width&.positive?
             return absence_bounded_probe_results(
               body, characters, cursor, captures, flags,
-              preserve_failed_capture: !wildcard_node?(quantifier.expression) &&
-                                       fixed_suffix_width(parts.drop(1)).nil?
+              preserve_failed_capture: preserve_quantifier_capture?(quantifier, parts, characters,
+                                                                    cursor, flags)
             )
           end
         end
@@ -1065,6 +1065,16 @@ module Onibi
           body, characters, cursor, state, flags
         )
         [[frame.absent_end - cursor, state]]
+      end
+
+      # A repeat frame restores captures when its failed suffix crosses an
+      # even number of iterations. Wildcard repeats use the outer frame.
+      def preserve_quantifier_capture?(quantifier, parts, characters, cursor, flags)
+        return false if wildcard_node?(quantifier.expression)
+        return false unless fixed_suffix_width(parts.drop(1)).nil?
+        return true unless quantifier.kind == :*
+
+        quantified_atom_run_length(quantifier.expression, characters, cursor, flags).odd?
       end
 
       def repeated_quantified_atom_suffix?(quantifier, suffix)

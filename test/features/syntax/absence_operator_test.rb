@@ -247,7 +247,8 @@ class AbsenceOperatorTest < Minitest::Test
   def test_absence_operator_replays_finite_and_positive_quantifier_probes
     cases = [
       ["(?~(?:a?(ab|a)))", %w[aab aaba baab]],
-      ["(?~(?:b+(ab|a)))", %w[bab baab]]
+      ["(?~(?:b+(ab|a)))", %w[bab baab]],
+      ["(?~(?:b*(a|aa)))", %w[ba baa bbaa]]
     ]
 
     cases.each do |pattern, inputs|
