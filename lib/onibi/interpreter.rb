@@ -111,6 +111,8 @@ module Onibi
           result = if (root = @program.flags[:semantic_root])
                      node_results(root, characters, start, {}, runtime_flags).first&.then do |length, captures|
                        match_start = captures.delete(:__match_start) || start
+                       hidden_captures = captures.delete(:__absence_captures)
+                       captures.merge!(hidden_captures) if hidden_captures
                        match_prefix = captures.key?(:__match_prefix)
                        match_reset = captures.delete(:__match_reset)
                        captures.delete(:__match_end)
@@ -440,6 +442,8 @@ module Onibi
                   next
                 end
 
+                inner = discard_absence_body_captures(part, inner) if part.is_a?(SemanticBytecode::Absence) &&
+                                                                      part_index < parts.length - 1
                 next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
                                marked = inner.dup
                                marked[:__match_prefix] = consumed
@@ -1069,6 +1073,8 @@ module Onibi
           break unless result
 
           length, current = result
+          current = adjust_possessive_absence_capture(quantifier.expression, cursor + consumed,
+                                                      length, current)
           consumed += length
           count += 1
           accepted << [consumed, current] if count >= quantifier.minimum
@@ -2435,7 +2441,7 @@ module Onibi
       def capture_numbers(node)
         case node
         when SemanticBytecode::Group
-          [node.number] + capture_numbers(node.body)
+          node.number ? [node.number] + capture_numbers(node.body) : capture_numbers(node.body)
         when SemanticBytecode::Sequence
           node.parts.flat_map { |part| capture_numbers(part) }
         when SemanticBytecode::Alternation
@@ -2445,6 +2451,54 @@ module Onibi
         else
           []
         end
+      end
+
+      def capture_names(node)
+        case node
+        when SemanticBytecode::Group
+          names = node.name ? [node.name] : []
+          names + capture_names(node.body)
+        when SemanticBytecode::Sequence
+          node.parts.flat_map { |part| capture_names(part) }
+        when SemanticBytecode::Alternation
+          node.branches.flat_map { |branch| capture_names(branch) }
+        when SemanticBytecode::Quantifier
+          capture_names(node.expression)
+        else
+          []
+        end
+      end
+
+      def absence_only_node?(node)
+        node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        node.is_a?(SemanticBytecode::Absence)
+      end
+
+      def adjust_possessive_absence_capture(expression, cursor, length, captures)
+        return captures unless expression.is_a?(SemanticBytecode::Group) &&
+                               absence_only_node?(expression.body)
+
+        adjusted = captures.dup
+        span = [cursor + length, cursor + length]
+        adjusted[expression.number] = span if expression.capture
+        adjusted[expression.name] = span if expression.capture && expression.name
+        adjusted
+      end
+
+      def discard_absence_body_captures(node, captures)
+        numbers = capture_numbers(node.body)
+        names = capture_names(node.body)
+        return captures if numbers.empty? && names.empty?
+
+        discarded = captures.select do |key, _value|
+          numbers.include?(key) || names.include?(key)
+        end
+        return captures if discarded.empty?
+
+        visible = captures.reject { |key, _value| discarded.key?(key) }
+        hidden = visible.delete(:__absence_captures) || {}
+        visible[:__absence_captures] = hidden.merge(discarded)
+        visible
       end
 
       def clear_repeated_absence_captures(node, captures)
@@ -2765,6 +2819,10 @@ module Onibi
       end
 
       def filter_absence_capture_scope(body, captures)
+        # A backreference-only body defines no capture scope. Preserve the
+        # incoming local state so the body can read captures from its prefix.
+        return captures if capture_numbers(body).empty?
+
         scope = body
         loop do
           if scope.is_a?(SemanticBytecode::Group) && !scope.capture

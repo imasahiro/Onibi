@@ -85,6 +85,33 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal "a", match[1]
   end
 
+  def test_absence_operator_preserves_captures_used_by_a_backreference_body
+    pattern = "(?<x>a)(?~\\k<x>)"
+    expected = ::Regexp.new(pattern).match("xaba")
+    actual = Onibi::Regexp.new(pattern).match("xaba")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
+  def test_absence_body_captures_are_not_visible_to_a_following_suffix
+    pattern = "(?~(?<x>a))\\k<x>"
+    expected = ::Regexp.new(pattern).match("a")
+    actual = Onibi::Regexp.new(pattern).match("a")
+
+    assert_nil expected
+    assert_nil actual
+  end
+
+  def test_repeated_absence_capture_uses_the_zero_width_endpoint
+    pattern = "((?~a))*+"
+    expected = ::Regexp.new(pattern).match("b")
+    actual = Onibi::Regexp.new(pattern).match("b")
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.offset(1), actual.offset(1)
+  end
+
   def test_absence_operator_preserves_captures_from_a_failed_suffix
     pattern = "(?~(?:(a|b)a))"
 
