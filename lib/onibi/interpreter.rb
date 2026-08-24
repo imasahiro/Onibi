@@ -246,8 +246,6 @@ module Onibi
         when Onibi::AST::Alternation, SemanticBytecode::Alternation
           node.branches.each_with_index.flat_map do |branch, branch_index|
             node_results(branch, characters, cursor, captures, flags).map do |length, state|
-              next [length, state] unless state.key?(:__match_start)
-
               marked = state.dup
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
@@ -827,7 +825,7 @@ module Onibi
                       match_position - cursor + quantified_length
                     elsif length.zero? && match_position > cursor
                       characters.length - cursor
-                    elsif internal_alternative_index&.positive? && internal_prefix.nil?
+                    elsif internal_alternative_index&.positive? && internal_start && internal_prefix.nil?
                       internal_start - cursor
                     elsif internal_end
                       effective_length = internal_end - internal_start
