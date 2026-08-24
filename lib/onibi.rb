@@ -46,6 +46,7 @@ module Onibi
     NOENCODING = 32
 
     class TimeoutError < RegexpError; end
+    LAST_MATCH_KEY = :onibi_regexp_last_match
 
     class << self
       def compile(pattern, options = nil, timeout: nil)
@@ -57,6 +58,11 @@ module Onibi
       end
 
       attr_reader :timeout
+
+      def last_match(index = nil)
+        matched = Thread.current[LAST_MATCH_KEY]
+        index.nil? ? matched : matched&.[](index)
+      end
 
       def escape(string)
         value = if string.is_a?(String)
@@ -319,7 +325,7 @@ module Onibi
 
     def match?(input, position = 0)
       requested_position = normalize_match_position(position)
-      matched = match(input, requested_position)
+      matched = match_without_last_match(input, requested_position)
       return false unless matched
       return false if requested_position >= 0 && requested_position > match_input_length(input)
 
@@ -343,6 +349,20 @@ module Onibi
     end
 
     def match(input, position = 0)
+      yielded_match = nil
+      result = if block_given?
+                 match_without_last_match(input, position) do |matched|
+                   yielded_match = matched
+                   yield(matched)
+                 end
+               else
+                 match_without_last_match(input, position)
+               end
+      Thread.current[LAST_MATCH_KEY] = yielded_match || (result if result.is_a?(Onibi::MatchData))
+      result
+    end
+
+    def match_without_last_match(input, position = 0)
       requested_position = normalize_match_position(position)
       return nil if input.nil? || input.is_a?(Symbol)
 
@@ -392,6 +412,8 @@ module Onibi
       matched = bytecode_match(input, start, program)
       matched && block_given? ? yield(matched) : matched
     end
+
+    private :match_without_last_match
 
     def scan(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)

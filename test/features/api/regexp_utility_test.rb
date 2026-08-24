@@ -52,6 +52,21 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)
   end
 
+  def test_last_match_matches_mri_and_match_question_does_not_change_it
+    regexp = Onibi::Regexp.new("(a)")
+
+    assert_nil Onibi::Regexp.last_match
+    matched = regexp.match("a")
+    assert_equal matched, Onibi::Regexp.last_match
+    assert_equal "a", Onibi::Regexp.last_match(0)
+    assert_equal "a", Onibi::Regexp.last_match(1)
+
+    regexp.match?("b")
+    assert_equal matched, Onibi::Regexp.last_match
+    assert_nil regexp.match("b")
+    assert_nil Onibi::Regexp.last_match
+  end
+
   def test_try_convert_handles_to_regexp_contract
     regexp = Onibi::Regexp.new("a")
     convertible = Object.new
