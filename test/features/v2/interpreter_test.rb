@@ -55,6 +55,20 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_interpreter_keeps_alternation_branch_identity_in_semantic_state
+    regexp = Onibi::Regexp.new("(?~(?:.*(ab|a)))")
+    program = regexp.send(:bytecode_program)
+    executor = Onibi::Interpreter::Executor.new(program)
+    body = program.flags[:semantic_root].parts.first.body.parts.first.body
+    characters = "aba".chars
+    executor.instance_variable_set(:@characters, characters)
+    executor.instance_variable_set(:@steps, 0)
+
+    results = executor.send(:node_results, body, characters, 0, {}, program.flags)
+
+    assert_equal([1, 0, 1], results.map { |_length, state| state[:__match_alternative_index] })
+  end
+
   private
 
   def dfa_program_for(source)
