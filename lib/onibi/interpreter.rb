@@ -927,6 +927,21 @@ module Onibi
           end
         end
 
+        if quantifier.kind == :* && fixed_repeated_suffix_width(quantifier, parts.drop(1))
+          suffix_width = fixed_repeated_suffix_width(quantifier, parts.drop(1))
+          run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
+          return unless run >= quantifier.minimum
+
+          boundary = (run + suffix_width - 1) / 2
+          results = node_results(body, characters, cursor, captures, flags)
+          target = results.find { |length, _state| length == boundary + 1 }
+          if target
+            state = target.last.dup
+            state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+            return [[boundary, state]]
+          end
+        end
+
         return unless quantifier.kind == :*
 
         maximum = quantified_absence_length(quantifier, characters, cursor)
@@ -943,6 +958,16 @@ module Onibi
 
       def repeated_quantified_atom_suffix?(quantifier, suffix)
         quantified_atoms_equivalent?(quantifier.expression, suffix)
+      end
+
+      def fixed_repeated_suffix_width(quantifier, suffix_parts)
+        return if suffix_parts.empty?
+        return unless suffix_parts.all? { |part| quantified_atoms_equivalent?(quantifier.expression, part) }
+
+        values = suffix_parts.map { |part| literal_value(part) }
+        return unless values.all?
+
+        values.sum(&:length)
       end
 
       def quantified_atoms_equivalent?(left, right)
