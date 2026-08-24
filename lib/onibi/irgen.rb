@@ -10,7 +10,8 @@ module Onibi
         # fold aligned with the following operand during backtracking.
         Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive)
         # `casefolds` contains reverse multi-character folds for this class.
-        CharacterClass = Struct.new(:value, :casefolds)
+        # `split_casefold` records MRI's class-only split rule for sharp-s.
+        CharacterClass = Struct.new(:value, :casefolds, :split_casefold)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -69,7 +70,11 @@ module Onibi
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive)
           end
-          return type.new(node.value, class_casefold_sequences(node.value)) if node.is_a?(Onibi::AST::CharacterClass)
+          if node.is_a?(Onibi::AST::CharacterClass)
+            folds = class_casefold_sequences(node.value)
+            split = folds.any? { |source, value| %w[ß ẞ].include?(source) && value == "ss" }
+            return type.new(node.value, folds, split)
+          end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
         end

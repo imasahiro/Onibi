@@ -65,6 +65,14 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(program_for(node))
   end
 
+  def test_character_class_embeds_casefold_split_policy
+    sharp_s = Onibi::Regexp.new("[ß]", Onibi::Regexp::IGNORECASE)
+    ligature = Onibi::Regexp.new("[ﬆ]", Onibi::Regexp::IGNORECASE)
+
+    assert sharp_s.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
+    refute ligature.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
+  end
+
   def test_escape_property_and_any_generate_exact_match_operands
     nodes = [
       [Onibi::AST::Escape.new(:digit), :match_escape],

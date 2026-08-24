@@ -587,9 +587,7 @@ module Onibi
           end
 
           folded = slice.join.downcase(:fold)
-          expanded_class = Array(prefix.first.casefolds).any? do |source, value|
-            %w[ß ẞ].include?(source) && value == "ss"
-          end
+          expanded_class = prefix.first.split_casefold
           expected_fold_characters = prefix.flat_map do |part|
             if part.is_a?(SemanticBytecode::Literal)
               (part.casefold || part.value).each_char.to_a
