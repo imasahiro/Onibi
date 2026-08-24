@@ -71,6 +71,7 @@ module Onibi
       Supplemental_Arrows_A
       Supplemental_Mathematical_Operators
       Transport_and_Map_Symbols
+      Enclosed_Alphanumerics
     ].freeze
   end
 end
