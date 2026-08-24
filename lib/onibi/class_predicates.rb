@@ -38,7 +38,6 @@ module Onibi
 
     def posix_matches?(property, character, ignorecase, encoding)
       return :incompatible if incompatible_property?(property, character, encoding)
-      return true if property == "Word" && !character.ascii_only?
 
       return true if UnicodeProperties.matches_normalized?(property, character)
       return false unless ignorecase && %w[Lower Upper].include?(property)
