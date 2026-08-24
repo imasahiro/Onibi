@@ -66,6 +66,7 @@ module Onibi
       Ethiopic Cherokee Canadian_Aboriginal Ogham Runic Khmer Mongolian Hiragana Katakana
       Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility
       CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms Emoticons Miscellaneous_Symbols Dingbats
+      Mathematical_Operators
     ].freeze
   end
 end
