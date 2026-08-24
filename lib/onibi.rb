@@ -234,6 +234,7 @@ module Onibi
       @ast = @parsed.ast
       Onibi::Compiler.validate(@ast)
       validate_subexpression_calls!
+      validate_backreferences!
       @effective_casefold = casefold? || scoped_casefold?(@ast)
       @effective_multiline = multiline? || scoped_multiline?(@ast)
       freeze_source_encoding
@@ -296,6 +297,16 @@ module Onibi
     end
 
     def named_captures
+      return {} if raw_named_captures.empty?
+
+      raw_named_captures.transform_values do |indices|
+        indices.map { |index| public_capture_numbers.index(index) + 1 }
+      end
+    end
+
+    # The VM uses parser capture numbers. MRI uses a separate public number
+    # space when a pattern has named captures: unnamed groups are hidden.
+    def raw_named_captures
       groups = {}
       walk_ast(@ast) do |node|
         next unless node.is_a?(Onibi::AST::Group) && node.name
@@ -675,7 +686,7 @@ module Onibi
                         full_casefold: full_casefold,
                         multiline: inline_global_flag_value(:m, multiline?),
                         subexpressions: bytecode_subexpressions,
-                        named_capture_numbers: named_captures,
+                        named_capture_numbers: raw_named_captures,
                         unicode_capture_byte_offsets: unicode_capture_byte_offsets,
                         binary_escape: binary_escape_pattern?,
                         linebreak_escape: source.include?("\\R"),
@@ -728,6 +739,17 @@ module Onibi
       groups = {}
       collect_bytecode_subexpressions(@ast, groups)
       validate_bytecode_subexpression_calls(groups)
+    end
+
+    def validate_backreferences!
+      return if raw_named_captures.empty?
+
+      walk_ast(@ast) do |node|
+        next unless node.is_a?(Onibi::AST::Backreference)
+        next unless node.identifier.to_s.match?(/\A\d+\z/)
+
+        raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/"
+      end
     end
 
     def validate_bytecode_subexpression_calls(groups)
@@ -786,9 +808,7 @@ module Onibi
     end
 
     def result_names
-      @result_names ||= named_captures.transform_values do |indices|
-        indices.map { |index| public_capture_numbers.index(index) + 1 }
-      end
+      @result_names ||= named_captures
     end
 
     def public_capture_numbers

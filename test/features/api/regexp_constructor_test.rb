@@ -87,6 +87,21 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
   end
 
+  def test_named_capture_numbers_hide_unnamed_groups_like_mri
+    expected = ::Regexp.new("(a)(?<name>b)")
+    actual = Onibi::Regexp.new("(a)(?<name>b)")
+
+    assert_equal expected.named_captures, actual.named_captures
+    assert_equal expected.match("ab").to_a, actual.match("ab").to_a
+    assert_equal expected.match("ab")["name"], actual.match("ab")["name"]
+  end
+
+  def test_numbered_backreferences_are_rejected_when_named_groups_exist
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<name>a)\\1") }
+
+    assert_equal "numbered backref/call is not allowed. (use name): /(?<name>a)\\1/", error.message
+  end
+
   def test_named_captures_collects_duplicate_group_numbers
     regexp = Onibi::Regexp.new("(?<value>x)(?<value>y)")
 
