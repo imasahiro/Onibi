@@ -79,6 +79,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{InWancho}", ["\u{1E2C0}", "\u{1E2FF}"], %w[A अ]],
     ["\\p{InToto}", ["\u{1E290}", "\u{1E2BF}"], %w[A अ]],
     ["\\p{InAdlam}", ["\u{1E900}", "\u{1E95F}"], %w[A अ]],
+    ["\\p{InMedefaidrin}", ["\u{16E40}", "\u{16E9F}"], %w[A अ]],
     ["\\p{InCJK_Strokes}", ["㇐", "㇑"], %w[A あ]],
     ["\\p{InIdeographic_Description_Characters}", ["⿰", "⿻"], %w[A あ]],
     ["\\p{InCJK_Radicals_Supplement}", ["⺀", "⻳"], %w[A あ]],
