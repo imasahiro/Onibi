@@ -39,7 +39,10 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Lu}", %w[A Ж], %w[a あ]],
     ["\\p{Ll}", %w[a ж], %w[A あ]],
     ["\\p{Lo}", %w[あ 漢], %w[A 1]],
-    ["\\p{Cn}", ["\u0378", "\u{10ffff}"], %w[A あ]]
+    ["\\p{Cn}", ["\u0378", "\u{10ffff}"], %w[A あ]],
+    ["\\p{Assigned}", %w[A あ], ["\u0378"]],
+    ["\\p{White_Space}", [" ", "\u2003"], %w[A]],
+    ["\\p{ASCII_Hex_Digit}", %w[0 9 A f], %w[g １]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri

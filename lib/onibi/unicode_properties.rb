@@ -13,7 +13,8 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
-      XDigit Blank Cntrl Graph Print Punct L Lu Ll Lt Lm Lo M N P S Z C Cn Mark
+      XDigit ASCII_Hex_Digit Assigned White_Space Blank Cntrl Graph Print Punct
+      L Lu Ll Lt Lm Lo M N P S Z C Cn Mark
       Symbol Separator Other
     ].freeze
     PROPERTY_MATCHERS = {
@@ -23,6 +24,7 @@ module Onibi
       "Letter" => :letter?, "Alnum" => :alnum?, "Digit" => :digit?, "Nd" => :digit?,
       "Number" => :number?, "Lower" => :lower?, "Upper" => :upper?, "Space" => :space?,
       "Word" => :word?, "XDigit" => :xdigit?, "Blank" => :blank?, "Cntrl" => :cntrl?,
+      "ASCII_Hex_Digit" => :xdigit?, "Assigned" => :assigned?, "White_Space" => :space?,
       "Graph" => :graph?, "Print" => :print?, "Punct" => :punct?,
       "L" => :letter?, "Lu" => :upper?, "Ll" => :lower?, "Lt" => :titlecase?,
       "Lm" => :modifier_letter?, "Lo" => :other_letter?, "M" => :mark?, "Mark" => :mark?,
