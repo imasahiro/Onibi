@@ -977,11 +977,14 @@ module Onibi
           end
         end
 
-        if quantifier.kind == :* && wildcard_node?(quantifier.expression)
-          suffix_width = fixed_suffix_width(parts.drop(1)) || minimum_suffix_width(parts.drop(1))
-          suffix_width = 1 if suffix_width&.zero? && suffix_can_consume?(parts.drop(1))
+        suffix_minimum = minimum_suffix_width(parts.drop(1))
+        nullable_wildcard_suffix = wildcard_node?(quantifier.expression) && suffix_minimum&.zero? &&
+                                   suffix_can_consume?(parts.drop(1))
+        if quantifier.kind == :* && (suffix_minimum&.positive? || nullable_wildcard_suffix)
+          suffix_width = fixed_suffix_width(parts.drop(1)) || suffix_minimum
+          suffix_width = 1 if suffix_width&.zero?
           if suffix_width&.positive?
-            return absence_wildcard_loop_results(
+            return absence_bounded_probe_results(
               body, characters, cursor, captures, flags
             )
           end
@@ -1018,7 +1021,7 @@ module Onibi
 
       # Execute the two loops used by Onigmo's OP_ABSENT protocol.
       # Each probe uses the current absent end as its input boundary.
-      def absence_wildcard_loop_results(body, characters, cursor, captures, flags)
+      def absence_bounded_probe_results(body, characters, cursor, captures, flags)
         frame = AbsentFrame.new(
           absent_start: cursor,
           absent_end: characters.length,

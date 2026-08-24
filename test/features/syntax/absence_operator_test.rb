@@ -123,7 +123,7 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_applies_quantifier_boundary_to_suffix_bodies
     cases = [
-      ["(?~(?:a*(a|b)))", %w[aa aab ab aaaab]],
+      ["(?~(?:a*(a|b)))", %w[aa aab ab aaaab aaab]],
       ["(?~(?:a*[ab]))", %w[aa aab ab aaaab]],
       ["(?~(?:a*.))", %w[aa aab ab aaaab]]
     ]
