@@ -13,7 +13,8 @@ module Onibi
     SUPPORTED = %w[
       ASCII Any Bidi_Control Case_Ignorable Default_Ignorable_Code_Point Deprecated Diacritic Emoji Emoji_Component
       Emoji_Presentation Emoji_Modifier Join_Control Noncharacter_Code_Point Pattern_White_Space Quotation_Mark
-      Cased Extender ID_Compat_Math_Continue ID_Compat_Math_Start Ideographic Math Prepended_Concatenation_Mark Regional_Indicator Sentence_Terminal Soft_Dotted
+      Cased Extender ID_Compat_Math_Continue ID_Compat_Math_Start Ideographic Math Pattern_Syntax
+      Prepended_Concatenation_Mark Regional_Indicator Sentence_Terminal Soft_Dotted
       Terminal_Punctuation Unified_Ideograph Variation_Selector
       Emoji_Modifier_Base Extended_Pictographic Han Hiragana Katakana Latin Greek Cyrillic Arabic
       Alpha Letter Alnum Digit Nd Number Lower Upper Space Word
@@ -53,6 +54,7 @@ module Onibi
       "Unified_Ideograph" => :unified_ideograph?,
       "ID_Compat_Math_Start" => :id_compat_math_start?,
       "ID_Compat_Math_Continue" => :id_compat_math_continue?,
+      "Pattern_Syntax" => :pattern_syntax?,
       "Emoji_Presentation" => :emoji_presentation?, "Emoji_Modifier" => :emoji_modifier?,
       "Emoji_Modifier_Base" => :emoji_modifier_base?,
       "Extended_Pictographic" => :extended_pictographic?,

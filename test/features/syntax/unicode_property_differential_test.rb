@@ -37,6 +37,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Unified_Ideograph}", %w[一 漢 𠀀], %w[A あ 😀]],
     ["\\p{ID_Compat_Math_Start}", ["∂", "∇", "∞"], %w[A あ 😀]],
     ["\\p{ID_Compat_Math_Continue}", ["²", "⁴", "∂", "∞"], %w[A あ 😀]],
+    ["\\p{Pattern_Syntax}", ["!", "[", "~", "→", "⟨"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
