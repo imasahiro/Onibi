@@ -942,36 +942,38 @@ module Onibi
           end
         end
 
-        if quantifier.kind == :* && wildcard_node?(quantifier.expression) &&
-           (suffix_width = fixed_suffix_width(parts.drop(1)) || minimum_suffix_width(parts.drop(1))) &&
-           suffix_width.positive?
-          results = node_results(body, characters, cursor, captures, flags)
-          return [[characters.length - cursor, captures]] if results.empty?
+        if quantifier.kind == :* && wildcard_node?(quantifier.expression)
+          suffix_width = fixed_suffix_width(parts.drop(1)) || minimum_suffix_width(parts.drop(1))
+          suffix_width = 1 if suffix_width&.zero? && suffix_can_consume?(parts.drop(1))
+          if suffix_width&.positive?
+            results = node_results(body, characters, cursor, captures, flags)
+            return [[characters.length - cursor, captures]] if results.empty?
 
-          maximum = results.map(&:first).max
-          if maximum&.positive?
-            desired = (maximum + suffix_width - 1) / 2 + 1
-            target = results.min_by do |length, _state|
-              distance = (length - desired).abs
-              tie_break = if length == desired
-                            0
-                          elsif maximum.odd?
-                            length > desired ? 0 : 1
-                          else
-                            length < desired ? 0 : 1
-                          end
-              [distance, tie_break]
-            end
-            if target
-              state = target.last.dup
-              state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-              target_index = results.index(target)
-              next_length = results[target_index + 1]&.first
-              if target.first >= 3 && (next_length.nil? || target.first - next_length > 1) &&
-                 (target.first.even? || target.first == maximum)
-                state.delete_if { |key, _value| key.is_a?(Integer) }
+            maximum = results.map(&:first).max
+            if maximum&.positive?
+              desired = (maximum + suffix_width - 1) / 2 + 1
+              target = results.min_by do |length, _state|
+                distance = (length - desired).abs
+                tie_break = if length == desired
+                              0
+                            elsif maximum.odd?
+                              length > desired ? 0 : 1
+                            else
+                              length < desired ? 0 : 1
+                            end
+                [distance, tie_break]
               end
-              return [[target.first - 1, state]]
+              if target
+                state = target.last.dup
+                state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+                target_index = results.index(target)
+                next_length = results[target_index + 1]&.first
+                if target.first >= 3 && (next_length.nil? || target.first - next_length > 1) &&
+                   (target.first.even? || target.first == maximum)
+                  state.delete_if { |key, _value| key.is_a?(Integer) }
+                end
+                return [[target.first - 1, state]]
+              end
             end
           end
         end
@@ -1056,6 +1058,34 @@ module Onibi
         when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
           width = minimum_node_width(node.expression)
           width && width * node.minimum.to_i
+        end
+      end
+
+      def suffix_can_consume?(parts)
+        parts.any? { |part| node_can_consume?(part) }
+      end
+
+      def node_can_consume?(node)
+        case node
+        when Onibi::AST::Literal, SemanticBytecode::Literal
+          !node.value.empty?
+        when Onibi::AST::CharacterClass, SemanticBytecode::CharacterClass,
+             Onibi::AST::Any, SemanticBytecode::Any,
+             Onibi::AST::Escape, SemanticBytecode::Escape,
+             Onibi::AST::Property, SemanticBytecode::Property
+          true
+        when Onibi::AST::Group, SemanticBytecode::Group,
+             Onibi::AST::OptionGroup, SemanticBytecode::OptionGroup,
+             Onibi::AST::AtomicGroup, SemanticBytecode::AtomicGroup
+          node_can_consume?(node.body)
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          node.parts.any? { |part| node_can_consume?(part) }
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          node.branches.any? { |branch| node_can_consume?(branch) }
+        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+          node.maximum != 0 && node_can_consume?(node.expression)
+        else
+          false
         end
       end
 
