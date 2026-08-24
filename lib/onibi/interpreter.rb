@@ -409,10 +409,13 @@ module Onibi
         return [] if accepted.empty?
 
         if quantifier.mode != :lazy && quantifier.maximum != quantifier.minimum &&
-           nullable_single_quantifier?(quantifier.expression)
+           nullable_single_quantifier?(quantifier.expression) &&
+           !lazy_nullable_body?(quantifier.expression)
           accepted = accepted.group_by(&:first).values.map(&:last).sort_by { |length, _state| -length }
           group = quantifier.expression
           accepted = accepted.map do |length, state|
+            next [length, state] if quantifier.maximum && length >= quantifier.maximum
+
             next_state = state.dup
             next_state[group.number] = [cursor + length, cursor + length]
             [length, next_state]
@@ -423,6 +426,14 @@ module Onibi
 
         zero_width = accepted.find { |length, _state| length.zero? }
         zero_width ? [zero_width] : accepted
+      end
+
+      def lazy_nullable_body?(node)
+        body = node.is_a?(SemanticBytecode::Group) ? node.body : node
+        parts = body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+        parts.any? do |part|
+          part.is_a?(SemanticBytecode::Quantifier) && part.mode == :lazy && part.minimum.zero?
+        end
       end
 
       # MRI keeps the zero-width anchor branch when a bounded repetition of an

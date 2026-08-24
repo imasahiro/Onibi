@@ -118,6 +118,16 @@ class InterpreterTest < Minitest::Test
     assert_equal expected.offset(1), actual.offset(1)
   end
 
+  def test_lazy_inner_nullable_repeat_keeps_ordered_zero_width_choice
+    ["(a??)?", "(a??)*", "(a??)+", "(a??){2,3}"].each do |pattern|
+      expected = ::Regexp.new(pattern).match("a")
+      actual = Onibi::Regexp.new(pattern).match("a")
+
+      assert_equal expected.to_a, actual.to_a, pattern
+      assert_equal expected.offset(0), actual.offset(0), pattern
+    end
+  end
+
   private
 
   def semantic_node?(value)
