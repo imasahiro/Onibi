@@ -27,7 +27,8 @@ class RegexpUtilityTest < Minitest::Test
 
   def test_escape_matches_ruby_input_coercion_errors
     assert_equal "a", Onibi::Regexp.escape(:a)
-    assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
+    error = assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
+    assert_equal "no implicit conversion of nil into String", error.message
     assert_raises(TypeError) { Onibi::Regexp.escape(1) }
   end
 

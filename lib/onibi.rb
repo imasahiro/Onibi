@@ -66,7 +66,8 @@ module Onibi
                 elsif string.respond_to?(:to_str)
                   string.to_str
                 else
-                  raise TypeError, "no implicit conversion of #{string.class} into String"
+                  type = string.nil? ? "nil" : string.class
+                  raise TypeError, "no implicit conversion of #{type} into String"
                 end
         escaped = value.each_char.map do |character|
           case character
