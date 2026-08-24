@@ -3,6 +3,7 @@
 module Onibi
   module Compiler
     Pipeline = Optimization::Pipeline
+    MAX_REPEAT_COUNT = 100_000
 
     OptimizedCFG = Struct.new(:ast, :graph, :options, :encoding, :applied_passes, :source_ast,
                               keyword_init: true) do
@@ -22,6 +23,8 @@ module Onibi
       normalized_options = Onibi::Parser.send(:normalize_options, parsed ? parsed.options : options)
       raise TypeError, "expected an AST or parser result" unless ast
 
+      validate_quantifier_bounds(ast)
+
       pipeline = if passes.nil?
                    Onibi::Compiler::Pipeline.default
                  else
@@ -31,6 +34,17 @@ module Onibi
       OptimizedCFG.new(ast: unit.ast, graph: unit.cfg, options: unit.options,
                        encoding: unit.encoding, applied_passes: unit.applied_passes, source_ast: ast)
     end
+
+    def validate_quantifier_bounds(ast)
+      ast_values(ast).each do |node|
+        next unless node.is_a?(Onibi::AST::Quantifier)
+        next if node.minimum <= MAX_REPEAT_COUNT &&
+                (node.maximum.nil? || node.maximum <= MAX_REPEAT_COUNT)
+
+        raise RegexpError, "too big number for repeat range"
+      end
+    end
+    private_class_method :validate_quantifier_bounds
 
     def infer_encoding(parsed, ast)
       return parsed.source.encoding if parsed

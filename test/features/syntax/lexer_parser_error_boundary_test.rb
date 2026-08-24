@@ -40,6 +40,8 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     assert Onibi::Regexp.new("a{0}").match?("")
     assert Onibi::Regexp.new("a{2,}").match?("aaa")
     assert Onibi::Regexp.new("a{,2}").match?("aa")
+    assert Onibi::Regexp.new("a{100000}")
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("a{100001}").match?("") }
   end
 
   def test_malformed_repeat_syntax_is_literal_like_mri
