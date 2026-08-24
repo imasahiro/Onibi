@@ -878,7 +878,11 @@ module Onibi
     end
 
     def analysis_source
-      @analysis_source ||= @source.encode(Encoding::UTF_8)
+      @analysis_source ||= if @source.encoding == Encoding::ASCII_8BIT || @source.encoding.ascii_compatible?
+                             @source
+                           else
+                             @source.encode(Encoding::UTF_8)
+                           end
     end
 
     def inline_global_modifier?
