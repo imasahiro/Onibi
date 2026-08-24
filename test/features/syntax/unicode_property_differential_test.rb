@@ -334,6 +334,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_windows31j_word_property_uses_the_decoded_character
+    pattern = "\\p{Word}".encode(Encoding::Windows_31J)
+    input = "\xA1".b.force_encoding(Encoding::Windows_31J)
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal [input, [0, 1]], [mri[0], mri.offset(0)]
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   private
 
   def assert_same_outcome(pattern, input, expected, options = 0)

@@ -2700,13 +2700,24 @@ module Onibi
 
       def property_matches?(name, character, ignorecase, encoding = nil)
         non_unicode_encoding = encoding && ![Encoding::UTF_8, Encoding::US_ASCII].include?(encoding)
-        return :incompatible if non_unicode_encoding && ascii_property?(name) && !character.ascii_only?
+        incompatible = ascii_property?(name) && (name != "Word" || encoding == Encoding::ASCII_8BIT)
+        return :incompatible if non_unicode_encoding && incompatible && !character.ascii_only?
+        return true if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&
+                       !character.ascii_only?
 
         normalized = Onibi::UnicodeProperties.normalize_name(name)
-        return true if Onibi::UnicodeProperties.matches_normalized?(normalized, character)
+        normalized_character = if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&
+                                  !character.ascii_only?
+                                 character.encode(Encoding::UTF_8)
+                               else
+                                 character
+                               end
+        return true if Onibi::UnicodeProperties.matches_normalized?(normalized, normalized_character)
         return false unless ignorecase
 
-        Onibi::UnicodeProperties.casefold_matches?(normalized, character)
+        Onibi::UnicodeProperties.casefold_matches?(normalized, normalized_character)
+      rescue EncodingError
+        false
       end
 
       def ascii_property?(name)
