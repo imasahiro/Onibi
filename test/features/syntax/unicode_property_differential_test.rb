@@ -44,7 +44,10 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{White_Space}", [" ", "\u2003"], %w[A]],
     ["\\p{ASCII_Hex_Digit}", %w[0 9 A f], %w[g １]],
     ["\\p{Hex_Digit}", %w[0 9 A f １ Ｆ], %w[g あ]],
-    ["\\p{Dash}", ["-", "‐", "−"], %w[A あ]]
+    ["\\p{Dash}", ["-", "‐", "−"], %w[A あ]],
+    ["\\p{InBasic_Latin}", %w[A 7], %w[あ é]],
+    ["\\p{InGreek_and_Coptic}", %w[α Ω], %w[A Ж]],
+    ["\\p{InHiragana}", ["あ"], %w[ア A]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri

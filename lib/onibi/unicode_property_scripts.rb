@@ -14,6 +14,32 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
     UNICODE_HIRAGANA_RANGES = [[12353, 12438], [12445, 12447], [110593, 110879], [110898, 110898], [110928, 110930], [127488, 127488]].freeze
     UNICODE_KATAKANA_RANGES = [[12449, 12538], [12541, 12543], [12784, 12799], [13008, 13054], [13056, 13143], [65382, 65391], [65393, 65437], [110576, 110579], [110581, 110587], [110589, 110590], [110592, 110592], [110880, 110882], [110933, 110933], [110948, 110951]].freeze
 
+    UNICODE_BLOCK_RANGES = {
+      "Basic_Latin" => [[0x0000, 0x007F]], "Latin_1_Supplement" => [[0x0080, 0x00FF]],
+      "Latin_Extended_A" => [[0x0100, 0x017F]], "Latin_Extended_B" => [[0x0180, 0x024F]],
+      "IPA_Extensions" => [[0x0250, 0x02AF]], "Spacing_Modifier_Letters" => [[0x02B0, 0x02FF]],
+      "Combining_Diacritical_Marks" => [[0x0300, 0x036F]], "Greek_and_Coptic" => [[0x0370, 0x03FF]],
+      "Cyrillic" => [[0x0400, 0x04FF]], "Armenian" => [[0x0530, 0x058F]],
+      "Hebrew" => [[0x0590, 0x05FF]], "Arabic" => [[0x0600, 0x06FF]],
+      "Syriac" => [[0x0700, 0x074F]], "Arabic_Supplement" => [[0x0750, 0x077F]],
+      "Devanagari" => [[0x0900, 0x097F]], "Bengali" => [[0x0980, 0x09FF]],
+      "Gurmukhi" => [[0x0A00, 0x0A7F]], "Gujarati" => [[0x0A80, 0x0AFF]],
+      "Oriya" => [[0x0B00, 0x0B7F]], "Tamil" => [[0x0B80, 0x0BFF]],
+      "Telugu" => [[0x0C00, 0x0C7F]], "Kannada" => [[0x0C80, 0x0CFF]],
+      "Malayalam" => [[0x0D00, 0x0D7F]], "Thai" => [[0x0E00, 0x0E7F]],
+      "Lao" => [[0x0E80, 0x0EFF]], "Tibetan" => [[0x0F00, 0x0FFF]],
+      "Myanmar" => [[0x1000, 0x109F]], "Georgian" => [[0x10A0, 0x10FF]],
+      "Hangul_Jamo" => [[0x1100, 0x11FF]], "Ethiopic" => [[0x1200, 0x137F]],
+      "Cherokee" => [[0x13A0, 0x13FF]], "Canadian_Aboriginal" => [[0x1400, 0x167F]],
+      "Ogham" => [[0x1680, 0x169F]], "Runic" => [[0x16A0, 0x16FF]],
+      "Khmer" => [[0x1780, 0x17FF]], "Mongolian" => [[0x1800, 0x18AF]],
+      "Hiragana" => [[0x3040, 0x309F]], "Katakana" => [[0x30A0, 0x30FF]],
+      "Bopomofo" => [[0x3100, 0x312F]], "CJK_Unified_Ideographs" => [[0x4E00, 0x9FFF]],
+      "Yi" => [[0xA000, 0xA4CF]], "Hangul_Syllables" => [[0xAC00, 0xD7AF]],
+      "CJK_Compatibility" => [[0x3300, 0x33FF]], "CJK_Compatibility_Forms" => [[0xFE30, 0xFE4F]],
+      "Halfwidth_and_Fullwidth_Forms" => [[0xFF00, 0xFFEF]]
+    }.freeze
+
     def script_match?(character, ranges)
       codepoint = character.codepoints.first
       ranges.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
@@ -52,6 +78,10 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
 
     def arabic?(character)
       script_match?(character, UNICODE_ARABIC_RANGES)
+    end
+
+    def block?(name, character)
+      script_match?(character, UNICODE_BLOCK_RANGES.fetch(name))
     end
   end
 end

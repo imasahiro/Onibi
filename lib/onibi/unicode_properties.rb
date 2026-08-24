@@ -35,15 +35,37 @@ module Onibi
     }.freeze
 
     def validate!(name)
-      normalized = name.sub("Is", "").sub("^", "")
-      raise RegexpError, "unknown Unicode property #{name}" unless SUPPORTED.include?(normalized)
+      normalized = normalize_name(name)
+      return if SUPPORTED.include?(normalized) ||
+                (normalized.start_with?("In") && BLOCKS.include?(normalized.delete_prefix("In")))
+
+      raise RegexpError, "unknown Unicode property #{name}"
     end
 
     def matches?(name, character)
-      normalized = name.sub("Is", "").sub("^", "")
+      normalized = normalize_name(name)
       validate!(name)
+
+      return block?(normalized.delete_prefix("In"), character) if normalized.start_with?("In")
 
       send(PROPERTY_MATCHERS.fetch(normalized), character)
     end
+
+    def normalize_name(name)
+      normalized = name.sub("Is", "").sub("^", "")
+      return normalized if normalized.start_with?("In") && BLOCKS.include?(normalized.delete_prefix("In"))
+
+      normalized
+    end
+
+    BLOCKS = %w[
+      Basic_Latin Latin_1_Supplement Latin_Extended_A Latin_Extended_B IPA_Extensions
+      Spacing_Modifier_Letters Combining_Diacritical_Marks Greek_and_Coptic Cyrillic
+      Armenian Hebrew Arabic Syriac Arabic_Supplement Devanagari Bengali Gurmukhi Gujarati
+      Oriya Tamil Telugu Kannada Malayalam Thai Lao Tibetan Myanmar Georgian Hangul_Jamo
+      Ethiopic Cherokee Canadian_Aboriginal Ogham Runic Khmer Mongolian Hiragana Katakana
+      Bopomofo CJK_Unified_Ideographs Yi Hangul_Syllables CJK_Compatibility
+      CJK_Compatibility_Forms Halfwidth_and_Fullwidth_Forms
+    ].freeze
   end
 end
