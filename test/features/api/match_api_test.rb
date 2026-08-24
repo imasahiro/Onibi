@@ -117,6 +117,27 @@ class MatchApiTest < Minitest::Test
     assert_nil Onibi::Regexp.new("z").match("a") { :unexpected }
   end
 
+  def test_match_position_uses_mri_numeric_conversion_errors
+    regexp = Onibi::Regexp.new("a")
+
+    [Float::INFINITY, Float::NAN].each do |position|
+      error = assert_raises(RangeError) { regexp.match("a", position) }
+
+      assert_equal "float #{if position.infinite?
+                              position.positive? ? "Inf" : "-Inf"
+                            else
+                              "NaN"
+                            end} out of range of integer",
+                   error.message
+    end
+
+    object = Object.new
+    object.define_singleton_method(:to_int) { 1.2 }
+    error = assert_raises(TypeError) { regexp.match("a", object) }
+
+    assert_equal "can't convert Object to Integer (Object#to_int gives Float)", error.message
+  end
+
   def test_scan_and_gsub_use_the_same_vm_match_path
     regexp = Onibi::Regexp.new("a+")
 

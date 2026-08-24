@@ -562,12 +562,35 @@ module Onibi
 
     def normalize_match_position(position)
       return position if position.is_a?(Integer)
-      return position.to_i if position.is_a?(Float)
-      return position.to_int if position.respond_to?(:to_int)
+
+      if position.is_a?(Float)
+        begin
+          return Integer(position)
+        rescue FloatDomainError
+          value = if position.infinite?
+                    position.positive? ? "Inf" : "-Inf"
+                  else
+                    "NaN"
+                  end
+          raise RangeError, "float #{value} out of range of integer"
+        end
+      end
+      if position.respond_to?(:to_int)
+        converted = position.to_int
+        return converted if converted.is_a?(Integer)
+
+        raise TypeError,
+              "can't convert #{position.class} to Integer (#{position.class}#to_int gives #{converted.class})"
+      end
 
       raise TypeError, "no implicit conversion from nil to integer" if position.nil?
 
-      raise TypeError, "no implicit conversion of #{position.class} into Integer"
+      type = case position
+             when true then "true"
+             when false then "false"
+             else position.class
+             end
+      raise TypeError, "no implicit conversion of #{type} into Integer"
     end
 
     def match_input_length(input)
