@@ -206,6 +206,7 @@ module Onibi
       @parsed = Onibi::Parser.parse(source, options: @options)
       @ast = @parsed.ast
       Onibi::Compiler.validate(@ast)
+      validate_subexpression_calls!
       @effective_casefold = casefold? || scoped_casefold?(@ast)
       @effective_multiline = multiline? || scoped_multiline?(@ast)
       freeze_source_encoding
@@ -628,6 +629,12 @@ module Onibi
       collect_bytecode_subexpressions(@ast, groups)
       validate_bytecode_subexpression_calls(groups)
       groups.transform_values { |body| Onibi::IRGen::YARVIR::SemanticBytecode.compile(body) }
+    end
+
+    def validate_subexpression_calls!
+      groups = {}
+      collect_bytecode_subexpressions(@ast, groups)
+      validate_bytecode_subexpression_calls(groups)
     end
 
     def validate_bytecode_subexpression_calls(groups)

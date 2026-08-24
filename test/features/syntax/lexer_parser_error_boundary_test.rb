@@ -21,6 +21,7 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "[z-a]",
     "[[:foo:]]",
     "[\\p{Foo}]",
+    "(?<x>a)\\g<1>",
     "(?<",
     "(?(",
     "(?#",
