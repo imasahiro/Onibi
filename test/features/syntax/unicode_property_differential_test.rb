@@ -213,6 +213,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     [
       %w[s?a ſa],
       %w[s? ſ],
+      %w[s?ß ſẞ],
+      %w[s?ß+ ſẞ],
       %w[É?ß*ß* éſſἀbς]
     ].each do |pattern, input|
       mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)

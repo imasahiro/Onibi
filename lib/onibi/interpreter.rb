@@ -629,7 +629,16 @@ module Onibi
            next_node.expression.casefolds.any?
           return :greedy
         end
+        if next_node.is_a?(SemanticBytecode::Quantifier) &&
+           next_node.expression.is_a?(SemanticBytecode::Literal) &&
+           next_node.expression.casefold&.length.to_i > next_node.expression.value.length
+          return :greedy
+        end
         return :zero_only if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.maximum != 1
+        # Keep the consuming candidate when the following literal has an
+        # expanding fold. For example, `s?ß` must match `ſẞ` from position 0.
+        return :greedy if next_node.is_a?(SemanticBytecode::Literal) &&
+                          next_node.casefold&.length.to_i > next_node.value.length
         return false if same_fold_literal?(next_node, expression)
 
         :zero_only
