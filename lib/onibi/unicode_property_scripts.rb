@@ -59,6 +59,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Kana_Supplement" => [[0x1B000, 0x1B0FF]],
       "CJK_Unified_Ideographs_Extension_A" => [[0x3400, 0x4DBF]],
       "CJK_Unified_Ideographs_Extension_B" => [[0x20000, 0x2A6DF]],
+      "CJK_Unified_Ideographs_Extension_C" => [[0x2A700, 0x2B73F]],
       "Arabic_Presentation_Forms_A" => [[0xFB50, 0xFDFF]],
       "Arabic_Presentation_Forms_B" => [[0xFE70, 0xFEFF]]
     }.freeze
