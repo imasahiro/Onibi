@@ -40,7 +40,7 @@ module Onibi
       return :incompatible if incompatible_property?(property, character, encoding)
       return true if property == "Word" && !character.ascii_only?
 
-      return true if UnicodeProperties.matches?(property, character)
+      return true if UnicodeProperties.matches_normalized?(property, character)
       return false unless ignorecase && %w[Lower Upper].include?(property)
 
       UnicodeProperties.matches?(property == "Lower" ? "Upper" : "Lower", character)
@@ -186,11 +186,12 @@ module Onibi
 
     def property_matches?(property, character, ignorecase: false, encoding: nil)
       name, negated = property
+      name = UnicodeProperties.normalize_name(name)
       if incompatible_property?(name, character, encoding)
         return negated ? true : :incompatible
       end
 
-      matched = UnicodeProperties.matches?(name, character)
+      matched = UnicodeProperties.matches_normalized?(name, character)
       matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched
       negated ? !matched : matched
     end

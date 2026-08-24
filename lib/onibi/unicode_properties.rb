@@ -76,6 +76,12 @@ module Onibi
       normalized = normalize_name(name)
       validate!(name)
 
+      matches_normalized?(normalized, character)
+    end
+
+    # Compiler operands contain normalized, validated property names. This
+    # path is the VM equivalent of MRI's generated ctype identifier lookup.
+    def matches_normalized?(normalized, character)
       return block?(normalized.delete_prefix("In"), character) if normalized.start_with?("In")
 
       send(PROPERTY_MATCHERS.fetch(normalized), character)
@@ -84,18 +90,20 @@ module Onibi
     # MRI applies simple casefold closure before it evaluates Ll, Lu, and Lt.
     # Keep the closure here so every bytecode property operand uses one rule.
     def casefold_matches?(name, character)
-      return true if matches?(name, character)
+      normalized = normalize_name(name)
+      validate!(name)
+      return true if matches_normalized?(normalized, character)
 
       variants = [character.downcase, character.upcase, character.capitalize]
       return true if variants.any? do |variant|
-        variant.length == 1 && character.casecmp?(variant) && matches?(name, variant)
+        variant.length == 1 && character.casecmp?(variant) && matches_normalized?(normalized, variant)
       end
 
-      return false unless %w[Lower Upper Ll Lu Lt].include?(name)
+      return false unless %w[Lower Upper Ll Lu Lt].include?(normalized)
 
       # These two Unicode mappings are multi-stage casefold closures in MRI.
-      return true if name == "Ll" && character == "\u0345"
-      return true if %w[Lu Upper].include?(name) && character == "\u00DF"
+      return true if normalized == "Ll" && character == "\u0345"
+      return true if %w[Lu Upper].include?(normalized) && character == "\u00DF"
 
       false
     end

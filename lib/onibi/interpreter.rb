@@ -2596,10 +2596,11 @@ module Onibi
         non_unicode_encoding = encoding && ![Encoding::UTF_8, Encoding::US_ASCII].include?(encoding)
         return :incompatible if non_unicode_encoding && ascii_property?(name) && !character.ascii_only?
 
-        return true if Onibi::UnicodeProperties.matches?(name, character)
+        normalized = Onibi::UnicodeProperties.normalize_name(name)
+        return true if Onibi::UnicodeProperties.matches_normalized?(normalized, character)
         return false unless ignorecase
 
-        Onibi::UnicodeProperties.casefold_matches?(name, character)
+        Onibi::UnicodeProperties.casefold_matches?(normalized, character)
       end
 
       def ascii_property?(name)
