@@ -388,11 +388,9 @@ module Onibi
           node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
             if length.zero?
               expression = quantifier.expression
-              expression = expression.body if expression.is_a?(Onibi::AST::Group) ||
-                                              expression.is_a?(SemanticBytecode::Group)
+              expression = expression.body if expression.is_a?(SemanticBytecode::Group)
               if count.positive? && consumed.positive? &&
-                 (expression.is_a?(Onibi::AST::Sequence) ||
-                  expression.is_a?(SemanticBytecode::Sequence))
+                 expression.is_a?(SemanticBytecode::Sequence)
                 accepted << [consumed, inner] if count + 1 >= quantifier.minimum
                 next
               end
@@ -446,34 +444,34 @@ module Onibi
         return false if accepted.any? { |length, _state| length >= quantifier.minimum }
 
         body = quantifier.expression
-        body = body.body if body.is_a?(Onibi::AST::Group) || body.is_a?(SemanticBytecode::Group)
-        return false unless body.is_a?(Onibi::AST::Alternation) || body.is_a?(SemanticBytecode::Alternation)
+        body = body.body if body.is_a?(SemanticBytecode::Group)
+        return false unless body.is_a?(SemanticBytecode::Alternation)
 
         branch_parts = body.branches.map do |branch|
-          branch.is_a?(Onibi::AST::Sequence) || branch.is_a?(SemanticBytecode::Sequence) ? branch.parts : [branch]
+          branch.is_a?(SemanticBytecode::Sequence) ? branch.parts : [branch]
         end
         consuming_branch = lambda do |part|
-          part.is_a?(Onibi::AST::CharacterClass) || part.is_a?(SemanticBytecode::CharacterClass) ||
+          part.is_a?(SemanticBytecode::CharacterClass) ||
             (quantifier.maximum != quantifier.minimum &&
-             (part.is_a?(Onibi::AST::Literal) || part.is_a?(SemanticBytecode::Literal)))
+             part.is_a?(SemanticBytecode::Literal))
         end
         branch_parts.any? { |parts| parts.any?(&consuming_branch) } &&
           branch_parts.any? do |parts|
             parts.any? do |part|
-              (part.is_a?(Onibi::AST::Anchor) || part.is_a?(SemanticBytecode::Anchor)) &&
+              part.is_a?(SemanticBytecode::Anchor) &&
                 %i[anchor_start anchor_absolute_start].include?(part.kind)
             end
           end
       end
 
       def nullable_single_quantifier?(node)
-        group = node if node.is_a?(Onibi::AST::Group) || node.is_a?(SemanticBytecode::Group)
+        group = node if node.is_a?(SemanticBytecode::Group)
         body = group&.body
         return false unless body && minimum_node_width(body)&.zero?
 
-        parts = body.is_a?(Onibi::AST::Sequence) || body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+        parts = body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
         nested = parts.first
-        nested && (nested.is_a?(Onibi::AST::Quantifier) || nested.is_a?(SemanticBytecode::Quantifier)) &&
+        nested.is_a?(SemanticBytecode::Quantifier) &&
           nested.minimum.zero? && nested.maximum == 1
       end
 
@@ -630,7 +628,7 @@ module Onibi
       end
 
       def quantifier_length(quantifier, characters, cursor, flags = {})
-        if quantifier.expression.is_a?(Onibi::AST::Group) || quantifier.expression.is_a?(SemanticBytecode::Group)
+        if quantifier.expression.is_a?(SemanticBytecode::Group)
           count = 0
           consumed = 0
           limit = quantifier.maximum || characters.length
@@ -658,7 +656,7 @@ module Onibi
       end
 
       def quantifier_lengths(quantifier, characters, cursor)
-        if quantifier.expression.is_a?(Onibi::AST::Group) || quantifier.expression.is_a?(SemanticBytecode::Group)
+        if quantifier.expression.is_a?(SemanticBytecode::Group)
           unit = sequence_length(quantifier.expression.body, characters, cursor)
           return [] unless unit&.positive?
 
@@ -700,7 +698,7 @@ module Onibi
           return
         end
         if opcode == :match_quantifier &&
-           (operand.expression.is_a?(Onibi::AST::Group) || operand.expression.is_a?(SemanticBytecode::Group))
+           operand.expression.is_a?(SemanticBytecode::Group)
           group = operand.expression
           return unless group.capture && length.positive?
 
@@ -721,10 +719,10 @@ module Onibi
       end
 
       def capture_absence(node, cursor, _length, captures)
-        return unless node.is_a?(Onibi::AST::Sequence) || node.is_a?(SemanticBytecode::Sequence)
+        return unless node.is_a?(SemanticBytecode::Sequence)
 
         group = node.parts.find do |part|
-          (part.is_a?(Onibi::AST::Group) || part.is_a?(SemanticBytecode::Group)) && part.capture
+          part.is_a?(SemanticBytecode::Group) && part.capture
         end
         return unless group
 
@@ -1028,7 +1026,7 @@ module Onibi
         quantifier = bounded_absence_quantifier(body)
         return false unless quantifier
 
-        (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)) &&
+        quantifier.is_a?(SemanticBytecode::Quantifier) &&
           quantifier.kind == :bounded
       end
 
@@ -1037,22 +1035,21 @@ module Onibi
         return nil unless parts.length == 1
 
         part = parts.first
-        return part if part.is_a?(Onibi::AST::Quantifier) || part.is_a?(SemanticBytecode::Quantifier)
-        return bounded_absence_quantifier(part.body) if part.is_a?(Onibi::AST::Group) ||
-                                                        part.is_a?(SemanticBytecode::Group)
+        return part if part.is_a?(SemanticBytecode::Quantifier)
+        return bounded_absence_quantifier(part.body) if part.is_a?(SemanticBytecode::Group)
 
         nil
       end
 
       def bounded_body_has_capture?(node)
         case node
-        when Onibi::AST::Group, SemanticBytecode::Group
+        when SemanticBytecode::Group
           true
-        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+        when SemanticBytecode::Sequence
           node.parts.any? { |part| bounded_body_has_capture?(part) }
-        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+        when SemanticBytecode::Alternation
           node.branches.any? { |branch| bounded_body_has_capture?(branch) }
-        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+        when SemanticBytecode::Quantifier
           bounded_body_has_capture?(node.expression)
         else
           false
@@ -1061,7 +1058,7 @@ module Onibi
 
       def bounded_wrapper_capture?(node)
         first = absence_sequence_parts(node).first
-        (first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)) &&
+        first.is_a?(SemanticBytecode::Group) &&
           bounded_quantifier_body?(node)
       end
 
@@ -1070,13 +1067,12 @@ module Onibi
         return false unless quantifier
 
         quantifier.maximum.nil? && %i[* +].include?(quantifier.kind) &&
-          (absence_sequence_parts(body).first.is_a?(Onibi::AST::Group) ||
-           absence_sequence_parts(body).first.is_a?(SemanticBytecode::Group))
+          absence_sequence_parts(body).first.is_a?(SemanticBytecode::Group)
       end
 
       def nested_quantifier_suffix_body?(body)
         first = absence_sequence_parts(body).first
-        return false unless first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)
+        return false unless first.is_a?(SemanticBytecode::Group)
 
         scope = quantifier_suffix_scope(body)
         scope && scope[1] &&
@@ -1090,12 +1086,12 @@ module Onibi
         parts = absence_sequence_parts(body)
         outer = parts.first
         return false unless parts.length > 1 &&
-                            (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+                            outer.is_a?(SemanticBytecode::Group)
 
         nested = absence_sequence_parts(outer.body)
         quantifier = nested.first
         nested.length == 1 &&
-          (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier)) &&
+          quantifier.is_a?(SemanticBytecode::Quantifier) &&
           static_node_width(quantifier.expression) &&
           minimum_suffix_width(parts.drop(1))&.positive? &&
           parts.drop(1).none? { |part| capture_numbers(part).any? }
@@ -1113,7 +1109,7 @@ module Onibi
       end
 
       def quantifier_node?(node)
-        node.is_a?(Onibi::AST::Quantifier) || node.is_a?(SemanticBytecode::Quantifier)
+        node.is_a?(SemanticBytecode::Quantifier)
       end
 
       def body_match_exists_after_probe?(body, characters, cursor, captures, flags)
@@ -1143,7 +1139,7 @@ module Onibi
         loop do
           first = parts.first
           return [first, suffix, depth, parent] if quantifier_node?(first)
-          return nil unless first.is_a?(Onibi::AST::Group) || first.is_a?(SemanticBytecode::Group)
+          return nil unless first.is_a?(SemanticBytecode::Group)
 
           parent = first
           nested = absence_sequence_parts(first.body)
