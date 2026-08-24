@@ -87,6 +87,7 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
       "Sundanese_Supplement" => [[0x1CC0, 0x1CCF]],
       "Batak" => [[0x1BC0, 0x1BFF]],
       "Lisu" => [[0xA4D0, 0xA4FF]],
+      "Ol_Chiki" => [[0x1C50, 0x1C7F]],
       "Bassa_Vah" => [[0x16AD0, 0x16AFF]],
       "Nag_Mundari" => [[0x1E4D0, 0x1E4FF]],
       "Ol_Onal" => [[0x1E5D0, 0x1E5FF]],
@@ -114,7 +115,23 @@ UNICODE_LATIN_RANGES = [[65, 90], [97, 122], [170, 170], [186, 186], [192, 214],
 
     def script_match?(character, ranges)
       codepoint = character.codepoints.first
-      ranges.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
+      # MRI/Onigmo stores each Unicode property as sorted code-point ranges
+      # and checks membership with a binary search. Keep the same O(log n)
+      # lookup for the bytecode class predicate instead of scanning every range.
+      lower = 0
+      upper = ranges.length - 1
+      while lower <= upper
+        middle = (lower + upper) / 2
+        range = ranges[middle]
+        if codepoint < range[0]
+          upper = middle - 1
+        elsif codepoint <= range[1]
+          return true
+        else
+          lower = middle + 1
+        end
+      end
+      false
     end
     def ascii?(character)
       character.codepoints.first <= 127
