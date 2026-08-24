@@ -9,6 +9,11 @@ module Onibi
       expression = atom
       while current_token&.type == :quantifier
         value = consume.value
+        if value == "?" && nested_bounded_possessive?(expression)
+          expression.mode = :lazy
+          next
+        end
+
         mode, base = quantifier_mode(value)
         kind, minimum, maximum = quantifier_bounds(base)
         if mode == :possessive && kind == :bounded
@@ -19,6 +24,12 @@ module Onibi
         end
       end
       expression
+    end
+
+    def nested_bounded_possessive?(expression)
+      expression.is_a?(AST::Quantifier) && expression.mode == :possessive &&
+        expression.kind == :+ && expression.expression.is_a?(AST::Quantifier) &&
+        expression.expression.kind == :bounded
     end
 
     def quantifier_mode(value)

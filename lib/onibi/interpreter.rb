@@ -1116,6 +1116,11 @@ module Onibi
           next_frontier = []
           frontier.each do |consumed, state|
             node_results(quantifier.expression, characters, cursor + consumed, state, flags).each do |length, inner|
+              if length.zero? && !zero_width_nested_unit_valid?(quantifier.expression, characters,
+                                                                cursor + consumed, state, flags)
+                next
+              end
+
               next_count = count + 1
               accepted << [consumed + length, inner] if next_count >= quantifier.minimum
               next if length.zero?
@@ -1129,6 +1134,25 @@ module Onibi
         return [] if accepted.empty?
 
         accepted.uniq { |length, state| [length, state] }.sort_by { |length, _state| -length }
+      end
+
+      def zero_width_nested_unit_valid?(node, characters, cursor, captures, flags)
+        if node.is_a?(SemanticBytecode::Group) || node.is_a?(SemanticBytecode::OptionGroup) ||
+           node.is_a?(SemanticBytecode::AtomicGroup)
+          return zero_width_nested_unit_valid?(node.body, characters, cursor, captures, flags)
+        end
+        if node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
+          return zero_width_nested_unit_valid?(node.parts.first, characters, cursor, captures, flags)
+        end
+        return false if characters.empty? && node.is_a?(SemanticBytecode::Escape) &&
+                        %i[word_boundary not_word_boundary].include?(node.kind)
+        return !node_results(node, characters, cursor, captures, flags).empty? unless
+          node.is_a?(SemanticBytecode::Quantifier)
+        return true if node.minimum.zero?
+        return zero_width_nested_unit_valid?(node.expression, characters, cursor, captures, flags) if
+          node.is_a?(SemanticBytecode::Quantifier)
+
+        !node_results(node, characters, cursor, captures, flags).empty?
       end
 
       def transition_lengths(label, characters, cursor, captures, flags = {})
