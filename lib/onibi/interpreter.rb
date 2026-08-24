@@ -110,6 +110,7 @@ module Onibi
           result = if (root = @program.flags[:semantic_root])
                      node_results(root, characters, start, {}, runtime_flags).first&.then do |length, captures|
                        match_start = captures.delete(:__match_start) || start
+                       match_prefix = captures.key?(:__match_prefix)
                        match_reset = captures.delete(:__match_reset)
                        captures.delete(:__match_end)
                        captures.delete(:__match_probe)
@@ -120,7 +121,16 @@ module Onibi
                        captures.delete(:__zero_absence)
                        captures.delete(:__match_prefix_zero_absence)
                        captures.delete(:__end_zero_width)
-                       finish = match_reset ? start + length : match_start + length
+                       finish = if match_reset
+                                  start + length
+                                elsif match_start > start && match_prefix
+                                  # The sequence length includes the prefix
+                                  # consumed before the absence probe moved the
+                                  # reported match start forward.
+                                  start + length
+                                else
+                                  match_start + length
+                                end
                        [match_start, finish, captures]
                      end
                    elsif @automaton.is_a?(Onibi::Automata::DFA)
@@ -2226,7 +2236,12 @@ module Onibi
           state[:__match_end] = finish
           state[:__match_probe] = characters[start - 1] if start.positive?
         end
-        [[finish - start, state]]
+        results = [[finish - start, state]]
+        # Keep the zero-length probe as a backtracking candidate. A following
+        # bytecode operand can match at the absence start before the first
+        # forbidden zero-width body position.
+        results << [0, captures.dup] if start == cursor && finish > start
+        results
       end
 
       def contains_assertion?(node)
