@@ -28,6 +28,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["\\p{Quotation_Mark}", ["\"", "'", "«", "“", "「"], %w[A あ 😀]],
     ["\\p{Terminal_Punctuation}", [".", "!", "?", "。", "؟"], %w[A あ 😀]],
     ["\\p{Soft_Dotted}", %w[i j į 𝐢], %w[A あ 😀]],
+    ["\\p{Extender}", ["·", "ـ", "々", "ー", "\u{a60c}"], %w[A あ 😀]],
     ["\\p{Han}", %w[漢 𠀀], ["あ"]],
     ["\\p{Latin}", %w[A é ꝑ], ["Ж"]],
     ["\\p{Greek}", %w[Ω ἂ], ["A"]],
