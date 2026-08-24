@@ -777,6 +777,8 @@ module Onibi
         maximum.downto(0).to_a
       end
 
+      # The VM dispatch keeps all OP_ABSENT state transitions in one method.
+      # rubocop:disable Metrics/BlockLength
       def absence_results(node, characters, cursor, captures, flags)
         delimiter = literal_value(node.body)
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
@@ -811,6 +813,8 @@ module Onibi
         return zero_width if zero_width
 
         return [] if zero_width_star_absence?(node.body, characters, cursor)
+
+        return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags) if nested_quantifier_suffix_body?(node.body)
 
         return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if bounded_quantifier_body?(node.body)
 
@@ -864,6 +868,9 @@ module Onibi
           inner_captures = discard_failed_quantified_suffix_captures(
             node.body, characters, cursor, inner_captures, flags
           )
+          inner_captures = filter_nested_quantifier_suffix_captures(
+            node.body, inner_captures, characters, flags
+          )
           quantified_length = quantified_absence_length(node.body, characters, position)
           match_position = internal_start || position
           maximum = if quantified_length
@@ -911,6 +918,7 @@ module Onibi
         maximum = characters.length - cursor
         maximum.downto(0).map { |length| [length, captures] }
       end
+      # rubocop:enable Metrics/BlockLength
 
       def record_absence_checkpoint(frame, position, results, captures)
         frame.probe_position = position
@@ -966,6 +974,24 @@ module Onibi
         quantifier.maximum.nil? && %i[* +].include?(quantifier.kind) &&
           (absence_sequence_parts(body).first.is_a?(Onibi::AST::Group) ||
            absence_sequence_parts(body).first.is_a?(SemanticBytecode::Group))
+      end
+
+      def nested_quantifier_suffix_body?(body)
+        outer = absence_sequence_parts(body).first
+        return false unless absence_sequence_parts(body).length == 1 &&
+                            (outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group))
+
+        parts = absence_sequence_parts(outer.body)
+        quantifier = parts.first
+        parts.length > 1 &&
+          (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
+      end
+
+      def nested_quantifier_suffix_results(body, characters, cursor, captures, flags)
+        absence_bounded_probe_results(body, characters, cursor, captures, flags,
+                                      preserve_failed_capture: false).map do |length, state|
+          [length, filter_nested_quantifier_suffix_captures(body, state, characters, flags)]
+        end
       end
 
       def nested_nullable_repeat_body?(body)
@@ -1366,6 +1392,59 @@ module Onibi
         end
 
         captures.reject { |key, _value| key.is_a?(Integer) }
+      end
+
+      def filter_nested_quantifier_suffix_captures(body, captures, characters, flags)
+        outer = absence_sequence_parts(body).first
+        return captures unless outer.is_a?(Onibi::AST::Group) || outer.is_a?(SemanticBytecode::Group)
+
+        nested = absence_sequence_parts(outer.body)
+        quantifier = nested.first
+        return captures unless nested.length > 1 &&
+                               (quantifier.is_a?(Onibi::AST::Quantifier) ||
+                                quantifier.is_a?(SemanticBytecode::Quantifier))
+
+        outer_span = captures[outer.number]
+        suffix_width = minimum_suffix_width(nested.drop(1))
+        if outer_span.is_a?(Array) && suffix_width
+          repeat_end = outer_span[1] - suffix_width
+          repetitions = quantifier_repetition_count(
+            quantifier.expression, characters, outer_span[0], repeat_end, flags
+          )
+          return {} if repetitions > 1
+        end
+
+        hidden = capture_numbers(quantifier.expression)
+        captures.reject { |key, _value| key.is_a?(Integer) && hidden.include?(key) }
+      end
+
+      def quantifier_repetition_count(expression, characters, start, finish, flags)
+        position = start
+        count = 0
+        while position < finish
+          length = node_results(expression, characters, position, {}, flags)
+                   .map(&:first).select(&:positive?).min
+          break unless length && position + length <= finish
+
+          position += length
+          count += 1
+        end
+        position == finish ? count : 0
+      end
+
+      def capture_numbers(node)
+        case node
+        when Onibi::AST::Group, SemanticBytecode::Group
+          [node.number] + capture_numbers(node.body)
+        when Onibi::AST::Sequence, SemanticBytecode::Sequence
+          node.parts.flat_map { |part| capture_numbers(part) }
+        when Onibi::AST::Alternation, SemanticBytecode::Alternation
+          node.branches.flat_map { |branch| capture_numbers(branch) }
+        when Onibi::AST::Quantifier, SemanticBytecode::Quantifier
+          capture_numbers(node.expression)
+        else
+          []
+        end
       end
 
       def node_starts_with_selected_atom?(node, atom, captures)
