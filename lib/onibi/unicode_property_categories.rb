@@ -86,6 +86,23 @@ module Onibi
         codepoint.between?("A".ord, "F".ord)
     end
 
+    HEX_DIGIT_RANGES = [[48, 57], [65, 70], [97, 102], [65_296, 65_305], [65_313, 65_318], [65_345, 65_350]].freeze
+    DASH_RANGES = [[45, 45], [1418, 1418], [1470, 1470], [5120, 5120], [6150, 6150], [8208, 8213],
+                   [8275, 8275], [8315, 8315], [8331, 8331], [8722, 8722], [11_799, 11_799],
+                   [11_802, 11_802], [11_834, 11_835], [11_840, 11_840], [11_869, 11_869], [12_316, 12_316],
+                   [12_336, 12_336], [12_448, 12_448], [65_073, 65_074], [65_112, 65_112], [65_123, 65_123],
+                   [65_293, 65_293], [68_974, 68_974], [69_293, 69_293]].freeze
+
+    def hex_digit?(character)
+      codepoint = character.codepoints.first
+      HEX_DIGIT_RANGES.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
+    end
+
+    def dash?(character)
+      codepoint = character.codepoints.first
+      DASH_RANGES.any? { |range| range[0] <= codepoint && codepoint <= range[1] }
+    end
+
     def alnum?(character)
       alpha?(character) || digit?(character)
     end
