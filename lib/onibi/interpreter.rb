@@ -909,7 +909,19 @@ module Onibi
         quantifier = parts.first
         return unless parts.length > 1 &&
                       (quantifier.is_a?(Onibi::AST::Quantifier) || quantifier.is_a?(SemanticBytecode::Quantifier))
-        return unless quantifier.maximum.nil? && !contains_absence_node?(body)
+        return if contains_absence_node?(body)
+
+        suffix_minimum = minimum_suffix_width(parts.drop(1))
+        if %i[* + ?].include?(quantifier.kind) &&
+           (suffix_minimum&.positive? || suffix_can_consume?(parts.drop(1)))
+          return absence_bounded_probe_results(
+            body, characters, cursor, captures, flags,
+            preserve_failed_capture: !wildcard_node?(quantifier.expression) &&
+                                     fixed_suffix_width(parts.drop(1)).nil?
+          )
+        end
+
+        return unless quantifier.maximum.nil?
 
         repeated_atom = parts.length == 2 && quantifier.kind == :+ &&
                         repeated_quantified_atom_suffix?(quantifier, parts[1])
@@ -977,7 +989,6 @@ module Onibi
           end
         end
 
-        suffix_minimum = minimum_suffix_width(parts.drop(1))
         nullable_wildcard_suffix = wildcard_node?(quantifier.expression) && suffix_minimum&.zero? &&
                                    suffix_can_consume?(parts.drop(1))
         if quantifier.kind == :* && (suffix_minimum&.positive? || nullable_wildcard_suffix)
@@ -985,7 +996,9 @@ module Onibi
           suffix_width = 1 if suffix_width&.zero?
           if suffix_width&.positive?
             return absence_bounded_probe_results(
-              body, characters, cursor, captures, flags
+              body, characters, cursor, captures, flags,
+              preserve_failed_capture: !wildcard_node?(quantifier.expression) &&
+                                       fixed_suffix_width(parts.drop(1)).nil?
             )
           end
         end
@@ -1021,7 +1034,7 @@ module Onibi
 
       # Execute the two loops used by Onigmo's OP_ABSENT protocol.
       # Each probe uses the current absent end as its input boundary.
-      def absence_bounded_probe_results(body, characters, cursor, captures, flags)
+      def absence_bounded_probe_results(body, characters, cursor, captures, flags, preserve_failed_capture: false)
         frame = AbsentFrame.new(
           absent_start: cursor,
           absent_end: characters.length,
@@ -1037,7 +1050,7 @@ module Onibi
           results = node_results(body, bounded, position, captures, flags)
           record_absence_checkpoint(frame, position, results, captures)
           if results.empty?
-            current_captures = nil
+            current_captures = nil unless preserve_failed_capture
           else
             length, state = results.first
             frame.absent_end = [frame.absent_end, position + length - 1].min
@@ -1048,6 +1061,9 @@ module Onibi
 
         state = (current_captures || captures).dup
         state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+        state = discard_failed_quantified_suffix_captures(
+          body, characters, cursor, state, flags
+        )
         [[frame.absent_end - cursor, state]]
       end
 

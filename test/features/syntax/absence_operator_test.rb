@@ -140,7 +140,7 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_operator_preserves_repeated_atom_boundary
     pattern = "(?~(?:a+a))"
-    %w[aaaab aaaa].each do |input|
+    %w[aaaab aaaa baaaa].each do |input|
       expected = ::Regexp.new(pattern).match(input)
       actual = Onibi::Regexp.new(pattern).match(input)
 
@@ -241,6 +241,23 @@ class AbsenceOperatorTest < Minitest::Test
 
       assert_equal expected.to_a, actual.to_a, input
       assert_equal expected.offset(0), actual.offset(0), input
+    end
+  end
+
+  def test_absence_operator_replays_finite_and_positive_quantifier_probes
+    cases = [
+      ["(?~(?:a?(ab|a)))", %w[aab aaba baab]],
+      ["(?~(?:b+(ab|a)))", %w[bab baab]]
+    ]
+
+    cases.each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected.to_a, actual.to_a, [pattern, input]
+        assert_equal expected.offset(0), actual.offset(0), [pattern, input]
+      end
     end
   end
 
