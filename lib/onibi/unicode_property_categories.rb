@@ -86,5 +86,43 @@ module Onibi
         codepoint.between?(0x2030, 0x2043) || codepoint.between?(0x3001, 0x303F) ||
         codepoint.between?(0xFF01, 0xFF65)
     end
+
+    def mark?(character)
+      codepoint = character.codepoints.first
+      (0x300..0x36F).cover?(codepoint) || (0x1AB0..0x1AFF).cover?(codepoint) ||
+        (0x1DC0..0x1DFF).cover?(codepoint) || (0x20D0..0x20FF).cover?(codepoint) ||
+        (0xFE20..0xFE2F).cover?(codepoint)
+    end
+
+    def symbol?(character)
+      codepoint = character.codepoints.first
+      [0xA9, 0xAE, 0x2116, 0x2122].include?(codepoint) ||
+        (0x20A0..0x20CF).cover?(codepoint) || (0x2100..0x214F).cover?(codepoint) ||
+        (0x2190..0x21FF).cover?(codepoint) || (0x2200..0x22FF).cover?(codepoint) ||
+        (0x2300..0x23FF).cover?(codepoint) || (0x25A0..0x25FF).cover?(codepoint) ||
+        (0x2600..0x27BF).cover?(codepoint) || (0x1F300..0x1FAFF).cover?(codepoint)
+    end
+
+    def separator?(character)
+      space?(character)
+    end
+
+    def other?(character)
+      !letter?(character) && !digit?(character) && !mark?(character) && !space?(character) &&
+        !punct?(character) && !symbol?(character)
+    end
+
+    def titlecase?(character)
+      [0x1C5, 0x1F2, 0x1F9, 0x01F2].include?(character.codepoints.first)
+    end
+
+    def modifier_letter?(character)
+      codepoint = character.codepoints.first
+      (0x2B0..0x2FF).cover?(codepoint) || (0xA700..0xA71F).cover?(codepoint)
+    end
+
+    def other_letter?(character)
+      uncased_letter?(character)
+    end
   end
 end

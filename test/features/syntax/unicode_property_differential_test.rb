@@ -16,7 +16,11 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     ["[[:word:]]", %w[A 0 _ ١ २ ０ \u0301], ["-"]],
     ["[[:space:]]", ["\u00a0", "\u2003", "\u2028"], ["A"]],
     ["[[:blank:]]", ["\u00a0", "\u2003"], ["A"]],
-    ["[[:xdigit:]]", %w[0 9 a F], %w[١ g]]
+    ["[[:xdigit:]]", %w[0 9 a F], %w[١ g]],
+    ["\\p{L}", %w[A あ], %w[1 -]],
+    ["\\p{M}", ["\u0301"], ["A"]],
+    ["\\p{P}", ["-", "\u2014"], ["A"]],
+    ["\\p{Z}", [" ", "\u2003"], ["A"]]
   ].freeze
 
   def test_unicode_and_posix_property_corpus_matches_mri
