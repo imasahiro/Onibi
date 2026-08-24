@@ -9,7 +9,7 @@ module Onibi
         Escape = Struct.new(:kind)
         Property = Struct.new(:name, :negated)
         Backreference = Struct.new(:identifier, :named)
-        Assertion = Struct.new(:body, :kind)
+        Assertion = Struct.new(:body, :kind, :widths)
         Any = Struct.new(:value)
         Anchor = Struct.new(:kind)
         Sequence = Struct.new(:parts)
@@ -46,6 +46,8 @@ module Onibi
 
         def compile(node)
           type = NODE_TYPES.fetch(node.class)
+          return type.new(compile_value(node.body), node.kind, Onibi::WidthAnalysis.widths(node.body)) if node.is_a?(Onibi::AST::Assertion)
+
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
         end
 

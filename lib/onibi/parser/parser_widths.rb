@@ -1,6 +1,51 @@
 # frozen_string_literal: true
 
 module Onibi
+  # Computes all finite input widths for a syntax node.
+  # The compiler stores this set in assertion operands for bounded lookbehind.
+  module WidthAnalysis
+    module_function
+
+    def widths(node)
+      case node
+      when AST::Literal then [node.value.chars.length]
+      when AST::CharacterClass, AST::Property, AST::Any then [1]
+      when AST::Anchor, AST::Assertion then [0]
+      when AST::Escape
+        next_width = zero_width_escape?(node.kind) ? 0 : 1
+        node.kind == :grapheme ? nil : [next_width]
+      when AST::Sequence then combine(node.parts)
+      when AST::Alternation
+        branch_widths = node.branches.map { |branch| widths(branch) }
+        return nil if branch_widths.any?(&:nil?)
+
+        branch_widths.flatten.uniq.sort
+      when AST::Group, AST::AtomicGroup, AST::OptionGroup then widths(node.body)
+      when AST::Quantifier
+        return unless node.kind == :bounded && node.minimum == node.maximum
+
+        widths(node.expression)&.map { |width| width * node.minimum }
+      when AST::Conditional
+        return unless node.yes_branch && node.no_branch
+
+        (widths(node.yes_branch) || []).concat(widths(node.no_branch) || []).uniq.sort
+      end
+    end
+
+    def combine(parts)
+      parts.reduce([0]) do |prefixes, part|
+        part_widths = widths(part)
+        return nil unless part_widths
+
+        prefixes.product(part_widths).map { |left, right| left + right }.uniq.sort
+      end
+    end
+
+    def zero_width_escape?(kind)
+      %i[word_boundary not_word_boundary start_match].include?(kind)
+    end
+  end
+
   # Calculates fixed widths for parser-level lookbehind validation.
   module ParserWidths
     WIDTH_METHODS = {
@@ -26,8 +71,8 @@ module Onibi
     end
 
     def node_width(node)
-      matcher = WIDTH_METHODS[node.class]
-      matcher ? send(matcher, node) : nil
+      widths = WidthAnalysis.widths(node)
+      widths&.one? ? widths.first : nil
     end
 
     def literal_width(node)

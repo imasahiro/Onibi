@@ -32,4 +32,15 @@ class LookaheadTest < Minitest::Test
   def test_lookbehind_rejects_a_variable_width_body
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a+)b") }
   end
+
+  def test_lookbehind_accepts_finite_alternation_widths
+    pattern = "(?<=a|bc)c"
+    input = "bcc"
+
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+  end
+
+  def test_lookbehind_rejects_nested_variable_width_alternation
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
+  end
 end

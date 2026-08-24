@@ -215,12 +215,12 @@ module Onibi
         end
 
         if assertion.kind == :positive_lookbehind
-          return mark_end_zero_width(lookbehind_results(assertion.body, characters, cursor, captures, flags),
+          return mark_end_zero_width(lookbehind_results(assertion, characters, cursor, captures, flags),
                                      characters, cursor, flags)
         end
 
         if assertion.kind == :negative_lookbehind
-          matched = lookbehind_results(assertion.body, characters, cursor, captures, flags).any?
+          matched = lookbehind_results(assertion, characters, cursor, captures, flags).any?
           return mark_end_zero_width(matched ? [] : [[0, captures]], characters, cursor, flags)
         end
 
@@ -240,9 +240,10 @@ module Onibi
         end
       end
 
-      def lookbehind_results(body, characters, cursor, captures, flags)
-        0.upto(cursor).reverse_each do |width|
-          results = node_results(body, characters, cursor - width, captures, flags)
+      def lookbehind_results(assertion, characters, cursor, captures, flags)
+        widths = assertion.widths || (0..cursor).to_a
+        widths.select { |width| width <= cursor }.sort.reverse_each do |width|
+          results = node_results(assertion.body, characters, cursor - width, captures, flags)
           matching = results.select { |length, _inner| length == width }
           return matching.map { |_length, inner| [0, inner] } unless matching.empty?
         end
