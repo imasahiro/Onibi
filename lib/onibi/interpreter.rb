@@ -274,6 +274,8 @@ module Onibi
             return [] if states.empty?
           end
           states
+        when Onibi::AST::Conditional, SemanticBytecode::Conditional
+          conditional_results(node, characters, cursor, captures, flags)
         when Onibi::AST::Alternation, SemanticBytecode::Alternation
           node.branches.each_with_index.flat_map do |branch, branch_index|
             node_results(branch, characters, cursor, captures, flags).map do |length, state|
@@ -701,6 +703,15 @@ module Onibi
         return nil unless branch
 
         sequence_length(branch, characters, cursor)
+      end
+
+      def conditional_results(conditional, characters, cursor, captures, flags)
+        condition = conditional.condition
+        key = condition.is_a?(Array) ? condition[0] : condition
+        branch = captures.key?(key) ? conditional.yes_branch : conditional.no_branch
+        return [] unless branch
+
+        node_results(branch, characters, cursor, captures, flags)
       end
 
       def atom_matches?(expression, character, flags = {})

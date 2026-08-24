@@ -21,4 +21,11 @@ class ConditionalGroupTest < Minitest::Test
     assert_equal "ab", regexp.match("ab")[0]
     assert_equal "c", regexp.match("c")[0]
   end
+
+  def test_conditional_group_executes_an_alternating_yes_branch
+    regexp = Onibi::Regexp.new("(a)?(?(1)(b|c)|d)")
+
+    assert_equal %w[ab a b], regexp.match("ab").to_a
+    assert_equal %w[ac a c], regexp.match("ac").to_a
+  end
 end
