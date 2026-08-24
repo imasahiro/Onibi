@@ -40,6 +40,13 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal "can't convert Object to String (Object#to_str gives NilClass)", error.message
   end
 
+  def test_escape_reports_boolean_conversion_errors_like_mri
+    assert_equal "no implicit conversion of true into String",
+                 assert_raises(TypeError) { Onibi::Regexp.escape(true) }.message
+    assert_equal "no implicit conversion of false into String",
+                 assert_raises(TypeError) { Onibi::Regexp.escape(false) }.message
+  end
+
   def test_quote_is_an_alias_for_escape
     assert_equal Onibi::Regexp.escape("a+b"), Onibi::Regexp.quote("a+b")
     assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)

@@ -72,7 +72,12 @@ module Onibi
 
                   converted
                 else
-                  type = string.nil? ? "nil" : string.class
+                  type = case string
+                         when nil then "nil"
+                         when true then "true"
+                         when false then "false"
+                         else string.class
+                         end
                   raise TypeError, "no implicit conversion of #{type} into String"
                 end
         escaped = value.each_char.map do |character|
