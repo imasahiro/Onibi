@@ -550,15 +550,11 @@ module Onibi
       [start, input_length].min
     end
 
-    def nullable_position_clamp?(input_length)
-      return false if @source.empty? && input_length.zero?
-
-      nodes = []
-      walk_ast(@ast) do |node|
-        nodes << node if node.is_a?(Onibi::AST::Anchor) ||
-                         node.is_a?(Onibi::AST::Assertion) || node.is_a?(Onibi::AST::Escape)
-      end
-      nodes.empty?
+    def nullable_position_clamp?(_input_length)
+      # MRI runs a nullable bytecode at the input end when the requested
+      # position is beyond the input. The bytecode decides if that position
+      # is valid; anchors and assertions must not be classified here.
+      true
     end
 
     def bytecode_nullable?

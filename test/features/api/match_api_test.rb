@@ -45,7 +45,7 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match("", -1)
     assert_equal [1, 1], regexp.match("a", 1).offset(0)
     assert_equal [1, 1], regexp.match("a", 10).offset(0)
-    assert_nil Onibi::Regexp.new("^").match("", 1)
+    assert_equal [0, 0], Onibi::Regexp.new("^").match("", 1).offset(0)
   end
 
   def test_nullable_pattern_uses_mri_position_rules
@@ -62,10 +62,10 @@ class MatchApiTest < Minitest::Test
     refute Onibi::Regexp.new("a*").match?("a", 10)
   end
 
-  def test_zero_width_lookbehind_rejects_positions_past_input_end
-    match = Onibi::Regexp.new("(?<=a)").match("ba", 99)
-
-    assert_nil match
+  def test_nullable_assertions_run_at_input_end_for_large_positions
+    assert_equal [1, 1], Onibi::Regexp.new("\\b").match("a", 99).offset(0)
+    assert_equal [2, 2], Onibi::Regexp.new("(?<=a)").match("ba", 99).offset(0)
+    assert_nil Onibi::Regexp.new("(?=a)").match("a", 99)
   end
 
   def test_lookbehind_captures_are_returned_by_the_vm
