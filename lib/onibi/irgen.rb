@@ -112,8 +112,10 @@ module Onibi
             [(node.casefold || node.value).length]
           when SemanticBytecode::CharacterClass
             [1, *node.casefolds.to_a.map { |_source, value| value.length }].uniq
-          when SemanticBytecode::Property, SemanticBytecode::Any, SemanticBytecode::Escape
+          when SemanticBytecode::Property, SemanticBytecode::Any
             [1]
+          when SemanticBytecode::Escape
+            [zero_width_escape?(node.kind) ? 0 : 1]
           when SemanticBytecode::Anchor
             [0]
           when SemanticBytecode::Sequence
@@ -132,6 +134,10 @@ module Onibi
           else
             []
           end
+        end
+
+        def zero_width_escape?(kind)
+          %i[word_boundary not_word_boundary start_match match_reset].include?(kind)
         end
 
         # Onigmo treats an exact bound with a lazy suffix (`{n}?`) as a

@@ -22,6 +22,16 @@ class LookaheadTest < Minitest::Test
     assert_equal "b", match[0]
   end
 
+  def test_word_boundary_lookbehind_keeps_zero_width_bytecode_width
+    pattern = "(?<=\\b)\\w\\w"
+    input = "ab"
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && expected.offset(0), actual && actual.offset(0)
+  end
+
   def test_negative_lookbehind_rejects_the_asserted_prefix
     regexp = Onibi::Regexp.new("(?<!a)b")
 
