@@ -195,17 +195,21 @@ module Onibi
       normalized = name.sub("^", "")
       if normalized.length >= 2 && normalized[0, 2].casecmp?("In")
         block_name = normalized[2..]
-        canonical_block = BLOCK_CANONICAL_NAMES[block_name.downcase]
+        canonical_block = BLOCK_CANONICAL_NAMES[canonical_key(block_name)]
         return "In#{canonical_block}" if canonical_block
       end
 
-      CANONICAL_NAMES.fetch(normalized.downcase, normalized)
+      CANONICAL_NAMES.fetch(canonical_key(normalized), normalized)
+    end
+
+    def canonical_key(name)
+      name.downcase.delete("_-")
     end
 
     # MRI maps normalized property names to generated ctype entries.
     # The range table is the single source for block names in this VM.
     BLOCK_LOOKUP = UNICODE_BLOCK_RANGES.each_key.to_h { |name| [name, true] }.freeze
-    BLOCK_CANONICAL_NAMES = BLOCK_LOOKUP.keys.to_h { |name| [name.downcase, name] }.freeze
-    CANONICAL_NAMES = SUPPORTED.to_h { |name| [name.downcase, name] }.freeze
+    BLOCK_CANONICAL_NAMES = BLOCK_LOOKUP.keys.to_h { |name| [canonical_key(name), name] }.freeze
+    CANONICAL_NAMES = SUPPORTED.to_h { |name| [canonical_key(name), name] }.freeze
   end
 end
