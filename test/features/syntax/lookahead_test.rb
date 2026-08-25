@@ -138,6 +138,16 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_greek_backreference_keeps_alternate_capture
+    source = "(σ)\\1\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ςσ")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ςσ")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end

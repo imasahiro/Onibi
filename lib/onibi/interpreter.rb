@@ -1054,6 +1054,8 @@ module Onibi
 
         value = @characters[span[0]...span[1]].join
         folded = value.downcase(:fold)
+        return false if value.each_char.all? { |character| Onibi::UnicodeProperties.greek?(character) }
+
         folded.length == value.length && folded != value.downcase
       end
 
@@ -3624,6 +3626,11 @@ module Onibi
         left_fold = left.downcase(:fold)
         right_fold = right.downcase(:fold)
         return false if left.length > 1 && right_fold.length != right.length
+        if left.each_char.all? { |character| Onibi::UnicodeProperties.greek?(character) } &&
+           right.each_char.all? { |character| Onibi::UnicodeProperties.greek?(character) }
+          return left_fold == right_fold
+        end
+
         return left_fold == right_fold if left_fold.length != left.length || right_fold.length != right.length
 
         right_fold == left.downcase
