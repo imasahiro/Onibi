@@ -669,6 +669,19 @@ module Onibi
       def casefold_sequence_results(parts, characters, cursor, captures, flags)
         return [] unless flags[:ignorecase]
 
+        literal_prefix = parts.take_while { |part| part.is_a?(SemanticBytecode::Literal) }
+        if literal_prefix.length >= 2
+          reverse_value = literal_prefix.map(&:value).join
+          source = characters[cursor]
+          if reverse_value.ascii_only? && reverse_casefold_sequence?(reverse_value) && source &&
+             source.downcase(:fold) == reverse_value
+            suffix = SemanticBytecode::Sequence.new(parts.drop(literal_prefix.length))
+            return node_results(suffix, characters, cursor + 1, captures, flags).map do |length, inner|
+              [1 + length, inner]
+            end
+          end
+        end
+
         prefix = []
         parts.each do |part|
           break unless (prefix.empty? && part.is_a?(SemanticBytecode::CharacterClass)) ||
@@ -680,7 +693,7 @@ module Onibi
         return [] if prefix.length < 2 || prefix.first.value.start_with?("^")
 
         split_class = true
-        if prefix.first.split_casefold
+        if prefix.first.is_a?(SemanticBytecode::CharacterClass) && prefix.first.split_casefold
           suffix = prefix.drop(1)
           split_safe = suffix.length == 1 && suffix.first.is_a?(SemanticBytecode::Literal) &&
                        suffix.first.value.each_char.one? &&
@@ -704,7 +717,7 @@ module Onibi
           end
 
           folded = slice.join.downcase(:fold)
-          expanded_class = prefix.first.split_casefold
+          expanded_class = prefix.first.is_a?(SemanticBytecode::CharacterClass) && prefix.first.split_casefold
           expected_fold_characters = prefix.flat_map do |part|
             if part.is_a?(SemanticBytecode::Literal)
               (part.casefold || part.value).each_char.to_a
