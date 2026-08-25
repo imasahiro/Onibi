@@ -525,6 +525,11 @@ module Onibi
                                                      cursor + consumed, flags)
                 part_results = []
               end
+              if mri_alternate_fold_quantifier_anchor_boundary?(part, parts[index],
+                                                                characters, cursor + consumed,
+                                                                flags)
+                part_results = []
+              end
               if mri_backreference_anchor_boundary?(part, parts[index], state_captures,
                                                     flags)
                 part_results = []
@@ -975,6 +980,19 @@ module Onibi
 
         source = characters[cursor]
         source && source != node.value && source.downcase(:fold) == node.value.downcase(:fold)
+      end
+
+      def mri_alternate_fold_quantifier_anchor_boundary?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum == node.maximum && node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+        return false if Onibi::UnicodeProperties.greek?(node.expression.value)
+
+        maximum = [node.maximum, characters.length - cursor].min
+        characters[cursor, maximum].to_a.any? do |character|
+          character != node.expression.value &&
+            character.downcase(:fold) == node.expression.value.downcase(:fold)
+        end
       end
 
       def later_fold_candidate?(literal, characters, cursor)
