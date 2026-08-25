@@ -122,8 +122,10 @@ module Onibi
       normalized = normalize_name(name)
       return ASCII_ENCODING_PROPERTIES.include?(normalized) if encoding == Encoding::US_ASCII
       return NON_UTF8_ENCODING_PROPERTIES.include?(normalized) if [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+      return true if [Encoding::UTF_8, Encoding::UTF_16BE, Encoding::UTF_16LE,
+                      Encoding::UTF_32BE, Encoding::UTF_32LE].include?(encoding)
 
-      true
+      ASCII_ENCODING_PROPERTIES.include?(normalized)
     end
 
     def matches?(name, character)

@@ -680,8 +680,6 @@ module Onibi
     end
 
     def validate_property_encoding!
-      return unless [Encoding::US_ASCII, Encoding::EUC_JP, Encoding::Windows_31J].include?(@source.encoding)
-
       analysis_source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
         next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
 
