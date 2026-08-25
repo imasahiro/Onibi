@@ -1097,6 +1097,8 @@ module Onibi
 
         if reverse_fold_source_literal?(value)
           maximum = [node.maximum, characters.length - cursor].min
+          return false if next_node.kind == :anchor_end &&
+                          characters[cursor, maximum].to_a.all? { |character| character == value }
           return false if characters[cursor, maximum].to_a.all?(&:ascii_only?)
         end
         return false if Onibi::UnicodeProperties.greek?(value)
@@ -1224,7 +1226,8 @@ module Onibi
         end
         return false if node.branches.any? do |branch|
           operand = boundary_operand(branch)
-          operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":")
+          operand.is_a?(SemanticBytecode::Property) ||
+          (operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":"))
         end
 
         node.branches.any? do |branch|
