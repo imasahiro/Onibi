@@ -1292,7 +1292,7 @@ module Onibi
         opcode, operand = label
         case opcode
         when :match_literal
-          value = operand.value.each_char.to_a
+          value = literal_characters(operand, flags)
           if flags[:ignorecase]
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
@@ -1502,7 +1502,8 @@ module Onibi
       def atom_matches?(expression, character, flags = {})
         case expression
         when SemanticBytecode::Literal
-          flags[:ignorecase] ? expression.value.casecmp?(character) : expression.value == character
+          value = literal_string(expression, flags)
+          flags[:ignorecase] ? value.casecmp?(character) : value == character
         when SemanticBytecode::CharacterClass
           Onibi::ClassPredicates.matches?(expression.value, character,
                                           ignorecase: flags[:ignorecase],
@@ -1519,6 +1520,16 @@ module Onibi
           flags[:multiline] || expression.value != "." || character != "\n"
         else false
         end
+      end
+
+      def literal_string(expression, flags)
+        return expression.value unless flags[:ascii_escape_bytes] && flags[:encoding] == Encoding::ASCII_8BIT
+
+        expression.value.bytes.pack("C*").force_encoding(Encoding::ASCII_8BIT)
+      end
+
+      def literal_characters(expression, flags)
+        literal_string(expression, flags).each_char.to_a
       end
 
       # Return all lengths that one property bytecode operand can consume.

@@ -53,6 +53,7 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert regexp.fixed_encoding?
     assert regexp.match?("あ")
     assert us_ascii_regexp.match?("あ")
+    assert us_ascii_regexp.match?("\xE3\x81\x82".b)
     refute regexp.match?("い")
     assert_raises(Encoding::CompatibilityError) { regexp.match?("\xE3\x81\x82".b) }
   end
@@ -64,6 +65,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert regexp.match?("あ")
     assert us_ascii_regexp.match?("あ")
     refute regexp.match?("い")
+  end
+
+  def test_noencoding_property_does_not_match_non_ascii_binary_input
+    regexp = Onibi::Regexp.new("\\p{Alpha}", Onibi::Regexp::NOENCODING)
+
+    refute regexp.match?("\xFF".b)
   end
 
   def test_trailing_escape_error_matches_mri
