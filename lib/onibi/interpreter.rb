@@ -2193,14 +2193,18 @@ module Onibi
             next
           end
 
+          zero_seen = false
           results.each do |length, inner|
             if length.zero?
               next unless zero_width_nested_unit_valid?(quantifier.expression, characters,
                                                         cursor + consumed, state, flags)
 
               accepted << [consumed, inner] if count + 1 >= quantifier.minimum
-              break
+              zero_seen = true
+              next
             end
+
+            break if zero_seen
 
             visit.call(consumed + length, inner, count + 1)
           end
