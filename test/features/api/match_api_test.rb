@@ -52,6 +52,16 @@ class MatchApiTest < Minitest::Test
     assert_nil Onibi::Regexp.last_match
   end
 
+  def test_case_equality_returns_false_for_non_string_inputs
+    regexp = Onibi::Regexp.new("a")
+
+    [1, true, false, Object.new].each do |input|
+      expected = Regexp.new("a").public_send("===", input)
+      actual = regexp.public_send("===", input)
+      assert_equal expected, actual
+    end
+  end
+
   def test_match_position_uses_input_length_for_negative_positions
     regexp = Onibi::Regexp.new("a")
 

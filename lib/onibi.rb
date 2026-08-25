@@ -397,6 +397,8 @@ module Onibi
 
     def ===(input)
       !match(input).nil?
+    rescue TypeError
+      false
     end
 
     def ~
