@@ -315,7 +315,7 @@ module Onibi
             return matching.map do |_length, inner|
               state = inner.dup
               state[:__lookbehind_reverse_fold] = true if flags[:ignorecase] && cursor == characters.length &&
-                                                          expanded_lookbehind_fold?(assertion.body)
+                                                          expanded_lookbehind_source?(assertion.body, characters, cursor)
               [0, state]
             end
           end
@@ -341,7 +341,7 @@ module Onibi
             state[:__lookbehind_overlap] = overlap if overlap.positive?
             state[:__lookbehind_reverse_fold] = true if cursor == characters.length &&
                                                         (reverse_lookbehind_fold?(assertion.body) ||
-                                                         expanded_lookbehind_fold?(assertion.body))
+                                                         expanded_lookbehind_source?(assertion.body, characters, cursor))
             [0, state]
           end
         end
@@ -415,6 +415,16 @@ module Onibi
         return node.casefold && node.casefold.length > node.value.length if node.is_a?(SemanticBytecode::Literal)
 
         false
+      end
+
+      def expanded_lookbehind_source?(node, characters, cursor)
+        return node.branches.any? { |branch| expanded_lookbehind_source?(branch, characters, cursor) } if node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.any? { |part| expanded_lookbehind_source?(part, characters, cursor) } if node.is_a?(SemanticBytecode::Sequence)
+        return false unless node.is_a?(SemanticBytecode::Literal)
+        return false unless node.casefold && node.casefold.length > node.value.length
+
+        source = characters[cursor - node.casefold.length, node.value.length]
+        source && source.join == node.value
       end
 
       def node_results(node, characters, cursor, captures, flags = {})
