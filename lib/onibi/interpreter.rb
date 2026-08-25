@@ -1211,7 +1211,10 @@ module Onibi
               next_captures[:__group_expanded_literal_fold] ||= characters[cursor]&.downcase(:fold)
               next_captures[:__group_expanded_literal_boundary] ||= expanded_boundary
             end
-            next_captures[:__captured_expanded_fold] = true if node.capture && next_captures[:__group_expanded_literal_source]
+            if node.capture && next_captures[:__group_expanded_literal_source] &&
+               next_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
+              next_captures[:__captured_expanded_fold] = true
+            end
             if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
                characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
               next_captures[:__group_expanded_literal_source] = true
