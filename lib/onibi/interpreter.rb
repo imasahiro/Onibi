@@ -184,6 +184,9 @@ module Onibi
 
         remaining = characters.drop(cursor).map { |character| character.downcase(:fold) }.join
         if captured_fold
+          boundary = captures[:__group_expanded_literal_boundary]
+          return false unless boundary && boundary[:kind] == :iota_tail
+
           return true if captures[:__captured_fold_incompatible]
           return true if remaining.empty? && prefix.length.positive?
 
