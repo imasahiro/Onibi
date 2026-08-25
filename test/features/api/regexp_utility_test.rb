@@ -92,6 +92,18 @@ class RegexpUtilityTest < Minitest::Test
     refute regexp.match?("dog")
   end
 
+  def test_union_ignores_string_subclass_overrides
+    pattern_class = Class.new(String) do
+      def encoding
+        raise "Regexp.union must not dispatch to pattern subclass"
+      end
+    end
+
+    regexp = Onibi::Regexp.union(pattern_class.new("a"))
+
+    assert regexp.match?("a")
+  end
+
   def test_union_of_no_patterns_never_matches
     refute Onibi::Regexp.union.match?("")
     refute Onibi::Regexp.union.match?("anything")

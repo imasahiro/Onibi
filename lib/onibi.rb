@@ -151,6 +151,7 @@ module Onibi
             has_non_ascii_source ||= !pattern.source.ascii_only?
             regexp_scope(pattern)
           else
+            pattern = String.new(pattern) if pattern.is_a?(String)
             has_string = true
             has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
             has_non_ascii_source ||= pattern.is_a?(String) && !pattern.ascii_only?
