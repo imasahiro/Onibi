@@ -73,6 +73,21 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("\xFF".b)
   end
 
+  def test_ascii8bit_property_uses_byte_semantics
+    regexp = Onibi::Regexp.new("\\p{Alpha}".b)
+
+    refute regexp.match?("\xC3".b)
+    assert regexp.match?("A".b)
+  end
+
+  def test_noencoding_multibyte_escape_is_fixed_binary
+    regexp = Onibi::Regexp.new("\\xC3\\xA9", Onibi::Regexp::NOENCODING)
+
+    assert regexp.fixed_encoding?
+    assert regexp.match?("\xC3\xA9".b)
+    assert_raises(Encoding::CompatibilityError) { regexp.match?("é") }
+  end
+
   def test_trailing_escape_error_matches_mri
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
 

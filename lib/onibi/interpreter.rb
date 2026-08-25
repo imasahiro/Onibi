@@ -1540,7 +1540,11 @@ module Onibi
       def property_match_lengths(operand, characters, cursor, flags)
         return [] if cursor >= characters.length
 
-        character = unicode_character(characters[cursor])
+        character = if flags[:encoding] == Encoding::ASCII_8BIT
+                      characters[cursor]
+                    else
+                      unicode_character(characters[cursor])
+                    end
         # A bare negated property also receives MRI's case-fold closure.
         # Character-class negation is handled separately by ClassPredicates.
         matched = property_matches?(operand.name, character, flags[:ignorecase], flags[:encoding])
@@ -3422,7 +3426,7 @@ module Onibi
         cache_key = [name, character, ignorecase, encoding]
         return @property_match_cache[cache_key] if @property_match_cache.key?(cache_key)
 
-        non_unicode_encoding = [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+        non_unicode_encoding = [Encoding::ASCII_8BIT, Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
         incompatible = ascii_property?(name) && (name != "Word" || encoding == Encoding::ASCII_8BIT)
         return @property_match_cache[cache_key] = :incompatible if non_unicode_encoding && incompatible && !character.ascii_only?
         if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&

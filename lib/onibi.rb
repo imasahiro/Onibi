@@ -296,6 +296,7 @@ module Onibi
                                    (no_encoding? || @source.encoding != Encoding::US_ASCII)
       @options |= FIXEDENCODING if @source.encoding == Encoding::ASCII_8BIT && non_ascii_escape_present?
       @options |= FIXEDENCODING if @source.encoding == Encoding::UTF_8 && non_ascii_escape_present?
+      @options |= FIXEDENCODING if no_encoding? && non_ascii_escape_present?
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       # The parser consumes Unicode scalar text. Keep the original pattern
