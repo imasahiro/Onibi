@@ -159,6 +159,37 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_body_capture_presence_is_visible_to_conditionals
+    [
+      ["(?~(a+))(?(1)a|b)", %w[a aa ab ba]],
+      ["(?~(a|ab))(?(1)a|b)", %w[a aa ab ba]],
+      ["(?~(?:(a|b)a))(?(1)a|b)", %w[a aa ab ba b]]
+    ].each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected&.to_a, actual&.to_a, [pattern, input]
+        assert_equal expected && expected.offset(0), actual && actual.offset(0), [pattern, input]
+      end
+    end
+  end
+
+  def test_zero_width_absence_runs_suffix_at_the_internal_match_start
+    [
+      ["(?~(?=a))a", %w[ab aab ba]],
+      ["(?~(?=a))(?!a)", %w[ab aab ba]]
+    ].each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected&.to_a, actual&.to_a, [pattern, input]
+        assert_equal expected && expected.offset(0), actual && actual.offset(0), [pattern, input]
+      end
+    end
+  end
+
   def test_absence_operator_scans_for_a_greedy_body_match
     regexp = Onibi::Regexp.new("(?~a+)")
 

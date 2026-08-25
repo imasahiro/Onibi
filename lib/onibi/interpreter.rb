@@ -124,11 +124,11 @@ module Onibi
                        next if captures.delete(:__defer_expanded_match)
 
                        match_start = captures.delete(:__match_start) || start
+                       match_end = captures.delete(:__match_end)
                        hidden_captures = captures.delete(:__absence_captures)
                        captures.merge!(hidden_captures) if hidden_captures
                        match_prefix = captures.key?(:__match_prefix)
                        match_reset = captures.delete(:__match_reset)
-                       captures.delete(:__match_end)
                        captures.delete(:__match_probe)
                        captures.delete(:__match_prefix)
                        captures.delete(:__match_prefix_value)
@@ -145,7 +145,7 @@ module Onibi
                                   # The sequence length includes the prefix
                                   # consumed before the absence probe moved the
                                   # reported match start forward.
-                                  start + length
+                                  [start + length, match_end].compact.max
                                 else
                                   match_start + length
                                 end
@@ -719,6 +719,15 @@ module Onibi
                            else
                              flags
                            end
+              part_cursor = cursor + consumed
+              # A shifted absence carries its internal start and end in VM
+              # state. Execute the next operand at that start, not at the
+              # sequence origin. The reported match still uses the end.
+              if state_captures[:__match_start].is_a?(Integer) &&
+                 state_captures[:__match_end].is_a?(Integer) &&
+                 state_captures[:__match_start] > part_cursor
+                part_cursor = state_captures[:__match_start]
+              end
               if mri_posix_expanded_optional_anchor?(part, parts[index], characters, cursor + consumed)
                 part_flags = part_flags.merge(posix_anchor_expansion: true)
               end
@@ -840,7 +849,7 @@ module Onibi
                                  []
                                end
                              else
-                               node_results(part, characters, cursor + consumed, probe_captures, part_flags)
+                               node_results(part, characters, part_cursor, probe_captures, part_flags)
                              end
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
@@ -2479,6 +2488,8 @@ module Onibi
         condition = conditional.condition
         key = condition.is_a?(Array) ? condition[0] : condition
         branch = captures.key?(key) ? conditional.yes_branch : conditional.no_branch
+        branch = conditional.yes_branch if !captures.key?(key) &&
+                                           captures.fetch(:__absence_captures, {}).key?(key)
         return [] unless branch
 
         node_results(branch, characters, cursor, captures, flags)
