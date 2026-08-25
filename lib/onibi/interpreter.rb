@@ -183,7 +183,12 @@ module Onibi
         return false unless captures[:__group_expanded_literal_boundary]
 
         remaining = characters.drop(cursor).map { |character| character.downcase(:fold) }.join
-        return remaining.start_with?(source_fold[prefix.length..]) if captured_fold
+        if captured_fold
+          return true if captures[:__captured_fold_incompatible]
+          return true if remaining.empty? && prefix.length.positive?
+
+          return remaining.start_with?(source_fold[prefix.length..])
+        end
         return true if remaining.start_with?(source_fold[prefix.length..])
 
         tail = source_fold[prefix.length..]
@@ -674,6 +679,11 @@ module Onibi
           prefix = captures[:__group_expanded_literal_prefix] || +""
           combined = prefix + operand_fold.to_s
           if captures[:__captured_expanded_fold] && captures[:__fold_alternation_operand] &&
+             source_fold && !source_fold.start_with?(combined)
+            captures = captures.dup
+            captures[:__captured_fold_incompatible] = true
+          end
+          if captures[:__captured_expanded_fold] && captures[:__fold_alternation_operand] &&
              cursor + 1 >= characters.length && source_fold && !source_fold.start_with?(combined)
             return []
           end
@@ -1161,8 +1171,14 @@ module Onibi
         when SemanticBytecode::Alternation
           branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
           branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
-          branch_captures = captures.merge(branch_marker => true)
           node.branches.each_with_index.flat_map do |branch, branch_index|
+            branch_captures = captures.merge(branch_marker => true)
+            branch_value = alternation_branch_operand_value(branch)
+            if captures[:__captured_expanded_fold] && node.operand_context &&
+               branch_value && captures[:__group_expanded_literal_fold] &&
+               !captures[:__group_expanded_literal_fold].start_with?(branch_value)
+              branch_captures[:__captured_fold_incompatible] = true
+            end
             node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
               marked = state.dup
               marked.delete(branch_marker)
@@ -1494,6 +1510,11 @@ module Onibi
         else
           false
         end
+      end
+
+      def alternation_branch_operand_value(node)
+        node = node.parts.first while node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
+        node.is_a?(SemanticBytecode::Literal) ? node.value : nil
       end
 
       def expanded_fold_operand_value(node)

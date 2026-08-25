@@ -254,8 +254,8 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   def test_ignorecase_literal_run_preserves_multi_fold_node_boundaries
     pattern = "ſẞ"
     input = "ßs"
-    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
-    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
 
     assert_nil mri
     assert_nil onibi
@@ -857,6 +857,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     onibi = Onibi::Regexp.new(pattern).match(input)
 
     assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+  end
+
+  def test_captured_iota_fold_rejects_an_incompatible_alternation_branch
+    pattern = "(?i:(ᾀ))(?:ἀ|x)"
+    input = "ᾀx"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
   end
 
   def test_longest_reverse_fold_prefix_is_selected
