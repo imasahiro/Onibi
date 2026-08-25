@@ -64,7 +64,7 @@ class InterpreterTest < Minitest::Test
   end
 
   def test_bytecode_program_embeds_semantic_operands_without_ast_nodes
-    regexp = Onibi::Regexp.new("(?<word>[a-z]+)(?(1)!|c)")
+    regexp = Onibi::Regexp.new("(?<word>[a-z]+)(?(<word>)!|c)")
     program = regexp.send(:bytecode_program)
 
     assert program.flags[:semantic_root]
