@@ -527,6 +527,12 @@ module Onibi
         clean.delete(:__lookbehind_overlap_expanded)
         clean.delete(:__lookbehind_direct_tail_reject)
         results = node_results(quantifier, characters, cursor, clean, flags)
+        if quantifier.maximum
+          overlap = captures[:__lookbehind_overlap].to_i
+          remaining = characters.length - cursor
+          limit = remaining.zero? ? 0 : [remaining - overlap, 1].max
+          results = results.select { |length, _state| length <= limit }
+        end
         return results.select { |length, _state| length.zero? } if quantifier.maximum == 1 && quantifier.minimum.zero?
 
         results
@@ -721,7 +727,7 @@ module Onibi
                                    node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
                                                 characters, cursor + consumed, next_state, part_flags)
                                  end
-                               elsif overlap_count.positive? && !state_captures[:__lookbehind_overlap_expanded] &&
+                               elsif overlap_count == 1 &&
                                      cursor + consumed < characters.length &&
                                      casefold_equal?(part.value, characters[cursor + consumed])
                                  next_state = state_captures.dup
