@@ -974,6 +974,27 @@ module Onibi
           return []
         end
 
+        if flags[:ignorecase] && quantifier.lazy_exact && quantifier.maximum.to_i.positive? &&
+           (quantifier.expression.is_a?(SemanticBytecode::Literal) ||
+            quantifier.expression.is_a?(SemanticBytecode::CharacterClass))
+          # A lazy exact repeat has two VM candidates: the complete repeat and
+          # its zero-repeat fallback. Compile the complete repeat as one
+          # sequence so multi-character Unicode folds, such as ß -> ss, keep
+          # their source boundary.
+          repeated = SemanticBytecode::Sequence.new(
+            Array.new(quantifier.maximum, quantifier.expression)
+          )
+          repetition_flags = if quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
+                               flags.merge(casefold_repetition: true)
+                             else
+                               flags
+                             end
+          exact = node_results(repeated, characters, cursor, captures, repetition_flags)
+          return exact + [[0, captures]] unless exact.any? { |length, _state| length.zero? }
+
+          return exact
+        end
+
         if flags[:ignorecase] && quantifier.minimum == quantifier.maximum &&
            quantifier.minimum > 1 &&
            (quantifier.expression.is_a?(SemanticBytecode::Literal) ||

@@ -33,6 +33,16 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_lazy_exact_bound_keeps_unicode_fold_repetition_as_one_operand
+    [["s{2}?", "ß"], ["s{2}?s", "ßs"], ["ss{2}?", "sß"]].each do |source, input|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a, source
+      assert_equal expected&.offset(0), actual&.offset(0), source
+    end
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 
