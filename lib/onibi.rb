@@ -534,6 +534,8 @@ module Onibi
 
     def inspect_source
       source_for_display.each_char.map do |character|
+        next character == "/" ? "\\/" : character if @source.encoding.ascii_compatible?
+
         codepoint = character.codepoints.first
         if codepoint < 128
           character == "/" ? "\\/" : character
