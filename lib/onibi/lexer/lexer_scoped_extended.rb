@@ -81,7 +81,10 @@ module Onibi
     end
 
     def comment_character(source, index, in_class)
-      [source.index("\n", index + 1) || source.length, in_class]
+      ending = source.index("\n", index + 1)
+      raise RegexpError, "unterminated scoped extended group" unless ending
+
+      [ending, in_class]
     end
 
     def group_end(source, opening)
