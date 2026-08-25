@@ -61,7 +61,13 @@ module Onibi
     end
 
     def control_escape_token(index, escaped)
-      character_index = escaped == "C" && @source[index + 2] == "-" ? index + 3 : index + 2
+      if escaped == "C"
+        raise RegexpError, "invalid control escape" unless @source[index + 2] == "-"
+
+        character_index = index + 3
+      else
+        character_index = index + 2
+      end
       character = @source[character_index]
       raise RegexpError, "invalid control escape" unless character && character.length == 1
 

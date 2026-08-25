@@ -14,6 +14,7 @@ class LexerParserErrorBoundaryTest < Minitest::Test
     "\\777",
     "\\p{}",
     "\\M-",
+    "\\C+",
     "\\1",
     "\\C-",
     "[",
