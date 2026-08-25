@@ -528,6 +528,8 @@ module Onibi
               part_results = node_results(part, characters, cursor + consumed, probe_captures, part_flags)
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
+              optional_order = nil if mri_posix_expanded_optional_anchor?(part, parts[index],
+                                                                          characters, cursor + consumed)
               case optional_order
               when :zero_only
                 part_results = part_results.select { |length, _inner| length.zero? }
@@ -1128,6 +1130,16 @@ module Onibi
         source.ascii_only? ? :source_only : :expanded_greedy
       end
 
+      def mri_posix_expanded_optional_anchor?(node, next_node, characters, cursor)
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum.zero? && node.maximum == 1
+        return false unless node.expression.is_a?(SemanticBytecode::CharacterClass)
+        return false unless node.expression.value.include?(":")
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+
+        !characters[cursor].nil? && !characters[cursor].ascii_only?
+      end
+
       def mri_reverse_fold_literal_anchor_boundary?(node, next_node, characters, cursor, flags)
         return false unless flags[:ignorecase] && next_node.is_a?(SemanticBytecode::Anchor)
 
@@ -1340,6 +1352,15 @@ module Onibi
            quantifier.expression.is_a?(SemanticBytecode::Any) &&
            quantifier.expression.value == "."
           return []
+        end
+
+        if flags[:ignorecase] && quantifier.maximum == 1 &&
+           quantifier.expression.is_a?(SemanticBytecode::CharacterClass) &&
+           quantifier.expression.value.include?(":")
+          expanded = node_results(quantifier.expression, characters, cursor, captures, flags)
+          expanded = expanded.select { |length, _state| length > 1 }
+          return expanded + [[0, captures]] if expanded.any? && quantifier.minimum.zero?
+          return expanded if expanded.any?
         end
 
         if flags[:ignorecase] && quantifier.lazy_exact && quantifier.maximum.to_i.positive? &&
