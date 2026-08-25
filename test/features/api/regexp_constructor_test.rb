@@ -239,6 +239,27 @@ class RegexpConstructorTest < Minitest::Test
     Onibi::Regexp.timeout = nil
   end
 
+  def test_timeout_converts_numeric_subclasses_before_sign_check
+    numeric_class = Class.new(Numeric) do
+      def positive?
+        raise "timeout must convert before checking sign"
+      end
+
+      def to_f
+        0.25
+      end
+
+      def coerce(other)
+        [other, 0]
+      end
+    end
+
+    Onibi::Regexp.timeout = numeric_class.new
+    assert_equal 0.25, Onibi::Regexp.timeout
+  ensure
+    Onibi::Regexp.timeout = nil
+  end
+
   def test_timeout_raises_regexp_timeout_error
     # Use a stateful miss so the timeout contract remains exercised even when
     # the search planner can skip a direct literal with String#index.
