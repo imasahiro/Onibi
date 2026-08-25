@@ -31,7 +31,9 @@ module Onibi
         Any = Struct.new(:value)
         Anchor = Struct.new(:kind)
         Sequence = Struct.new(:parts)
-        Alternation = Struct.new(:branches)
+        # `operand_context` marks an alternation that is the next operand in
+        # a sequence. A root alternation selects a whole branch instead.
+        Alternation = Struct.new(:branches, :operand_context)
         Group = Struct.new(:body, :number, :capture, :name)
         OptionGroup = Struct.new(:body, :ignorecase, :multiline, :extended)
         AtomicGroup = Struct.new(:body)
@@ -65,7 +67,7 @@ module Onibi
 
         module_function
 
-        def compile(node, casefold: false)
+        def compile(node, casefold: false, parent: nil)
           type = NODE_TYPES.fetch(node.class)
           if node.is_a?(Onibi::AST::Assertion)
             return type.new(compile_value(node.body, casefold: casefold), node.kind,
@@ -92,6 +94,22 @@ module Onibi
             fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive, fold_boundary, fold_prefix_boundary)
+          end
+          if node.is_a?(Onibi::AST::Sequence)
+            parts = node.parts.map { |part| compile_value(part, casefold: casefold, parent: :sequence) }
+            return type.new(parts)
+          end
+          if node.is_a?(Onibi::AST::Alternation)
+            branches = node.branches.map { |branch| compile_value(branch, casefold: casefold, parent: :alternation) }
+            return type.new(branches, parent == :sequence)
+          end
+          if node.is_a?(Onibi::AST::Group) || node.is_a?(Onibi::AST::OptionGroup) ||
+             node.is_a?(Onibi::AST::AtomicGroup)
+            body_parent = parent == :sequence ? :sequence : :group
+            body_casefold = casefold || (node.respond_to?(:ignorecase) && node.ignorecase)
+            body = compile_value(node.body, casefold: body_casefold, parent: body_parent)
+            fields = node.each_pair.map { |field, value| field == :body ? body : compile_value(value, casefold: casefold) }
+            return type.new(*fields)
           end
           if node.is_a?(Onibi::AST::CharacterClass)
             folds = class_casefold_sequences(node.value)
@@ -235,11 +253,11 @@ module Onibi
           end
         end
 
-        def compile_value(value, casefold: false)
+        def compile_value(value, casefold: false, parent: nil)
           if value.respond_to?(:each_pair)
-            compile(value, casefold: casefold)
+            compile(value, casefold: casefold, parent: parent)
           elsif value.is_a?(Array)
-            value.map { |item| compile_value(item, casefold: casefold) }
+            value.map { |item| compile_value(item, casefold: casefold, parent: parent) }
           else
             value
           end

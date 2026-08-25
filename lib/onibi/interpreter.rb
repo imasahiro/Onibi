@@ -174,7 +174,8 @@ module Onibi
       end
 
       def expanded_fold_tail_rejected?(captures, characters, cursor)
-        return false unless captures[:__expanded_fold_anchor]
+        captured_fold = captures[:__captured_expanded_fold]
+        return false unless captures[:__expanded_fold_anchor] || captured_fold
 
         source_fold = captures[:__group_expanded_literal_fold]
         prefix = captures[:__group_expanded_literal_prefix] || +""
@@ -182,6 +183,7 @@ module Onibi
         return false unless captures[:__group_expanded_literal_boundary]
 
         remaining = characters.drop(cursor).map { |character| character.downcase(:fold) }.join
+        return remaining.start_with?(source_fold[prefix.length..]) if captured_fold
         return true if remaining.start_with?(source_fold[prefix.length..])
 
         tail = source_fold[prefix.length..]
@@ -671,6 +673,11 @@ module Onibi
           source_fold = captures[:__group_expanded_literal_fold]
           prefix = captures[:__group_expanded_literal_prefix] || +""
           combined = prefix + operand_fold.to_s
+          if captures[:__captured_expanded_fold] && captures[:__fold_alternation_operand] &&
+             cursor + 1 >= characters.length && source_fold && !source_fold.start_with?(combined)
+            return []
+          end
+
           if source_fold && combined == source_fold
             return [] if captures[:__group_expanded_literal_boundary]
 
@@ -684,8 +691,8 @@ module Onibi
 
           if grouped_expanded_source && captures[:__group_expanded_literal_boundary] &&
              node.is_a?(SemanticBytecode::Literal) && source_fold &&
-             ((!captures[:__fold_alternation_operand] && !captures[:__fold_lookahead_operand]) ||
-              cursor + 1 >= characters.length) &&
+             !captures[:__fold_alternation_context] && !captures[:__fold_lookahead_operand] &&
+             (!captures[:__fold_alternation_operand] || cursor + 1 >= characters.length) &&
              !source_fold.start_with?(combined)
             return []
           end
@@ -840,6 +847,17 @@ module Onibi
             previous_states = states
             # rubocop:disable Metrics/BlockLength
             states = previous_states.flat_map do |consumed, state_captures|
+              keep_capture_fold = state_captures[:__fold_alternation_operand] ||
+                                  fold_alternation_operand_node?(part) ||
+                                  (part.is_a?(SemanticBytecode::Assertion) && part.kind == :positive)
+              unless keep_capture_fold || !state_captures[:__captured_expanded_fold]
+                state_captures = state_captures.dup
+                state_captures.delete(:__captured_expanded_fold)
+                state_captures.delete(:__group_expanded_literal_source)
+                state_captures.delete(:__group_expanded_literal_fold)
+                state_captures.delete(:__group_expanded_literal_boundary)
+                state_captures.delete(:__group_expanded_literal_prefix)
+              end
               # A match-reset before an absence is a zero-width VM marker.
               # Do not expose its synthetic start to the absence probe; the
               # probe must still scan the remaining input. Restore the marker
@@ -1142,11 +1160,12 @@ module Onibi
           conditional_results(node, characters, cursor, captures, flags)
         when SemanticBytecode::Alternation
           branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
-          branch_captures = captures.merge(__fold_alternation_operand: true)
+          branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
+          branch_captures = captures.merge(branch_marker => true)
           node.branches.each_with_index.flat_map do |branch, branch_index|
             node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
               marked = state.dup
-              marked.delete(:__fold_alternation_operand)
+              marked.delete(branch_marker)
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
               [length, marked]
@@ -1168,11 +1187,12 @@ module Onibi
             end
             expanded_source = next_captures.delete(:__expanded_literal_source)
             expanded_boundary = next_captures.delete(:__expanded_literal_boundary)
-            if !node.capture && expanded_source
+            if expanded_source
               next_captures[:__group_expanded_literal_source] = true
-              next_captures[:__group_expanded_literal_fold] = characters[cursor]&.downcase(:fold)
-              next_captures[:__group_expanded_literal_boundary] = expanded_boundary
+              next_captures[:__group_expanded_literal_fold] ||= characters[cursor]&.downcase(:fold)
+              next_captures[:__group_expanded_literal_boundary] ||= expanded_boundary
             end
+            next_captures[:__captured_expanded_fold] = true if node.capture && next_captures[:__group_expanded_literal_source]
             if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
                characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
               next_captures[:__group_expanded_literal_source] = true
@@ -1462,6 +1482,18 @@ module Onibi
         return false unless parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
 
         parts.all? { |part| part.casefold.nil? || part.casefold.length == part.value.length }
+      end
+
+      def fold_alternation_operand_node?(node)
+        case node
+        when SemanticBytecode::Alternation
+          node.operand_context
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          fold_alternation_operand_node?(node.body)
+        else
+          false
+        end
       end
 
       def expanded_fold_operand_value(node)
