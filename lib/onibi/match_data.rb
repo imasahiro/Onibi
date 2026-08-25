@@ -84,12 +84,15 @@ module Onibi
 
     def [](index, length = :__onibi_missing)
       return @values[index] if length == :__onibi_missing && index.is_a?(Range)
+
+      normalize_public_index(index) unless index.is_a?(Range) || index.is_a?(String) || index.is_a?(Symbol)
       return value_at(index) if length == :__onibi_missing || length.nil?
 
       @values[index, length]
     end
 
     def match(index)
+      normalize_public_index(index) unless index.is_a?(String) || index.is_a?(Symbol)
       value_at(index, strict: true)
     end
 
@@ -126,7 +129,7 @@ module Onibi
     end
 
     def named_captures
-      @names.transform_values { |index| self[index] }
+      @names.transform_values { |index| value_at(index, allow_array: true) }
     end
 
     def names
@@ -138,7 +141,7 @@ module Onibi
     end
 
     def inspect
-      details = inspect_names.map { |name, index| "#{name}:#{self[index].inspect}" }
+      details = inspect_names.map { |name, index| "#{name}:#{value_at(index, allow_array: true).inspect}" }
       suffix = details.empty? ? "" : " #{details.join(" ")}"
       "#<MatchData #{self[0].inspect}#{suffix}>"
     end
@@ -187,13 +190,18 @@ module Onibi
       index
     end
 
-    def value_at(index, strict: false)
+    def value_at(index, strict: false, allow_array: false)
+      named = false
       if index.is_a?(String) || index.is_a?(Symbol)
         name = index.to_s
         raise IndexError, "undefined group name reference: #{name}" unless @names.key?(name)
 
         index = @names[name]
+        named = true
       end
+      normalize_public_index(index) unless named || (index.is_a?(Array) && allow_array)
+      raise TypeError, "no implicit conversion of Array into Integer" if index.is_a?(Array) && !allow_array && !named
+
       index = index.reverse.find { |candidate| @values[candidate] } || index.last if index.is_a?(Array)
       if index.is_a?(Integer) && index.negative?
         raise IndexError, "index #{index} out of matches" if strict
@@ -204,6 +212,13 @@ module Onibi
       raise IndexError, "index #{index} out of matches" if strict && index.is_a?(Integer) && index >= @values.length
 
       @values[index]
+    end
+
+    def normalize_public_index(index)
+      return index if index.is_a?(Integer) || index.is_a?(Float)
+      return Integer(index) if index.respond_to?(:to_int)
+
+      raise TypeError, "no implicit conversion of #{index.class} into Integer"
     end
   end
 end

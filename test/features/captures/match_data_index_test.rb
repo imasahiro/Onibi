@@ -39,4 +39,15 @@ class MatchDataIndexTest < Minitest::Test
     assert_equal %w[ab a b], match.values_at(-3..-1)
     assert_raises(RangeError) { match.values_at(-4..-1) }
   end
+
+  def test_match_uses_integer_or_name_indices_only
+    match = Onibi::Regexp.new("(?<x>a)(b)?").match("a")
+
+    assert_raises(TypeError) { match.match(0..1) }
+    assert_raises(TypeError) { match.match([0, 1]) }
+    assert_raises(TypeError) { match.match(nil) }
+    assert_raises(TypeError) { match[[0, 1]] }
+    assert_raises(TypeError) { match.values_at([0, 1]) }
+    assert_equal %w[a a], match[0..1]
+  end
 end
