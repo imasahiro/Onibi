@@ -1886,7 +1886,7 @@ module Onibi
         return boundary if boundary
 
         folded = node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
-        folded = source.downcase(:fold) if node.is_a?(SemanticBytecode::CharacterClass)
+        folded = source&.downcase(:fold) if node.is_a?(SemanticBytecode::CharacterClass)
         variants = folded && Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
         return unless variants&.include?(source)
 
@@ -1947,6 +1947,11 @@ module Onibi
                          characters[cursor + 1]&.downcase(:fold) == next_value
 
           return false
+        end
+        if fold_enabled && node.is_a?(SemanticBytecode::CharacterClass) &&
+           simple_fold_source_match?(node, characters[cursor]) && next_node.is_a?(SemanticBytecode::Literal) &&
+           !(next_node.casefold && next_node.casefold.length > next_node.value.length)
+          return true
         end
         return false unless fold_enabled && node.is_a?(SemanticBytecode::Literal)
 
@@ -3242,7 +3247,9 @@ module Onibi
           next unless span
 
           next if !flags[:ignorecase] &&
-                  (captures[:__expanded_literal_fold] || captures[:__captured_expanded_fold] ||
+                  (captures[:__captured_expanded_fold] ||
+                   (captures[:__expanded_literal_fold] &&
+                    Onibi::UnicodeProperties.greek?(captures[:__expanded_literal_value].to_s)) ||
                    %i[simple_fold_source iota_tail].include?(
                      captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil)
                    ))
