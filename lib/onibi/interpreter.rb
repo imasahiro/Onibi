@@ -989,14 +989,22 @@ module Onibi
 
       def mri_alternate_fold_quantifier_anchor_boundary?(node, next_node, characters, cursor, flags)
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Quantifier)
-        return false unless node.minimum == node.maximum && node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless node.minimum == node.maximum
         return false unless next_node.is_a?(SemanticBytecode::Anchor)
-        return false if Onibi::UnicodeProperties.greek?(node.expression.value)
+
+        expression = node.expression
+        value = if expression.is_a?(SemanticBytecode::Literal)
+                  expression.value
+                elsif expression.is_a?(SemanticBytecode::CharacterClass) &&
+                      expression.value.each_char.one? && !expression.value.match?(/[\\\[\]:&^]/)
+                  expression.value
+                end
+        return false unless value
+        return false if Onibi::UnicodeProperties.greek?(value)
 
         maximum = [node.maximum, characters.length - cursor].min
         characters[cursor, maximum].to_a.any? do |character|
-          character != node.expression.value &&
-            character.downcase(:fold) == node.expression.value.downcase(:fold)
+          character != value && character.downcase(:fold) == value.downcase(:fold)
         end
       end
 
