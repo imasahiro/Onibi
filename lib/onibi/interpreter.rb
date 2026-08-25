@@ -818,6 +818,8 @@ module Onibi
         boundary_node = boundary_operand(next_node)
         if boundary_node.is_a?(SemanticBytecode::Anchor) &&
            %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(boundary_node.kind)
+          return :greedy if Onibi::UnicodeProperties.greek?(expression.value)
+
           return :zero_only unless lazy_exact
 
           folded_input = characters[cursor, node.maximum].to_a
