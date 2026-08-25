@@ -644,7 +644,15 @@ module Onibi
                                                folded: folded_value,
                                                expanded_only: flags[:lookbehind_casefold] &&
                                                               !flags[:lookbehind_fold_source]).first
-              return folded_length ? [[folded_length, captures.dup]] : []
+              if folded_length
+                next_captures = captures.dup
+                if folded_length == 1 && characters[cursor]&.downcase(:fold) == folded_value &&
+                   folded_value.length > value.length
+                  next_captures[:__expanded_literal_source] = true
+                end
+                return [[folded_length, next_captures]]
+              end
+              return []
             end
           end
 
