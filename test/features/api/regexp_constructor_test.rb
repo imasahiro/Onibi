@@ -228,6 +228,17 @@ class RegexpConstructorTest < Minitest::Test
                  assert_raises(TypeError) { Onibi::Regexp.timeout = true }.message
   end
 
+  def test_timeout_matches_mri_non_finite_values
+    Onibi::Regexp.timeout = Float::NAN
+    assert_nil Onibi::Regexp.timeout
+
+    Onibi::Regexp.timeout = Float::INFINITY
+    assert_equal (2**64) / 1_000_000_000.0, Onibi::Regexp.timeout
+    assert_raises(ArgumentError) { Onibi::Regexp.timeout = -Float::INFINITY }
+  ensure
+    Onibi::Regexp.timeout = nil
+  end
+
   def test_timeout_raises_regexp_timeout_error
     # Use a stateful miss so the timeout contract remains exercised even when
     # the search planner can skip a direct literal with String#index.

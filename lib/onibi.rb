@@ -227,6 +227,9 @@ module Onibi
 
           raise TypeError, "can't convert #{value.class} into Float"
         end
+        return nil if value.respond_to?(:nan?) && value.nan?
+        return (2**64) / 1_000_000_000.0 if value.respond_to?(:infinite?) && value.infinite? == 1
+
         raise ArgumentError, "timeout must be positive" unless value.is_a?(Numeric) && value.positive?
 
         value.to_f
