@@ -545,9 +545,17 @@ module Onibi
       end
 
       source_for_display.each_char.map do |character|
-        next character == "/" ? "\\/" : character if @source.encoding.ascii_compatible?
+        if [Encoding::UTF_8, Encoding::US_ASCII].include?(@source.encoding)
+          next character == "/" ? "\\/" : character
+        end
+
+        if @source.encoding.ascii_compatible? && character.ord < 128
+          next character == "/" ? "\\/" : character
+        end
 
         codepoint = character.codepoints.first
+        next format("\\x{%X}", codepoint) if @source.encoding.ascii_compatible?
+
         if codepoint < 128
           character == "/" ? "\\/" : character
         elsif codepoint <= 0xffff

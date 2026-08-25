@@ -80,6 +80,14 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_non_utf8_ascii_compatible_inspect_uses_mri_hex_escapes
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      pattern = "あ".encode(encoding)
+
+      assert_equal Regexp.new(pattern).inspect, Onibi::Regexp.new(pattern).inspect
+    end
+  end
+
   def test_escape_preserves_ascii_metacharacter_rules_for_non_ascii_compatible_strings
     [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
       pattern = "a.b あ".encode(encoding)
