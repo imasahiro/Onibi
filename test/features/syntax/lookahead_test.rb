@@ -224,6 +224,36 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_posix_class_keeps_source_width_at_anchor
+    source = "[[:alpha:]]\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("SS")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("SS")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
+  def test_ignorecase_alternate_reverse_fold_is_not_accepted_at_anchor
+    source = "(ſ|s)\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſ")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
+  def test_ignorecase_expanded_lookbehind_preserves_mri_zero_width_tail
+    source = "(?<=ß)\\p{L}"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ßa")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ßa")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
   def test_ignorecase_posix_capture_backreference_keeps_identical_long_s
     source = "([[:alpha:]])\\1\\z"
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")

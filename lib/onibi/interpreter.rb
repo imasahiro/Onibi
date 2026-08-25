@@ -311,7 +311,14 @@ module Onibi
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
           results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
-          return matching.map { |_length, inner| [0, inner] } unless matching.empty?
+          unless matching.empty?
+            return matching.map do |_length, inner|
+              state = inner.dup
+              state[:__lookbehind_reverse_fold] = true if flags[:ignorecase] && cursor == characters.length &&
+                                                          expanded_lookbehind_fold?(assertion.body)
+              [0, state]
+            end
+          end
 
           next unless flags[:ignorecase] && lookbehind_fold_overlap?(assertion.body)
 
@@ -333,7 +340,8 @@ module Onibi
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
             state[:__lookbehind_reverse_fold] = true if cursor == characters.length &&
-                                                        reverse_lookbehind_fold?(assertion.body)
+                                                        (reverse_lookbehind_fold?(assertion.body) ||
+                                                         expanded_lookbehind_fold?(assertion.body))
             [0, state]
           end
         end
@@ -399,6 +407,14 @@ module Onibi
         return false unless body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
 
         reverse_casefold_sequence?(body.map(&:value).join)
+      end
+
+      def expanded_lookbehind_fold?(node)
+        return node.branches.any? { |branch| expanded_lookbehind_fold?(branch) } if node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.any? { |part| expanded_lookbehind_fold?(part) } if node.is_a?(SemanticBytecode::Sequence)
+        return node.casefold && node.casefold.length > node.value.length if node.is_a?(SemanticBytecode::Literal)
+
+        false
       end
 
       def node_results(node, characters, cursor, captures, flags = {})
@@ -534,7 +550,14 @@ module Onibi
                                                                 flags)
                 part_results = []
               end
-              part_results = part_results.select { |length, _inner| length <= part.maximum } if mri_posix_quantifier_anchor_source_width?(part, parts[index])
+              if mri_posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
+                limit = part.is_a?(SemanticBytecode::Quantifier) ? part.maximum : 1
+                part_results = part_results.select { |length, _inner| length <= limit }
+              end
+              if mri_alternate_fold_alternation_anchor_boundary?(part, parts[index],
+                                                                 characters, cursor + consumed, flags)
+                part_results = []
+              end
               if mri_alternate_fold_literal_run_anchor_boundary?(part, parts[index],
                                                                  characters, cursor + consumed,
                                                                  flags)
@@ -644,14 +667,28 @@ module Onibi
             return lengths.to_a.map { |length| [length, captures.dup] }
           end
 
-          length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
-          return [] unless length
+          # Onigmo keeps a reverse-fold lookbehind overlap at the end of the
+          # string as a zero-width match for class and any-character opcodes.
+          # Preserve that VM state until the following opcode consumes it.
+          if captures[:__lookbehind_reverse_fold] && cursor >= characters.length &&
+             (node.is_a?(SemanticBytecode::CharacterClass) || node.is_a?(SemanticBytecode::Property) ||
+              node.is_a?(SemanticBytecode::Any))
+            next_captures = captures.dup
+            next_captures.delete(:__lookbehind_overlap)
+            next_captures.delete(:__lookbehind_reverse_fold)
+            return [[0, next_captures]]
+          end
 
+          length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
           if captures[:__lookbehind_overlap] || captures[:__lookbehind_reverse_fold]
+            return [] unless length
+
             next_captures = captures.dup
             next_captures.delete(:__lookbehind_overlap)
             next_captures.delete(:__lookbehind_reverse_fold)
             captures = next_captures
+          else
+            return [] unless length
           end
 
           if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
@@ -1051,10 +1088,35 @@ module Onibi
         source.downcase(:fold).length == 1 && source.downcase(:fold) == node.value[0].downcase(:fold)
       end
 
-      def mri_posix_quantifier_anchor_source_width?(node, next_node)
-        node.is_a?(SemanticBytecode::Quantifier) && node.expression.is_a?(SemanticBytecode::CharacterClass) &&
-          node.expression.value.include?(":") && node.maximum &&
-          next_node.is_a?(SemanticBytecode::Anchor)
+      def mri_posix_anchor_source_width?(node, next_node, characters, cursor)
+        operand = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        return false unless operand.is_a?(SemanticBytecode::CharacterClass)
+        return false unless operand.value.include?(":")
+        return false if node.is_a?(SemanticBytecode::Quantifier) && node.maximum.nil?
+
+        source = characters[cursor]
+        return false unless source&.ascii_only?
+
+        next_node.is_a?(SemanticBytecode::Anchor)
+      end
+
+      def mri_alternate_fold_alternation_anchor_boundary?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase]
+
+        node = boundary_operand(node)
+        return false unless node.is_a?(SemanticBytecode::Alternation)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+
+        source = characters[cursor]
+        return false unless source
+        return false if source.ascii_only?
+
+        node.branches.any? do |branch|
+          literal = boundary_operand(branch)
+          next false unless literal.is_a?(SemanticBytecode::Literal)
+
+          Onibi::UnicodeProperties.reverse_casefold_variants(literal.value).include?(source)
+        end
       end
 
       def later_fold_candidate?(literal, characters, cursor)
