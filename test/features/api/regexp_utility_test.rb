@@ -114,6 +114,17 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("a")
   end
 
+  def test_union_ignores_native_regexp_subclass_overrides
+    regexp_class = Class.new(::Regexp) do
+      def source
+        raise "Regexp.union must not dispatch to native regexp subclass"
+      end
+    end
+    regexp = regexp_class.new("a")
+
+    assert Onibi::Regexp.union(regexp).match?("a")
+  end
+
   def test_union_of_no_patterns_never_matches
     refute Onibi::Regexp.union.match?("")
     refute Onibi::Regexp.union.match?("anything")

@@ -108,15 +108,17 @@ module Onibi
       alias quote escape
 
       def regexp_scope(pattern)
+        native = pattern.is_a?(::Regexp)
+        pattern_options = native ? ::Regexp.instance_method(:options).bind_call(pattern) : pattern.options
+        pattern_source = native ? ::Regexp.instance_method(:source).bind_call(pattern) : pattern.source
         enabled = [[::Regexp::IGNORECASE, "i"], [::Regexp::MULTILINE, "m"],
                    [::Regexp::EXTENDED, "x"]].filter_map do |bit, flag|
-          flag if (pattern.options & bit).positive?
+          flag if (pattern_options & bit).positive?
         end.join
         disabled = ("mix".chars - enabled.chars).join
-        source = pattern.source
-        prefix = "(?#{enabled}-#{disabled}:".encode(source.encoding)
-        suffix = ")".encode(source.encoding)
-        prefix + source + suffix
+        prefix = "(?#{enabled}-#{disabled}:".encode(pattern_source.encoding)
+        suffix = ")".encode(pattern_source.encoding)
+        prefix + pattern_source + suffix
       end
 
       def try_convert(object)
@@ -135,8 +137,12 @@ module Onibi
 
         raise TypeError, "no implicit conversion of Symbol into String" if patterns.length > 1 && patterns.any? { |pattern| pattern.is_a?(Symbol) }
 
-        return new(patterns.first.source, patterns.first.options) if
-          patterns.length == 1 && (patterns.first.is_a?(::Regexp) || patterns.first.is_a?(Regexp))
+        if patterns.length == 1 && (patterns.first.is_a?(::Regexp) || patterns.first.is_a?(Regexp))
+          native = patterns.first.is_a?(::Regexp)
+          source = native ? ::Regexp.instance_method(:source).bind_call(patterns.first) : patterns.first.source
+          options = native ? ::Regexp.instance_method(:options).bind_call(patterns.first) : patterns.first.options
+          return new(source, options)
+        end
 
         options = 0
         has_string = false
@@ -144,8 +150,10 @@ module Onibi
         has_non_ascii_source = false
         sources = patterns.map do |pattern|
           if pattern.is_a?(::Regexp)
-            options |= pattern.options & FIXEDENCODING
-            has_non_ascii_source ||= !pattern.source.ascii_only?
+            native_options = ::Regexp.instance_method(:options).bind_call(pattern)
+            native_source = ::Regexp.instance_method(:source).bind_call(pattern)
+            options |= native_options & FIXEDENCODING
+            has_non_ascii_source ||= !native_source.ascii_only?
             regexp_scope(pattern)
           elsif pattern.is_a?(Regexp)
             options |= pattern.options & FIXEDENCODING
@@ -219,8 +227,8 @@ module Onibi
         options = pattern.options if options.nil?
         timeout = pattern.timeout if timeout.nil?
       when ::Regexp
-        source = pattern.source
-        options = pattern.options if options.nil?
+        source = ::Regexp.instance_method(:source).bind_call(pattern)
+        options = ::Regexp.instance_method(:options).bind_call(pattern) if options.nil?
       when String
         source = pattern.dup
       else
