@@ -18,6 +18,8 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
   end
 
   def test_octal_escapes_match_the_encoded_byte
+    assert Onibi::Regexp.new("\\0").match?("\0")
+    assert Onibi::Regexp.new("\\01").match?("\x01")
     assert Onibi::Regexp.new("\\101").match?("A")
     assert Onibi::Regexp.new("\\141").match?("a")
   end
