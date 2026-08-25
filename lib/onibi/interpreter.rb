@@ -623,6 +623,10 @@ module Onibi
                                                                 flags)
                 part_results = []
               end
+              if mri_reverse_fold_quantifier_anchor_source_width?(part, parts[index], characters,
+                                                                  cursor + consumed, flags)
+                part_results = part_results.select { |length, _inner| length <= part.minimum }
+              end
               posix_anchor_mode = mri_posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
               if posix_anchor_mode == :source_only
                 limit = part.is_a?(SemanticBytecode::Quantifier) ? part.maximum : 1
@@ -1185,6 +1189,17 @@ module Onibi
         characters[cursor, maximum].to_a.any? do |character|
           character != value && character.downcase(:fold) == value.downcase(:fold)
         end
+      end
+
+      def mri_reverse_fold_quantifier_anchor_source_width?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum.positive? && node.maximum && node.maximum > node.minimum
+        return false unless node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless strict_end_anchor?(next_node)
+        return false if reverse_fold_source_literal?(node.expression.value)
+
+        source = characters[cursor]
+        source && Onibi::UnicodeProperties.reverse_casefold_variants(node.expression.value).include?(source)
       end
 
       def mri_alternate_fold_literal_run_anchor_boundary?(node, next_node, characters, cursor, flags)
