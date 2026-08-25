@@ -361,11 +361,15 @@ module Onibi
       end
 
       def lookbehind_fold_overlap?(node)
+        return node.branches.all? { |branch| lookbehind_fold_overlap?(branch) } if node.is_a?(SemanticBytecode::Alternation)
+
         body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
         body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
       end
 
       def reverse_lookbehind_fold?(node)
+        return node.branches.any? { |branch| reverse_lookbehind_fold?(branch) } if node.is_a?(SemanticBytecode::Alternation)
+
         body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
         return false unless body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
 
