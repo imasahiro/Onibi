@@ -169,7 +169,6 @@ module Onibi
 
       return [] if first > last
 
-      last = [last, @values.length - 1].min
       (first..last).map { |index| value_at(index) }
     end
 

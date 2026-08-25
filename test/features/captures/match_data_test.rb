@@ -54,4 +54,11 @@ class MatchDataTest < Minitest::Test
 
     assert_equal expected, actual
   end
+
+  def test_values_at_pads_ranges_past_capture_count
+    match = Onibi::Regexp.new("(a)(b)?").match("a")
+
+    assert_equal ["a", nil, nil, nil, nil], match.values_at(1..5)
+    assert_equal [nil, nil, nil], match.values_at(5..7)
+  end
 end
