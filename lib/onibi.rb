@@ -174,9 +174,12 @@ module Onibi
 
       def linear_time?(pattern)
         regexp = if pattern.is_a?(::Regexp) || pattern.is_a?(Regexp)
-                   new(pattern.source, pattern.options)
+                   native = pattern.is_a?(::Regexp)
+                   source = native ? ::Regexp.instance_method(:source).bind_call(pattern) : pattern.source
+                   options = native ? ::Regexp.instance_method(:options).bind_call(pattern) : pattern.options
+                   new(source, options)
                  else
-                   new(pattern.to_s)
+                   new(pattern)
                  end
         linear_time_ast?(regexp.ast)
       end

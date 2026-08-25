@@ -237,6 +237,18 @@ class RegexpUtilityTest < Minitest::Test
     refute Onibi::Regexp.linear_time?("(?~a)")
   end
 
+  def test_linear_time_uses_mri_pattern_conversion_rules
+    assert_raises(TypeError) { Onibi::Regexp.linear_time?(1) }
+    assert_raises(TypeError) { Onibi::Regexp.linear_time?(nil) }
+
+    pattern_class = Class.new(String) do
+      def to_s
+        raise "linear_time? must not dispatch to pattern subclass"
+      end
+    end
+    assert Onibi::Regexp.linear_time?(pattern_class.new("a*"))
+  end
+
   def test_linear_time_rejects_each_supported_non_linear_syntax_family
     UNSAFE_PATTERNS.each do |pattern|
       refute Onibi::Regexp.linear_time?(pattern), "expected #{pattern} to be unsafe"
