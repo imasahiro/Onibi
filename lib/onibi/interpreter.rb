@@ -627,6 +627,11 @@ module Onibi
                                                                   cursor + consumed, flags)
                 part_results = part_results.select { |length, _inner| length <= part.minimum }
               end
+              if mri_split_reverse_fold_quantifier_anchor_boundary?(part_index.positive? && parts[part_index - 1],
+                                                                    part, parts[index], characters,
+                                                                    cursor + consumed, flags)
+                part_results = []
+              end
               posix_anchor_mode = mri_posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
               if posix_anchor_mode == :source_only
                 limit = part.is_a?(SemanticBytecode::Quantifier) ? part.maximum : 1
@@ -1210,6 +1215,21 @@ module Onibi
         variants.include?(source) || characters.drop(cursor + 1).any? { |character| variants.include?(character) }
       end
 
+      def mri_split_reverse_fold_quantifier_anchor_boundary?(previous_node, node, next_node,
+                                                             characters, cursor, flags)
+        return false unless flags[:ignorecase] && previous_node.is_a?(SemanticBytecode::Literal)
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.maximum && node.maximum > node.minimum
+        return false unless node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless strict_end_anchor?(next_node)
+        return false unless previous_node.value == node.expression.value
+
+        source = characters[cursor]
+        return false if characters[cursor - 1] == previous_node.value
+
+        source && Onibi::UnicodeProperties.reverse_casefold_variants(node.expression.value).include?(source)
+      end
+
       def mri_alternate_fold_literal_run_anchor_boundary?(node, next_node, characters, cursor, flags)
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless next_node.is_a?(SemanticBytecode::Anchor)
@@ -1455,7 +1475,7 @@ module Onibi
              SemanticBytecode::AtomicGroup
           capture_body_has_class?(node.body)
         when SemanticBytecode::Quantifier
-          node.maximum.nil? || capture_body_has_class?(node.expression)
+          node.maximum.nil? || (node.maximum > node.minimum) || capture_body_has_class?(node.expression)
         else
           false
         end
