@@ -808,27 +808,33 @@ module Onibi
         return false unless optional || lazy_exact
 
         expression = node.expression
-        return false unless expression.is_a?(SemanticBytecode::Literal)
+        expression_value = if expression.is_a?(SemanticBytecode::Literal)
+                             expression.value
+                           elsif expression.is_a?(SemanticBytecode::CharacterClass) &&
+                                 expression.value.each_char.one? && !expression.value.match?(/[\\\[\]:&^]/)
+                             expression.value
+                           end
+        return false unless expression_value
 
         source = characters[cursor]
         return false unless source
 
-        expression_special = expression.value.downcase(:fold) != expression.value.downcase
+        expression_special = expression_value.downcase(:fold) != expression_value.downcase
         unless lazy_exact
-          return false unless source != expression.value || expression_special
-          return false unless source.downcase(:fold) == expression.value.downcase(:fold)
+          return false unless source != expression_value || expression_special
+          return false unless source.downcase(:fold) == expression_value.downcase(:fold)
         end
         return :greedy unless next_node
 
         special_source = source.downcase(:fold) != source.downcase ||
-                         (source == expression.value && expression_special)
+                         (source == expression_value && expression_special)
         return :greedy unless special_source || lazy_exact
-        return :greedy if expression.value.downcase(:fold).length > expression.value.length
+        return :greedy if expression_value.downcase(:fold).length > expression_value.length
 
         boundary_node = boundary_operand(next_node)
         if boundary_node.is_a?(SemanticBytecode::Anchor) &&
            %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(boundary_node.kind)
-          return :greedy if Onibi::UnicodeProperties.greek?(expression.value)
+          return :greedy if Onibi::UnicodeProperties.greek?(expression_value)
 
           return :zero_only unless lazy_exact
 
@@ -863,7 +869,7 @@ module Onibi
            next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
            next_node.maximum && next_node.maximum > next_node.minimum &&
            Onibi::ClassPredicates.matches?(next_node.expression.value,
-                                           expression.value.downcase(:fold),
+                                           expression_value.downcase(:fold),
                                            ignorecase: true)
           return :greedy
         end
