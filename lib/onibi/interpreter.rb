@@ -511,7 +511,10 @@ module Onibi
               boundary_relaxed = mri_fold_boundary_relaxed?(previous_part, part, consumed) ||
                                  mri_fold_boundary_lookahead_relaxed?(previous_part, part,
                                                                       parts[index], characters,
-                                                                      cursor + consumed)
+                                                                      cursor + consumed) ||
+                                 mri_alternate_fold_anchor_relaxed?(part, parts[index],
+                                                                    characters, cursor + consumed,
+                                                                    flags)
               if !boundary_relaxed &&
                  mri_multi_fold_literal_boundary?(part, parts[index], characters,
                                                   cursor + consumed, flags)
@@ -961,6 +964,15 @@ module Onibi
         return false unless next_node.expression.is_a?(SemanticBytecode::Literal)
 
         later_fold_candidate?(next_node.expression, characters, cursor + 2)
+      end
+
+      def mri_alternate_fold_anchor_relaxed?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+        return false unless %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind)
+
+        source = characters[cursor]
+        source && source != node.value && source.downcase(:fold) == node.value.downcase(:fold)
       end
 
       def later_fold_candidate?(literal, characters, cursor)
