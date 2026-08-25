@@ -101,6 +101,9 @@ module Onibi
         @input_view = input_view
         @characters = characters
         @steps = 0
+        # MRI builds encoding-specific character-class tables during compile.
+        # Reuse one decision for repeated code points in this execution.
+        @property_match_cache = {}
         # Character classes use the input encoding when an ASCII pattern can
         # match several encodings. MRI applies POSIX rules to this encoding.
         runtime_flags = @program.flags.merge(
@@ -3331,11 +3334,16 @@ module Onibi
       end
 
       def property_matches?(name, character, ignorecase, encoding = nil)
+        cache_key = [name, character, ignorecase, encoding]
+        return @property_match_cache[cache_key] if @property_match_cache.key?(cache_key)
+
         non_unicode_encoding = [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
         incompatible = ascii_property?(name) && (name != "Word" || encoding == Encoding::ASCII_8BIT)
-        return :incompatible if non_unicode_encoding && incompatible && !character.ascii_only?
-        return true if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&
-                       !character.ascii_only?
+        return @property_match_cache[cache_key] = :incompatible if non_unicode_encoding && incompatible && !character.ascii_only?
+        if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&
+           !character.ascii_only?
+          return @property_match_cache[cache_key] = true
+        end
 
         normalized = Onibi::UnicodeProperties.normalize_name(name)
         normalized_character = if name == "Word" && non_unicode_encoding && encoding != Encoding::ASCII_8BIT &&
@@ -3344,12 +3352,13 @@ module Onibi
                                else
                                  character
                                end
-        return true if Onibi::UnicodeProperties.matches_normalized?(normalized, normalized_character)
-        return false unless ignorecase && normalized != "ASCII"
+        return @property_match_cache[cache_key] = true if Onibi::UnicodeProperties.matches_normalized?(normalized, normalized_character)
+        return @property_match_cache[cache_key] = false unless ignorecase && normalized != "ASCII"
 
-        Onibi::UnicodeProperties.casefold_matches?(normalized, normalized_character)
+        @property_match_cache[cache_key] =
+          Onibi::UnicodeProperties.casefold_matches?(normalized, normalized_character)
       rescue EncodingError
-        false
+        @property_match_cache[cache_key] = false
       end
 
       def ascii_property?(name)
