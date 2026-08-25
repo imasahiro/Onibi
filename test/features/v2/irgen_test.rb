@@ -256,6 +256,9 @@ class V2IRGenTest < Minitest::Test
     assert root.parts.first.fold_boundary_sensitive
     assert_equal({ kind: :iota_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
 
+    lookahead = Onibi::Regexp.new("ω").send(:bytecode_program).flags[:semantic_root]
+    assert_equal :non_split_iota_prefix, lookahead.parts.first.fold_prefix_boundary
+
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
     refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
     assert_nil ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary

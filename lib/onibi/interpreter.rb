@@ -1874,16 +1874,8 @@ module Onibi
 
         next_operands.any? do |next_operand|
           next_value = next_operand.value
-          if next_node.is_a?(SemanticBytecode::Assertion)
-            # MRI's Unicode fold table keeps Greek iota-subscript folds with
-            # breathing/grave prefixes and omega prefixes as one operand.
-            normalized = next_value.unicode_normalize(:nfd)
-            has_non_split_mark = normalized.include?("\u0300") ||
-                                 normalized.include?("\u0313") ||
-                                 normalized.include?("\u0314")
-            omega_prefix = normalized.each_char.first == "ω"
-            next false unless has_non_split_mark || omega_prefix
-          end
+          next false if next_node.is_a?(SemanticBytecode::Assertion) && next_operand.fold_prefix_boundary != :non_split_iota_prefix
+
           fold.start_with?(next_value) &&
             characters[cursor + 1]&.downcase(:fold) == next_value
         end

@@ -11,7 +11,7 @@ module Onibi
         # `fold_boundary` describes a Unicode fold that has a special
         # operand-boundary rule. The VM consumes this metadata directly.
         Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive,
-                             :fold_boundary)
+                             :fold_boundary, :fold_prefix_boundary)
         # `casefolds` contains reverse multi-character folds for this class.
         # `split_casefold` records MRI's class-only split rule for sharp-s.
         # `compiled_sensitive` and `compiled_insensitive` are immutable
@@ -89,8 +89,9 @@ module Onibi
                                  folded.each_char.uniq.length > 1 &&
                                  folded.each_char.none? { |character| character.match?(/\p{M}/) }
             fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
+            fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
-                            boundary_sensitive, fold_boundary)
+                            boundary_sensitive, fold_boundary, fold_prefix_boundary)
           end
           if node.is_a?(Onibi::AST::CharacterClass)
             folds = class_casefold_sequences(node.value)
@@ -176,6 +177,17 @@ module Onibi
 
           { kind: :iota_tail, tail: folded.each_char.to_a.last,
             sensitive: boundary_sensitive }.freeze
+        end
+
+        def fold_prefix_boundary_metadata(value)
+          return nil unless value.encoding == Encoding::UTF_8
+
+          normalized = value.unicode_normalize(:nfd)
+          base = normalized.each_char.first
+          marks = normalized.each_char.drop(1)
+          return unless base == "ω" || marks.any? { |mark| %W[\u0300 \u0313 \u0314].include?(mark) }
+
+          :non_split_iota_prefix
         end
 
         # MRI closes a range over every simple fold of every code point in
