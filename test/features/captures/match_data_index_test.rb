@@ -46,6 +46,7 @@ class MatchDataIndexTest < Minitest::Test
     assert_raises(TypeError) { match.match(0..1) }
     assert_raises(TypeError) { match.match([0, 1]) }
     assert_raises(TypeError) { match.match(nil) }
+    assert_raises(IndexError) { match.match(-1.2) }
     assert_raises(TypeError) { match[[0, 1]] }
     assert_raises(TypeError) { match.values_at([0, 1]) }
     assert_equal %w[a a], match[0..1]

@@ -92,6 +92,7 @@ module Onibi
     end
 
     def match(index)
+      index = Integer(index) if index.is_a?(Float)
       normalize_public_index(index) unless index.is_a?(String) || index.is_a?(Symbol)
       value_at(index, strict: true)
     end
