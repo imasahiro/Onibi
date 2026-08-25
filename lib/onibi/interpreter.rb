@@ -1359,6 +1359,7 @@ module Onibi
                 marked[:__expanded_literal_fold] = fold
                 marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
                 marked[:__expanded_literal_from_class] = true
+                marked[:__expanded_literal_value] = characters[cursor]
                 marked[:__expanded_iota_fold] = true if marked[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
                 next [class_length, marked]
               end
