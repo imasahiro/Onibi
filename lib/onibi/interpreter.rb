@@ -1217,9 +1217,15 @@ module Onibi
                 folded = literal.value.downcase(:fold)
                 variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
                 variants.any? &&
-                  (variants - Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)).any?
+                  (variants - Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)).any? ||
+                  literal.fold_prefix_boundary
               end
           end
+          iota_prefix_alternative = node.branches.any? do |candidate|
+            boundary_literal_operands(candidate).any?(&:fold_prefix_boundary)
+          end
+          distinct_alternative = node.branches.map { |candidate| alternation_branch_operand_value(candidate) }.compact.uniq.length > 1
+          multichar_alternative = node.branches.any? { |candidate| capture_body_has_expanding_literal?(candidate) }
           node.branches.each_with_index.flat_map do |branch, branch_index|
             branch_captures = captures.merge(branch_marker => true)
             branch_value = alternation_branch_operand_value(branch)
@@ -1234,8 +1240,11 @@ module Onibi
               marked = state.dup
               marked.delete(branch_marker)
               if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 (state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail ||
-                  (expanding_alternative && state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source))
+                 (state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail && distinct_alternative ||
+                  (expanding_alternative &&
+                   (state[:__expanded_literal_fold] == "s" || state[:__expanded_literal_fold] == "k" && multichar_alternative ||
+                    (iota_prefix_alternative && distinct_alternative)) &&
+                   state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source))
                 marked[:__fold_alternation_context] = true
               end
               marked[:__match_alternative] = true
@@ -3232,7 +3241,11 @@ module Onibi
           span = captures[identifier]
           next unless span
 
-          next if !flags[:ignorecase] && captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
+          next if !flags[:ignorecase] &&
+                  (captures[:__expanded_literal_fold] || captures[:__captured_expanded_fold] ||
+                   %i[simple_fold_source iota_tail].include?(
+                     captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil)
+                   ))
 
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]
