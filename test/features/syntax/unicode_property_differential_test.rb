@@ -398,6 +398,24 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_ignorecase_literal_prefix_accepts_a_reverse_greek_fold
+    ["ᾀ(?:ᾀ)", "ἀιἀι"].each do |pattern|
+      input = "ᾀἀι"
+      mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+
+    pattern = "ᾀ(?:ἀι)"
+    input = "ᾀᾀ"
+    mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+    onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold
     pattern = "[a-z]+"
     input = "ſa"

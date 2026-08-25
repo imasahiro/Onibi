@@ -606,6 +606,15 @@ module Onibi
       def node_results(node, characters, cursor, captures, flags = {})
         @steps += 1
         return [] if @steps > 2_000_000
+        return [] if captures[:__expanded_literal_source] && simple_group_literal_node?(node)
+        return [] if captures[:__group_expanded_literal_source] &&
+                     !capture_body_has_expanding_literal?(node)
+
+        if captures[:__expanded_literal_source] || captures[:__group_expanded_literal_source]
+          captures = captures.dup
+          captures.delete(:__expanded_literal_source)
+          captures.delete(:__group_expanded_literal_source)
+        end
 
         case node
         when SemanticBytecode::Sequence
@@ -984,12 +993,16 @@ module Onibi
             # rubocop:enable Metrics/BlockLength
             next unless states.empty?
 
-            folded = previous_states.flat_map do |consumed, state_captures|
-              casefold_sequence_results(parts.drop(part_index), characters,
-                                        cursor + consumed, state_captures, flags).map do |length, inner|
-                [consumed + length, inner]
-              end
-            end
+            folded = if previous_states.any? { |_consumed, state| state[:__group_expanded_literal_source] }
+                       []
+                     else
+                       previous_states.flat_map do |consumed, state_captures|
+                         casefold_sequence_results(parts.drop(part_index), characters,
+                                                   cursor + consumed, state_captures, flags).map do |length, inner|
+                           [consumed + length, inner]
+                         end
+                       end
+                     end
             return folded unless folded.empty?
 
             return []
@@ -1015,6 +1028,12 @@ module Onibi
           end
           group_results.map do |length, inner|
             next_captures = inner.dup
+            expanded_source = next_captures.delete(:__expanded_literal_source)
+            next_captures[:__group_expanded_literal_source] = true if !node.capture && expanded_source
+            if !node.capture && capture_body_has_expanding_literal?(node.body) &&
+               characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor].length
+              next_captures[:__group_expanded_literal_source] = true
+            end
             if node.capture
               next_captures[node.number] = [cursor, cursor + length]
               next_captures[node.name] = [cursor, cursor + length] if node.name
@@ -1123,6 +1142,15 @@ module Onibi
             end
           end
 
+          if node.is_a?(SemanticBytecode::Literal) &&
+             flags[:ignorecase] && node.casefold &&
+             node.casefold.length > node.value.length && length == 1 &&
+             characters[cursor]&.downcase(:fold) == node.casefold
+            marked = captures.dup
+            marked[:__expanded_literal_source] = true
+            return [[length, marked]]
+          end
+
           [[length, captures]]
         end
       end
@@ -1134,15 +1162,21 @@ module Onibi
       def casefold_sequence_results(parts, characters, cursor, captures, flags)
         return [] unless flags[:ignorecase]
 
-        literal_prefix = parts.take_while { |part| part.is_a?(SemanticBytecode::Literal) }
-        if literal_prefix.length >= 2
-          reverse_value = literal_prefix.map(&:value).join
+        literal_prefix = parts.take_while { |part| reverse_fold_literal_operand(part) }
+        if literal_prefix.length >= 2 && reverse_fold_group_sequence_allowed?(literal_prefix)
+          reverse_value = literal_prefix.map { |part| reverse_fold_literal_operand(part).value }.join
           source = characters[cursor]
-          if reverse_value.ascii_only? && reverse_casefold_sequence?(reverse_value) && source &&
-             source.downcase(:fold) == reverse_value
+          folded_source = source&.downcase(:fold)
+          folded_pattern = reverse_value.downcase(:fold)
+          if source && folded_source && folded_source.length > source.length &&
+             folded_pattern.start_with?(folded_source) &&
+             reverse_fold_sequence_compatible?(literal_prefix, folded_source)
             suffix = SemanticBytecode::Sequence.new(parts.drop(literal_prefix.length))
-            return node_results(suffix, characters, cursor + 1, captures, flags).map do |length, inner|
-              [1 + length, inner]
+            lengths = casefold_lengths(reverse_value, characters, cursor, folded: folded_pattern)
+            return lengths.flat_map do |width|
+              node_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
+                [width + length, inner]
+              end
             end
           end
         end
@@ -1202,6 +1236,66 @@ module Onibi
             [width + length, inner]
           end
         end.flatten(1)
+      end
+
+      def reverse_fold_literal_operand(node)
+        return node if node.is_a?(SemanticBytecode::Literal)
+        return if node.is_a?(SemanticBytecode::Group) && node.capture
+
+        body = if node.is_a?(SemanticBytecode::Group) ||
+                  node.is_a?(SemanticBytecode::OptionGroup) ||
+                  node.is_a?(SemanticBytecode::AtomicGroup)
+                 node.body
+               end
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        operand = reverse_fold_literal_operand(body) if body
+        return unless operand
+        return operand unless node.is_a?(SemanticBytecode::Group) ||
+                              node.is_a?(SemanticBytecode::OptionGroup) ||
+                              node.is_a?(SemanticBytecode::AtomicGroup)
+
+        operand.casefold && operand.casefold.length > operand.value.length ? operand : nil
+      end
+
+      def reverse_fold_group_sequence_allowed?(parts)
+        parts.each_with_index.all? do |part, index|
+          next true unless part.is_a?(SemanticBytecode::Group) ||
+                           part.is_a?(SemanticBytecode::OptionGroup) ||
+                           part.is_a?(SemanticBytecode::AtomicGroup)
+
+          next_operand = parts[index + 1] && reverse_fold_literal_operand(parts[index + 1])
+          next_operand&.casefold &&
+            next_operand.casefold.length > next_operand.value.length
+        end
+      end
+
+      def reverse_fold_sequence_compatible?(parts, folded_source)
+        wrapped = parts.any? do |part|
+          part.is_a?(SemanticBytecode::Group) ||
+            part.is_a?(SemanticBytecode::OptionGroup) ||
+            part.is_a?(SemanticBytecode::AtomicGroup)
+        end
+        return reverse_fold_group_sequence_allowed?(parts) if wrapped
+
+        accumulated = +""
+        parts.any? do |part|
+          operand = reverse_fold_literal_operand(part)
+          accumulated << (operand.casefold || operand.value)
+          accumulated == folded_source
+        end
+      end
+
+      def simple_group_literal_node?(node)
+        return false if node.is_a?(SemanticBytecode::Group) && node.capture
+        return false unless node.is_a?(SemanticBytecode::Group) ||
+                            node.is_a?(SemanticBytecode::OptionGroup) ||
+                            node.is_a?(SemanticBytecode::AtomicGroup)
+
+        body = node.body
+        parts = body.is_a?(SemanticBytecode::Sequence) ? body.parts : [body]
+        return false unless parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+
+        parts.all? { |part| part.casefold.nil? || part.casefold.length == part.value.length }
       end
 
       def fold_sequence_expansion_boundaries_valid?(parts, source)
@@ -1411,6 +1505,12 @@ module Onibi
       def mri_multi_fold_literal_boundary?(node, next_node, characters, cursor, flags)
         return false if flags[:fold_alternation]
 
+        wrapped_previous = node.is_a?(SemanticBytecode::Group) ||
+                           node.is_a?(SemanticBytecode::OptionGroup) ||
+                           node.is_a?(SemanticBytecode::AtomicGroup)
+        wrapped_next = next_node.is_a?(SemanticBytecode::Group) ||
+                       next_node.is_a?(SemanticBytecode::OptionGroup) ||
+                       next_node.is_a?(SemanticBytecode::AtomicGroup)
         node = boundary_operand(node)
         next_node = boundary_operand(next_node)
         if node.is_a?(SemanticBytecode::Group)
@@ -1432,6 +1532,9 @@ module Onibi
           return true
         end
         return false unless node.casefold && node.casefold.length > node.value.length
+
+        return false if wrapped_previous && next_node.is_a?(SemanticBytecode::Literal) &&
+                        next_node.casefold&.length.to_i > next_node.value.length
 
         return false unless node.fold_boundary_sensitive
         return false unless source == node.value
@@ -1461,6 +1564,8 @@ module Onibi
 
           next_node = next_node.expression
         end
+        return false if wrapped_next && next_node.is_a?(SemanticBytecode::Literal) &&
+                        next_node.casefold&.length.to_i > next_node.value.length
         return true if next_node.is_a?(SemanticBytecode::Literal)
         return false unless next_node.is_a?(SemanticBytecode::CharacterClass)
 
