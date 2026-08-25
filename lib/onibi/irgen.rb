@@ -250,12 +250,12 @@ module Onibi
         generate(dfa)
       end
 
-      def execute(program, input, start_position = 0)
-        Onibi::Interpreter::Executor.new(program).match(input, start_position)
+      def execute(program, input, start_position = 0, input_view: nil)
+        Onibi::Interpreter::Executor.new(program, input_view: input_view).match(input, start_position)
       end
 
-      def execute_with_captures(program, input, start_position = 0)
-        Onibi::Interpreter::Executor.new(program).match_with_captures(input, start_position)
+      def execute_with_captures(program, input, start_position = 0, input_view: nil)
+        Onibi::Interpreter::Executor.new(program, input_view: input_view).match_with_captures(input, start_position)
       end
     end
   end

@@ -848,7 +848,10 @@ module Onibi
     end
 
     def bytecode_match(input, start, program = bytecode_program)
-      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start)
+      byte_input = @input_encoding == Encoding::ASCII_8BIT ||
+                   (program.flags[:binary_escape] && @input_encoding == Encoding::ISO_8859_1)
+      input_view = Onibi::InputView.new(input, byte_mode: byte_input)
+      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start, input_view: input_view)
       return nil unless result
 
       range = result.first(2)
@@ -867,7 +870,7 @@ module Onibi
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
-          byte_positions = character_byte_positions(input)
+          byte_positions = character_byte_positions(input, input_view)
           to_bytes = ->(position) { byte_positions.fetch(position) }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
@@ -879,7 +882,7 @@ module Onibi
       unless @ascii_input
         return Onibi::MatchData.captureless(input, range[0], range[1], self) if @input_encoding == Encoding::ASCII_8BIT
 
-        byte_positions = character_byte_positions(input)
+        byte_positions = character_byte_positions(input, input_view)
         to_bytes = ->(position) { byte_positions.fetch(position) }
         return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
                                                   [], result_names, self)
@@ -893,8 +896,8 @@ module Onibi
     # when MatchData needs byte offsets. MRI keeps these boundaries in its
     # encoding-aware matcher instead of rescanning the prefix for every
     # capture.
-    def character_byte_positions(input)
-      Onibi::InputView.new(input).byte_boundaries
+    def character_byte_positions(input, input_view = nil)
+      (input_view || Onibi::InputView.new(input)).byte_boundaries
     end
 
     def bytecode_program

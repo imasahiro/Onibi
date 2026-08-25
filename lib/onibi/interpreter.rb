@@ -72,11 +72,12 @@ module Onibi
     }.freeze
 
     class Executor
-      def initialize(program)
+      def initialize(program, input_view: nil)
         @program = program
         @automaton = program.automaton
         @subexpressions = program.flags[:subexpressions] || {}
         @retry_shifted_absence = shifted_absence_suffix?(program.flags[:semantic_root])
+        @input_view = input_view
       end
 
       def match(input, start_position = 0)
@@ -95,7 +96,7 @@ module Onibi
         input_ascii_only = String.instance_method(:ascii_only?).bind_call(input)
         byte_input = input_encoding == Encoding::ASCII_8BIT ||
                      (@program.flags[:binary_escape] && input_encoding == Encoding::ISO_8859_1)
-        input_view = Onibi::InputView.new(input, byte_mode: byte_input)
+        input_view = @input_view || Onibi::InputView.new(input, byte_mode: byte_input)
         characters = input_view.characters
         @input_view = input_view
         @characters = characters
