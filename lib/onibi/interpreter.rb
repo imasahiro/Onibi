@@ -528,6 +528,10 @@ module Onibi
               if mri_posix_expanded_optional_anchor?(part, parts[index], characters, cursor + consumed)
                 part_flags = part_flags.merge(posix_anchor_expansion: true)
               end
+              if mri_property_alternation_anchor_expansion?(part, parts[index],
+                                                            characters, cursor + consumed)
+                part_flags = part_flags.merge(property_alternation_anchor: true)
+              end
               part_results = node_results(part, characters, cursor + consumed, probe_captures, part_flags)
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
@@ -583,6 +587,11 @@ module Onibi
               if mri_posix_alternation_anchor_source_width?(part, parts[index],
                                                             characters, cursor + consumed)
                 part_results = part_results.select { |length, _inner| length <= 1 }
+              end
+              if mri_property_alternation_anchor_expansion?(part, parts[index],
+                                                            characters, cursor + consumed)
+                maximum = part_results.map(&:first).max
+                part_results = part_results.select { |length, _inner| length == maximum }
               end
               if mri_alternate_fold_alternation_anchor_boundary?(part, parts[index],
                                                                  characters, cursor + consumed, flags)
@@ -641,7 +650,7 @@ module Onibi
         when SemanticBytecode::Conditional
           conditional_results(node, characters, cursor, captures, flags)
         when SemanticBytecode::Alternation
-          branch_flags = flags.merge(fold_alternation: true)
+          branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
           node.branches.each_with_index.flat_map do |branch, branch_index|
             node_results(branch, characters, cursor, captures, branch_flags).map do |length, state|
               marked = state.dup
@@ -651,7 +660,12 @@ module Onibi
             end
           end
         when SemanticBytecode::Group
-          node_results(node.body, characters, cursor, captures, flags).map do |length, inner|
+          group_results = node_results(node.body, characters, cursor, captures, flags)
+          if flags[:property_alternation_anchor]
+            maximum = group_results.map(&:first).max
+            group_results = group_results.select { |length, _inner| length == maximum }
+          end
+          group_results.map do |length, inner|
             next_captures = inner.dup
             if node.capture
               next_captures[node.number] = [cursor, cursor + length]
@@ -1195,6 +1209,17 @@ module Onibi
           operand.is_a?(SemanticBytecode::Literal) &&
           (operand.casefold&.length.to_i > operand.value.length ||
            reverse_fold_source_literal?(operand.value))
+        end
+
+        characters[cursor]&.ascii_only?
+      end
+
+      def mri_property_alternation_anchor_expansion?(node, next_node, characters, cursor)
+        node = boundary_operand(node)
+        return false unless node.is_a?(SemanticBytecode::Alternation)
+        return false unless end_anchor?(next_node)
+        return false unless node.branches.any? do |branch|
+          boundary_operand(branch).is_a?(SemanticBytecode::Property)
         end
 
         characters[cursor]&.ascii_only?
