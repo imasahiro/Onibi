@@ -18,8 +18,10 @@ module Onibi
 
     module_function
 
-    def whitespace?(character)
+    def whitespace?(character, encoding: nil)
       value = codepoint(character)
+      return [9, 10, 11, 12, 13, 32].include?(value) if encoding == Encoding::ASCII_8BIT
+
       UNICODE_WHITESPACE.include?(value) || value.between?(0x2000, 0x200A)
     end
 
@@ -59,7 +61,8 @@ module Onibi
     end
 
     def escape_matches?(kind, character, encoding: nil)
-      return false if encoding == Encoding::ASCII_8BIT && !character.ascii_only? && kind == :space
+      return whitespace?(character, encoding: encoding) if kind == :space
+      return !whitespace?(character, encoding: encoding) if kind == :not_space
 
       ESCAPE_PREDICATES.fetch(kind).call(character)
     end

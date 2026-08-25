@@ -169,6 +169,14 @@ class InterpreterTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_binary_space_escape_uses_binary_whitespace_table
+    input = [0x85].pack("C*").b
+    expected = ::Regexp.new("\\S").match?(input)
+    actual = Onibi::Regexp.new("\\S").match?(input)
+
+    assert_equal expected, actual
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")
