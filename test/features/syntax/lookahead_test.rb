@@ -32,6 +32,16 @@ class LookaheadTest < Minitest::Test
     assert_equal expected && expected.offset(0), actual && actual.offset(0)
   end
 
+  def test_lookbehind_fold_overlap_can_feed_a_character_class
+    pattern = "(?<=ß)[s]\\w"
+    input = "ßss"
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && expected.offset(0), actual && actual.offset(0)
+  end
+
   def test_negative_lookbehind_rejects_the_asserted_prefix
     regexp = Onibi::Regexp.new("(?<!a)b")
 

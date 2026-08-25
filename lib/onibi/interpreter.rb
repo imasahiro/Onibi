@@ -464,6 +464,15 @@ module Onibi
         body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
       end
 
+      def clear_lookbehind_overlap_state(captures)
+        next_state = captures.dup
+        %i[__lookbehind_overlap __lookbehind_overlap_source __lookbehind_overlap_values
+           __lookbehind_overlap_alternation __lookbehind_overlap_expanded
+           __lookbehind_direct_tail_reject __lookbehind_prior_overlap_source
+           __lookbehind_prior_overlap_values].each { |key| next_state.delete(key) }
+        next_state
+      end
+
       def reverse_lookbehind_fold?(node)
         return node.branches.any? { |branch| reverse_lookbehind_fold?(branch) } if node.is_a?(SemanticBytecode::Alternation)
 
@@ -760,6 +769,12 @@ module Onibi
                                lookbehind_overlap_quantifier_results(
                                  part, characters, cursor + consumed, state_captures, part_flags
                                )
+                             elsif state_captures[:__lookbehind_overlap_source] &&
+                                   part.is_a?(SemanticBytecode::CharacterClass) &&
+                                   state_captures[:__lookbehind_overlap].to_i == 1 &&
+                                   class_match?(part, state_captures[:__lookbehind_overlap_source],
+                                                part_flags.merge(ignorecase: true))
+                               [[0, clear_lookbehind_overlap_state(state_captures)]]
                              elsif state_captures[:__lookbehind_prior_overlap_source] &&
                                    part.is_a?(SemanticBytecode::Literal) &&
                                    part.value.length == 1 &&
