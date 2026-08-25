@@ -874,11 +874,19 @@ module Onibi
     end
 
     def validate_backreferences!
-      return if raw_named_captures.empty?
-
       walk_ast(@ast) do |node|
+        if node.is_a?(Onibi::AST::Conditional)
+          identifier, named = node.condition
+          raise RegexpError, "undefined name <#{identifier}> condition: /#{@source}/" if named && !raw_named_captures.key?(identifier.to_s)
+          raise RegexpError, "invalid conditional reference: /#{@source}/" if !named && identifier.to_i > capture_count
+        end
+
         next unless node.is_a?(Onibi::AST::Backreference)
-        next unless node.identifier.to_s.match?(/\A\d+\z/)
+
+        identifier = node.identifier.to_s
+        raise RegexpError, "undefined name <#{identifier}> reference: /#{@source}/" if node.named && !raw_named_captures.key?(identifier)
+        next unless identifier.match?(/\A\d+\z/)
+        next if raw_named_captures.empty?
 
         raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/"
       end

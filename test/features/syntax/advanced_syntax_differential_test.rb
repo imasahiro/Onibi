@@ -15,7 +15,8 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
     ["(?~real)", "surrealist"],
     ["(?~real)ist", "surrealist"],
     ["(?~(a|ab))*", "a"],
-    ["a\\Kb", "ab"]
+    ["a\\Kb", "ab"],
+    ["(a)\\1", "aa"]
   ].freeze
 
   def test_advanced_syntax_corpus_matches_mri
@@ -37,6 +38,15 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
 
   def test_undefined_subexpression_calls_fail_during_compilation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\g<missing>").match("x") }
+  end
+
+  def test_undefined_named_backreferences_fail_during_compilation
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\k<missing>") }
+  end
+
+  def test_undefined_conditional_reference_fails_during_compilation
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?(1)a|b)") }
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?(<missing>)a|b)") }
   end
 
   def test_numeric_subexpression_calls_are_rejected_with_named_captures
