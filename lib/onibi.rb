@@ -779,10 +779,11 @@ module Onibi
     end
 
     def match_input_length(input)
-      return input.length if input.is_a?(String)
+      return String.instance_method(:length).bind_call(input) if input.is_a?(String)
       return 0 if input.nil? || input.is_a?(Symbol)
 
-      String.try_convert(input).length
+      converted = String.try_convert(input)
+      String.instance_method(:length).bind_call(converted)
     end
 
     def nullable_match_position(position, input_length)

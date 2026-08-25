@@ -41,6 +41,19 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match("a", 2)
   end
 
+  def test_match_question_uses_string_length_not_overridden_length
+    input_class = Class.new(String) do
+      def length
+        0
+      end
+    end
+    input = input_class.new("ba")
+    regexp = Onibi::Regexp.new("a")
+
+    assert_equal Regexp.new("a").match?(input, 1), regexp.match?(input, 1)
+    assert_equal Regexp.new("a").match?(input, 2), regexp.match?(input, 2)
+  end
+
   def test_match_position_rejects_string_like_mri
     assert_raises(TypeError) { Regexp.new("a").match("ba", "1") }
     assert_raises(TypeError) { Onibi::Regexp.new("a").match("ba", "1") }
