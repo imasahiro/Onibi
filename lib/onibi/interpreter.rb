@@ -1375,10 +1375,12 @@ module Onibi
 
       def capture_body_has_class?(node)
         case node
-        when SemanticBytecode::CharacterClass
+        when SemanticBytecode::CharacterClass, SemanticBytecode::Property
           true
         when SemanticBytecode::Sequence
           node.parts.any? { |part| capture_body_has_class?(part) }
+        when SemanticBytecode::Alternation
+          node.branches.any? { |branch| capture_body_has_class?(branch) }
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
              SemanticBytecode::AtomicGroup
           capture_body_has_class?(node.body)
