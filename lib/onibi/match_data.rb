@@ -219,6 +219,8 @@ module Onibi
       return index if index.is_a?(Integer) || index.is_a?(Float)
       return Integer(index) if index.respond_to?(:to_int)
 
+      raise TypeError, "no implicit conversion from nil to integer" if index.nil?
+
       raise TypeError, "no implicit conversion of #{index.class} into Integer"
     end
 

@@ -45,7 +45,8 @@ class MatchDataIndexTest < Minitest::Test
 
     assert_raises(TypeError) { match.match(0..1) }
     assert_raises(TypeError) { match.match([0, 1]) }
-    assert_raises(TypeError) { match.match(nil) }
+    assert_equal "no implicit conversion from nil to integer",
+                 assert_raises(TypeError) { match.match(nil) }.message
     assert_raises(IndexError) { match.match(-1.2) }
     assert_raises(TypeError) { match[[0, 1]] }
     assert_raises(TypeError) { match.values_at([0, 1]) }

@@ -59,7 +59,11 @@ module Onibi
 
     def validate_offset_index!(index)
       index = integer_index(index) if index.is_a?(Float)
-      raise TypeError, "no implicit conversion from #{index.class} into integer" unless index.is_a?(Integer)
+      unless index.is_a?(Integer)
+        raise TypeError, "no implicit conversion from nil to integer" if index.nil?
+
+        raise TypeError, "no implicit conversion of #{index.class} into Integer"
+      end
       raise IndexError, "index #{index} out of matches" if index.negative? || index >= @offsets.length
     end
 
