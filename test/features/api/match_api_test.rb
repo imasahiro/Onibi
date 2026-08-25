@@ -13,6 +13,18 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("dog")
   end
 
+  def test_match_block_runs_once_and_returns_block_value
+    calls = 0
+    result = Onibi::Regexp.new("a").match("ba") do |matched|
+      calls += 1
+      matched[0].upcase
+    end
+
+    assert_equal 1, calls
+    assert_equal "A", result
+    assert_equal "a", Onibi::Regexp.last_match[0]
+  end
+
   def test_tilde_clears_last_match_when_global_input_is_nil
     regexp = Onibi::Regexp.new("a")
     $_ = "a"

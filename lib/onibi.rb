@@ -410,17 +410,10 @@ module Onibi
     end
 
     def match(input, position = 0)
-      yielded_match = nil
-      result = if block_given?
-                 match_without_last_match(input, position) do |matched|
-                   yielded_match = matched
-                   yield(matched)
-                 end
-               else
-                 match_without_last_match(input, position)
-               end
-      Thread.current[LAST_MATCH_KEY] = yielded_match || (result if result.is_a?(Onibi::MatchData))
-      result
+      result = match_without_last_match(input, position)
+      Thread.current[LAST_MATCH_KEY] = result if result.is_a?(Onibi::MatchData)
+      Thread.current[LAST_MATCH_KEY] = nil unless result.is_a?(Onibi::MatchData)
+      block_given? && result ? yield(result) : result
     end
 
     def match_without_last_match(input, position = 0)
