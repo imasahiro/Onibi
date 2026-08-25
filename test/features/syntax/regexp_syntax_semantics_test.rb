@@ -49,9 +49,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     regexp = Onibi::Regexp.new("\\xE3\\x81\\x82")
     us_ascii_regexp = Onibi::Regexp.new("\\xE3\\x81\\x82".encode(Encoding::US_ASCII))
 
+    assert_equal Encoding::UTF_8, regexp.encoding
+    assert regexp.fixed_encoding?
     assert regexp.match?("あ")
     assert us_ascii_regexp.match?("あ")
     refute regexp.match?("い")
+    assert_raises(Encoding::CompatibilityError) { regexp.match?("\xE3\x81\x82".b) }
   end
 
   def test_contiguous_utf8_octal_escapes_match_as_one_character
