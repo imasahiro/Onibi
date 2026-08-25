@@ -184,6 +184,18 @@ class RegexpUtilityTest < Minitest::Test
     assert binary.fixed_encoding?
   end
 
+  def test_union_keeps_mri_binary_encoding_selection
+    ascii_binary = Onibi::Regexp.union("a".b, "b".b)
+    assert_equal Regexp.union("a".b, "b".b).encoding, ascii_binary.encoding
+    assert_equal Regexp.union("a".b, "b".b).options, ascii_binary.options
+
+    mixed = Onibi::Regexp.union("a".b, "é")
+    expected = Regexp.union("a".b, "é")
+    assert_equal expected.encoding, mixed.encoding
+    assert_equal expected.options, mixed.options
+    assert_equal expected.inspect, mixed.inspect
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))

@@ -140,24 +140,26 @@ module Onibi
         options = 0
         has_string = false
         has_binary_string = false
+        has_non_ascii_source = false
         sources = patterns.map do |pattern|
           if pattern.is_a?(::Regexp)
             options |= pattern.options & FIXEDENCODING
+            has_non_ascii_source ||= !pattern.source.ascii_only?
             regexp_scope(pattern)
           elsif pattern.is_a?(Regexp)
             options |= pattern.options & FIXEDENCODING
+            has_non_ascii_source ||= !pattern.source.ascii_only?
             regexp_scope(pattern)
           else
             has_string = true
             has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
+            has_non_ascii_source ||= pattern.is_a?(String) && !pattern.ascii_only?
             escape(pattern)
           end
         end
         options &= ~NOENCODING if has_string
-        options |= FIXEDENCODING if has_binary_string
-        result = new(join_union_sources(sources), options)
-        result.instance_variable_set(:@source, result.source.force_encoding(Encoding::ASCII_8BIT)) if has_binary_string
-        result
+        options |= FIXEDENCODING if has_binary_string && has_non_ascii_source
+        new(join_union_sources(sources), options)
       end
 
       def linear_time?(pattern)
@@ -533,6 +535,16 @@ module Onibi
     end
 
     def inspect_source
+      if @source.encoding == Encoding::ASCII_8BIT
+        return @source.bytes.map do |byte|
+          if byte == 0x2f
+            "\\/"
+          else
+            byte.between?(0x09, 0x7e) ? byte.chr : format("\\x%02X", byte)
+          end
+        end.join
+      end
+
       source_for_display.each_char.map do |character|
         next character == "/" ? "\\/" : character if @source.encoding.ascii_compatible?
 
