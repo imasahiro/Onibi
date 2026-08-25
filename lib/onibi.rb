@@ -129,9 +129,10 @@ module Onibi
         return nil unless object.respond_to?(:to_regexp)
 
         converted = object.to_regexp
-        return converted if converted.is_a?(Regexp)
+        return converted if converted.is_a?(Regexp) || converted.is_a?(::Regexp)
 
-        raise TypeError, "can't convert #{object.class} into Onibi::Regexp"
+        raise TypeError,
+              "can't convert #{object.class} to Regexp (#{object.class}#to_regexp gives #{converted.class})"
       end
 
       def union(*patterns)

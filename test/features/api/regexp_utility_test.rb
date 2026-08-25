@@ -82,6 +82,8 @@ class RegexpUtilityTest < Minitest::Test
     regexp = Onibi::Regexp.new("a")
     convertible = Object.new
     convertible.define_singleton_method(:to_regexp) { regexp }
+    native_convertible = Object.new
+    native_convertible.define_singleton_method(:to_regexp) { ::Regexp.new("a") }
     invalid = Object.new
     invalid.define_singleton_method(:to_regexp) { "not a regexp" }
 
@@ -89,6 +91,7 @@ class RegexpUtilityTest < Minitest::Test
     native = ::Regexp.new("a")
     assert_same native, Onibi::Regexp.try_convert(native)
     assert_same regexp, Onibi::Regexp.try_convert(convertible)
+    assert_instance_of ::Regexp, Onibi::Regexp.try_convert(native_convertible)
     assert_nil Onibi::Regexp.try_convert(Object.new)
     assert_raises(TypeError) { Onibi::Regexp.try_convert(invalid) }
   end
