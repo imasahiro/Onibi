@@ -58,13 +58,32 @@ module Onibi
     end
 
     def intersection_matches?(intersection, character, ignorecase, encoding)
+      if ignorecase
+        # MRI intersects the raw class tables first, then applies the
+        # case-fold closure to the resulting table. Do not fold operands
+        # independently, or [a-z&&A-Z] becomes unexpectedly non-empty.
+        if intersection[1].start_with?("[^")
+          unless intersection[0].include?("\\p") || intersection[0].include?("[:")
+            return casefold_candidates(character).any? do |candidate|
+              intersection_matches?(intersection, candidate, false, encoding)
+            end
+          end
+
+          left = matches?(intersection[0], character, ignorecase: true, encoding: encoding)
+          right = negated_intersection_matches?(intersection[1], character, encoding,
+                                                left_source: intersection[0])
+          return :incompatible if left == :incompatible || right == :incompatible
+
+          return left && right
+        end
+
+        return casefold_candidates(character).any? do |candidate|
+          intersection_matches?(intersection, candidate, false, encoding)
+        end
+      end
+
       left = matches?(intersection[0], character, ignorecase: ignorecase, encoding: encoding)
-      right = if ignorecase && intersection[1].start_with?("[^")
-                negated_intersection_matches?(intersection[1], character, encoding,
-                                              left_source: intersection[0])
-              else
-                matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
-              end
+      right = matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
       return :incompatible if left == :incompatible || right == :incompatible
 
       left && right
@@ -72,6 +91,12 @@ module Onibi
 
     def negated_intersection_matches?(source, character, encoding, left_source: nil)
       body = source[2...-1]
+      if left_source&.include?("\\p") && !body.include?("\\p") && !body.include?("[:")
+        script = literal_script(body)
+        character_script = unicode_script(character)
+        return character_script != script if script && character_script
+      end
+
       if intersection_casefold_mode?(left_source, body)
         return casefold_candidates(character).none? do |candidate|
           matches?(body, candidate, ignorecase: true, encoding: encoding)
@@ -83,17 +108,32 @@ module Onibi
       end
     end
 
+    def literal_script(source)
+      scripts = %w[Latin Greek Cyrillic Arabic Han Hiragana Katakana]
+      scripts.find do |script|
+        letters = source.each_char.select { |character| character.match?(/\p{L}/) }
+        !letters.empty? && letters.all? { |character| UnicodeProperties.matches?(script, character) }
+      end
+    end
+
+    def unicode_script(character)
+      %w[Latin Greek Cyrillic Arabic Han Hiragana Katakana].find do |script|
+        UnicodeProperties.matches?(script, character)
+      end
+    end
+
     def intersection_casefold_mode?(left_source, body)
       source_case_orientation(left_source) == source_case_orientation(body)
     end
 
     def source_case_orientation(source)
-      return :lower if source.match?(/\\p\{(?:Lower|Ll|Lowercase)\}/)
-      return :upper if source.match?(/\\p\{(?:Upper|Lu|Uppercase)\}/)
+      return :property_lower if source.match?(/\\p\{(?:Lower|Ll|Lowercase)\}/)
+      return :property_upper if source.match?(/\\p\{(?:Upper|Lu|Uppercase)\}/)
       return :mixed if source.include?("\\p") || source.include?("[:")
 
-      has_lower = source.match?(/[a-z]/)
-      has_upper = source.match?(/[A-Z]/)
+      letters = source.each_char.to_a
+      has_lower = letters.any? { |character| UnicodeProperties.matches?("Lower", character) }
+      has_upper = letters.any? { |character| UnicodeProperties.matches?("Upper", character) }
       return :lower if has_lower && !has_upper
       return :upper if has_upper && !has_lower
 
@@ -106,6 +146,30 @@ module Onibi
         UnicodeProperties.reverse_casefold_variants(normalized)).select do |candidate|
         candidate.each_char.one? && normalized.casecmp?(candidate)
       end.uniq
+    end
+
+    # Return Unicode simple-fold equivalence groups. Ruby's fold operation
+    # includes compatibility members such as Kelvin sign and OHM sign.
+    # Build this table once, then let the compiler embed only groups used by
+    # one character-class operand.
+    def casefold_groups
+      @casefold_groups ||= begin
+        groups = Hash.new { |hash, key| hash[key] = [] }
+        0.upto(0x10FFFF) do |codepoint|
+          character = begin
+            codepoint.chr(Encoding::UTF_8)
+          rescue RangeError
+            next
+          end
+          folded = character.downcase(:fold)
+          groups[folded] << character
+        end
+        groups.each_value do |members|
+          members.uniq!
+          members.freeze
+        end
+        groups.select { |_folded, members| members.length > 1 }.freeze
+      end
     end
 
     def split_intersection(source)

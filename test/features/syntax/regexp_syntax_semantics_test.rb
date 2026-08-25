@@ -143,6 +143,24 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert opposite_case.match?("A")
   end
 
+  def test_ignorecase_intersection_compiles_before_casefold
+    regexp = Onibi::Regexp.new("[a-z&&A-Z]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("a")
+    refute regexp.match?("A")
+  end
+
+  def test_ignorecase_property_intersection_closes_fold_groups
+    ascii = Onibi::Regexp.new("[\\p{Upper}&&[^A-Z]]", Onibi::Regexp::IGNORECASE)
+    greek = Onibi::Regexp.new("[\\p{Upper}&&[^Α-Ω]]", Onibi::Regexp::IGNORECASE)
+
+    refute ascii.match?("A")
+    assert ascii.match?("K")
+    assert ascii.match?("Ω")
+    refute greek.match?("Α")
+    assert greek.match?("Ω")
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 

@@ -102,28 +102,24 @@ module Onibi
         # that range. For example, U+2126 OHM SIGN is inside [ẞ-龠], and its
         # fold U+03C9 makes Ω and ω valid class operands.
         def class_casefold_characters(source)
-          metadata = Onibi::ClassPredicates::Normalizer.normalize(source)
-          return [].freeze unless metadata.kind == :ascii && source.encoding == Encoding::UTF_8
+          return [].freeze unless source.encoding == Encoding::UTF_8
           return [].freeze if source.start_with?("^")
 
-          characters = metadata.ranges.each_with_object([]) do |(first, last), result|
-            first.ord.upto(last.ord) do |codepoint|
-              character = codepoint.chr(Encoding::UTF_8)
-              variants = [character.downcase(:fold), character.downcase,
-                          character.upcase, character.capitalize]
-              variants.concat(UnicodeProperties.reverse_casefold_variants(character))
-              variants.each do |variant|
-                next unless variant.each_char.one?
-                next unless character.casecmp?(variant)
-                next if ClassPredicates.matches?(source, variant)
+          metadata = Onibi::ClassPredicates::Normalizer.normalize(source)
+          raw_match = if metadata.kind == :ascii
+                        lambda do |member|
+                          metadata.literals.include?(member) ||
+                            metadata.ranges.any? { |first, last| member.ord.between?(first.ord, last.ord) }
+                        end
+                      else
+                        ->(member) { ClassPredicates.matches?(source, member) }
+                      end
+          characters = Onibi::ClassPredicates.casefold_groups.each_value.with_object([]) do |members, result|
+            next unless members.any? { |member| raw_match.call(member) }
 
-                result << variant
-              end
-            end
+            result.concat(members)
           end
           characters.uniq.freeze
-        rescue RangeError, EncodingError
-          [].freeze
         end
 
         def full_casefold?(node)
