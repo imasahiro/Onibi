@@ -1435,7 +1435,11 @@ module Onibi
         when SemanticBytecode::Escape
           node.kind == :word
         when SemanticBytecode::Sequence
-          node.parts.any? { |part| capture_body_has_class?(part) }
+          node.parts.any? { |part| capture_body_has_class?(part) } ||
+            node.parts.length > 1 && node.parts.any? do |part|
+              part.is_a?(SemanticBytecode::Quantifier) &&
+                part.minimum.zero? && part.maximum == 1
+            end
         when SemanticBytecode::Alternation
           node.branches.any? { |branch| capture_body_has_class?(branch) } ||
             node.branches.any? { |branch| capture_body_has_expanding_literal?(branch) }
