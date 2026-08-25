@@ -1094,9 +1094,17 @@ module Onibi
                 part_results = []
               end
               part_results = [] if state_captures[:__simple_fold_alternation_source] &&
-                                   part.is_a?(SemanticBytecode::Literal)
+                                   (part.is_a?(SemanticBytecode::Literal) ||
+                                    part.is_a?(SemanticBytecode::Anchor) ||
+                                    part.is_a?(SemanticBytecode::Assertion))
               part_results = [] if state_captures[:__iota_fold_alternation_source] &&
-                                   part.is_a?(SemanticBytecode::Literal)
+                                   (part.is_a?(SemanticBytecode::Literal) ||
+                                    part.is_a?(SemanticBytecode::Anchor) ||
+                                    part.is_a?(SemanticBytecode::Assertion))
+              if mri_simple_fold_lookahead_boundary?(part, parts[index], characters,
+                                                     cursor + consumed, flags)
+                part_results = []
+              end
               boundary_relaxed = mri_fold_boundary_relaxed?(previous_part, part, consumed) ||
                                  mri_fold_boundary_lookahead_relaxed?(previous_part, part,
                                                                       parts[index], characters,
@@ -1270,7 +1278,7 @@ module Onibi
                 marked[:__fold_alternation_context] = true
               end
               if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 !expanding_alternative && distinct_alternative &&
+                 !expanding_alternative &&
                  state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
                 marked[:__simple_fold_alternation_source] = true
               end
@@ -1813,6 +1821,19 @@ module Onibi
 
         source = characters[cursor]
         return false unless source
+        if expression.is_a?(SemanticBytecode::CharacterClass) &&
+           %w[ι ͅ].include?(expression_value) && source == "ͅ"
+          return :greedy
+        end
+        if next_node.is_a?(SemanticBytecode::Anchor) &&
+           %i[anchor_absolute_end anchor_before_final_newline].include?(next_node.kind) &&
+           simple_fold_source_match?(expression, source)
+          return :zero_only
+        end
+        if next_node.is_a?(SemanticBytecode::Assertion) && next_node.kind == :positive &&
+           simple_fold_source_match?(expression, source)
+          return :zero_only
+        end
         if next_node && simple_fold_source_match?(expression, source) &&
            normal_consuming_operand?(next_node)
           return :zero_only
@@ -2098,6 +2119,16 @@ module Onibi
         later_fold_candidate?(next_node.expression, characters, cursor + 2)
       end
 
+      def mri_simple_fold_lookahead_boundary?(node, next_node, characters, cursor, flags)
+        fold_enabled = flags[:ignorecase] || option_group_ignorecase?(node)
+        node = boundary_operand(node)
+        return false unless fold_enabled
+        return false unless next_node.is_a?(SemanticBytecode::Assertion) && next_node.kind == :positive
+        return false unless node.is_a?(SemanticBytecode::Literal)
+
+        simple_fold_source_match?(node, characters[cursor])
+      end
+
       def mri_alternate_fold_anchor_relaxed?(node, next_node, characters, cursor, flags)
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless end_anchor?(next_node)
@@ -2357,7 +2388,11 @@ module Onibi
         return false unless operand.value.each_char.one?
         return false unless reverse_fold_source_literal?(operand.value)
 
-        characters[cursor] == operand.value
+        source = characters[cursor]
+        return true if %w[ι ͅ].include?(operand.value) && source == "ι"
+        return false if %w[ι ͅ].include?(operand.value) && source == operand.value
+
+        source == operand.value
       end
 
       def mri_reverse_fold_optional_anchor_boundary?(node, next_node, characters, cursor, flags)
