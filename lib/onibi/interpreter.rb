@@ -547,8 +547,16 @@ module Onibi
         clean.delete(:__lookbehind_prior_overlap_source)
         clean.delete(:__lookbehind_prior_overlap_values)
         unless casefold_equal?(quantifier.expression.value, source)
+          fold_suffix = Array(captures[:__lookbehind_overlap_values]).any? do |value|
+            value.end_with?(source.to_s.downcase(:fold))
+          end
+          repeated_overlap_source = fold_suffix && source.to_s.downcase(:fold).length == 1 && cursor > 1 &&
+                                    casefold_equal?(characters[cursor - 2], source)
+          prior_single_source = Array(captures[:__lookbehind_prior_overlap_values]).any? do |value|
+            value.each_char.to_a.length == 1 && value.start_with?(source.to_s.downcase(:fold))
+          end
           return quantifier.minimum.zero? && captures[:__lookbehind_overlap_alternation] &&
-                 (cursor == characters.length || captures[:__lookbehind_prior_overlap_source]) ? [[0, clean]] : []
+                 (prior_single_source || repeated_overlap_source) ? [[0, clean]] : []
         end
         results = node_results(quantifier, characters, cursor, clean, flags)
         if quantifier.maximum

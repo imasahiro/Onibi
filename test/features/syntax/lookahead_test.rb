@@ -365,6 +365,7 @@ class LookaheadTest < Minitest::Test
     [["(?<=ss|a)a", "ßa"], ["(?<=ss|a)a", "ßaa"],
      ["(?<=s|ß)a*", "ßss"],
      ["(?<=ß|ffi)ffi", "ﬃffi"], ["(?<=ß|ffi)ffi", "ßffi"],
+     ["(?<=ffi|ß)a*", "ßffi"], ["(?<=a|ß)a?", "ßs"],
      ["(?<=ß|ﬃ)ﬃ", "ﬃffi"], ["(?<=ss)a", "ßaa"]].each do |source, input|
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
       actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
