@@ -107,7 +107,8 @@ module Onibi
     # Keep it in compiler-owned Unicode data so range operands can close over
     # the same reverse fold as MRI.
     REVERSE_SIMPLE_CASEFOLDS = {
-      "k" => ["K"], "K" => ["K"], "K" => %w[k K]
+      "k" => ["K"], "K" => ["K"], "K" => %w[k K],
+      "s" => ["ſ"], "S" => ["ſ"], "ſ" => %w[s S]
     }.freeze
 
     def validate!(name)

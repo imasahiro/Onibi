@@ -95,6 +95,23 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("\x81".b)
   end
 
+  def test_non_utf8_character_classes_use_unicode_codepoints
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      range = Onibi::Regexp.new("[Α-Ω]".encode(encoding), Onibi::Regexp::IGNORECASE)
+      property = Onibi::Regexp.new("[\\p{Greek}]".encode(encoding))
+
+      assert range.match?("α".encode(encoding))
+      assert property.match?("Α".encode(encoding))
+    end
+  end
+
+  def test_ignorecase_closes_unicode_range_casefolds
+    regexp = Onibi::Regexp.new("[\\u{100}-\\u{200}]", Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("s")
+    assert regexp.match?("S")
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 

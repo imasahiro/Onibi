@@ -93,7 +93,8 @@ module Onibi
             next
           end
         end
-        return true if range_matches?(source, index, first, character, ignorecase: ignorecase)
+        return true if range_matches?(source, index, first, character,
+                                      ignorecase: ignorecase, encoding: encoding)
 
         result = atom_matches?(first, character, ignorecase, encoding)
         return true if result == true
@@ -162,7 +163,7 @@ module Onibi
       [depth, false]
     end
 
-    def range_matches?(source, index, first, character, ignorecase: false)
+    def range_matches?(source, index, first, character, ignorecase: false, encoding: nil)
       return false unless source[index] == "-" && index + 1 < source.length
 
       last, = atom(source, index + 1)
@@ -171,11 +172,20 @@ module Onibi
       character_value = character.codepoints.first
       return true if character_value.between?(first[1].ord, last[1].ord)
       return false unless ignorecase
+      return false if non_utf8_encoding?(encoding) && first[1].ascii_only? != last[1].ascii_only?
 
-      variants = [character.downcase(:fold), character.downcase, character.upcase, character.capitalize]
-      variants.concat(UnicodeProperties.reverse_casefold_variants(character))
+      normalized_character = unicode_character(character, encoding)
+      normalized_first = unicode_character(first[1], encoding)
+      normalized_last = unicode_character(last[1], encoding)
+      variants = [normalized_character.downcase(:fold), normalized_character.downcase,
+                  normalized_character.upcase, normalized_character.capitalize]
+      variants.concat(UnicodeProperties.reverse_casefold_variants(normalized_character))
       variants.any? do |variant|
-        variant.each_char.one? && variant.codepoints.first.between?(first[1].ord, last[1].ord)
+        next false unless variant.each_char.one?
+
+        encoded_variant = unicode_character(variant, character.encoding)
+        encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord) ||
+          variant.codepoints.first.between?(normalized_first.ord, normalized_last.ord)
       end
     end
 
@@ -218,9 +228,12 @@ module Onibi
         return negated ? true : :incompatible
       end
 
-      matched = UnicodeProperties.matches_normalized?(name, character)
-      matched = casefold_property_match?(name, character) if ignorecase && !negated && !matched &&
-                                                             casefold_property?(name)
+      normalized_character = unicode_character(character, encoding) unless
+        encoding_specific_ascii_property?(name, encoding) || encoding == Encoding::ASCII_8BIT
+      normalized_character ||= character
+      matched = UnicodeProperties.matches_normalized?(name, normalized_character)
+      matched = casefold_property_match?(name, normalized_character) if ignorecase && !negated && !matched &&
+                                                                        casefold_property?(name)
       negated ? !matched : matched
     end
 
@@ -247,6 +260,14 @@ module Onibi
 
     def non_utf8_encoding?(encoding)
       [Encoding::ASCII_8BIT, Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+    end
+
+    def unicode_character(character, encoding)
+      return character unless [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+
+      character.encode(Encoding::UTF_8)
+    rescue EncodingError
+      character
     end
 
     def property_escape(source, index)

@@ -85,7 +85,8 @@ module Onibi
           Onibi::UnicodeProperties.casefold_codepoints.filter_map do |codepoint|
             character = [codepoint].pack("U")
             folded = character.downcase(:fold)
-            [character, folded] if Onibi::ClassPredicates.matches?(source, character)
+            [character, folded] if Onibi::ClassPredicates.matches?(source, character,
+                                                                   encoding: source.encoding)
           end.freeze
         end
 
