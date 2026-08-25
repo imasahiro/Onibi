@@ -361,6 +361,18 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_lookbehind_uses_branch_fold_width
+    [["(?<=ss|a)a", "ßa"], ["(?<=ß|ffi)ffi", "ﬃffi"],
+     ["(?<=ß|ﬃ)ﬃ", "ﬃffi"]].each do |source, input|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
+  end
+
   def test_ignorecase_reverse_fold_anchor_boundary_through_wrappers
     ["(?>ſ|s)\\z", "(?i:ſ|s)\\z"].each do |source|
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
