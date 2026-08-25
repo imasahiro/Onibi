@@ -418,7 +418,9 @@ module Onibi
 
     def match_without_last_match(input, position = 0)
       requested_position = normalize_match_position(position)
-      return nil if input.nil? || input.is_a?(Symbol)
+      return nil if input.nil?
+
+      input = input.to_s if input.is_a?(Symbol)
 
       unless input.is_a?(String)
         original_input = input
