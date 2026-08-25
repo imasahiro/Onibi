@@ -502,9 +502,13 @@ module Onibi
               part_results = node_results(part, characters, cursor + consumed, probe_captures, part_flags)
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
-              if optional_order == :zero_only
+              case optional_order
+              when :zero_only
                 part_results = part_results.select { |length, _inner| length.zero? }
-              elsif optional_order == :greedy
+              when :single_greedy
+                part_results = part_results.select { |length, _inner| length <= 1 }
+                part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
+              when :greedy
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
               previous_part = part_index.positive? ? parts[part_index - 1] : nil
@@ -808,6 +812,15 @@ module Onibi
         return false unless optional || lazy_exact
 
         expression = node.expression
+        if expression.is_a?(SemanticBytecode::CharacterClass) &&
+           (!expression.value.each_char.one? || expression.value.match?(/[\\\[\]:&^]/))
+          boundary = boundary_operand(next_node)
+          return :single_greedy if boundary.is_a?(SemanticBytecode::Anchor) &&
+                                   %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(boundary.kind)
+
+          return false
+        end
+
         expression_value = if expression.is_a?(SemanticBytecode::Literal)
                              expression.value
                            elsif expression.is_a?(SemanticBytecode::CharacterClass) &&

@@ -194,6 +194,16 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_posix_optional_class_keeps_single_source_width
+    source = "[[:alpha:]]?\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ss")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ss")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
