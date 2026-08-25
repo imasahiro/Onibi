@@ -830,7 +830,9 @@ module Onibi
       when Onibi::AST::OptionGroup then minimum_match_width(node.body)
       when Onibi::AST::Conditional
         [node.yes_branch, node.no_branch].compact.map { |branch| minimum_match_width(branch) }.min
-      when Onibi::AST::Quantifier then minimum_match_width(node.expression) * node.minimum
+      when Onibi::AST::Quantifier
+        minimum = node.exact_bound && node.mode == :lazy ? 0 : node.minimum
+        minimum_match_width(node.expression) * minimum
       else 1
       end
     end

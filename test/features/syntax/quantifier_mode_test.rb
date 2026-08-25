@@ -21,6 +21,18 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_lazy_exact_bound_clamps_position_past_input_end
+    source = "a{2}?"
+
+    ["", "a", "ba"].each do |input|
+      expected = ::Regexp.new(source).match(input, input.length + 2)
+      actual = Onibi::Regexp.new(source).match(input, input.length + 2)
+
+      assert_equal expected&.to_a, actual&.to_a, input
+      assert_equal expected&.offset(0), actual&.offset(0), input
+    end
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 
