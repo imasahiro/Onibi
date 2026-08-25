@@ -364,6 +364,8 @@ module Onibi
                  folded_lookbehind_values(assertion.body).any? { |value| casefold_equal?(value, expanded_source) }
                 state[:__defer_expanded_match] = true
               end
+              state[:__lookbehind_simple_fold_source] = true if
+                state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
               state[:__lookbehind_reverse_fold] = true if flags[:ignorecase] && cursor == characters.length &&
                                                           expanded_lookbehind_source?(assertion.body, characters, cursor)
               [0, state]
@@ -636,7 +638,7 @@ module Onibi
         folded_lookbehind_values(node)
       end
 
-      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
       def node_results(node, characters, cursor, captures, flags = {})
         @steps += 1
         return [] if @steps > 2_000_000
@@ -721,6 +723,8 @@ module Onibi
              node.is_a?(SemanticBytecode::Literal) && source_fold &&
              !captures[:__fold_alternation_context] && !captures[:__fold_lookahead_operand] &&
              (!captures[:__fold_alternation_operand] || cursor + 1 >= characters.length) &&
+             (captures[:__group_expanded_literal_boundary][:kind] != :simple_fold_source ||
+              !captures[:__lookbehind_simple_fold_source]) &&
              !source_fold.start_with?(combined)
             return []
           end
@@ -1075,6 +1079,22 @@ module Onibi
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
               previous_part = part_index.positive? ? parts[part_index - 1] : nil
+              if previous_part.is_a?(SemanticBytecode::Assertion) &&
+                 previous_part.kind == :positive &&
+                 state_captures[:__expanded_literal_source] &&
+                 part.is_a?(SemanticBytecode::Literal) &&
+                 simple_fold_source_match?(part, characters[cursor + consumed])
+                part_results = []
+              end
+              if state_captures[:__expanded_literal_source] &&
+                 state_captures[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source &&
+                 previous_part.is_a?(SemanticBytecode::OptionGroup) &&
+                 part.is_a?(SemanticBytecode::Literal) &&
+                 state_captures[:__expanded_literal_value] == characters[cursor + consumed]
+                part_results = []
+              end
+              part_results = [] if state_captures[:__simple_fold_alternation_source] &&
+                                   part.is_a?(SemanticBytecode::Literal)
               boundary_relaxed = mri_fold_boundary_relaxed?(previous_part, part, consumed) ||
                                  mri_fold_boundary_lookahead_relaxed?(previous_part, part,
                                                                       parts[index], characters,
@@ -1246,6 +1266,11 @@ module Onibi
                     (iota_prefix_alternative && distinct_alternative)) &&
                    state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source))
                 marked[:__fold_alternation_context] = true
+              end
+              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
+                 !expanding_alternative && distinct_alternative &&
+                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
+                marked[:__simple_fold_alternation_source] = true
               end
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
@@ -1440,7 +1465,7 @@ module Onibi
         )
       end
 
-      # rubocop:enable Metrics/AbcSize
+      # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
       # Onigmo can split one expanded fold across adjacent operands. For
       # example, `[s]s` matches one `ß` under `/i`. The normal cursor model
@@ -1746,8 +1771,13 @@ module Onibi
       # suffix it keeps the consuming branch first. With a different suffix,
       # it keeps only the empty branch, as in `s?a` matching `a` in `ſa`.
       def mri_casefold_optional_order?(node, next_node, characters, cursor, flags)
+        wrapper_casefold = option_group_ignorecase?(node)
+        if node.is_a?(SemanticBytecode::OptionGroup) && node.body.is_a?(SemanticBytecode::Sequence) &&
+           node.body.parts.one?
+          node = node.body.parts.first
+        end
         return false unless node.is_a?(SemanticBytecode::Quantifier)
-        return false unless flags[:ignorecase] || option_group_ignorecase?(node.expression)
+        return false unless flags[:ignorecase] || wrapper_casefold || option_group_ignorecase?(node.expression)
 
         optional = node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
         lazy_exact = node.lazy_exact && node.minimum.zero? && node.maximum.to_i > 1
