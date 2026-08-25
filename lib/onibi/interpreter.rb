@@ -373,6 +373,9 @@ module Onibi
       def lookbehind_fold_overlap?(node)
         return node.branches.all? { |branch| lookbehind_fold_overlap?(branch) } if node.is_a?(SemanticBytecode::Alternation)
         return node.minimum == node.maximum && lookbehind_fold_overlap?(node.expression) if node.is_a?(SemanticBytecode::Quantifier)
+        if node.is_a?(SemanticBytecode::Sequence) && !node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+          return node.parts.all? { |part| lookbehind_fold_overlap?(part) }
+        end
 
         body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
         body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
@@ -386,6 +389,10 @@ module Onibi
           return reverse_casefold_sequence?(node.expression.value * node.minimum) if node.expression.is_a?(SemanticBytecode::Literal)
 
           return reverse_lookbehind_fold?(node.expression)
+        end
+
+        if node.is_a?(SemanticBytecode::Sequence) && !node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+          return node.parts.any? { |part| reverse_lookbehind_fold?(part) }
         end
 
         body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
