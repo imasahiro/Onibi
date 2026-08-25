@@ -215,10 +215,10 @@ class RegexpConstructorTest < Minitest::Test
   end
 
   def test_timeout_rejects_zero_and_negative_values
-    assert_raises(ArgumentError) { Onibi::Regexp.timeout = 0 }
-    assert_raises(ArgumentError) { Onibi::Regexp.timeout = -0.1 }
-    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }
-    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }
+    assert_equal "invalid timeout: 0", assert_raises(ArgumentError) { Onibi::Regexp.timeout = 0 }.message
+    assert_equal "invalid timeout: -0.1", assert_raises(ArgumentError) { Onibi::Regexp.timeout = -0.1 }.message
+    assert_equal "invalid timeout: 0", assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }.message
+    assert_equal "invalid timeout: -0.1", assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }.message
   end
 
   def test_timeout_matches_mri_type_conversion_errors

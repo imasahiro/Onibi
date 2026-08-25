@@ -234,7 +234,7 @@ module Onibi
         return nil if converted.nan?
         return (2**64) / 1_000_000_000.0 if converted.infinite? == 1
 
-        raise ArgumentError, "timeout must be positive" unless converted.positive?
+        raise ArgumentError, "invalid timeout: #{value}" unless converted.positive?
 
         converted
       end
