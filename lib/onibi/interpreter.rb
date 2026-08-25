@@ -379,6 +379,7 @@ module Onibi
                              node.parts.length > 1 &&
                              node.parts.all? { |part| part.is_a?(SemanticBytecode::CharacterClass) } &&
                              node.parts.none? { |part| part.value.start_with?("^") } &&
+                             node.parts.all? { |part| fold_repetition_class?(part) } &&
                              (node.parts.all? { |part| part.casefolds.empty? } ||
                               node.parts.all? do |part|
                                 part.casefolds.any? && part.value.each_char.one?
@@ -689,6 +690,15 @@ module Onibi
           width if (expanded_classes && folded == folded_pattern) ||
                    (!expanded_classes && folded_atoms_match?(parts, folded, flags))
         end
+      end
+
+      def fold_repetition_class?(node)
+        source = node.value
+        return false if source.include?("-") || source.include?("\\") || source.include?(":") ||
+                        source.include?("&&")
+
+        characters = source.each_char.to_a
+        characters.uniq.one?
       end
 
       # MRI changes branch order for an optional folded literal. With no
