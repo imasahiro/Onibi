@@ -127,6 +127,15 @@ class QuantifierModeTest < Minitest::Test
     assert_equal [expected.begin(0), expected.end(0)], [actual.begin(0), actual.end(0)]
   end
 
+  def test_casefold_backreference_does_not_cross_absolute_end
+    source = "(s)\\1\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+    actual = Onibi::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+
+    assert_nil expected
+    assert_nil actual
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 

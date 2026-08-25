@@ -426,6 +426,7 @@ module Onibi
               index += 1
             end
             previous_states = states
+            # rubocop:disable Metrics/BlockLength
             states = previous_states.flat_map do |consumed, state_captures|
               # A match-reset before an absence is a zero-width VM marker.
               # Do not expose its synthetic start to the absence probe; the
@@ -465,6 +466,10 @@ module Onibi
                                                      cursor + consumed, flags)
                 part_results = []
               end
+              if mri_backreference_anchor_boundary?(part, parts[index], state_captures,
+                                                    flags)
+                part_results = []
+              end
               part_results.filter_map do |length, inner|
                 if state_captures[:__zero_absence] &&
                    state_captures[:__match_start] == state_captures[:__match_end] &&
@@ -492,6 +497,7 @@ module Onibi
                 [consumed + length, next_state]
               end
             end
+            # rubocop:enable Metrics/BlockLength
             next unless states.empty?
 
             folded = previous_states.flat_map do |consumed, state_captures|
@@ -945,6 +951,19 @@ module Onibi
         end
 
         mri_multi_fold_literal_boundary?(node.expression, next_node, characters, cursor, flags)
+      end
+
+      def mri_backreference_anchor_boundary?(node, next_node, captures, flags)
+        return false unless flags[:ignorecase]
+        return false unless node.is_a?(SemanticBytecode::Backreference)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+        return false unless %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind)
+
+        span = captures[node.identifier]
+        return false unless span
+
+        value = @characters[span[0]...span[1]].join
+        value.downcase(:fold) != value.downcase
       end
 
       def mri_fold_boundary_relaxed?(previous_node, node, consumed)
