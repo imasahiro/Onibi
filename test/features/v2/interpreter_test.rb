@@ -70,6 +70,7 @@ class InterpreterTest < Minitest::Test
     assert program.flags[:semantic_root]
     assert(program.flags[:subexpressions].values.all? { |body| semantic_node?(body) })
     assert semantic_node?(program.flags[:semantic_root])
+    assert(program.instructions.all? { |instruction| semantic_node?(instruction.operand) })
   end
 
   def test_interpreter_executes_each_semantic_operand_kind

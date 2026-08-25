@@ -175,7 +175,7 @@ class V2IRGenTest < Minitest::Test
     assert_same program, program.iseq
     assert_equal :start, program.instructions.first.opcode
     assert_equal :accept, program.instructions.last.opcode
-    assert_equal [[:match_literal, Onibi::AST::Literal.new("a")]],
+    assert_equal [[:match_literal, Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a", nil, nil, false)]],
                  program.instructions.select { |instruction| instruction.opcode == :match }.map(&:operand)
   end
 
@@ -266,6 +266,16 @@ class V2IRGenTest < Minitest::Test
     assert_nil program.automaton.tnfa
   end
 
+  def test_ir_generation_is_idempotent_for_semantic_automata
+    original = program_for(Onibi::AST::Literal.new("a"))
+    regenerated = Onibi::IRGen::YARVIR.generate(original.automaton)
+
+    assert_equal original.instructions, regenerated.instructions
+    assert regenerated.instructions.all? do |instruction|
+      instruction.opcode != :match || semantic_operand?(instruction.operand[1])
+    end
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
@@ -278,8 +288,11 @@ class V2IRGenTest < Minitest::Test
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
     program = Onibi::IRGen::YARVIR.generate(dfa)
     expected = [
-      [:start, 0], [:match, [:match_literal, Onibi::AST::Literal.new("a")]], [:jump, 1],
-      [:match, [:match_any, Onibi::AST::Any.new(".")]], [:jump, 2], [:accept, 2]
+      [:start, 0],
+      [:match, [:match_literal, Onibi::AST::Literal.new("a")]],
+      [:jump, 1],
+      [:match, [:match_any, Onibi::AST::Any.new(".")]],
+      [:jump, 2], [:accept, 2]
     ]
     assert_equal expected, instruction_signature(program)
   end
@@ -302,7 +315,38 @@ class V2IRGenTest < Minitest::Test
   end
 
   def instruction_signature(program)
-    program.instructions.map { |instruction| [instruction.opcode, instruction.operand] }
+    program.instructions.map do |instruction|
+      [instruction.opcode, legacy_operand_signature(instruction.operand)]
+    end
+  end
+
+  def legacy_operand_signature(value)
+    return value.map { |item| legacy_operand_signature(item) } if value.is_a?(Array)
+
+    semantic = Onibi::IRGen::YARVIR::SemanticBytecode
+    case value
+    when semantic::Literal then Onibi::AST::Literal.new(value.value)
+    when semantic::CharacterClass then Onibi::AST::CharacterClass.new(value.value)
+    when semantic::Escape then Onibi::AST::Escape.new(value.kind)
+    when semantic::Property then Onibi::AST::Property.new(value.name, value.negated)
+    when semantic::Backreference then Onibi::AST::Backreference.new(value.identifier, value.named)
+    when semantic::Assertion then Onibi::AST::Assertion.new(legacy_operand_signature(value.body), value.kind)
+    when semantic::Any then Onibi::AST::Any.new(value.value)
+    when semantic::Anchor then Onibi::AST::Anchor.new(value.kind)
+    when semantic::Sequence then Onibi::AST::Sequence.new(value.parts.map { |part| legacy_operand_signature(part) })
+    when semantic::Alternation then Onibi::AST::Alternation.new(value.branches.map { |branch| legacy_operand_signature(branch) })
+    when semantic::Group then Onibi::AST::Group.new(legacy_operand_signature(value.body), value.number, value.capture, value.name)
+    when semantic::OptionGroup
+      Onibi::AST::OptionGroup.new(legacy_operand_signature(value.body), value.ignorecase, value.multiline, value.extended)
+    when semantic::AtomicGroup then Onibi::AST::AtomicGroup.new(legacy_operand_signature(value.body))
+    when semantic::Conditional
+      Onibi::AST::Conditional.new(value.condition, legacy_operand_signature(value.yes_branch), legacy_operand_signature(value.no_branch))
+    when semantic::SubexpressionCall then Onibi::AST::SubexpressionCall.new(value.identifier, value.named)
+    when semantic::Absence then Onibi::AST::Absence.new(legacy_operand_signature(value.body))
+    when semantic::Quantifier
+      Onibi::AST::Quantifier.new(legacy_operand_signature(value.expression), value.kind, value.minimum, value.maximum, value.mode)
+    else value
+    end
   end
 
   def semantic_operand?(operand)

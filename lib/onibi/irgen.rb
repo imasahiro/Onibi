@@ -49,6 +49,7 @@ module Onibi
           Onibi::AST::Absence => Absence,
           Onibi::AST::Quantifier => Quantifier
         }.freeze
+        TYPES = NODE_TYPES.values.freeze
 
         module_function
 
@@ -183,7 +184,7 @@ module Onibi
           dfa.transitions.each do |(source, label), target|
             next unless source == state.id
 
-            instructions << Instruction.new(opcode: :match, operand: label)
+            instructions << Instruction.new(opcode: :match, operand: semantic_label(label))
             instructions << Instruction.new(opcode: :jump, operand: target)
           end
           instructions << Instruction.new(opcode: :accept, operand: state.id) if state.accepting
@@ -196,7 +197,8 @@ module Onibi
         tnfa.transitions.each do |transition|
           instructions << Instruction.new(
             opcode: :nfa_match,
-            operand: [transition.from, transition.to, [transition.operation.opcode, transition.operation.operand]]
+            operand: [transition.from, transition.to,
+                      [transition.operation.opcode, semantic_value(transition.operation.operand)]]
           )
         end
         instructions << Instruction.new(opcode: :nfa_accept, operand: tnfa.accept_positions)
@@ -237,6 +239,8 @@ module Onibi
       end
 
       def semantic_value(value)
+        return value if SemanticBytecode::TYPES.include?(value.class)
+
         if value.respond_to?(:each_pair)
           SemanticBytecode.compile(value)
         elsif value.is_a?(Array)
