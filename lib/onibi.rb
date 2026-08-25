@@ -47,6 +47,7 @@ module Onibi
 
     class TimeoutError < RegexpError; end
     LAST_MATCH_KEY = :onibi_regexp_last_match
+    LAST_MATCH_UNSET = Object.new.freeze
 
     class << self
       ESCAPE_REPLACEMENTS = {
@@ -69,9 +70,11 @@ module Onibi
 
       attr_reader :timeout
 
-      def last_match(index = nil)
+      def last_match(index = LAST_MATCH_UNSET)
         matched = Thread.current[LAST_MATCH_KEY]
-        index.nil? ? matched : matched&.[](index)
+        return matched if index.equal?(LAST_MATCH_UNSET)
+
+        matched&.[](index)
       end
 
       def escape(string)

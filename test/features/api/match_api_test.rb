@@ -32,6 +32,12 @@ class MatchApiTest < Minitest::Test
     assert_raises(IndexError) { matched.match(3) }
   end
 
+  def test_last_match_distinguishes_an_explicit_nil_index
+    Onibi::Regexp.new("a").match("a")
+
+    assert_raises(TypeError) { Onibi::Regexp.last_match(nil) }
+  end
+
   def test_tilde_clears_last_match_when_global_input_is_nil
     regexp = Onibi::Regexp.new("a")
     $_ = "a"
