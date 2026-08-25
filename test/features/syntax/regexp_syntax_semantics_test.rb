@@ -56,8 +56,10 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
 
   def test_contiguous_utf8_octal_escapes_match_as_one_character
     regexp = Onibi::Regexp.new("\\343\\201\\202")
+    us_ascii_regexp = Onibi::Regexp.new("\\343\\201\\202".encode(Encoding::US_ASCII))
 
     assert regexp.match?("あ")
+    assert us_ascii_regexp.match?("あ")
     refute regexp.match?("い")
   end
 

@@ -294,6 +294,7 @@ module Onibi
       @options |= FIXEDENCODING if (!@source.ascii_only? || property_names.any?) && !no_encoding?
       @options |= FIXEDENCODING if non_ascii_escape_pattern? &&
                                    (no_encoding? || @source.encoding != Encoding::US_ASCII)
+      @options |= FIXEDENCODING if @source.encoding == Encoding::ASCII_8BIT && non_ascii_escape_present?
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
       # The parser consumes Unicode scalar text. Keep the original pattern
@@ -939,9 +940,17 @@ module Onibi
     end
 
     def binary_escape_pattern?
-      return false unless @source.ascii_only? && (no_encoding? || @source.encoding == Encoding::US_ASCII)
+      return false unless @source.ascii_only? &&
+                          (no_encoding? || [Encoding::US_ASCII, Encoding::ASCII_8BIT].include?(@source.encoding))
+
+      return non_ascii_escape_present? if @source.encoding == Encoding::ASCII_8BIT
 
       non_ascii_escape_pattern?
+    end
+
+    def non_ascii_escape_present?
+      analysis_source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
+        analysis_source.scan(/\\([0-7]{1,3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
     end
 
     def non_ascii_escape_pattern?
@@ -949,7 +958,15 @@ module Onibi
         bytes = sequence.scan(/\\x([0-9a-fA-F]{2})/).map { |digits| digits.first.to_i(16) }
         bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
       end ||
-        analysis_source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
+        analysis_source.scan(/(?:\\[0-7]{1,3})+/).any? do |sequence|
+          bytes = []
+          cursor = 0
+          while (digits = sequence[cursor..].to_s[/\A\\([0-7]{1,3})/, 1])
+            bytes << digits.to_i(8)
+            cursor += 1 + digits.length
+          end
+          bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
+        end
     end
 
     def non_ascii_unicode_escape_pattern?
