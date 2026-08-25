@@ -4090,6 +4090,21 @@ module Onibi
 
           return quantifier.minimum.to_i >= 2 ? (run + quantifier.minimum - 1) / 2 : run / 2
         end
+        if quantifier.expression.is_a?(SemanticBytecode::Any)
+          run = 0
+          position = cursor
+          while position < characters.length
+            length = node_results(quantifier.expression, characters, position, {}, flags)
+                     .map(&:first).select(&:positive?).max
+            break unless length
+
+            run += length
+            position += length
+          end
+          return if run.zero? && quantifier.minimum.to_i.positive?
+
+          return quantifier.minimum.to_i >= 2 ? (run + quantifier.minimum - 1) / 2 : run / 2
+        end
         variable_units = variable_alternation_units(quantifier.expression)
         if variable_units
           repetitions = 0

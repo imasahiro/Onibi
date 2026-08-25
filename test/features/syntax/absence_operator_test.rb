@@ -132,6 +132,17 @@ class AbsenceOperatorTest < Minitest::Test
     assert_equal ["", "a", "a", "aa", "aa"], actual
   end
 
+  def test_absence_operator_matches_mri_for_unbounded_any_body
+    pattern = "(?~.+)"
+    %w[a ab abc abcd].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+      assert_equal expected&.to_a, actual&.to_a, input
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)], input
+    end
+  end
+
   def test_absence_operator_scans_for_a_greedy_body_match
     regexp = Onibi::Regexp.new("(?~a+)")
 
