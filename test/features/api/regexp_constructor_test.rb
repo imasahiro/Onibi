@@ -221,6 +221,13 @@ class RegexpConstructorTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }
   end
 
+  def test_timeout_matches_mri_type_conversion_errors
+    assert_equal "no implicit conversion to float from string",
+                 assert_raises(TypeError) { Onibi::Regexp.timeout = "x" }.message
+    assert_equal "no implicit conversion to float from true",
+                 assert_raises(TypeError) { Onibi::Regexp.timeout = true }.message
+  end
+
   def test_timeout_raises_regexp_timeout_error
     # Use a stateful miss so the timeout contract remains exercised even when
     # the search planner can skip a direct literal with String#index.

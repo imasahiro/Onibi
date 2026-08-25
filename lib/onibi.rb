@@ -217,6 +217,16 @@ module Onibi
       end
 
       def normalize_timeout_value(value)
+        unless value.is_a?(Numeric)
+          type = case value
+                 when String then "string"
+                 when true then "true"
+                 when false then "false"
+                 end
+          raise TypeError, "no implicit conversion to float from #{type}" if type
+
+          raise TypeError, "can't convert #{value.class} into Float"
+        end
         raise ArgumentError, "timeout must be positive" unless value.is_a?(Numeric) && value.positive?
 
         value.to_f
