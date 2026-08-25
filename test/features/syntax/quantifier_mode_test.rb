@@ -136,6 +136,14 @@ class QuantifierModeTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_casefold_expanding_backreference_can_end_at_absolute_anchor
+    source = "(ß)\\1\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ßß")
+    actual = Onibi::Regexp.new(source, ::Regexp::IGNORECASE).match("ßß")
+
+    assert_equal expected.to_a, actual.to_a
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 

@@ -963,7 +963,8 @@ module Onibi
         return false unless span
 
         value = @characters[span[0]...span[1]].join
-        value.downcase(:fold) != value.downcase
+        folded = value.downcase(:fold)
+        folded.length == value.length && folded != value.downcase
       end
 
       def mri_fold_boundary_relaxed?(previous_node, node, consumed)
