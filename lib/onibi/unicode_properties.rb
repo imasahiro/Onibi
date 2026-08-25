@@ -114,7 +114,15 @@ module Onibi
     REVERSE_SIMPLE_CASEFOLDS = {
       "k" => ["K"], "K" => ["K"], "K" => %w[k K],
       "s" => ["ſ"], "S" => ["ſ"], "ſ" => %w[s S],
-      "ß" => ["ẞ"], "ẞ" => ["ß"]
+      "ß" => ["ẞ"], "ẞ" => ["ß"],
+      "ι" => %w[ͅ ι], "Ι" => %w[ͅ ι], "ͅ" => %w[ι Ι], "ι" => %w[ι Ι],
+      "π" => ["ϖ"], "Π" => ["ϖ"], "ϖ" => %w[π Π]
+    }.freeze
+
+    # MRI keeps these reverse folds at a source boundary before a normal
+    # consuming operand. Other reverse simple folds remain ordinary choices.
+    REVERSE_SOURCE_BOUNDARY_FOLDS = {
+      "k" => ["K"], "s" => ["ſ"]
     }.freeze
 
     def validate!(name)
@@ -190,6 +198,10 @@ module Onibi
 
     def reverse_casefold_variants(character)
       REVERSE_SIMPLE_CASEFOLDS.fetch(character, EMPTY_ARRAY)
+    end
+
+    def reverse_source_boundary_variants(character)
+      REVERSE_SOURCE_BOUNDARY_FOLDS.fetch(character, EMPTY_ARRAY)
     end
 
     EMPTY_ARRAY = [].freeze

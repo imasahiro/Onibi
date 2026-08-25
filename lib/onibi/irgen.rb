@@ -198,10 +198,8 @@ module Onibi
         end
 
         def simple_fold_boundary_metadata(folded)
-          variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
-          # MRI treats the Kelvin sign as a source boundary. Other reverse
-          # simple folds, such as long s, remain ordinary fold candidates.
-          return unless folded == "k" && variants.include?("K")
+          variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
+          return if variants.empty?
 
           { kind: :simple_fold_source, variants: variants.freeze }.freeze
         end

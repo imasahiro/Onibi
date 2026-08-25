@@ -181,6 +181,7 @@ module Onibi
         prefix = captures[:__group_expanded_literal_prefix] || +""
         return false unless source_fold && prefix && source_fold.start_with?(prefix) && source_fold != prefix
         return false unless captures[:__group_expanded_literal_boundary]
+        return false if captures[:__group_expanded_literal_boundary][:kind] == :simple_fold_source
 
         remaining = characters.drop(cursor).map { |character| character.downcase(:fold) }.join
         if captured_fold
@@ -635,6 +636,7 @@ module Onibi
         folded_lookbehind_values(node)
       end
 
+      # rubocop:disable Metrics/AbcSize
       def node_results(node, characters, cursor, captures, flags = {})
         @steps += 1
         return [] if @steps > 2_000_000
@@ -779,15 +781,16 @@ module Onibi
               if folded_length
                 next_captures = captures.dup
                 simple_source = node.parts.length == 1 &&
-                                node.parts.first.fold_boundary&.fetch(:kind, nil) == :simple_fold_source &&
-                                node.parts.first.fold_boundary[:variants].include?(characters[cursor]) &&
+                                simple_fold_source_match?(node.parts.first, characters[cursor]) &&
                                 characters[cursor] != folded_value
                 if !flags[:skip_fold_marker] && folded_length == 1 &&
                    characters[cursor]&.downcase(:fold) == folded_value &&
                    (folded_value.length > value.length || simple_source)
                   next_captures[:__expanded_literal_source] = true
                   next_captures[:__expanded_literal_fold] = folded_value
-                  next_captures[:__expanded_literal_boundary] = node.parts.filter_map(&:fold_boundary).first
+                  next_captures[:__expanded_literal_boundary] = node.parts.filter_map do |part|
+                    simple_fold_boundary_for(part, characters[cursor]) || part.fold_boundary
+                  end.first
                   next_captures[:__expanded_literal_value] = characters[cursor]
                 end
                 return [[folded_length, next_captures]]
@@ -884,6 +887,11 @@ module Onibi
                             state_captures[:__quantifier_iota_fold]
               next [] if captured_fold_literal_tail_rejected?(part, state_captures)
 
+              if part.is_a?(SemanticBytecode::CharacterClass) &&
+                 state_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
+                state_captures = clear_fold_boundary_markers(state_captures)
+              end
+
               keep_capture_fold = state_captures[:__fold_alternation_operand] ||
                                   fold_alternation_operand_node?(part) ||
                                   (part.is_a?(SemanticBytecode::Assertion) && part.kind == :positive)
@@ -893,6 +901,7 @@ module Onibi
                 state_captures.delete(:__captured_expanded_fold_source)
                 state_captures.delete(:__expanded_iota_fold)
                 state_captures.delete(:__quantifier_iota_fold)
+                state_captures.delete(:__quantifier_iota_optional)
                 state_captures.delete(:__group_expanded_literal_source)
                 state_captures.delete(:__group_expanded_literal_fold)
                 state_captures.delete(:__group_expanded_literal_boundary)
@@ -1072,7 +1081,8 @@ module Onibi
                                                                       cursor + consumed) ||
                                  mri_alternate_fold_anchor_relaxed?(part, parts[index],
                                                                     characters, cursor + consumed,
-                                                                    flags)
+                                                                    flags) ||
+                                 optional_iota_quantifier?(part)
               if !boundary_relaxed &&
                  mri_multi_fold_literal_boundary?(part, parts[index], characters,
                                                   cursor + consumed, flags)
@@ -1214,6 +1224,10 @@ module Onibi
             node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
               marked = state.dup
               marked.delete(branch_marker)
+              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
+                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
+                marked[:__fold_alternation_context] = true
+              end
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
               [length, marked]
@@ -1364,9 +1378,7 @@ module Onibi
                 marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
                 marked[:__expanded_literal_from_class] = true
                 marked[:__expanded_literal_value] = characters[cursor]
-                marked[:__expanded_iota_fold] = true if %i[iota_tail simple_fold_source].include?(
-                  marked[:__expanded_literal_boundary]&.fetch(:kind, nil)
-                )
+                marked[:__expanded_iota_fold] = true if marked[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
                 next [class_length, marked]
               end
               [class_length, captures]
@@ -1398,17 +1410,18 @@ module Onibi
         character = characters[cursor]
         expanded = node.casefold && node.casefold.length > node.value.length &&
                    character&.downcase(:fold) == node.casefold
-        simple_source = node.fold_boundary&.fetch(:kind, nil) == :simple_fold_source &&
-                        node.fold_boundary[:variants].include?(character) && character != node.casefold
+        simple_source = simple_fold_source_match?(node, character) && character != node.casefold
         return unless expanded || simple_source
 
         captures.merge(
           __expanded_literal_source: true,
           __expanded_literal_fold: simple_source ? node.casefold : character.downcase(:fold),
-          __expanded_literal_boundary: node.fold_boundary,
+          __expanded_literal_boundary: simple_fold_boundary_for(node, character) || node.fold_boundary,
           __expanded_literal_value: character
         )
       end
+
+      # rubocop:enable Metrics/AbcSize
 
       # Onigmo can split one expanded fold across adjacent operands. For
       # example, `[s]s` matches one `ß` under `/i`. The normal cursor model
@@ -1583,7 +1596,10 @@ module Onibi
         marker = captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold] ||
                  captures[:__quantifier_iota_fold]
         return false unless marker && !captures[:__fold_alternation_operand]
+        return false if captures[:__quantifier_iota_optional]
+        return false if captures[:__match_alternative] && captures[:__expanded_iota_fold]
         return false if captures[:__fold_alternation_context]
+
         return false unless node.is_a?(SemanticBytecode::Literal)
 
         fold_boundary_operand_fold(node) != (captures[:__group_expanded_literal_fold] || marker)
@@ -1711,14 +1727,14 @@ module Onibi
       # suffix it keeps the consuming branch first. With a different suffix,
       # it keeps only the empty branch, as in `s?a` matching `a` in `ſa`.
       def mri_casefold_optional_order?(node, next_node, characters, cursor, flags)
-        return false unless flags[:ignorecase]
         return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless flags[:ignorecase] || option_group_ignorecase?(node.expression)
 
         optional = node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
         lazy_exact = node.lazy_exact && node.minimum.zero? && node.maximum.to_i > 1
         return false unless optional || lazy_exact
 
-        expression = node.expression
+        expression = boundary_operand(node.expression)
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            (!expression.value.each_char.one? || expression.value.match?(/[\\\[\]:&^]/))
           boundary = boundary_operand(next_node)
@@ -1741,6 +1757,12 @@ module Onibi
 
         source = characters[cursor]
         return false unless source
+        if next_node && simple_fold_source_match?(expression, source) &&
+           normal_consuming_operand?(next_node)
+          return :zero_only
+        end
+
+        return :greedy if next_node && reverse_simple_fold_source?(expression, source)
 
         expression_special = expression_value.downcase(:fold) != expression_value.downcase
         unless lazy_exact
@@ -1816,8 +1838,52 @@ module Onibi
           literal.value.downcase(:fold) == expression.value.downcase(:fold)
       end
 
+      def simple_fold_source_match?(node, source)
+        operand = boundary_operand(node)
+        boundary = simple_fold_boundary_for(operand, source)
+        boundary&.fetch(:kind, nil) == :simple_fold_source &&
+          boundary[:variants].include?(source)
+      end
+
+      def simple_fold_boundary_for(node, source)
+        boundary = if node.is_a?(SemanticBytecode::Literal)
+                     node.fold_boundary
+                   elsif node.is_a?(SemanticBytecode::CharacterClass)
+                     node.fold_boundaries&.[](source)
+                   end
+        return boundary if boundary
+
+        folded = node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
+        folded = source.downcase(:fold) if node.is_a?(SemanticBytecode::CharacterClass)
+        variants = folded && Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
+        return unless variants&.include?(source)
+
+        { kind: :simple_fold_source, variants: variants.freeze }.freeze
+      end
+
+      def reverse_simple_fold_source?(node, source)
+        operand = boundary_operand(node)
+        return false unless operand.is_a?(SemanticBytecode::Literal)
+
+        folded = operand.value.downcase(:fold)
+        Onibi::UnicodeProperties.reverse_casefold_variants(folded).include?(source) &&
+          !Onibi::UnicodeProperties.reverse_source_boundary_variants(folded).include?(source)
+      end
+
+      def normal_consuming_operand?(node)
+        operand = boundary_operand(node)
+        return (operand.casefold || operand.value).length == operand.value.length if operand.is_a?(SemanticBytecode::Literal)
+        return false if operand.is_a?(SemanticBytecode::CharacterClass)
+
+        false
+      end
+
       def mri_multi_fold_literal_boundary?(node, next_node, characters, cursor, flags)
         return false if flags[:fold_alternation]
+
+        original_node = node
+        fold_enabled = flags[:ignorecase] || option_group_ignorecase?(node) ||
+                       (node.is_a?(SemanticBytecode::Quantifier) && option_group_ignorecase?(node.expression))
 
         wrapped_previous = node.is_a?(SemanticBytecode::Group) ||
                            node.is_a?(SemanticBytecode::OptionGroup) ||
@@ -1832,7 +1898,7 @@ module Onibi
           node = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
         end
         node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
-        if flags[:ignorecase] && node.is_a?(SemanticBytecode::CharacterClass) &&
+        if fold_enabled && node.is_a?(SemanticBytecode::CharacterClass) &&
            node.casefolds.length == 1 && next_node.is_a?(SemanticBytecode::Literal)
           source = characters[cursor]
           fold = node.casefolds.first[1]
@@ -1844,7 +1910,7 @@ module Onibi
 
           return false
         end
-        return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
+        return false unless fold_enabled && node.is_a?(SemanticBytecode::Literal)
 
         source = characters[cursor]
         return false unless source
@@ -1864,6 +1930,12 @@ module Onibi
 
         return false unless node.fold_boundary_sensitive
         return false unless source == node.value
+
+        if original_node.is_a?(SemanticBytecode::Quantifier) && original_node.minimum.zero?
+          operand = boundary_operand(original_node.expression)
+          return false if operand.is_a?(SemanticBytecode::Literal) &&
+                          operand.fold_boundary&.fetch(:kind, nil) == :iota_tail
+        end
 
         next_source = characters[cursor + 1]
         if next_source && next_source.downcase(:fold).length > 1 &&
@@ -2601,11 +2673,13 @@ module Onibi
             return
           end
 
-          repetition_flags = flags.merge(skip_fold_marker: !iota_fold_operand?(quantifier.expression))
+          repetition_flags = flags.merge(skip_fold_marker: !iota_fold_operand?(quantifier.expression) &&
+                                                    !simple_fold_operand?(quantifier.expression))
           repetition_state = state_captures
           if repetition_state.key?(:__quantifier_iota_fold)
             repetition_state = repetition_state.dup
             repetition_state.delete(:__quantifier_iota_fold)
+            repetition_state.delete(:__quantifier_iota_optional)
           end
           node_results(quantifier.expression, characters, cursor + consumed, repetition_state,
                        repetition_flags).each do |length, inner|
@@ -2613,7 +2687,10 @@ module Onibi
             iota_fold = iota_fold_boundary_state?(inner)
             iota_fold_value = inner[:__group_expanded_literal_fold] || inner[:__expanded_literal_fold]
             inner = clear_fold_boundary_markers(inner)
-            inner = inner.merge(__quantifier_iota_fold: iota_fold_value) if iota_fold && count.zero?
+            if iota_fold && count.zero?
+              inner = inner.merge(__quantifier_iota_fold: iota_fold_value)
+              inner = inner.merge(__quantifier_iota_optional: true) if quantifier.minimum.zero?
+            end
             if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
                quantifier.expression.capture && length.positive? &&
                repeated_capture_keeps_fold_origin?(quantifier.expression, inner)
@@ -4378,6 +4455,18 @@ module Onibi
         fold_boundary_for_node(node)&.fetch(:kind, nil) == :iota_tail
       end
 
+      def simple_fold_operand?(node)
+        operand = boundary_operand(node)
+        return false unless operand.is_a?(SemanticBytecode::Literal)
+
+        variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(operand.value.downcase(:fold))
+        variants.include?(operand.value) || operand.fold_boundary&.fetch(:kind, nil) == :simple_fold_source
+      end
+
+      def optional_iota_quantifier?(node)
+        node.is_a?(SemanticBytecode::Quantifier) && node.minimum.zero? && iota_fold_operand?(node.expression)
+      end
+
       def node_starts_with_selected_atom?(node, atom, captures)
         case node
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
@@ -5125,7 +5214,8 @@ module Onibi
         pair = node.casefolds.find { |source, _fold| source == character }
         fold = pair&.[](1)
         fold ||= character.downcase(:fold) if node.fold_boundaries&.key?(character)
-        return fold if fold && node.fold_boundaries&.fetch(character, nil)&.fetch(:kind, nil) == :simple_fold_source
+        boundary = simple_fold_boundary_for(node, character)
+        return fold if fold && boundary&.fetch(:kind, nil) == :simple_fold_source
 
         fold if fold && fold.length > character.length
       end

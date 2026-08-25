@@ -261,7 +261,8 @@ class V2IRGenTest < Minitest::Test
 
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
     refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
-    assert_nil ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary
+    assert_equal({ kind: :simple_fold_source, variants: ["ſ"] },
+                 ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary)
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
