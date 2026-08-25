@@ -815,6 +815,9 @@ module Onibi
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            (!expression.value.each_char.one? || expression.value.match?(/[\\\[\]:&^]/))
           boundary = boundary_operand(next_node)
+          return :greedy if expression.value.include?("\\p") &&
+                            boundary.is_a?(SemanticBytecode::Anchor)
+
           return :single_greedy if boundary.is_a?(SemanticBytecode::Anchor) &&
                                    %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(boundary.kind)
 
