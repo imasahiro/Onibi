@@ -132,7 +132,7 @@ module Onibi
       end
 
       def union(*patterns)
-        patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
+        patterns = Array.instance_method(:to_a).bind_call(patterns.first) if patterns.length == 1 && patterns.first.is_a?(Array)
         return new("(?!)") if patterns.empty?
 
         raise TypeError, "no implicit conversion of Symbol into String" if patterns.length > 1 && patterns.any? { |pattern| pattern.is_a?(Symbol) }

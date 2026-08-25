@@ -125,6 +125,16 @@ class RegexpUtilityTest < Minitest::Test
     assert Onibi::Regexp.union(regexp).match?("a")
   end
 
+  def test_union_ignores_array_subclass_overrides
+    patterns_class = Class.new(Array) do
+      def length
+        raise "Regexp.union must not dispatch to array subclass"
+      end
+    end
+
+    assert Onibi::Regexp.union(patterns_class.new(["a"])).match?("a")
+  end
+
   def test_union_of_no_patterns_never_matches
     refute Onibi::Regexp.union.match?("")
     refute Onibi::Regexp.union.match?("anything")
