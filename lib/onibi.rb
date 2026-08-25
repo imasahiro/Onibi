@@ -163,8 +163,12 @@ module Onibi
       end
 
       def linear_time?(pattern)
-        source = pattern.is_a?(::Regexp) || pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
-        linear_time_ast?(Onibi::Parser.parse(source).ast)
+        regexp = if pattern.is_a?(::Regexp) || pattern.is_a?(Regexp)
+                   new(pattern.source, pattern.options)
+                 else
+                   new(pattern.to_s)
+                 end
+        linear_time_ast?(regexp.ast)
       end
 
       def linear_time_ast?(node)

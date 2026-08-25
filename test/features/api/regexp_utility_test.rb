@@ -209,4 +209,9 @@ class RegexpUtilityTest < Minitest::Test
       refute Onibi::Regexp.linear_time?(pattern), "expected #{pattern} to be unsafe"
     end
   end
+
+  def test_linear_time_validates_references_before_classification
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.linear_time?("\\k<missing>") }
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.linear_time?("(?(1)a|b)") }
+  end
 end
