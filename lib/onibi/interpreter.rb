@@ -707,7 +707,10 @@ module Onibi
       def mri_casefold_optional_order?(node, next_node, characters, cursor, flags)
         return false unless flags[:ignorecase]
         return false unless node.is_a?(SemanticBytecode::Quantifier)
-        return false unless node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
+
+        optional = node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
+        lazy_exact = node.lazy_exact && node.minimum.zero? && node.maximum.to_i > 1
+        return false unless optional || lazy_exact
 
         expression = node.expression
         return false unless expression.is_a?(SemanticBytecode::Literal)
@@ -716,14 +719,26 @@ module Onibi
         return false unless source
 
         expression_special = expression.value.downcase(:fold) != expression.value.downcase
-        return false unless source != expression.value || expression_special
-        return false unless source.downcase(:fold) == expression.value.downcase(:fold)
+        unless lazy_exact
+          return false unless source != expression.value || expression_special
+          return false unless source.downcase(:fold) == expression.value.downcase(:fold)
+        end
         return :greedy unless next_node
 
         special_source = source.downcase(:fold) != source.downcase ||
                          (source == expression.value && expression_special)
-        return :greedy unless special_source
+        return :greedy unless special_source || lazy_exact
         return :greedy if expression.value.downcase(:fold).length > expression.value.length
+
+        boundary_node = boundary_operand(next_node)
+        if boundary_node.is_a?(SemanticBytecode::Anchor) &&
+           %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(boundary_node.kind)
+          return :zero_only unless lazy_exact
+
+          folded_input = characters[cursor, node.maximum].to_a
+          return :zero_only if folded_input.any? { |character| character.downcase(:fold) != character.downcase }
+
+        end
         return :greedy unless next_node.is_a?(SemanticBytecode::Literal) ||
                               next_node.is_a?(SemanticBytecode::CharacterClass) ||
                               next_node.is_a?(SemanticBytecode::Quantifier)
@@ -746,8 +761,7 @@ module Onibi
         # expanding fold. For example, `s?ß` must match `ſẞ` from position 0.
         return :greedy if next_node.is_a?(SemanticBytecode::Literal) &&
                           next_node.casefold&.length.to_i > next_node.value.length
-        return :greedy if next_node.is_a?(SemanticBytecode::CharacterClass) &&
-                          next_node.casefolds.any?
+        return :greedy if next_node.is_a?(SemanticBytecode::CharacterClass)
         if next_node.is_a?(SemanticBytecode::Quantifier) &&
            next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
            next_node.maximum && next_node.maximum > next_node.minimum &&
@@ -781,11 +795,24 @@ module Onibi
 
         node = boundary_operand(node)
         next_node = boundary_operand(next_node)
+        if node.is_a?(SemanticBytecode::Group)
+          body = node.body
+          node = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
+        end
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless node.casefold && node.casefold.length > node.value.length
-        return false unless characters[cursor] == node.value
-        return false unless node.fold_boundary_sensitive
+
+        source = characters[cursor]
+        return false unless source
         return false if next_node.is_a?(SemanticBytecode::CharacterClass)
+
+        if next_node.is_a?(SemanticBytecode::Anchor) &&
+           %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind) && source && source != node.value &&
+           source.downcase(:fold) == node.value.downcase(:fold)
+          return true
+        end
+        return false unless node.fold_boundary_sensitive
+        return false unless source == node.value
 
         next_source = characters[cursor + 1]
         if next_source && next_source.downcase(:fold).length > 1 &&

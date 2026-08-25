@@ -44,6 +44,48 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_casefold_optional_stops_before_absolute_end_anchor
+    %w[ſ sſ].each do |input|
+      source = "s?\\z"
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a, input
+      assert_equal expected&.offset(0), actual&.offset(0), input
+    end
+  end
+
+  def test_casefold_optional_stops_before_grouped_absolute_end_anchor
+    source = "s?(\\z)"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſ")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected&.offset(0), actual&.offset(0)
+  end
+
+  def test_casefold_optional_keeps_consuming_before_character_class
+    source = "s?[a-z]"
+    %w[ſs ſſ].each do |input|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected.to_a, actual.to_a
+      assert_equal [expected.begin(0), expected.end(0)], [actual.begin(0), actual.end(0)]
+    end
+  end
+
+  def test_casefold_lazy_exact_repeat_prefers_zero_before_absolute_end
+    source = "s{2}?\\z"
+    %w[sſ ſs ſſ].each do |input|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected.to_a, actual.to_a
+      assert_equal [expected.begin(0), expected.end(0)], [actual.begin(0), actual.end(0)]
+    end
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 
