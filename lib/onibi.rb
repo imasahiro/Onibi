@@ -96,6 +96,7 @@ module Onibi
                          end
                   raise TypeError, "no implicit conversion of #{type} into String"
                 end
+        value = String.new(value)
         escaped = value.each_char.map do |character|
           replacement = ESCAPE_REPLACEMENTS[character.ord]
           replacement ||= "\\#{character.encode(Encoding::US_ASCII)}" if character.ord < 128 && ESCAPE_METACHARACTER_CODES.include?(character.ord)

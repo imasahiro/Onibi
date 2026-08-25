@@ -3,6 +3,16 @@
 require "test_helper"
 
 class RegexpUtilityTest < Minitest::Test
+  def test_escape_ignores_string_subclass_overrides
+    string_class = Class.new(String) do
+      def each_char
+        raise "Regexp.escape must not dispatch to String subclass"
+      end
+    end
+
+    assert_equal Regexp.escape(string_class.new("a.b")), Onibi::Regexp.escape(string_class.new("a.b"))
+  end
+
   UNSAFE_PATTERNS = [
     "(?<word>a)\\k<word>", "(?~a)", "(a)?(?(1)b|c)"
   ].freeze
