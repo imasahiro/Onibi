@@ -1003,6 +1003,10 @@ module Onibi
         return false if Onibi::UnicodeProperties.greek?(value)
 
         maximum = [node.maximum, characters.length - cursor].min
+        folded_value = value.downcase(:fold)
+        return true if folded_value.length == 1 && folded_value != value.downcase &&
+                       characters[cursor, maximum].to_a.all? { |character| character.downcase(:fold) == folded_value }
+
         characters[cursor, maximum].to_a.any? do |character|
           character != value && character.downcase(:fold) == value.downcase(:fold)
         end

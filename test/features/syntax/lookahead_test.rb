@@ -175,6 +175,15 @@ class LookaheadTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_ignorecase_alternate_long_s_class_repeat_stops_at_anchor
+    source = "[ſ]{2}\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſſ")
+
+    assert_nil expected
+    assert_nil actual
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
