@@ -20,8 +20,17 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
   def test_octal_escapes_match_the_encoded_byte
     assert Onibi::Regexp.new("\\0").match?("\0")
     assert Onibi::Regexp.new("\\01").match?("\x01")
+    assert Onibi::Regexp.new("\\10").match?("\b")
+    assert Onibi::Regexp.new("\\80").match?("80")
     assert Onibi::Regexp.new("\\101").match?("A")
     assert Onibi::Regexp.new("\\141").match?("a")
+  end
+
+  def test_multi_digit_escape_uses_an_existing_capture_as_a_backreference
+    pattern = "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10"
+    expected = ::Regexp.new(pattern).match("abcdefghijj").to_a
+
+    assert_equal expected, Onibi::Regexp.new(pattern).match("abcdefghijj").to_a
   end
 
   def test_invalid_hex_and_unicode_escapes_raise_regexp_error

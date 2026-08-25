@@ -45,7 +45,9 @@ module Onibi
       ending = index + 2
       ending += 1 while @source[ending] && @source[ending] >= "0" && @source[ending] <= "9"
 
-      [Lexer::Token.new(:backreference, @source[(index + 1)...ending].to_i, index), ending]
+      digits = @source[(index + 1)...ending]
+      value = digits.length == 1 ? digits.to_i : digits
+      [Lexer::Token.new(:backreference, value, index), ending]
     end
   end
 end

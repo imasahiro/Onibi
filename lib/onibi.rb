@@ -295,7 +295,7 @@ module Onibi
       # The parser consumes Unicode scalar text. Keep the original pattern
       # encoding on the regexp object, but compile a UTF-8 view for the AST.
       @parsed = Onibi::Parser.parse(analysis_source, options: @options)
-      @ast = @parsed.ast
+      @ast = Onibi::Compiler.normalize_numeric_escapes(@parsed.ast)
       Onibi::Compiler.validate(@ast)
       validate_subexpression_calls!
       validate_backreferences!
@@ -897,7 +897,7 @@ module Onibi
 
     def bytecode_program
       @bytecode_program ||= begin
-        compiled = Onibi::Compiler.compile(@parsed)
+        compiled = Onibi::Compiler.compile(@ast, options: @options, encoding: @source.encoding)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
         semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast)

@@ -20,7 +20,10 @@ module Onibi
       match_reset: ->(token) { AST::Escape.new(token.type) },
       grapheme: ->(token) { AST::Escape.new(token.type) },
       property: ->(token) { AST::Property.new(token.value[0], token.value[1]) },
-      backreference: ->(token) { AST::Backreference.new(token.value, token.value.is_a?(String)) },
+      backreference: lambda do |token|
+        numeric = token.value.is_a?(String) && token.value.match?(/\A\d+\z/)
+        AST::Backreference.new(token.value, token.value.is_a?(String) && !numeric)
+      end,
       subexpression_call: ->(token) { AST::SubexpressionCall.new(token.value[0], token.value[1]) },
       class: ->(token) { AST::CharacterClass.new(token.value) },
       dot: ->(token) { AST::Any.new(token.value) },
