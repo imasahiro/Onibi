@@ -827,7 +827,8 @@ module Onibi
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
-          to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
+          byte_positions = character_byte_positions(input)
+          to_bytes = ->(position) { byte_positions.fetch(position) }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
           return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
                                                     byte_offsets, result_names, self)
@@ -838,17 +839,24 @@ module Onibi
       unless @ascii_input
         return Onibi::MatchData.captureless(input, range[0], range[1], self) if @input_encoding == Encoding::ASCII_8BIT
 
-        to_bytes = if @input_encoding == Encoding::UTF_8
-                     ->(position) { input.codepoints.take(position).pack("U*").bytesize }
-                   else
-                     ->(position) { input.each_char.take(position).join.bytesize }
-                   end
+        byte_positions = character_byte_positions(input)
+        to_bytes = ->(position) { byte_positions.fetch(position) }
         return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
                                                   [], result_names, self)
       end
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
       nil
+    end
+
+    # The VM cursor is a character index. Build the byte boundary table once
+    # when MatchData needs byte offsets. MRI keeps these boundaries in its
+    # encoding-aware matcher instead of rescanning the prefix for every
+    # capture.
+    def character_byte_positions(input)
+      positions = [0]
+      input.each_char { |character| positions << positions[-1] + character.bytesize }
+      positions
     end
 
     def bytecode_program
