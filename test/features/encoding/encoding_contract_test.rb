@@ -80,6 +80,14 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_escape_preserves_ascii_metacharacter_rules_for_non_ascii_compatible_strings
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "a.b あ".encode(encoding)
+
+      assert_equal Regexp.escape(pattern), Onibi::Regexp.escape(pattern)
+    end
+  end
+
   def test_union_preserves_non_ascii_compatible_pattern_encoding
     [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
       patterns = %w[あ い].map { |value| value.encode(encoding) }

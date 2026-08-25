@@ -57,6 +57,7 @@ module Onibi
         13 => "\\r"
       }.freeze
       ESCAPE_METACHARACTERS = "\\[]{}().*+?^$| #-"
+      ESCAPE_METACHARACTER_CODES = ESCAPE_METACHARACTERS.bytes.freeze
 
       def compile(pattern, options = nil, timeout: nil)
         new(pattern, options, timeout: timeout)
@@ -97,8 +98,7 @@ module Onibi
                 end
         escaped = value.each_char.map do |character|
           replacement = ESCAPE_REPLACEMENTS[character.ord]
-          replacement ||= "\\#{character}" if character.ascii_only? &&
-                                              ESCAPE_METACHARACTERS.include?(character)
+          replacement ||= "\\#{character.encode(Encoding::US_ASCII)}" if character.ord < 128 && ESCAPE_METACHARACTER_CODES.include?(character.ord)
           (replacement || character).encode(value.encoding)
         end.join
         escaped.force_encoding(escaped.ascii_only? ? Encoding::US_ASCII : value.encoding)
