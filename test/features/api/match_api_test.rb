@@ -147,6 +147,20 @@ class MatchApiTest < Minitest::Test
     assert_equal expected.byteoffset(1), actual.byteoffset(1)
   end
 
+  def test_gsub_ignores_replacement_string_subclass_methods
+    replacement_class = Class.new(String) do
+      def gsub(*)
+        "bad"
+      end
+    end
+    replacement = replacement_class.new("\\1")
+
+    expected = "a".gsub(::Regexp.new("(a)"), replacement)
+    actual = Onibi::Regexp.new("(a)").gsub("a", replacement)
+
+    assert_equal expected, actual
+  end
+
   def test_empty_pattern_uses_mri_position_rules
     regexp = Onibi::Regexp.new("")
 

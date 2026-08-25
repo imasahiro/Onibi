@@ -817,7 +817,7 @@ module Onibi
     end
 
     def replacement_value(replacement, matched)
-      replacement.gsub(/\\([0-9&+`'\\]|k<[^>]+>)/) do |token|
+      String.instance_method(:gsub).bind_call(replacement, /\\([0-9&+`'\\]|k<[^>]+>)/) do |token|
         case token
         when "\\0", "\\&" then matched[0].to_s
         when "\\+" then matched.captures.reverse.find { |capture| capture }.to_s
