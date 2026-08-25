@@ -424,7 +424,12 @@ module Onibi
                                else
                                  state_captures
                                end
-              part_results = node_results(part, characters, cursor + consumed, probe_captures, flags)
+              part_flags = if negated_class_casefold_barrier?(part, parts[index], flags)
+                             flags.merge(negated_class_casefold_barrier: true)
+                           else
+                             flags
+                           end
+              part_results = node_results(part, characters, cursor + consumed, probe_captures, part_flags)
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
               if optional_order == :zero_only
@@ -954,7 +959,28 @@ module Onibi
 
         return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
 
-        ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
+        results = ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
+        return results unless flags[:negated_class_casefold_barrier]
+
+        maximum = results.map(&:first).max
+        results.select { |length, _state| length == maximum }
+      end
+
+      def negated_class_casefold_barrier?(node, next_node, flags)
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false if node.mode == :lazy || !node.expression.is_a?(SemanticBytecode::CharacterClass)
+        return false unless node.expression.value.start_with?("^")
+        return false unless next_node.is_a?(SemanticBytecode::OptionGroup) && next_node.ignorecase
+
+        body = next_node.body
+        body = body.parts.one? && body.parts.first if body.is_a?(SemanticBytecode::Sequence)
+        return false unless body.is_a?(SemanticBytecode::Literal)
+
+        folded = body.casefold || body.value.downcase(:fold)
+        folded.each_char.any? do |character|
+          !Onibi::ClassPredicates.matches?(node.expression.value, character,
+                                           encoding: flags[:encoding])
+        end
       end
 
       def ordered_quantifier_results(quantifier, characters, cursor, captures, flags)

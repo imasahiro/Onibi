@@ -122,6 +122,14 @@ class InterpreterTest < Minitest::Test
     assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
   end
 
+  def test_greedy_negated_class_does_not_backtrack_into_scoped_casefold
+    expected = ::Regexp.new("[^a]+(?i:a)").match("AAB")
+    actual = Onibi::Regexp.new("[^a]+(?i:a)").match("AAB")
+
+    assert_nil expected
+    assert_nil actual
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")
