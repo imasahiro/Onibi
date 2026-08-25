@@ -313,6 +313,8 @@ module Onibi
           widths = folded_widths unless folded_widths.empty?
         end
         lookbehind_flags = flags.merge(lookbehind_casefold: true, lookbehind_fold_source: true)
+        # The loop carries all branch-specific fold metadata into VM state.
+        # rubocop:disable Metrics/BlockLength
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
           results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
@@ -351,8 +353,9 @@ module Onibi
               folded_source && gap.all? { |character| folded_source.include?(character.downcase(:fold)) }
             end
             if partial.empty? && source
-              folded_body = folded_lookbehind_value(assertion.body)
-              partial = results.select { |length, _inner| length < width } if folded_body && source.downcase(:fold) == folded_body
+              folded_bodies = folded_lookbehind_values(assertion.body)
+              partial = results.select { |length, _inner| length < width } if
+                folded_bodies.any? { |body| source.downcase(:fold) == body }
             end
           end
           next if partial.empty?
@@ -362,10 +365,23 @@ module Onibi
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
             state[:__lookbehind_overlap_source] = characters[cursor - 1] if overlap.positive?
-            state[:__lookbehind_overlap_values] = lookbehind_result_values(assertion.body, inner)
+            overlap_values = lookbehind_result_values(assertion.body, inner)
+            state[:__lookbehind_overlap_values] = overlap_values
+            if cursor == characters.length && overlap.positive? &&
+               (reverse_lookbehind_fold?(assertion.body) || expanded_lookbehind_fold?(assertion.body)) &&
+               overlap_values.none? { |value| casefold_equal?(value, characters[cursor - 1]) }
+              state[:__lookbehind_direct_tail_reject] = true
+            end
             if assertion.body.is_a?(SemanticBytecode::Alternation)
               state[:__lookbehind_overlap_alternation] = true
               branch = assertion.body.branches[inner[:__match_alternative_index]]
+              prior_branches = assertion.body.branches.first(inner[:__match_alternative_index].to_i)
+              source = characters[cursor - 1].to_s.downcase(:fold)
+              prior_values = prior_branches.flat_map { |prior| folded_lookbehind_values(prior) }
+              state[:__lookbehind_prior_overlap_source] = true if prior_branches.any? do |prior|
+                folded_lookbehind_values(prior).any? { |value| value.start_with?(source) }
+              end
+              state[:__lookbehind_prior_overlap_values] = prior_values unless prior_values.empty?
               state[:__lookbehind_overlap_expanded] = true if
                 branch && casefold_widths(branch).max > source_widths(branch).max
               state[:__lookbehind_direct_tail_reject] = true if
@@ -377,6 +393,7 @@ module Onibi
             [0, state]
           end
         end
+        # rubocop:enable Metrics/BlockLength
         []
       end
 
@@ -497,6 +514,7 @@ module Onibi
       def folded_lookbehind_value(node)
         return node.branches.map { |branch| folded_lookbehind_value(branch) }.compact.first if node.is_a?(SemanticBytecode::Alternation)
         return node.parts.map { |part| folded_lookbehind_value(part) }.join if node.is_a?(SemanticBytecode::Sequence)
+        return folded_lookbehind_value(node.expression).to_s * node.minimum if node.is_a?(SemanticBytecode::Quantifier) && node.minimum == node.maximum
         return node.casefold || node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
 
         nil
@@ -505,6 +523,7 @@ module Onibi
       def folded_lookbehind_values(node)
         return node.branches.flat_map { |branch| folded_lookbehind_values(branch) } if node.is_a?(SemanticBytecode::Alternation)
         return [node.parts.flat_map { |part| folded_lookbehind_values(part) }.join] if node.is_a?(SemanticBytecode::Sequence)
+        return [folded_lookbehind_values(node.expression).join * node.minimum] if node.is_a?(SemanticBytecode::Quantifier) && node.minimum == node.maximum
         return [node.casefold || node.value.downcase(:fold)] if node.is_a?(SemanticBytecode::Literal)
 
         []
@@ -517,7 +536,6 @@ module Onibi
 
       def lookbehind_overlap_quantifier_results(quantifier, characters, cursor, captures, flags)
         source = captures[:__lookbehind_overlap_source]
-        return [] unless casefold_equal?(quantifier.expression.value, source)
 
         clean = captures.dup
         clean.delete(:__lookbehind_overlap)
@@ -526,6 +544,12 @@ module Onibi
         clean.delete(:__lookbehind_overlap_alternation)
         clean.delete(:__lookbehind_overlap_expanded)
         clean.delete(:__lookbehind_direct_tail_reject)
+        clean.delete(:__lookbehind_prior_overlap_source)
+        clean.delete(:__lookbehind_prior_overlap_values)
+        unless casefold_equal?(quantifier.expression.value, source)
+          return quantifier.minimum.zero? && captures[:__lookbehind_overlap_alternation] &&
+                 cursor == characters.length ? [[0, clean]] : []
+        end
         results = node_results(quantifier, characters, cursor, clean, flags)
         if quantifier.maximum
           overlap = captures[:__lookbehind_overlap].to_i
@@ -689,11 +713,48 @@ module Onibi
                 part_flags = part_flags.merge(property_alternation_anchor: true)
               end
               part_results = if state_captures[:__lookbehind_overlap_source] &&
+                                state_captures[:__lookbehind_prior_overlap_source] &&
                                 part.is_a?(SemanticBytecode::Quantifier) &&
-                                part.expression.is_a?(SemanticBytecode::Literal)
+                                part.expression.is_a?(SemanticBytecode::Literal) &&
+                                part.expression.value.length == 1 &&
+                                state_captures[:__lookbehind_prior_overlap_values].any? do |value|
+                                  casefold_equal?(value, part.expression.value)
+                                end
+                               next_state = state_captures.dup
+                               next_state.delete(:__lookbehind_overlap)
+                               next_state.delete(:__lookbehind_overlap_source)
+                               next_state.delete(:__lookbehind_overlap_values)
+                               next_state.delete(:__lookbehind_overlap_alternation)
+                               next_state.delete(:__lookbehind_overlap_expanded)
+                               next_state.delete(:__lookbehind_direct_tail_reject)
+                               next_state.delete(:__lookbehind_prior_overlap_source)
+                               next_state.delete(:__lookbehind_prior_overlap_values)
+                               node_results(part, characters, cursor + consumed, next_state, part_flags)
+                             elsif state_captures[:__lookbehind_overlap_source] &&
+                                   part.is_a?(SemanticBytecode::Quantifier) &&
+                                   part.expression.is_a?(SemanticBytecode::Literal)
                                lookbehind_overlap_quantifier_results(
                                  part, characters, cursor + consumed, state_captures, part_flags
                                )
+                             elsif state_captures[:__lookbehind_prior_overlap_source] &&
+                                   part.is_a?(SemanticBytecode::Literal) &&
+                                   part.value.length == 1 &&
+                                   state_captures[:__lookbehind_prior_overlap_values].any? do |value|
+                                     casefold_equal?(value, part.value)
+                                   end &&
+                                   casefold_equal?(part.value.each_char.first.to_s,
+                                                   state_captures[:__lookbehind_overlap_source])
+                               next_state = state_captures.dup
+                               next_state.delete(:__lookbehind_overlap)
+                               next_state.delete(:__lookbehind_overlap_source)
+                               next_state.delete(:__lookbehind_overlap_values)
+                               next_state.delete(:__lookbehind_overlap_alternation)
+                               next_state.delete(:__lookbehind_overlap_expanded)
+                               next_state.delete(:__lookbehind_direct_tail_reject)
+                               next_state.delete(:__lookbehind_prior_overlap_source)
+                               next_state.delete(:__lookbehind_prior_overlap_values)
+                               next_state.delete(:__lookbehind_prior_overlap_source)
+                               node_results(part, characters, cursor + consumed, next_state, part_flags)
                              elsif state_captures[:__lookbehind_overlap_source] && part.is_a?(SemanticBytecode::Literal)
                                overlap_source = state_captures[:__lookbehind_overlap_source]
                                overlap_chars = part.value.each_char.to_a
@@ -711,7 +772,10 @@ module Onibi
                                                           (index < parts.length - 1 ||
                                                            part.value.length > 1 ||
                                                            (part.casefold && part.casefold.length > part.value.length))
-                               if overlap_count.positive? && casefold_equal?(overlap_prefix, overlap_source) &&
+                               if overlap_count.positive? &&
+                                  (!state_captures[:__lookbehind_direct_tail_reject] ||
+                                   (part.casefold && part.casefold.length > part.value.length)) &&
+                                  casefold_equal?(overlap_prefix, overlap_source) &&
                                   (body_matches_source || expanded_overlap_allowed)
                                  remainder = overlap_chars.drop(overlap_count).join
                                  next_state = state_captures.dup
@@ -721,6 +785,8 @@ module Onibi
                                  next_state.delete(:__lookbehind_overlap_alternation)
                                  next_state.delete(:__lookbehind_overlap_expanded)
                                  next_state.delete(:__lookbehind_direct_tail_reject)
+                                 next_state.delete(:__lookbehind_prior_overlap_source)
+                                 next_state.delete(:__lookbehind_prior_overlap_values)
                                  if remainder.empty?
                                    [[0, next_state]]
                                  else
@@ -737,6 +803,8 @@ module Onibi
                                  next_state.delete(:__lookbehind_overlap_alternation)
                                  next_state.delete(:__lookbehind_overlap_expanded)
                                  next_state.delete(:__lookbehind_direct_tail_reject)
+                                 next_state.delete(:__lookbehind_prior_overlap_source)
+                                 next_state.delete(:__lookbehind_prior_overlap_values)
                                  [[0, next_state]]
                                elsif overlap_count.positive? && overlap_count < folded_chars.length &&
                                      (part.casefold && part.casefold.length > part.value.length ||
@@ -750,6 +818,8 @@ module Onibi
                                  next_state.delete(:__lookbehind_overlap_alternation)
                                  next_state.delete(:__lookbehind_overlap_expanded)
                                  next_state.delete(:__lookbehind_direct_tail_reject)
+                                 next_state.delete(:__lookbehind_prior_overlap_source)
+                                 next_state.delete(:__lookbehind_prior_overlap_values)
                                  node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
                                               characters, cursor + consumed, next_state, part_flags)
                                else
@@ -962,6 +1032,8 @@ module Onibi
             next_captures.delete(:__lookbehind_overlap_alternation)
             next_captures.delete(:__lookbehind_overlap_expanded)
             next_captures.delete(:__lookbehind_direct_tail_reject)
+            next_captures.delete(:__lookbehind_prior_overlap_source)
+            next_captures.delete(:__lookbehind_prior_overlap_values)
             return [[0, next_captures]]
           end
 
@@ -977,6 +1049,8 @@ module Onibi
             next_captures.delete(:__lookbehind_overlap_alternation)
             next_captures.delete(:__lookbehind_overlap_expanded)
             next_captures.delete(:__lookbehind_direct_tail_reject)
+            next_captures.delete(:__lookbehind_prior_overlap_source)
+            next_captures.delete(:__lookbehind_prior_overlap_values)
             captures = next_captures
           else
             return [] unless length
