@@ -3195,6 +3195,8 @@ module Onibi
         end
         if casefold_source
           node.value.each_char do |candidate|
+            next unless class_match?(node, candidate, flags)
+
             casefold_lengths(candidate, characters, cursor,
                              expanded_only: flags[:lookbehind_casefold]).each do |length|
               lengths << length unless lengths.include?(length)
@@ -3394,7 +3396,13 @@ module Onibi
           slice = characters[cursor, length]
           next false unless slice && slice.length == length
 
-          folded_value == slice.join.encode(Encoding::UTF_8).downcase(:fold)
+          joined = slice.join
+          folded_slice = if joined.encoding == Encoding::ASCII_8BIT
+                           joined.downcase(:fold)
+                         else
+                           joined.encode(Encoding::UTF_8).downcase(:fold)
+                         end
+          folded_value == folded_slice
         end
       end
 

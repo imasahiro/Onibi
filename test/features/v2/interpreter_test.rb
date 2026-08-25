@@ -146,6 +146,21 @@ class InterpreterTest < Minitest::Test
     assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
   end
 
+  def test_binary_input_does_not_force_invalid_bytes_through_unicode_fold
+    input = "\xE5\x1D".b
+    expected = ::Regexp.new("a", ::Regexp::IGNORECASE).match?(input)
+    actual = Onibi::Regexp.new("a", Onibi::Regexp::IGNORECASE).match?(input)
+
+    assert_equal expected, actual
+  end
+
+  def test_casefold_class_candidates_still_require_class_membership
+    expected = ::Regexp.new("[a-z]", ::Regexp::IGNORECASE).match?("-".b)
+    actual = Onibi::Regexp.new("[a-z]", Onibi::Regexp::IGNORECASE).match?("-".b)
+
+    assert_equal expected, actual
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")
