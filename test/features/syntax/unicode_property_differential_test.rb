@@ -446,6 +446,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_scoped_ignorecase_latin_fold_can_continue_with_a_repeated_tail
+    pattern = "(?i:ß)(?:s)"
+    input = "ßs"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
+  end
+
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold
     pattern = "[a-z]+"
     input = "ſa"
