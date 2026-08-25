@@ -59,4 +59,14 @@ class MatchDataIndexTest < Minitest::Test
     assert_equal [0, 2], match.byteoffset(0.9)
     assert_equal 0, match.begin(-0.1)
   end
+
+  def test_non_finite_indices_raise_mri_range_errors
+    match = Onibi::Regexp.new("(a)").match("a")
+
+    [Float::NAN, Float::INFINITY, -Float::INFINITY].each do |index|
+      error = assert_raises(RangeError) { match.match(index) }
+      assert_match(/float .+ out of range of integer/, error.message)
+      assert_raises(RangeError) { match.offset(index) }
+    end
+  end
 end

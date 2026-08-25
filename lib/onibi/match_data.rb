@@ -92,7 +92,7 @@ module Onibi
     end
 
     def match(index)
-      index = Integer(index) if index.is_a?(Float)
+      index = integer_index(index) if index.is_a?(Float)
       normalize_public_index(index) unless index.is_a?(String) || index.is_a?(Symbol)
       value_at(index, strict: true)
     end
@@ -220,6 +220,19 @@ module Onibi
       return Integer(index) if index.respond_to?(:to_int)
 
       raise TypeError, "no implicit conversion of #{index.class} into Integer"
+    end
+
+    def integer_index(index)
+      Integer(index)
+    rescue FloatDomainError
+      label = if index.nan?
+                "NaN"
+              elsif index.positive?
+                "Inf"
+              else
+                "-Inf"
+              end
+      raise RangeError, "float #{label} out of range of integer"
     end
   end
 end

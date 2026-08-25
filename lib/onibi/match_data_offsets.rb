@@ -58,9 +58,22 @@ module Onibi
     end
 
     def validate_offset_index!(index)
-      index = Integer(index) if index.is_a?(Float)
+      index = integer_index(index) if index.is_a?(Float)
       raise TypeError, "no implicit conversion from #{index.class} into integer" unless index.is_a?(Integer)
       raise IndexError, "index #{index} out of matches" if index.negative? || index >= @offsets.length
+    end
+
+    def integer_index(index)
+      Integer(index)
+    rescue FloatDomainError
+      label = if index.nan?
+                "NaN"
+              elsif index.positive?
+                "Inf"
+              else
+                "-Inf"
+              end
+      raise RangeError, "float #{label} out of range of integer"
     end
 
     def byte_position(character_position)
