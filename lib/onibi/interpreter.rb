@@ -332,6 +332,10 @@ module Onibi
               folded_source = source&.downcase(:fold)
               folded_source && gap.all? { |character| folded_source.include?(character.downcase(:fold)) }
             end
+            if partial.empty? && source && cursor == characters.length
+              folded_body = folded_lookbehind_value(assertion.body)
+              partial = results.select { |length, _inner| length < width } if folded_body && source.downcase(:fold) == folded_body
+            end
           end
           next if partial.empty?
 
@@ -425,6 +429,14 @@ module Onibi
 
         source = characters[cursor - node.casefold.length, node.value.length]
         source && source.join == node.value
+      end
+
+      def folded_lookbehind_value(node)
+        return node.branches.map { |branch| folded_lookbehind_value(branch) }.compact.first if node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.map { |part| folded_lookbehind_value(part) }.join if node.is_a?(SemanticBytecode::Sequence)
+        return node.casefold || node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
+
+        nil
       end
 
       def node_results(node, characters, cursor, captures, flags = {})
@@ -1153,6 +1165,7 @@ module Onibi
 
       def mri_posix_anchor_source_width?(node, next_node, characters, cursor)
         operand = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        operand = boundary_operand(operand)
         return false unless operand.is_a?(SemanticBytecode::CharacterClass)
         return false unless operand.value.include?(":")
         return false if node.is_a?(SemanticBytecode::Quantifier) && node.maximum.nil?
