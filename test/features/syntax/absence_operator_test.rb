@@ -143,6 +143,22 @@ class AbsenceOperatorTest < Minitest::Test
     end
   end
 
+  def test_absence_operator_backtracks_nested_unbounded_capture_to_a_suffix
+    ["(?~(a+))b", "(?~((a|b)+))c"].each do |pattern|
+      %w[b ab abb abc abcabc].each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+        if expected
+          assert_equal expected.to_a, actual&.to_a, [pattern, input]
+          assert_equal [expected.begin(0), expected.end(0)],
+                       [actual.begin(0), actual.end(0)], [pattern, input]
+        else
+          assert_nil actual, [pattern, input]
+        end
+      end
+    end
+  end
+
   def test_absence_operator_scans_for_a_greedy_body_match
     regexp = Onibi::Regexp.new("(?~a+)")
 

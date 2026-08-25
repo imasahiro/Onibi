@@ -2759,6 +2759,11 @@ module Onibi
             node.body, characters, cursor, inner_captures, flags
           )
           inner_captures = filter_quantifier_suffix_captures(node.body, inner_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
+          if nested_unbounded_quantifier_body?(node.body) && body_result
+            outer_number = capture_numbers(node.body).first
+            outer_value = body_result.last[outer_number]
+            inner_captures = { outer_number => outer_value } if outer_number && outer_value
+          end
           quantified_length = quantified_absence_length(node.body, characters, position, flags)
           match_position = internal_start || position
           maximum = if quantified_length
@@ -3168,7 +3173,11 @@ module Onibi
           body, length,
           { characters: characters, cursor: cursor, captures: captures, flags: flags, state: state }
         )
-        [[length, filter_bounded_absence_captures(body, state)]]
+        filtered = filter_bounded_absence_captures(body, state)
+        candidates = [[length, filtered]]
+        candidates << [length - 1, filtered] if length > 1
+        candidates << [0, filtered] if length.positive?
+        candidates
       end
 
       def restore_outer_quantifier_suffix_checkpoint(body, length, context)
