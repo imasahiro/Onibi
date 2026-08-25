@@ -606,11 +606,17 @@ module Onibi
       def node_results(node, characters, cursor, captures, flags = {})
         @steps += 1
         return [] if @steps > 2_000_000
-        return [] if captures[:__expanded_literal_source] && simple_group_literal_node?(node)
-        return [] if captures[:__group_expanded_literal_source] &&
-                     !capture_body_has_expanding_literal?(node)
 
-        if captures[:__expanded_literal_source] || captures[:__group_expanded_literal_source]
+        expanded_source = captures[:__expanded_literal_source]
+        grouped_expanded_source = captures[:__group_expanded_literal_source]
+        return [] if expanded_source && simple_group_literal_node?(node)
+        if grouped_expanded_source && (node.is_a?(SemanticBytecode::Literal) ||
+                                       simple_group_literal_node?(node))
+          return []
+        end
+
+        if (expanded_source || grouped_expanded_source) &&
+           (node.is_a?(SemanticBytecode::Literal) || simple_group_literal_node?(node))
           captures = captures.dup
           captures.delete(:__expanded_literal_source)
           captures.delete(:__group_expanded_literal_source)
@@ -1030,8 +1036,8 @@ module Onibi
             next_captures = inner.dup
             expanded_source = next_captures.delete(:__expanded_literal_source)
             next_captures[:__group_expanded_literal_source] = true if !node.capture && expanded_source
-            if !node.capture && capture_body_has_expanding_literal?(node.body) &&
-               characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor].length
+            if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
+               characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
               next_captures[:__group_expanded_literal_source] = true
             end
             if node.capture
