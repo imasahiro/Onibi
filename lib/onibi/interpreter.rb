@@ -3405,7 +3405,13 @@ module Onibi
       end
 
       def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false)
+        if value.encoding != Encoding::UTF_8 && value.encoding != Encoding::ASCII_8BIT && !value.ascii_only?
+          slice = characters[cursor, value.length]
+          return slice && slice.join == value ? [value.length] : []
+        end
+
         folded_value = folded || value.downcase(:fold)
+        folded_value = folded_value.encode(Encoding::UTF_8) unless [Encoding::UTF_8, Encoding::ASCII_8BIT].include?(folded_value.encoding)
         maximum = folded_value.length
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
         (minimum..maximum).select do |length|

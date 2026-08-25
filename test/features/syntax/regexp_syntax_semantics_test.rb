@@ -97,6 +97,13 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("é".encode(Encoding::EUC_JP))
   end
 
+  def test_non_utf8_casefold_does_not_apply_unicode_case_mapping
+    pattern = "é".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("É".encode(Encoding::EUC_JP))
+  end
+
   def test_trailing_escape_error_matches_mri
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
 
