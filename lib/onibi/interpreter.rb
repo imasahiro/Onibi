@@ -1226,6 +1226,11 @@ module Onibi
         return false unless strict_end_anchor?(next_node)
 
         source = characters[cursor]
+        return false if source && Onibi::UnicodeProperties.greek?(source)
+        return true if source == node.expression.value &&
+                       reverse_fold_source_literal?(node.expression.value) &&
+                       source.downcase != source
+
         source && source != node.expression.value &&
           source.downcase == node.expression.value.downcase && source.downcase != source
       end
@@ -1255,7 +1260,8 @@ module Onibi
         return false unless source && source != node.value[0]
         return false if Onibi::UnicodeProperties.greek?(source)
 
-        source.downcase(:fold).length == 1 && source.downcase(:fold) == node.value[0].downcase(:fold)
+        source.downcase(:fold).length == 1 &&
+          source.downcase(:fold) == node.value[0].downcase(:fold)
       end
 
       def mri_posix_anchor_source_width?(node, next_node, characters, cursor)
