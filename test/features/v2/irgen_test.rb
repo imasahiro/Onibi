@@ -77,7 +77,19 @@ class V2IRGenTest < Minitest::Test
     regexp = Onibi::Regexp.new("[ᾀ]", Onibi::Regexp::IGNORECASE)
     operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
 
-    assert_equal({ kind: :iota_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
+    assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
+  end
+
+  def test_fold_policy_is_embedded_in_unicode_operands
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::Literal.new("ι"), casefold: true
+    )
+    character_class = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("ι"), casefold: true
+    )
+
+    assert_equal :fold_group_variant, literal.fold_policy[:anchor_source]
+    assert_equal :consume_source_variant, character_class.fold_policy[:optional_order]
   end
 
   def test_character_class_embeds_compiled_predicate_operands
@@ -142,7 +154,7 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(program_for(node))
   end
 
-  def test_repeat_bytecode_records_mri_lazy_exact_bounds
+  def test_repeat_bytecode_records_fold_lazy_exact_bounds
     node = Onibi::AST::Quantifier.new(Onibi::AST::Literal.new("a"), :bounded, 2, 2, :lazy, true)
     operand = program_for(node).instructions[1].operand.last
 
@@ -215,7 +227,7 @@ class V2IRGenTest < Minitest::Test
                  program.instructions.select { |instruction| instruction.opcode == :match }.map(&:operand)
   end
 
-  def test_dedicated_executor_matches_literal_without_mri_regexp
+  def test_dedicated_executor_matches_literal_without_fold_regexp
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("cat")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
     program = Onibi::IRGen::YARVIR.generate(dfa)
@@ -254,10 +266,10 @@ class V2IRGenTest < Minitest::Test
     assert_equal "ἀι", root.parts.first.casefold
     assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
     assert root.parts.first.fold_boundary_sensitive
-    assert_equal({ kind: :iota_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
+    assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
 
     lookahead = Onibi::Regexp.new("ω").send(:bytecode_program).flags[:semantic_root]
-    assert_equal :non_split_iota_prefix, lookahead.parts.first.fold_prefix_boundary
+    assert_equal :non_split_prefix, lookahead.parts.first.fold_prefix_boundary
 
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
     refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive

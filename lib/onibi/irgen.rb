@@ -11,7 +11,7 @@ module Onibi
         # `fold_boundary` describes a Unicode fold that has a special
         # operand-boundary rule. The VM consumes this metadata directly.
         Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive,
-                             :fold_boundary, :fold_prefix_boundary)
+                             :fold_boundary, :fold_prefix_boundary, :fold_policy)
         # `casefolds` contains reverse multi-character folds for this class.
         # `split_casefold` records MRI's class-only split rule for sharp-s.
         # `compiled_sensitive` and `compiled_insensitive` are immutable
@@ -19,7 +19,7 @@ module Onibi
         # It does not parse the class source during execution.
         CharacterClass = Struct.new(:value, :casefolds, :split_casefold,
                                     :compiled_sensitive, :compiled_insensitive,
-                                    :folded_characters, :fold_boundaries)
+                                    :folded_characters, :fold_boundaries, :fold_policy)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -93,7 +93,8 @@ module Onibi
             fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
             fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
-                            boundary_sensitive, fold_boundary, fold_prefix_boundary)
+                            boundary_sensitive, fold_boundary, fold_prefix_boundary,
+                            fold_policy_for_literal(node.value))
           end
           if node.is_a?(Onibi::AST::Sequence)
             parts = node.parts.map { |part| compile_value(part, casefold: casefold, parent: :sequence) }
@@ -119,14 +120,15 @@ module Onibi
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
                             folded_characters,
-                            class_fold_boundaries(folds, folded_characters))
+                            class_fold_boundaries(folds, folded_characters),
+                            fold_policy_for_class(node.value, folded_characters))
           end
           if node.is_a?(Onibi::AST::OptionGroup)
             body = compile_value(node.body, casefold: casefold || node.ignorecase)
             return type.new(body, node.ignorecase, node.multiline, node.extended)
           end
           if node.is_a?(Onibi::AST::Quantifier)
-            minimum, maximum, lazy_exact = mri_lazy_exact_bounds(node)
+            minimum, maximum, lazy_exact = fold_lazy_exact_bounds(node)
             return type.new(compile_value(node.expression, casefold: casefold), node.kind,
                             minimum, maximum, node.mode, lazy_exact)
           end
@@ -171,7 +173,7 @@ module Onibi
         # Onigmo treats an exact bound with a lazy suffix (`{n}?`) as a
         # bounded optional repeat. The bytecode stores that rule explicitly,
         # so the interpreter does not need to inspect the source AST.
-        def mri_lazy_exact_bounds(node)
+        def fold_lazy_exact_bounds(node)
           return [node.minimum, node.maximum, false] unless node.kind == :bounded &&
                                                             node.mode == :lazy &&
                                                             node.exact_bound
@@ -192,7 +194,7 @@ module Onibi
           return nil unless folded.encoding == Encoding::UTF_8
           return nil unless folded.length > 1 && folded.end_with?("ι")
 
-          { kind: :iota_tail, tail: folded.each_char.to_a.last,
+          { kind: :expanded_tail, tail: folded.each_char.to_a.last,
             sensitive: boundary_sensitive }.freeze
         end
 
@@ -211,7 +213,25 @@ module Onibi
           marks = normalized.each_char.drop(1)
           return unless base == "ω" || marks.any? { |mark| %W[\u0300 \u0313 \u0314].include?(mark) }
 
-          :non_split_iota_prefix
+          :non_split_prefix
+        end
+
+        # The VM receives semantic boundary policy. It does not identify
+        # Unicode characters or infer policy from source text.
+        def fold_policy_for_literal(value)
+          group = Onibi::ClassPredicates.casefold_groups.values.find { |members| members.include?(value) }
+          return nil unless group
+          return nil unless group.any? { |character| character.match?(/\p{M}/) }
+
+          { anchor_source: :fold_group_variant }.freeze
+        end
+
+        def fold_policy_for_class(value, folded_characters)
+          return nil unless value.each_char.one?
+          return nil if folded_characters.empty?
+
+          combining_variant = folded_characters.any? { |character| character.match?(/\p{M}/) }
+          combining_variant ? { optional_order: :consume_source_variant }.freeze : nil
         end
 
         # MRI closes a range over every simple fold of every code point in
