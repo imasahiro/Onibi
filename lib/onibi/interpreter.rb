@@ -3239,6 +3239,7 @@ module Onibi
       def class_match?(node, character, flags)
         matched = compiled_class_match?(node, character, flags)
         return true if matched
+        return true if flags[:ignorecase] && node.folded_characters&.include?(character)
         return false unless flags[:ignorecase]
         return false if node.value.start_with?("^")
         return false if node.value.include?("[") || node.value.include?(":") || node.value.include?("\\")
@@ -3252,6 +3253,8 @@ module Onibi
       # The class predicate is a bytecode operand. Use its prebuilt table
       # for UTF-8 execution. Encoding-specific input keeps the generic path.
       def compiled_class_match?(node, character, flags)
+        return true if flags[:ignorecase] && node.folded_characters&.include?(character)
+
         table = flags[:ignorecase] ? node.compiled_insensitive : node.compiled_sensitive
         if table && flags[:encoding] == Encoding::UTF_8 && character.encoding == Encoding::UTF_8
           table.matches?(character)

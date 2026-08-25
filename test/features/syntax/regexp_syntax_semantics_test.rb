@@ -118,6 +118,13 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("ı")
   end
 
+  def test_ignorecase_range_closes_folds_of_codepoints_inside_range
+    regexp = Onibi::Regexp.new("[ẞ-龠]", Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("Ω")
+    assert regexp.match?("ω")
+  end
+
   def test_ignorecase_intersection_folds_negated_class_operands
     greek = Onibi::Regexp.new("[\\p{Greek}&&[^\\p{Lower}]]", Onibi::Regexp::IGNORECASE)
     alpha = Onibi::Regexp.new("[\\p{Alpha}&&[^a-z]]", Onibi::Regexp::IGNORECASE)

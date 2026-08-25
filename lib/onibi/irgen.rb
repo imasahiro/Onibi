@@ -15,7 +15,8 @@ module Onibi
         # predicate tables. The interpreter selects one table from flags.
         # It does not parse the class source during execution.
         CharacterClass = Struct.new(:value, :casefolds, :split_casefold,
-                                    :compiled_sensitive, :compiled_insensitive)
+                                    :compiled_sensitive, :compiled_insensitive,
+                                    :folded_characters)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -81,7 +82,8 @@ module Onibi
             split = folds.any? { |source, value| %w[ß ẞ].include?(source) && value == "ss" }
             return type.new(node.value, folds, split,
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
-                            Onibi::ClassPredicates.compiled(node.value, ignorecase: true))
+                            Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
+                            class_casefold_characters(node.value))
           end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
@@ -94,6 +96,34 @@ module Onibi
             [character, folded] if Onibi::ClassPredicates.matches?(source, character,
                                                                    encoding: source.encoding)
           end.freeze
+        end
+
+        # MRI closes a range over every simple fold of every code point in
+        # that range. For example, U+2126 OHM SIGN is inside [ẞ-龠], and its
+        # fold U+03C9 makes Ω and ω valid class operands.
+        def class_casefold_characters(source)
+          metadata = Onibi::ClassPredicates::Normalizer.normalize(source)
+          return [].freeze unless metadata.kind == :ascii && source.encoding == Encoding::UTF_8
+          return [].freeze if source.start_with?("^")
+
+          characters = metadata.ranges.each_with_object([]) do |(first, last), result|
+            first.ord.upto(last.ord) do |codepoint|
+              character = codepoint.chr(Encoding::UTF_8)
+              variants = [character.downcase(:fold), character.downcase,
+                          character.upcase, character.capitalize]
+              variants.concat(UnicodeProperties.reverse_casefold_variants(character))
+              variants.each do |variant|
+                next unless variant.each_char.one?
+                next unless character.casecmp?(variant)
+                next if ClassPredicates.matches?(source, variant)
+
+                result << variant
+              end
+            end
+          end
+          characters.uniq.freeze
+        rescue RangeError, EncodingError
+          [].freeze
         end
 
         def full_casefold?(node)
