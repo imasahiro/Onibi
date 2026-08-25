@@ -1316,7 +1316,8 @@ module Onibi
             boundary = !boundary if operand.kind == :not_word_boundary
             boundary ? 0 : nil
           when :linebreak
-            return nil unless cursor < characters.length && Onibi::CharacterPredicates.linebreak?(characters[cursor])
+            return nil unless cursor < characters.length &&
+                              Onibi::CharacterPredicates.linebreak?(characters[cursor], encoding: flags[:encoding])
 
             characters[cursor] == "\r" && characters[cursor + 1] == "\n" ? 2 : 1
           when :match_reset

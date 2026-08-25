@@ -161,6 +161,14 @@ class InterpreterTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_binary_linebreak_escape_does_not_treat_nel_as_unicode_linebreak
+    input = [0x85].pack("C*").b
+    expected = ::Regexp.new("\\R").match?(input)
+    actual = Onibi::Regexp.new("\\R").match?(input)
+
+    assert_equal expected, actual
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")

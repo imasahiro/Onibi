@@ -39,8 +39,13 @@ module Onibi
       value.between?(48, 57) || value.between?(65, 70) || value.between?(97, 102)
     end
 
-    def linebreak?(character)
-      [10, 11, 12, 13, 133, 8232, 8233].include?(codepoint(character))
+    def linebreak?(character, encoding: nil)
+      values = if encoding == Encoding::UTF_8
+                 [10, 11, 12, 13, 133, 8232, 8233]
+               else
+                 [10, 11, 12, 13]
+               end
+      values.include?(codepoint(character))
     end
 
     def word_boundary?(characters, position)
