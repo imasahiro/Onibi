@@ -349,6 +349,9 @@ module Onibi
           return partial.map do |_length, inner|
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
+            state[:__lookbehind_overlap_source] = characters[cursor - 1] if overlap.positive?
+            state[:__lookbehind_direct_tail_reject] = true if overlap.positive? &&
+                                                              folded_widths.uniq.length > 1
             state[:__lookbehind_reverse_fold] = true if cursor == characters.length &&
                                                         (reverse_lookbehind_fold?(assertion.body) ||
                                                          expanded_lookbehind_source?(assertion.body, characters, cursor))
@@ -586,7 +589,38 @@ module Onibi
                                                             characters, cursor + consumed)
                 part_flags = part_flags.merge(property_alternation_anchor: true)
               end
-              part_results = node_results(part, characters, cursor + consumed, probe_captures, part_flags)
+              part_results = if state_captures[:__lookbehind_overlap_source] && part.is_a?(SemanticBytecode::Literal)
+                               overlap_source = state_captures[:__lookbehind_overlap_source]
+                               overlap_chars = part.value.each_char.to_a
+                               overlap_count = state_captures[:__lookbehind_overlap].to_i
+                               folded_chars = (part.casefold || part.value).each_char.to_a
+                               if overlap_count.positive? && casefold_equal?(part.value, overlap_source) &&
+                                  !state_captures[:__lookbehind_direct_tail_reject]
+                                 remainder = overlap_chars.drop(overlap_count).join
+                                 next_state = state_captures.dup
+                                 next_state.delete(:__lookbehind_overlap)
+                                 next_state.delete(:__lookbehind_overlap_source)
+                                 next_state.delete(:__lookbehind_direct_tail_reject)
+                                 if remainder.empty?
+                                   [[0, next_state]]
+                                 else
+                                   node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
+                                                characters, cursor + consumed, next_state, part_flags)
+                                 end
+                               elsif overlap_count.positive? && overlap_count < folded_chars.length
+                                 remainder = folded_chars.drop(overlap_count).join
+                                 next_state = state_captures.dup
+                                 next_state.delete(:__lookbehind_overlap)
+                                 next_state.delete(:__lookbehind_overlap_source)
+                                 next_state.delete(:__lookbehind_direct_tail_reject)
+                                 node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
+                                              characters, cursor + consumed, next_state, part_flags)
+                               else
+                                 []
+                               end
+                             else
+                               node_results(part, characters, cursor + consumed, probe_captures, part_flags)
+                             end
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
               optional_order = nil if mri_posix_expanded_optional_anchor?(part, parts[index],
@@ -786,6 +820,8 @@ module Onibi
             next_captures = captures.dup
             next_captures.delete(:__lookbehind_overlap)
             next_captures.delete(:__lookbehind_reverse_fold)
+            next_captures.delete(:__lookbehind_overlap_source)
+            next_captures.delete(:__lookbehind_direct_tail_reject)
             return [[0, next_captures]]
           end
 
@@ -796,6 +832,8 @@ module Onibi
             next_captures = captures.dup
             next_captures.delete(:__lookbehind_overlap)
             next_captures.delete(:__lookbehind_reverse_fold)
+            next_captures.delete(:__lookbehind_overlap_source)
+            next_captures.delete(:__lookbehind_direct_tail_reject)
             captures = next_captures
           else
             return [] unless length
