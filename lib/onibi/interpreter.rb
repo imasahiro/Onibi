@@ -288,7 +288,10 @@ module Onibi
 
       def assertion_results(assertion, characters, cursor, captures, flags = {})
         if %i[positive positive_lookahead].include?(assertion.kind)
-          results = node_results(assertion.body, characters, cursor, captures, flags).first(1).map do |_length, inner|
+          lookahead_captures = captures.merge(__fold_lookahead_operand: true)
+          results = node_results(assertion.body, characters, cursor, lookahead_captures, flags).first(1).map do |_length, inner|
+            inner = inner.dup
+            inner.delete(:__fold_lookahead_operand)
             [0, inner]
           end
           return mark_end_zero_width(results, characters, cursor, flags)
@@ -681,6 +684,8 @@ module Onibi
 
           if grouped_expanded_source && captures[:__group_expanded_literal_boundary] &&
              node.is_a?(SemanticBytecode::Literal) && source_fold &&
+             ((!captures[:__fold_alternation_operand] && !captures[:__fold_lookahead_operand]) ||
+              cursor + 1 >= characters.length) &&
              !source_fold.start_with?(combined)
             return []
           end
@@ -1137,9 +1142,11 @@ module Onibi
           conditional_results(node, characters, cursor, captures, flags)
         when SemanticBytecode::Alternation
           branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
+          branch_captures = captures.merge(__fold_alternation_operand: true)
           node.branches.each_with_index.flat_map do |branch, branch_index|
-            node_results(branch, characters, cursor, captures, branch_flags).map do |length, state|
+            node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
               marked = state.dup
+              marked.delete(:__fold_alternation_operand)
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
               [length, marked]

@@ -822,6 +822,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
   end
 
+  def test_iota_fold_positive_lookahead_can_match_after_an_extra_character
+    pattern = "(?i:ᾁ)(?=ἀ)"
+    input = "ᾁἀἀ"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+  end
+
   def test_iota_fold_source_does_not_match_at_a_strict_end_anchor
     pattern = "(?i:ᾀ)\\z"
     input = "ᾀ"
