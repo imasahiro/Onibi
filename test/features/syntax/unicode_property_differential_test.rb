@@ -455,6 +455,16 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_scoped_ignorecase_greek_fold_respects_strict_end_anchor
+    pattern = "(?i:ᾀ){1,2}\\z"
+    input = "ᾀ"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold
     pattern = "[a-z]+"
     input = "ſa"
