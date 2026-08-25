@@ -460,7 +460,6 @@ module Onibi
 
       input_valid = String.instance_method(:valid_encoding?).bind_call(input)
       raise ArgumentError, "invalid byte sequence in #{string_encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input_valid
-      return nil if no_encoding? && property_names.any? && string_encoding == Encoding::ASCII_8BIT && !ascii_input
 
       if program.flags[:binary_escape] && !ascii_input && string_encoding != Encoding::ASCII_8BIT &&
          !(@source.encoding == Encoding::US_ASCII && !no_encoding? &&

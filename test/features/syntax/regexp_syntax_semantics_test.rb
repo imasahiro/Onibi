@@ -73,6 +73,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("\xFF".b)
   end
 
+  def test_noencoding_negated_property_matches_non_ascii_binary_input
+    regexp = Onibi::Regexp.new("\\p{^Alpha}", Onibi::Regexp::NOENCODING)
+
+    assert regexp.match?("\xFF".b)
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 
