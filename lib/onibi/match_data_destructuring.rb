@@ -10,9 +10,10 @@ module Onibi
     def deconstruct_keys(keys)
       unless keys
         return @names.each_with_object({}) do |(name, index), result|
-          result[name.to_sym] = self[index]
+          result[name.to_sym] = value_at(index, allow_array: true)
         end
       end
+      raise TypeError, "wrong argument type #{keys.class} (expected Array)" unless keys.is_a?(Array)
 
       keys.each_with_object({}) do |key, result|
         raise TypeError, "wrong argument type #{key.class} (expected Symbol)" unless key.is_a?(Symbol)

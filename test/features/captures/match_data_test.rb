@@ -71,4 +71,13 @@ class MatchDataTest < Minitest::Test
     assert_raises(IndexError) { match.begin("missing") }
     assert_raises(IndexError) { match.offset(:missing) }
   end
+
+  def test_deconstruct_keys_matches_mri_input_contract
+    match = Onibi::Regexp.new("(?<x>a)(?<y>b)?").match("a")
+
+    assert_equal({ x: "a", y: nil }, match.deconstruct_keys(nil))
+    assert_equal({ x: "a" }, match.deconstruct_keys(%i[x missing]))
+    assert_raises(TypeError) { match.deconstruct_keys({}) }
+    assert_raises(TypeError) { match.deconstruct_keys(:x) }
+  end
 end
