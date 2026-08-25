@@ -130,6 +130,7 @@ module Onibi
                        captures.delete(:__match_prefix)
                        captures.delete(:__match_prefix_value)
                        captures.delete(:__class_capture_numbers)
+                       captures.delete(:__reverse_literal_capture_numbers)
                        captures.delete(:__match_alternative)
                        captures.delete(:__match_alternative_index)
                        captures.delete(:__zero_absence)
@@ -1398,6 +1399,7 @@ module Onibi
 
         span = captures[node.identifier]
         return false unless span
+        return true if Array(captures[:__reverse_literal_capture_numbers]).include?(node.identifier)
         return false if Array(captures[:__class_capture_numbers]).include?(node.identifier)
 
         value = @characters[span[0]...span[1]].join
@@ -1412,6 +1414,8 @@ module Onibi
         when SemanticBytecode::CharacterClass, SemanticBytecode::Property,
              SemanticBytecode::Any
           true
+        when SemanticBytecode::Escape
+          node.kind == :word
         when SemanticBytecode::Sequence
           node.parts.any? { |part| capture_body_has_class?(part) }
         when SemanticBytecode::Alternation
@@ -1443,6 +1447,19 @@ module Onibi
         else
           false
         end
+      end
+
+      def reverse_literal_capture_origin?(body, characters, cursor, length)
+        literal = if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
+                    body.parts.first
+                  else
+                    body
+                  end
+        return false unless literal.is_a?(SemanticBytecode::Literal)
+        return false unless reverse_fold_source_literal?(literal.value)
+
+        captured = characters[cursor, length]&.join
+        captured && captured != literal.value
       end
 
       def mri_fold_boundary_relaxed?(previous_node, node, consumed)
@@ -1601,10 +1618,20 @@ module Onibi
           node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
             inner = clear_repeated_absence_captures(quantifier.expression, inner)
             if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
-               quantifier.expression.capture && length.positive?
+               quantifier.expression.capture && length.positive? &&
+               repeated_capture_keeps_fold_origin?(quantifier.expression, inner)
               inner = inner.dup
               inner[:__class_capture_numbers] = Array(inner[:__class_capture_numbers])
               inner[:__class_capture_numbers] << quantifier.expression.number
+            end
+            if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
+               quantifier.expression.capture && length.positive? &&
+               reverse_literal_capture_origin?(quantifier.expression.body, characters,
+                                               cursor + consumed, length)
+              inner = inner.dup
+              inner[:__reverse_literal_capture_numbers] =
+                Array(inner[:__reverse_literal_capture_numbers])
+              inner[:__reverse_literal_capture_numbers] << quantifier.expression.number
             end
             if length.zero?
               expression = quantifier.expression
@@ -1657,6 +1684,23 @@ module Onibi
         return count >= quantifier.minimum unless quantifier.lazy_exact
 
         count.zero? || count == quantifier.maximum
+      end
+
+      def repeated_capture_keeps_fold_origin?(group, captures)
+        body = group.body
+        return true if capture_body_has_class?(body)
+
+        literal = if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
+                    body.parts.first
+                  else
+                    body
+                  end
+        return true unless literal.is_a?(SemanticBytecode::Literal)
+
+        return true unless reverse_fold_source_literal?(literal.value)
+
+        span = captures[group.number]
+        span && @characters[span[0]...span[1]].join == literal.value
       end
 
       def lazy_nullable_body?(node)
