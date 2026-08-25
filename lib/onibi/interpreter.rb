@@ -1950,7 +1950,8 @@ module Onibi
         end
         if fold_enabled && node.is_a?(SemanticBytecode::CharacterClass) &&
            simple_fold_source_match?(node, characters[cursor]) && next_node.is_a?(SemanticBytecode::Literal) &&
-           !(next_node.casefold && next_node.casefold.length > next_node.value.length)
+           !(next_node.casefold && next_node.casefold.length > next_node.value.length) &&
+           !node.value.include?("\\")
           return true
         end
         return false unless fold_enabled && node.is_a?(SemanticBytecode::Literal)
@@ -5274,6 +5275,12 @@ module Onibi
 
       def class_expanded_fold(node, character)
         return unless character && node.respond_to?(:casefolds)
+
+        # Unicode property classes already perform their own case-insensitive
+        # membership test.  Do not add a literal-fold boundary marker for
+        # them.  MRI keeps that marker for explicit literal classes only;
+        # applying it to a property class rejects valid following operands.
+        return if node.value.include?("\\") || node.value.include?(":")
 
         pair = node.casefolds.find { |source, _fold| source == character }
         fold = pair&.[](1)

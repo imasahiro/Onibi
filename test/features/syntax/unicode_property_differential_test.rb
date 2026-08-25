@@ -958,6 +958,18 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_unicode_property_classes_keep_following_operand_matches
+    [
+      ["(?i:[\\p{L}])x", "ſx"],
+      ["(?i:[\\p{Greek}])x", "ᾀx"],
+      ["(?i:[\\p{Greek}])ι", "ᾀι"]
+    ].each do |pattern, input|
+      mri = Regexp.new(pattern).match(input)
+      onibi = Onibi::Regexp.new(pattern).match(input)
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+  end
+
   def test_longest_reverse_fold_prefix_is_selected
     pattern = "\\bὒa"
     input = "ὒa"
