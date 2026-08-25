@@ -49,6 +49,10 @@ class AdvancedSyntaxDifferentialTest < Minitest::Test
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?(<missing>)a|b)") }
   end
 
+  def test_numeric_conditional_references_are_rejected_with_named_captures
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<x>a)?(?(1)b|c)") }
+  end
+
   def test_numeric_subexpression_calls_are_rejected_with_named_captures
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<x>a)\\g<1>").match("aa") }
   end

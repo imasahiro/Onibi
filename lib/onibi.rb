@@ -878,6 +878,7 @@ module Onibi
         if node.is_a?(Onibi::AST::Conditional)
           identifier, named = node.condition
           raise RegexpError, "undefined name <#{identifier}> condition: /#{@source}/" if named && !raw_named_captures.key?(identifier.to_s)
+          raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/" if !named && raw_named_captures.any?
           raise RegexpError, "invalid conditional reference: /#{@source}/" if !named && identifier.to_i > capture_count
         end
 
