@@ -560,9 +560,20 @@ module Onibi
                                                                 flags)
                 part_results = []
               end
-              if mri_posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
+              posix_anchor_mode = mri_posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
+              if posix_anchor_mode == :source_only
                 limit = part.is_a?(SemanticBytecode::Quantifier) ? part.maximum : 1
                 part_results = part_results.select { |length, _inner| length <= limit }
+              elsif posix_anchor_mode == :expanded_greedy
+                part_results = part_results.sort_by { |length, _inner| -length }
+              end
+              if mri_reverse_fold_literal_anchor_boundary?(part, parts[index], characters,
+                                                           cursor + consumed, flags)
+                part_results = []
+              end
+              if mri_posix_alternation_anchor_source_width?(part, parts[index],
+                                                            characters, cursor + consumed)
+                part_results = part_results.select { |length, _inner| length <= 1 }
               end
               if mri_alternate_fold_alternation_anchor_boundary?(part, parts[index],
                                                                  characters, cursor + consumed, flags)
@@ -1074,6 +1085,11 @@ module Onibi
                   expression.value
                 end
         return false unless value
+
+        if reverse_fold_source_literal?(value)
+          maximum = [node.maximum, characters.length - cursor].min
+          return false if characters[cursor, maximum].to_a.all?(&:ascii_only?)
+        end
         return false if Onibi::UnicodeProperties.greek?(value)
 
         maximum = [node.maximum, characters.length - cursor].min
@@ -1105,9 +1121,42 @@ module Onibi
         return false if node.is_a?(SemanticBytecode::Quantifier) && node.maximum.nil?
 
         source = characters[cursor]
-        return false unless source&.ascii_only?
+        return false unless source
 
-        next_node.is_a?(SemanticBytecode::Anchor)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+
+        source.ascii_only? ? :source_only : :expanded_greedy
+      end
+
+      def mri_reverse_fold_literal_anchor_boundary?(node, next_node, characters, cursor, flags)
+        return false unless flags[:ignorecase] && next_node.is_a?(SemanticBytecode::Anchor)
+
+        operand = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        return false unless operand.is_a?(SemanticBytecode::Literal)
+        return false unless operand.value.each_char.one?
+        return false unless reverse_fold_source_literal?(operand.value)
+
+        characters[cursor] == operand.value
+      end
+
+      def mri_posix_alternation_anchor_source_width?(node, next_node, characters, cursor)
+        node = boundary_operand(node)
+        return false unless node.is_a?(SemanticBytecode::Alternation)
+        return false unless next_node.is_a?(SemanticBytecode::Anchor)
+        return false unless node.branches.any? do |branch|
+          operand = boundary_operand(branch)
+          operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":")
+        end
+
+        characters[cursor]&.ascii_only?
+      end
+
+      def reverse_fold_source_literal?(value)
+        return false if value.ascii_only?
+
+        Onibi::UnicodeProperties::REVERSE_SIMPLE_CASEFOLDS.any? do |_base, variants|
+          variants.include?(value)
+        end
       end
 
       def mri_alternate_fold_alternation_anchor_boundary?(node, next_node, characters, cursor, flags)
@@ -1125,7 +1174,8 @@ module Onibi
           literal = boundary_operand(branch)
           next false unless literal.is_a?(SemanticBytecode::Literal)
 
-          Onibi::UnicodeProperties.reverse_casefold_variants(literal.value).include?(source)
+          (reverse_fold_source_literal?(literal.value) && literal.value == source) ||
+            Onibi::UnicodeProperties.reverse_casefold_variants(literal.value).include?(source)
         end
       end
 
