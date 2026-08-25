@@ -74,6 +74,83 @@ module Onibi
     UNICODE_ENCODINGS = [Encoding::UTF_8, Encoding::UTF_16LE, Encoding::UTF_16BE,
                          Encoding::UTF_32LE, Encoding::UTF_32BE].freeze
 
+    # FoldPolicy is the VM's single Unicode fold classifier.  The compiler
+    # puts fold metadata on each operand.  The policy compares one operand
+    # with one input character and returns a stable class:
+    #
+    #   exact          source and operand are equal
+    #   simple_source  a one-character reverse fold with a source boundary
+    #   reverse_source a reverse fold that is not a source boundary
+    #   equivalent     an ordinary case-insensitive match
+    #   no_match       the input is outside the operand fold set
+    #
+    # Boundary code uses this result instead of rebuilding Unicode tables in
+    # each assertion, quantifier, and alternation path.
+    class FoldPolicy
+      def initialize
+        @reverse_variants = {}
+        @source_variants = {}
+      end
+
+      def classify(node, source)
+        operand = unwrap(node)
+        return :no_match unless source && (operand.is_a?(SemanticBytecode::Literal) ||
+                                           operand.is_a?(SemanticBytecode::CharacterClass))
+
+        folded = fold_for(operand, source)
+        return :no_match unless folded
+
+        source_variants = source_variants_for(folded)
+        return :simple_source if source_variants.include?(source)
+        return :reverse_source if reverse_variants_for(folded).include?(source)
+        return :exact if operand.is_a?(SemanticBytecode::Literal) && operand.value == source
+        return :equivalent if source.downcase(:fold) == folded
+
+        :no_match
+      end
+
+      def boundary(node, source)
+        operand = unwrap(node)
+        return operand.fold_boundary if operand.is_a?(SemanticBytecode::Literal) && operand.fold_boundary
+        return operand.fold_boundaries&.[](source) if operand.is_a?(SemanticBytecode::CharacterClass)
+
+        folded = fold_for(operand, source)
+        variants = folded && source_variants_for(folded)
+        return unless variants&.include?(source)
+
+        { kind: :simple_fold_source, variants: variants.freeze }.freeze
+      end
+
+      private
+
+      def unwrap(node)
+        loop do
+          node = node.body if node.is_a?(SemanticBytecode::Group) ||
+                              node.is_a?(SemanticBytecode::OptionGroup) ||
+                              node.is_a?(SemanticBytecode::AtomicGroup)
+          node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+          return node unless node.is_a?(SemanticBytecode::Group) ||
+                             node.is_a?(SemanticBytecode::OptionGroup) ||
+                             node.is_a?(SemanticBytecode::AtomicGroup) ||
+                             (node.is_a?(SemanticBytecode::Sequence) && node.parts.one?)
+        end
+      end
+
+      def fold_for(operand, source)
+        return operand.casefold || operand.value.downcase(:fold) if operand.is_a?(SemanticBytecode::Literal)
+
+        source.downcase(:fold) if operand.is_a?(SemanticBytecode::CharacterClass)
+      end
+
+      def source_variants_for(folded)
+        @source_variants[folded] ||= Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
+      end
+
+      def reverse_variants_for(folded)
+        @reverse_variants[folded] ||= Onibi::UnicodeProperties.reverse_casefold_variants(folded)
+      end
+    end
+
     class Executor
       def initialize(program, input_view: nil)
         @program = program
@@ -81,6 +158,7 @@ module Onibi
         @subexpressions = program.flags[:subexpressions] || {}
         @retry_shifted_absence = shifted_absence_suffix?(program.flags[:semantic_root])
         @input_view = input_view
+        @fold_policy = FoldPolicy.new
       end
 
       def match(input, start_position = 0)
@@ -1968,35 +2046,15 @@ module Onibi
       end
 
       def simple_fold_source_match?(node, source)
-        operand = boundary_operand(node)
-        boundary = simple_fold_boundary_for(operand, source)
-        boundary&.fetch(:kind, nil) == :simple_fold_source &&
-          boundary[:variants].include?(source)
+        @fold_policy.classify(node, source) == :simple_source
       end
 
       def simple_fold_boundary_for(node, source)
-        boundary = if node.is_a?(SemanticBytecode::Literal)
-                     node.fold_boundary
-                   elsif node.is_a?(SemanticBytecode::CharacterClass)
-                     node.fold_boundaries&.[](source)
-                   end
-        return boundary if boundary
-
-        folded = node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
-        folded = source&.downcase(:fold) if node.is_a?(SemanticBytecode::CharacterClass)
-        variants = folded && Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
-        return unless variants&.include?(source)
-
-        { kind: :simple_fold_source, variants: variants.freeze }.freeze
+        @fold_policy.boundary(node, source)
       end
 
       def reverse_simple_fold_source?(node, source)
-        operand = boundary_operand(node)
-        return false unless operand.is_a?(SemanticBytecode::Literal)
-
-        folded = operand.value.downcase(:fold)
-        Onibi::UnicodeProperties.reverse_casefold_variants(folded).include?(source) &&
-          !Onibi::UnicodeProperties.reverse_source_boundary_variants(folded).include?(source)
+        @fold_policy.classify(node, source) == :reverse_source
       end
 
       def normal_consuming_operand?(node)

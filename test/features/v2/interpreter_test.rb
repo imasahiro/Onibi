@@ -24,6 +24,15 @@ class InterpreterTest < Minitest::Test
     assert_equal :repeat_frame_state, absence.fetch(:capture_checkpoint)
   end
 
+  def test_fold_policy_classifies_operand_source_boundaries
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("s", nil, nil, false, nil, nil)
+    policy = Onibi::Interpreter::FoldPolicy.new
+
+    assert_equal :exact, policy.classify(literal, "s")
+    assert_equal :simple_source, policy.classify(literal, "ſ")
+    assert_equal :no_match, policy.classify(literal, "x")
+  end
+
   def test_absent_frame_contains_stack_checkpoint_fields
     frame = Onibi::Interpreter::AbsentFrame.new(
       absent_start: 0,
