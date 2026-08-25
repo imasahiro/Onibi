@@ -410,6 +410,10 @@ module Onibi
         Thread.current[LAST_MATCH_KEY] = nil
         return nil
       end
+      unless input.is_a?(String)
+        Thread.current[LAST_MATCH_KEY] = nil
+        return nil
+      end
 
       send("=".dup << "~", input)
     end

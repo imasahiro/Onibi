@@ -49,6 +49,18 @@ class MatchApiTest < Minitest::Test
     $_ = nil
   end
 
+  def test_tilde_ignores_non_string_global_input
+    regexp = Onibi::Regexp.new("a")
+
+    [:a, 1, true, Object.new].each do |input|
+      $_ = input
+      assert_nil regexp.public_send("~")
+      assert_nil Onibi::Regexp.last_match
+    end
+  ensure
+    $_ = nil
+  end
+
   def test_case_equality_updates_last_match_state
     regexp = Onibi::Regexp.new("a")
 
