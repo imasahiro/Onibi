@@ -603,6 +603,10 @@ module Onibi
             if node.capture
               next_captures[node.number] = [cursor, cursor + length]
               next_captures[node.name] = [cursor, cursor + length] if node.name
+              if capture_body_has_class?(node.body)
+                next_captures[:__class_capture_numbers] = Array(next_captures[:__class_capture_numbers])
+                next_captures[:__class_capture_numbers] << node.number
+              end
             end
             [length, next_captures]
           end
@@ -1127,12 +1131,27 @@ module Onibi
 
         span = captures[node.identifier]
         return false unless span
+        return false if Array(captures[:__class_capture_numbers]).include?(node.identifier)
 
         value = @characters[span[0]...span[1]].join
         folded = value.downcase(:fold)
         return false if value.each_char.all? { |character| Onibi::UnicodeProperties.greek?(character) }
 
         folded.length == value.length && folded != value.downcase
+      end
+
+      def capture_body_has_class?(node)
+        case node
+        when SemanticBytecode::CharacterClass
+          true
+        when SemanticBytecode::Sequence
+          node.parts.any? { |part| capture_body_has_class?(part) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          capture_body_has_class?(node.body)
+        else
+          false
+        end
       end
 
       def mri_fold_boundary_relaxed?(previous_node, node, consumed)
