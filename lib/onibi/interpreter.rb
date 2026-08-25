@@ -1196,10 +1196,18 @@ module Onibi
         return false unless node.minimum.positive? && node.maximum && node.maximum > node.minimum
         return false unless node.expression.is_a?(SemanticBytecode::Literal)
         return false unless strict_end_anchor?(next_node)
-        return false if reverse_fold_source_literal?(node.expression.value)
 
         source = characters[cursor]
-        source && Onibi::UnicodeProperties.reverse_casefold_variants(node.expression.value).include?(source)
+        return false unless source
+
+        if reverse_fold_source_literal?(node.expression.value)
+          return true if source == node.expression.value
+
+          return characters.drop(cursor + node.minimum).include?(node.expression.value)
+        end
+
+        variants = Onibi::UnicodeProperties.reverse_casefold_variants(node.expression.value)
+        variants.include?(source) || characters.drop(cursor + 1).any? { |character| variants.include?(character) }
       end
 
       def mri_alternate_fold_literal_run_anchor_boundary?(node, next_node, characters, cursor, flags)

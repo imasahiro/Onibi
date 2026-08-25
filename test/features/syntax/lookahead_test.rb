@@ -443,6 +443,19 @@ class LookaheadTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_reverse_fold_repeat_restarts_at_source_boundary
+    ["s{1,2}\\z", "ſ{1,2}\\z"].each do |source|
+      %w[ſſ sſ ſs].each do |input|
+        expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+        actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+
+        assert_equal expected&.to_a, actual&.to_a
+        assert_equal expected && [expected.begin(0), expected.end(0)],
+                     actual && [actual.begin(0), actual.end(0)]
+      end
+    end
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
