@@ -130,6 +130,10 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     vowels = Onibi::Regexp.new("[[a-z]&&[^aeiou]]", Onibi::Regexp::IGNORECASE)
     refute vowels.match?("a")
     assert vowels.match?("b")
+
+    opposite_case = Onibi::Regexp.new("[a-z&&[^A-Z]]", Onibi::Regexp::IGNORECASE)
+    assert opposite_case.match?("a")
+    assert opposite_case.match?("A")
   end
 
   def test_ascii8bit_property_uses_byte_semantics

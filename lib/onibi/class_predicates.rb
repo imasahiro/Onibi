@@ -60,8 +60,8 @@ module Onibi
     def intersection_matches?(intersection, character, ignorecase, encoding)
       left = matches?(intersection[0], character, ignorecase: ignorecase, encoding: encoding)
       right = if ignorecase && intersection[1].start_with?("[^")
-                literal_left = !intersection[0].include?("\\p") && !intersection[0].include?("[:")
-                negated_intersection_matches?(intersection[1], character, encoding, literal_left: literal_left)
+                negated_intersection_matches?(intersection[1], character, encoding,
+                                              left_source: intersection[0])
               else
                 matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
               end
@@ -70,9 +70,9 @@ module Onibi
       left && right
     end
 
-    def negated_intersection_matches?(source, character, encoding, literal_left: false)
+    def negated_intersection_matches?(source, character, encoding, left_source: nil)
       body = source[2...-1]
-      if literal_left
+      if intersection_casefold_mode?(left_source, body)
         return casefold_candidates(character).none? do |candidate|
           matches?(body, candidate, ignorecase: true, encoding: encoding)
         end
@@ -81,6 +81,23 @@ module Onibi
       casefold_candidates(character).any? do |candidate|
         !matches?(body, candidate, ignorecase: false, encoding: encoding)
       end
+    end
+
+    def intersection_casefold_mode?(left_source, body)
+      source_case_orientation(left_source) == source_case_orientation(body)
+    end
+
+    def source_case_orientation(source)
+      return :lower if source.match?(/\\p\{(?:Lower|Ll|Lowercase)\}/)
+      return :upper if source.match?(/\\p\{(?:Upper|Lu|Uppercase)\}/)
+      return :mixed if source.include?("\\p") || source.include?("[:")
+
+      has_lower = source.match?(/[a-z]/)
+      has_upper = source.match?(/[A-Z]/)
+      return :lower if has_lower && !has_upper
+      return :upper if has_upper && !has_lower
+
+      :mixed
     end
 
     def casefold_candidates(character)
@@ -215,7 +232,8 @@ module Onibi
           nil
         end
         encoded_match = if encoded_variant && non_utf8_encoding?(encoding)
-                          non_utf8_casefold_character?(normalized_character) &&
+                          (normalized_character.ascii_only? ||
+                           non_utf8_casefold_character?(normalized_character)) &&
                             encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
                         elsif encoded_variant
                           encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
