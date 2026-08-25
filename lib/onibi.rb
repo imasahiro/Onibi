@@ -49,6 +49,15 @@ module Onibi
     LAST_MATCH_KEY = :onibi_regexp_last_match
 
     class << self
+      ESCAPE_REPLACEMENTS = {
+        9 => "\\t",
+        10 => "\\n",
+        11 => "\\v",
+        12 => "\\f",
+        13 => "\\r"
+      }.freeze
+      ESCAPE_METACHARACTERS = "\\[]{}().*+?^$| #-"
+
       def compile(pattern, options = nil, timeout: nil)
         new(pattern, options, timeout: timeout)
       end
@@ -87,15 +96,10 @@ module Onibi
                   raise TypeError, "no implicit conversion of #{type} into String"
                 end
         escaped = value.each_char.map do |character|
-          case character
-          when "\t" then "\\t"
-          when "\n" then "\\n"
-          when "\v" then "\\v"
-          when "\f" then "\\f"
-          when "\r" then "\\r"
-          when /[\\\[\]{}().*+?^$| #-]/ then "\\#{character}"
-          else character
-          end
+          replacement = ESCAPE_REPLACEMENTS[character.ord]
+          replacement ||= "\\#{character}" if character.ascii_only? &&
+                                              ESCAPE_METACHARACTERS.include?(character)
+          (replacement || character).encode(value.encoding)
         end.join
         escaped.force_encoding(escaped.ascii_only? ? Encoding::US_ASCII : value.encoding)
       end
@@ -108,7 +112,10 @@ module Onibi
           flag if (pattern.options & bit).positive?
         end.join
         disabled = ("mix".chars - enabled.chars).join
-        "(?#{enabled}-#{disabled}:#{pattern.source})"
+        source = pattern.source
+        prefix = "(?#{enabled}-#{disabled}:".encode(source.encoding)
+        suffix = ")".encode(source.encoding)
+        prefix + source + suffix
       end
 
       def try_convert(object)
@@ -148,7 +155,7 @@ module Onibi
         end
         options &= ~NOENCODING if has_string
         options |= FIXEDENCODING if has_binary_string
-        result = new(sources.join("|"), options)
+        result = new(join_union_sources(sources), options)
         result.instance_variable_set(:@source, result.source.force_encoding(Encoding::ASCII_8BIT)) if has_binary_string
         result
       end
@@ -177,6 +184,17 @@ module Onibi
       end
 
       private
+
+      def join_union_sources(sources)
+        non_ascii_compatible = sources.filter_map do |source|
+          source.encoding unless source.encoding.ascii_compatible?
+        end.uniq
+        encoding = non_ascii_compatible.first
+        return sources.join("|") unless encoding
+
+        separator = "|".encode(encoding)
+        sources.map { |source| source.ascii_only? ? source.encode(encoding) : source }.join(separator)
+      end
 
       def normalize_timeout_value(value)
         raise ArgumentError, "timeout must be positive" unless value.is_a?(Numeric) && value.positive?
