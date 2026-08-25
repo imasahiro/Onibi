@@ -639,6 +639,11 @@ module Onibi
         @steps += 1
         return [] if @steps > 2_000_000
 
+        # A captured iota fold that matched its source code point cannot
+        # split before a normal consuming operand. MRI permits the split only
+        # when the next operand is an alternation, whose bytecode carries its
+        # own fold-boundary policy.
+
         expanded_source = captures[:__expanded_literal_source]
         grouped_expanded_source = captures[:__group_expanded_literal_source]
         operand_fold = expanded_fold_operand_value(node)
@@ -860,12 +865,21 @@ module Onibi
             previous_states = states
             # rubocop:disable Metrics/BlockLength
             states = previous_states.flat_map do |consumed, state_captures|
+              if state_captures[:__captured_expanded_fold] &&
+                 !state_captures[:__fold_alternation_operand] &&
+                 !state_captures[:__fold_alternation_context] &&
+                 part.is_a?(SemanticBytecode::Literal) &&
+                 fold_boundary_operand_fold(part) != state_captures[:__group_expanded_literal_fold]
+                next []
+              end
+
               keep_capture_fold = state_captures[:__fold_alternation_operand] ||
                                   fold_alternation_operand_node?(part) ||
                                   (part.is_a?(SemanticBytecode::Assertion) && part.kind == :positive)
               unless keep_capture_fold || !state_captures[:__captured_expanded_fold]
                 state_captures = state_captures.dup
                 state_captures.delete(:__captured_expanded_fold)
+                state_captures.delete(:__captured_expanded_fold_source)
                 state_captures.delete(:__group_expanded_literal_source)
                 state_captures.delete(:__group_expanded_literal_fold)
                 state_captures.delete(:__group_expanded_literal_boundary)
@@ -1179,7 +1193,8 @@ module Onibi
             branch_value = alternation_branch_operand_value(branch)
             if captures[:__captured_expanded_fold] && node.operand_context &&
                branch_value && captures[:__group_expanded_literal_fold] &&
-               !captures[:__group_expanded_literal_fold].start_with?(branch_value)
+               !captures[:__group_expanded_literal_fold].start_with?(branch_value) &&
+               branch_value != captures[:__captured_expanded_fold_source]
               branch_captures[:__captured_fold_incompatible] = true
             end
             node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
@@ -1214,6 +1229,7 @@ module Onibi
             if node.capture && next_captures[:__group_expanded_literal_source] &&
                next_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
               next_captures[:__captured_expanded_fold] = true
+              next_captures[:__captured_expanded_fold_source] = characters[cursor]
             end
             if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
                characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
@@ -1515,6 +1531,20 @@ module Onibi
           fold_alternation_operand_node?(node.body)
         else
           false
+        end
+      end
+
+      def fold_boundary_operand_fold(node)
+        case node
+        when SemanticBytecode::Literal
+          node.casefold || node.value
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          fold_boundary_operand_fold(node.body)
+        when SemanticBytecode::Sequence
+          return unless node.parts.all? { |part| fold_boundary_operand_fold(part) }
+
+          node.parts.map { |part| fold_boundary_operand_fold(part) }.join
         end
       end
 

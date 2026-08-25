@@ -869,6 +869,14 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_nil onibi
   end
 
+  def test_captured_iota_fold_does_not_split_before_a_literal_tail
+    pattern = "(?i:(ᾀ))x"
+    input = "ᾀx"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+    assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+  end
+
   def test_longest_reverse_fold_prefix_is_selected
     pattern = "\\bὒa"
     input = "ὒa"
