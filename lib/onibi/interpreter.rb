@@ -799,8 +799,8 @@ module Onibi
           body = node.body
           node = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
         end
+        node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
-        return false unless node.casefold && node.casefold.length > node.value.length
 
         source = characters[cursor]
         return false unless source
@@ -811,6 +811,8 @@ module Onibi
            source.downcase(:fold) == node.value.downcase(:fold)
           return true
         end
+        return false unless node.casefold && node.casefold.length > node.value.length
+
         return false unless node.fold_boundary_sensitive
         return false unless source == node.value
 
@@ -3494,7 +3496,12 @@ module Onibi
       end
 
       def simple_casefold_equal?(left, right)
-        left.downcase == right.downcase
+        left_fold = left.downcase(:fold)
+        right_fold = right.downcase(:fold)
+        return false if left.length > 1 && right_fold.length != right.length
+        return left_fold == right_fold if left_fold.length != left.length || right_fold.length != right.length
+
+        right_fold == left.downcase
       end
 
       def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false)
