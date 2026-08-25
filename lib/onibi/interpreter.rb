@@ -1022,7 +1022,7 @@ module Onibi
         accepted = []
         visit = lambda do |consumed, state_captures, count|
           current = [consumed, state_captures]
-          if (count >= quantifier.minimum) && (quantifier.mode == :lazy)
+          if quantifier_accepts_count?(quantifier, count) && quantifier.mode == :lazy
             accepted << current unless accepted.include?(current)
             return if count >= limit
           end
@@ -1038,17 +1038,18 @@ module Onibi
               expression = expression.body if expression.is_a?(SemanticBytecode::Group)
               if count.positive? && consumed.positive? &&
                  expression.is_a?(SemanticBytecode::Sequence)
-                accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+                accepted << [consumed, inner] if quantifier_accepts_count?(quantifier, count + 1)
                 next
               end
 
-              accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+              accepted << [consumed, inner] if quantifier_accepts_count?(quantifier, count + 1)
               visit.call(consumed, inner, count + 1) if count + 1 < quantifier.minimum
               next
             end
             visit.call(consumed + length, inner, count + 1)
           end
-          accepted << current if quantifier.mode != :lazy && count >= quantifier.minimum && !accepted.include?(current)
+          accepted << current if quantifier.mode != :lazy && quantifier_accepts_count?(quantifier, count) &&
+                                 !accepted.include?(current)
         end
         visit.call(0, captures, 0)
         return [] if accepted.empty?
@@ -1067,10 +1068,22 @@ module Onibi
           end
         end
 
+        if quantifier.lazy_exact
+          # MRI tries the complete exact repetition before its zero-repeat
+          # fallback. This differs from a normal lazy range.
+          accepted.sort_by! { |length, _state| length.zero? ? 1 : 0 }
+        end
+
         return accepted unless mri_anchor_class_quantifier_fallback?(quantifier, accepted)
 
         zero_width = accepted.find { |length, _state| length.zero? }
         zero_width ? [zero_width] : accepted
+      end
+
+      def quantifier_accepts_count?(quantifier, count)
+        return count >= quantifier.minimum unless quantifier.lazy_exact
+
+        count.zero? || count == quantifier.maximum
       end
 
       def lazy_nullable_body?(node)

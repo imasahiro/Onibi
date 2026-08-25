@@ -135,6 +135,13 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(program_for(node))
   end
 
+  def test_repeat_bytecode_records_mri_lazy_exact_bounds
+    node = Onibi::AST::Quantifier.new(Onibi::AST::Literal.new("a"), :bounded, 2, 2, :lazy)
+    operand = program_for(node).instructions[1].operand.last
+
+    assert_equal [0, 2, true], [operand.minimum, operand.maximum, operand.lazy_exact]
+  end
+
   def test_capture_generates_exact_group_operand
     node = Onibi::AST::Group.new(sequence("a"), 1, true, "name")
     assert_equal [

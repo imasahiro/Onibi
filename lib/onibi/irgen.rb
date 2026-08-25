@@ -33,7 +33,9 @@ module Onibi
         Conditional = Struct.new(:condition, :yes_branch, :no_branch)
         SubexpressionCall = Struct.new(:identifier, :named)
         Absence = Struct.new(:body)
-        Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
+        # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
+        # exactly `n` repetitions, not the intermediate counts.
+        Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
 
         NODE_TYPES = {
           Onibi::AST::Literal => Literal,
@@ -92,8 +94,24 @@ module Onibi
             body = compile_value(node.body, casefold: casefold || node.ignorecase)
             return type.new(body, node.ignorecase, node.multiline, node.extended)
           end
+          if node.is_a?(Onibi::AST::Quantifier)
+            minimum, maximum, lazy_exact = mri_lazy_exact_bounds(node)
+            return type.new(compile_value(node.expression, casefold: casefold), node.kind,
+                            minimum, maximum, node.mode, lazy_exact)
+          end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value, casefold: casefold) })
+        end
+
+        # Onigmo treats an exact bound with a lazy suffix (`{n}?`) as a
+        # bounded optional repeat. The bytecode stores that rule explicitly,
+        # so the interpreter does not need to inspect the source AST.
+        def mri_lazy_exact_bounds(node)
+          return [node.minimum, node.maximum, false] unless node.kind == :bounded &&
+                                                            node.mode == :lazy &&
+                                                            node.minimum == node.maximum
+
+          [0, node.maximum, true]
         end
 
         def class_casefold_sequences(source)

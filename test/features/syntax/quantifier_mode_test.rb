@@ -9,6 +9,18 @@ class QuantifierModeTest < Minitest::Test
     assert_equal "aa", match[0]
   end
 
+  def test_lazy_exact_bound_uses_mri_optional_boundary
+    source = "a{2}?b"
+
+    %w[b ab aab aaab].each do |input|
+      expected = ::Regexp.new(source).match(input)
+      actual = Onibi::Regexp.new(source).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a, input
+      assert_equal expected&.offset(0), actual&.offset(0), input
+    end
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 
