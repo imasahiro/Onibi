@@ -15,7 +15,7 @@ module Onibi
 
     def self.captureless(input, start_position, finish_position, regexp)
       match_data = allocate
-      value = input[start_position, finish_position - start_position]
+      value = string_slice(input, start_position, finish_position - start_position)
       match_data.instance_variable_set(:@values, [value].freeze)
       match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
       match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)
@@ -27,9 +27,9 @@ module Onibi
 
     def self.from_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       match_data = allocate
-      full_match = input[start_position, finish_position - start_position]
+      full_match = string_slice(input, start_position, finish_position - start_position)
       captures = capture_offsets.map do |offset|
-        offset && input[offset[0], offset[1] - offset[0]]
+        offset && string_slice(input, offset[0], offset[1] - offset[0])
       end
       match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)
@@ -48,11 +48,11 @@ module Onibi
         offset && [character_position.call(offset[0]), character_position.call(offset[1])]
       end
       captures = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
+        offset && string_byteslice(input, offset[0], offset[1] - offset[0])
       end
       match_data = allocate
       match_data.instance_variable_set(:@values,
-                                       ([input.byteslice(start_position, finish_position - start_position)] + captures).freeze)
+                                       ([string_byteslice(input, start_position, finish_position - start_position)] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)
       match_data.instance_variable_set(
         :@offsets,
@@ -62,6 +62,14 @@ module Onibi
       match_data.instance_variable_set(:@string, input)
       match_data.instance_variable_set(:@regexp, regexp)
       match_data
+    end
+
+    def self.string_slice(input, start_position, length)
+      String.instance_method(:[]).bind_call(input, start_position, length)
+    end
+
+    def self.string_byteslice(input, start_position, length)
+      String.instance_method(:byteslice).bind_call(input, start_position, length)
     end
 
     def initialize(values, captures, offsets, names = {}, context = nil)
@@ -108,12 +116,12 @@ module Onibi
 
     def pre_match
       start_position = self.begin(0)
-      @string[0, start_position]
+      String.instance_method(:[]).bind_call(@string, 0, start_position)
     end
 
     def post_match
       finish = self.end(0)
-      @string[finish..] || ""
+      String.instance_method(:[]).bind_call(@string, finish..) || ""
     end
 
     def named_captures

@@ -83,6 +83,22 @@ class MatchApiTest < Minitest::Test
                  Onibi::Regexp.new("é").match(input).to_a
   end
 
+  def test_match_data_uses_string_bytes_not_overridden_slicing
+    input_class = Class.new(String) do
+      def [](*)
+        "bad"
+      end
+    end
+    input = input_class.new("ba")
+    expected = Regexp.new("(a)").match(input)
+    actual = Onibi::Regexp.new("(a)").match(input)
+
+    assert_equal expected.to_a, actual.to_a
+    assert_equal expected.pre_match, actual.pre_match
+    assert_equal expected.post_match, actual.post_match
+    assert_equal expected.byteoffset(1), actual.byteoffset(1)
+  end
+
   def test_empty_pattern_uses_mri_position_rules
     regexp = Onibi::Regexp.new("")
 

@@ -63,7 +63,8 @@ module Onibi
     end
 
     def byte_position(character_position)
-      @string[0, character_position].bytesize
+      prefix = String.instance_method(:[]).bind_call(@string, 0, character_position)
+      String.instance_method(:bytesize).bind_call(prefix)
     end
   end
 end
