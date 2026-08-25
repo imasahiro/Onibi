@@ -979,6 +979,7 @@ module Onibi
         identifier = node.identifier.to_s
         raise RegexpError, "undefined name <#{identifier}> reference: /#{@source}/" if node.named && !raw_named_captures.key?(identifier)
         next unless identifier.match?(/\A\d+\z/)
+        raise RegexpError, "invalid backref number/name: /#{@source}/" if identifier.to_i > capture_count
         next if raw_named_captures.empty?
 
         raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/"
