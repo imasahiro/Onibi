@@ -86,6 +86,12 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_union_rejects_mixed_ascii_incompatible_encodings
+    pattern = "あ".encode(Encoding::UTF_16LE)
+
+    assert_raises(ArgumentError) { Onibi::Regexp.union(pattern, "a") }
+  end
+
   def test_unicode_full_casefold_matches_mri_for_literals
     [["ß", "SS"], ["ſ", "S"], ["[ß]", "SS"], ["(?i:ss)", "ß"]].each do |pattern, input|
       expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)&.to_a

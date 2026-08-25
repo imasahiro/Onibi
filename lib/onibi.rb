@@ -192,8 +192,10 @@ module Onibi
         encoding = non_ascii_compatible.first
         return sources.join("|") unless encoding
 
+        raise ArgumentError, "ASCII incompatible encoding: #{encoding.name}" if sources.any? { |source| source.encoding != encoding }
+
         separator = "|".encode(encoding)
-        sources.map { |source| source.ascii_only? ? source.encode(encoding) : source }.join(separator)
+        sources.join(separator)
       end
 
       def normalize_timeout_value(value)
