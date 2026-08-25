@@ -945,7 +945,10 @@ module Onibi
     end
 
     def non_ascii_escape_pattern?
-      analysis_source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
+      analysis_source.scan(/(?:\\x[0-9a-fA-F]{2})+/).any? do |sequence|
+        bytes = sequence.scan(/\\x([0-9a-fA-F]{2})/).map { |digits| digits.first.to_i(16) }
+        bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
+      end ||
         analysis_source.scan(/\\([0-7]{3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
     end
 

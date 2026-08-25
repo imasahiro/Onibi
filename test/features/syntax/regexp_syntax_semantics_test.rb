@@ -45,6 +45,15 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert_equal "too short escaped multibyte character: /\\xE9/", error.message
   end
 
+  def test_contiguous_utf8_hex_escapes_match_as_one_character
+    regexp = Onibi::Regexp.new("\\xE3\\x81\\x82")
+    us_ascii_regexp = Onibi::Regexp.new("\\xE3\\x81\\x82".encode(Encoding::US_ASCII))
+
+    assert regexp.match?("あ")
+    assert us_ascii_regexp.match?("あ")
+    refute regexp.match?("い")
+  end
+
   def test_trailing_escape_error_matches_mri
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
 

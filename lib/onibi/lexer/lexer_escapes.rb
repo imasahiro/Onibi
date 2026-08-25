@@ -76,16 +76,40 @@ module Onibi
     end
 
     def hex_escape_token(index)
-      cursor = index + 2
-      digits = +""
-      while digits.length < 2 && hex_digit?(@source[cursor])
-        digits << @source[cursor]
-        cursor += 1
-      end
-      raise RegexpError, "invalid hex escape" if digits.empty?
+      cursor = index
+      bytes = []
+      while @source[cursor] == "\\" && @source[cursor + 1] == "x"
+        digits = @source[(cursor + 2), 2]
+        break unless hex_sequence?(digits, 2)
 
-      codepoint = digits.to_i(16)
-      [Lexer::Token.new(:literal, escaped_byte(codepoint), index), cursor]
+        bytes << digits.to_i(16)
+        cursor += 4
+      end
+      raise RegexpError, "invalid hex escape" if bytes.empty?
+
+      value = escaped_bytes(bytes)
+      [Lexer::Token.new(:literal, value, index), cursor]
+    end
+
+    def escaped_bytes(bytes)
+      return escaped_byte(bytes.first) if bytes.length == 1
+
+      value = bytes.pack("C*").force_encoding(escape_encoding)
+      return value if value.valid_encoding?
+
+      # US-ASCII patterns can contain a valid encoded byte sequence. MRI keeps
+      # the regexp encoding as US-ASCII, but matches the sequence as Unicode.
+      if escape_encoding == Encoding::US_ASCII
+        utf8 = bytes.pack("C*").force_encoding(Encoding::UTF_8)
+        return utf8 if utf8.valid_encoding?
+
+        # MRI defers this invalid US-ASCII byte sequence until match time.
+        # Keep the payload as binary so parsing can continue and the VM can
+        # apply the same encoding compatibility check.
+        return bytes.pack("C*")
+      end
+
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/"
     end
 
     def unicode_escape_token(index)
