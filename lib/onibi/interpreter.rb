@@ -71,6 +71,9 @@ module Onibi
       }
     }.freeze
 
+    UNICODE_ENCODINGS = [Encoding::UTF_8, Encoding::UTF_16LE, Encoding::UTF_16BE,
+                         Encoding::UTF_32LE, Encoding::UTF_32BE].freeze
+
     class Executor
       def initialize(program, input_view: nil)
         @program = program
@@ -98,6 +101,7 @@ module Onibi
                      (@program.flags[:binary_escape] && input_encoding == Encoding::ISO_8859_1)
         input_view = @input_view || Onibi::InputView.new(input, byte_mode: byte_input)
         characters = input_view.characters
+        characters = normalize_runtime_characters(characters, input_encoding)
         @input_view = input_view
         @characters = characters
         @steps = 0
@@ -153,6 +157,14 @@ module Onibi
           return result if result
         end
         nil
+      end
+
+      def normalize_runtime_characters(characters, encoding)
+        return characters unless UNICODE_ENCODINGS.include?(encoding) && encoding != Encoding::UTF_8
+
+        characters.map { |character| character.encode(Encoding::UTF_8) }.freeze
+      rescue EncodingError
+        characters
       end
 
       def shifted_absence_suffix?(node)
@@ -3251,12 +3263,12 @@ module Onibi
       end
 
       # The class predicate is a bytecode operand. Use its prebuilt table
-      # for UTF-8 execution. Encoding-specific input keeps the generic path.
+      # for Unicode encodings after runtime character normalization.
       def compiled_class_match?(node, character, flags)
         return true if flags[:ignorecase] && node.folded_characters&.include?(character)
 
         table = flags[:ignorecase] ? node.compiled_insensitive : node.compiled_sensitive
-        if table && flags[:encoding] == Encoding::UTF_8 && character.encoding == Encoding::UTF_8
+        if table && UNICODE_ENCODINGS.include?(flags[:encoding]) && character.encoding == Encoding::UTF_8
           table.matches?(character)
         else
           Onibi::ClassPredicates.matches?(node.value, character,

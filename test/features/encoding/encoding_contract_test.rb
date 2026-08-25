@@ -41,6 +41,30 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_non_ascii_compatible_unicode_literals_honor_ignorecase
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "a".encode(encoding)
+      input = "A".encode(encoding)
+
+      expected = Regexp.new(pattern, Regexp::IGNORECASE).match?(input)
+      actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match?(input)
+
+      assert_equal expected, actual, encoding.name
+    end
+  end
+
+  def test_non_ascii_compatible_unicode_classes_honor_ignorecase
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "[\\p{Upper}&&[^A-Z]]".encode(encoding)
+      input = "K".encode(encoding)
+
+      expected = Regexp.new(pattern, Regexp::IGNORECASE).match?(input)
+      actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match?(input)
+
+      assert_equal expected, actual, encoding.name
+    end
+  end
+
   def test_non_ascii_compatible_pattern_rejects_other_input_encodings
     pattern = "a".encode(Encoding::UTF_16LE)
     [Encoding::UTF_8, Encoding::ASCII_8BIT].each do |encoding|
