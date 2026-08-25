@@ -537,6 +537,8 @@ module Onibi
     end
 
     def inspect_source
+      return inspect_non_ascii_compatible_source unless @source.encoding.ascii_compatible?
+
       if @source.encoding == Encoding::ASCII_8BIT
         return @source.bytes.map do |byte|
           if byte == 0x2f
@@ -567,6 +569,20 @@ module Onibi
           format("\\u{%X}", codepoint)
         end
       end.join
+    end
+
+    def inspect_non_ascii_compatible_source
+      bytes = @source.each_char.flat_map do |character|
+        if character.ord < 128
+          prefix = character == "/" ? "\\/" : character
+          prefix.bytes
+        elsif character.ord <= 0xffff
+          format("\\u%04X", character.ord).bytes
+        else
+          format("\\u{%X}", character.ord).bytes
+        end
+      end
+      bytes.pack("C*").force_encoding(Encoding::US_ASCII)
     end
 
     def single_inline_scope?

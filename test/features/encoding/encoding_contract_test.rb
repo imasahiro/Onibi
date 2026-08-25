@@ -74,6 +74,16 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_non_ascii_compatible_inspect_preserves_ascii_code_units
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      pattern = "a|é".encode(encoding)
+
+      assert_equal Regexp.new(pattern).inspect, Onibi::Regexp.new(pattern).inspect
+      assert_equal Regexp.union([pattern, "b".encode(encoding)]).inspect,
+                   Onibi::Regexp.union([pattern, "b".encode(encoding)]).inspect
+    end
+  end
+
   def test_ascii_compatible_inspect_preserves_unicode_source
     ["é", "[あ]"].each do |pattern|
       assert_equal Regexp.new(pattern).inspect, Onibi::Regexp.new(pattern).inspect
