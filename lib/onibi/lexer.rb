@@ -116,13 +116,20 @@ module Onibi
     end
 
     def octal_escape_token(index)
-      digits = @source[(index + 1), 3]
-      digits = digits[/\A[0-7]{1,3}/]
-      codepoint = digits.to_i(8)
-      raise RegexpError, "invalid escape code" if codepoint > 0xFF
+      cursor = index
+      bytes = []
+      while @source[cursor] == "\\"
+        digits = @source[(cursor + 1), 3].to_s[/\A[0-7]{1,3}/]
+        break unless digits
 
-      value = escaped_byte(codepoint)
-      [Token.new(:literal, value, index), index + 1 + digits.length]
+        codepoint = digits.to_i(8)
+        raise RegexpError, "invalid escape code" if codepoint > 0xFF
+
+        bytes << codepoint
+        cursor += 1 + digits.length
+      end
+
+      [Token.new(:literal, escaped_bytes(bytes), index), cursor]
     rescue RangeError, EncodingError
       raise RegexpError, "invalid octal escape"
     end

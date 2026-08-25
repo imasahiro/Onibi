@@ -54,6 +54,13 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("い")
   end
 
+  def test_contiguous_utf8_octal_escapes_match_as_one_character
+    regexp = Onibi::Regexp.new("\\343\\201\\202")
+
+    assert regexp.match?("あ")
+    refute regexp.match?("い")
+  end
+
   def test_trailing_escape_error_matches_mri
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
 
