@@ -548,7 +548,7 @@ module Onibi
         clean.delete(:__lookbehind_prior_overlap_values)
         unless casefold_equal?(quantifier.expression.value, source)
           return quantifier.minimum.zero? && captures[:__lookbehind_overlap_alternation] &&
-                 cursor == characters.length ? [[0, clean]] : []
+                 (cursor == characters.length || captures[:__lookbehind_prior_overlap_source]) ? [[0, clean]] : []
         end
         results = node_results(quantifier, characters, cursor, clean, flags)
         if quantifier.maximum

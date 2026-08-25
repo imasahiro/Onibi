@@ -363,6 +363,7 @@ class LookaheadTest < Minitest::Test
 
   def test_ignorecase_lookbehind_uses_branch_fold_width
     [["(?<=ss|a)a", "ßa"], ["(?<=ss|a)a", "ßaa"],
+     ["(?<=s|ß)a*", "ßss"],
      ["(?<=ß|ffi)ffi", "ﬃffi"], ["(?<=ß|ffi)ffi", "ßffi"],
      ["(?<=ß|ﬃ)ﬃ", "ﬃffi"], ["(?<=ss)a", "ßaa"]].each do |source, input|
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
