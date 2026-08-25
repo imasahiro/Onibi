@@ -875,7 +875,9 @@ module Onibi
             previous_states = states
             # rubocop:disable Metrics/BlockLength
             states = previous_states.flat_map do |consumed, state_captures|
-              fold_marker = state_captures[:__captured_expanded_fold] || state_captures[:__expanded_iota_fold]
+              fold_marker = state_captures[:__captured_expanded_fold] ||
+                            state_captures[:__expanded_iota_fold] ||
+                            state_captures[:__quantifier_iota_fold]
               next [] if captured_fold_literal_tail_rejected?(part, state_captures)
 
               keep_capture_fold = state_captures[:__fold_alternation_operand] ||
@@ -886,6 +888,7 @@ module Onibi
                 state_captures.delete(:__captured_expanded_fold)
                 state_captures.delete(:__captured_expanded_fold_source)
                 state_captures.delete(:__expanded_iota_fold)
+                state_captures.delete(:__quantifier_iota_fold)
                 state_captures.delete(:__group_expanded_literal_source)
                 state_captures.delete(:__group_expanded_literal_fold)
                 state_captures.delete(:__group_expanded_literal_boundary)
@@ -1559,12 +1562,13 @@ module Onibi
       end
 
       def captured_fold_literal_tail_rejected?(node, captures)
-        marker = captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold]
+        marker = captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold] ||
+                 captures[:__quantifier_iota_fold]
         return false unless marker && !captures[:__fold_alternation_operand]
         return false if captures[:__fold_alternation_context]
         return false unless node.is_a?(SemanticBytecode::Literal)
 
-        fold_boundary_operand_fold(node) != captures[:__group_expanded_literal_fold]
+        fold_boundary_operand_fold(node) != (captures[:__group_expanded_literal_fold] || marker)
       end
 
       def alternation_branch_operand_value(node)
@@ -2579,11 +2583,19 @@ module Onibi
             return
           end
 
-          repetition_flags = flags.merge(skip_fold_marker: true)
-          node_results(quantifier.expression, characters, cursor + consumed, state_captures,
+          repetition_flags = flags.merge(skip_fold_marker: !iota_fold_operand?(quantifier.expression))
+          repetition_state = state_captures
+          if repetition_state.key?(:__quantifier_iota_fold)
+            repetition_state = repetition_state.dup
+            repetition_state.delete(:__quantifier_iota_fold)
+          end
+          node_results(quantifier.expression, characters, cursor + consumed, repetition_state,
                        repetition_flags).each do |length, inner|
             inner = clear_repeated_absence_captures(quantifier.expression, inner)
+            iota_fold = iota_fold_boundary_state?(inner)
+            iota_fold_value = inner[:__group_expanded_literal_fold] || inner[:__expanded_literal_fold]
             inner = clear_fold_boundary_markers(inner)
+            inner = inner.merge(__quantifier_iota_fold: iota_fold_value) if iota_fold && count.zero?
             if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
                quantifier.expression.capture && length.positive? &&
                repeated_capture_keeps_fold_origin?(quantifier.expression, inner)
@@ -4337,6 +4349,15 @@ module Onibi
         cleaned.delete(:__group_expanded_literal_boundary)
         cleaned.delete(:__group_expanded_literal_prefix)
         cleaned
+      end
+
+      def iota_fold_boundary_state?(captures)
+        boundary = captures[:__group_expanded_literal_boundary] || captures[:__expanded_literal_boundary]
+        boundary&.fetch(:kind, nil) == :iota_tail
+      end
+
+      def iota_fold_operand?(node)
+        fold_boundary_for_node(node)&.fetch(:kind, nil) == :iota_tail
       end
 
       def node_starts_with_selected_atom?(node, atom, captures)
