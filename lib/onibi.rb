@@ -855,7 +855,9 @@ module Onibi
     # capture.
     def character_byte_positions(input)
       positions = [0]
-      input.each_char { |character| positions << positions[-1] + character.bytesize }
+      String.instance_method(:each_char).bind_call(input) do |character|
+        positions << positions[-1] + character.bytesize
+      end
       positions
     end
 
