@@ -373,6 +373,16 @@ class LookaheadTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_lookbehind_overlap_limits_following_quantifier
+    [["(?<=ß)a*", "ßaa"], ["(?<=ß)a+", "ßaa"], ["(?<=ß)a?", "ßß"]].each do |source, input|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
+  end
+
   def test_ignorecase_reverse_fold_anchor_boundary_through_wrappers
     ["(?>ſ|s)\\z", "(?i:ſ|s)\\z"].each do |source|
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
