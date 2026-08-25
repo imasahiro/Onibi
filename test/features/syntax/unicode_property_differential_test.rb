@@ -512,6 +512,15 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     assert_equal [mri[0], mri.offset(0)], [onibi[0], onibi.offset(0)]
   end
 
+  def test_casefold_range_keeps_the_greek_iota_compatibility_member
+    pattern = "[ι]"
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match("ι")
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match("ι")
+
+    assert_equal [expected&.to_a, expected&.offset(0)],
+                 [actual&.to_a, actual&.offset(0)]
+  end
+
   def test_adjacent_classes_do_not_split_one_unicode_character
     pattern = "[s][s]"
     input = "ß"

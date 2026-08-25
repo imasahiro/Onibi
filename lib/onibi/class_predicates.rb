@@ -155,15 +155,17 @@ module Onibi
     def casefold_groups
       @casefold_groups ||= begin
         groups = Hash.new { |hash, key| hash[key] = [] }
-        0.upto(0x10FFFF) do |codepoint|
-          character = begin
-            codepoint.chr(Encoding::UTF_8)
-          rescue RangeError
-            next
-          end
+        add_codepoint = lambda do |codepoint|
+          character = codepoint.chr(Encoding::UTF_8)
           folded = character.downcase(:fold)
           groups[folded] << character
+          groups[folded] << folded if folded.each_char.one?
         end
+        UnicodeProperties::UNICODE_CHANGES_WHEN_CASEFOLDED_RANGES.each do |first, last|
+          first.upto(last, &add_codepoint)
+        end
+        (UnicodeProperties::MULTI_CHAR_CASEFOLD_CODEPOINTS +
+         UnicodeProperties::CASEFOLD_GROUP_CODEPOINTS).uniq.each(&add_codepoint)
         groups.each_value do |members|
           members.uniq!
           members.freeze

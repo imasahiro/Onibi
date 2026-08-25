@@ -102,6 +102,11 @@ module Onibi
       64_260, 64_261, 64_262, 64_275, 64_276, 64_277, 64_278, 64_279
     ].freeze
 
+    # U+1FBE has a simple fold to Greek small iota, but MRI does not expose
+    # it through the Changes_When_Casefolded property table. Keep this small
+    # generated-table exception with the compiler-owned fold data.
+    CASEFOLD_GROUP_CODEPOINTS = [0x1FBE].freeze
+
     # Unicode Simple_Case_Folding has one compatibility code point that is
     # not reached by String#upcase/downcase from its ASCII base character.
     # Keep it in compiler-owned Unicode data so range operands can close over
