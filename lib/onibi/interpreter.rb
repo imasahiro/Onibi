@@ -988,6 +988,7 @@ module Onibi
                              else
                                node_results(part, characters, part_cursor, probe_captures, part_flags)
                              end
+              original_part_results = part_results
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
               optional_order = nil if mri_posix_expanded_optional_anchor?(part, parts[index],
@@ -1082,6 +1083,10 @@ module Onibi
               if mri_backreference_anchor_boundary?(part, parts[index], state_captures,
                                                     flags)
                 part_results = []
+              end
+              if mri_positive_lookahead_extra_character_relaxed?(part, parts[index],
+                                                                 characters, cursor + consumed)
+                part_results = original_part_results
               end
               part_results.filter_map do |length, inner|
                 if state_captures[:__zero_absence] &&
@@ -1912,11 +1917,12 @@ module Onibi
         return false unless boundary
 
         tail = boundary[:tail]
+        return false if next_node.is_a?(SemanticBytecode::Assertion) && next_node.kind == :positive && characters[cursor + 2] && characters[cursor + 2] != tail
+
         return true if next_operands.any? { |operand| operand.value == tail } &&
                        characters[cursor + 1] == tail
 
-        if expression.is_a?(SemanticBytecode::CharacterClass) &&
-           boundary_operand(next_body).is_a?(SemanticBytecode::Alternation)
+        if boundary_operand(next_body).is_a?(SemanticBytecode::Alternation)
           next_character = characters[cursor + 1]
           return true if next_character == tail &&
                          next_operands.any? { |operand| operand.value == tail }
@@ -1926,6 +1932,9 @@ module Onibi
           return false if next_character &&
                           fold.start_with?(next_character) &&
                           input_remainder == folded_remainder
+
+          return false if next_character && fold.start_with?(next_character) &&
+                          characters.length > cursor + 2
 
           return true if next_character && fold.start_with?(next_character)
         end
@@ -1937,6 +1946,17 @@ module Onibi
           fold.start_with?(next_value) &&
             characters[cursor + 1]&.downcase(:fold) == next_value
         end
+      end
+
+      def mri_positive_lookahead_extra_character_relaxed?(node, next_node, characters, cursor)
+        return false unless next_node.is_a?(SemanticBytecode::Assertion) &&
+                            next_node.kind == :positive
+
+        boundary = fold_boundary_for_node(node)
+        return false unless boundary
+
+        extra = characters[cursor + 2]
+        extra && extra != boundary[:tail]
       end
 
       def mri_reverse_fold_quantifier_anchor_source_width?(node, next_node, characters, cursor, flags)
