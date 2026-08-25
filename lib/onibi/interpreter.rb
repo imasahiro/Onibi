@@ -534,6 +534,7 @@ module Onibi
                                                                 flags)
                 part_results = []
               end
+              part_results = part_results.select { |length, _inner| length <= part.maximum } if mri_posix_quantifier_anchor_source_width?(part, parts[index])
               if mri_alternate_fold_literal_run_anchor_boundary?(part, parts[index],
                                                                  characters, cursor + consumed,
                                                                  flags)
@@ -1044,6 +1045,12 @@ module Onibi
         return false if Onibi::UnicodeProperties.greek?(source)
 
         source.downcase(:fold).length == 1 && source.downcase(:fold) == node.value[0].downcase(:fold)
+      end
+
+      def mri_posix_quantifier_anchor_source_width?(node, next_node)
+        node.is_a?(SemanticBytecode::Quantifier) && node.expression.is_a?(SemanticBytecode::CharacterClass) &&
+          node.expression.value.include?(":") && node.maximum &&
+          next_node.is_a?(SemanticBytecode::Anchor)
       end
 
       def later_fold_candidate?(literal, characters, cursor)
