@@ -1076,7 +1076,9 @@ module Onibi
       colon = analysis_source.index(":")
       return false if colon && close && colon < close
 
-      modifier = analysis_source[2, (colon || close || analysis_source.length) - 2].to_s
+      # Only the first group header can define a global modifier. A later
+      # non-capturing group may contain `:` but must not change this header.
+      modifier = analysis_source[2, (close || analysis_source.length) - 2].to_s
       !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
         modifier.each_char.any? { |character| %w[i m x].include?(character) }
     end

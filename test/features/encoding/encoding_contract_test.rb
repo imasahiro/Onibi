@@ -203,6 +203,27 @@ class EncodingContractTest < Minitest::Test
     assert regexp.match?("S")
   end
 
+  def test_inline_casefold_applies_to_quantified_unicode_literals
+    pattern = "(?i)(?:ß){1,2}"
+    %w[ss SS aßss ssß ssss].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a, [input, expected, actual]
+      assert_equal expected && expected.offset(0), actual && actual.offset(0), input
+    end
+  end
+
+  def test_inline_casefold_applies_to_fixed_repeated_character_classes
+    pattern = "(?i)(?:[s]){2}s"
+    input = "ßss"
+    expected = ::Regexp.new(pattern).match(input)
+    actual = Onibi::Regexp.new(pattern).match(input)
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && expected.offset(0), actual && actual.offset(0)
+  end
+
   def test_ascii_compatible_literal_skips_redundant_encoding_validation
     input = ValidationTrackingString.new("needle")
 

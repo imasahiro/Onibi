@@ -626,15 +626,18 @@ module Onibi
 
           class_repetition = flags[:ignorecase] && flags[:casefold_repetition] &&
                              node.parts.length > 1 &&
-                             node.parts.all? { |part| part.is_a?(SemanticBytecode::CharacterClass) } &&
-                             node.parts.none? { |part| part.value.start_with?("^") } &&
-                             node.parts.all? { |part| fold_repetition_class?(part) } &&
-                             (node.parts.all? { |part| part.casefolds.empty? } ||
+                             node.parts.map { |part| repeated_class_operand(part) }.all? &&
+                             node.parts.none? { |part| repeated_class_operand(part).value.start_with?("^") } &&
+                             node.parts.all? { |part| fold_repetition_class?(repeated_class_operand(part)) } &&
+                             (node.parts.all? { |part| repeated_class_operand(part).casefolds.empty? } ||
                               node.parts.all? do |part|
-                                part.casefolds.any? && part.value.each_char.one?
+                                operand = repeated_class_operand(part)
+                                operand.casefolds.any? && operand.value.each_char.one?
                               end)
           if class_repetition
-            class_lengths = casefold_class_sequence_lengths(node.parts, characters, cursor, flags)
+            class_lengths = casefold_class_sequence_lengths(
+              node.parts.map { |part| repeated_class_operand(part) }, characters, cursor, flags
+            )
             return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
           end
 
@@ -1228,6 +1231,32 @@ module Onibi
 
         characters = source.each_char.to_a
         characters.uniq.one?
+      end
+
+      def repeated_class_operand(node)
+        return node if node.is_a?(SemanticBytecode::CharacterClass)
+
+        body = if node.is_a?(SemanticBytecode::Group) ||
+                  node.is_a?(SemanticBytecode::OptionGroup) ||
+                  node.is_a?(SemanticBytecode::AtomicGroup)
+                 node.body
+               end
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body if body.is_a?(SemanticBytecode::CharacterClass)
+      end
+
+      def repeatable_casefold_operand(node)
+        return node if node.is_a?(SemanticBytecode::Literal) ||
+                       node.is_a?(SemanticBytecode::CharacterClass)
+        return if node.is_a?(SemanticBytecode::Group) && node.capture
+
+        body = if node.is_a?(SemanticBytecode::Group) ||
+                  node.is_a?(SemanticBytecode::OptionGroup) ||
+                  node.is_a?(SemanticBytecode::AtomicGroup)
+                 node.body
+               end
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        repeatable_casefold_operand(body) if body
       end
 
       # MRI changes branch order for an optional folded literal. With no
@@ -1910,14 +1939,13 @@ module Onibi
 
         if flags[:ignorecase] && quantifier.minimum == quantifier.maximum &&
            quantifier.minimum > 1 &&
-           (quantifier.expression.is_a?(SemanticBytecode::Literal) ||
-            quantifier.expression.is_a?(SemanticBytecode::CharacterClass))
+           repeatable_casefold_operand(quantifier.expression)
           # A fixed repetition is one logical literal sequence. Matching each
           # operand alone would lose reverse folds such as `ſ{2}` versus `ß`.
           repeated = SemanticBytecode::Sequence.new(
             Array.new(quantifier.minimum, quantifier.expression)
           )
-          repetition_flags = if quantifier.expression.is_a?(SemanticBytecode::CharacterClass)
+          repetition_flags = if repeatable_casefold_operand(quantifier.expression).is_a?(SemanticBytecode::CharacterClass)
                                flags.merge(casefold_repetition: true)
                              else
                                flags
