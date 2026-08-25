@@ -83,6 +83,18 @@ class V2IRGenTest < Minitest::Test
     refute operand.compiled_sensitive.matches?("0")
   end
 
+  def test_character_class_fold_groups_are_only_compiled_for_casefolding
+    plain = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("[\\p{Upper}&&[^A-Z]]")
+    )
+    folded = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("[\\p{Upper}&&[^A-Z]]"), casefold: true
+    )
+
+    assert_empty plain.folded_characters
+    assert_includes folded.folded_characters, "K"
+  end
+
   def test_escape_property_and_any_generate_exact_match_operands
     nodes = [
       [Onibi::AST::Escape.new(:digit), :match_escape],

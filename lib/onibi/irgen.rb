@@ -58,9 +58,12 @@ module Onibi
 
         module_function
 
-        def compile(node)
+        def compile(node, casefold: false)
           type = NODE_TYPES.fetch(node.class)
-          return type.new(compile_value(node.body), node.kind, Onibi::WidthAnalysis.widths(node.body)) if node.is_a?(Onibi::AST::Assertion)
+          if node.is_a?(Onibi::AST::Assertion)
+            return type.new(compile_value(node.body, casefold: casefold), node.kind,
+                            Onibi::WidthAnalysis.widths(node.body))
+          end
           if node.is_a?(Onibi::AST::Property)
             return type.new(node.name, node.negated,
                             Onibi::UnicodeProperties.casefold_sequences(node.name))
@@ -83,10 +86,14 @@ module Onibi
             return type.new(node.value, folds, split,
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
-                            class_casefold_characters(node.value))
+                            casefold ? class_casefold_characters(node.value) : [].freeze)
+          end
+          if node.is_a?(Onibi::AST::OptionGroup)
+            body = compile_value(node.body, casefold: casefold || node.ignorecase)
+            return type.new(body, node.ignorecase, node.multiline, node.extended)
           end
 
-          type.new(*node.each_pair.map { |_field, value| compile_value(value) })
+          type.new(*node.each_pair.map { |_field, value| compile_value(value, casefold: casefold) })
         end
 
         def class_casefold_sequences(source)
@@ -143,13 +150,27 @@ module Onibi
           end
         end
 
-        def compile_value(value)
+        def compile_value(value, casefold: false)
           if value.respond_to?(:each_pair)
-            compile(value)
+            compile(value, casefold: casefold)
           elsif value.is_a?(Array)
-            value.map { |item| compile_value(item) }
+            value.map { |item| compile_value(item, casefold: casefold) }
           else
             value
+          end
+        end
+
+        def casefold_required?(node)
+          return true if node.is_a?(Onibi::AST::OptionGroup) && node.ignorecase
+
+          node.respond_to?(:each_pair) && node.each_pair.any? do |_field, value|
+            if value.respond_to?(:each_pair)
+              casefold_required?(value)
+            elsif value.is_a?(Array)
+              value.any? { |item| item.respond_to?(:each_pair) && casefold_required?(item) }
+            else
+              false
+            end
           end
         end
 

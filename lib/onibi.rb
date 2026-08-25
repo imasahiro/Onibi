@@ -915,7 +915,10 @@ module Onibi
         compiled = Onibi::Compiler.compile(@ast, options: @options, encoding: @source.encoding)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
-        semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(@ast)
+        semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+          @ast,
+          casefold: casefold? || Onibi::IRGen::YARVIR::SemanticBytecode.casefold_required?(@ast)
+        )
         full_casefold = Onibi::IRGen::YARVIR::SemanticBytecode.full_casefold?(semantic_root)
         unicode_capture_byte_offsets =
           Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
