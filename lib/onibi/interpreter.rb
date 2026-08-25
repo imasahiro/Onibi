@@ -129,6 +129,7 @@ module Onibi
                        captures.delete(:__match_probe)
                        captures.delete(:__match_prefix)
                        captures.delete(:__match_prefix_value)
+                       captures.delete(:__class_capture_numbers)
                        captures.delete(:__match_alternative)
                        captures.delete(:__match_alternative_index)
                        captures.delete(:__zero_absence)
@@ -1414,6 +1415,8 @@ module Onibi
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
              SemanticBytecode::AtomicGroup
           capture_body_has_class?(node.body)
+        when SemanticBytecode::Quantifier
+          capture_body_has_class?(node.expression)
         else
           false
         end

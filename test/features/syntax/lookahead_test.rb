@@ -370,6 +370,17 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_property_quantifier_backreference_keeps_nonempty_capture
+    ["(\\p{L}+?)\\1\\z", "(\\p{L}*)\\1\\z"].each do |source|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſſ")
+
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
