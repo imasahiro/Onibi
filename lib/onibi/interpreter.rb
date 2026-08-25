@@ -686,13 +686,15 @@ module Onibi
           source_fold = captures[:__group_expanded_literal_fold]
           prefix = captures[:__group_expanded_literal_prefix] || +""
           combined = prefix + operand_fold.to_s
-          if captures[:__captured_expanded_fold] && captures[:__fold_alternation_operand] &&
+          if (captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold]) &&
+             captures[:__fold_alternation_operand] &&
              source_fold && !source_fold.start_with?(combined)
             captures = captures.dup
             captures[:__captured_fold_incompatible] = true
           end
-          if captures[:__captured_expanded_fold] && captures[:__fold_alternation_operand] &&
-             cursor + 1 >= characters.length && source_fold && !source_fold.start_with?(combined)
+          if (captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold]) &&
+             captures[:__fold_alternation_operand] && cursor + 1 >= characters.length &&
+             source_fold&.start_with?(combined) && combined != source_fold
             return []
           end
 
@@ -865,7 +867,8 @@ module Onibi
             previous_states = states
             # rubocop:disable Metrics/BlockLength
             states = previous_states.flat_map do |consumed, state_captures|
-              if state_captures[:__captured_expanded_fold] &&
+              fold_marker = state_captures[:__captured_expanded_fold] || state_captures[:__expanded_iota_fold]
+              if fold_marker &&
                  !state_captures[:__fold_alternation_operand] &&
                  !state_captures[:__fold_alternation_context] &&
                  part.is_a?(SemanticBytecode::Literal) &&
@@ -876,10 +879,11 @@ module Onibi
               keep_capture_fold = state_captures[:__fold_alternation_operand] ||
                                   fold_alternation_operand_node?(part) ||
                                   (part.is_a?(SemanticBytecode::Assertion) && part.kind == :positive)
-              unless keep_capture_fold || !state_captures[:__captured_expanded_fold]
+              unless keep_capture_fold || !fold_marker
                 state_captures = state_captures.dup
                 state_captures.delete(:__captured_expanded_fold)
                 state_captures.delete(:__captured_expanded_fold_source)
+                state_captures.delete(:__expanded_iota_fold)
                 state_captures.delete(:__group_expanded_literal_source)
                 state_captures.delete(:__group_expanded_literal_fold)
                 state_captures.delete(:__group_expanded_literal_boundary)
@@ -1191,7 +1195,8 @@ module Onibi
           node.branches.each_with_index.flat_map do |branch, branch_index|
             branch_captures = captures.merge(branch_marker => true)
             branch_value = alternation_branch_operand_value(branch)
-            if captures[:__captured_expanded_fold] && node.operand_context &&
+            if (captures[:__captured_expanded_fold] || captures[:__expanded_iota_fold]) &&
+               node.operand_context &&
                branch_value && captures[:__group_expanded_literal_fold] &&
                !captures[:__group_expanded_literal_fold].start_with?(branch_value) &&
                branch_value != captures[:__captured_expanded_fold_source]
@@ -1348,6 +1353,7 @@ module Onibi
                 marked[:__expanded_literal_fold] = fold
                 marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
                 marked[:__expanded_literal_from_class] = true
+                marked[:__expanded_iota_fold] = true if marked[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
                 next [class_length, marked]
               end
               [class_length, captures]
@@ -5065,7 +5071,8 @@ module Onibi
         return unless character && node.respond_to?(:casefolds)
 
         pair = node.casefolds.find { |source, _fold| source == character }
-        fold = pair && pair[1]
+        fold = pair&.[](1)
+        fold ||= character.downcase(:fold) if node.fold_boundaries&.key?(character)
         fold if fold && fold.length > character.length
       end
 

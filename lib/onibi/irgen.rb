@@ -114,13 +114,12 @@ module Onibi
           if node.is_a?(Onibi::AST::CharacterClass)
             folds = class_casefold_sequences(node.value)
             split = folds.any? { |source, value| %w[ß ẞ].include?(source) && value == "ss" }
+            folded_characters = casefold ? class_casefold_characters(node.value) : [].freeze
             return type.new(node.value, folds, split,
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
-                            casefold ? class_casefold_characters(node.value) : [].freeze,
-                            folds.each_with_object({}) do |(source, folded), metadata|
-                              metadata[source] = fold_boundary_metadata(folded, true)
-                            end.freeze)
+                            folded_characters,
+                            class_fold_boundaries(folds, folded_characters))
           end
           if node.is_a?(Onibi::AST::OptionGroup)
             body = compile_value(node.body, casefold: casefold || node.ignorecase)
@@ -230,6 +229,16 @@ module Onibi
             result.concat(members)
           end
           characters.uniq.freeze
+        end
+
+        def class_fold_boundaries(folds, folded_characters)
+          characters = folds.map(&:first) | folded_characters
+          characters.each_with_object({}) do |character, metadata|
+            folded = character.downcase(:fold)
+            next unless folds.any? { |_source, value| value == folded }
+
+            metadata[character] = fold_boundary_metadata(folded, true)
+          end.freeze
         end
 
         def full_casefold?(node)
