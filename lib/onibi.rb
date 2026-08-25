@@ -401,6 +401,7 @@ module Onibi
     def ===(input)
       !match(input).nil?
     rescue TypeError
+      Thread.current[LAST_MATCH_KEY] = nil
       false
     end
 

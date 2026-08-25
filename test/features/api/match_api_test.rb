@@ -74,9 +74,11 @@ class MatchApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("a")
 
     [1, true, false, Object.new].each do |input|
+      regexp.match("a")
       expected = Regexp.new("a").public_send("===", input)
       actual = regexp.public_send("===", input)
       assert_equal expected, actual
+      assert_nil Onibi::Regexp.last_match
     end
   end
 
