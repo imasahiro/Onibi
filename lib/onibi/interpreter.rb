@@ -1998,10 +1998,18 @@ module Onibi
         if quantifier.mode != :lazy && quantifier.maximum != quantifier.minimum &&
            nullable_single_quantifier?(quantifier.expression) &&
            !lazy_nullable_body?(quantifier.expression)
-          accepted = accepted.group_by(&:first).values.map(&:last).sort_by { |length, _state| -length }
+          accepted = accepted.group_by(&:first).values.flat_map do |candidates|
+            length = candidates.first.first
+            if length.zero? && candidates.length > 1
+              candidates
+            else
+              [candidates.last]
+            end
+          end.sort_by { |length, _state| -length }
           group = quantifier.expression
           accepted = accepted.map do |length, state|
             next [length, state] if quantifier.maximum && length >= quantifier.maximum
+            next [length, state] unless length.positive? || state.key?(group.number)
 
             next_state = state.dup
             next_state[group.number] = [cursor + length, cursor + length]
