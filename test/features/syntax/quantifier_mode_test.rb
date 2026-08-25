@@ -197,6 +197,18 @@ class QuantifierModeTest < Minitest::Test
     assert_equal expected.to_a, actual&.to_a
   end
 
+  def test_nested_possessive_repeat_prefers_a_consuming_nullable_unit
+    pattern = "(a?){2}+"
+
+    %w[a aa ab].each do |input|
+      expected = ::Regexp.new(pattern).match(input)
+      actual = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal expected.to_a, actual.to_a, input
+      assert_equal expected.offset(0), actual.offset(0), input
+    end
+  end
+
   def test_nested_possessive_zero_width_unit_keeps_capture_state
     source = "(?=(?<value>.))+?*+"
     expected = ::Regexp.new(source).match("a\nb")

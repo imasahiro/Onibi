@@ -2209,7 +2209,13 @@ module Onibi
           count += 1
         end
         return [] if accepted.empty?
-        return [ordered_zero] if ordered_zero
+        # A nullable inner bounded repeat keeps its first zero-width branch.
+        # An inner repeat with a positive minimum must consume first.
+        return [ordered_zero] if ordered_zero &&
+                                 (quantifier.minimum.zero? ||
+                                  (quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
+                                   quantifier.expression.minimum.zero?) ||
+                                  accepted.none? { |length, _state| length.positive? })
 
         # A zero-width nested unit can update captures without changing the
         # cursor. Prefer the state with the most capture data at an equal
