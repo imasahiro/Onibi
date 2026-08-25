@@ -471,8 +471,20 @@ module Onibi
             return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
           end
 
-          states = [[0, captures]]
           parts = node.parts
+          if parts.length == 2 && mri_property_alternation_anchor_expansion?(parts[0], parts[1], characters,
+                                                                             cursor)
+            expanded_flags = flags.merge(property_alternation_anchor: true)
+            first_results = node_results(parts[0], characters, cursor, captures, expanded_flags)
+            maximum = first_results.map(&:first).max
+            return first_results.select { |length, _state| length == maximum }.flat_map do |length, state|
+              node_results(parts[1], characters, cursor + length, state, expanded_flags).map do |tail, inner|
+                [length + tail, inner]
+              end
+            end
+          end
+
+          states = [[0, captures]]
           index = 0
           while index < parts.length
             part_index = index
@@ -1202,6 +1214,7 @@ module Onibi
         return false unless node.branches.any? do |branch|
           operand = boundary_operand(branch)
           operand.is_a?(SemanticBytecode::Property) ||
+          operand.is_a?(SemanticBytecode::Any) ||
           (operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":"))
         end
         return false if node.branches.any? do |branch|
@@ -1251,7 +1264,7 @@ module Onibi
         end
         return false if node.branches.any? do |branch|
           operand = boundary_operand(branch)
-          operand.is_a?(SemanticBytecode::Property) ||
+          operand.is_a?(SemanticBytecode::Property) || operand.is_a?(SemanticBytecode::Any) ||
           (operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":"))
         end
 
