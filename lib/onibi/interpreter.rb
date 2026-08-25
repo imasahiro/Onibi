@@ -692,6 +692,7 @@ module Onibi
                                overlap_source = state_captures[:__lookbehind_overlap_source]
                                overlap_chars = part.value.each_char.to_a
                                overlap_count = state_captures[:__lookbehind_overlap].to_i
+                               overlap_prefix = overlap_chars.first(overlap_count).join
                                folded_chars = (part.casefold || part.value).each_char.to_a
                                overlap_values = state_captures[:__lookbehind_overlap_values] || []
                                body_matches_source = overlap_values.any? do |value|
@@ -702,8 +703,9 @@ module Onibi
                                )
                                expanded_overlap_allowed = state_captures[:__lookbehind_overlap_expanded] &&
                                                           (index < parts.length - 1 ||
+                                                           part.value.length > 1 ||
                                                            (part.casefold && part.casefold.length > part.value.length))
-                               if overlap_count.positive? && casefold_equal?(part.value, overlap_source) &&
+                               if overlap_count.positive? && casefold_equal?(overlap_prefix, overlap_source) &&
                                   (body_matches_source || expanded_overlap_allowed)
                                  remainder = overlap_chars.drop(overlap_count).join
                                  next_state = state_captures.dup
@@ -719,6 +721,17 @@ module Onibi
                                    node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
                                                 characters, cursor + consumed, next_state, part_flags)
                                  end
+                               elsif overlap_count.positive? && !state_captures[:__lookbehind_overlap_expanded] &&
+                                     cursor + consumed < characters.length &&
+                                     casefold_equal?(part.value, characters[cursor + consumed])
+                                 next_state = state_captures.dup
+                                 next_state.delete(:__lookbehind_overlap)
+                                 next_state.delete(:__lookbehind_overlap_source)
+                                 next_state.delete(:__lookbehind_overlap_values)
+                                 next_state.delete(:__lookbehind_overlap_alternation)
+                                 next_state.delete(:__lookbehind_overlap_expanded)
+                                 next_state.delete(:__lookbehind_direct_tail_reject)
+                                 [[0, next_state]]
                                elsif overlap_count.positive? && overlap_count < folded_chars.length &&
                                      (part.casefold && part.casefold.length > part.value.length ||
                                       !state_captures[:__lookbehind_overlap_alternation] ||

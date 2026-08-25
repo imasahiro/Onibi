@@ -362,8 +362,9 @@ class LookaheadTest < Minitest::Test
   end
 
   def test_ignorecase_lookbehind_uses_branch_fold_width
-    [["(?<=ss|a)a", "ßa"], ["(?<=ß|ffi)ffi", "ﬃffi"],
-     ["(?<=ß|ﬃ)ﬃ", "ﬃffi"]].each do |source, input|
+    [["(?<=ss|a)a", "ßa"], ["(?<=ss|a)a", "ßaa"],
+     ["(?<=ß|ffi)ffi", "ﬃffi"], ["(?<=ß|ffi)ffi", "ßffi"],
+     ["(?<=ß|ﬃ)ﬃ", "ﬃffi"], ["(?<=ss)a", "ßaa"]].each do |source, input|
       expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match(input)
       actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match(input)
 
