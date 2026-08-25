@@ -22,7 +22,9 @@ module Onibi
         # consulting AST or rebuilding Unicode fold candidates at run time.
         Property = Struct.new(:name, :negated, :casefolds)
         Backreference = Struct.new(:identifier, :named)
-        Assertion = Struct.new(:body, :kind, :widths)
+        # `folded_widths` is the finite width set used by the VM for
+        # encoding-aware lookbehind. It is compiler output, not AST state.
+        Assertion = Struct.new(:body, :kind, :widths, :folded_widths)
         Any = Struct.new(:value)
         Anchor = Struct.new(:kind)
         Sequence = Struct.new(:parts)
@@ -64,7 +66,8 @@ module Onibi
           type = NODE_TYPES.fetch(node.class)
           if node.is_a?(Onibi::AST::Assertion)
             return type.new(compile_value(node.body, casefold: casefold), node.kind,
-                            Onibi::WidthAnalysis.widths(node.body))
+                            Onibi::WidthAnalysis.widths(node.body),
+                            folded_widths(compile_value(node.body, casefold: casefold)))
           end
           if node.is_a?(Onibi::AST::Property)
             return type.new(node.name, node.negated,
@@ -101,6 +104,34 @@ module Onibi
           end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value, casefold: casefold) })
+        end
+
+        def folded_widths(node)
+          case node
+          when SemanticBytecode::Literal
+            [(node.casefold || node.value).length]
+          when SemanticBytecode::CharacterClass
+            [1, *node.casefolds.to_a.map { |_source, value| value.length }].uniq
+          when SemanticBytecode::Property, SemanticBytecode::Any, SemanticBytecode::Escape
+            [1]
+          when SemanticBytecode::Anchor
+            [0]
+          when SemanticBytecode::Sequence
+            node.parts.reduce([0]) do |widths, part|
+              widths.product(folded_widths(part)).map { |left, right| left + right }.uniq
+            end
+          when SemanticBytecode::Alternation
+            node.branches.flat_map { |branch| folded_widths(branch) }.uniq
+          when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+               SemanticBytecode::AtomicGroup, SemanticBytecode::Assertion
+            folded_widths(node.body)
+          when SemanticBytecode::Quantifier
+            return [] unless node.maximum && node.minimum == node.maximum
+
+            folded_widths(node.expression).map { |width| width * node.minimum }
+          else
+            []
+          end
         end
 
         # Onigmo treats an exact bound with a lazy suffix (`{n}?`) as a

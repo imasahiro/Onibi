@@ -304,7 +304,7 @@ module Onibi
       def lookbehind_results(assertion, characters, cursor, captures, flags)
         widths = assertion.widths || (0..cursor).to_a
         if flags[:ignorecase]
-          folded_widths = casefold_widths(assertion.body)
+          folded_widths = assertion.folded_widths || casefold_widths(assertion.body)
           widths = folded_widths unless folded_widths.empty?
         end
         lookbehind_flags = flags.merge(lookbehind_casefold: true)
