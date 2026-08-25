@@ -456,13 +456,14 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   end
 
   def test_scoped_ignorecase_greek_fold_respects_strict_end_anchor
-    pattern = "(?i:ᾀ){1,2}\\z"
-    input = "ᾀ"
-    mri = Regexp.new(pattern).match(input)
-    onibi = Onibi::Regexp.new(pattern).match(input)
+    %w[ᾀ ᾷ ῇ ῷ].each do |input|
+      pattern = "(?i:#{input}){1,2}\\z"
+      mri = Regexp.new(pattern).match(input)
+      onibi = Onibi::Regexp.new(pattern).match(input)
 
-    assert_nil mri
-    assert_nil onibi
+      assert_nil mri
+      assert_nil onibi
+    end
   end
 
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold

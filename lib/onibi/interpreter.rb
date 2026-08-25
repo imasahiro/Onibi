@@ -1758,7 +1758,6 @@ module Onibi
         value = expression.value
         folded = value.downcase(:fold)
         return false unless folded.length > value.length && folded.each_char.uniq.length > 1
-        return false if folded.each_char.any? { |character| character.match?(/\p{M}/) }
         return false unless folded.end_with?("ι")
 
         source = characters[cursor]
