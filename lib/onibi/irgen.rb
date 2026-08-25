@@ -91,6 +91,7 @@ module Onibi
                                  folded.each_char.uniq.length > 1 &&
                                  folded.each_char.none? { |character| character.match?(/\p{M}/) }
             fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
+            fold_boundary ||= simple_fold_boundary_metadata(folded)
             fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive, fold_boundary, fold_prefix_boundary)
@@ -196,6 +197,15 @@ module Onibi
             sensitive: boundary_sensitive }.freeze
         end
 
+        def simple_fold_boundary_metadata(folded)
+          variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
+          # MRI treats the Kelvin sign as a source boundary. Other reverse
+          # simple folds, such as long s, remain ordinary fold candidates.
+          return unless folded == "k" && variants.include?("K")
+
+          { kind: :simple_fold_source, variants: variants.freeze }.freeze
+        end
+
         def fold_prefix_boundary_metadata(value)
           return nil unless value.encoding == Encoding::UTF_8
 
@@ -235,9 +245,15 @@ module Onibi
           characters = folds.map(&:first) | folded_characters
           characters.each_with_object({}) do |character, metadata|
             folded = character.downcase(:fold)
+            simple = simple_fold_boundary_metadata(folded)
+            if simple && simple[:variants].include?(character)
+              metadata[character] = simple
+              next
+            end
             next unless folds.any? { |_source, value| value == folded }
 
-            metadata[character] = fold_boundary_metadata(folded, true)
+            metadata[character] = fold_boundary_metadata(folded, true) ||
+                                  simple_fold_boundary_metadata(folded)
           end.freeze
         end
 

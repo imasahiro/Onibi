@@ -778,9 +778,13 @@ module Onibi
                                                               !flags[:lookbehind_fold_source]).first
               if folded_length
                 next_captures = captures.dup
+                simple_source = node.parts.length == 1 &&
+                                node.parts.first.fold_boundary&.fetch(:kind, nil) == :simple_fold_source &&
+                                node.parts.first.fold_boundary[:variants].include?(characters[cursor]) &&
+                                characters[cursor] != folded_value
                 if !flags[:skip_fold_marker] && folded_length == 1 &&
                    characters[cursor]&.downcase(:fold) == folded_value &&
-                   folded_value.length > value.length
+                   (folded_value.length > value.length || simple_source)
                   next_captures[:__expanded_literal_source] = true
                   next_captures[:__expanded_literal_fold] = folded_value
                   next_captures[:__expanded_literal_boundary] = node.parts.filter_map(&:fold_boundary).first
@@ -1360,22 +1364,16 @@ module Onibi
                 marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
                 marked[:__expanded_literal_from_class] = true
                 marked[:__expanded_literal_value] = characters[cursor]
-                marked[:__expanded_iota_fold] = true if marked[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
+                marked[:__expanded_iota_fold] = true if %i[iota_tail simple_fold_source].include?(
+                  marked[:__expanded_literal_boundary]&.fetch(:kind, nil)
+                )
                 next [class_length, marked]
               end
               [class_length, captures]
             end
           end
 
-          if node.is_a?(SemanticBytecode::Literal) &&
-             !flags[:skip_fold_marker] && flags[:ignorecase] && node.casefold &&
-             node.casefold.length > node.value.length && length == 1 &&
-             characters[cursor]&.downcase(:fold) == node.casefold
-            marked = captures.dup
-            marked[:__expanded_literal_source] = true
-            marked[:__expanded_literal_fold] = characters[cursor].downcase(:fold)
-            marked[:__expanded_literal_boundary] = node.fold_boundary
-            marked[:__expanded_literal_value] = characters[cursor]
+          if (marked = literal_fold_marker(node, characters, cursor, captures, flags, length))
             return [[length, marked]]
           end
 
@@ -1391,6 +1389,25 @@ module Onibi
           end
           [[length, captures]]
         end
+      end
+
+      def literal_fold_marker(node, characters, cursor, captures, flags, length)
+        return unless node.is_a?(SemanticBytecode::Literal)
+        return if flags[:skip_fold_marker] || !flags[:ignorecase] || length != 1
+
+        character = characters[cursor]
+        expanded = node.casefold && node.casefold.length > node.value.length &&
+                   character&.downcase(:fold) == node.casefold
+        simple_source = node.fold_boundary&.fetch(:kind, nil) == :simple_fold_source &&
+                        node.fold_boundary[:variants].include?(character) && character != node.casefold
+        return unless expanded || simple_source
+
+        captures.merge(
+          __expanded_literal_source: true,
+          __expanded_literal_fold: simple_source ? node.casefold : character.downcase(:fold),
+          __expanded_literal_boundary: node.fold_boundary,
+          __expanded_literal_value: character
+        )
       end
 
       # Onigmo can split one expanded fold across adjacent operands. For
@@ -5108,6 +5125,8 @@ module Onibi
         pair = node.casefolds.find { |source, _fold| source == character }
         fold = pair&.[](1)
         fold ||= character.downcase(:fold) if node.fold_boundaries&.key?(character)
+        return fold if fold && node.fold_boundaries&.fetch(character, nil)&.fetch(:kind, nil) == :simple_fold_source
+
         fold if fold && fold.length > character.length
       end
 
