@@ -87,6 +87,14 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?(input)
   end
 
+  def test_ascii8bit_casefold_keeps_non_ascii_bytes_exact
+    pattern = "\x80".b
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("\x80".b)
+    refute regexp.match?("\x81".b)
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 
