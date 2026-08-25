@@ -311,6 +311,10 @@ module Onibi
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
           results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
+          if flags[:ignorecase] && cursor < characters.length &&
+             expanded_lookbehind_source_at_boundary?(assertion.body, characters, cursor)
+            matching = []
+          end
           unless matching.empty?
             return matching.map do |_length, inner|
               state = inner.dup
@@ -429,6 +433,15 @@ module Onibi
 
         source = characters[cursor - node.casefold.length, node.value.length]
         source && source.join == node.value
+      end
+
+      def expanded_lookbehind_source_at_boundary?(node, characters, cursor)
+        return node.branches.any? { |branch| expanded_lookbehind_source_at_boundary?(branch, characters, cursor) } if node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.any? { |part| expanded_lookbehind_source_at_boundary?(part, characters, cursor) } if node.is_a?(SemanticBytecode::Sequence)
+        return false unless node.is_a?(SemanticBytecode::Literal)
+        return false unless node.casefold && node.casefold.length > node.value.length
+
+        characters[cursor - node.value.length] == node.value
       end
 
       def folded_lookbehind_value(node)
