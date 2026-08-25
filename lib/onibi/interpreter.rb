@@ -1462,7 +1462,10 @@ module Onibi
         when :match_literal
           value = literal_characters(operand, flags)
           if flags[:ignorecase]
-            return 0 if captures[:__lookbehind_reverse_fold] && cursor >= characters.length
+            if captures[:__lookbehind_reverse_fold] && cursor >= characters.length &&
+               operand.casefold && operand.casefold.length > operand.value.length
+              return 0
+            end
 
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
