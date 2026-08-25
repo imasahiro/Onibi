@@ -778,7 +778,8 @@ module Onibi
                                body_matches_source ||= lookbehind_overlap_suffix?(
                                  overlap_values, overlap_source, overlap_count
                                )
-                               expanded_overlap_allowed = state_captures[:__lookbehind_overlap_expanded] &&
+                               expanded_overlap_allowed = (state_captures[:__lookbehind_overlap_expanded] ||
+                                                           state_captures[:__lookbehind_reverse_fold]) &&
                                                           (index < parts.length - 1 ||
                                                            part.value.length > 1 ||
                                                            (part.casefold && part.casefold.length > part.value.length))
@@ -816,7 +817,10 @@ module Onibi
                                  next_state.delete(:__lookbehind_prior_overlap_source)
                                  next_state.delete(:__lookbehind_prior_overlap_values)
                                  [[0, next_state]]
-                               elsif overlap_count.positive? && overlap_count < folded_chars.length &&
+                               elsif overlap_count.positive? &&
+                                     (overlap_count <= overlap_source.to_s.downcase(:fold).length ||
+                                      (part.casefold && part.casefold.length > part.value.length)) &&
+                                     overlap_count < folded_chars.length &&
                                      (part.casefold && part.casefold.length > part.value.length ||
                                       !state_captures[:__lookbehind_overlap_alternation] ||
                                       lookbehind_overlap_suffix?(overlap_values, overlap_source, overlap_count))
