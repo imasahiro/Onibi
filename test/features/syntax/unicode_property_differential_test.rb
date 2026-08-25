@@ -479,6 +479,39 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_expanded_fold_prefix_can_continue_with_a_literal
+    %w[İ ŉ ΐ ẖ].each do |source|
+      folded = source.downcase(:fold)
+      pattern = "(?i:[#{source}])#{folded.each_char.first}"
+      input = source + folded
+
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+
+    pattern = "(?i:[ᾀ])(?=ἀ)"
+    input = "ᾀἀι"
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+  end
+
+  def test_iota_fold_does_not_split_into_following_operands
+    [["(?i:ᾀ)ἀ", "ᾀἀι"], ["(?i:ᾀ)(?:ἀ)", "ᾀἀι"],
+     ["(?i:ᾀ)(?=ἀ)", "ᾀἀι"], ["(?i:ᾴ)(?=ά)", "ᾴάι"],
+     ["(?i:ῳ)(?=ω)", "ῳωι"]].each do |pattern, input|
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+
+    pattern = "(?i:(ᾀ))ἀ"
+    input = "ᾀἀι"
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+  end
+
+  def test_iota_fold_class_alternation_preserves_virtual_tail
+    pattern = "(?i:[ᾀ])(?:ἀ|ι)"
+    %w[ᾀἀι ᾀἀ ᾀι].each do |input|
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    end
+  end
+
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold
     pattern = "[a-z]+"
     input = "ſa"

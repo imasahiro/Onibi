@@ -174,6 +174,8 @@ module Onibi
       end
 
       def expanded_fold_tail_rejected?(captures, characters, cursor)
+        return false unless captures[:__expanded_fold_anchor]
+
         source_fold = captures[:__group_expanded_literal_fold]
         prefix = captures[:__group_expanded_literal_prefix]
         return false unless source_fold && prefix && source_fold.start_with?(prefix) && source_fold != prefix
@@ -983,8 +985,13 @@ module Onibi
                 part_results = []
               end
               if mri_distinct_expanded_fold_anchor_boundary?(part, parts[index], characters,
-                                                             cursor + consumed, flags) &&
+                                                             cursor + consumed,
+                                                             flags) &&
                  part_results.all? { |length, _inner| length <= 1 }
+                part_results = []
+              end
+              if mri_expanded_fold_prefix_boundary?(part, parts[index], characters,
+                                                    cursor + consumed, flags)
                 part_results = []
               end
               if mri_reverse_fold_quantifier_anchor_reject?(part, parts[index], characters,
@@ -1242,6 +1249,11 @@ module Onibi
             return [[length, marked]]
           end
 
+          if node.is_a?(SemanticBytecode::Anchor) && strict_end_anchor?(node) &&
+             captures[:__group_expanded_literal_source]
+            captures = captures.dup
+            captures[:__expanded_fold_anchor] = true
+          end
           [[length, captures]]
         end
       end
@@ -1623,6 +1635,17 @@ module Onibi
           node = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 1
         end
         node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
+        if flags[:ignorecase] && node.is_a?(SemanticBytecode::CharacterClass) &&
+           node.casefolds.length == 1 && next_node.is_a?(SemanticBytecode::Literal)
+          source = characters[cursor]
+          fold = node.casefolds.first[1]
+          next_value = next_node.value
+          return true if source == node.value && fold.end_with?("ι") &&
+                         fold.start_with?(next_value) &&
+                         characters[cursor + 1]&.downcase(:fold) == next_value
+
+          return false
+        end
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
 
         source = characters[cursor]
@@ -1651,6 +1674,12 @@ module Onibi
         end
 
         next_value = next_node_value(next_node)
+        if next_node.is_a?(SemanticBytecode::Literal) && next_value &&
+           node.casefold.start_with?(next_value) &&
+           !node.casefold.end_with?("ι") &&
+           next_source && next_source.downcase(:fold) == next_value
+          return false
+        end
         if next_value && later_sequence_fold_candidate?(next_value, characters,
                                                         cursor + 1 + next_value.length)
           return false
@@ -1782,6 +1811,66 @@ module Onibi
         source = characters[cursor]
         source && source.downcase(:fold).length > source.length &&
           source.downcase(:fold) == folded
+      end
+
+      def mri_expanded_fold_prefix_boundary?(node, next_node, characters, cursor, flags)
+        next_body = if next_node.is_a?(SemanticBytecode::Assertion) &&
+                       next_node.kind == :positive
+                      next_node.body
+                    else
+                      next_node
+                    end
+        next_operands = boundary_literal_operands(next_body)
+        return false if next_operands.empty?
+
+        expression = boundary_operand(node)
+        grouped_fold = node.is_a?(SemanticBytecode::Group) &&
+                       capture_body_has_expanding_literal?(node.body)
+        return false unless flags[:ignorecase] || option_group_ignorecase?(node) || grouped_fold
+
+        source = characters[cursor]
+        fold = if expression.is_a?(SemanticBytecode::CharacterClass)
+                 return false unless expression.casefolds.length == 1
+
+                 return false unless source == expression.value
+
+                 expression.casefolds.first[1]
+               elsif expression.is_a?(SemanticBytecode::Literal)
+                 return false unless source == expression.value
+
+                 expression.casefold || expression.value.downcase(:fold)
+               end
+        return false unless fold
+        return false unless fold.end_with?("ι")
+
+        if expression.is_a?(SemanticBytecode::CharacterClass) &&
+           boundary_operand(next_body).is_a?(SemanticBytecode::Alternation)
+          next_character = characters[cursor + 1]
+          return true if next_character == "ι" &&
+                         next_operands.any? { |operand| operand.value == "ι" }
+
+          return false if next_character &&
+                          fold.start_with?(next_character) &&
+                          characters[cursor + 2] == "ι"
+
+          return true if next_character && fold.start_with?(next_character)
+        end
+
+        next_operands.any? do |next_operand|
+          next_value = next_operand.value
+          if next_node.is_a?(SemanticBytecode::Assertion)
+            # MRI's Unicode fold table keeps Greek iota-subscript folds with
+            # breathing/grave prefixes and omega prefixes as one operand.
+            normalized = next_value.unicode_normalize(:nfd)
+            has_non_split_mark = normalized.include?("\u0300") ||
+                                 normalized.include?("\u0313") ||
+                                 normalized.include?("\u0314")
+            omega_prefix = normalized.each_char.first == "ω"
+            next false unless has_non_split_mark || omega_prefix
+          end
+          fold.start_with?(next_value) &&
+            characters[cursor + 1]&.downcase(:fold) == next_value
+        end
       end
 
       def mri_reverse_fold_quantifier_anchor_source_width?(node, next_node, characters, cursor, flags)
@@ -4758,6 +4847,14 @@ module Onibi
                             node.is_a?(SemanticBytecode::AtomicGroup)
         node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
         node
+      end
+
+      def boundary_literal_operands(node)
+        node = unwrap_literal_operand(node)
+        return [node] if node.is_a?(SemanticBytecode::Literal)
+        return [] unless node.is_a?(SemanticBytecode::Alternation)
+
+        node.branches.flat_map { |branch| boundary_literal_operands(branch) }
       end
 
       def option_group_ignorecase?(node)
