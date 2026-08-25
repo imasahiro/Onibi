@@ -1561,6 +1561,7 @@ module Onibi
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]
           matched = flags[:ignorecase] ? simple_casefold_equal?(value.join, candidate.join) : candidate == value
+          matched = value.join.downcase(:fold) == candidate.join.downcase(:fold) if !matched && flags[:ignorecase] && cursor + value.length < characters.length
           return value.length if matched
         end
         nil
