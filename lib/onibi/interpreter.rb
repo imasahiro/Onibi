@@ -2178,65 +2178,36 @@ module Onibi
       # the compiled execution path so a following operand can select the
       # first valid greedy unit without reopening the outer repeat.
       def nested_possessive_quantifier_results(quantifier, characters, cursor, captures, flags)
-        frontier = [[0, captures]]
-        accepted = quantifier.minimum.zero? ? [[0, captures]] : []
-        ordered_zero = nil
-        limit = characters.length - cursor + 1
-        count = 0
-        while count < limit && !frontier.empty?
-          next_frontier = []
-          frontier.each do |consumed, state|
-            node_results(quantifier.expression, characters, cursor + consumed, state, flags).each do |length, inner|
-              if length.zero? && !zero_width_nested_unit_valid?(quantifier.expression, characters,
-                                                                cursor + consumed, state, flags)
-                next
-              end
+        accepted = []
+        limit = quantifier.maximum || characters.length - cursor + 1
+        visit = lambda do |consumed, state, count|
+          current = [consumed, state]
+          if count >= limit
+            accepted << current if count >= quantifier.minimum
+            next
+          end
 
-              next_count = count + 1
-              zero_width_state = inner != state || inner.key?(:__match_alternative)
-              ordered_zero = [consumed + length, inner] if count.zero? && length.zero? &&
-                                                           zero_width_state && ordered_zero.nil? &&
-                                                           !(quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
-                                                             quantifier.expression.mode == :lazy &&
-                                                             quantifier.expression.minimum.zero?)
-              accepted << [consumed + length, inner] if next_count >= quantifier.minimum
-              next if length.zero?
+          results = node_results(quantifier.expression, characters, cursor + consumed, state, flags)
+          if results.empty?
+            accepted << current if count >= quantifier.minimum
+            next
+          end
 
-              next_frontier << [consumed + length, inner]
+          results.each do |length, inner|
+            if length.zero?
+              next unless zero_width_nested_unit_valid?(quantifier.expression, characters,
+                                                        cursor + consumed, state, flags)
+
+              accepted << [consumed, inner] if count + 1 >= quantifier.minimum
+              break
             end
-          end
-          frontier = next_frontier
-          count += 1
-        end
-        return [] if accepted.empty?
-        # A nullable inner bounded repeat keeps its first zero-width branch.
-        # An inner repeat with a positive minimum must consume first.
-        return [ordered_zero] if ordered_zero &&
-                                 (quantifier.minimum.zero? ||
-                                  (quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
-                                   quantifier.expression.minimum.zero?) ||
-                                  accepted.none? { |length, _state| length.positive? })
 
-        # A zero-width nested unit can update captures without changing the
-        # cursor. Prefer the state with the most capture data at an equal
-        # width. Keep the latest state when capture data has the same shape.
-        accepted.group_by(&:first).values.map do |candidates|
-          if quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
-             quantifier.expression.mode == :lazy && quantifier.expression.minimum.zero?
-            candidates.first
-          else
-            candidates.each_with_index.max_by do |(_length, state), index|
-              [state.count { |key, _value| key.is_a?(Integer) || key.is_a?(String) }, index]
-            end.first
+            visit.call(consumed + length, inner, count + 1)
           end
-        end.sort_by do |length, _state|
-          if quantifier.expression.is_a?(SemanticBytecode::Quantifier) &&
-             quantifier.expression.mode == :lazy && quantifier.expression.minimum.zero?
-            length
-          else
-            -length
-          end
+          accepted << current if count >= quantifier.minimum
         end
+        visit.call(0, captures, 0)
+        accepted.uniq
       end
 
       def zero_width_nested_unit_valid?(node, characters, cursor, captures, flags)

@@ -209,6 +209,23 @@ class QuantifierModeTest < Minitest::Test
     end
   end
 
+  def test_nested_possessive_bounded_units_keep_inner_order
+    [
+      ["(a?){0,2}+", %w[a aa]],
+      ["(a*){0,2}+", %w[a aa]],
+      ["(a+){0,2}+", %w[aa aaa]],
+      ["(a|ab){0,2}+", %w[ab aba]]
+    ].each do |pattern, inputs|
+      inputs.each do |input|
+        expected = ::Regexp.new(pattern).match(input)
+        actual = Onibi::Regexp.new(pattern).match(input)
+
+        assert_equal expected.to_a, actual.to_a, [pattern, input]
+        assert_equal expected.offset(0), actual.offset(0), [pattern, input]
+      end
+    end
+  end
+
   def test_nested_possessive_zero_width_unit_keeps_capture_state
     source = "(?=(?<value>.))+?*+"
     expected = ::Regexp.new(source).match("a\nb")
