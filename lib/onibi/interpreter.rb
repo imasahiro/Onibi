@@ -96,7 +96,12 @@ module Onibi
         characters = if byte_input
                        input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }
                      else
-                       input.codepoints.map { |codepoint| codepoint.chr(input.encoding) }
+                       # Keep the encoding decoder on the String. MRI's
+                       # Onigmo engine advances with encoding callbacks; it
+                       # does not round-trip every codepoint through `chr`.
+                       # `each_char` preserves the original encoding and
+                       # avoids an intermediate Integer array.
+                       input.each_char.to_a
                      end
         @characters = characters
         @steps = 0
