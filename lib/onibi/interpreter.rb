@@ -1147,6 +1147,8 @@ module Onibi
         return false unless %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind)
 
         source = characters[cursor]
+        return false if source && Onibi::UnicodeProperties.reverse_casefold_variants(node.value).include?(source)
+
         source && source != node.value && source.downcase(:fold) == node.value.downcase(:fold)
       end
 
@@ -1309,6 +1311,7 @@ module Onibi
         return false if node.branches.any? do |branch|
           operand = boundary_operand(branch)
           operand.is_a?(SemanticBytecode::Property) || operand.is_a?(SemanticBytecode::Any) ||
+          (operand.is_a?(SemanticBytecode::Escape) && operand.kind == :word) ||
           (operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":"))
         end
 
@@ -1406,17 +1409,37 @@ module Onibi
 
       def capture_body_has_class?(node)
         case node
-        when SemanticBytecode::CharacterClass, SemanticBytecode::Property
+        when SemanticBytecode::CharacterClass, SemanticBytecode::Property,
+             SemanticBytecode::Any
           true
         when SemanticBytecode::Sequence
           node.parts.any? { |part| capture_body_has_class?(part) }
         when SemanticBytecode::Alternation
-          node.branches.any? { |branch| capture_body_has_class?(branch) }
+          node.branches.any? { |branch| capture_body_has_class?(branch) } ||
+            node.branches.any? { |branch| capture_body_has_expanding_literal?(branch) }
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
              SemanticBytecode::AtomicGroup
           capture_body_has_class?(node.body)
         when SemanticBytecode::Quantifier
-          capture_body_has_class?(node.expression)
+          node.maximum.nil? || capture_body_has_class?(node.expression)
+        else
+          false
+        end
+      end
+
+      def capture_body_has_expanding_literal?(node)
+        case node
+        when SemanticBytecode::Literal
+          node.casefold && node.casefold.length > node.value.length
+        when SemanticBytecode::Sequence
+          node.parts.any? { |part| capture_body_has_expanding_literal?(part) }
+        when SemanticBytecode::Alternation
+          node.branches.any? { |branch| capture_body_has_expanding_literal?(branch) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          capture_body_has_expanding_literal?(node.body)
+        when SemanticBytecode::Quantifier
+          capture_body_has_expanding_literal?(node.expression)
         else
           false
         end
@@ -1577,6 +1600,12 @@ module Onibi
 
           node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
             inner = clear_repeated_absence_captures(quantifier.expression, inner)
+            if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
+               quantifier.expression.capture && length.positive?
+              inner = inner.dup
+              inner[:__class_capture_numbers] = Array(inner[:__class_capture_numbers])
+              inner[:__class_capture_numbers] << quantifier.expression.number
+            end
             if length.zero?
               expression = quantifier.expression
               expression = expression.body if expression.is_a?(SemanticBytecode::Group)
