@@ -3353,7 +3353,7 @@ module Onibi
       end
 
       def ascii_property?(name)
-        %w[ASCII Alpha Alnum Digit Lower Upper Space Word XDigit Blank Cntrl Graph Print Punct].include?(name)
+        %w[ASCII Alpha Alnum Digit Lower Upper Space Word XDigit Blank Cntrl Punct].include?(name)
       end
 
       def unicode_character(character)
