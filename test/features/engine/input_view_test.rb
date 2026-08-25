@@ -28,4 +28,23 @@ class InputViewTest < Minitest::Test
 
     assert_match(/character boundary/, error.message)
   end
+
+  def test_byte_mode_exposes_byte_units_without_reencoding
+    view = Onibi::InputView.new("é".encode(Encoding::UTF_8), byte_mode: true)
+
+    assert_equal [0xC3.chr(Encoding::ASCII_8BIT), 0xA9.chr(Encoding::ASCII_8BIT)], view.characters
+    assert_equal [0, 1, 2], view.byte_boundaries
+  end
+
+  def test_decoder_ignores_string_subclass_iteration
+    input_class = Class.new(String) do
+      def each_char
+        raise "InputView must use the base String decoder"
+      end
+    end
+
+    view = Onibi::InputView.new(input_class.new("a"))
+
+    assert_equal ["a"], view.characters
+  end
 end

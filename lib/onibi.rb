@@ -894,11 +894,7 @@ module Onibi
     # encoding-aware matcher instead of rescanning the prefix for every
     # capture.
     def character_byte_positions(input)
-      positions = [0]
-      String.instance_method(:each_char).bind_call(input) do |character|
-        positions << positions[-1] + character.bytesize
-      end
-      positions
+      Onibi::InputView.new(input).byte_boundaries
     end
 
     def bytecode_program

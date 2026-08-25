@@ -95,20 +95,9 @@ module Onibi
         input_ascii_only = String.instance_method(:ascii_only?).bind_call(input)
         byte_input = input_encoding == Encoding::ASCII_8BIT ||
                      (@program.flags[:binary_escape] && input_encoding == Encoding::ISO_8859_1)
-        characters = if byte_input
-                       String.instance_method(:bytes).bind_call(input).map do |byte|
-                         byte.chr(Encoding::ASCII_8BIT)
-                       end
-                     else
-                       # Keep the encoding decoder on the String. MRI's
-                       # Onigmo engine advances with encoding callbacks; it
-                       # does not round-trip every codepoint through `chr`.
-                       # `each_char` preserves the original encoding and
-                       # avoids an intermediate Integer array.
-                       decoded = []
-                       String.instance_method(:each_char).bind_call(input) { |character| decoded << character }
-                       decoded
-                     end
+        input_view = Onibi::InputView.new(input, byte_mode: byte_input)
+        characters = input_view.characters
+        @input_view = input_view
         @characters = characters
         @steps = 0
         # Character classes use the input encoding when an ASCII pattern can
