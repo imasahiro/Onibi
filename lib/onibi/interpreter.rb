@@ -1095,6 +1095,8 @@ module Onibi
               end
               part_results = [] if state_captures[:__simple_fold_alternation_source] &&
                                    part.is_a?(SemanticBytecode::Literal)
+              part_results = [] if state_captures[:__iota_fold_alternation_source] &&
+                                   part.is_a?(SemanticBytecode::Literal)
               boundary_relaxed = mri_fold_boundary_relaxed?(previous_part, part, consumed) ||
                                  mri_fold_boundary_lookahead_relaxed?(previous_part, part,
                                                                       parts[index], characters,
@@ -1271,6 +1273,11 @@ module Onibi
                  !expanding_alternative && distinct_alternative &&
                  state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
                 marked[:__simple_fold_alternation_source] = true
+              end
+              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
+                 !distinct_alternative &&
+                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
+                marked[:__iota_fold_alternation_source] = true
               end
               marked[:__match_alternative] = true
               marked[:__match_alternative_index] = branch_index
@@ -2317,7 +2324,7 @@ module Onibi
       end
 
       def mri_posix_anchor_source_width?(node, next_node, characters, cursor)
-        operand = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        operand = node.is_a?(SemanticBytecode::Quantifier) ? boundary_operand(node.expression) : boundary_operand(node)
         operand = boundary_operand(operand)
         return false unless operand.is_a?(SemanticBytecode::CharacterClass)
         return false unless operand.value.include?(":")
@@ -2342,9 +2349,9 @@ module Onibi
       end
 
       def mri_reverse_fold_literal_anchor_boundary?(node, next_node, characters, cursor, flags)
-        return false unless flags[:ignorecase] && strict_end_anchor?(next_node)
+        return false unless (flags[:ignorecase] || option_group_ignorecase?(node)) && strict_end_anchor?(next_node)
 
-        operand = node.is_a?(SemanticBytecode::Quantifier) ? node.expression : node
+        operand = node.is_a?(SemanticBytecode::Quantifier) ? boundary_operand(node.expression) : boundary_operand(node)
         return false if node.is_a?(SemanticBytecode::Quantifier) && node.minimum != node.maximum
         return false unless operand.is_a?(SemanticBytecode::Literal)
         return false unless operand.value.each_char.one?
