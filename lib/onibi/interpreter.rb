@@ -1185,7 +1185,8 @@ module Onibi
         return false unless end_anchor?(next_node)
         return false unless node.branches.any? do |branch|
           operand = boundary_operand(branch)
-          operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":")
+          operand.is_a?(SemanticBytecode::Property) ||
+          (operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":"))
         end
         return false if node.branches.any? do |branch|
           operand = boundary_operand(branch)
@@ -1216,6 +1217,15 @@ module Onibi
         source = characters[cursor]
         return false unless source
         return false if source.ascii_only?
+        return false if node.branches.any? do |branch|
+          literal = boundary_operand(branch)
+          literal.is_a?(SemanticBytecode::Literal) &&
+          literal.casefold&.length.to_i > literal.value.length
+        end
+        return false if node.branches.any? do |branch|
+          operand = boundary_operand(branch)
+          operand.is_a?(SemanticBytecode::CharacterClass) && operand.value.include?(":")
+        end
 
         node.branches.any? do |branch|
           literal = boundary_operand(branch)
