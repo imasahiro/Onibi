@@ -79,8 +79,11 @@ module Onibi
               [character, character.downcase(:fold)]
             end
             segments = nil if segments.all? { |source, value| source == value }
+            # An expanded fold with distinct, non-mark code points can cross
+            # operand boundaries in Onigmo. Derive this from fold structure,
+            # not from a script-specific table.
             boundary_sensitive = folded.length > node.value.length &&
-                                 folded.each_char.any? { |character| Onibi::UnicodeProperties.greek?(character) } &&
+                                 folded.each_char.uniq.length > 1 &&
                                  folded.each_char.none? { |character| character.match?(/\p{M}/) }
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive)
