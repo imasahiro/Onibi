@@ -169,7 +169,8 @@ module Onibi
 
       def linear_time_ast?(node)
         case node
-        when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall, Onibi::AST::Absence
+        when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall, Onibi::AST::Absence,
+             Onibi::AST::Conditional
           false
         when Onibi::AST::Sequence
           node.parts.all? { |part| linear_time_ast?(part) }
@@ -178,8 +179,6 @@ module Onibi
         when Onibi::AST::Group, Onibi::AST::AtomicGroup, Onibi::AST::OptionGroup,
              Onibi::AST::Quantifier, Onibi::AST::Assertion
           linear_time_ast?(node.respond_to?(:body) ? node.body : node.expression)
-        when Onibi::AST::Conditional
-          linear_time_ast?(node.yes_branch) && (!node.no_branch || linear_time_ast?(node.no_branch))
         else
           true
         end

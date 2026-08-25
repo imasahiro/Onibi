@@ -4,7 +4,7 @@ require "test_helper"
 
 class RegexpUtilityTest < Minitest::Test
   UNSAFE_PATTERNS = [
-    "(?<word>a)\\k<word>", "(?~a)"
+    "(?<word>a)\\k<word>", "(?~a)", "(a)?(?(1)b|c)"
   ].freeze
   def test_escape_quotes_regexp_metacharacters
     assert_equal "a\\.b\\[c\\]\\ \\(x\\)\\\\", Onibi::Regexp.escape("a.b[c] (x)\\")
