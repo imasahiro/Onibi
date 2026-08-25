@@ -10,25 +10,24 @@ module Onibi
 
       @string = string
       @byte_mode = byte_mode
-      @characters = decode_characters.freeze
-      @boundaries = nil
+      @characters, @boundaries = decode_characters
     end
 
     def character_length
-      boundaries.length - 1
+      @boundaries.length - 1
     end
 
     def byte_offset(character_index)
-      boundaries.fetch(normalize_character_index(character_index))
+      @boundaries.fetch(normalize_character_index(character_index))
     end
 
     def byte_boundaries
-      boundaries
+      @boundaries
     end
 
     def character_index(byte_offset)
-      index = boundaries.bsearch_index { |boundary| boundary >= byte_offset }
-      raise IndexError, "byte offset is not a character boundary" unless index && boundaries[index] == byte_offset
+      index = @boundaries.bsearch_index { |boundary| boundary >= byte_offset }
+      raise IndexError, "byte offset is not a character boundary" unless index && @boundaries[index] == byte_offset
 
       index
     end
@@ -42,25 +41,23 @@ module Onibi
     private
 
     def decode_characters
+      boundaries = [0]
       if @byte_mode
-        return String.instance_method(:bytes).bind_call(@string).map do |byte|
+        characters = String.instance_method(:bytes).bind_call(@string).map do |byte|
+          boundaries << boundaries.last + 1
           byte.chr(Encoding::ASCII_8BIT)
         end
+        return [characters.freeze, boundaries.freeze]
       end
 
       characters = []
-      String.instance_method(:each_char).bind_call(@string) { |character| characters << character }
-      characters
-    end
-
-    def boundaries
-      @boundaries ||= [0].tap do |result|
-        cursor = 0
-        @characters.each do |character|
-          cursor += character.bytesize
-          result << cursor
-        end
-      end.freeze
+      cursor = 0
+      String.instance_method(:each_char).bind_call(@string) do |character|
+        characters << character
+        cursor += String.instance_method(:bytesize).bind_call(character)
+        boundaries << cursor
+      end
+      [characters.freeze, boundaries.freeze]
     end
 
     def string_bytesize
