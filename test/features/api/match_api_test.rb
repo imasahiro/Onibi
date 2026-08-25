@@ -161,6 +161,20 @@ class MatchApiTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_gsub_block_uses_string_value_not_overridden_to_s
+    value_class = Class.new(String) do
+      def to_s
+        "bad"
+      end
+    end
+    value = value_class.new("X")
+
+    expected = "a".gsub(::Regexp.new("a")) { value }
+    actual = Onibi::Regexp.new("a").gsub("a") { value }
+
+    assert_equal expected, actual
+  end
+
   def test_empty_pattern_uses_mri_position_rules
     regexp = Onibi::Regexp.new("")
 

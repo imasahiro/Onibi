@@ -510,7 +510,11 @@ module Onibi
         finish = character_position_for_match(input, matched)
         output << String.instance_method(:[]).bind_call(input, cursor...start)
         value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
-        output << value.to_s
+        output << if value.is_a?(String)
+                    String.instance_method(:to_s).bind_call(value)
+                  else
+                    value.to_s
+                  end
         if finish == start
           cursor = start
           search_position = start + 1
