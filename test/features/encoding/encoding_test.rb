@@ -367,6 +367,17 @@ class EncodingTest < Minitest::Test
     end
   end
 
+  def test_non_utf8_posix_graph_and_print_include_non_ascii_characters
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      input = "あ".encode(encoding)
+      %w[graph print].each do |property|
+        pattern = "[[:#{property}:]]"
+
+        assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+      end
+    end
+  end
+
   def test_iso8859_posix_properties_include_latin1_letters
     encoding = Encoding::ISO_8859_1
     pattern = "\\p{Alpha}".encode(encoding)

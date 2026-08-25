@@ -234,9 +234,15 @@ module Onibi
 
     def incompatible_property?(name, character, encoding)
       non_utf8_encoding?(encoding) &&
-        (%w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Graph Print Punct].include?(name) ||
+        (encoding_specific_ascii_property?(name, encoding) ||
          (name == "Word" && encoding == Encoding::ASCII_8BIT)) &&
         !character.ascii_only?
+    end
+
+    def encoding_specific_ascii_property?(name, encoding)
+      properties = %w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Punct]
+      properties << "Graph" << "Print" if encoding == Encoding::ASCII_8BIT
+      properties.include?(name)
     end
 
     def non_utf8_encoding?(encoding)
