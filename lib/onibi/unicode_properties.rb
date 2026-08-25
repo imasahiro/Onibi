@@ -108,7 +108,8 @@ module Onibi
     # the same reverse fold as MRI.
     REVERSE_SIMPLE_CASEFOLDS = {
       "k" => ["K"], "K" => ["K"], "K" => %w[k K],
-      "s" => ["ſ"], "S" => ["ſ"], "ſ" => %w[s S]
+      "s" => ["ſ"], "S" => ["ſ"], "ſ" => %w[s S],
+      "ß" => ["ẞ"], "ẞ" => ["ß"]
     }.freeze
 
     def validate!(name)
