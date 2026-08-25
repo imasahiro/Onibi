@@ -323,6 +323,7 @@ module Onibi
           return partial.map do |_length, inner|
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
+            state[:__lookbehind_reverse_fold] = true if reverse_lookbehind_fold?(assertion.body)
             [0, state]
           end
         end
@@ -362,6 +363,13 @@ module Onibi
       def lookbehind_fold_overlap?(node)
         body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
         body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+      end
+
+      def reverse_lookbehind_fold?(node)
+        body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
+        return false unless body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+
+        reverse_casefold_sequence?(body.map(&:value).join)
       end
 
       def node_results(node, characters, cursor, captures, flags = {})
@@ -588,9 +596,10 @@ module Onibi
           length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
           return [] unless length
 
-          if captures[:__lookbehind_overlap]
+          if captures[:__lookbehind_overlap] || captures[:__lookbehind_reverse_fold]
             next_captures = captures.dup
             next_captures.delete(:__lookbehind_overlap)
+            next_captures.delete(:__lookbehind_reverse_fold)
             captures = next_captures
           end
 
@@ -1424,6 +1433,8 @@ module Onibi
         when :match_literal
           value = literal_characters(operand, flags)
           if flags[:ignorecase]
+            return 0 if captures[:__lookbehind_reverse_fold] && cursor >= characters.length
+
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
                              expanded_only: flags[:lookbehind_casefold] &&
