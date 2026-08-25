@@ -506,9 +506,13 @@ class UnicodePropertyDifferentialTest < Minitest::Test
   end
 
   def test_iota_fold_class_alternation_preserves_virtual_tail
-    pattern = "(?i:[ᾀ])(?:ἀ|ι)"
-    %w[ᾀἀι ᾀἀ ᾀι].each do |input|
-      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    source = "ᾷ"
+    folded = source.downcase(:fold)
+    [["(?i:[ᾀ])(?:ἀ|ι)", %w[ᾀἀι ᾀἀ ᾀι]],
+     ["(?i:[#{source}])(?:α|ι)", [source + folded, source + folded[0], "#{source}ι"]]].each do |pattern, inputs|
+      inputs.each do |input|
+        assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+      end
     end
   end
 

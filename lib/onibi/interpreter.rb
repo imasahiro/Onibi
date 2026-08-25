@@ -1863,9 +1863,11 @@ module Onibi
           return true if next_character == tail &&
                          next_operands.any? { |operand| operand.value == tail }
 
+          folded_remainder = fold.each_char.to_a.drop(next_character.to_s.each_char.count)
+          input_remainder = characters[(cursor + 2), folded_remainder.length]
           return false if next_character &&
                           fold.start_with?(next_character) &&
-                          characters[cursor + 2] == tail
+                          input_remainder == folded_remainder
 
           return true if next_character && fold.start_with?(next_character)
         end
