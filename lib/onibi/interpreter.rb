@@ -1639,8 +1639,9 @@ module Onibi
            node.casefolds.length == 1 && next_node.is_a?(SemanticBytecode::Literal)
           source = characters[cursor]
           fold = node.casefolds.first[1]
+          boundary = node.fold_boundaries[node.value]
           next_value = next_node.value
-          return true if source == node.value && fold.end_with?("ι") &&
+          return true if source == node.value && boundary &&
                          fold.start_with?(next_value) &&
                          characters[cursor + 1]&.downcase(:fold) == next_value
 
@@ -1676,7 +1677,7 @@ module Onibi
         next_value = next_node_value(next_node)
         if next_node.is_a?(SemanticBytecode::Literal) && next_value &&
            node.casefold.start_with?(next_value) &&
-           !node.casefold.end_with?("ι") &&
+           node.fold_boundary.nil? &&
            next_source && next_source.downcase(:fold) == next_value
           return false
         end
@@ -1806,7 +1807,13 @@ module Onibi
           return false
         end
         return false unless folded.length > value.length && folded.each_char.uniq.length > 1
-        return false unless folded.end_with?("ι")
+
+        boundary = if expression.is_a?(SemanticBytecode::CharacterClass)
+                     expression.fold_boundaries[value]
+                   else
+                     expression.fold_boundary
+                   end
+        return false unless boundary
 
         source = characters[cursor]
         source && source.downcase(:fold).length > source.length &&
@@ -1841,17 +1848,24 @@ module Onibi
                  expression.casefold || expression.value.downcase(:fold)
                end
         return false unless fold
-        return false unless fold.end_with?("ι")
+
+        boundary = if expression.is_a?(SemanticBytecode::CharacterClass)
+                     expression.fold_boundaries[source]
+                   else
+                     expression.fold_boundary
+                   end
+        return false unless boundary
 
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            boundary_operand(next_body).is_a?(SemanticBytecode::Alternation)
           next_character = characters[cursor + 1]
-          return true if next_character == "ι" &&
-                         next_operands.any? { |operand| operand.value == "ι" }
+          tail = boundary[:tail]
+          return true if next_character == tail &&
+                         next_operands.any? { |operand| operand.value == tail }
 
           return false if next_character &&
                           fold.start_with?(next_character) &&
-                          characters[cursor + 2] == "ι"
+                          characters[cursor + 2] == tail
 
           return true if next_character && fold.start_with?(next_character)
         end

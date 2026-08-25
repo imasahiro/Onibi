@@ -8,7 +8,10 @@ module Onibi
         # keeps each source character boundary for VM backtracking.
         # `fold_boundary_sensitive` tells the VM that MRI keeps this expanded
         # fold aligned with the following operand during backtracking.
-        Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive)
+        # `fold_boundary` describes a Unicode fold that has a special
+        # operand-boundary rule. The VM consumes this metadata directly.
+        Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive,
+                             :fold_boundary)
         # `casefolds` contains reverse multi-character folds for this class.
         # `split_casefold` records MRI's class-only split rule for sharp-s.
         # `compiled_sensitive` and `compiled_insensitive` are immutable
@@ -16,7 +19,7 @@ module Onibi
         # It does not parse the class source during execution.
         CharacterClass = Struct.new(:value, :casefolds, :split_casefold,
                                     :compiled_sensitive, :compiled_insensitive,
-                                    :folded_characters)
+                                    :folded_characters, :fold_boundaries)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -85,8 +88,9 @@ module Onibi
             boundary_sensitive = folded.length > node.value.length &&
                                  folded.each_char.uniq.length > 1 &&
                                  folded.each_char.none? { |character| character.match?(/\p{M}/) }
+            fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
-                            boundary_sensitive)
+                            boundary_sensitive, fold_boundary)
           end
           if node.is_a?(Onibi::AST::CharacterClass)
             folds = class_casefold_sequences(node.value)
@@ -94,7 +98,10 @@ module Onibi
             return type.new(node.value, folds, split,
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
                             Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
-                            casefold ? class_casefold_characters(node.value) : [].freeze)
+                            casefold ? class_casefold_characters(node.value) : [].freeze,
+                            folds.each_with_object({}) do |(source, folded), metadata|
+                              metadata[source] = fold_boundary_metadata(folded, true)
+                            end.freeze)
           end
           if node.is_a?(Onibi::AST::OptionGroup)
             body = compile_value(node.body, casefold: casefold || node.ignorecase)
@@ -161,6 +168,14 @@ module Onibi
             [character, folded] if Onibi::ClassPredicates.matches?(source, character,
                                                                    encoding: source.encoding)
           end.freeze
+        end
+
+        def fold_boundary_metadata(folded, boundary_sensitive)
+          return nil unless folded.encoding == Encoding::UTF_8
+          return nil unless folded.length > 1 && folded.end_with?("ι")
+
+          { kind: :iota_tail, tail: folded.each_char.to_a.last,
+            sensitive: boundary_sensitive }.freeze
         end
 
         # MRI closes a range over every simple fold of every code point in

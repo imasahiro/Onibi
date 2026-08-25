@@ -73,6 +73,13 @@ class V2IRGenTest < Minitest::Test
     refute ligature.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
   end
 
+  def test_character_class_embeds_fold_boundary_metadata
+    regexp = Onibi::Regexp.new("[ᾀ]", Onibi::Regexp::IGNORECASE)
+    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+
+    assert_equal({ kind: :iota_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
+  end
+
   def test_character_class_embeds_compiled_predicate_operands
     regexp = Onibi::Regexp.new("[a-z]")
     operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
@@ -247,9 +254,11 @@ class V2IRGenTest < Minitest::Test
     assert_equal "ἀι", root.parts.first.casefold
     assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
     assert root.parts.first.fold_boundary_sensitive
+    assert_equal({ kind: :iota_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
 
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
     refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
+    assert_nil ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
