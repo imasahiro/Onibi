@@ -1176,6 +1176,7 @@ module Onibi
             end
           end.uniq
           next unless folded.each_char.all? { |character| expected_fold_characters.include?(character) }
+          next unless fold_sequence_expansion_boundaries_valid?(prefix, slice)
           next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class,
                                                                  split_class: split_class)
 
@@ -1186,6 +1187,30 @@ module Onibi
             [width + length, inner]
           end
         end.flatten(1)
+      end
+
+      def fold_sequence_expansion_boundaries_valid?(parts, source)
+        source_boundaries = [0]
+        source.each do |character|
+          source_boundaries << source_boundaries.last + character.downcase(:fold).length
+        end
+
+        folded_offset = 0
+        parts.each_with_index do |part, index|
+          if part.is_a?(SemanticBytecode::Literal) &&
+             part.casefold && part.casefold.length > part.value.length
+            return true if parts.first(index).any? do |prior|
+              prior.is_a?(SemanticBytecode::CharacterClass) && prior.casefolds.any?
+            end
+            return false unless source_boundaries.include?(folded_offset)
+          end
+          folded_offset += if part.is_a?(SemanticBytecode::Literal)
+                             (part.casefold || part.value).length
+                           else
+                             class_fold_characters(part).length
+                           end
+        end
+        true
       end
 
       def casefold_prefix_width(parts)
