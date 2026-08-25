@@ -508,6 +508,21 @@ module Onibi
               end
             end
           end
+          if parts.length == 3 && parts[0].is_a?(SemanticBytecode::Anchor) &&
+             parts[0].kind == :anchor_absolute_start &&
+             mri_property_alternation_anchor_expansion?(parts[1], parts[2], characters, cursor)
+            expanded_flags = flags.merge(property_alternation_anchor: true)
+            prefix = node_results(parts[0], characters, cursor, captures, expanded_flags)
+            return prefix.flat_map do |prefix_length, state|
+              first_results = node_results(parts[1], characters, cursor + prefix_length, state, expanded_flags)
+              maximum = first_results.map(&:first).max
+              first_results.select { |length, _inner| length == maximum }.flat_map do |length, inner|
+                node_results(parts[2], characters, cursor + prefix_length + length, inner, expanded_flags).map do |tail, final_state|
+                  [prefix_length + length + tail, final_state]
+                end
+              end
+            end
+          end
 
           states = [[0, captures]]
           index = 0
@@ -1101,6 +1116,8 @@ module Onibi
       def boundary_operand(node)
         loop do
           if node.is_a?(SemanticBytecode::Group)
+            node = node.body
+          elsif node.is_a?(SemanticBytecode::OptionGroup) || node.is_a?(SemanticBytecode::AtomicGroup)
             node = node.body
           elsif node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 1
             node = node.parts.first

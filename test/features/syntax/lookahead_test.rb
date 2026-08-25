@@ -339,6 +339,27 @@ class LookaheadTest < Minitest::Test
     end
   end
 
+  def test_ignorecase_reverse_fold_anchor_boundary_through_wrappers
+    ["(?>ſ|s)\\z", "(?i:ſ|s)\\z"].each do |source|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſ")
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſ")
+
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
+  end
+
+  def test_ignorecase_property_alternation_keeps_width_with_absolute_start
+    source = "\\A(?:\\p{L}|a)\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("SS")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("SS")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
   def test_ignorecase_posix_capture_backreference_keeps_identical_long_s
     source = "([[:alpha:]])\\1\\z"
     expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
