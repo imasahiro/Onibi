@@ -1505,9 +1505,7 @@ module Onibi
           value = literal_string(expression, flags)
           flags[:ignorecase] ? value.casecmp?(character) : value == character
         when SemanticBytecode::CharacterClass
-          Onibi::ClassPredicates.matches?(expression.value, character,
-                                          ignorecase: flags[:ignorecase],
-                                          encoding: flags[:encoding])
+          compiled_class_match?(expression, character, flags)
         when SemanticBytecode::Escape
           Onibi::CharacterPredicates.escape_matches?(expression.kind, character, encoding: flags[:encoding])
         when SemanticBytecode::Property
@@ -3239,9 +3237,7 @@ module Onibi
       end
 
       def class_match?(node, character, flags)
-        matched = Onibi::ClassPredicates.matches?(node.value, character,
-                                                  ignorecase: flags[:ignorecase],
-                                                  encoding: flags[:encoding])
+        matched = compiled_class_match?(node, character, flags)
         return true if matched
         return false unless flags[:ignorecase]
         return false if node.value.start_with?("^")
@@ -3250,9 +3246,20 @@ module Onibi
         folded = character.downcase(:fold)
         return false unless folded.each_char.one?
 
-        Onibi::ClassPredicates.matches?(node.value, folded,
-                                        ignorecase: true,
-                                        encoding: flags[:encoding])
+        compiled_class_match?(node, folded, flags.merge(ignorecase: true))
+      end
+
+      # The class predicate is a bytecode operand. Use its prebuilt table
+      # for UTF-8 execution. Encoding-specific input keeps the generic path.
+      def compiled_class_match?(node, character, flags)
+        table = flags[:ignorecase] ? node.compiled_insensitive : node.compiled_sensitive
+        if table && flags[:encoding] == Encoding::UTF_8 && character.encoding == Encoding::UTF_8
+          table.matches?(character)
+        else
+          Onibi::ClassPredicates.matches?(node.value, character,
+                                          ignorecase: flags[:ignorecase],
+                                          encoding: flags[:encoding])
+        end
       end
 
       def boundary_word?(character, encoding = nil)

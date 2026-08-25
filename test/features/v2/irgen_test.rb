@@ -73,6 +73,16 @@ class V2IRGenTest < Minitest::Test
     refute ligature.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
   end
 
+  def test_character_class_embeds_compiled_predicate_operands
+    regexp = Onibi::Regexp.new("[a-z]")
+    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+
+    assert operand.compiled_sensitive
+    assert operand.compiled_insensitive
+    assert operand.compiled_sensitive.matches?("m")
+    refute operand.compiled_sensitive.matches?("0")
+  end
+
   def test_escape_property_and_any_generate_exact_match_operands
     nodes = [
       [Onibi::AST::Escape.new(:digit), :match_escape],

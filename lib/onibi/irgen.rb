@@ -11,7 +11,11 @@ module Onibi
         Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive)
         # `casefolds` contains reverse multi-character folds for this class.
         # `split_casefold` records MRI's class-only split rule for sharp-s.
-        CharacterClass = Struct.new(:value, :casefolds, :split_casefold)
+        # `compiled_sensitive` and `compiled_insensitive` are immutable
+        # predicate tables. The interpreter selects one table from flags.
+        # It does not parse the class source during execution.
+        CharacterClass = Struct.new(:value, :casefolds, :split_casefold,
+                                    :compiled_sensitive, :compiled_insensitive)
         Escape = Struct.new(:kind)
         # `casefolds` is compiler output. It prevents the interpreter from
         # consulting AST or rebuilding Unicode fold candidates at run time.
@@ -75,7 +79,9 @@ module Onibi
           if node.is_a?(Onibi::AST::CharacterClass)
             folds = class_casefold_sequences(node.value)
             split = folds.any? { |source, value| %w[ß ẞ].include?(source) && value == "ss" }
-            return type.new(node.value, folds, split)
+            return type.new(node.value, folds, split,
+                            Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
+                            Onibi::ClassPredicates.compiled(node.value, ignorecase: true))
           end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value) })
