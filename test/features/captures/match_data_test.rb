@@ -61,4 +61,11 @@ class MatchDataTest < Minitest::Test
     assert_equal ["a", nil, nil, nil, nil], match.values_at(1..5)
     assert_equal [nil, nil, nil], match.values_at(5..7)
   end
+
+  def test_offsets_report_unknown_group_names_as_index_errors
+    match = Onibi::Regexp.new("(?<name>a)").match("a")
+
+    assert_raises(IndexError) { match.begin("missing") }
+    assert_raises(IndexError) { match.offset(:missing) }
+  end
 end

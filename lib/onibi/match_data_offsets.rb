@@ -47,6 +47,8 @@ module Onibi
     def named_index(index)
       if index.is_a?(String) || index.is_a?(Symbol)
         value = @names[index.to_s]
+        raise IndexError, "undefined group name reference: #{index}" if value.nil?
+
         return value.reverse.find { |candidate| @values[candidate] } || value.last if value.is_a?(Array)
 
         return value
