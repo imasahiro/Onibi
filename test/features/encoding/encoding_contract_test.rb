@@ -151,6 +151,26 @@ class EncodingContractTest < Minitest::Test
     assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
   end
 
+  def test_unicode_full_casefold_respects_sharp_s_literal_boundaries
+    pattern = "sß"
+    input = "ßS"
+
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
+  end
+
+  def test_unicode_full_casefold_joins_character_class_and_literal_runs
+    pattern = "[f]fi"
+    input = "ﬃ"
+
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
+  end
+
   def test_unicode_literal_full_casefold_runs_in_the_vm_for_ascii_input
     regexp = Onibi::Regexp.new("ſ", "i")
 

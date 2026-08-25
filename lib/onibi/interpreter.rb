@@ -343,8 +343,11 @@ module Onibi
             reverse_fold = reverse_casefold_sequence?(value)
             folded_value = node.parts.map { |part| part.casefold || part.value }.join
             fold_boundary_sensitive = node.parts.each_cons(2).any? do |left, right|
-              left.casefold && left.casefold.length == left.value.length &&
-                right.casefold && right.casefold.length > right.value.length
+              left_literal = left.is_a?(SemanticBytecode::Literal)
+              right_expands = right.is_a?(SemanticBytecode::Literal) &&
+                              (right.casefold || right.value).length > right.value.length
+              left_literal && right_expands &&
+                (left.casefold.nil? || left.casefold.length == left.value.length)
             end
             if !value.empty? && !fold_boundary_sensitive && (value.ascii_only? || first_expands ||
               has_mark || reverse_fold || folded_value != value)
@@ -561,9 +564,8 @@ module Onibi
 
         prefix = []
         parts.each do |part|
-          break if prefix.length >= 2
           break unless (prefix.empty? && part.is_a?(SemanticBytecode::CharacterClass)) ||
-                       (prefix.length == 1 && part.is_a?(SemanticBytecode::Literal) &&
+                       (prefix.any? && part.is_a?(SemanticBytecode::Literal) &&
                         part.value.each_char.one?)
 
           prefix << part
@@ -575,7 +577,7 @@ module Onibi
           slice = characters[cursor, width]
           if prefix.first.is_a?(SemanticBytecode::CharacterClass) &&
              slice.first&.downcase(:fold)&.length.to_i > 1 &&
-             !prefix.first.split_casefold && !prefix.first.value.each_char.one?
+             !prefix.first.split_casefold && !singleton_character_class?(prefix.first)
             next
           end
           if prefix.first.is_a?(SemanticBytecode::CharacterClass) &&
@@ -591,7 +593,7 @@ module Onibi
             if part.is_a?(SemanticBytecode::Literal)
               (part.casefold || part.value).each_char.to_a
             else
-              part.casefolds.flat_map { |_source, value| value.each_char.to_a }
+              class_fold_characters(part)
             end
           end.uniq
           next unless folded.each_char.all? { |character| expected_fold_characters.include?(character) }
@@ -615,6 +617,18 @@ module Onibi
             [1, *lengths].max
           end
         end
+      end
+
+      def singleton_character_class?(character_class)
+        source = character_class.value
+        source.each_char.one? && !source.match?(/[\\\[\]:&^]/)
+      end
+
+      def class_fold_characters(character_class)
+        return character_class.casefolds.flat_map { |_source, value| value.each_char.to_a } unless singleton_character_class?(character_class)
+
+        character = character_class.value
+        character.downcase(:fold).each_char.to_a
       end
 
       def casefold_class_sequence_lengths(parts, characters, cursor, flags)
