@@ -51,4 +51,12 @@ class MatchDataIndexTest < Minitest::Test
     assert_raises(TypeError) { match.values_at([0, 1]) }
     assert_equal %w[a a], match[0..1]
   end
+
+  def test_offsets_coerce_float_indices_like_mri
+    match = Onibi::Regexp.new("(?<x>é)").match("é")
+
+    assert_equal [0, 1], match.offset(0.9)
+    assert_equal [0, 2], match.byteoffset(0.9)
+    assert_equal 0, match.begin(-0.1)
+  end
 end
