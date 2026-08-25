@@ -1211,6 +1211,15 @@ module Onibi
         when SemanticBytecode::Alternation
           branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
           branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
+          expanding_alternative = node.branches.any? do |candidate|
+            capture_body_has_expanding_literal?(candidate) ||
+              boundary_literal_operands(candidate).any? do |literal|
+                folded = literal.value.downcase(:fold)
+                variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
+                variants.any? &&
+                  (variants - Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)).any?
+              end
+          end
           node.branches.each_with_index.flat_map do |branch, branch_index|
             branch_captures = captures.merge(branch_marker => true)
             branch_value = alternation_branch_operand_value(branch)
@@ -1225,7 +1234,8 @@ module Onibi
               marked = state.dup
               marked.delete(branch_marker)
               if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail
+                 (state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :iota_tail ||
+                  (expanding_alternative && state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source))
                 marked[:__fold_alternation_context] = true
               end
               marked[:__match_alternative] = true
@@ -1762,6 +1772,19 @@ module Onibi
           return :zero_only
         end
 
+        if next_node.is_a?(SemanticBytecode::Literal) &&
+           simple_fold_source_match?(expression, source) &&
+           next_node.casefold && next_node.casefold.length > next_node.value.length
+          return characters[cursor + 1] == next_node.value ? :zero_only : :greedy
+        end
+
+        if next_node.is_a?(SemanticBytecode::Literal) && simple_fold_source_match?(expression, source) &&
+           Onibi::UnicodeProperties.reverse_source_boundary_variants(next_node.value.downcase(:fold)).include?(next_node.value)
+          return :greedy if next_node.value.downcase(:fold) == expression_value.downcase(:fold)
+
+          return :zero_only
+        end
+
         return :greedy if next_node && reverse_simple_fold_source?(expression, source)
 
         expression_special = expression_value.downcase(:fold) != expression_value.downcase
@@ -1872,7 +1895,13 @@ module Onibi
 
       def normal_consuming_operand?(node)
         operand = boundary_operand(node)
-        return (operand.casefold || operand.value).length == operand.value.length if operand.is_a?(SemanticBytecode::Literal)
+        if operand.is_a?(SemanticBytecode::Literal)
+          return false if Onibi::UnicodeProperties.reverse_source_boundary_variants(
+            operand.value.downcase(:fold)
+          ).include?(operand.value)
+
+          return (operand.casefold || operand.value).length == operand.value.length
+        end
         return false if operand.is_a?(SemanticBytecode::CharacterClass)
 
         false
@@ -1915,6 +1944,11 @@ module Onibi
         source = characters[cursor]
         return false unless source
         return false if next_node.is_a?(SemanticBytecode::CharacterClass)
+
+        if simple_fold_source_match?(node, source) && next_node.is_a?(SemanticBytecode::Literal) &&
+           !(next_node.casefold && next_node.casefold.length > next_node.value.length)
+          return true
+        end
 
         if next_node.is_a?(SemanticBytecode::Anchor) &&
            %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind) && source && source != node.value &&
@@ -2394,6 +2428,8 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Quantifier)
         return false unless node.minimum.positive?
         return false if node.maximum.nil?
+
+        expression = boundary_operand(node.expression)
         if node.expression.is_a?(SemanticBytecode::CharacterClass) &&
            node.expression.value.each_char.one? &&
            node.expression.value.downcase(:fold) != node.expression.value &&
@@ -2405,8 +2441,14 @@ module Onibi
            next_node.expression.value.downcase(:fold) != node.expression.value.downcase(:fold)
           return true
         end
-        return false unless node.expression.is_a?(SemanticBytecode::Literal)
+        return false unless expression.is_a?(SemanticBytecode::Literal)
         return false if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.zero?
+
+        if simple_fold_source_match?(expression, characters[cursor]) &&
+           next_node.is_a?(SemanticBytecode::Literal)
+          return expression.value.downcase(:fold) == "k" &&
+                 (!next_node.value.ascii_only? || next_node.casefold&.length.to_i > next_node.value.length)
+        end
 
         next_expression = next_node.is_a?(SemanticBytecode::Quantifier) ? next_node.expression : next_node
         if next_expression.is_a?(SemanticBytecode::CharacterClass)
@@ -2428,7 +2470,7 @@ module Onibi
           return false
         end
 
-        mri_multi_fold_literal_boundary?(node.expression, next_node, characters, cursor, flags)
+        mri_multi_fold_literal_boundary?(expression, next_node, characters, cursor, flags)
       end
 
       def mri_backreference_anchor_boundary?(node, next_node, captures, flags)
@@ -3189,6 +3231,8 @@ module Onibi
         identifiers.each do |identifier|
           span = captures[identifier]
           next unless span
+
+          next if !flags[:ignorecase] && captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
 
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]

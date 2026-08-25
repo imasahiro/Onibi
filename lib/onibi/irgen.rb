@@ -91,7 +91,6 @@ module Onibi
                                  folded.each_char.uniq.length > 1 &&
                                  folded.each_char.none? { |character| character.match?(/\p{M}/) }
             fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
-            fold_boundary ||= simple_fold_boundary_metadata(folded)
             fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
             return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
                             boundary_sensitive, fold_boundary, fold_prefix_boundary)
