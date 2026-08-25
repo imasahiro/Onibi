@@ -1068,6 +1068,8 @@ module Onibi
         if next_node.is_a?(SemanticBytecode::Anchor) &&
            %i[anchor_absolute_start anchor_absolute_end anchor_before_final_newline].include?(next_node.kind) && source && source != node.value &&
            source.downcase(:fold) == node.value.downcase(:fold)
+          return false if reverse_fold_source_literal?(node.value)
+
           return true
         end
         return false unless node.casefold && node.casefold.length > node.value.length
@@ -1189,6 +1191,7 @@ module Onibi
         return false unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
         return false unless next_node.is_a?(SemanticBytecode::Anchor)
         return false unless node.value.length > 1 && node.value.each_char.all? { |character| character == node.value[0] }
+        return false if next_node.kind == :anchor_end
 
         source = characters[cursor]
         return false unless source && source != node.value[0]

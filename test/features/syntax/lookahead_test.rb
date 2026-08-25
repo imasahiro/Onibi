@@ -402,6 +402,26 @@ class LookaheadTest < Minitest::Test
                  actual && [actual.begin(0), actual.end(0)]
   end
 
+  def test_ignorecase_reverse_fold_literal_run_can_end_at_line_anchor
+    source = "ss$"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("ſſ")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
+  def test_ignorecase_forward_fold_literal_can_end_at_absolute_anchor
+    source = "K\\z"
+    expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("k")
+    actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("k")
+
+    assert_equal expected&.to_a, actual&.to_a
+    assert_equal expected && [expected.begin(0), expected.end(0)],
+                 actual && [actual.begin(0), actual.end(0)]
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end
