@@ -25,6 +25,13 @@ class MatchApiTest < Minitest::Test
     assert_equal "a", Onibi::Regexp.last_match[0]
   end
 
+  def test_match_data_match_rejects_negative_and_out_of_range_indexes
+    matched = Onibi::Regexp.new("(?<x>a)(b)?").match("a")
+
+    assert_raises(IndexError) { matched.match(-1) }
+    assert_raises(IndexError) { matched.match(3) }
+  end
+
   def test_tilde_clears_last_match_when_global_input_is_nil
     regexp = Onibi::Regexp.new("a")
     $_ = "a"

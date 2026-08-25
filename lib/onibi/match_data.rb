@@ -90,7 +90,7 @@ module Onibi
     end
 
     def match(index)
-      value_at(index)
+      value_at(index, strict: true)
     end
 
     def captures
@@ -187,7 +187,7 @@ module Onibi
       index
     end
 
-    def value_at(index)
+    def value_at(index, strict: false)
       if index.is_a?(String) || index.is_a?(Symbol)
         name = index.to_s
         raise IndexError, "undefined group name reference: #{name}" unless @names.key?(name)
@@ -195,7 +195,13 @@ module Onibi
         index = @names[name]
       end
       index = index.reverse.find { |candidate| @values[candidate] } || index.last if index.is_a?(Array)
-      return nil if index.is_a?(Integer) && index.negative? && index < -@captures.length
+      if index.is_a?(Integer) && index.negative?
+        raise IndexError, "index #{index} out of matches" if strict
+
+        capture_index = index + @captures.length + 1
+        return capture_index.positive? ? @values[capture_index] : nil
+      end
+      raise IndexError, "index #{index} out of matches" if strict && index.is_a?(Integer) && index >= @values.length
 
       @values[index]
     end
