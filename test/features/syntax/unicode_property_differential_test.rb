@@ -503,6 +503,10 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     pattern = "(?i:(ᾀ))ἀ"
     input = "ᾀἀι"
     assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+
+    pattern = "(?i:ᾀ)ι\\z"
+    input = "ᾀι"
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
   end
 
   def test_iota_fold_class_alternation_preserves_virtual_tail
@@ -513,6 +517,20 @@ class UnicodePropertyDifferentialTest < Minitest::Test
       inputs.each do |input|
         assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
       end
+    end
+  end
+
+  def test_dotted_i_fold_can_end_after_a_following_literal
+    pattern = "(?i:İ)i\\z"
+    input = "İi"
+
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+  end
+
+  def test_non_iota_fold_prefix_can_end_at_an_absolute_anchor
+    [["(?i:ŉ)ʼ\\z", "ŉʼ"], ["(?i:և)ե\\z", "ևե"],
+     ["(?i:ẚ)a\\z", "ẚa"]].each do |pattern, input|
+      assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
     end
   end
 
@@ -780,6 +798,26 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     input = "ᾀa"
     mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
     onibi = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_iota_fold_does_not_match_when_followed_by_an_incompatible_literal
+    pattern = "(?i:ᾀ)α"
+    input = "ᾀα"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
+
+    assert_nil mri
+    assert_nil onibi
+  end
+
+  def test_iota_fold_source_does_not_match_at_a_strict_end_anchor
+    pattern = "(?i:ᾀ)\\z"
+    input = "ᾀ"
+    mri = Regexp.new(pattern).match(input)
+    onibi = Onibi::Regexp.new(pattern).match(input)
 
     assert_nil mri
     assert_nil onibi

@@ -177,11 +177,16 @@ module Onibi
         return false unless captures[:__expanded_fold_anchor]
 
         source_fold = captures[:__group_expanded_literal_fold]
-        prefix = captures[:__group_expanded_literal_prefix]
+        prefix = captures[:__group_expanded_literal_prefix] || +""
         return false unless source_fold && prefix && source_fold.start_with?(prefix) && source_fold != prefix
+        return false unless captures[:__group_expanded_literal_boundary]
 
         remaining = characters.drop(cursor).map { |character| character.downcase(:fold) }.join
         return true if remaining.start_with?(source_fold[prefix.length..])
+
+        tail = source_fold[prefix.length..]
+        return false if tail&.each_char&.all? { |character| Onibi::UnicodeProperties.mark?(character) }
+        return true if prefix.empty?
 
         !remaining.empty? || source_fold != prefix * (source_fold.length / prefix.length)
       end
@@ -630,8 +635,10 @@ module Onibi
           captures = captures.dup
           captures.delete(:__expanded_literal_source)
           captures.delete(:__expanded_literal_fold)
+          captures.delete(:__expanded_literal_boundary)
           captures.delete(:__group_expanded_literal_source)
           captures.delete(:__group_expanded_literal_fold)
+          captures.delete(:__group_expanded_literal_boundary)
           captures.delete(:__group_expanded_literal_prefix)
           expanded_source = false
           grouped_expanded_source = false
@@ -643,36 +650,68 @@ module Onibi
           captures.delete(:__expanded_literal_from_class)
           captures[:__group_expanded_literal_source] = true
           captures[:__group_expanded_literal_fold] ||= captures[:__expanded_literal_fold]
+          captures[:__group_expanded_literal_boundary] ||= captures[:__expanded_literal_boundary]
           captures.delete(:__expanded_literal_fold)
+          captures.delete(:__expanded_literal_boundary)
           grouped_expanded_source = true
+        end
+        if grouped_expanded_source && node.is_a?(SemanticBytecode::Literal) &&
+           captures[:__group_expanded_literal_fold] == node.value
+          captures = captures.dup
+          captures.delete(:__group_expanded_literal_source)
+          captures.delete(:__group_expanded_literal_fold)
+          captures.delete(:__group_expanded_literal_boundary)
+          captures.delete(:__group_expanded_literal_prefix)
+          grouped_expanded_source = false
         end
         if grouped_expanded_source && boundary_node
           source_fold = captures[:__group_expanded_literal_fold]
           prefix = captures[:__group_expanded_literal_prefix] || +""
           combined = prefix + operand_fold.to_s
-          return [] if source_fold && combined == source_fold
+          if source_fold && combined == source_fold
+            return [] if captures[:__group_expanded_literal_boundary]
 
-          captures = captures.dup
-          if (node.is_a?(SemanticBytecode::Group) && !node.capture) ||
-             node.is_a?(SemanticBytecode::OptionGroup) || node.is_a?(SemanticBytecode::AtomicGroup)
-            deferred_group_fold = [source_fold, combined]
+            captures = captures.dup
             captures.delete(:__group_expanded_literal_source)
             captures.delete(:__group_expanded_literal_fold)
+            captures.delete(:__group_expanded_literal_boundary)
             captures.delete(:__group_expanded_literal_prefix)
-          elsif source_fold&.start_with?(combined)
-            captures[:__group_expanded_literal_prefix] = combined
-          else
+            grouped_expanded_source = false
+          end
+
+          if grouped_expanded_source && captures[:__group_expanded_literal_boundary] &&
+             node.is_a?(SemanticBytecode::Literal) && source_fold &&
+             !source_fold.start_with?(combined)
+            return []
+          end
+
+          captures = captures.dup unless source_fold && combined == source_fold
+          if grouped_expanded_source && ((node.is_a?(SemanticBytecode::Group) && !node.capture) ||
+             node.is_a?(SemanticBytecode::OptionGroup) || node.is_a?(SemanticBytecode::AtomicGroup)
+                                        )
+            deferred_group_fold = [source_fold, combined,
+                                   captures[:__group_expanded_literal_boundary]]
             captures.delete(:__group_expanded_literal_source)
             captures.delete(:__group_expanded_literal_fold)
+            captures.delete(:__group_expanded_literal_boundary)
+            captures.delete(:__group_expanded_literal_prefix)
+          elsif grouped_expanded_source && source_fold&.start_with?(combined)
+            captures[:__group_expanded_literal_prefix] = combined
+          elsif grouped_expanded_source
+            captures.delete(:__group_expanded_literal_source)
+            captures.delete(:__group_expanded_literal_fold)
+            captures.delete(:__group_expanded_literal_boundary)
             captures.delete(:__group_expanded_literal_prefix)
           end
         elsif (expanded_source || grouped_expanded_source) && boundary_node
           captures = captures.dup
           captures.delete(:__expanded_literal_source)
           captures.delete(:__expanded_literal_fold)
+          captures.delete(:__expanded_literal_boundary)
           captures.delete(:__expanded_literal_from_class)
           captures.delete(:__group_expanded_literal_source)
           captures.delete(:__group_expanded_literal_fold)
+          captures.delete(:__group_expanded_literal_boundary)
           captures.delete(:__group_expanded_literal_prefix)
         end
 
@@ -705,6 +744,7 @@ module Onibi
                    folded_value.length > value.length
                   next_captures[:__expanded_literal_source] = true
                   next_captures[:__expanded_literal_fold] = folded_value
+                  next_captures[:__expanded_literal_boundary] = node.parts.filter_map(&:fold_boundary).first
                 end
                 return [[folded_length, next_captures]]
               end
@@ -1111,17 +1151,21 @@ module Onibi
             if deferred_group_fold
               next_captures[:__group_expanded_literal_source] = true
               next_captures[:__group_expanded_literal_fold] = deferred_group_fold.first
-              next_captures[:__group_expanded_literal_prefix] = deferred_group_fold.last
+              next_captures[:__group_expanded_literal_prefix] = deferred_group_fold[1]
+              next_captures[:__group_expanded_literal_boundary] = deferred_group_fold[2]
             end
             expanded_source = next_captures.delete(:__expanded_literal_source)
+            expanded_boundary = next_captures.delete(:__expanded_literal_boundary)
             if !node.capture && expanded_source
               next_captures[:__group_expanded_literal_source] = true
               next_captures[:__group_expanded_literal_fold] = characters[cursor]&.downcase(:fold)
+              next_captures[:__group_expanded_literal_boundary] = expanded_boundary
             end
             if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
                characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
               next_captures[:__group_expanded_literal_source] = true
               next_captures[:__group_expanded_literal_fold] = characters[cursor].downcase(:fold)
+              next_captures[:__group_expanded_literal_boundary] = fold_boundary_for_node(node.body)
             end
             if node.capture
               next_captures[node.number] = [cursor, cursor + length]
@@ -1232,6 +1276,7 @@ module Onibi
                 marked = captures.dup
                 marked[:__expanded_literal_source] = true
                 marked[:__expanded_literal_fold] = fold
+                marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
                 marked[:__expanded_literal_from_class] = true
                 next [class_length, marked]
               end
@@ -1246,13 +1291,19 @@ module Onibi
             marked = captures.dup
             marked[:__expanded_literal_source] = true
             marked[:__expanded_literal_fold] = characters[cursor].downcase(:fold)
+            marked[:__expanded_literal_boundary] = node.fold_boundary
             return [[length, marked]]
           end
 
           if node.is_a?(SemanticBytecode::Anchor) && strict_end_anchor?(node) &&
-             captures[:__group_expanded_literal_source]
+             (captures[:__group_expanded_literal_source] || captures[:__expanded_literal_source])
             captures = captures.dup
             captures[:__expanded_fold_anchor] = true
+            if captures[:__expanded_literal_source]
+              captures[:__group_expanded_literal_source] = true
+              captures[:__group_expanded_literal_fold] ||= captures[:__expanded_literal_fold]
+              captures[:__group_expanded_literal_boundary] ||= captures[:__expanded_literal_boundary]
+            end
           end
           [[length, captures]]
         end
@@ -1402,7 +1453,11 @@ module Onibi
       end
 
       def expanded_fold_operand_value(node)
-        return node.casefold || node.value if node.is_a?(SemanticBytecode::Literal)
+        if node.is_a?(SemanticBytecode::Literal)
+          return node.value if node.value.each_char.count > 1
+
+          return node.casefold || node.value
+        end
         return if node.is_a?(SemanticBytecode::Group) && node.capture
         return unless node.is_a?(SemanticBytecode::Group) ||
                       node.is_a?(SemanticBytecode::OptionGroup) ||
@@ -1856,10 +1911,13 @@ module Onibi
                    end
         return false unless boundary
 
+        tail = boundary[:tail]
+        return true if next_operands.any? { |operand| operand.value == tail } &&
+                       characters[cursor + 1] == tail
+
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            boundary_operand(next_body).is_a?(SemanticBytecode::Alternation)
           next_character = characters[cursor + 1]
-          tail = boundary[:tail]
           return true if next_character == tail &&
                          next_operands.any? { |operand| operand.value == tail }
 
@@ -2204,6 +2262,20 @@ module Onibi
           capture_body_has_expanding_literal?(node.expression)
         else
           false
+        end
+      end
+
+      def fold_boundary_for_node(node)
+        case node
+        when SemanticBytecode::Literal
+          node.fold_boundary
+        when SemanticBytecode::CharacterClass
+          node.fold_boundaries.values.compact.first
+        when SemanticBytecode::Sequence
+          node.parts.lazy.map { |part| fold_boundary_for_node(part) }.find(&:itself)
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          fold_boundary_for_node(node.body)
         end
       end
 
@@ -4124,8 +4196,10 @@ module Onibi
         cleaned = captures.dup
         cleaned.delete(:__expanded_literal_source)
         cleaned.delete(:__expanded_literal_fold)
+        cleaned.delete(:__expanded_literal_boundary)
         cleaned.delete(:__group_expanded_literal_source)
         cleaned.delete(:__group_expanded_literal_fold)
+        cleaned.delete(:__group_expanded_literal_boundary)
         cleaned.delete(:__group_expanded_literal_prefix)
         cleaned
       end
