@@ -177,7 +177,7 @@ module Onibi
     def range_values(range)
       first = range.begin.nil? ? 0 : range_index(range.begin)
       last = range.end.nil? ? @values.length - 1 : range_index(range.end)
-      last -= 1 if range.exclude_end?
+      last -= 1 if range.exclude_end? && !range.end.nil?
       raise RangeError, "#{range} out of range" if first.negative?
 
       return [] if first > last

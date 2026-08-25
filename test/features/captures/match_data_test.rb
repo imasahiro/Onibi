@@ -62,6 +62,7 @@ class MatchDataTest < Minitest::Test
     assert_equal [nil, nil, nil], match.values_at(5..7)
     assert_equal ["a", "a", nil], match.values_at(..2)
     assert_equal ["a", nil], match.values_at(1..)
+    assert_equal ["a", nil], match.values_at(1...)
   end
 
   def test_offsets_report_unknown_group_names_as_index_errors
