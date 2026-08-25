@@ -366,7 +366,10 @@ module Onibi
 
     def ~
       input = eval("$_", TOPLEVEL_BINDING, __FILE__, __LINE__)
-      return nil unless input
+      unless input
+        Thread.current[LAST_MATCH_KEY] = nil
+        return nil
+      end
 
       send("=".dup << "~", input)
     end

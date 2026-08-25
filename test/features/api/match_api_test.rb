@@ -13,6 +13,17 @@ class MatchApiTest < Minitest::Test
     refute regexp.match?("dog")
   end
 
+  def test_tilde_clears_last_match_when_global_input_is_nil
+    regexp = Onibi::Regexp.new("a")
+    $_ = "a"
+    $_ = nil
+
+    assert_nil(~regexp)
+    assert_nil(Onibi::Regexp.last_match)
+  ensure
+    $_ = nil
+  end
+
   def test_match_position_uses_input_length_for_negative_positions
     regexp = Onibi::Regexp.new("a")
 
