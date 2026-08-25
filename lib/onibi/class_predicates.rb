@@ -179,6 +179,7 @@ module Onibi
       variants = [normalized_character.downcase(:fold), normalized_character.downcase,
                   normalized_character.upcase, normalized_character.capitalize]
       variants.concat(UnicodeProperties.reverse_casefold_variants(normalized_character))
+      variants.select! { |variant| normalized_character.casecmp?(variant) }
       variants.any? do |variant|
         next false unless variant.each_char.one?
 

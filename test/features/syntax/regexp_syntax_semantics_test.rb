@@ -112,6 +112,12 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert regexp.match?("S")
   end
 
+  def test_ignorecase_range_does_not_fold_turkish_dotless_i
+    regexp = Onibi::Regexp.new("[A-ê]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("ı")
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 
