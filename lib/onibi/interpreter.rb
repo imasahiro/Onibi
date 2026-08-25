@@ -317,13 +317,23 @@ module Onibi
 
           folded_width = folded_widths.find { |candidate| candidate == width }
           partial = results.select { |length, _inner| length < width && length < folded_width.to_i }
+          if reverse_lookbehind_fold?(assertion.body)
+            start = cursor - width
+            source = characters[start]
+            partial = partial.select do |length, _inner|
+              gap = characters[(start + length)...cursor]
+              folded_source = source&.downcase(:fold)
+              folded_source && gap.all? { |character| folded_source.include?(character.downcase(:fold)) }
+            end
+          end
           next if partial.empty?
 
           overlap = folded_width - partial.first.first
           return partial.map do |_length, inner|
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
-            state[:__lookbehind_reverse_fold] = true if reverse_lookbehind_fold?(assertion.body)
+            state[:__lookbehind_reverse_fold] = true if cursor == characters.length &&
+                                                        reverse_lookbehind_fold?(assertion.body)
             [0, state]
           end
         end
