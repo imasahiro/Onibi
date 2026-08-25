@@ -91,8 +91,10 @@ module Onibi
       private
 
       def run(input, start_position)
-        byte_input = input.encoding == Encoding::ASCII_8BIT ||
-                     (@program.flags[:binary_escape] && input.encoding == Encoding::ISO_8859_1)
+        input_encoding = String.instance_method(:encoding).bind_call(input)
+        input_ascii_only = String.instance_method(:ascii_only?).bind_call(input)
+        byte_input = input_encoding == Encoding::ASCII_8BIT ||
+                     (@program.flags[:binary_escape] && input_encoding == Encoding::ISO_8859_1)
         characters = if byte_input
                        String.instance_method(:bytes).bind_call(input).map do |byte|
                          byte.chr(Encoding::ASCII_8BIT)
@@ -112,9 +114,9 @@ module Onibi
         # Character classes use the input encoding when an ASCII pattern can
         # match several encodings. MRI applies POSIX rules to this encoding.
         runtime_flags = @program.flags.merge(
-          encoding: input.encoding,
+          encoding: input_encoding,
           full_casefold: @program.flags[:full_casefold] ||
-                         (input.encoding == Encoding::UTF_8 && !input.ascii_only?)
+                         (input_encoding == Encoding::UTF_8 && !input_ascii_only)
         )
         first = [start_position, 0].max
         @match_start = first

@@ -83,6 +83,18 @@ class MatchApiTest < Minitest::Test
                  Onibi::Regexp.new("é").match(input).to_a
   end
 
+  def test_match_uses_string_encoding_not_overridden_encoding
+    input_class = Class.new(String) do
+      def encoding
+        raise "Regexp must not dispatch to String subclass encoding"
+      end
+    end
+    input = input_class.new("a")
+
+    assert_equal Regexp.new("a").match(input).to_a,
+                 Onibi::Regexp.new("a").match(input).to_a
+  end
+
   def test_match_data_uses_string_bytes_not_overridden_slicing
     input_class = Class.new(String) do
       def [](*)
