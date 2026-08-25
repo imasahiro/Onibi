@@ -350,6 +350,7 @@ module Onibi
             state = inner.dup
             state[:__lookbehind_overlap] = overlap if overlap.positive?
             state[:__lookbehind_overlap_source] = characters[cursor - 1] if overlap.positive?
+            state[:__lookbehind_overlap_values] = folded_lookbehind_values(assertion.body)
             state[:__lookbehind_direct_tail_reject] = true if overlap.positive? &&
                                                               folded_widths.uniq.length > 1
             state[:__lookbehind_reverse_fold] = true if cursor == characters.length &&
@@ -455,6 +456,14 @@ module Onibi
         return node.casefold || node.value.downcase(:fold) if node.is_a?(SemanticBytecode::Literal)
 
         nil
+      end
+
+      def folded_lookbehind_values(node)
+        return node.branches.flat_map { |branch| folded_lookbehind_values(branch) } if node.is_a?(SemanticBytecode::Alternation)
+        return [node.parts.flat_map { |part| folded_lookbehind_values(part) }.join] if node.is_a?(SemanticBytecode::Sequence)
+        return [node.casefold || node.value.downcase(:fold)] if node.is_a?(SemanticBytecode::Literal)
+
+        []
       end
 
       def node_results(node, characters, cursor, captures, flags = {})
@@ -594,12 +603,18 @@ module Onibi
                                overlap_chars = part.value.each_char.to_a
                                overlap_count = state_captures[:__lookbehind_overlap].to_i
                                folded_chars = (part.casefold || part.value).each_char.to_a
+                               overlap_values = state_captures[:__lookbehind_overlap_values] || []
+                               body_matches_source = overlap_values.any? do |value|
+                                 casefold_equal?(value, overlap_source)
+                               end
                                if overlap_count.positive? && casefold_equal?(part.value, overlap_source) &&
+                                  body_matches_source &&
                                   !state_captures[:__lookbehind_direct_tail_reject]
                                  remainder = overlap_chars.drop(overlap_count).join
                                  next_state = state_captures.dup
                                  next_state.delete(:__lookbehind_overlap)
                                  next_state.delete(:__lookbehind_overlap_source)
+                                 next_state.delete(:__lookbehind_overlap_values)
                                  next_state.delete(:__lookbehind_direct_tail_reject)
                                  if remainder.empty?
                                    [[0, next_state]]
@@ -612,6 +627,7 @@ module Onibi
                                  next_state = state_captures.dup
                                  next_state.delete(:__lookbehind_overlap)
                                  next_state.delete(:__lookbehind_overlap_source)
+                                 next_state.delete(:__lookbehind_overlap_values)
                                  next_state.delete(:__lookbehind_direct_tail_reject)
                                  node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
                                               characters, cursor + consumed, next_state, part_flags)
@@ -821,6 +837,7 @@ module Onibi
             next_captures.delete(:__lookbehind_overlap)
             next_captures.delete(:__lookbehind_reverse_fold)
             next_captures.delete(:__lookbehind_overlap_source)
+            next_captures.delete(:__lookbehind_overlap_values)
             next_captures.delete(:__lookbehind_direct_tail_reject)
             return [[0, next_captures]]
           end
@@ -833,6 +850,7 @@ module Onibi
             next_captures.delete(:__lookbehind_overlap)
             next_captures.delete(:__lookbehind_reverse_fold)
             next_captures.delete(:__lookbehind_overlap_source)
+            next_captures.delete(:__lookbehind_overlap_values)
             next_captures.delete(:__lookbehind_direct_tail_reject)
             captures = next_captures
           else
