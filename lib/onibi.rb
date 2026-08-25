@@ -430,6 +430,10 @@ module Onibi
       end
       raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && input.encoding != encoding
       raise_incompatible_encoding(input) if !encoding.ascii_compatible? && input.encoding != encoding
+      # MRI does not allow an ASCII-compatible regexp to run on a
+      # non-ASCII-compatible string. Such strings use a code-unit width that
+      # the regexp encoding must declare explicitly (UTF-16 or UTF-32).
+      raise_incompatible_encoding(input) if !input.encoding.ascii_compatible? && input.encoding != encoding
 
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
 

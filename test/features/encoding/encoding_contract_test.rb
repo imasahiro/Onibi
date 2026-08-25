@@ -49,6 +49,14 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_ascii_pattern_rejects_non_ascii_compatible_input
+    [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
+      input = "a".encode(encoding)
+
+      assert_raises(Encoding::CompatibilityError) { Onibi::Regexp.new(".").match?(input) }
+    end
+  end
+
   def test_non_ascii_compatible_character_classes_compare_codepoints
     [Encoding::UTF_16LE, Encoding::UTF_16BE, Encoding::UTF_32LE, Encoding::UTF_32BE].each do |encoding|
       ["[あ]", "\\d"].each do |source|
