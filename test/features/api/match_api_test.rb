@@ -24,6 +24,15 @@ class MatchApiTest < Minitest::Test
     $_ = nil
   end
 
+  def test_case_equality_updates_last_match_state
+    regexp = Onibi::Regexp.new("a")
+
+    assert_equal true, regexp.public_send(:===, "ba")
+    assert_equal ["a"], Onibi::Regexp.last_match.to_a
+    assert_equal false, regexp.public_send(:===, "x")
+    assert_nil Onibi::Regexp.last_match
+  end
+
   def test_match_position_uses_input_length_for_negative_positions
     regexp = Onibi::Regexp.new("a")
 

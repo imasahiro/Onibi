@@ -361,7 +361,7 @@ module Onibi
     end
 
     def ===(input)
-      match?(input)
+      !match(input).nil?
     end
 
     def ~
