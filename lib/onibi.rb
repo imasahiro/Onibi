@@ -412,35 +412,40 @@ module Onibi
 
       program = bytecode_program
 
-      ascii_input = input.ascii_only?
+      string_encoding = String.instance_method(:encoding).bind_call(input)
+      ascii_input = String.instance_method(:ascii_only?).bind_call(input)
       @ascii_input = ascii_input
-      @input_encoding = input.encoding
-      return nil if requested_position.negative? && (requested_position + input.length).negative?
-      raise ArgumentError, "invalid byte sequence in #{input.encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
+      @input_encoding = string_encoding
+      input_length = String.instance_method(:length).bind_call(input)
+      return nil if requested_position.negative? && (requested_position + input_length).negative?
 
-      if program.flags[:binary_escape] && !ascii_input && input.encoding != Encoding::ASCII_8BIT &&
+      input_valid = String.instance_method(:valid_encoding?).bind_call(input)
+      raise ArgumentError, "invalid byte sequence in #{string_encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input_valid
+
+      if program.flags[:binary_escape] && !ascii_input && string_encoding != Encoding::ASCII_8BIT &&
          !(@source.encoding == Encoding::US_ASCII && !no_encoding? &&
-           input.encoding == Encoding::ISO_8859_1)
+           string_encoding == Encoding::ISO_8859_1)
         if @source.encoding == Encoding::US_ASCII && !no_encoding? &&
-           [Encoding::UTF_8, Encoding::EUC_JP, Encoding::Windows_31J].include?(input.encoding)
+           [Encoding::UTF_8, Encoding::EUC_JP, Encoding::Windows_31J].include?(string_encoding)
           raise ArgumentError, "regexp preprocess failed: too short escaped multibyte character"
         end
 
         raise_incompatible_encoding(input)
       end
-      raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && input.encoding != encoding
-      raise_incompatible_encoding(input) if !encoding.ascii_compatible? && input.encoding != encoding
+      raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && string_encoding != encoding
+      raise_incompatible_encoding(input) if !encoding.ascii_compatible? && string_encoding != encoding
       # MRI does not allow an ASCII-compatible regexp to run on a
       # non-ASCII-compatible string. Such strings use a code-unit width that
       # the regexp encoding must declare explicitly (UTF-16 or UTF-32).
-      raise_incompatible_encoding(input) if !input.encoding.ascii_compatible? && input.encoding != encoding
+      raise_incompatible_encoding(input) if !string_encoding.ascii_compatible? && string_encoding != encoding
 
-      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && !program.flags[:literal_only]
+      input_bytesize = String.instance_method(:bytesize).bind_call(input)
+      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input_bytesize > 100_000 && !program.flags[:literal_only]
 
       start = if program.flags[:nullable]
-                nullable_match_position(requested_position, input.length)
+                nullable_match_position(requested_position, input_length)
               else
-                start_position(requested_position, input.length)
+                start_position(requested_position, input_length)
               end
       return nil unless start
 
@@ -627,7 +632,8 @@ module Onibi
 
     def raise_incompatible_encoding(input)
       pattern_encoding = encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : encoding.name
-      input_encoding = input.encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : input.encoding.name
+      input_encoding_value = String.instance_method(:encoding).bind_call(input)
+      input_encoding = input_encoding_value == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : input_encoding_value.name
       raise Encoding::CompatibilityError,
             "incompatible encoding regexp match (#{pattern_encoding} regexp with #{input_encoding} string)"
     end

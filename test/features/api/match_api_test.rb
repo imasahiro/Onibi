@@ -71,6 +71,18 @@ class MatchApiTest < Minitest::Test
                  Onibi::Regexp.new("a").match(input).to_a
   end
 
+  def test_match_uses_string_encoding_not_overridden_validation
+    input_class = Class.new(String) do
+      def valid_encoding?
+        raise "Regexp must not dispatch to String subclass validation"
+      end
+    end
+    input = input_class.new("é")
+
+    assert_equal Regexp.new("é").match(input).to_a,
+                 Onibi::Regexp.new("é").match(input).to_a
+  end
+
   def test_empty_pattern_uses_mri_position_rules
     regexp = Onibi::Regexp.new("")
 
