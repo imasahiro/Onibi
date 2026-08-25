@@ -109,7 +109,7 @@ module Onibi
         def mri_lazy_exact_bounds(node)
           return [node.minimum, node.maximum, false] unless node.kind == :bounded &&
                                                             node.mode == :lazy &&
-                                                            node.minimum == node.maximum
+                                                            node.exact_bound
 
           [0, node.maximum, true]
         end

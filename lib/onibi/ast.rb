@@ -18,6 +18,7 @@ module Onibi
     Conditional = Struct.new(:condition, :yes_branch, :no_branch)
     SubexpressionCall = Struct.new(:identifier, :named)
     Absence = Struct.new(:body)
-    Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode)
+    # `exact_bound` preserves `{n}` versus `{n,n}` for bytecode semantics.
+    Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :exact_bound)
   end
 end

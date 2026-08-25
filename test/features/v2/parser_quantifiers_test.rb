@@ -17,7 +17,7 @@ class V2ParserQuantifiersTest < Minitest::Test
     expected = Onibi::AST::Sequence.new([
                                           quantifier("a", :bounded, 2, 4, :greedy),
                                           quantifier("a", :bounded, 2, nil, :greedy),
-                                          quantifier("a", :bounded, 2, 2, :greedy)
+                                          quantifier("a", :bounded, 2, 2, :greedy, true)
                                         ])
 
     assert_equal expected, Onibi::Parser.parse("a{2,4}a{2,}a{2}").ast
@@ -25,8 +25,8 @@ class V2ParserQuantifiersTest < Minitest::Test
 
   private
 
-  def quantifier(value, kind, minimum, maximum, mode)
+  def quantifier(value, kind, minimum, maximum, mode, exact_bound = nil)
     expression = Onibi::AST::Literal.new(value)
-    Onibi::AST::Quantifier.new(expression, kind, minimum, maximum, mode)
+    Onibi::AST::Quantifier.new(expression, kind, minimum, maximum, mode, exact_bound)
   end
 end

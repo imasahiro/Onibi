@@ -15,12 +15,12 @@ module Onibi
         end
 
         mode, base = quantifier_mode(value)
-        kind, minimum, maximum = quantifier_bounds(base)
+        kind, minimum, maximum, exact_bound = quantifier_bounds(base)
         if mode == :possessive && kind == :bounded
-          bounded = AST::Quantifier.new(expression, kind, minimum, maximum, :greedy)
+          bounded = AST::Quantifier.new(expression, kind, minimum, maximum, :greedy, exact_bound)
           expression = AST::Quantifier.new(bounded, :+, 1, nil, :possessive)
         else
-          expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode)
+          expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode, exact_bound)
         end
       end
       expression
@@ -49,7 +49,7 @@ module Onibi
       maximum = bounded_maximum(bounds, minimum)
       raise RegexpError, "invalid quantifier" if maximum && maximum < minimum
 
-      [:bounded, minimum, maximum]
+      [:bounded, minimum, maximum, bounds.length == 1 ? true : nil]
     rescue ArgumentError, TypeError
       raise RegexpError, "invalid quantifier"
     end
@@ -58,7 +58,7 @@ module Onibi
       minimum = { "*" => 0, "+" => 1, "?" => 0 }.fetch(value)
       maximum = { "*" => nil, "+" => nil, "?" => 1 }.fetch(value)
 
-      [value.to_sym, minimum, maximum]
+      [value.to_sym, minimum, maximum, nil]
     end
 
     def bounded_maximum(bounds, minimum)
