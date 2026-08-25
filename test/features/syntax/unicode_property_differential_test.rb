@@ -466,6 +466,19 @@ class UnicodePropertyDifferentialTest < Minitest::Test
     end
   end
 
+  def test_scoped_ignorecase_class_fold_preserves_operand_boundaries
+    [
+      ["(?i:[ᾀ]){1,2}\\z", "ᾀἀι"],
+      ["(?i:[ᾀ])(?:ἀι)", "ᾀἀι"],
+      ["(?i:[ᾀ])(?:ᾀ)", "ᾀᾀ"]
+    ].each do |pattern, input|
+      mri = Regexp.new(pattern).match(input)
+      onibi = Onibi::Regexp.new(pattern).match(input)
+
+      assert_equal [mri&.[](0), mri&.offset(0)], [onibi&.[](0), onibi&.offset(0)]
+    end
+  end
+
   def test_ignorecase_ascii_range_class_accepts_a_single_codepoint_fold
     pattern = "[a-z]+"
     input = "ſa"

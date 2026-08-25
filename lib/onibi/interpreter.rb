@@ -635,9 +635,10 @@ module Onibi
           grouped_expanded_source = false
         end
         expanded_marker_boundary = node.is_a?(SemanticBytecode::Literal) || simple_group_literal_node?(node)
-        if expanded_source && expanded_marker_boundary
+        if expanded_source && (expanded_marker_boundary || captures[:__expanded_literal_from_class])
           captures = captures.dup
           captures.delete(:__expanded_literal_source)
+          captures.delete(:__expanded_literal_from_class)
           captures[:__group_expanded_literal_source] = true
           captures[:__group_expanded_literal_fold] ||= captures[:__expanded_literal_fold]
           captures.delete(:__expanded_literal_fold)
@@ -667,6 +668,7 @@ module Onibi
           captures = captures.dup
           captures.delete(:__expanded_literal_source)
           captures.delete(:__expanded_literal_fold)
+          captures.delete(:__expanded_literal_from_class)
           captures.delete(:__group_expanded_literal_source)
           captures.delete(:__group_expanded_literal_fold)
           captures.delete(:__group_expanded_literal_prefix)
@@ -696,7 +698,8 @@ module Onibi
                                                               !flags[:lookbehind_fold_source]).first
               if folded_length
                 next_captures = captures.dup
-                if folded_length == 1 && characters[cursor]&.downcase(:fold) == folded_value &&
+                if !flags[:skip_fold_marker] && folded_length == 1 &&
+                   characters[cursor]&.downcase(:fold) == folded_value &&
                    folded_value.length > value.length
                   next_captures[:__expanded_literal_source] = true
                   next_captures[:__expanded_literal_fold] = folded_value
@@ -980,7 +983,8 @@ module Onibi
                 part_results = []
               end
               if mri_distinct_expanded_fold_anchor_boundary?(part, parts[index], characters,
-                                                             cursor + consumed, flags)
+                                                             cursor + consumed, flags) &&
+                 part_results.all? { |length, _inner| length <= 1 }
                 part_results = []
               end
               if mri_reverse_fold_quantifier_anchor_reject?(part, parts[index], characters,
@@ -1216,12 +1220,20 @@ module Onibi
 
           if node.is_a?(SemanticBytecode::CharacterClass)
             return class_match_lengths(node, characters, cursor, flags).map do |class_length|
+              if !flags[:skip_fold_marker] && flags[:ignorecase] && class_length == 1 &&
+                 (fold = class_expanded_fold(node, characters[cursor]))
+                marked = captures.dup
+                marked[:__expanded_literal_source] = true
+                marked[:__expanded_literal_fold] = fold
+                marked[:__expanded_literal_from_class] = true
+                next [class_length, marked]
+              end
               [class_length, captures]
             end
           end
 
           if node.is_a?(SemanticBytecode::Literal) &&
-             flags[:ignorecase] && node.casefold &&
+             !flags[:skip_fold_marker] && flags[:ignorecase] && node.casefold &&
              node.casefold.length > node.value.length && length == 1 &&
              characters[cursor]&.downcase(:fold) == node.casefold
             marked = captures.dup
@@ -1752,11 +1764,18 @@ module Onibi
         return false unless strict_end_anchor?(next_node)
 
         expression = unwrap_literal_operand(node.expression)
-        return false unless expression.is_a?(SemanticBytecode::Literal)
         return false unless flags[:ignorecase] || option_group_ignorecase?(node.expression)
 
-        value = expression.value
-        folded = value.downcase(:fold)
+        if expression.is_a?(SemanticBytecode::CharacterClass)
+          value = characters[cursor]
+          folded = class_expanded_fold(expression, value)
+          return false unless folded
+        elsif expression.is_a?(SemanticBytecode::Literal)
+          value = expression.value
+          folded = value.downcase(:fold)
+        else
+          return false
+        end
         return false unless folded.length > value.length && folded.each_char.uniq.length > 1
         return false unless folded.end_with?("ι")
 
@@ -2256,7 +2275,9 @@ module Onibi
             return
           end
 
-          node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).each do |length, inner|
+          repetition_flags = flags.merge(skip_fold_marker: true)
+          node_results(quantifier.expression, characters, cursor + consumed, state_captures,
+                       repetition_flags).each do |length, inner|
             inner = clear_repeated_absence_captures(quantifier.expression, inner)
             inner = clear_fold_boundary_markers(inner)
             if quantifier.maximum.nil? && quantifier.expression.is_a?(SemanticBytecode::Group) &&
@@ -4743,6 +4764,14 @@ module Onibi
         return node.ignorecase == true if node.is_a?(SemanticBytecode::OptionGroup)
 
         false
+      end
+
+      def class_expanded_fold(node, character)
+        return unless character && node.respond_to?(:casefolds)
+
+        pair = node.casefolds.find { |source, _fold| source == character }
+        fold = pair && pair[1]
+        fold if fold && fold.length > character.length
       end
 
       def casefold_equal?(left, right)
