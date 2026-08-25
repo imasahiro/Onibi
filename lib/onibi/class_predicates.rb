@@ -172,7 +172,6 @@ module Onibi
       character_value = character.codepoints.first
       return true if character_value.between?(first[1].ord, last[1].ord)
       return false unless ignorecase
-      return false if non_utf8_encoding?(encoding) && first[1].ascii_only? != last[1].ascii_only?
 
       normalized_character = unicode_character(character, encoding)
       normalized_first = unicode_character(first[1], encoding)
@@ -183,9 +182,22 @@ module Onibi
       variants.any? do |variant|
         next false unless variant.each_char.one?
 
-        encoded_variant = unicode_character(variant, character.encoding)
-        encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord) ||
-          variant.codepoints.first.between?(normalized_first.ord, normalized_last.ord)
+        encoded_variant = begin
+          variant.encode(character.encoding)
+        rescue EncodingError
+          nil
+        end
+        encoded_match = if encoded_variant && non_utf8_encoding?(encoding)
+                          non_utf8_casefold_character?(normalized_character) &&
+                            encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
+                        elsif encoded_variant
+                          encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
+                        else
+                          false
+                        end
+        unicode_match = !non_utf8_encoding?(encoding) &&
+                        variant.codepoints.first.between?(normalized_first.ord, normalized_last.ord)
+        encoded_match || unicode_match
       end
     end
 
@@ -268,6 +280,10 @@ module Onibi
       character.encode(Encoding::UTF_8)
     rescue EncodingError
       character
+    end
+
+    def non_utf8_casefold_character?(character)
+      UnicodeProperties.greek?(character) || UnicodeProperties.cyrillic?(character)
     end
 
     def property_escape(source, index)
