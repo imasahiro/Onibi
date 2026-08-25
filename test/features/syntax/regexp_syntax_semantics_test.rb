@@ -79,6 +79,14 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert regexp.match?("\xFF".b)
   end
 
+  def test_non_utf8_casefold_does_not_apply_unicode_expansions
+    pattern = "ss".encode(Encoding::EUC_JP)
+    input = "ß".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?(input)
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 

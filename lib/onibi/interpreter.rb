@@ -3419,6 +3419,10 @@ module Onibi
           next false unless slice && slice.length == length
 
           joined = slice.join
+          # MRI applies Unicode casefold only for Unicode input. In other
+          # encodings, keep non-ASCII characters on the exact-match path.
+          next false if joined.encoding != Encoding::UTF_8 && !joined.ascii_only?
+
           folded_slice = if joined.encoding == Encoding::ASCII_8BIT
                            joined.downcase(:fold)
                          else
