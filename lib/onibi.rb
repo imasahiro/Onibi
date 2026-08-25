@@ -477,14 +477,15 @@ module Onibi
 
       results = []
       position = 0
-      while position <= input.length && (matched = internal_match(input, position))
+      input_length = String.instance_method(:length).bind_call(input)
+      while position <= input_length && (matched = internal_match(input, position))
         value = named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
         results << value
         yield(value) if block_given?
         match_start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
         position = finish > match_start ? finish : match_start + 1
-        break if position > input.length
+        break if position > input_length
       end
       block_given? ? input : results
     end
@@ -493,13 +494,14 @@ module Onibi
       raise TypeError, "no implicit conversion of nil into String" if !block_given? && replacement.nil?
       raise TypeError, "no implicit conversion of #{replacement.class} into String" unless block_given? || replacement.is_a?(String)
 
-      output = String.new(encoding: input.encoding)
+      input_length = String.instance_method(:length).bind_call(input)
+      output = String.new(encoding: String.instance_method(:encoding).bind_call(input))
       cursor = 0
       search_position = 0
-      while search_position <= input.length && (matched = internal_match(input, search_position))
+      while search_position <= input_length && (matched = internal_match(input, search_position))
         start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
-        output << input[cursor...start]
+        output << String.instance_method(:[]).bind_call(input, cursor...start)
         value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
         output << value.to_s
         if finish == start
@@ -509,9 +511,9 @@ module Onibi
           cursor = finish
           search_position = finish
         end
-        break if cursor > input.length
+        break if cursor > input_length
       end
-      output << input[cursor..] if cursor <= input.length
+      output << String.instance_method(:[]).bind_call(input, cursor..) if cursor <= input_length
       output
     end
 

@@ -221,6 +221,27 @@ class MatchApiTest < Minitest::Test
     assert_equal "xxXyzX", regexp.gsub("xxaaayzaa", "X")
   end
 
+  def test_scan_and_gsub_ignore_string_subclass_overrides
+    input_class = Class.new(String) do
+      def length
+        0
+      end
+
+      def [](*)
+        "bad"
+      end
+
+      def encoding
+        raise "scan/gsub must not dispatch to String subclass"
+      end
+    end
+    input = input_class.new("ba")
+    regexp = Onibi::Regexp.new("a")
+
+    assert_equal ["a"], regexp.scan(input)
+    assert_equal "bX", regexp.gsub(input, "X")
+  end
+
   def test_scan_returns_captures_for_conditional_groups
     pattern = "(a)?(?(1)b|c)"
     expected = "ababa".scan(::Regexp.new(pattern))
