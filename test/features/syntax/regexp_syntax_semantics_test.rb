@@ -118,6 +118,20 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     refute regexp.match?("ı")
   end
 
+  def test_ignorecase_intersection_folds_negated_class_operands
+    greek = Onibi::Regexp.new("[\\p{Greek}&&[^\\p{Lower}]]", Onibi::Regexp::IGNORECASE)
+    alpha = Onibi::Regexp.new("[\\p{Alpha}&&[^a-z]]", Onibi::Regexp::IGNORECASE)
+
+    assert greek.match?("Α")
+    assert greek.match?("α")
+    assert alpha.match?("a")
+    assert alpha.match?("A")
+
+    vowels = Onibi::Regexp.new("[[a-z]&&[^aeiou]]", Onibi::Regexp::IGNORECASE)
+    refute vowels.match?("a")
+    assert vowels.match?("b")
+  end
+
   def test_ascii8bit_property_uses_byte_semantics
     regexp = Onibi::Regexp.new("\\p{Alpha}".b)
 

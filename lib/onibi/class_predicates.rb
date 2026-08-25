@@ -59,10 +59,36 @@ module Onibi
 
     def intersection_matches?(intersection, character, ignorecase, encoding)
       left = matches?(intersection[0], character, ignorecase: ignorecase, encoding: encoding)
-      right = matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
+      right = if ignorecase && intersection[1].start_with?("[^")
+                literal_left = !intersection[0].include?("\\p") && !intersection[0].include?("[:")
+                negated_intersection_matches?(intersection[1], character, encoding, literal_left: literal_left)
+              else
+                matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
+              end
       return :incompatible if left == :incompatible || right == :incompatible
 
       left && right
+    end
+
+    def negated_intersection_matches?(source, character, encoding, literal_left: false)
+      body = source[2...-1]
+      if literal_left
+        return casefold_candidates(character).none? do |candidate|
+          matches?(body, candidate, ignorecase: true, encoding: encoding)
+        end
+      end
+
+      casefold_candidates(character).any? do |candidate|
+        !matches?(body, candidate, ignorecase: false, encoding: encoding)
+      end
+    end
+
+    def casefold_candidates(character)
+      normalized = character.encoding == Encoding::UTF_8 ? character : unicode_character(character, nil)
+      ([normalized, normalized.downcase, normalized.upcase, normalized.capitalize] +
+        UnicodeProperties.reverse_casefold_variants(normalized)).select do |candidate|
+        candidate.each_char.one? && normalized.casecmp?(candidate)
+      end.uniq
     end
 
     def split_intersection(source)
