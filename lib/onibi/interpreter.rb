@@ -562,6 +562,12 @@ module Onibi
         results
       end
 
+      def prior_overlap_exact?(captures, value)
+        Array(captures[:__lookbehind_prior_overlap_values]).any? do |candidate|
+          casefold_equal?(candidate, value)
+        end
+      end
+
       def lookbehind_result_folded_width(node, state, fallback)
         if node.is_a?(SemanticBytecode::Alternation) && state[:__match_alternative_index]
           branch = node.branches[state[:__match_alternative_index]]
@@ -717,9 +723,7 @@ module Onibi
                                 part.is_a?(SemanticBytecode::Quantifier) &&
                                 part.expression.is_a?(SemanticBytecode::Literal) &&
                                 part.expression.value.length == 1 &&
-                                state_captures[:__lookbehind_prior_overlap_values].any? do |value|
-                                  casefold_equal?(value, part.expression.value)
-                                end
+                                prior_overlap_exact?(state_captures, part.expression.value)
                                next_state = state_captures.dup
                                next_state.delete(:__lookbehind_overlap)
                                next_state.delete(:__lookbehind_overlap_source)
@@ -739,9 +743,7 @@ module Onibi
                              elsif state_captures[:__lookbehind_prior_overlap_source] &&
                                    part.is_a?(SemanticBytecode::Literal) &&
                                    part.value.length == 1 &&
-                                   state_captures[:__lookbehind_prior_overlap_values].any? do |value|
-                                     casefold_equal?(value, part.value)
-                                   end &&
+                                   prior_overlap_exact?(state_captures, part.value) &&
                                    casefold_equal?(part.value.each_char.first.to_s,
                                                    state_captures[:__lookbehind_overlap_source])
                                next_state = state_captures.dup
