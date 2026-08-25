@@ -226,6 +226,10 @@ module Onibi
         raise TypeError, "no implicit conversion of #{pattern.class} into String" unless source
       end
 
+      # Compile from a plain String. MRI's regexp compiler reads the string
+      # payload and encoding directly; String subclass overrides must not
+      # affect lexer or parser input.
+      source = String.new(source)
       @source = source
       unicode_escape = @source.valid_encoding? && non_ascii_unicode_escape_pattern?
       source_encoding = @source.encoding

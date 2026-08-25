@@ -3,6 +3,18 @@
 require "test_helper"
 
 class RegexpConstructorTest < Minitest::Test
+  def test_constructor_ignores_string_subclass_overrides
+    pattern_class = Class.new(String) do
+      def valid_encoding?
+        raise "Regexp compiler must not dispatch to pattern subclass"
+      end
+    end
+
+    pattern = pattern_class.new("a+")
+
+    assert Onibi::Regexp.new(pattern).match?("aaa")
+  end
+
   def test_constructor_accepts_to_str_pattern_like_mri
     pattern = Object.new
     pattern.define_singleton_method(:to_str) { "a+" }
