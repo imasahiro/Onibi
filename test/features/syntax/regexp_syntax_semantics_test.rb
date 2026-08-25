@@ -88,6 +88,15 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
     assert_raises(Encoding::CompatibilityError) { regexp.match?("é") }
   end
 
+  def test_non_utf8_multibyte_escape_preserves_pattern_encoding
+    pattern = "\\xC3\\xA9".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal Encoding::EUC_JP, regexp.encoding
+    assert regexp.fixed_encoding?
+    refute regexp.match?("é".encode(Encoding::EUC_JP))
+  end
+
   def test_trailing_escape_error_matches_mri
     error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
 
