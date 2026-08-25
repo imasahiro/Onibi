@@ -111,6 +111,17 @@ class InterpreterTest < Minitest::Test
                  [actual[0], actual.captures, actual.offset(1)]
   end
 
+  def test_absence_followed_by_match_reset_keeps_zero_width_result
+    expected = ::Regexp.new("a(?~a)\\K").match("abc")
+    actual = Onibi::Regexp.new("a(?~a)\\K").match("abc")
+
+    assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
+
+    expected = ::Regexp.new("\\K(?~a)+", ::Regexp::IGNORECASE).match("ba")
+    actual = Onibi::Regexp.new("\\K(?~a)+", Onibi::Regexp::IGNORECASE).match("ba")
+    assert_equal [expected[0], expected.offset(0)], [actual[0], actual.offset(0)]
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")

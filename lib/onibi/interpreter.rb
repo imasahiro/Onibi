@@ -147,7 +147,9 @@ module Onibi
                    elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
                      walk_tnfa(:start, characters, start, {}, start, runtime_flags)
                    end
-          next if result && @retry_shifted_absence && result.first > start
+          # A shifted zero-width result is valid when `\\K` reset the match
+          # start after an absence probe. Retry only consuming shifted matches.
+          next if result && @retry_shifted_absence && result.first > start && result.first != result[1]
           return result if result
         end
         nil
@@ -412,7 +414,17 @@ module Onibi
             end
             previous_states = states
             states = previous_states.flat_map do |consumed, state_captures|
-              part_results = node_results(part, characters, cursor + consumed, state_captures, flags)
+              # A match-reset before an absence is a zero-width VM marker.
+              # Do not expose its synthetic start to the absence probe; the
+              # probe must still scan the remaining input. Restore the marker
+              # after the absence consumes its complement.
+              reset_start = (state_captures[:__match_start] if contains_absence_node?(part) && state_captures[:__match_reset])
+              probe_captures = if reset_start
+                                 state_captures.dup.tap { |state| state.delete(:__match_start) }
+                               else
+                                 state_captures
+                               end
+              part_results = node_results(part, characters, cursor + consumed, probe_captures, flags)
               optional_order = mri_casefold_optional_order?(part, parts[index], characters,
                                                             cursor + consumed, flags)
               if optional_order == :zero_only
@@ -445,6 +457,11 @@ module Onibi
 
                 inner = discard_absence_body_captures(part, inner) if part.is_a?(SemanticBytecode::Absence) &&
                                                                       part_index < parts.length - 1
+                if reset_start
+                  inner = inner.dup
+                  inner[:__match_start] = reset_start
+                  inner[:__match_reset] = true
+                end
                 next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
                                marked = inner.dup
                                marked[:__match_prefix] = consumed
