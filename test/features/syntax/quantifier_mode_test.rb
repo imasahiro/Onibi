@@ -111,6 +111,13 @@ class QuantifierModeTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_casefold_backreference_matches_identical_long_s
+    source = "(s)\\1"
+    actual = Onibi::Regexp.new(source, ::Regexp::IGNORECASE).match("ſſ")
+
+    assert_equal %w[ſſ ſ], actual&.to_a
+  end
+
   def test_lazy_optional_quantifier_prefers_zero_repetitions
     match = Onibi::Regexp.new("a??b").match("b")
 

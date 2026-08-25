@@ -3496,6 +3496,8 @@ module Onibi
       end
 
       def simple_casefold_equal?(left, right)
+        return true if left == right
+
         left_fold = left.downcase(:fold)
         right_fold = right.downcase(:fold)
         return false if left.length > 1 && right_fold.length != right.length
