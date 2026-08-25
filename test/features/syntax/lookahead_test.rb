@@ -58,6 +58,17 @@ class LookaheadTest < Minitest::Test
     assert_equal Regexp.new(pattern).match?("aßx"), Onibi::Regexp.new(pattern).match?("aßx")
   end
 
+  def test_ignorecase_lookbehind_preserves_fold_overlap_for_literals
+    [["(?<=ß)ss", "ßss"], ["(?<=ß).", "ßa"], ["(?<=ffi)ﬃ", "ﬃffi"]].each do |pattern, input|
+      expected = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
+      actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+      assert_equal expected&.to_a, actual&.to_a
+      assert_equal expected && [expected.begin(0), expected.end(0)],
+                   actual && [actual.begin(0), actual.end(0)]
+    end
+  end
+
   def test_lookbehind_rejects_nested_variable_width_alternation
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<=a(?:b|cd))x") }
   end

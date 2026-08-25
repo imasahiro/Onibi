@@ -307,11 +307,24 @@ module Onibi
           folded_widths = assertion.folded_widths || casefold_widths(assertion.body)
           widths = folded_widths unless folded_widths.empty?
         end
-        lookbehind_flags = flags.merge(lookbehind_casefold: true)
+        lookbehind_flags = flags.merge(lookbehind_casefold: true, lookbehind_fold_source: true)
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
           results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
           return matching.map { |_length, inner| [0, inner] } unless matching.empty?
+
+          next unless flags[:ignorecase] && lookbehind_fold_overlap?(assertion.body)
+
+          folded_width = folded_widths.find { |candidate| candidate == width }
+          partial = results.select { |length, _inner| length < width && length < folded_width.to_i }
+          next if partial.empty?
+
+          overlap = folded_width - partial.first.first
+          return partial.map do |_length, inner|
+            state = inner.dup
+            state[:__lookbehind_overlap] = overlap if overlap.positive?
+            [0, state]
+          end
         end
         []
       end
@@ -346,6 +359,11 @@ module Onibi
         end
       end
 
+      def lookbehind_fold_overlap?(node)
+        body = node.is_a?(SemanticBytecode::Sequence) ? node.parts : [node]
+        body.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+      end
+
       def node_results(node, characters, cursor, captures, flags = {})
         @steps += 1
         return [] if @steps > 2_000_000
@@ -370,7 +388,8 @@ module Onibi
               has_mark || reverse_fold || folded_value != value)
               folded_length = casefold_lengths(value, characters, cursor,
                                                folded: folded_value,
-                                               expanded_only: flags[:lookbehind_casefold]).first
+                                               expanded_only: flags[:lookbehind_casefold] &&
+                                                              !flags[:lookbehind_fold_source]).first
               return folded_length ? [[folded_length, captures.dup]] : []
             end
           end
@@ -568,6 +587,12 @@ module Onibi
 
           length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
           return [] unless length
+
+          if captures[:__lookbehind_overlap]
+            next_captures = captures.dup
+            next_captures.delete(:__lookbehind_overlap)
+            captures = next_captures
+          end
 
           if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
             next_captures = captures.dup
@@ -1401,7 +1426,9 @@ module Onibi
           if flags[:ignorecase]
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
-                             expanded_only: flags[:lookbehind_casefold]).first
+                             expanded_only: flags[:lookbehind_casefold] &&
+                                            !flags[:lookbehind_fold_source],
+                             overlap: captures[:__lookbehind_overlap]).first
           else
             input_codepoints = characters[cursor, value.length]&.map(&:ord)
             input_codepoints == value.map(&:ord) ? value.length : nil
@@ -1409,7 +1436,12 @@ module Onibi
         when :match_class
           class_match_lengths(operand, characters, cursor, flags).first
         when :match_any
-          cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
+          if captures[:__lookbehind_overlap]
+            0
+          elsif cursor < characters.length &&
+                (flags[:multiline] || operand.value != "." || characters[cursor] != "\n")
+            1
+          end
         when :match_escape
           case operand.kind
           when :grapheme
@@ -3527,13 +3559,16 @@ module Onibi
         right_fold == left.downcase
       end
 
-      def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false)
+      def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false, overlap: 0)
+        overlap = overlap.to_i
+
         if value.encoding != Encoding::UTF_8 && value.encoding != Encoding::ASCII_8BIT && !value.ascii_only?
           slice = characters[cursor, value.length]
           return slice && slice.join == value ? [value.length] : []
         end
 
         folded_value = folded || value.downcase(:fold)
+        folded_value = folded_value[overlap..] || "" if overlap.positive?
         folded_value = folded_value.encode(Encoding::UTF_8) unless [Encoding::UTF_8, Encoding::ASCII_8BIT].include?(folded_value.encoding)
         maximum = folded_value.length
         minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
