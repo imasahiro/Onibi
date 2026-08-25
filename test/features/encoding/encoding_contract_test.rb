@@ -141,6 +141,16 @@ class EncodingContractTest < Minitest::Test
     end
   end
 
+  def test_unicode_full_casefold_keeps_literal_runs_across_quantifiers
+    pattern = "ffi.*ffi"
+    input = "ﬃﬃ"
+
+    expected = ::Regexp.new(pattern, ::Regexp::IGNORECASE).match(input)
+    actual = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE).match(input)
+
+    assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
+  end
+
   def test_unicode_literal_full_casefold_runs_in_the_vm_for_ascii_input
     regexp = Onibi::Regexp.new("ſ", "i")
 

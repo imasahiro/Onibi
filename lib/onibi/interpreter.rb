@@ -394,18 +394,8 @@ module Onibi
               has_mark = run_value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
               reverse_fold = reverse_casefold_sequence?(run_value)
               folded_run = run.map { |literal| literal.casefold || literal.value }.join
-              reverse_prefix = run.each_index.drop(1).reverse.find do |length|
-                reverse_casefold_sequence?(run.first(length).map(&:value).join)
-              end
-              if reverse_prefix
-                index = part_index + reverse_prefix
-                prefix = run.first(reverse_prefix)
-                prefix_value = prefix.map(&:value).join
-                prefix_fold = prefix.map { |literal| literal.casefold || literal.value }.join
-                part = SemanticBytecode::Literal.new(prefix_value, prefix_fold == prefix_value ? nil : prefix_fold,
-                                                     nil, false)
-              elsif run.length > 1 &&
-                    (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
+              if run.length > 1 &&
+                 (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
                 part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run,
                                                      nil, false)
               else
