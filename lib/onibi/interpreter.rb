@@ -597,6 +597,15 @@ module Onibi
         end
         return [] if prefix.length < 2 || prefix.first.value.start_with?("^")
 
+        split_class = true
+        if prefix.first.split_casefold
+          suffix = prefix.drop(1)
+          split_safe = suffix.length == 1 && suffix.first.is_a?(SemanticBytecode::Literal) &&
+                       suffix.first.value.each_char.one? &&
+                       (suffix.first.casefold || suffix.first.value).each_char.one?
+          split_class = split_safe
+        end
+
         maximum = [characters.length - cursor, casefold_prefix_width(prefix)].min
         1.upto(maximum).filter_map do |width|
           slice = characters[cursor, width]
@@ -622,7 +631,8 @@ module Onibi
             end
           end.uniq
           next unless folded.each_char.all? { |character| expected_fold_characters.include?(character) }
-          next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class)
+          next unless folded_atoms_match?(prefix, folded, flags, allow_fold_tail: expanded_class,
+                                                                 split_class: split_class)
 
           next [[width, captures.dup]] if prefix.length == parts.length
 
@@ -696,6 +706,10 @@ module Onibi
                               next_node.is_a?(SemanticBytecode::CharacterClass) ||
                               next_node.is_a?(SemanticBytecode::Quantifier)
         return :greedy if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.zero?
+        if next_node.is_a?(SemanticBytecode::Quantifier) && next_node.minimum.positive? &&
+           next_node.expression.is_a?(SemanticBytecode::Assertion)
+          return :greedy
+        end
         if next_node.is_a?(SemanticBytecode::Quantifier) &&
            next_node.expression.is_a?(SemanticBytecode::CharacterClass) &&
            next_node.expression.casefolds.any?
@@ -904,7 +918,7 @@ module Onibi
         end
       end
 
-      def folded_atoms_match?(atoms, folded, flags, allow_fold_tail: false)
+      def folded_atoms_match?(atoms, folded, flags, allow_fold_tail: false, split_class: true)
         return folded.empty? || allow_fold_tail if atoms.empty?
 
         atom = atoms.first
@@ -913,11 +927,19 @@ module Onibi
           return false unless folded.start_with?(value)
 
           return folded_atoms_match?(atoms.drop(1), folded[value.length..], flags,
-                                     allow_fold_tail: allow_fold_tail)
+                                     allow_fold_tail: allow_fold_tail, split_class: split_class)
         end
 
         character = folded.each_char.first
         return false unless character
+
+        if atom.is_a?(SemanticBytecode::CharacterClass) && atom.split_casefold && !split_class
+          value = class_fold_characters(atom).join
+          return false unless folded.start_with?(value)
+
+          return folded_atoms_match?(atoms.drop(1), folded[value.length..], flags,
+                                     allow_fold_tail: allow_fold_tail, split_class: split_class)
+        end
 
         matched = if atom.is_a?(SemanticBytecode::CharacterClass)
                     Onibi::ClassPredicates.matches?(atom.value, character,
@@ -928,7 +950,7 @@ module Onibi
                     false
                   end
         matched && folded_atoms_match?(atoms.drop(1), folded[character.length..], flags,
-                                       allow_fold_tail: allow_fold_tail)
+                                       allow_fold_tail: allow_fold_tail, split_class: split_class)
       end
 
       def quantifier_results(quantifier, characters, cursor, captures, flags = {})

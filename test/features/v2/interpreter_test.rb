@@ -130,6 +130,22 @@ class InterpreterTest < Minitest::Test
     assert_nil actual
   end
 
+  def test_sharp_s_class_split_respects_following_fold_boundary
+    ["[ß]ß", "[ß]ss"].each do |source|
+      expected = ::Regexp.new(source, ::Regexp::IGNORECASE).match("sß")
+      actual = Onibi::Regexp.new(source, Onibi::Regexp::IGNORECASE).match("sß")
+
+      assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)], source
+    end
+  end
+
+  def test_folded_optional_literal_keeps_consuming_branch_before_assertion_repeat
+    expected = ::Regexp.new("ς?(?!ß){1}", ::Regexp::IGNORECASE).match("ς")
+    actual = Onibi::Regexp.new("ς?(?!ß){1}", Onibi::Regexp::IGNORECASE).match("ς")
+
+    assert_equal [expected&.to_a, expected&.offset(0)], [actual&.to_a, actual&.offset(0)]
+  end
+
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
     expected = ::Regexp.new("(a?){2}").match("aa")
     actual = Onibi::Regexp.new("(a?){2}").match("aa")
