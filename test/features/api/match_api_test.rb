@@ -100,6 +100,10 @@ class MatchApiTest < Minitest::Test
       def [](*)
         "bad"
       end
+
+      def byteslice(*)
+        "bad"
+      end
     end
     input = input_class.new("ba")
     expected = Regexp.new("(a)").match(input)

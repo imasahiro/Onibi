@@ -42,7 +42,8 @@ module Onibi
 
     def self.from_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       character_position = lambda do |byte_position|
-        input.byteslice(0, byte_position).to_s.length
+        prefix = string_byteslice(input, 0, byte_position).to_s
+        String.instance_method(:length).bind_call(prefix)
       end
       offsets = capture_offsets.map do |offset|
         offset && [character_position.call(offset[0]), character_position.call(offset[1])]
