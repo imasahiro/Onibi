@@ -47,4 +47,11 @@ class MatchDataTest < Minitest::Test
     assert_equal "cat", match.match("animal")
     assert_equal "cat", match.match(:animal)
   end
+
+  def test_inspect_includes_unnamed_capture_values
+    expected = Regexp.new("(a)(b)?").match("ab").inspect
+    actual = Onibi::Regexp.new("(a)(b)?").match("ab").inspect
+
+    assert_equal expected, actual
+  end
 end

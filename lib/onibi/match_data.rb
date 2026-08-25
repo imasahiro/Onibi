@@ -155,7 +155,10 @@ module Onibi
     def inspect_names
       return @names.flat_map { |name, index| [[name, index]] } unless @regexp
 
-      @regexp.named_captures.flat_map { |name, indices| indices.map { |index| [name, index] } }
+      named = @regexp.named_captures
+      return named.flat_map { |name, indices| indices.map { |index| [name, index] } } unless named.empty?
+
+      (1...@values.length).map { |index| [index, index] }
     end
 
     def range_values(range)
