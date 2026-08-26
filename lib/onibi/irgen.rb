@@ -1032,7 +1032,12 @@ module Onibi
             when Any
               true
             when Group
-              !node.capture && wildcard_absence_suffix?(node.body)
+              if node.capture
+                body = unwrap_single_sequence(node.body)
+                body.is_a?(Literal) && body.casefold.nil?
+              else
+                wildcard_absence_suffix?(node.body)
+              end
             when Sequence
               !node.parts.empty? && node.parts.all? { |part| wildcard_absence_suffix?(part) }
             when Alternation
