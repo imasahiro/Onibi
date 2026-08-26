@@ -29,10 +29,11 @@ The parser owns syntax, option scopes, capture numbering, and source errors.
 The compiler lowers AST nodes to CFG blocks and operations. Optimization passes
 transform CFG to CFG and preserve ordered control semantics. Automata lowering
 maps CFG facts to position-based TNFA states, then to a full or partial DFA.
-IR generation emits immutable automaton instructions and a linear semantic
-instruction table. The automaton stream contains one `semantic_match` entry;
-the interpreter obtains semantic operands from that stream, not from an
-execution-only AST side channel.
+IR generation emits immutable automaton instructions and a flat semantic
+instruction stream. A flat-safe pattern uses one `semantic_flat` entry whose
+operand contains only VM instructions and primitive metadata. The interpreter
+does not retain a semantic tree on this path. Unsupported patterns still use
+the transitional `semantic_match` compatibility entry.
 
 The target instruction contract is defined in [`flat-vm-design.md`](flat-vm-design.md).
 
