@@ -2925,6 +2925,10 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
         capture, conditional = body.parts
+        if capture.is_a?(SemanticBytecode::Quantifier) &&
+           capture.maximum && capture.minimum == capture.maximum
+          capture = capture.expression
+        end
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless conditional.is_a?(SemanticBytecode::Conditional)
         condition = conditional.condition.is_a?(Array) ? conditional.condition.first : conditional.condition
