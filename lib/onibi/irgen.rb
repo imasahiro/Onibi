@@ -94,6 +94,18 @@ module Onibi
             tail = boundary.fetch(:tail, nil)
             tail && next_casefold && tail == next_casefold
           end
+
+          def fold_width_delta
+            return 0 unless literal && casefold
+
+            casefold.each_char.count - literal.value.each_char.count
+          end
+
+          def next_fold_width_delta
+            return 0 unless next_literal && next_casefold
+
+            next_casefold.each_char.count - next_literal.value.each_char.count
+          end
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any

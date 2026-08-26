@@ -171,6 +171,8 @@ class V2IRGenTest < Minitest::Test
     metadata = flat.boundary_metadata(0)
     assert metadata.expanded_tail?
     assert metadata.tail_matches_next_fold?
+    assert_equal(0, metadata.fold_width_delta)
+    assert_equal(0, metadata.next_fold_width_delta)
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms
