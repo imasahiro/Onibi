@@ -1142,6 +1142,15 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_backreference_preserves_source_fold_boundary
+    regexp = Onibi::Regexp.new("(?i:(?<x>Ω)\\k<x>)")
+
+    assert_equal ::Regexp.new("(?i:(?<x>Ω)\\k<x>)").match("Ωω")&.to_a,
+                 regexp.match("Ωω")&.to_a
+    assert_equal ::Regexp.new("(?i:(?<x>Ω)\\k<x>)").match("ΩΩ")&.to_a,
+                 regexp.match("ΩΩ")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

@@ -3573,6 +3573,14 @@ module Onibi
 
           value = characters[span[0]...span[1]]
           candidate = characters[cursor, value.length]
+          if flags[:ignorecase] && value.length == 1 && candidate&.length == 1 &&
+             value.first.encoding == Encoding::UTF_8 && !value.first.ascii_only? &&
+             value.first.downcase(:fold).each_char.one? &&
+             value.first == value.first.upcase &&
+             value.first != value.first.downcase(:fold) &&
+             candidate.first == value.first.downcase(:fold)
+            next
+          end
           matched = flags[:ignorecase] ? simple_casefold_equal?(value.join, candidate.join) : candidate == value
           matched = value.join.downcase(:fold) == candidate.join.downcase(:fold) if !matched && flags[:ignorecase] && cursor + value.length < characters.length
           return value.length if matched
