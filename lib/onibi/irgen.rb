@@ -2381,9 +2381,20 @@ module Onibi
 
         body = scope.body
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
-        return false unless body.is_a?(SemanticBytecode::Quantifier) && body.maximum.nil?
+        if body.is_a?(SemanticBytecode::Quantifier)
+          return false unless body.maximum.nil?
 
-        semantic_scoped_repeat_operand_safe?(body.expression)
+          semantic_scoped_repeat_operand_safe?(body.expression)
+        elsif body.is_a?(SemanticBytecode::Alternation)
+          body.branches.all? do |branch|
+            branch = branch.parts.first if branch.is_a?(SemanticBytecode::Sequence) && branch.parts.one?
+            branch.is_a?(SemanticBytecode::Quantifier) ?
+              (branch.maximum.nil? && semantic_scoped_repeat_operand_safe?(branch.expression)) :
+              semantic_scoped_repeat_operand_safe?(branch)
+          end
+        else
+          false
+        end
       end
 
       def semantic_scoped_unicode_repeat_alternation_safe?(node)
