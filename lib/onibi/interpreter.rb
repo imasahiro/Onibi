@@ -4200,6 +4200,30 @@ module Onibi
           return [boundary ? [boundary - cursor + run - 1, limit].min : limit]
         end
         if node.atoms.first.is_a?(SemanticBytecode::AlternationAtom)
+          values = node.atoms.first.variants.map { |variant| variant.map(&:value).join }
+          if values.map(&:length).uniq.length > 1
+            repetitions = 0
+            position = cursor
+            lengths = []
+            while position < characters.length
+              value = values.sort_by(&:length).reverse.find do |candidate|
+                characters[position, candidate.length].join == candidate
+              end
+              break unless value
+
+              lengths << value.length
+              repetitions += 1
+              position += value.length
+            end
+            return [limit] if repetitions < node.minimum
+
+            total = position - cursor
+            return [(total + node.minimum - 1) / 2] if lengths.all? { |length| length == 1 }
+
+            trailing = lengths.last && lengths.last < values.map(&:length).max ? lengths.last : 0
+            length = [[total - values.map(&:length).max - trailing, limit].min, 0].max
+            return [length]
+          end
           boundary = cursor.upto(characters.length).find do |probe|
             local = 0
             while probe + local < characters.length &&
