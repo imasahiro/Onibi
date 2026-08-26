@@ -606,7 +606,7 @@ class InterpreterTest < Minitest::Test
       program = regexp.send(:bytecode_program)
 
       refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
-      ["a", "ac", "abc", "bac", "cabc", "caba", "ba"].each do |input|
+      ["a", "ac", "abc", "bac", "cabc", "caba", "ba", "ab"].each do |input|
         expected = ::Regexp.new(source).match(input)
         actual = regexp.match(input)
         assert_equal [expected&.to_a, expected&.offset(0)],

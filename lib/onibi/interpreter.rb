@@ -697,7 +697,8 @@ module Onibi
             ) do
               if absence.is_a?(SemanticBytecode::AbsenceProbe)
                 flat_absence_probe_results(absence.program, characters, position, state, frame_flags,
-                                           capture_program: absence.capture_program)
+                                           capture_program: absence.capture_program,
+                                           capture_requires_end: absence.capture_requires_end)
               elsif absence.is_a?(SemanticBytecode::AbsenceAssertion)
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
@@ -3956,7 +3957,8 @@ module Onibi
         maximum.downto(0).map { |candidate| [candidate, state] }
       end
 
-      def flat_absence_probe_results(program, characters, cursor, captures, flags, capture_program: nil)
+      def flat_absence_probe_results(program, characters, cursor, captures, flags, capture_program: nil,
+                                     capture_requires_end: false)
         frame = @state.push_absence_frame(
           resume_pc: nil, body_pc: nil, absent_start: cursor, absent_end: characters.length,
           probe_position: cursor, possible_points: [], body_checkpoints: [], capture_checkpoints: []
@@ -3969,11 +3971,13 @@ module Onibi
           partial_state = nil
           if results.empty? && capture_program
             partial = flat_probe_results(capture_program, bounded, position, current, flags).first
-            partial_state = partial.last if partial
+            if partial && partial.last.values.any? { |span| span.is_a?(Array) && span.last == bounded.length }
+              partial_state = partial.last
+            end
           end
           record_absence_checkpoint(frame, position, results, current)
           if results.empty?
-            current = partial_state || captures
+            current = partial_state || (capture_requires_end ? captures : (capture_program ? current : captures))
           else
             length, state = results.first
             frame.tighten_absent_end(position + length - 1)
