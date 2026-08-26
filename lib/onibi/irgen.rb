@@ -1998,13 +1998,25 @@ module Onibi
         capture, conditional = body.parts
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless conditional.is_a?(SemanticBytecode::Conditional)
-        return false unless conditional.condition == capture.number
+        condition = conditional.condition.is_a?(Array) ? conditional.condition.first : conditional.condition
+        return false unless condition == capture.number
 
         [conditional.yes_branch, conditional.no_branch].compact.all? do |branch|
-          literal = branch
-          literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
-          literal.is_a?(SemanticBytecode::Literal) && literal.value.ascii_only? && literal.value.each_char.one?
+          semantic_scoped_conditional_branch_safe?(branch)
         end
+      end
+
+      def semantic_scoped_conditional_branch_safe?(branch)
+        node = branch
+        node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        return true if node.is_a?(SemanticBytecode::Property) &&
+                       Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(
+                         Onibi::UnicodeProperties.normalize_name(node.name.to_s)
+                       )
+
+        node.is_a?(SemanticBytecode::Literal) && node.value.ascii_only? && node.value.each_char.one?
+      rescue RegexpError, KeyError
+        false
       end
 
       def semantic_scoped_optional_capture_conditional_safe?(node)
@@ -2022,12 +2034,11 @@ module Onibi
         capture = quantifier.expression
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless conditional.is_a?(SemanticBytecode::Conditional)
-        return false unless conditional.condition == capture.number
+        condition = conditional.condition.is_a?(Array) ? conditional.condition.first : conditional.condition
+        return false unless condition == capture.number
 
         [conditional.yes_branch, conditional.no_branch].compact.all? do |branch|
-          literal = branch
-          literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
-          literal.is_a?(SemanticBytecode::Literal) && literal.value.ascii_only? && literal.value.each_char.one?
+          semantic_scoped_conditional_branch_safe?(branch)
         end
       end
 

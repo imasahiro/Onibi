@@ -849,6 +849,17 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ab")&.to_a
   end
 
+  def test_scoped_capture_conditional_property_branch_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:(a)?(?(1)\\p{Letter}|c))")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:(a)?(?(1)\\p{Letter}|c))").match("aſ")&.to_a,
+                 regexp.match("aſ")&.to_a
+    assert_equal ::Regexp.new("(?i:(a)?(?(1)\\p{Letter}|c))").match("c")&.to_a,
+                 regexp.match("c")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
