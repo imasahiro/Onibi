@@ -86,10 +86,12 @@ uses these character widths, not byte widths. Boundary-sensitive folds enter
 the flat VM only for terminal or anchored forms. Other forms use compatibility
 execution until source-width conversion is complete.
 
-The compatibility evaluator remains for Unicode fold boundary rules, complex
-recursive bodies, and other constructs that do not yet have complete PC
-lowering. Unbounded absence repeats also remain there because their greedy
-retry and zero-width retry rules need a dedicated VM policy. It lives in
+The compatibility evaluator remains for Unicode fold boundary rules, leading
+terminal-anchor assertions, complex recursive bodies, and other constructs
+that do not yet have complete PC lowering. Leading terminal-anchor assertions
+need a search policy in addition to an assertion instruction. Unbounded
+absence repeats also remain there when their greedy retry and zero-width retry
+rules need a dedicated VM policy. It lives in
 `SemanticTreeEvaluator` and is not used by the supported flat instruction
 stream.
 
