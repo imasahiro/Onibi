@@ -69,6 +69,8 @@ module Onibi
         # exactly `n` repetitions, not the intermediate counts.
         Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
         ZeroWidthRepeat = Struct.new(:predicate, :minimum, :maximum, :number, :capture, :name)
+        NullableGroupRepeat = Struct.new(:body, :kind, :minimum, :maximum, :mode, :lazy_exact,
+                                         :number, :name)
 
         # A linear semantic instruction table.  The VM receives this table
         # through the automaton instruction stream, instead of through a
@@ -168,6 +170,7 @@ module Onibi
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
                         assert_anchor split jump fail capture_start capture_end repeat
+                        repeat_nullable_group
                         repeat_possessive repeat_zero_width repeat_absence assert conditional backreference call return
                         scope_start scope_end atomic_start atomic_end absence nop accept].freeze
         FlatProgram = Struct.new(:instructions, :entry, :subroutines, :operands, keyword_init: true) do
@@ -318,6 +321,7 @@ module Onibi
           end
 
           def self.composite_payload?(operand)
+            return false if operand.is_a?(NullableGroupRepeat)
             return true if operand.is_a?(Assertion) && !operand.tree_free?
             return true if operand.respond_to?(:body) && operand.body
             return true if operand.respond_to?(:parts) && operand.parts.any?
@@ -481,6 +485,13 @@ module Onibi
             when Alternation
               Alternation.new([])
             when Quantifier
+              if nullable_group_repeat?(node) && node.expression.capture
+                body = unwrap_single_sequence(node.expression.body)
+                return NullableGroupRepeat.new(
+                  flat_operand(body), node.kind, node.minimum, node.maximum, node.mode,
+                  node.lazy_exact, node.expression.number, node.expression.name
+                )
+              end
               if zero_width_repeat?(node)
                 expression = node.expression
                 body = expression.is_a?(Group) ? expression.body : expression
@@ -656,7 +667,8 @@ module Onibi
               emit_command(:call, node.identifier, nil)
             when Quantifier
               if nullable_group_repeat?(node)
-                emit_command(:repeat, index_for(node), nil)
+                opcode = node.expression.capture ? :repeat_nullable_group : :repeat
+                emit_command(opcode, index_for(node), nil)
               elsif node.expression.is_a?(Group) && (repeatable_group?(node) || nested_nullable_group_repeat?(node))
                 emit_group_quantifier(node)
               elsif zero_width_repeat?(node)
@@ -768,11 +780,12 @@ module Onibi
           end
 
           def nullable_group_repeat?(node)
-            return false unless node.expression.is_a?(Group) && !node.expression.capture && node.maximum.nil?
+            return false unless node.expression.is_a?(Group) && node.maximum.nil?
 
             body = node.expression.body
             body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
-            body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 && supported?(body)
+            body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 &&
+              body.mode == :lazy && supported?(body)
           end
 
           def repeatable_option_group?(node)

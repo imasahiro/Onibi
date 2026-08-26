@@ -628,6 +628,29 @@ module Onibi
                                            ))
               end
             end
+          when :repeat_nullable_group
+            quantifier = @flat_program.operand(instruction.operand)
+            lengths = nullable_group_repeat_lengths(
+              quantifier, quantifier.body, characters, position, state, frame_flags
+            )
+            if lengths.empty?
+              resume_backtrack
+              next
+            end
+            @state.with_repeat_frame(pc: pc, cursor: position, lengths: lengths,
+                                     minimum: quantifier.minimum, maximum: quantifier.maximum) do |repeat|
+              while repeat.next_index < repeat.lengths.length
+                length = repeat.lengths[repeat.next_index]
+                repeat.next_index += 1
+                next_state = state.dup
+                next_state[quantifier.number] = [position, position + length]
+                next_state[quantifier.name] = [position, position + length] if quantifier.name
+                @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                             pc: pc + 1, cursor: position + length,
+                                             captures: next_state, flags: frame_flags
+                                           ))
+              end
+            end
           when :repeat_absence
             quantifier = @flat_program.operand(instruction.operand)
             lengths = flat_absence_repeat_lengths(quantifier, characters, position, state, frame_flags)
