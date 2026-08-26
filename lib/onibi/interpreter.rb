@@ -840,6 +840,7 @@ module Onibi
         case node
         when SemanticBytecode::Sequence
           return [] if lookahead_variant_barrier?(node, characters, cursor, flags)
+          return [] if expanded_quantifier_anchor_barrier?(node, characters, cursor, flags)
           if node.parts.each_index.any? do |index|
                reverse_fold_optional_barrier?(node.parts[index], node.parts[index + 1],
                                               node.parts[index + 2], characters, cursor, flags)
@@ -2110,6 +2111,27 @@ module Onibi
         body.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
           source && source != body.value && !source.match?(/\p{M}/) &&
           source.downcase(:fold) == body.value.downcase(:fold)
+      end
+
+      def expanded_quantifier_anchor_barrier?(node, characters, cursor, flags)
+        quantifier = node.parts[0]
+        anchor = node.parts[1]
+        return false unless anchor.is_a?(SemanticBytecode::Anchor) && strict_end_anchor?(anchor)
+
+        if quantifier.is_a?(SemanticBytecode::OptionGroup) && quantifier.body.is_a?(SemanticBytecode::Sequence)
+          return false unless quantifier.ignorecase
+
+          quantifier = quantifier.body.parts.first
+        else
+          return false unless flags[:ignorecase]
+        end
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.minimum.positive? && quantifier.maximum.nil?
+
+        literal = boundary_operand(quantifier.expression)
+        return false unless literal.is_a?(SemanticBytecode::Literal) && literal.casefold
+
+        literal.casefold.length > literal.value.length && characters.length - cursor == 1
       end
 
       def same_fold_literal?(node, expression)
