@@ -681,6 +681,8 @@ module Onibi
               !%i[word_boundary not_word_boundary].include?(node.kind)
             when Sequence
               !node.parts.empty? && node.parts.all? { |part| repeatable_body?(part) }
+            when Alternation
+              !node.branches.empty? && node.branches.all? { |branch| repeatable_body?(branch) }
             when Group
               repeatable_body?(node.body)
             else
@@ -1963,7 +1965,8 @@ module Onibi
         quantifier, *suffix = node.parts
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless quantifier.minimum.positive? ||
-                            (quantifier.minimum.zero? && quantifier.maximum == 1)
+                            (quantifier.minimum.zero? &&
+                             [1, nil].include?(quantifier.maximum))
         return false unless suffix.all? do |part|
           part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
         end
@@ -2016,7 +2019,7 @@ module Onibi
         quantifier, *suffix = node.parts
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless quantifier.minimum.positive? ||
-                            (quantifier.minimum.zero? && quantifier.maximum == 1)
+                            (quantifier.minimum.zero? && [1, nil].include?(quantifier.maximum))
         return false unless suffix.all? do |part|
           part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
         end
