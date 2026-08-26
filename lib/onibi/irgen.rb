@@ -1812,7 +1812,9 @@ module Onibi
           optional = node.minimum.zero? && node.maximum == 1
           bounded = node.maximum && node.maximum <= 32 && node.minimum <= node.maximum
           unbounded = node.maximum.nil? && node.minimum.positive?
-          (fixed || optional || bounded || unbounded) && semantic_flat_unicode_literal?(node.expression)
+          unbounded_optional = node.maximum.nil? && node.minimum.zero?
+          (fixed || optional || bounded || unbounded || unbounded_optional) &&
+            semantic_flat_unicode_literal?(node.expression)
         else
           false
         end

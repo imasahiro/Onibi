@@ -1120,6 +1120,17 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_scoped_non_reverse_unicode_fold_unbounded_optional_repeat_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:Ω*)")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["", "Ω", "ω", "ΩΩ", "ωω", "xΩ"].each do |input|
+      assert_equal ::Regexp.new("(?i:Ω*)").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
