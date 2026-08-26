@@ -697,6 +697,8 @@ module Onibi
             ) do
               if absence.is_a?(SemanticBytecode::AbsenceProbe)
                 flat_absence_probe_results(absence.program, characters, position, state, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceAssertion)
+                flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
                 flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
@@ -715,6 +717,7 @@ module Onibi
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
                   absence.is_a?(SemanticBytecode::AbsenceProbe)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                            pc: pc + 1, cursor: position + length, captures: next_state,
@@ -3971,6 +3974,27 @@ module Onibi
         [[frame.absent_end - cursor, current || captures]]
       ensure
         @state.pop_absence_frame(frame) if frame && @state.current_frame.equal?(frame)
+      end
+
+      def flat_absence_assertion_results(assertion, characters, cursor, flags)
+        first_match = cursor.upto(characters.length).find do |position|
+          flat_assertion_match?(assertion, characters, position, {}, flags)
+        end
+        return [] unless first_match
+
+        if first_match > cursor
+          first_match.downto(cursor).map { |position| [position - cursor, {}] }
+        else
+          next_failure = (cursor + 1).upto(characters.length).find do |position|
+            !flat_assertion_match?(assertion, characters, position, {}, flags)
+          end
+          if next_failure
+            [[1, { __match_start: next_failure, __match_end: next_failure + 1 }]]
+          else
+            [[0, { __match_start: characters.length, __match_end: characters.length,
+                   __zero_absence: true }]]
+          end
+        end
       end
 
       def flat_probe_results(program, characters, cursor, captures, flags)

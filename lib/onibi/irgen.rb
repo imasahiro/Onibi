@@ -63,6 +63,7 @@ module Onibi
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
         AbsenceNullableRepeat = Struct.new(:atom)
+        AbsenceAssertion = Struct.new(:assertion)
         AbsenceProbe = Struct.new(:program)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
@@ -444,6 +445,9 @@ module Onibi
               body = unwrap_single_sequence(node.body)
               probe = absence_probe_program(node)
               return AbsenceProbe.new(probe) if probe
+
+              assertion = absence_assertion(node)
+              return AbsenceAssertion.new(assertion) if assertion
 
               if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
                 atom = absence_repeat_atoms(body.expression)
@@ -964,6 +968,7 @@ module Onibi
 
           def absence_flat_safe?(node)
             return true if absence_probe_program(node)
+            return true if absence_assertion(node)
 
             body = unwrap_single_sequence(node.body)
             if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
@@ -999,6 +1004,21 @@ module Onibi
             return unless suffix.all? { |part| wildcard_absence_suffix?(part) }
 
             SemanticBytecode.lower(node.body).flat_program
+          end
+
+          def absence_assertion(node)
+            root = @program.entry_node
+            return unless root == node || (root.is_a?(Sequence) && root.parts.one? && root.parts.first == node)
+
+            body = unwrap_single_sequence(node.body)
+            assertion = if body.is_a?(Group) && !body.capture
+                          unwrap_single_sequence(body.body)
+                        else
+                          body
+                        end
+            return unless assertion.is_a?(Assertion) && %i[negative negative_lookahead].include?(assertion.kind)
+
+            assertion.flat_atoms ? assertion : nil
           end
 
           def wildcard_absence_suffix?(node)

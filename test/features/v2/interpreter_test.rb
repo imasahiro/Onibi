@@ -503,6 +503,19 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_negative_lookahead_absence_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?~(?!a))")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["a", "ab", "ba", "b", "aa", "bb", "bba"].each do |input|
+      expected = ::Regexp.new("(?~(?!a))").match(input)
+      actual = regexp.match(input)
+      assert_equal [expected&.to_a, expected&.offset(0)],
+                   [actual&.to_a, actual&.offset(0)], input
+    end
+  end
+
   def test_absence_literal_alternation_capture_uses_flat_vm
     regexp = Onibi::Regexp.new("(?~(a|b))")
     program = regexp.send(:bytecode_program)
