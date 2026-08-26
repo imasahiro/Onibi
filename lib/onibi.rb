@@ -380,7 +380,7 @@ module Onibi
     # space when a pattern has named captures: unnamed groups are hidden.
     def raw_named_captures
       groups = {}
-      walk_ast(@ast) do |node|
+      Onibi::AST.walk(@ast) do |node|
         next unless node.is_a?(Onibi::AST::Group) && node.name
 
         groups[node.name] ||= []
@@ -490,7 +490,7 @@ module Onibi
               end
       return nil unless start
 
-      matched = bytecode_match(input, start, program)
+      matched = build_match_data(input, start, program)
       matched && block_given? ? yield(matched) : matched
     end
 
@@ -861,11 +861,11 @@ module Onibi
       Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
     end
 
-    def bytecode_match(input, start, program = bytecode_program)
+    def build_match_data(input, start, program = bytecode_program)
       byte_input = Onibi::EncodingSupport.byte_mode?(@input_encoding) ||
                    (program.flags[:binary_escape] && Onibi::EncodingSupport.iso_8859_1?(@input_encoding))
       input_view = Onibi::InputView.new(input, byte_mode: byte_input)
-      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start, input_view: input_view)
+      result = program.execute_with_captures(input, start, input_view: input_view)
       return nil unless result
 
       range = result.first(2)
@@ -916,9 +916,6 @@ module Onibi
 
     def bytecode_program
       @bytecode_program ||= begin
-        compiled = Onibi::Compiler.compile(@ast, options: @options, encoding: @source.encoding)
-        tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
-        dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
         semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
           @ast,
           casefold: casefold? || Onibi::IRGen::YARVIR::SemanticBytecode.casefold_required?(@ast)
@@ -926,22 +923,20 @@ module Onibi
         full_casefold = Onibi::IRGen::YARVIR::SemanticBytecode.full_casefold?(semantic_root)
         unicode_capture_byte_offsets =
           Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
-        Onibi::IRGen::YARVIR.generate(
-          dfa, flags: { encoding: @source.encoding,
-                        ignorecase: inline_global_flag_value(:i, casefold?),
-                        full_casefold: full_casefold,
-                        multiline: inline_global_flag_value(:m, multiline?),
-                        subexpressions: bytecode_subexpressions,
-                        named_capture_numbers: raw_named_captures,
-                        unicode_capture_byte_offsets: unicode_capture_byte_offsets,
-                        binary_escape: binary_escape_pattern?,
-                        ascii_escape_bytes: Onibi::EncodingSupport.us_ascii?(@source.encoding) &&
-                                            non_ascii_escape_present?,
-                        linebreak_escape: analysis_source.include?("\\R"),
-                        nullable: minimum_match_width(@ast).zero?,
-                        literal_only: !literal_value(@ast).nil?,
-                        semantic_root: semantic_root }
-        )
+        flags = { encoding: @source.encoding,
+                  ignorecase: inline_global_flag_value(:i, casefold?),
+                  full_casefold: full_casefold,
+                  multiline: inline_global_flag_value(:m, multiline?),
+                  subexpressions: bytecode_subexpressions,
+                  named_capture_numbers: raw_named_captures,
+                  unicode_capture_byte_offsets: unicode_capture_byte_offsets,
+                  binary_escape: binary_escape_pattern?,
+                  ascii_escape_bytes: Onibi::EncodingSupport.us_ascii?(@source.encoding) && non_ascii_escape_present?,
+                  linebreak_escape: analysis_source.include?("\\R"),
+                  nullable: minimum_match_width(@ast).zero?,
+                  literal_only: !literal_value(@ast).nil?,
+                  semantic_root: semantic_root }
+        Onibi::Compiler.bytecode_program(@ast, options: @options, encoding: @source.encoding, flags: flags)
       end
     end
 
@@ -1010,7 +1005,7 @@ module Onibi
     end
 
     def validate_backreferences!
-      walk_ast(@ast) do |node|
+      Onibi::AST.walk(@ast) do |node|
         if node.is_a?(Onibi::AST::Conditional)
           identifier, named = node.condition
           raise RegexpError, "undefined name <#{identifier}> condition: /#{@source}/" if named && !raw_named_captures.key?(identifier.to_s)
@@ -1031,7 +1026,7 @@ module Onibi
     end
 
     def validate_bytecode_subexpression_calls(groups)
-      walk_ast(@ast) do |node|
+      Onibi::AST.walk(@ast) do |node|
         next unless node.is_a?(Onibi::AST::SubexpressionCall)
 
         identifier = node.identifier.to_s
@@ -1092,7 +1087,7 @@ module Onibi
         return public_capture_numbers.length unless named_captures.empty?
 
         count = 0
-        walk_ast(@ast) { |node| count += 1 if node.is_a?(Onibi::AST::Group) && node.capture }
+        Onibi::AST.walk(@ast) { |node| count += 1 if node.is_a?(Onibi::AST::Group) && node.capture }
         count
       end
     end
@@ -1104,7 +1099,7 @@ module Onibi
     def public_capture_numbers
       @public_capture_numbers ||= begin
         numbers = []
-        walk_ast(@ast) do |node|
+        Onibi::AST.walk(@ast) do |node|
           numbers << node.number if node.is_a?(Onibi::AST::Group) && node.capture && node.name
         end
         numbers
@@ -1116,16 +1111,6 @@ module Onibi
 
       node.each_pair.any? do |_field, value|
         Array(value).any? { |child| child.respond_to?(:each_pair) && ast_contains_node?(child, klass) }
-      end
-    end
-
-    def walk_ast(node, &block)
-      yield node
-      node.each_pair do |_field, value|
-        values = value.is_a?(Array) ? value : [value]
-        values.each do |child|
-          walk_ast(child, &block) if child.respond_to?(:each_pair)
-        end
       end
     end
   end

@@ -2,6 +2,19 @@
 
 module Onibi
   module AST
+    # Visit an AST node and all child nodes in source order.
+    def self.walk(node, &block)
+      return enum_for(:walk, node) unless block
+
+      yield node
+      node.each_pair do |_field, value|
+        values = value.is_a?(Array) ? value : [value]
+        values.each do |child|
+          walk(child, &block) if child.respond_to?(:each_pair)
+        end
+      end
+    end
+
     Literal = Struct.new(:value)
     CharacterClass = Struct.new(:value)
     Escape = Struct.new(:kind)

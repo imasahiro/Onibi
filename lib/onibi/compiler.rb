@@ -5,6 +5,24 @@ module Onibi
     Pipeline = Optimization::Pipeline
     MAX_REPEAT_COUNT = 100_000
 
+    # Build the execution program from compiler output. Runtime objects pass
+    # semantic flags and subexpressions; this keeps IR generation out of the
+    # public regexp facade.
+    def bytecode_program(ast, options:, encoding:, flags: {})
+      compiled = compile(ast, options: options, encoding: encoding)
+      tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
+      dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+      semantic_root = flags[:semantic_root] ||
+                      Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+                        ast, casefold: flags.fetch(:casefold, false)
+                      )
+      Onibi::IRGen::YARVIR.generate(
+        dfa,
+        flags: flags.merge(semantic_root: semantic_root)
+      )
+    end
+    module_function :bytecode_program
+
     OptimizedCFG = Struct.new(:ast, :graph, :options, :encoding, :applied_passes, :source_ast,
                               keyword_init: true) do
       def initialize(ast:, graph:, options:, encoding:, applied_passes:, source_ast: ast)
