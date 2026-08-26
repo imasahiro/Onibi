@@ -126,6 +126,16 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_program_rejects_invalid_fold_boundary_target
+    instruction = Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(
+      opcode: :fold_boundary, target: 2
+    )
+
+    assert_raises(ArgumentError) do
+      Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(instructions: [instruction])
+    end
+  end
+
   def test_flat_assertion_operands_keep_only_leaf_atoms
     flat = Onibi::Regexp.new("(?=a[0-9])a7").send(:bytecode_program).instructions
                         .find { |instruction| instruction.opcode == :semantic_flat }.operand
