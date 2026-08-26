@@ -416,10 +416,6 @@ module Onibi
       end
 
       def lookbehind_results(assertion, characters, cursor, captures, flags)
-        if cursor == characters.length && expanded_lookbehind_literal?(assertion.body)
-          folded = boundary_operand(assertion.body).casefold
-          return [] unless characters.join.downcase(:fold).end_with?(folded)
-        end
         widths = assertion.widths || (0..cursor).to_a
         if flags[:ignorecase]
           folded_widths = assertion.folded_widths || casefold_widths(assertion.body)
@@ -467,7 +463,7 @@ module Onibi
               folded_source = source&.downcase(:fold)
               folded_source && gap.all? { |character| folded_source.include?(character.downcase(:fold)) }
             end
-            if partial.empty? && source && !expanded_lookbehind_literal?(assertion.body)
+            if partial.empty? && source
               folded_bodies = folded_lookbehind_values(assertion.body)
               partial = results.select { |length, _inner| length < width } if
                 folded_bodies.any? { |body| source.downcase(:fold) == body }
@@ -540,12 +536,6 @@ module Onibi
         else
           []
         end
-      end
-
-      def expanded_lookbehind_literal?(node)
-        node = boundary_operand(node)
-        node.is_a?(SemanticBytecode::Literal) && node.casefold &&
-          node.casefold.length > node.value.length
       end
 
       def source_widths(node)
@@ -1339,6 +1329,11 @@ module Onibi
                   next_state.delete(:__group_expanded_literal_boundary)
                   next_state.delete(:__group_expanded_literal_value)
                 end
+                if part.is_a?(SemanticBytecode::Quantifier) && part.minimum.zero? && length.zero? &&
+                   state_captures[:__simple_fold_alternation_source]
+                  next_state = next_state.dup
+                  next_state.delete(:__simple_fold_alternation_source)
+                end
                 if optional_order == :zero_only && length.zero?
                   next_state = next_state.dup
                   next_state[:__optional_fold_zero] = true
@@ -1371,6 +1366,8 @@ module Onibi
           branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
           expanding_alternative = node.branches.any? do |candidate|
             capture_body_has_expanding_literal?(candidate) ||
+              (branch_fold_literals(candidate).length > 1 &&
+               branch_fold_literals(candidate).any? { |literal| !literal.value.ascii_only? }) ||
               boundary_literal_operands(candidate).any? do |literal|
                 folded = literal.value.downcase(:fold)
                 variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
@@ -5597,6 +5594,16 @@ module Onibi
         return [] unless node.is_a?(SemanticBytecode::Alternation)
 
         node.branches.flat_map { |branch| boundary_literal_operands(branch) }
+      end
+
+      def branch_fold_literals(node)
+        case node
+        when SemanticBytecode::Literal then [node]
+        when SemanticBytecode::Sequence then node.parts.flat_map { |part| branch_fold_literals(part) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
+          branch_fold_literals(node.body)
+        else []
+        end
       end
 
       def option_group_ignorecase?(node)
