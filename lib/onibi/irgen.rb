@@ -467,6 +467,13 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Group) && !body.capture
+                repeated = unwrap_single_sequence(body.body)
+                if repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum.nil?
+                  atom = absence_repeat_atoms(repeated.expression)
+                  return AbsenceNullableRepeat.new(atom.first) if atom&.length == 1
+                end
+              end
               if (suffix_repeat = suffix_repeat(body))
                 return AbsenceSuffixRepeat.new(*suffix_repeat)
               end
@@ -1185,6 +1192,13 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Group) && !body.capture
+              repeated = unwrap_single_sequence(body.body)
+              if repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum.nil?
+                atom = absence_repeat_atoms(repeated.expression)
+                return true if atom&.length == 1
+              end
+            end
             return true if suffix_repeat(body)
             return true if suffix_capture_repeat(body)
             if body.is_a?(Group) && body.capture
