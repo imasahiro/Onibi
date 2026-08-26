@@ -1909,6 +1909,7 @@ module Onibi
                         !semantic_scoped_capture_backreference_safe?(semantic_root) &&
                         !semantic_scoped_capture_conditional_safe?(semantic_root) &&
                         !semantic_scoped_optional_capture_conditional_safe?(semantic_root) &&
+                        !semantic_scoped_unicode_unbounded_repeat_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
@@ -1931,6 +1932,7 @@ module Onibi
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
+                        !semantic_scoped_unicode_unbounded_repeat_safe?(semantic_root) &&
                         !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
@@ -2351,6 +2353,35 @@ module Onibi
         node.parts.any? do |part|
           semantic_contains_scoped_unicode_bounded_repeat?(part)
         end
+      end
+
+      def semantic_scoped_unicode_unbounded_repeat_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        scope = node.parts.first
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Quantifier) && body.maximum.nil?
+        return false unless body.minimum.zero? || body.minimum.positive?
+
+        semantic_scoped_repeat_operand_safe?(body.expression)
+      end
+
+      def semantic_scoped_repeat_operand_safe?(node)
+        return true if node.is_a?(SemanticBytecode::Literal) && node.value.each_char.one? &&
+                       (node.value.ascii_only? ||
+                        Onibi::UnicodeProperties.reverse_casefold_variants(node.value.downcase(:fold)).all? do |variant|
+                          variant.each_char.one?
+                        end)
+
+        return node.branches.all? { |branch| semantic_scoped_repeat_operand_safe?(branch) } if
+          node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.all? { |part| semantic_scoped_repeat_operand_safe?(part) } if
+          node.is_a?(SemanticBytecode::Sequence)
+
+        false
       end
 
       def semantic_scoped_simple_bounded_repeat_suffix_safe?(node)
