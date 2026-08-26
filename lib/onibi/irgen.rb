@@ -1912,6 +1912,7 @@ module Onibi
                         !semantic_scoped_unicode_repeat_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_alternation_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_unicode_repeat_capture_suffix_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
@@ -1937,6 +1938,7 @@ module Onibi
                         !semantic_scoped_unicode_repeat_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_alternation_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_unicode_repeat_capture_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
@@ -2395,6 +2397,22 @@ module Onibi
         else
           false
         end
+      end
+
+      def semantic_scoped_unicode_repeat_capture_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+
+        scope, capture = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
+        return false unless capture.body.is_a?(SemanticBytecode::Sequence) || capture.body.is_a?(SemanticBytecode::Literal)
+
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Quantifier) && body.maximum.nil?
+
+        semantic_scoped_repeat_operand_safe?(body.expression) &&
+          semantic_scoped_repeat_operand_safe?(capture.body)
       end
 
       def semantic_scoped_unicode_repeat_alternation_safe?(node)
