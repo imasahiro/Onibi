@@ -1330,7 +1330,10 @@ module Onibi
                   next_state.delete(:__group_expanded_literal_value)
                 end
                 if part.is_a?(SemanticBytecode::Quantifier) && part.minimum.zero? && length.zero? &&
-                   state_captures[:__simple_fold_alternation_source]
+                   state_captures[:__simple_fold_alternation_source] &&
+                   boundary_operand(part.expression).is_a?(SemanticBytecode::Literal) &&
+                   characters[cursor]&.downcase(:fold) ==
+                   boundary_operand(part.expression).value.downcase(:fold)
                   next_state = next_state.dup
                   next_state.delete(:__simple_fold_alternation_source)
                 end
