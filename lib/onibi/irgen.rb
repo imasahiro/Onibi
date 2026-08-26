@@ -1872,7 +1872,7 @@ module Onibi
 
         atoms = Array(assertion.flat_atoms).flatten
         atoms.length == 1 && atoms.first.is_a?(SemanticBytecode::Anchor) &&
-          atoms.first.kind == :anchor_absolute_end
+          %i[anchor_absolute_end anchor_before_final_newline].include?(atoms.first.kind)
       end
 
       def semantic_boundary_fold_lookahead_end_safe?(node)
