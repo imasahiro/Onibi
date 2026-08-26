@@ -62,6 +62,7 @@ module Onibi
         SubexpressionCall = Struct.new(:identifier, :named)
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
+        AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceProbe = Struct.new(:program)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
@@ -443,6 +444,11 @@ module Onibi
               body = unwrap_single_sequence(node.body)
               probe = absence_probe_program(node)
               return AbsenceProbe.new(probe) if probe
+
+              if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
+                atom = absence_repeat_atoms(body.expression)
+                return AbsenceNullableRepeat.new(atom.first) if atom&.length == 1
+              end
 
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                  (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
@@ -959,10 +965,15 @@ module Onibi
           def absence_flat_safe?(node)
             return true if absence_probe_program(node)
 
+            body = unwrap_single_sequence(node.body)
+            if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
+              atom = absence_repeat_atoms(body.expression)
+              return true if atom&.length == 1
+            end
+
             return false if node.flat_atoms&.flatten&.any? { |atom| atom.is_a?(CaptureAtom) } &&
                             !simple_capture_absence?(node)
 
-            body = unwrap_single_sequence(node.body)
             if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? && (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
                              body.expression.is_a?(Property) ||
                              body.expression.is_a?(Escape) ||

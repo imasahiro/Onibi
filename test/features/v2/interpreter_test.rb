@@ -490,6 +490,19 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_nullable_literal_absence_repeat_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?~a*)")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["b", "ab", "aab", "aaab", "aaaa"].each do |input|
+      expected = ::Regexp.new("(?~a*)").match(input)
+      actual = regexp.match(input)
+      assert_equal [expected&.to_a, expected&.offset(0)],
+                   [actual&.to_a, actual&.offset(0)], input
+    end
+  end
+
   def test_absence_literal_alternation_capture_uses_flat_vm
     regexp = Onibi::Regexp.new("(?~(a|b))")
     program = regexp.send(:bytecode_program)

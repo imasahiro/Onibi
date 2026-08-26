@@ -697,6 +697,8 @@ module Onibi
             ) do
               if absence.is_a?(SemanticBytecode::AbsenceProbe)
                 flat_absence_probe_results(absence.program, characters, position, state, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
+                flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -711,7 +713,9 @@ module Onibi
             outcomes.reverse_each do |length, absence_captures|
               next_state = state.merge(absence_captures || {})
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
-                absence.is_a?(SemanticBytecode::AbsenceRepeat) || absence.is_a?(SemanticBytecode::AbsenceProbe)
+                absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceProbe)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                            pc: pc + 1, cursor: position + length, captures: next_state,
                                            flags: frame_flags
@@ -4001,6 +4005,22 @@ module Onibi
 
         maximum = node.minimum >= 2 ? (run + node.minimum - 1) / 2 : run / 2
         [maximum, limit].min.downto(0).to_a
+      end
+
+      def flat_nullable_absence_repeat_results(atom, characters, cursor, flags)
+        run = 0
+        while cursor + run < characters.length &&
+              flat_assertion_lengths([[atom]], characters, cursor + run, {}, flags).any?
+          run += 1
+        end
+        return [[0, {}]] if run.zero? && cursor == characters.length
+        return [] if run.zero?
+
+        maximum = run / 2
+        return [[0, { __match_start: cursor + run, __zero_absence: true }]] if maximum.zero? &&
+                                                                              cursor + run == characters.length
+
+        maximum.downto(0).map { |length| [length, {}] }
       end
 
       def flat_repeated_match?(node, characters, cursor, flags)
