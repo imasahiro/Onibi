@@ -4807,8 +4807,7 @@ module Onibi
               prior_ambiguous = frame.capture_checkpoints.any? { |checkpoint| checkpoint[4] }
               discard_capture = repeat_capture_discard_required?(body, results, state, length,
                                                                  prior_ambiguous)
-              frame.capture_checkpoints << [position, length, state.dup, discard_capture,
-                                            results.length > 1]
+              frame.record_capture_checkpoint(position, length, state, discard_capture, results.length > 1)
               boundary = if length.zero? && nested_nullable_repeat_body?(body)
                            position
                          else

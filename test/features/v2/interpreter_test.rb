@@ -383,6 +383,8 @@ class InterpreterTest < Minitest::Test
     assert_equal({ 1 => [2, 3] }, executor.send(:absence_capture_checkpoint_state, frame, {}))
     assert_equal [2, 1, { 1 => [2, 3] }, false, true],
                  frame.restorable_capture_checkpoint(require_ambiguous: true)
+    frame.record_capture_checkpoint(3, 2, { 1 => [3, 5] }, false, false)
+    assert_equal [3, 2, { 1 => [3, 5] }, false, false], frame.capture_checkpoints.last
   end
 
   def test_execution_state_capture_frame_records_span

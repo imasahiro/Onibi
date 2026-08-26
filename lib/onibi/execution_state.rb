@@ -121,6 +121,10 @@ module Onibi
           !checkpoint[3] && (!require_ambiguous || checkpoint[4])
         end
       end
+
+      def record_capture_checkpoint(position, length, state, discard_capture, ambiguous)
+        capture_checkpoints << [position, length, state.dup, discard_capture, ambiguous]
+      end
     end
 
     attr_accessor :cursor, :search_origin, :steps
