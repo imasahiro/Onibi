@@ -1498,6 +1498,7 @@ module Onibi
                         !semantic_full_fold_class_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1512,6 +1513,7 @@ module Onibi
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
@@ -1520,6 +1522,7 @@ module Onibi
                         !semantic_scoped_property_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1957,6 +1960,26 @@ module Onibi
         end
 
         semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([scope]))
+      end
+
+      def semantic_scoped_property_ascii_sequence_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        scope, *suffix = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only? }
+
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length > 1
+
+        first, *rest = body.parts
+        return false unless first.is_a?(SemanticBytecode::Property)
+        rest.all? do |part|
+          part.is_a?(SemanticBytecode::Escape) &&
+            %i[digit non_digit word not_word space not_space horizontal_space
+               not_horizontal_space linebreak grapheme].include?(part.kind)
+        end
       end
 
       def semantic_scoped_property_quantifier_safe?(node)
