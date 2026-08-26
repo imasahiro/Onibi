@@ -2095,8 +2095,18 @@ module Onibi
         source && variants.include?(source)
       end
 
-      def lookahead_variant_barrier?(node, characters, cursor, flags)
+      def lookahead_variant_barrier?(node, characters, cursor, flags, anchored: false)
+        if node.parts[0].is_a?(SemanticBytecode::OptionGroup) &&
+           node.parts[1].is_a?(SemanticBytecode::Anchor) && strict_end_anchor?(node.parts[1])
+          option = node.parts[0]
+          body = option.body
+          return false unless option.ignorecase && body.is_a?(SemanticBytecode::Sequence)
+
+          nested = SemanticBytecode::Sequence.new(body.parts)
+          return lookahead_variant_barrier?(nested, characters, cursor, flags.merge(ignorecase: true), anchored: true)
+        end
         return false unless flags[:ignorecase]
+        return false unless anchored
 
         assertion = node.parts[0]
         operand = boundary_operand(node.parts[1])
@@ -2131,7 +2141,8 @@ module Onibi
         literal = boundary_operand(quantifier.expression)
         return false unless literal.is_a?(SemanticBytecode::Literal) && literal.casefold
 
-        literal.casefold.length > literal.value.length && characters.length - cursor == 1
+        literal.casefold.length > literal.value.length &&
+          literal.casefold.each_char.uniq.length > 1 && characters.length - cursor == 1
       end
 
       def same_fold_literal?(node, expression)
