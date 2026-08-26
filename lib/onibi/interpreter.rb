@@ -533,7 +533,8 @@ module Onibi
                                  next_pc && @flat_program.instruction_at(next_pc)
                                end
             matches = reject_flat_fold_boundary_matches(
-              matches, instruction.opcode, node, next_instruction, boundary_metadata
+              matches, instruction.opcode, node, next_instruction, boundary_metadata,
+              characters, position
             )
             matches.reverse_each do |length, inner|
               next_state = state.merge(inner)
@@ -795,7 +796,8 @@ module Onibi
         end
       end
 
-      def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction, metadata = nil)
+      def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction, metadata = nil,
+                                            characters = nil, position = nil)
         return matches unless node.is_a?(SemanticBytecode::Literal)
         boundary_sensitive = node.fold_boundary_sensitive || metadata&.expanded_tail?
         return matches unless opcode == :fold_boundary || boundary_sensitive
@@ -807,6 +809,14 @@ module Onibi
                    assertion.flat_atoms&.first if assertion.is_a?(SemanticBytecode::Assertion) &&
                                                   assertion.kind == :positive
                  end
+        if metadata&.expanded_tail? && metadata.tail_matches_next_fold? &&
+           %i[consume fold_boundary].include?(next_instruction&.opcode) && characters && position
+          remaining = characters.length - position
+          return matches.reject do |length, _inner|
+            metadata.source_width_match?(length) &&
+              metadata.next_source_width_match?(remaining - length)
+          end
+        end
         return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
                               anchor.kind == :anchor_absolute_end
 
