@@ -1145,6 +1145,10 @@ class InterpreterTest < Minitest::Test
   def test_scoped_unicode_backreference_preserves_source_fold_boundary
     regexp = Onibi::Regexp.new("(?i:(?<x>Ω)\\k<x>)")
 
+    refute(regexp.send(:bytecode_program).instructions.any? do |instruction|
+      instruction.opcode == :semantic_match
+    end)
+
     assert_equal ::Regexp.new("(?i:(?<x>Ω)\\k<x>)").match("Ωω")&.to_a,
                  regexp.match("Ωω")&.to_a
     assert_equal ::Regexp.new("(?i:(?<x>Ω)\\k<x>)").match("ΩΩ")&.to_a,

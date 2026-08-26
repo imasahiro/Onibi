@@ -2282,12 +2282,21 @@ module Onibi
 
         capture, reference = body.parts
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
-        return false unless reference.is_a?(SemanticBytecode::Backreference) && !reference.named
-        return false unless reference.identifier == capture.number
+        return false unless reference.is_a?(SemanticBytecode::Backreference)
+        numbered_reference = !reference.named && reference.identifier == capture.number
+        named_reference = reference.named && reference.identifier == capture.name
+        return false unless numbered_reference || named_reference
 
         literal = capture.body
         literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
-        literal.is_a?(SemanticBytecode::Literal) && literal.value.ascii_only? && literal.value.each_char.one?
+        literal.is_a?(SemanticBytecode::Literal) && literal.value.each_char.one? &&
+          (literal.value.ascii_only? ||
+           (literal.value.encoding == Encoding::UTF_8 && !literal.value.ascii_only? &&
+            literal.value == literal.value.upcase &&
+            literal.casefold.to_s.each_char.one? &&
+            Onibi::UnicodeProperties.reverse_casefold_variants(literal.casefold).all? do |variant|
+              variant.each_char.one?
+            end))
       end
 
       def semantic_scoped_capture_conditional_safe?(node)
