@@ -1055,6 +1055,19 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_semantic_vm_executes_nested_possessive_any_repeat
+    source = ".{0,2}+"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }, source
+    ["aaab", "x", ""].each do |input|
+      expected = ::Regexp.new(source).match(input)
+      actual = regexp.match(input)
+      assert_equal expected&.to_a, actual&.to_a, [source, input]
+    end
+  end
+
   def test_flat_semantic_vm_executes_nullable_capture_absence
     source = "(?~(a?))"
     regexp = Onibi::Regexp.new(source)

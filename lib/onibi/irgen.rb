@@ -520,7 +520,7 @@ module Onibi
             when Quantifier
               if node.mode == :possessive && node.maximum.nil? && node.expression.is_a?(Quantifier) &&
                  node.expression.maximum && node.expression.maximum <= 32 &&
-                 node.expression.expression.is_a?(Literal)
+                 [Literal, Any].any? { |type| node.expression.expression.is_a?(type) }
                 return NestedPossessiveRepeat.new(
                   flat_operand(node.expression), node.kind, node.minimum, node.maximum,
                   node.mode, node.lazy_exact
@@ -616,7 +616,7 @@ module Onibi
               atom = node.expression
               return true if node.mode == :possessive && node.maximum.nil? && atom.is_a?(Quantifier) &&
                              atom.maximum && atom.maximum <= 32 &&
-                             atom.expression.is_a?(Literal) &&
+                             [Literal, Any].any? { |type| atom.expression.is_a?(type) } &&
                              supported?(atom)
               return true if nullable_group_repeat?(node)
               if atom.is_a?(Group) && nested_nullable_group_repeat?(node)
@@ -716,7 +716,7 @@ module Onibi
             when Quantifier
               if node.mode == :possessive && node.maximum.nil? && node.expression.is_a?(Quantifier) &&
                  node.expression.maximum && node.expression.maximum <= 32 &&
-                 node.expression.expression.is_a?(Literal)
+                 [Literal, Any].any? { |type| node.expression.expression.is_a?(type) }
                 emit_command(:repeat_nested_possessive, index_for(node), nil)
               elsif nullable_group_repeat?(node)
                 emit_command(:repeat_nullable_group, index_for(node), nil)

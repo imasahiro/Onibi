@@ -657,6 +657,21 @@ module Onibi
             end
           when :repeat_nested_possessive
             quantifier = @flat_program.operand(instruction.operand)
+            if quantifier.body.expression.is_a?(SemanticBytecode::Any)
+              consumed = 0
+              loop do
+                length = quantifier_lengths(quantifier.body, characters, position + consumed,
+                                            state, frame_flags).first
+                break unless length&.positive?
+
+                consumed += length
+              end
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position + consumed,
+                                           captures: state, flags: frame_flags
+                                         ))
+              next
+            end
             lengths = quantifier_lengths(quantifier.body, characters, position, state, frame_flags)
             if lengths.any?
               lengths.reverse_each do |length|
