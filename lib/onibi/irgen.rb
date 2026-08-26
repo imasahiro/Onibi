@@ -87,6 +87,13 @@ module Onibi
           def expanded_tail?
             boundary&.fetch(:kind, nil) == :expanded_tail
           end
+
+          def tail_matches_next_fold?
+            return false unless expanded_tail?
+
+            tail = boundary.fetch(:tail, nil)
+            tail && next_casefold && tail == next_casefold
+          end
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
