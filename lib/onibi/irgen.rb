@@ -2014,6 +2014,11 @@ module Onibi
                          Onibi::UnicodeProperties.normalize_name(node.name.to_s)
                        )
 
+        return true if node.is_a?(SemanticBytecode::Any)
+        return true if node.is_a?(SemanticBytecode::Escape) &&
+                       %i[digit non_digit word not_word space not_space horizontal_space
+                          not_horizontal_space linebreak grapheme].include?(node.kind)
+
         node.is_a?(SemanticBytecode::Literal) && node.value.ascii_only? && node.value.each_char.one?
       rescue RegexpError, KeyError
         false
