@@ -1175,6 +1175,7 @@ module Onibi
                  simple_fold_source_match?(part, characters[cursor + consumed])
                 part_results = []
               end
+              part_results = [] if part.is_a?(SemanticBytecode::Anchor) && state_captures[:__lookbehind_direct_tail_reject]
               if state_captures[:__expanded_literal_source] &&
                  state_captures[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source &&
                  previous_part.is_a?(SemanticBytecode::OptionGroup) &&
