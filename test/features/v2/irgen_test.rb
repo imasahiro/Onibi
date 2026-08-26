@@ -172,6 +172,17 @@ class V2IRGenTest < Minitest::Test
     refute program.instructions.any? { |item| item.opcode == :semantic_match }
   end
 
+  def test_flat_compiler_lowers_variable_nested_alternation_capture_absence
+    source = "(?~((a|b)+))"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    { "aba" => ["a", "b", nil], "ababab" => ["aba", "ab", nil] }.each do |input, expected|
+      assert_equal expected, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_compiler_keeps_zero_length_suffix_candidate_for_capture_absence
     source = "(?~((?:a|ab){2,}))c"
     regexp = Onibi::Regexp.new(source)

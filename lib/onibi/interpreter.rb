@@ -802,6 +802,8 @@ module Onibi
                 flat_capture_variable_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat)
                 flat_fixed_capture_absence_results(absence, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceAlternationCaptureRepeat)
+                flat_alternation_capture_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -823,7 +825,8 @@ module Onibi
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
                 absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
-                  absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat) ||
+                absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceAlternationCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
@@ -4322,6 +4325,22 @@ module Onibi
                     {}
                   end
         [[length, capture]]
+      end
+
+      def flat_alternation_capture_absence_results(node, characters, cursor, flags)
+        values = node.variants.map { |variant| variant.first.value }
+        run = 0
+        while cursor + run < characters.length && values.include?(characters[cursor + run])
+          run += 1
+        end
+        return [[characters.length - cursor, {}]] if run.zero?
+
+        prefix = run / 2
+        capture_start = run.even? ? [prefix - 1, 0].max : prefix
+        capture_length = run.even? ? 2 : 1
+        span = [cursor + capture_start, cursor + capture_start + capture_length]
+        capture = { node.number => span, node.name => span }.compact
+        [[prefix, capture]]
       end
 
       def flat_nullable_absence_repeat_results(atom, characters, cursor, flags)
