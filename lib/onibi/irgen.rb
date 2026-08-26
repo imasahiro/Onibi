@@ -126,6 +126,13 @@ module Onibi
             end
           end
 
+          def matching_next_fold_width_delta?(length, delta)
+            matching_next_fold_indices.any? do |index|
+              next_literals[index].value.each_char.count == length &&
+                next_fold_width_deltas[index] == delta
+            end
+          end
+
           def fold_width_delta
             return 0 unless literal && casefold
 

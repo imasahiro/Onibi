@@ -812,10 +812,10 @@ module Onibi
         if metadata&.expanded_tail? && metadata.tail_matches_any_next_fold? &&
            %i[consume fold_boundary].include?(next_instruction&.opcode) && characters && position
           remaining = characters.length - position
-          return matches.reject do |length, _inner|
-            metadata.source_width_match?(length) &&
-              metadata.matching_next_fold_width?(remaining - length)
-          end
+            return matches.reject do |length, _inner|
+              metadata.source_width_match?(length) &&
+              metadata.matching_next_fold_width_delta?(remaining - length, 0)
+            end
         end
         return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
                               anchor.kind == :anchor_absolute_end
