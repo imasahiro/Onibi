@@ -730,6 +730,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ſax")&.to_a
   end
 
+  def test_scoped_unicode_property_word_boundary_sequence_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:\\p{Letter}\\b)-")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:\\p{Letter}\\b)-").match("ſ-")&.to_a,
+                 regexp.match("ſ-")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

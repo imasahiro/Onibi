@@ -1981,7 +1981,7 @@ module Onibi
           part.is_a?(SemanticBytecode::Any) ||
             (part.is_a?(SemanticBytecode::Escape) &&
              %i[digit non_digit word not_word space not_space horizontal_space
-                not_horizontal_space linebreak grapheme].include?(part.kind))
+                not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(part.kind))
         end
       end
 
