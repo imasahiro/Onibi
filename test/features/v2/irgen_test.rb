@@ -228,6 +228,18 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_compiler_lowers_positive_assertion_absence
+    source = "(?~(?=a))"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    { "a" => [""], "aa" => [""], "aba" => ["b"], "b" => ["b"], "" => [""] }.each do |input, expected|
+      assert_equal expected, regexp.match(input)&.to_a, [source, input]
+      assert_equal ::Regexp.new(source).match(input)&.to_a, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_compiler_keeps_zero_length_suffix_candidate_for_capture_absence
     source = "(?~((?:a|ab){2,}))c"
     regexp = Onibi::Regexp.new(source)

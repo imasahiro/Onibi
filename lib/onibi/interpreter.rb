@@ -796,6 +796,8 @@ module Onibi
                 flat_nullable_capture_absence_results(absence, characters, position, state, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceAssertion)
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsencePositiveAssertion)
+                flat_positive_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
                 flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceOptionalRepeat)
@@ -839,6 +841,7 @@ module Onibi
                   absence.is_a?(SemanticBytecode::AbsenceOptionalRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
+                  absence.is_a?(SemanticBytecode::AbsencePositiveAssertion) ||
                   absence.is_a?(SemanticBytecode::AbsenceProbe)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                            pc: pc + 1, cursor: position + length, captures: next_state,
@@ -4413,6 +4416,21 @@ module Onibi
         return [[0, {}]] if position == cursor
 
         [[0, { __match_start: position, __zero_absence: true }]]
+      end
+
+      def flat_positive_absence_assertion_results(assertion, characters, cursor, flags)
+        matches = characters.length.downto(cursor).select do |position|
+          flat_assertion_lengths([assertion.flat_atoms], characters, position, {}, flags).any?
+        end.sort
+        return (characters.length - cursor).downto(0).map { |length| [length, {}] } if matches.empty?
+
+        first = matches.first
+        return (first - cursor).downto(0).map { |length| [length, {}] } if first > cursor
+
+        gap_start = cursor + 1
+        next_match = matches.find { |position| position >= gap_start }
+        finish = next_match || characters.length
+        [[finish - gap_start, { __match_start: gap_start, __zero_absence: true }]]
       end
 
       def flat_repeated_match?(node, characters, cursor, flags)

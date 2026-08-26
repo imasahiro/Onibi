@@ -73,6 +73,7 @@ module Onibi
         AlternationAtom = Struct.new(:variants)
         AlternationGroupRepeat = Struct.new(:variants, :minimum, :number, :name)
         AbsenceAssertion = Struct.new(:assertion)
+        AbsencePositiveAssertion = Struct.new(:assertion)
         AbsenceProbe = Struct.new(:program, :capture_program, :capture_requires_end)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
@@ -602,7 +603,7 @@ module Onibi
               return AbsenceProbe.new(*probe) if probe
 
               assertion = absence_assertion(node)
-              return AbsenceAssertion.new(assertion) if assertion
+              return assertion.is_a?(AbsencePositiveAssertion) ? assertion : AbsenceAssertion.new(assertion) if assertion
 
               if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
                 atom = absence_repeat_atoms(body.expression)
@@ -1426,9 +1427,16 @@ module Onibi
                         else
                           body
                         end
-            return unless assertion.is_a?(Assertion) && %i[negative negative_lookahead].include?(assertion.kind)
+            return unless assertion.is_a?(Assertion) &&
+                          %i[negative negative_lookahead positive positive_lookahead].include?(assertion.kind)
 
-            assertion.flat_atoms ? assertion : nil
+            return unless assertion.flat_atoms
+
+            if %i[positive positive_lookahead].include?(assertion.kind)
+              AbsencePositiveAssertion.new(assertion)
+            else
+              assertion
+            end
           end
 
           def wildcard_absence_suffix?(node)
