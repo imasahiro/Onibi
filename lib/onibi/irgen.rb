@@ -458,6 +458,8 @@ module Onibi
                 emit_command(:repeat_possessive, index_for(node), nil)
               elsif scoped_optional_choice?(node)
                 emit_scoped_optional_choice(node)
+              elsif repeatable_option_group?(node)
+                emit_group_quantifier(node)
               else
                 emit_command(:repeat, index_for(node), nil)
               end
@@ -530,6 +532,16 @@ module Onibi
 
           def repeatable_group?(node)
             return false unless node.expression.is_a?(Group)
+            return false if node.lazy_exact
+            return false if node.maximum && node.maximum > 32
+            return false unless node.maximum.nil? || node.maximum >= node.minimum
+            return false unless %i[greedy lazy].include?(node.mode)
+
+            repeatable_body?(node.expression.body) && supported?(node.expression)
+          end
+
+          def repeatable_option_group?(node)
+            return false unless node.expression.is_a?(OptionGroup)
             return false if node.lazy_exact
             return false if node.maximum && node.maximum > 32
             return false unless node.maximum.nil? || node.maximum >= node.minimum
@@ -1483,6 +1495,7 @@ module Onibi
                         !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_full_fold_class_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1496,6 +1509,7 @@ module Onibi
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
@@ -1503,6 +1517,7 @@ module Onibi
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
+                        !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1952,6 +1967,17 @@ module Onibi
         return false unless suffix.all? do |part|
           part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
         end
+
+        semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([quantifier.expression]))
+      end
+
+      def semantic_scoped_property_unbounded_quantifier_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        quantifier, *suffix = node.parts
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.minimum.zero? && quantifier.maximum.nil?
+        return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only? }
 
         semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([quantifier.expression]))
       end
