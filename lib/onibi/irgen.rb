@@ -1001,6 +1001,9 @@ module Onibi
             suffix = parts.parts.drop(1)
             return unless prefix.is_a?(Quantifier) && prefix.minimum.zero? && prefix.maximum.nil? &&
                           prefix.expression.is_a?(Any)
+            return if suffix.each_index.any? do |index|
+              suffix[index].is_a?(Group) && suffix[index].capture && index < suffix.length - 1
+            end
             return unless suffix.all? { |part| wildcard_absence_suffix?(part) }
 
             SemanticBytecode.lower(node.body).flat_program

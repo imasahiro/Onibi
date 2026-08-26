@@ -600,6 +600,14 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_wildcard_capture_probe_with_internal_suffix_keeps_compatibility_path
+    source = "(?~(?:.*(a|b)c))"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+  end
+
   def test_absence_followed_by_match_reset_keeps_zero_width_result
     expected = ::Regexp.new("a(?~a)\\K").match("abc")
     actual = Onibi::Regexp.new("a(?~a)\\K").match("abc")
