@@ -1854,7 +1854,7 @@ module Onibi
 
         assertion, *suffix = node.parts
         return false unless assertion.is_a?(SemanticBytecode::Assertion) &&
-                            %i[positive positive_lookahead].include?(assertion.kind)
+                            %i[positive positive_lookahead negative negative_lookahead].include?(assertion.kind)
         atoms = Array(assertion.flat_atoms).flatten
         return false unless atoms.length == 1 && atoms.first.is_a?(SemanticBytecode::Anchor) &&
                             atoms.first.kind == :anchor_absolute_start
