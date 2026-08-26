@@ -958,8 +958,21 @@ module Onibi
 
           def simple_capture_absence?(node)
             body = unwrap_single_sequence(node.body)
-            body.is_a?(Group) && body.capture && body.body.is_a?(Sequence) && body.body.parts.one? &&
-              body.body.parts.first.is_a?(Literal) && body.body.parts.first.casefold.nil?
+            return false unless body.is_a?(Group) && body.capture
+
+            atom = body.body
+            atom = atom.parts.first if atom.is_a?(Sequence) && atom.parts.one?
+            capture_absence_atom_safe?(atom)
+          end
+
+          def capture_absence_atom_safe?(node)
+            return node.is_a?(Literal) && node.casefold.nil? if node.is_a?(Literal)
+            return false unless node.is_a?(Alternation)
+
+            node.branches.all? do |branch|
+              branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                branch.parts.first.casefold.nil?
+            end
           end
 
           def absence_repeat_atoms(node)
@@ -1102,6 +1115,16 @@ module Onibi
           value
         end
 
+        def capture_absence_atom_safe?(node)
+          return node.is_a?(Literal) && node.casefold.nil? if node.is_a?(Literal)
+          return false unless node.is_a?(Alternation)
+
+          node.branches.all? do |branch|
+            branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+              branch.parts.first.casefold.nil?
+          end
+        end
+
         def compile(node, casefold: false, parent: nil)
           type = NODE_TYPES.fetch(node.class)
           if node.is_a?(Onibi::AST::Assertion)
@@ -1111,9 +1134,10 @@ module Onibi
           end
           if node.is_a?(Onibi::AST::Absence)
             body = compile_value(node.body, casefold: casefold)
-            capture = body.is_a?(Sequence) && body.parts.one? && body.parts.first.is_a?(Group) &&
-                      body.parts.first.capture && body.parts.first.body.is_a?(Sequence) &&
-                      body.parts.first.body.parts.one? && body.parts.first.body.parts.first.is_a?(Literal)
+            group = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+            atom = group.body if group.is_a?(Group)
+            atom = atom.parts.first if atom.is_a?(Sequence) && atom.parts.one?
+            capture = group.is_a?(Group) && group.capture && capture_absence_atom_safe?(atom)
             return type.new(body, flat_assertion_atoms(body, capture: capture))
           end
           if node.is_a?(Onibi::AST::Property)

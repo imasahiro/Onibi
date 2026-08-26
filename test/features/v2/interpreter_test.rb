@@ -442,6 +442,16 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_absence_literal_alternation_capture_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?~(a|b))")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    match = regexp.match("xaby")
+    assert_equal "x", match[0]
+    assert_equal "a", match[1]
+  end
+
   def test_absence_followed_by_match_reset_keeps_zero_width_result
     expected = ::Regexp.new("a(?~a)\\K").match("abc")
     actual = Onibi::Regexp.new("a(?~a)\\K").match("abc")
