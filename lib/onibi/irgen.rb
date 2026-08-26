@@ -224,12 +224,7 @@ module Onibi
                              operand(next_instruction.operand)
                            end
             next_literals = if split_targets
-                              split_targets.filter_map do |target|
-                                candidate = instructions[target]
-                                next unless candidate && %i[consume fold_boundary].include?(candidate.opcode)
-
-                                candidate.operand.is_a?(Integer) ? operand(candidate.operand) : nil
-                              end
+                              boundary_candidate_literals(split_targets, program_counter)
                             else
                               [next_literal].compact
                             end
@@ -239,6 +234,30 @@ module Onibi
                              next_casefold: next_literal&.casefold,
                              next_source_width: next_literal&.source_width,
                              next_literals: next_literals)
+          end
+
+          def boundary_candidate_literals(starts, origin)
+            pending = Array(starts).dup
+            visited = {}
+            candidates = []
+            16.times do
+              pc = pending.shift
+              next if pc.nil? || visited[pc] || pc <= origin || pc >= instructions.length
+
+              visited[pc] = true
+              instruction = instruction_at(pc)
+              case instruction.opcode
+              when :consume, :fold_boundary
+                candidates << operand(instruction.operand) if instruction.operand.is_a?(Integer)
+              when :scope_end
+                pending << pc + 1
+              when :jump
+                pending << instruction.target if instruction.target.is_a?(Integer)
+              when :split
+                pending.concat(Array(instruction.target))
+              end
+            end
+            candidates.uniq
           end
 
           def tree_free?

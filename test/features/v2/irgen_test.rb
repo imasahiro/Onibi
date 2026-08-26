@@ -202,17 +202,19 @@ class V2IRGenTest < Minitest::Test
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :fold_boundary, operand: 0, target: 1),
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :split, target: [2, 3]),
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :consume, operand: 1),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :consume, operand: 2),
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)
     ]
     literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ᾀ", "ἀι")
     suffix = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a")
+    alternate = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("b")
     flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
-      instructions: instructions, operands: [literal, suffix]
+      instructions: instructions, operands: [literal, suffix, alternate]
     )
 
     metadata = flat.boundary_metadata(0)
     assert_equal suffix, metadata.next_literal
-    assert_equal [suffix], metadata.next_literals
+    assert_equal [suffix, alternate], metadata.next_literals
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms
