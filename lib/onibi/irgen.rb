@@ -62,7 +62,7 @@ module Onibi
         SubexpressionCall = Struct.new(:identifier, :named)
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
-        AbsenceCaptureRepeat = Struct.new(:atoms, :minimum, :number, :name)
+        AbsenceCaptureRepeat = Struct.new(:atoms, :minimum, :number, :name, :clear_numbers)
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AlternationAtom = Struct.new(:variants)
@@ -461,8 +461,8 @@ module Onibi
               body = unwrap_single_sequence(node.body)
               if body.is_a?(Group) && body.capture
                 repeated = unwrap_single_sequence(body.body)
-                if repeated.is_a?(Quantifier) && repeated.minimum.positive? && repeated.maximum.nil? &&
-                   repeated.expression.is_a?(Group) && !repeated.expression.capture
+                if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
+                   repeated.expression.is_a?(Group)
                   alternation = unwrap_single_sequence(repeated.expression.body)
                   if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
                     branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
@@ -470,9 +470,10 @@ module Onibi
                   end
                     variants = alternation.branches.map { |branch| branch.parts }
                     values = variants.map { |variant| variant.map(&:value).join }
-                    if values.map(&:length).uniq.length > 1
+                    if values.map(&:length).uniq.length > 1 && values.first.length == values.map(&:length).min
+                      clear_numbers = repeated.expression.capture ? [repeated.expression.number] : []
                       return AbsenceCaptureRepeat.new([AlternationAtom.new(variants)], repeated.minimum,
-                                                      body.number, body.name)
+                                                      body.number, body.name, clear_numbers.freeze)
                     end
                   end
                 end
@@ -1141,13 +1142,16 @@ module Onibi
             body = unwrap_single_sequence(node.body)
             if body.is_a?(Group) && body.capture
               repeated = unwrap_single_sequence(body.body)
-              if repeated.is_a?(Quantifier) && repeated.minimum.positive? && repeated.maximum.nil? &&
-                 repeated.expression.is_a?(Group) && !repeated.expression.capture
+              if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
+                 repeated.expression.is_a?(Group)
                 alternation = unwrap_single_sequence(repeated.expression.body)
                 return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
                   branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
                     branch.parts.any?
-                end && alternation.branches.map { |branch| branch.parts.map(&:value).join.length }.uniq.length > 1
+                end && begin
+                  values = alternation.branches.map { |branch| branch.parts.map(&:value).join }
+                  values.map(&:length).uniq.length > 1 && values.first.length == values.map(&:length).min
+                end
               end
             end
             if body.is_a?(Group) && body.capture

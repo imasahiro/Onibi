@@ -817,6 +817,7 @@ module Onibi
                 next
               end
               next_state = state.merge(absence_captures || {})
+              Array(next_state.delete(:__clear_captures)).each { |number| next_state.delete(number) }
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
@@ -4270,6 +4271,7 @@ module Onibi
         values = node.atoms.first.variants.map { |variant| variant.map(&:value).join }
         repetitions = 0
         position = cursor
+        run_lengths = []
         while position < characters.length
           value = values.sort_by(&:length).reverse.find do |candidate|
             characters[position, candidate.length].join == candidate
@@ -4277,9 +4279,11 @@ module Onibi
           break unless value
 
           repetitions += 1
+          run_lengths << value.length
           position += value.length
         end
-        capture = if repetitions == node.minimum
+        shortest = values.map(&:length).min
+        capture = if repetitions == node.minimum && run_lengths.include?(shortest)
                     capture_position = cursor
                     node.minimum.times do
                       value = values.find do |candidate|
@@ -4292,6 +4296,7 @@ module Onibi
                   else
                     {}
                   end
+        capture[:__clear_captures] = node.clear_numbers unless node.clear_numbers.empty?
         lengths.map { |length| [length, capture] }
       end
 
