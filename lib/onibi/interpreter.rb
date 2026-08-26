@@ -1952,6 +1952,13 @@ module Onibi
            source != expression.value && !source.match?(/\p{M}/)
           return :zero_only
         end
+        if expression.is_a?(SemanticBytecode::Literal) &&
+           expression.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
+           source != expression.value && !source.match?(/\p{M}/) &&
+           source.downcase(:fold) == expression.value.downcase(:fold) &&
+           normal_consuming_operand?(next_node)
+          return :zero_only
+        end
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            expression.fold_policy&.fetch(:optional_order, nil) == :consume_source_variant &&
            expression.folded_characters.include?(source)
