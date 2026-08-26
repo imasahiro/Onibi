@@ -619,8 +619,10 @@ module Onibi
                 folded = node.value.downcase(:fold)
                 return true if full_fold_literal?(node)
 
-                return node.value.each_char.one? && folded == node.value &&
-                       Onibi::UnicodeProperties.reverse_casefold_variants(folded).empty?
+                return node.value.each_char.one? && folded.each_char.one? &&
+                       Onibi::UnicodeProperties.reverse_casefold_variants(folded).all? do |variant|
+                         variant.each_char.one?
+                       end
               end
               return false unless node.value.each_char.one?
 
@@ -1763,8 +1765,10 @@ module Onibi
           return true if node.value.each_char.one? && node.casefold.to_s.each_char.count > 1 &&
                          !node.fold_boundary_sensitive
 
-          node.value.each_char.one? && folded == node.value &&
-            Onibi::UnicodeProperties.reverse_casefold_variants(folded).empty?
+          node.value.each_char.one? && folded.each_char.one? &&
+            Onibi::UnicodeProperties.reverse_casefold_variants(folded).all? do |variant|
+              variant.each_char.one?
+            end
         when SemanticBytecode::Sequence
           node.parts.all? { |part| semantic_scoped_casefold_simple_safe?(part) }
         when SemanticBytecode::Alternation
