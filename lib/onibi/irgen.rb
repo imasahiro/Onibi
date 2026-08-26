@@ -2426,7 +2426,7 @@ module Onibi
         body = scope.body
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length > 1
         quantifier, *suffix = body.parts
-        return false unless quantifier.is_a?(SemanticBytecode::Quantifier) && quantifier.maximum.nil?
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.casefold.nil? }
 
         semantic_scoped_repeat_operand_safe?(quantifier.expression)
