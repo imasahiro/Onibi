@@ -1915,6 +1915,7 @@ module Onibi
                         !semantic_scoped_unicode_repeat_capture_suffix_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_internal_suffix_safe?(semantic_root) &&
                         !semantic_scoped_capture_backreference_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_capture_conditional_suffix_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
@@ -1943,6 +1944,7 @@ module Onibi
                         !semantic_scoped_unicode_repeat_capture_suffix_safe?(semantic_root) &&
                         !semantic_scoped_unicode_repeat_internal_suffix_safe?(semantic_root) &&
                         !semantic_scoped_capture_backreference_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_capture_conditional_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
@@ -2443,6 +2445,16 @@ module Onibi
         return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.casefold.nil? }
 
         semantic_scoped_capture_backreference_safe?(SemanticBytecode::Sequence.new([scope]))
+      end
+
+      def semantic_scoped_capture_conditional_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        scope, *suffix = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.casefold.nil? }
+
+        semantic_scoped_capture_conditional_safe?(SemanticBytecode::Sequence.new([scope]))
       end
 
       def semantic_scoped_unicode_repeat_alternation_safe?(node)
