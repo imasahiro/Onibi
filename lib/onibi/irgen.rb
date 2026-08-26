@@ -2862,7 +2862,8 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
         capture, reference = body.parts
-        if capture.is_a?(SemanticBytecode::Quantifier) && capture.maximum && capture.minimum == capture.maximum
+        if capture.is_a?(SemanticBytecode::Quantifier) &&
+           (capture.maximum.nil? || capture.minimum == capture.maximum)
           capture = capture.expression
         end
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
@@ -2886,7 +2887,7 @@ module Onibi
           if node.is_a?(SemanticBytecode::Alternation)
 
         if node.is_a?(SemanticBytecode::Quantifier)
-          return false unless node.maximum && node.minimum == node.maximum && node.minimum.positive?
+          return false unless node.maximum.nil? || (node.minimum == node.maximum && node.minimum.positive?)
 
           return semantic_capture_backreference_body_safe?(node.expression)
         end
