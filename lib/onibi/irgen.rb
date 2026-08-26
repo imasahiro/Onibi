@@ -2292,6 +2292,7 @@ module Onibi
 
       def semantic_capture_backreference_body_safe?(node)
         node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        node = node.body if node.is_a?(SemanticBytecode::Group) && !node.capture
         return node.branches.all? { |branch| semantic_capture_backreference_body_safe?(branch) } \
           if node.is_a?(SemanticBytecode::Alternation)
 

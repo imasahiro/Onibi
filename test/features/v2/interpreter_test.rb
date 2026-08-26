@@ -1165,6 +1165,16 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_nested_alternation_backreference_lowers_to_flat_bytecode
+    regexp = Onibi::Regexp.new("(?i:(?<x>(?:Ω|a))\\k<x>)")
+    refute regexp.send(:bytecode_program).instructions.any? { |instruction| instruction.opcode == :semantic_match }
+
+    ["ΩΩ", "Ωω", "aa", "aA", "aΩ"].each do |input|
+      assert_equal ::Regexp.new("(?i:(?<x>(?:Ω|a))\\k<x>)").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
