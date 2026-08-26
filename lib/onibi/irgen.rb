@@ -1800,7 +1800,7 @@ module Onibi
             Array(node.flat_atoms).flatten.all? do |atom|
               atom.is_a?(SemanticBytecode::Any) ||
                 (atom.is_a?(SemanticBytecode::Literal) &&
-                 (atom.value.ascii_only? || semantic_simple_unicode_literal?(atom)))
+                 (atom.value.ascii_only? || semantic_flat_unicode_literal?(atom)))
             end
         when SemanticBytecode::Quantifier
           node.minimum == 1 && node.maximum == 1 &&
@@ -1811,10 +1811,14 @@ module Onibi
       end
 
       def semantic_simple_unicode_literal?(node)
+        semantic_flat_unicode_literal?(node) &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).any?
+      end
+
+      def semantic_flat_unicode_literal?(node)
         node.is_a?(SemanticBytecode::Literal) && !node.value.ascii_only? &&
           node.value.each_char.one? && node.casefold.to_s.each_char.one? &&
           !node.fold_boundary_sensitive &&
-          Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).any? &&
           Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
             variant.each_char.one?
           end
