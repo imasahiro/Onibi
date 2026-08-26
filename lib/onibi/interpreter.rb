@@ -806,6 +806,8 @@ module Onibi
                 flat_alternation_capture_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceSuffixCaptureRepeat)
                 flat_suffix_capture_absence_results(absence, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceSuffixRepeat)
+                flat_suffix_absence_results(absence, characters, position)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -830,6 +832,7 @@ module Onibi
                 absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceAlternationCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceSuffixCaptureRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceSuffixRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
@@ -4361,6 +4364,23 @@ module Onibi
               node.clear_numbers.each { |number| capture.delete(number) }
               return [[position - cursor, capture]]
             end
+          end
+          position += 1
+        end
+        [[characters.length - cursor, {}]]
+      end
+
+      def flat_suffix_absence_results(node, characters, cursor)
+        suffix = node.suffix.value
+        position = cursor
+        while position < characters.length
+          if characters[position, suffix.length].join == suffix
+            run_start = position
+            values = node.variants.map { |variant| variant.map(&:value).join }
+            run_start -= 1 while run_start > cursor && values.any? do |value|
+              characters[run_start - value.length, value.length].join == value
+            end
+            return [[position - cursor, {}]] if run_start < position
           end
           position += 1
         end
