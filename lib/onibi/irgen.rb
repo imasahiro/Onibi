@@ -1033,8 +1033,7 @@ module Onibi
               true
             when Group
               if node.capture
-                body = unwrap_single_sequence(node.body)
-                body.is_a?(Literal) && body.casefold.nil?
+                capture_absence_atom_safe?(unwrap_single_sequence(node.body))
               else
                 wildcard_absence_suffix?(node.body)
               end
