@@ -1847,7 +1847,12 @@ module Onibi
 
         node.parts.any? do |part|
           part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase &&
-            semantic_scoped_ascii_class_safe?(SemanticBytecode::Sequence.new([part]))
+            semantic_scoped_ascii_class_safe?(SemanticBytecode::Sequence.new([part])) &&
+            begin
+              body = part.body
+              body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+              body.is_a?(SemanticBytecode::CharacterClass) && body.fold_boundaries.values.compact.any?
+            end
         end
       end
 
