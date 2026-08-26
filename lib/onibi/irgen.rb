@@ -1009,6 +1009,9 @@ module Onibi
               !node.parts.empty? && node.parts.all? { |part| wildcard_absence_suffix?(part) }
             when Alternation
               !node.branches.empty? && node.branches.all? { |branch| wildcard_absence_suffix?(branch) }
+            when Quantifier
+              node.minimum.positive? && (node.maximum.nil? || node.maximum.positive?) &&
+                wildcard_absence_suffix?(node.expression)
             else
               false
             end
