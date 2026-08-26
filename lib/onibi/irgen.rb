@@ -1136,8 +1136,9 @@ module Onibi
             return false unless node.is_a?(Alternation)
 
             node.branches.all? do |branch|
-              branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
-                branch.parts.first.casefold.nil?
+              branch.is_a?(Sequence) && branch.parts.all? do |part|
+                part.is_a?(Literal) && part.casefold.nil?
+              end && branch.parts.any?
             end
           end
 

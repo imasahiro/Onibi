@@ -457,14 +457,8 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?~(?:.*(ab|a)))")
     program = regexp.send(:bytecode_program)
     executor = Onibi::Interpreter::Executor.new(program)
-    body = semantic_root(program).parts.first.body.parts.first.body
-    characters = "aba".chars
-    executor.instance_variable_set(:@characters, characters)
-    executor.instance_variable_set(:@steps, 0)
-
-    results = executor.send(:tree_results, body, characters, 0, {}, program.flags)
-
-    assert_equal([1, 0, 1], results.map { |_length, state| state[:__match_alternative_index] })
+    refute program.instructions.any? { |instruction| instruction.opcode == :semantic_match }
+    assert_equal [0, 2], executor.match("aba")
   end
 
   def test_absence_literal_fast_path_preserves_wrapped_capture
@@ -1499,10 +1493,6 @@ class InterpreterTest < Minitest::Test
 
     refute value.class.name.start_with?("Onibi::AST::")
     value.each_pair.all? { |_field, child| semantic_node?(child) }
-  end
-
-  def semantic_root(program)
-    program.instructions.find { |instruction| instruction.opcode == :semantic_match }.operand.entry_node
   end
 
   def dfa_program_for(source)
