@@ -226,10 +226,10 @@ module Onibi
           return nil unless group
 
           policy = {}
-          if group.any? { |character| character.match?(/\p{M}/) }
-            policy[:anchor_source] = :fold_group_variant
-            policy[:alternation_source] = :reject_non_mark_variant
-          end
+          reverse_variants = Onibi::UnicodeProperties.reverse_casefold_variants(value.downcase(:fold))
+          policy[:anchor_source] = :fold_group_variant if group.any? { |character| character.match?(/\p{M}/) }
+          policy[:alternation_source] = :reject_reverse_variant if reverse_variants.any? &&
+                                                                   group.any? { |character| character.match?(/\p{M}/) }
           variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(value.downcase(:fold))
           policy[:sequence_source] = :allow_repeated_variant if variants.any? && variants.all? { |character| character == character.upcase }
           policy.empty? ? nil : policy.freeze

@@ -1289,9 +1289,90 @@ module Onibi
                                                        cursor + consumed, flags)
                 part_results = []
               end
+              if strict_end_anchor?(parts[index]) &&
+                 (anchor_operand = boundary_operand(part))
+                anchor_operand = anchor_operand.parts.last if anchor_operand.is_a?(SemanticBytecode::Sequence)
+                if anchor_operand.is_a?(SemanticBytecode::Literal) &&
+                   anchor_operand.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
+                   characters[cursor + consumed - 1] == anchor_operand.value
+                  part_results = []
+                end
+                if anchor_operand.is_a?(SemanticBytecode::Literal) &&
+                   anchor_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
+                  source = characters[cursor + consumed - 1]
+                  if source && !source.match?(/\p{M}/) &&
+                     Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(source)
+                    part_results = []
+                  end
+                end
+              end
+              if strict_end_anchor?(parts[index]) &&
+                 (anchor_operand = boundary_operand(part)).is_a?(SemanticBytecode::Literal)
+                source = characters[cursor + consumed - 1]
+                if source && !source.match?(/\p{M}/) &&
+                   anchor_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
+                   Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(source)
+                  part_results = []
+                end
+              end
+              if previous_part.is_a?(SemanticBytecode::Assertion) && previous_part.kind == :positive &&
+                 strict_end_anchor?(parts[index]) &&
+                 (lookahead_operand = boundary_operand(part))
+                lookahead_operand = lookahead_operand.parts.last if lookahead_operand.is_a?(SemanticBytecode::Sequence)
+                if lookahead_operand.is_a?(SemanticBytecode::Literal) &&
+                   lookahead_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
+                  source = characters[cursor + consumed]
+                  if source && !source.match?(/\p{M}/) &&
+                     Onibi::UnicodeProperties.reverse_casefold_variants(lookahead_operand.value.downcase(:fold)).include?(source)
+                    part_results = []
+                  end
+                end
+              end
+              if strict_end_anchor?(parts[index]) &&
+                 (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation)
+                source = characters[cursor + consumed - 1]
+                if source && !source.match?(/\p{M}/) && alternative.branches.any? do |branch|
+                  operand = boundary_operand(branch)
+                  operand.is_a?(SemanticBytecode::Literal) &&
+                  operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
+                  Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
+                end
+                  part_results = []
+                end
+              end
+              if (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation) &&
+                 parts[index].is_a?(SemanticBytecode::Literal)
+                source = characters[cursor + consumed]
+                if source && !source.match?(/\p{M}/) &&
+                   alternative.branches.any? do |branch|
+                     operand = boundary_operand(branch)
+                     operand.is_a?(SemanticBytecode::Literal) &&
+                     operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
+                     Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
+                   end && characters[cursor + consumed + 1] &&
+                   casefold_equal?(parts[index].value, characters[cursor + consumed + 1])
+                  part_results = []
+                end
+              end
               if reverse_fold_optional_anchor_boundary?(part, parts[index],
                                                         characters, cursor + consumed, flags)
                 part_results = part_results.select { |length, _inner| length.zero? }
+              end
+              if part.is_a?(SemanticBytecode::OptionGroup) &&
+                 part.body.is_a?(SemanticBytecode::Sequence) && part.body.parts.one? &&
+                 (optional = part.body.parts.first).is_a?(SemanticBytecode::Quantifier) &&
+                 optional.minimum.zero? && optional.maximum == 1 &&
+                 optional.expression.is_a?(SemanticBytecode::Literal) &&
+                 parts[index].is_a?(SemanticBytecode::Literal)
+                source = characters[cursor + consumed]
+                variants = Onibi::UnicodeProperties.reverse_casefold_variants(
+                  optional.expression.value.downcase(:fold)
+                )
+                if source && !source.match?(/\p{M}/) && variants.include?(source) &&
+                   characters[cursor + consumed + 1] &&
+                   casefold_equal?(parts[index].value, characters[cursor + consumed + 1])
+                  part_results = part_results.select { |length, _inner| length.zero? }
+                end
               end
               if posix_alternation_anchor_source_width?(part, parts[index],
                                                         characters, cursor + consumed)
@@ -2676,12 +2757,14 @@ module Onibi
         return false if node.is_a?(SemanticBytecode::Quantifier) && node.minimum != node.maximum
         return false unless operand.is_a?(SemanticBytecode::Literal)
         return false unless operand.value.each_char.one?
-        return false unless reverse_fold_source_literal?(operand.value)
+
+        policy = operand.fold_policy || {}
+        return false unless reverse_fold_source_literal?(operand.value) ||
+                            policy[:anchor_source] == :fold_group_variant
 
         source = characters[cursor]
         return false unless source
 
-        policy = operand.fold_policy || {}
         return true if policy[:anchor_source] == :fold_group_variant &&
                        source != operand.value &&
                        !source.match?(/\p{M}/) &&
@@ -2692,13 +2775,27 @@ module Onibi
       end
 
       def reverse_fold_optional_anchor_boundary?(node, next_node, characters, cursor, flags)
-        return false unless flags[:ignorecase] && strict_end_anchor?(next_node)
-        return false unless node.is_a?(SemanticBytecode::Quantifier)
-        return false unless node.minimum.zero? && node.maximum == 1
-        return false unless node.expression.is_a?(SemanticBytecode::Literal)
-        return false unless reverse_fold_source_literal?(node.expression.value)
+        return false unless (flags[:ignorecase] || option_group_ignorecase?(node)) && strict_end_anchor?(next_node)
 
-        characters[cursor] == node.expression.value
+        quantifier = if node.is_a?(SemanticBytecode::Quantifier)
+                       node
+                     elsif node.is_a?(SemanticBytecode::OptionGroup) && node.body.is_a?(SemanticBytecode::Sequence) &&
+                           node.body.parts.one? && node.body.parts.first.is_a?(SemanticBytecode::Quantifier)
+                       node.body.parts.first
+                     end
+        return false unless quantifier
+        return false unless quantifier.minimum.zero? && quantifier.maximum == 1
+        return false unless quantifier.expression.is_a?(SemanticBytecode::Literal)
+
+        policy = quantifier.expression.fold_policy || {}
+        return false unless reverse_fold_source_literal?(quantifier.expression.value) ||
+                            policy[:anchor_source] == :fold_group_variant
+
+        source = characters[cursor]
+        return true if source == quantifier.expression.value && policy[:anchor_source] == :fold_group_variant
+
+        source && !source.match?(/\p{M}/) &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(quantifier.expression.value.downcase(:fold)).include?(source)
       end
 
       def end_anchor?(node)
