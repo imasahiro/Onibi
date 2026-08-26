@@ -839,6 +839,7 @@ module Onibi
 
         case node
         when SemanticBytecode::Sequence
+          return [] if lookahead_variant_barrier?(node, characters, cursor, flags)
           if node.parts.each_index.any? do |index|
                reverse_fold_optional_barrier?(node.parts[index], node.parts[index + 1],
                                               node.parts[index + 2], characters, cursor, flags)
@@ -2091,6 +2092,24 @@ module Onibi
           expression.value.downcase(:fold)
         )
         source && variants.include?(source)
+      end
+
+      def lookahead_variant_barrier?(node, characters, cursor, flags)
+        return false unless flags[:ignorecase]
+
+        assertion = node.parts[0]
+        operand = boundary_operand(node.parts[1])
+        return false unless assertion.is_a?(SemanticBytecode::Assertion) && assertion.kind == :positive
+
+        body = boundary_operand(assertion.body)
+        return false unless body.is_a?(SemanticBytecode::Literal)
+        return false unless operand.is_a?(SemanticBytecode::Literal)
+        return false unless body.value.downcase(:fold) == operand.value.downcase(:fold)
+
+        source = characters[cursor]
+        body.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
+          source && source != body.value && !source.match?(/\p{M}/) &&
+          source.downcase(:fold) == body.value.downcase(:fold)
       end
 
       def same_fold_literal?(node, expression)
