@@ -64,6 +64,7 @@ module Onibi
         AbsenceRepeat = Struct.new(:atoms, :minimum)
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
+        AlternationAtom = Struct.new(:variants)
         AbsenceAssertion = Struct.new(:assertion)
         AbsenceProbe = Struct.new(:program, :capture_program, :capture_requires_end)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
@@ -450,6 +451,17 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+                 body.expression.is_a?(Group) && body.expression.capture
+                alternation = unwrap_single_sequence(body.expression.body)
+                if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                  branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                    branch.parts.first.casefold.nil?
+                end
+                  variants = alternation.branches.map { |branch| branch.parts }
+                  return AbsenceRepeat.new([AlternationAtom.new(variants)], body.minimum)
+                end
+              end
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                  body.expression.is_a?(Group) && body.expression.capture
                 atoms = absence_repeat_atoms(body.expression.body)
@@ -1035,6 +1047,14 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+               body.expression.is_a?(Group) && body.expression.capture
+              alternation = unwrap_single_sequence(body.expression.body)
+              return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                  branch.parts.first.casefold.nil?
+              end
+            end
             if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                body.expression.is_a?(Group) && body.expression.capture
               atoms = absence_repeat_atoms(body.expression.body)

@@ -862,6 +862,7 @@ module Onibi
       def semantic_opcode(node)
         case node
         when SemanticBytecode::Literal then :match_literal
+        when SemanticBytecode::AlternationAtom then :match_alternation_atom
         when SemanticBytecode::CharacterClass then :match_class
         when SemanticBytecode::Property then :match_property
         when SemanticBytecode::Escape then :match_escape
@@ -1268,6 +1269,10 @@ module Onibi
           # absence: probe the bounded complement. Each result carries its
           # length and the frame-restored local state.
           absence_results(operand, characters, cursor, captures, flags)
+        when :match_alternation_atom
+          flat_assertion_lengths(operand.variants, characters, cursor, captures, flags).map do |length|
+            [length, {}]
+          end
         when :match_class
           # class: each accepted character width becomes one stack result.
           class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
@@ -3442,6 +3447,8 @@ module Onibi
 
       def transition_lengths(label, characters, cursor, captures, flags = {})
         opcode, operand = label
+        return flat_assertion_lengths(operand.variants, characters, cursor, captures, flags) if
+          opcode == :match_alternation_atom
         return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
         return grapheme_cluster_lengths(characters, cursor) || [] if opcode == :match_escape && operand.kind == :grapheme
 
@@ -4138,6 +4145,20 @@ module Onibi
             end
           end
           return [boundary ? [boundary - cursor + run - 1, limit].min : limit]
+        end
+        if node.atoms.first.is_a?(SemanticBytecode::AlternationAtom)
+          boundary = cursor.upto(characters.length).find do |probe|
+            local = 0
+            while probe + local < characters.length &&
+                  flat_assertion_lengths([node.atoms], characters, probe + local, {}, flags).any?
+              local += 1
+            end
+            if local >= node.minimum
+              run = local
+              true
+            end
+          end
+          return [boundary ? [boundary - cursor + (run + 1) / 2, limit].min : limit]
         end
         while run < limit && flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags).any?
           widths = flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags)
