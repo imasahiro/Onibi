@@ -94,6 +94,18 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_program_accepts_fold_boundary_instruction
+    instruction = Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(
+      opcode: :fold_boundary, operand: 0
+    )
+    flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
+      instructions: [instruction, Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)],
+      operands: [Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ſ", "s", [["ſ", "s"]], true)]
+    )
+
+    assert_equal :fold_boundary, flat.opcode_at(0)
+  end
+
   def test_flat_program_exposes_verified_subroutine_target_lookup
     flat = Onibi::Regexp.new("(?<x>a)\\g<x>").send(:bytecode_program).instructions
                         .find { |instruction| instruction.opcode == :semantic_flat }.operand

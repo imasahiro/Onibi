@@ -77,7 +77,7 @@ module Onibi
           def initialize(opcode:, operand: nil, target: nil) = super.freeze
         end
 
-        VM_OPCODES = %i[consume consume_class consume_property consume_escape consume_any
+        VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
                         assert_anchor split jump fail capture_start capture_end repeat
                         repeat_possessive repeat_zero_width assert conditional backreference call return
                         scope_start scope_end atomic_start atomic_end absence nop accept].freeze
@@ -505,7 +505,7 @@ module Onibi
 
           def emit_leaf(node)
             opcode = case node
-                     when Literal then :consume
+                     when Literal then node.fold_boundary_sensitive ? :fold_boundary : :consume
                      when CharacterClass then :consume_class
                      when Property then :consume_property
                      when Escape then :consume_escape

@@ -517,7 +517,7 @@ module Onibi
             @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                          pc: instruction.target, cursor: position, captures: state, flags: frame_flags
                                        ))
-          when :consume, :consume_class, :consume_property, :consume_escape, :consume_any,
+          when :consume, :fold_boundary, :consume_class, :consume_property, :consume_escape, :consume_any,
                :assert_anchor
             node = @flat_program.operand(instruction.operand)
             semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
@@ -788,7 +788,7 @@ module Onibi
       # stable transition interface for the compatibility and flat paths.
       def flat_transition_opcode(opcode, node)
         case opcode
-        when :consume then :match_literal
+        when :consume, :fold_boundary then :match_literal
         when :consume_class then :match_class
         when :consume_property then :match_property
         when :consume_escape then :match_escape
