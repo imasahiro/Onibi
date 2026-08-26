@@ -134,6 +134,17 @@ module Onibi
         branch_checkpoints_at(position).find { |_point, _branch, length| length.positive? }&.fetch(1)
       end
 
+      def preferred_body_result(position, results)
+        branch = preferred_branch_at(position) || preferred_branch
+        if branch && results.any? { |_length, state| state[:__match_alternative_index] == branch }
+          return results.find { |_length, state| state[:__match_alternative_index] == branch }
+        end
+        return results.find { |_length, state| !state.key?(:__match_start) } if
+          results.any? { |_length, state| state.key?(:__match_alternative) }
+
+        nil
+      end
+
       def tighten_absent_end(boundary)
         self.absent_end = [absent_end, boundary].min
       end

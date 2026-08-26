@@ -371,6 +371,8 @@ class InterpreterTest < Minitest::Test
     assert_equal 3, frame.preferred_branch
     assert_equal [[2, 3, 1], [2, 4, 2]], frame.branch_checkpoints_at(2)
     assert_equal 3, frame.preferred_branch_at(2)
+    assert_equal [1, { __match_alternative_index: 3 }],
+                 frame.preferred_body_result(2, [[1, { __match_alternative_index: 3 }]])
     frame.absent_end = 8
     frame.tighten_absent_end(5)
     frame.tighten_absent_end(6)
