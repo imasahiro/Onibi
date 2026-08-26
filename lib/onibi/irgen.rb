@@ -457,8 +457,33 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Group) && body.capture
+                repeated = unwrap_single_sequence(body.body)
+                if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
+                   repeated.expression.is_a?(Group) && repeated.expression.capture
+                  alternation = unwrap_single_sequence(repeated.expression.body)
+                  if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                    branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                      branch.parts.first.casefold.nil?
+                  end
+                    variants = alternation.branches.map(&:parts)
+                    return AbsenceRepeat.new([AlternationAtom.new(variants)], repeated.minimum)
+                  end
+                end
+              end
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                  body.expression.is_a?(Group) && body.expression.capture
+                inner_group = unwrap_single_sequence(body.expression.body)
+                if body.minimum > 1 && inner_group.is_a?(Group) && inner_group.capture
+                  alternation = unwrap_single_sequence(inner_group.body)
+                  if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                    branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                      branch.parts.first.casefold.nil?
+                  end
+                    variants = alternation.branches.map(&:parts)
+                    return AbsenceRepeat.new([AlternationAtom.new(variants)], body.minimum)
+                  end
+                end
                 alternation = unwrap_single_sequence(body.expression.body)
                 if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
                   branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
@@ -1074,8 +1099,27 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Group) && body.capture
+              repeated = unwrap_single_sequence(body.body)
+              if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
+                 repeated.expression.is_a?(Group) && repeated.expression.capture
+                alternation = unwrap_single_sequence(repeated.expression.body)
+                return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                  branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                    branch.parts.first.casefold.nil?
+                end
+              end
+            end
             if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                body.expression.is_a?(Group) && body.expression.capture
+              inner_group = unwrap_single_sequence(body.expression.body)
+              if body.minimum > 1 && inner_group.is_a?(Group) && inner_group.capture
+                alternation = unwrap_single_sequence(inner_group.body)
+                return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                  branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
+                    branch.parts.first.casefold.nil?
+                end
+              end
               alternation = unwrap_single_sequence(body.expression.body)
               return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
                 branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&

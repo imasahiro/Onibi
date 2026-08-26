@@ -92,6 +92,18 @@ class V2IRGenTest < Minitest::Test
     assert_equal ["x"], regexp.match("x1")&.to_a
   end
 
+  def test_flat_compiler_lowers_bounded_nested_capture_alternation_absence
+    source = "(?~((a|b)){2,})"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    ["abab", "ababab", "xabab"].each do |input|
+      expected = ::Regexp.new(source).match(input)
+      assert_equal expected&.to_a, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_program_does_not_embed_legacy_semantic_command_stream
     program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
     flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
