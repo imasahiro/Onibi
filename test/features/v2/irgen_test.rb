@@ -235,6 +235,8 @@ class V2IRGenTest < Minitest::Test
     metadata = flat.boundary_metadata(0)
     assert_equal [0], metadata.backedge_pcs
     assert metadata.repeat_backedge?
+    assert_equal [0], flat.backedge_targets(0)
+    assert_empty flat.backedge_targets(1)
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

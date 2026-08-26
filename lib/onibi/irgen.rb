@@ -282,6 +282,10 @@ module Onibi
                              backedge_pcs: backedge_pcs.uniq)
           end
 
+          def backedge_targets(program_counter)
+            boundary_metadata(program_counter)&.backedge_pcs || []
+          end
+
           def boundary_candidate_literals(starts, origin)
             pending = Array(starts).dup
             visited = {}
