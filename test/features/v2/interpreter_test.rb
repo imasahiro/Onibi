@@ -43,7 +43,8 @@ class InterpreterTest < Minitest::Test
       capture_checkpoints: []
     )
 
-    assert_equal [0, 3, 0, [[0, {}]], [[0, [[1, {}]]]], []], frame.to_a
+    assert_nil frame.kind
+    assert_equal [nil, 0, 3, 0, [[0, {}]], [[0, [[1, {}]]]], []], frame.to_a
   end
 
   def test_interpreter_executes_dfa_start_match_jump_and_accept

@@ -5,16 +5,12 @@ module Onibi
     # SemanticBytecode is the compiler-owned operand model.
     SemanticBytecode = Onibi::IRGen::YARVIR::SemanticBytecode
 
-    # Runtime state for the Onigmo-style absence loop.
-    # `absent_end` is exclusive before a probe and becomes body_end - 1 after
-    # a body result. `probe_position` advances one character per iteration.
-    # `possible_points` stores [cursor, captures] checkpoints.
-    # `body_checkpoints` stores ordered body results for each point.
-    # `capture_checkpoints` stores
-    # [probe_position, body_length, captures, discard_capture, ambiguous].
-    # The interpreter restores this state after a failed suffix, like
-    # OP_ABSENT_END popping to its absent frame.
-    AbsentFrame = Struct.new(
+    # Runtime state for bounded probes and backtracking scopes.
+    # A frame owns the input range, the current probe position, and the
+    # checkpoints needed to restore local capture state. Absence uses the
+    # same frame shape as future group and quantifier scopes.
+    ExecutionFrame = Struct.new(
+      :kind,
       :absent_start,
       :absent_end,
       :probe_position,
@@ -23,6 +19,8 @@ module Onibi
       :capture_checkpoints,
       keyword_init: true
     )
+    # Kept as a compatibility alias for callers that inspected the old name.
+    AbsentFrame = ExecutionFrame
 
     # Formal VM contract:
     # DFA: start(state), match(label), jump(state), accept(state).
@@ -3627,7 +3625,8 @@ module Onibi
         delimiter = literal_value(node.body) unless capture_numbers(node.body).any? || flags[:ignorecase]
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
-        frame = AbsentFrame.new(
+        frame = ExecutionFrame.new(
+          kind: :absence,
           absent_start: cursor,
           absent_end: characters.length,
           probe_position: cursor,
@@ -4342,7 +4341,8 @@ module Onibi
       # Execute the two loops used by Onigmo's OP_ABSENT protocol.
       # Each probe uses the current absent end as its input boundary.
       def absence_bounded_probe_results(body, characters, cursor, captures, flags, preserve_failed_capture: false)
-        frame = AbsentFrame.new(
+        frame = ExecutionFrame.new(
+          kind: :absence,
           absent_start: cursor,
           absent_end: characters.length,
           probe_position: cursor,
