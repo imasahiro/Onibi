@@ -739,6 +739,8 @@ module Onibi
                 flat_absence_probe_results(absence.program, characters, position, state, frame_flags,
                                            capture_program: absence.capture_program,
                                            capture_requires_end: absence.capture_requires_end)
+              elsif absence.is_a?(SemanticBytecode::AbsenceNullableCapture)
+                flat_nullable_capture_absence_results(absence, characters, position, state, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceAssertion)
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
@@ -763,6 +765,7 @@ module Onibi
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
                   absence.is_a?(SemanticBytecode::AbsenceProbe)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
@@ -4042,6 +4045,20 @@ module Onibi
         length, state = flat_assertion_results([variant], characters, boundary, captures, flags).first
         maximum = [boundary - cursor + length - 1, characters.length - cursor].min
         maximum.downto(0).map { |candidate| [candidate, state] }
+      end
+
+      def flat_nullable_capture_absence_results(operand, characters, cursor, captures, flags)
+        found = cursor.upto(characters.length - 1).find do |position|
+          transition_results([:match_literal, operand.atom], characters, position, captures, flags).any?
+        end
+        if found
+          span = [found, found + 1]
+          captured = captures.merge(operand.number => span)
+          captured[operand.name] = span if operand.name
+          [[0, captured]]
+        else
+          [[0, {}]]
+        end
       end
 
       def flat_absence_probe_results(program, characters, cursor, captures, flags, capture_program: nil,

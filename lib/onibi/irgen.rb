@@ -63,6 +63,7 @@ module Onibi
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
         AbsenceNullableRepeat = Struct.new(:atom)
+        AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AbsenceAssertion = Struct.new(:assertion)
         AbsenceProbe = Struct.new(:program, :capture_program, :capture_requires_end)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
@@ -449,6 +450,13 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Group) && body.capture
+                atom = unwrap_single_sequence(body.body)
+                if atom.is_a?(Quantifier) && atom.minimum.zero? && atom.maximum == 1 &&
+                   atom.expression.is_a?(Literal) && atom.expression.casefold.nil?
+                  return AbsenceNullableCapture.new(atom.expression, body.number, body.name)
+                end
+              end
               probe = absence_probe_program(node)
               return AbsenceProbe.new(*probe) if probe
 
@@ -1016,10 +1024,15 @@ module Onibi
           end
 
           def absence_flat_safe?(node)
+            body = unwrap_single_sequence(node.body)
+            if body.is_a?(Group) && body.capture
+              atom = unwrap_single_sequence(body.body)
+              return true if atom.is_a?(Quantifier) && atom.minimum.zero? && atom.maximum == 1 &&
+                              atom.expression.is_a?(Literal) && atom.expression.casefold.nil?
+            end
             return true if absence_probe_program(node)
             return true if absence_assertion(node)
 
-            body = unwrap_single_sequence(node.body)
             return true if body.is_a?(Sequence) && body.parts.empty?
 
             if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
