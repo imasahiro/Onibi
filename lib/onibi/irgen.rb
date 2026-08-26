@@ -133,6 +133,13 @@ module Onibi
             instruction_at(program_counter).opcode
           end
 
+          def boundary_target(program_counter)
+            instruction = instruction_at(program_counter)
+            return nil unless instruction.opcode == :fold_boundary
+
+            instruction.target && instruction_at(instruction.target)
+          end
+
           def tree_free?
             operands.none? { |operand| self.class.composite_payload?(operand) }
           end

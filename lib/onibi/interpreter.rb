@@ -523,7 +523,7 @@ module Onibi
             semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
             matches = transition_results(semantic_label, characters, position, state, frame_flags)
             next_instruction = if instruction.opcode == :fold_boundary && instruction.target
-                                 @flat_program.instruction_at(instruction.target)
+                                 @flat_program.boundary_target(pc)
                                else
                                  next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
                                    @flat_program.opcode_at(index) != :scope_end
@@ -794,8 +794,8 @@ module Onibi
       end
 
       def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction)
-        return matches unless opcode == :fold_boundary
         return matches unless node.is_a?(SemanticBytecode::Literal)
+        return matches unless opcode == :fold_boundary || node.fold_boundary_sensitive
 
         anchor = if next_instruction&.opcode == :assert_anchor
                    @flat_program.operand(next_instruction.operand)
