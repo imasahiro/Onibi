@@ -637,7 +637,7 @@ module Onibi
               resume_backtrack
               next
             end
-            ordered_lengths = quantifier.body.mode == :greedy ? lengths.reverse : lengths
+            ordered_lengths = quantifier.body.mode == :greedy ? lengths.sort : lengths.sort.reverse
             @state.with_repeat_frame(pc: pc, cursor: position, lengths: ordered_lengths,
                                      minimum: quantifier.minimum, maximum: quantifier.maximum) do |repeat|
               while repeat.next_index < repeat.lengths.length
