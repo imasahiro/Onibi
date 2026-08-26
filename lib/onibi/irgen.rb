@@ -631,6 +631,10 @@ module Onibi
                 variant.ascii_only? && variant.each_char.one?
               end
             when Sequence
+              return false if node.parts.length > 1 && node.parts.any? do |part|
+                part.is_a?(Literal) && !part.value.ascii_only?
+              end
+
               node.parts.all? { |part| scoped_casefold_safe?(part) }
             when Alternation
               node.branches.all? { |branch| scoped_casefold_safe?(branch) }
@@ -1568,6 +1572,8 @@ module Onibi
                         !semantic_terminal_end_assertion_only_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
+        return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
+                        !semantic_standalone_scoped_simple_unicode_literal?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -1770,6 +1776,10 @@ module Onibi
               variant.each_char.one?
             end
         when SemanticBytecode::Sequence
+          return false if node.parts.length > 1 && node.parts.any? do |part|
+            semantic_contains_non_ascii_operand?(part)
+          end
+
           node.parts.all? { |part| semantic_scoped_casefold_simple_safe?(part) }
         when SemanticBytecode::Alternation
           node.branches.all? { |branch| semantic_scoped_casefold_simple_safe?(branch) }
@@ -1778,6 +1788,37 @@ module Onibi
         else
           false
         end
+      end
+
+      def semantic_contains_scoped_simple_unicode_literal?(node)
+        return true if node.is_a?(SemanticBytecode::OptionGroup) && node.ignorecase &&
+                       semantic_standalone_scoped_simple_unicode_literal?(SemanticBytecode::Sequence.new([node]))
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_scoped_simple_unicode_literal?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_scoped_simple_unicode_literal?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_standalone_scoped_simple_unicode_literal?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        group = node.parts.first
+        return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+
+        body = group.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::Literal) && !body.value.ascii_only? &&
+          body.value.each_char.one? && body.casefold.to_s.each_char.one? &&
+          !body.fold_boundary_sensitive &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(body.casefold).all? do |variant|
+            variant.each_char.one?
+          end
       end
 
       def semantic_fixed_casefold_sequence_safe?(node)
