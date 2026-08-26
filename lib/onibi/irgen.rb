@@ -607,6 +607,9 @@ module Onibi
                 end
             when Property
               fold_invariant_property?(node)
+            when Escape
+              %i[digit non_digit word not_word space not_space horizontal_space
+                 not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(node.kind)
             when Group, AtomicGroup, OptionGroup
               scoped_casefold_safe?(node.body)
             else
