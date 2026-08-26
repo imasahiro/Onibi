@@ -1931,10 +1931,13 @@ module Onibi
       end
 
       def semantic_scoped_property_alternation_safe?(node)
-        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.any?
 
-        group = node.parts.first
+        group, *suffix = node.parts
         return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+        return false unless suffix.all? do |part|
+          part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
+        end
 
         body = group.body
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
