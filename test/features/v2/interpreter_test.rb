@@ -461,6 +461,15 @@ class InterpreterTest < Minitest::Test
     assert_equal [0, 2], executor.match("aba")
   end
 
+  def test_flat_executor_does_not_retain_or_enter_semantic_tree
+    program = Onibi::Regexp.new("(?~(?:.*(ab|a)))").send(:bytecode_program)
+    executor = Onibi::Interpreter::Executor.new(program)
+
+    assert_instance_of Onibi::Interpreter::FlatExecutor, executor
+    assert_nil executor.instance_variable_get(:@semantic_entry)
+    refute executor.class.ancestors.include?(Onibi::Interpreter::SemanticTreeEvaluator)
+  end
+
   def test_absence_literal_fast_path_preserves_wrapped_capture
     program = Onibi::Regexp.new("(?~(a))").send(:bytecode_program)
     refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
