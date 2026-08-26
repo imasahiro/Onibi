@@ -648,6 +648,8 @@ module Onibi
                 )
             when Any
               true
+            when Backreference
+              true
             when Assertion
               %i[positive positive_lookahead negative negative_lookahead
                  positive_lookbehind negative_lookbehind].include?(node.kind) &&
@@ -1530,6 +1532,7 @@ module Onibi
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
+                        !semantic_scoped_capture_backreference_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
@@ -1956,6 +1959,25 @@ module Onibi
           )
       rescue RegexpError, KeyError
         false
+      end
+
+      def semantic_scoped_capture_backreference_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        group = node.parts.first
+        return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+        body = group.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
+
+        capture, reference = body.parts
+        return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
+        return false unless reference.is_a?(SemanticBytecode::Backreference) && !reference.named
+        return false unless reference.identifier == capture.number
+
+        literal = capture.body
+        literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
+        literal.is_a?(SemanticBytecode::Literal) && literal.value.ascii_only? && literal.value.each_char.one?
       end
 
       def semantic_scoped_property_suffix_safe?(node)

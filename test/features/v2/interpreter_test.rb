@@ -775,6 +775,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("cbx")&.to_a
   end
 
+  def test_scoped_ascii_capture_backreference_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:(a)\\1)")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:(a)\\1)").match("aA")&.to_a,
+                 regexp.match("aA")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
