@@ -1222,7 +1222,7 @@ module Onibi
             when Property
               node.casefolds.empty?
             when Escape
-              %i[digit non_digit word not_word space not_space horizontal_space
+              %i[digit non_digit not_digit word not_word space not_space horizontal_space
                  not_horizontal_space linebreak grapheme].include?(node.kind)
             when Any
               true
@@ -1276,7 +1276,7 @@ module Onibi
             when Property
               node.casefolds.empty? ? [node] : nil
             when Escape
-              if %i[digit non_digit word not_word space not_space horizontal_space
+              if %i[digit non_digit not_digit word not_word space not_space horizontal_space
                     not_horizontal_space linebreak grapheme].include?(node.kind)
                 [node]
               end
@@ -3151,7 +3151,7 @@ module Onibi
                %i[positive positive_lookahead negative negative_lookahead
                   positive_lookbehind negative_lookbehind].include?(node.kind)
         return true if node.is_a?(SemanticBytecode::Escape) &&
-                       %i[digit non_digit word not_word space not_space horizontal_space
+                       %i[digit non_digit not_digit word not_word space not_space horizontal_space
                           not_horizontal_space linebreak grapheme].include?(node.kind)
 
         semantic_scoped_repeat_operand_safe?(node)
@@ -3213,7 +3213,7 @@ module Onibi
         rest.all? do |part|
           part.is_a?(SemanticBytecode::Any) ||
             (part.is_a?(SemanticBytecode::Escape) &&
-             %i[digit non_digit word not_word space not_space horizontal_space
+             %i[digit non_digit not_digit word not_word space not_space horizontal_space
                 not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(part.kind))
         end
       end
@@ -3245,7 +3245,7 @@ module Onibi
             part.equal?(assertion) || part.equal?(properties.first) ||
               part.is_a?(SemanticBytecode::Any) ||
               (part.is_a?(SemanticBytecode::Escape) &&
-               %i[digit non_digit word not_word space not_space horizontal_space
+               %i[digit non_digit not_digit word not_word space not_space horizontal_space
                   not_horizontal_space linebreak grapheme].include?(part.kind)) ||
               (part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?)
           end
