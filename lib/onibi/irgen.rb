@@ -1966,7 +1966,7 @@ module Onibi
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
         return false unless quantifier.minimum.positive? ||
                             (quantifier.minimum.zero? &&
-                             [1, nil].include?(quantifier.maximum))
+                             (quantifier.maximum.nil? || quantifier.maximum <= 32))
         return false unless suffix.all? do |part|
           part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
         end
