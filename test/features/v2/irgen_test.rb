@@ -25,6 +25,901 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(Onibi::IRGen::YARVIR.generate(dfa, mode: :dfa))
   end
 
+  def test_semantic_bytecode_is_lowered_to_a_linear_program_operand
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("(ab)+").ast
+    )
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa_for(Onibi::Parser.parse("(ab)+").ast))
+    program = Onibi::IRGen::YARVIR.generate(dfa, semantic_root: root)
+    instruction = program.instructions.find { |item| item.opcode == :semantic_match }
+
+    assert_instance_of Onibi::IRGen::YARVIR::SemanticBytecode::SemanticProgram, instruction.operand
+    assert_equal 0, instruction.operand.entry
+    assert_operator instruction.operand.instructions.length, :>, 1
+    assert_equal root, instruction.operand.entry_node
+  end
+
+  def test_semantic_program_exposes_flat_vm_commands
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("(?<x>a|b)+\\1").ast
+    )
+    commands = Onibi::IRGen::YARVIR::SemanticBytecode.lower(root).vm_instructions
+
+    assert_includes commands.map(&:opcode), :choice
+    assert_includes commands.map(&:opcode), :repeat
+    assert_includes commands.map(&:opcode), :capture
+    assert_includes commands.map(&:opcode), :backreference
+    assert(commands.all? { |command| command.operand.is_a?(Integer) })
+  end
+
+  def test_flat_compiler_emits_specialized_leaf_opcodes
+    regexp = Onibi::Regexp.new("[a-z]\\d.")
+    flat = regexp.send(:bytecode_program).instructions.find { |item| item.opcode == :semantic_flat }.operand
+
+    assert_includes flat.instructions.map(&:opcode), :consume_class
+    assert_includes flat.instructions.map(&:opcode), :consume_escape
+    assert_includes flat.instructions.map(&:opcode), :consume_any
+  end
+
+  def test_flat_program_does_not_embed_legacy_semantic_command_stream
+    program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    refute(program.instructions.any? { |item| item.opcode == :semantic_vm })
+    assert flat.tree_free?
+    assert(flat.operands.grep(Onibi::IRGen::YARVIR::SemanticBytecode::Sequence).all? { |node| node.parts.empty? })
+    assert(flat.operands.grep(Onibi::IRGen::YARVIR::SemanticBytecode::Alternation).all? { |node| node.branches.empty? })
+  end
+
+  def test_flat_program_rejects_invalid_subroutine_target
+    assert_raises(ArgumentError) do
+      Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
+        instructions: [Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)],
+        subroutines: { 1 => 2 }
+      )
+    end
+  end
+
+  def test_flat_program_exposes_verified_subroutine_target_lookup
+    flat = Onibi::Regexp.new("(?<x>a)\\g<x>").send(:bytecode_program).instructions
+                        .find { |instruction| instruction.opcode == :semantic_flat }.operand
+
+    assert_equal flat.subroutines.fetch(1), flat.call_target(1)
+    assert_equal flat.subroutines.fetch("x"), flat.call_target("x")
+    assert_equal :capture_start, flat.instruction_at(flat.subroutines.fetch(1)).opcode
+    assert flat.valid_pc?(flat.entry)
+    refute flat.valid_pc?(flat.instructions.length)
+    assert_equal :capture_start, flat.opcode_at(flat.subroutines.fetch(1))
+  end
+
+  def test_flat_program_rejects_invalid_control_flow_target
+    instruction = Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :jump, target: 4)
+
+    assert_raises(ArgumentError) do
+      Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(instructions: [instruction])
+    end
+  end
+
+  def test_flat_assertion_operands_keep_only_leaf_atoms
+    flat = Onibi::Regexp.new("(?=a[0-9])a7").send(:bytecode_program).instructions
+                        .find { |instruction| instruction.opcode == :semantic_flat }.operand
+    assertions = flat.operands.grep(Onibi::IRGen::YARVIR::SemanticBytecode::Assertion)
+
+    refute_empty assertions
+    assert assertions.all? do |assertion|
+      Array(assertion.flat_atoms).flatten.all? do |atom|
+        !atom.respond_to?(:body) && !atom.respond_to?(:parts) && !atom.respond_to?(:branches)
+      end
+    end
+  end
+
+  def test_flat_program_rejects_assertion_with_composite_atoms
+    assertion = Onibi::IRGen::YARVIR::SemanticBytecode::Assertion.new(
+      nil, :positive, [1], [1], [Onibi::IRGen::YARVIR::SemanticBytecode::Sequence.new([])]
+    )
+
+    assert_raises(ArgumentError) do
+      Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
+        instructions: [Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)],
+        operands: [assertion]
+      )
+    end
+  end
+
+  def test_flat_executor_does_not_retain_semantic_tree_entry
+    program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
+    executor = Onibi::Interpreter::Executor.new(program)
+
+    refute executor.instance_variable_defined?(:@semantic_entry)
+  end
+
+  def test_flat_call_return_uses_execution_state_frames
+    regexp = Onibi::Regexp.new("(?<x>a)\\g<x>")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    assert_equal [0, 2], executor.match("aa")
+    assert_empty executor.instance_variable_get(:@state).calls
+    refute_includes executor.match_with_captures("aa")[2].keys, :__flat_call_stack
+  end
+
+  def test_flat_repeat_uses_and_releases_execution_state_frame
+    regexp = Onibi::Regexp.new("a+")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    assert_equal [0, 3], executor.match("aaa")
+    assert_empty executor.instance_variable_get(:@state).repeats
+  end
+
+  def test_flat_ordered_choice_records_and_releases_backtrack_points
+    regexp = Onibi::Regexp.new("a|b")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    assert_equal [0, 1], executor.match("b")
+    assert_empty executor.instance_variable_get(:@state).backtracks
+  end
+
+  def test_flat_choice_restores_capture_state_before_alternative
+    regexp = Onibi::Regexp.new("(?:(?<x>a)c|(?<y>b)d)")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    result = executor.match_with_captures("bd")
+    captures = result[2]
+    assert_equal [0, 2], result.first(2)
+    assert_nil captures[1]
+    assert_equal [0, 1], captures[2]
+    assert_empty executor.instance_variable_get(:@state).capture_frames
+  end
+
+  def test_flat_compiler_accepts_single_character_simple_casefold
+    regexp = Onibi::Regexp.new("k", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("K", 0)
+  end
+
+  def test_flat_compiler_accepts_ascii_literal_sequence_simple_casefold
+    regexp = Onibi::Regexp.new("ab", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("AB", 0)
+  end
+
+  def test_flat_compiler_accepts_single_character_unicode_simple_casefold
+    regexp = Onibi::Regexp.new("é", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("É", 0)
+  end
+
+  def test_flat_compiler_accepts_single_character_unicode_full_fold
+    regexp = Onibi::Regexp.new("ß", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("SS", 0)
+  end
+
+  def test_flat_compiler_accepts_non_capturing_full_fold_wrapper
+    regexp = Onibi::Regexp.new("(?:ß)", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("SS", 0)
+  end
+
+  def test_flat_operands_do_not_retain_composite_bodies
+    regexp = Onibi::Regexp.new("(?=ab)(?<x>a)b")
+    flat = regexp.send(:bytecode_program).instructions.find { |item| item.opcode == :semantic_flat }.operand
+    assertion = flat.operands.find { |operand| operand.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Assertion) }
+
+    assert assertion
+    assert_nil assertion.body
+    assert assertion.flat_atoms
+  end
+
+  def test_flat_absence_operand_contains_atoms_without_tree_body
+    regexp = Onibi::Regexp.new("(?~a)b")
+    flat = regexp.send(:bytecode_program).instructions.find { |item| item.opcode == :semantic_flat }.operand
+    absence = flat.operands.find { |operand| operand.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Absence) }
+
+    assert absence
+    assert_nil absence.body
+    assert absence.flat_atoms
+  end
+
+  def test_flat_quantifier_operand_does_not_retain_group_body
+    regexp = Onibi::Regexp.new("(a)+b")
+    flat = regexp.send(:bytecode_program).instructions.find { |item| item.opcode == :semantic_flat }.operand
+    quantifier = flat.operands.find { |operand| operand.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Quantifier) }
+
+    assert quantifier
+    refute quantifier.expression.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Group)
+  end
+
+  def test_compiler_program_contains_tagged_vm_transitions
+    program = Onibi::Regexp.new("(a)").send(:bytecode_program)
+
+    assert_instance_of Onibi::Automata::TaggedDFA, program.tagged_automaton
+    assert_includes program.instructions.map(&:opcode), :tagged_match
+    assert_equal [0, 1], program.execute_with_captures("a")[2][1]
+  end
+
+  def test_flat_semantic_vm_executes_sequence_and_ordered_choice
+    regexp = Onibi::Regexp.new("(a|b)c")
+    program = regexp.send(:bytecode_program)
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }
+
+    assert_instance_of Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram, flat.operand
+    assert_equal [2, 4], program.execute("xxac", 0)
+    assert_equal [2, 4], program.execute("xxbc", 0)
+    assert_nil program.execute("xxcc", 0)
+  end
+
+  def test_flat_semantic_vm_executes_ascii_quantifier_command
+    regexp = Onibi::Regexp.new("a*b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [2, 5], program.execute("xxaab", 0)
+  end
+
+  def test_flat_semantic_vm_lowers_empty_alternation_branch_to_nop
+    regexp = Onibi::Regexp.new("(a|)")
+    program = regexp.send(:bytecode_program)
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
+
+    assert_includes flat.instructions.map(&:opcode), :nop
+    assert_equal [0, 0], program.execute("x", 0)
+    assert_equal [0, 1], program.execute("a", 0)
+  end
+
+  def test_flat_semantic_vm_lowers_variable_capture_group_loop
+    regexp = Onibi::Regexp.new("(a)+b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 4], program.execute("aaab", 0)
+    assert_equal [0, 1], program.execute_with_captures("ab", 0)[2][1]
+  end
+
+  def test_flat_semantic_vm_lowers_bounded_capture_group_choices
+    regexp = Onibi::Regexp.new("(a){1,3}b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 4], program.execute("aaab", 0)
+    assert_equal [0, 2], program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_possessive_capture_group
+    regexp = Onibi::Regexp.new("(a)++b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 4], program.execute("aaab", 0)
+    assert_nil program.execute("aaac", 0)
+    assert_nil Onibi::Regexp.new("(a)++a").send(:bytecode_program).execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_lowers_fixed_quantified_capture_group
+    regexp = Onibi::Regexp.new("(a){2}b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("aab", 0)
+    assert_equal [1, 2], program.execute_with_captures("aab", 0)[2][1]
+  end
+
+  def test_flat_semantic_vm_executes_ascii_character_class
+    regexp = Onibi::Regexp.new("[a-z]+!")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 4], program.execute("abc!", 0)
+    assert_nil program.execute("ABC!", 0)
+  end
+
+  def test_flat_semantic_vm_executes_anchors
+    regexp = Onibi::Regexp.new("^a$")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("a", 0)
+    assert_nil program.execute("ba", 0)
+  end
+
+  def test_flat_semantic_vm_executes_basic_escape
+    regexp = Onibi::Regexp.new("\\d+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("123", 0)
+    assert_nil program.execute("abc", 0)
+  end
+
+  def test_flat_semantic_vm_executes_word_boundary_escape
+    regexp = Onibi::Regexp.new("\\bword\\b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 4], program.execute("word", 0)
+    assert_nil program.execute("sword", 0)
+  end
+
+  def test_flat_compiler_rejects_zero_width_capture_group_repeat
+    regexp = Onibi::Regexp.new("(\\b)+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 0], program.execute("word", 0)
+  end
+
+  def test_flat_semantic_vm_executes_linebreak_escape
+    regexp = Onibi::Regexp.new("a\\Rb")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("a\nb", 0)
+  end
+
+  def test_flat_semantic_vm_executes_start_match_escape
+    regexp = Onibi::Regexp.new("\\Gabc")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("abc", 0)
+  end
+
+  def test_flat_semantic_vm_executes_match_reset_escape
+    regexp = Onibi::Regexp.new("a\\Kb")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [1, 2], program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_grapheme_escape
+    regexp = Onibi::Regexp.new("\\X")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("a\u0301", 0)
+  end
+
+  def test_flat_semantic_vm_executes_ascii_property
+    regexp = Onibi::Regexp.new("\\p{ASCII}+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("Ab1", 0)
+    assert_nil program.execute("é", 0)
+  end
+
+  def test_flat_semantic_vm_executes_utf8_unicode_property
+    regexp = Onibi::Regexp.new("(\\p{L}+)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("あA1", 0)
+  end
+
+  def test_flat_semantic_vm_executes_exact_utf8_literal
+    regexp = Onibi::Regexp.new("(あ+)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("ああ!", 0)
+  end
+
+  def test_flat_semantic_vm_executes_exact_utf8_character_class
+    regexp = Onibi::Regexp.new("([あ-お]+)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("いう!", 0)
+  end
+
+  def test_flat_semantic_vm_executes_negated_character_class
+    regexp = Onibi::Regexp.new("([^a]+)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("bc!", 0)
+  end
+
+  def test_flat_semantic_vm_executes_sequence_assertion_atoms
+    regexp = Onibi::Regexp.new("(?=a[0-9])a[0-9]")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("a7", 0)
+    assert_nil program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_non_literal_absence_body
+    regexp = Onibi::Regexp.new("((?~[a-z]))")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("12a", 0)
+  end
+
+  def test_flat_semantic_vm_executes_backreference_assertion_atom
+    regexp = Onibi::Regexp.new("(a)(?=\\1)\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("aa", 0)
+    assert_nil program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_backreference_quantifier
+    regexp = Onibi::Regexp.new("(a)\\1+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("aaa", 0)
+    assert_equal [0, 2], program.execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_executes_zero_width_assertion_atom
+    regexp = Onibi::Regexp.new("(?=\\b)a")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("a", 0)
+    assert_equal [1, 2], program.execute(" a", 0)
+  end
+
+  def test_flat_semantic_vm_executes_zero_width_assertion_repeat
+    regexp = Onibi::Regexp.new("(?=a)+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 0], program.execute("a", 0)
+  end
+
+  def test_flat_semantic_vm_executes_zero_width_escape_repeat
+    regexp = Onibi::Regexp.new("\\b+")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 0], program.execute("word", 0)
+  end
+
+  def test_flat_semantic_vm_executes_fixed_zero_width_assertion_repeat
+    regexp = Onibi::Regexp.new("(?=a){2}")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 0], program.execute("a", 0)
+    assert_nil program.execute("b", 0)
+  end
+
+  def test_flat_semantic_vm_preserves_fixed_zero_width_capture
+    regexp = Onibi::Regexp.new("(\\b){2}")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    result = program.execute_with_captures("word", 0)
+    assert_equal [0, 0], result.first(2)
+    assert_equal [0, 0], result[2][1]
+  end
+
+  def test_flat_semantic_vm_executes_grapheme_assertion_atom
+    regexp = Onibi::Regexp.new("(?=\\X)\\X")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("a\u0301", 0)
+  end
+
+  def test_flat_semantic_vm_executes_lazy_exact_quantifier
+    regexp = Onibi::Regexp.new("(a{2}?)b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [1, 2], program.execute("ab", 0)
+    assert_equal [2, 3], program.execute("aab", 0)
+  end
+
+  def test_flat_semantic_vm_commits_atomic_choice
+    regexp = Onibi::Regexp.new("(?>a|ab)c")
+    program = regexp.send(:bytecode_program)
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
+
+    assert_includes flat.instructions.map(&:opcode), :atomic_start
+    assert_includes flat.instructions.map(&:opcode), :atomic_end
+    assert_equal [0, 2], program.execute("ac", 0)
+    assert_nil program.execute("abc", 0)
+  end
+
+  def test_flat_semantic_vm_executes_possessive_sequence_group
+    regexp = Onibi::Regexp.new("([a-z][0-9])++b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 5], program.execute("a1b2b", 0)
+    assert_nil program.execute("a1b2", 0)
+  end
+
+  def test_flat_compiler_handles_programs_larger_than_legacy_limit
+    source = "#{"a" * 30}(b)"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 31], program.execute("#{"a" * 30}b", 0)
+  end
+
+  def test_flat_semantic_vm_executes_numeric_backreference
+    regexp = Onibi::Regexp.new("(a)\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [2, 4], program.execute("xxaa", 0)
+    assert_nil program.execute("xxab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_named_backreference
+    regexp = Onibi::Regexp.new("(?<x>a)\\k<x>")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("aa", 0)
+    assert_nil program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_named_conditional
+    regexp = Onibi::Regexp.new("(?<x>a)(?(<x>)b|c)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("ab", 0)
+    assert_nil program.execute("ac", 0)
+  end
+
+  def test_flat_semantic_vm_executes_lookahead_assertion
+    positive = Onibi::Regexp.new("a(?=b)b").send(:bytecode_program)
+    negative = Onibi::Regexp.new("a(?!c)b").send(:bytecode_program)
+
+    assert_equal [2, 4], positive.execute("xxab", 0)
+    assert_equal [2, 4], negative.execute("xxab", 0)
+    assert_nil negative.execute("xxac", 0)
+  end
+
+  def test_flat_semantic_vm_preserves_capture_from_lookahead
+    regexp = Onibi::Regexp.new("(?=(a))a\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    result = program.execute_with_captures("aa", 0)
+    assert_equal [0, 2], result.first(2)
+    assert_equal [0, 1], result[2][1]
+  end
+
+  def test_flat_semantic_vm_preserves_capture_from_alternating_lookahead
+    regexp = Onibi::Regexp.new("(?=(a|b))\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("a", 0)
+    assert_equal [0, 1], program.execute("b", 0)
+    assert_equal [0, 1], program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_preserves_quantifier_order_in_capture_lookahead
+    greedy = Onibi::Regexp.new("(?=(a{1,2}))\\1").send(:bytecode_program)
+    lazy = Onibi::Regexp.new("(?=(a{1,2}?))\\1").send(:bytecode_program)
+
+    [greedy, lazy].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    end
+    assert_equal [0, 2], greedy.execute("aaa", 0)
+    assert_equal [0, 1], lazy.execute("aaa", 0)
+  end
+
+  def test_flat_semantic_vm_handles_possessive_quantifier_in_capture_lookahead
+    regexp = Onibi::Regexp.new("(?=(a{1,2}+))\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("aa", 0)
+    assert_equal [0, 3], program.execute("aaa", 0)
+
+    no_backtrack = Onibi::Regexp.new("(?=(a{1,2}+))\\1a").send(:bytecode_program)
+    assert_nil no_backtrack.execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_handles_zero_width_quantifier_in_capture_lookahead
+    regexp = Onibi::Regexp.new("(?=(\\b*))\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    result = program.execute_with_captures("a", 0)
+    assert_equal [0, 0], result.first(2)
+    assert_equal [0, 0], result[2][1]
+  end
+
+  def test_flat_semantic_vm_handles_nested_zero_width_assertion_capture
+    regexp = Onibi::Regexp.new("(?=(\\b(?=a)))\\1")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    result = program.execute_with_captures("a", 0)
+    assert_equal [0, 0], result.first(2)
+    assert_equal [0, 0], result[2][1]
+  end
+
+  def test_flat_semantic_vm_handles_nested_zero_width_lookbehind_capture
+    positive = Onibi::Regexp.new("(?<=(a(?=b)))b").send(:bytecode_program)
+    negative = Onibi::Regexp.new("(?<!(a(?=b)))b").send(:bytecode_program)
+
+    [positive, negative].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    end
+    positive_result = positive.execute_with_captures("ab", 0)
+    assert_equal [1, 2], positive_result.first(2)
+    assert_equal [0, 1], positive_result[2][1]
+    assert_equal [1, 2], negative.execute("cb", 0)
+    assert_nil negative.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_resolves_backreference_inside_capture_lookahead
+    positive = Onibi::Regexp.new("(?=(a)\\1)\\1").send(:bytecode_program)
+    named = Onibi::Regexp.new("(?=(?<x>a)\\k<x>)\\k<x>").send(:bytecode_program)
+
+    [positive, named].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    end
+    assert_equal [0, 1], positive.execute("aa", 0)
+    assert_nil positive.execute("ab", 0)
+    assert_equal [0, 1], named.execute("aa", 0)
+    assert_nil named.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_resolves_fixed_backreference_inside_lookbehind
+    numeric = Onibi::Regexp.new("(?<=(a)\\1)b").send(:bytecode_program)
+    named = Onibi::Regexp.new("(?<=(?<x>a)\\k<x>)b").send(:bytecode_program)
+
+    [numeric, named].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+      assert_equal [2, 3], program.execute("aab", 0)
+      assert_nil program.execute("abb", 0)
+    end
+  end
+
+  def test_flat_semantic_vm_resolves_conditional_inside_capture_lookahead
+    regexp = Onibi::Regexp.new("(?=(a)(?(1)b|c))\\1b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    result = program.execute_with_captures("ab", 0)
+    assert_equal [0, 2], result.first(2)
+    assert_equal [0, 1], result[2][1]
+    assert_nil program.execute("ac", 0)
+  end
+
+  def test_flat_semantic_vm_resolves_backreference_after_fixed_alternation_lookbehind
+    alternation = Onibi::Regexp.new("(?<=(a|b)\\1)c").send(:bytecode_program)
+    quantified = Onibi::Regexp.new("(?<=(a{2})\\1)c").send(:bytecode_program)
+
+    [alternation, quantified].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    end
+    assert_equal [2, 3], alternation.execute("aac", 0)
+    assert_equal [4, 5], quantified.execute("aaaac", 0)
+    assert_nil alternation.execute("abc", 0)
+    assert_nil quantified.execute("aaac", 0)
+  end
+
+  def test_flat_semantic_vm_resolves_exact_possessive_lookbehind_width
+    possessive = Onibi::Regexp.new("(?<=(a{2}+)\\1)c").send(:bytecode_program)
+    lazy = Onibi::Regexp.new("(?<=(a{2}?)\\1)c").send(:bytecode_program)
+
+    [possessive, lazy].each do |program|
+      assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+      assert_equal [4, 5], program.execute("aaaac", 0)
+      assert_nil program.execute("aaac", 0)
+    end
+  end
+
+  def test_flat_semantic_vm_executes_literal_sequence_lookahead
+    regexp = Onibi::Regexp.new("(?=abc)abc")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("abc", 0)
+  end
+
+  def test_flat_semantic_vm_executes_literal_alternation_lookahead
+    regexp = Onibi::Regexp.new("(?=a|b)[ab]")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("b", 0)
+    assert_nil program.execute("c", 0)
+  end
+
+  def test_flat_semantic_vm_executes_literal_lookbehind_assertion
+    positive = Onibi::Regexp.new("(?<=a)b")
+    negative = Onibi::Regexp.new("(?<!a)b")
+
+    positive_program = positive.send(:bytecode_program)
+    negative_program = negative.send(:bytecode_program)
+    assert(positive_program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [1, 2], positive_program.execute("ab", 0)
+    assert_equal [1, 2], negative_program.execute("cb", 0)
+  end
+
+  def test_flat_semantic_vm_executes_literal_absence
+    regexp = Onibi::Regexp.new("(?~a)b")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("xb", 0)
+    assert_equal [1, 2], program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_alternating_literal_absence
+    regexp = Onibi::Regexp.new("(?~a|b)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("xyz", 0)
+    assert_equal [0, 1], program.execute("xab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_fixed_quantifier_absence
+    regexp = Onibi::Regexp.new("(?~a{2})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("b", 0)
+    assert_equal [0, 1], program.execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_executes_bounded_quantifier_absence
+    regexp = Onibi::Regexp.new("(?~a{1,2})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("b", 0)
+    assert_equal [0, 1], program.execute("aa", 0)
+  end
+
+  def test_unbounded_absence_stays_on_compatibility_path
+    program = Onibi::Regexp.new("(?~a+)").send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    refute(program.instructions.any? { |item| item.opcode == :semantic_vm })
+    assert_equal [0, 1], program.execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_executes_unbounded_non_capturing_group_absence
+    regexp = Onibi::Regexp.new("(?~(?:ab)+)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("ab", 0)
+    assert_equal [0, 2], program.execute("aa", 0)
+  end
+
+  def test_flat_semantic_vm_executes_unbounded_class_absence
+    regexp = Onibi::Regexp.new("(?~[ab]{2,})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("aaaa", 0)
+    assert_equal [0, 2], program.execute("abab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_unbounded_property_absence
+    regexp = Onibi::Regexp.new("(?~\\p{ASCII}{2,})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("aaaa", 0)
+    assert_equal [0, 1], program.execute("x", 0)
+  end
+
+  def test_flat_semantic_vm_executes_unbounded_escape_absence
+    regexp = Onibi::Regexp.new("(?~\\d{2,})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("123a", 0)
+    assert_equal [0, 2], program.execute("a12", 0)
+    assert_equal [0, 1], program.execute("1", 0)
+  end
+
+  def test_flat_semantic_vm_executes_unbounded_any_absence
+    regexp = Onibi::Regexp.new("(?~.{2,})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("abcd", 0)
+    assert_equal [0, 1], program.execute("a", 0)
+  end
+
+  def test_flat_semantic_vm_executes_non_capturing_group_absence
+    regexp = Onibi::Regexp.new("(?~(?:ab|cd))")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("a", 0)
+    assert_equal [0, 1], program.execute("abx", 0)
+  end
+
+  def test_flat_semantic_vm_lowers_safe_atomic_group
+    regexp = Onibi::Regexp.new("(?>ab)c")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 3], program.execute("abc", 0)
+  end
+
+  def test_flat_compiler_lowers_option_group_without_flag_changes
+    node = Onibi::AST::OptionGroup.new(Onibi::AST::Literal.new("a"), nil, nil, nil)
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(node)
+    semantic = Onibi::IRGen::YARVIR::SemanticBytecode.lower(root)
+
+    assert semantic.flat_program
+  end
+
+  def test_flat_semantic_vm_scopes_ascii_ignorecase
+    regexp = Onibi::Regexp.new("(?i:(a|b))")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 1], program.execute("A", 0)
+    assert_equal [0, 1], program.execute("b", 0)
+  end
+
+  def test_flat_semantic_vm_scopes_inline_multiline
+    regexp = Onibi::Regexp.new("(?m:^a$)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [2, 3], program.execute("x\na\ny", 0)
+  end
+
+  def test_flat_semantic_vm_scopes_inline_extended_mode
+    regexp = Onibi::Regexp.new("(?x:a  b)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    assert_equal [0, 2], program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_inlines_named_subexpression_call
+    regexp = Onibi::Regexp.new("(?<x>a)\\g<x>")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
+    assert_includes flat.instructions.map(&:opcode), :call
+    assert_includes flat.instructions.map(&:opcode), :return
+    assert_equal [0, 2], program.execute("aa", 0)
+    assert_nil program.execute("ab", 0)
+  end
+
+  def test_flat_semantic_vm_executes_consuming_recursive_call
+    regexp = Onibi::Regexp.new("(?<x>a\\g<x>|b)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
+    flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
+    assert_includes flat.instructions.map(&:opcode), :call
+    assert_includes flat.instructions.map(&:opcode), :return
+    assert_equal [0, 4], program.execute("aaab", 0)
+    assert_equal [0, 1], program.execute("b", 0)
+  end
+
   def test_common_vm_executes_tnfa_bytecode
     tnfa = tnfa_for(sequence("a", "b"))
     program = Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
@@ -69,13 +964,13 @@ class V2IRGenTest < Minitest::Test
     sharp_s = Onibi::Regexp.new("[ß]", Onibi::Regexp::IGNORECASE)
     ligature = Onibi::Regexp.new("[ﬆ]", Onibi::Regexp::IGNORECASE)
 
-    assert sharp_s.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
-    refute ligature.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
+    assert semantic_root(sharp_s.send(:bytecode_program)).parts.first.split_casefold
+    refute semantic_root(ligature.send(:bytecode_program)).parts.first.split_casefold
   end
 
   def test_character_class_embeds_fold_boundary_metadata
     regexp = Onibi::Regexp.new("[ᾀ]", Onibi::Regexp::IGNORECASE)
-    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+    operand = semantic_root(regexp.send(:bytecode_program)).parts.first
 
     assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
   end
@@ -93,8 +988,9 @@ class V2IRGenTest < Minitest::Test
   end
 
   def test_character_class_embeds_compiled_predicate_operands
-    regexp = Onibi::Regexp.new("[a-z]")
-    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+    operand = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("[a-z]").ast
+    ).parts.first
 
     assert operand.compiled_sensitive
     assert operand.compiled_insensitive
@@ -260,20 +1156,23 @@ class V2IRGenTest < Minitest::Test
   end
 
   def test_literal_casefold_is_embedded_in_semantic_bytecode
-    regexp = Onibi::Regexp.new("ᾀ")
-    root = regexp.send(:bytecode_program).flags[:semantic_root]
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("ᾀ").ast, casefold: true
+    )
 
     assert_equal "ἀι", root.parts.first.casefold
     assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
     assert root.parts.first.fold_boundary_sensitive
     assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
 
-    lookahead = Onibi::Regexp.new("ω").send(:bytecode_program).flags[:semantic_root]
+    lookahead = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("ω").ast, casefold: true
+    )
     assert_equal :non_split_prefix, lookahead.parts.first.fold_prefix_boundary
 
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
-    refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
-    assert_nil ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary
+    refute semantic_root(ascii.send(:bytecode_program)).parts.first.fold_boundary_sensitive
+    assert_nil semantic_root(ascii.send(:bytecode_program)).parts.first.fold_boundary
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
@@ -355,6 +1254,10 @@ class V2IRGenTest < Minitest::Test
   def program_for(node)
     dfa = Onibi::Automata::DFA.from_tnfa(tnfa_for(node))
     Onibi::IRGen::YARVIR.generate(dfa)
+  end
+
+  def semantic_root(program)
+    program.instructions.find { |instruction| instruction.opcode == :semantic_match }.operand.entry_node
   end
 
   def tnfa_for(node)

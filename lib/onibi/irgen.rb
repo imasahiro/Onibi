@@ -12,7 +12,15 @@ module Onibi
         # `fold_boundary` describes a Unicode fold that has a special
         # operand-boundary rule. The VM consumes this metadata directly.
         Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive,
-                             :fold_boundary, :fold_prefix_boundary, :fold_policy)
+                             :fold_boundary, :fold_prefix_boundary, :fold_policy) do
+          def source_width
+            value.each_char.count
+          end
+
+          def folded_width
+            (casefold || value).each_char.count
+          end
+        end
         # `casefolds` contains reverse multi-character folds for this class.
         # `split_casefold` records MRI's class-only split rule for sharp-s.
         # `compiled_sensitive` and `compiled_insensitive` are immutable
@@ -28,7 +36,13 @@ module Onibi
         Backreference = Struct.new(:identifier, :named)
         # `folded_widths` is the finite width set used by the VM for
         # encoding-aware lookbehind. It is compiler output, not AST state.
-        Assertion = Struct.new(:body, :kind, :widths, :folded_widths)
+        Assertion = Struct.new(:body, :kind, :widths, :folded_widths, :flat_atoms) do
+          def tree_free?
+            body.nil? && Array(flat_atoms).flatten.all? do |atom|
+              !atom.respond_to?(:body) && !atom.respond_to?(:parts) && !atom.respond_to?(:branches)
+            end
+          end
+        end
         Any = Struct.new(:value)
         Anchor = Struct.new(:kind)
         Sequence = Struct.new(:parts)
@@ -36,14 +50,715 @@ module Onibi
         # a sequence. A root alternation selects a whole branch instead.
         Alternation = Struct.new(:branches, :operand_context, :fold_policy)
         Group = Struct.new(:body, :number, :capture, :name)
+        # A capture inside a flat assertion. The body is already lowered to
+        # primitive assertion atoms, so the VM does not retain a tree node.
+        CaptureAtom = Struct.new(:number, :name, :atoms)
+        RepeatAtom = Struct.new(:atoms, :minimum, :maximum, :mode)
+        AssertionAtom = Struct.new(:kind, :widths, :flat_atoms)
+        ConditionalAtom = Struct.new(:condition, :yes_atoms, :no_atoms)
         OptionGroup = Struct.new(:body, :ignorecase, :multiline, :extended)
         AtomicGroup = Struct.new(:body)
         Conditional = Struct.new(:condition, :yes_branch, :no_branch)
         SubexpressionCall = Struct.new(:identifier, :named)
-        Absence = Struct.new(:body)
+        Absence = Struct.new(:body, :flat_atoms)
+        AbsenceRepeat = Struct.new(:atoms, :minimum)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
         Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
+        ZeroWidthRepeat = Struct.new(:predicate, :minimum, :maximum, :number, :capture, :name)
+
+        # A linear semantic instruction table.  The VM receives this table
+        # through the automaton instruction stream, instead of through a
+        # separate program flag.
+        SemanticInstruction = Struct.new(:opcode, :operand, keyword_init: true) do
+          def initialize(opcode:, operand: nil) = super.freeze
+        end
+        VMInstruction = Struct.new(:opcode, :operand, :target, keyword_init: true) do
+          def initialize(opcode:, operand: nil, target: nil) = super.freeze
+        end
+
+        VM_OPCODES = %i[consume consume_class consume_property consume_escape consume_any
+                        assert_anchor split jump fail capture_start capture_end repeat
+                        repeat_possessive repeat_zero_width assert conditional backreference call return
+                        scope_start scope_end atomic_start atomic_end absence nop accept].freeze
+        FlatProgram = Struct.new(:instructions, :entry, :subroutines, :operands, keyword_init: true) do
+          def initialize(instructions:, entry: 0, subroutines: {}, operands: [])
+            unknown = instructions.map(&:opcode) - VM_OPCODES
+            raise ArgumentError, "unknown flat VM opcode: #{unknown.first}" unless unknown.empty?
+
+            limit = instructions.length
+            raise ArgumentError, "flat VM entry is invalid: #{entry.inspect}" unless entry.is_a?(Integer) && entry >= 0 && entry < limit
+
+            invalid_pc = instructions.each_with_index.find do |instruction, _index|
+              targets = instruction.target.is_a?(Array) ? instruction.target : [instruction.target]
+              %i[jump split].include?(instruction.opcode) &&
+                targets.any? { |target| !target.is_a?(Integer) || target.negative? || target >= limit }
+            end
+            raise ArgumentError, "flat VM control-flow target is invalid" if invalid_pc
+
+            invalid_target = subroutines.values.find do |target|
+              !target.is_a?(Integer) || target.negative? || target >= limit
+            end
+            raise ArgumentError, "flat VM subroutine target is invalid: #{invalid_target.inspect}" if invalid_target
+
+            retained = operands.find { |operand| self.class.composite_payload?(operand) }
+            raise ArgumentError, "flat VM operand retains a composite payload: #{retained.class}" if retained
+
+            super(instructions: instructions.freeze, entry: entry, subroutines: subroutines.freeze,
+                  operands: operands.freeze)
+            freeze
+          end
+
+          def operand(index)
+            operands.fetch(index)
+          end
+
+          def call_target(identifier)
+            subroutines.fetch(identifier) { subroutines.fetch(identifier.to_s) }
+          end
+
+          def instruction_at(program_counter)
+            instructions.fetch(program_counter)
+          end
+
+          def valid_pc?(program_counter)
+            program_counter.is_a?(Integer) && program_counter >= 0 && program_counter < instructions.length
+          end
+
+          def opcode_at(program_counter)
+            instruction_at(program_counter).opcode
+          end
+
+          def tree_free?
+            operands.none? { |operand| self.class.composite_payload?(operand) }
+          end
+
+          def self.composite_payload?(operand)
+            return true if operand.is_a?(Assertion) && !operand.tree_free?
+            return true if operand.respond_to?(:body) && operand.body
+            return true if operand.respond_to?(:parts) && operand.parts.any?
+            return true if operand.respond_to?(:branches) && operand.branches.any?
+
+            false
+          end
+        end
+        SemanticProgram = Struct.new(:instructions, :entry, :subexpressions, keyword_init: true) do
+          def initialize(instructions:, entry:, subexpressions: {})
+            super(instructions: instructions.freeze, entry: entry, subexpressions: subexpressions.freeze)
+            @vm_instructions = instructions.each_index.map do |index|
+              VMInstruction.new(opcode: vm_opcode(instructions.fetch(index).opcode), operand: index)
+            end.freeze
+            @flat_program = FlatCompiler.new(self).compile
+            freeze
+          end
+
+          def entry_node
+            materialize(entry, {})
+          end
+
+          def materialized_node(index)
+            materialize(index, {})
+          end
+
+          # Return the executable command stream. Each command has an integer
+          # operand that points into the immutable semantic table. The VM can
+          # dispatch commands without inspecting AST classes.
+          def vm_instructions
+            @vm_instructions
+          end
+
+          def flat_program
+            @flat_program
+          end
+
+          private
+
+          def vm_opcode(type)
+            {
+              Literal => :consume,
+              CharacterClass => :consume_class,
+              Property => :consume_property,
+              Escape => :consume_escape,
+              Any => :consume_any,
+              Anchor => :assert_anchor,
+              Group => :capture,
+              OptionGroup => :scope_flags,
+              AtomicGroup => :atomic,
+              Sequence => :sequence,
+              Alternation => :choice,
+              Quantifier => :repeat,
+              Assertion => :assert,
+              Backreference => :backreference,
+              Conditional => :conditional,
+              SubexpressionCall => :call,
+              Absence => :absence
+            }.fetch(type, :semantic)
+          end
+
+          def materialize(index, cache)
+            return cache[index] if cache.key?(index)
+
+            instruction = instructions.fetch(index)
+            fields = instruction.operand.map { |field| decode(field, cache) }
+            node = instruction.opcode.new(*fields)
+            cache[index] = node
+            node
+          end
+
+          def decode(value, cache)
+            return materialize(value[1], cache) if value.is_a?(Array) && value.first == :__semantic_ref
+            return value.drop(1).map { |item| decode(item, cache) } if value.is_a?(Array) && value.first == :__semantic_array
+            return value.drop(1).each_slice(2).to_h { |key, item| [key, decode(item, cache)] } if value.is_a?(Array) && value.first == :__semantic_hash
+
+            value
+          end
+        end
+
+        # Compile the common semantic subset to real PC-based control flow.
+        # Unsupported Unicode and lookaround forms use the compatibility path.
+        class FlatCompiler
+          LEAF_TYPES = [Literal, CharacterClass, Property, Escape, Any, Anchor].freeze
+
+          def initialize(program)
+            @program = program
+            @nodes = {}
+            @subexpressions = program.subexpressions
+            @visiting = {}.compare_by_identity
+            @depth = 0
+            @code = []
+          end
+
+          def compile
+            return unless supported?(@program.entry_node)
+
+            entry = emit(@program.entry_node)
+            @code << VMInstruction.new(opcode: :accept)
+            subroutines = {}
+            @subexpressions.each do |identifier, body|
+              next if subroutines.key?(identifier)
+
+              subroutines[identifier] = @code.length
+              emit(body)
+              @code << VMInstruction.new(opcode: :return)
+            end
+            operands = @program.instructions.each_index.map do |index|
+              flat_operand(@program.materialized_node(index))
+            end
+            FlatProgram.new(instructions: @code, entry: entry, subroutines: subroutines,
+                            operands: operands)
+          end
+
+          private
+
+          # Keep only fields that the flat dispatcher needs. Composite bodies
+          # stay in the semantic table for compatibility execution, but the
+          # flat VM receives metadata and primitive atom lists only.
+          def flat_operand(node)
+            case node
+            when Assertion
+              Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
+            when Absence
+              body = unwrap_single_sequence(node.body)
+              if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+                 (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
+                  body.expression.is_a?(Property) ||
+                  body.expression.is_a?(Escape) ||
+                  body.expression.is_a?(Any) ||
+                  body.expression.is_a?(Group))
+                atoms = absence_repeat_atoms(body.expression)
+                return AbsenceRepeat.new(atoms, body.minimum) if atoms&.all? do |atom|
+                  atom.is_a?(Literal) || atom.is_a?(CharacterClass) ||
+                  atom.is_a?(Property) || atom.is_a?(Escape) ||
+                  atom.is_a?(Any)
+                end
+              end
+              Absence.new(nil, node.flat_atoms)
+            when OptionGroup
+              OptionGroup.new(nil, node.ignorecase, node.multiline, node.extended)
+            when Group
+              Group.new(nil, node.number, node.capture, node.name)
+            when AtomicGroup
+              AtomicGroup.new(nil)
+            when Conditional
+              Conditional.new(node.condition, nil, nil)
+            when Sequence
+              Sequence.new([])
+            when Alternation
+              Alternation.new([])
+            when Quantifier
+              if zero_width_repeat?(node)
+                expression = node.expression
+                body = expression.is_a?(Group) ? expression.body : expression
+                body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+                return ZeroWidthRepeat.new(body, node.minimum, node.maximum,
+                                           expression.is_a?(Group) ? expression.number : nil,
+                                           expression.is_a?(Group) && expression.capture,
+                                           expression.is_a?(Group) ? expression.name : nil)
+              end
+              expression = node.expression.is_a?(Group) ? nil : node.expression
+              Quantifier.new(expression, node.kind, node.minimum, node.maximum, node.mode, node.lazy_exact)
+            else
+              node
+            end
+          end
+
+          def supported?(node)
+            return false if @depth >= 64
+
+            @depth += 1
+            if @visiting[node]
+              @depth -= 1
+              return false
+            end
+
+            @visiting[node] = true
+            result = supported_node?(node)
+            @visiting.delete(node)
+            @depth -= 1
+            result
+          end
+
+          def supported_node?(node)
+            if node.is_a?(Literal)
+              return full_fold_literal?(node) || ascii_casefold_safe_literal?(node) ||
+                     Onibi::IRGen::YARVIR.semantic_simple_casefold_safe?(node)
+            end
+            return flat_character_class_safe?(node) if node.is_a?(CharacterClass)
+            return true if node.is_a?(Any)
+            return true if node.is_a?(Anchor)
+            if node.is_a?(Escape)
+              return %i[digit non_digit word not_word space not_space horizontal_space
+                        not_horizontal_space linebreak grapheme word_boundary not_word_boundary start_match match_reset].include?(node.kind)
+            end
+            return flat_property_safe?(node) if node.is_a?(Property)
+            return true if node.is_a?(Backreference)
+
+            if node.is_a?(Assertion)
+              body = unwrap_single_sequence(node.body)
+              return %i[positive positive_lookahead negative negative_lookahead
+                        positive_lookbehind negative_lookbehind].include?(node.kind) &&
+                     node.flat_atoms &&
+                     (supported?(body) || SemanticBytecode.flat_assertion_atoms(body, capture: true))
+            end
+            if node.is_a?(Conditional)
+              condition = node.condition.is_a?(Array) ? node.condition.first : node.condition
+              return (condition.is_a?(Integer) || condition.is_a?(String)) &&
+                     supported?(node.yes_branch) &&
+                     (!node.no_branch || supported?(node.no_branch))
+            end
+            if node.is_a?(SubexpressionCall)
+              body = subexpression_body(node)
+              return true if body && @visiting[body]
+
+              return body && supported?(body)
+            end
+            return node.parts.all? { |part| supported?(part) } if node.is_a?(Sequence)
+            return node.branches.all? { |branch| supported?(branch) } if node.is_a?(Alternation)
+            return supported?(node.body) if node.is_a?(Group) && (!node.capture || node.number)
+
+            if node.is_a?(OptionGroup)
+              return false if node.ignorecase && !scoped_casefold_safe?(node.body)
+
+              return supported?(node.body)
+            end
+            return supported?(node.body) if node.is_a?(AtomicGroup)
+            return absence_flat_safe?(node) if node.is_a?(Absence)
+
+            if node.is_a?(Quantifier)
+              atom = node.expression
+              if (atom.is_a?(Group) || atom.is_a?(Assertion) || atom.is_a?(Escape)) && (repeatable_group?(node) || possessive_group_loop?(node) ||
+                               possessive_group?(node) || zero_width_repeat?(node))
+                return true
+              end
+              return false if atom.is_a?(Escape) && %i[word_boundary not_word_boundary].include?(atom.kind)
+              return false unless [Literal, CharacterClass, Any, Escape, Property, Backreference].include?(atom.class) &&
+                                  supported?(atom)
+
+              return node.maximum.nil? || node.maximum <= 32
+            end
+            false
+          end
+
+          def index_for(node)
+            @nodes[node] ||= @program.instructions.each_index.find do |index|
+              @program.materialized_node(index) == node
+            end
+          end
+
+          def emit(node)
+            case node
+            when Sequence
+              return emit_command(:nop, index_for(node), nil) if node.parts.empty?
+
+              first = nil
+              node.parts.each do |part|
+                pc = emit(part)
+                first ||= pc
+              end
+              first
+            when Alternation
+              return emit(node.branches.first) if node.branches.one?
+
+              split = @code.length
+              @code << VMInstruction.new(opcode: :split, target: [])
+              starts = []
+              jumps = []
+              node.branches.each_with_index do |branch, index|
+                starts << @code.length
+                emit(branch)
+                jumps << emit_command(:jump, nil, nil) unless index == node.branches.length - 1
+              end
+              join = @code.length
+              jumps.each { |jump| @code[jump] = VMInstruction.new(opcode: :jump, target: join) }
+              @code[split] = VMInstruction.new(opcode: :split, target: starts.freeze)
+              split
+            when Group
+              start = node.capture ? emit_command(:capture_start, index_for(node), node.number) : nil
+              body = emit(node.body)
+              emit_command(:capture_end, index_for(node), [node.number, node.name].freeze) if node.capture
+              start || body
+            when OptionGroup
+              start = emit_command(:scope_start, index_for(node), nil)
+              emit(node.body)
+              emit_command(:scope_end, index_for(node), nil)
+              start
+            when AtomicGroup
+              start = emit_command(:atomic_start, index_for(node), nil)
+              emit(node.body)
+              emit_command(:atomic_end, index_for(node), nil)
+              start
+            when Conditional
+              branch = @code.length
+              @code << VMInstruction.new(opcode: :conditional, operand: index_for(node), target: [])
+              yes_start = @code.length
+              emit(node.yes_branch)
+              yes_jump = emit_command(:jump, nil, nil)
+              no_start = @code.length
+              if node.no_branch
+                emit(node.no_branch)
+              else
+                emit_command(:nop, index_for(node), nil)
+              end
+              join = @code.length
+              @code[yes_jump] = VMInstruction.new(opcode: :jump, target: join)
+              @code[branch] = VMInstruction.new(opcode: :conditional, operand: index_for(node),
+                                                target: [yes_start, no_start].freeze)
+              branch
+            when SubexpressionCall
+              emit_command(:call, node.identifier, nil)
+            when Quantifier
+              if node.expression.is_a?(Group) && repeatable_group?(node)
+                emit_group_quantifier(node)
+              elsif zero_width_repeat?(node)
+                emit_command(:repeat_zero_width, index_for(node), nil)
+              elsif node.expression.is_a?(Group) && possessive_group_loop?(node)
+                emit_possessive_group_quantifier(node)
+              elsif node.expression.is_a?(Group) && possessive_group?(node)
+                emit_command(:repeat_possessive, index_for(node), nil)
+              else
+                emit_command(:repeat, index_for(node), nil)
+              end
+            else
+              emit_leaf(node)
+            end
+          end
+
+          def emit_fixed(node)
+            first = nil
+            node.minimum.times do
+              pc = emit(node.expression)
+              first ||= pc
+            end
+            first || emit_command(:nop, index_for(node), nil)
+          end
+
+          def emit_group_quantifier(node)
+            first = emit_fixed(node)
+            if node.maximum.nil?
+              loop_start = @code.length
+              split = @code.length
+              @code << VMInstruction.new(opcode: :split, target: [])
+              body_start = @code.length
+              emit(node.expression)
+              emit_command(:jump, nil, loop_start)
+              exit_pc = @code.length
+              targets = node.mode == :lazy ? [exit_pc, body_start] : [body_start, exit_pc]
+              @code[split] = VMInstruction.new(opcode: :split, target: targets.freeze)
+            else
+              (node.maximum - node.minimum).times do
+                split = @code.length
+                @code << VMInstruction.new(opcode: :split, target: [])
+                body_start = @code.length
+                emit(node.expression)
+                exit_pc = @code.length
+                targets = node.mode == :lazy ? [exit_pc, body_start] : [body_start, exit_pc]
+                @code[split] = VMInstruction.new(opcode: :split, target: targets.freeze)
+              end
+            end
+            first
+          end
+
+          def emit_leaf(node)
+            opcode = case node
+                     when Literal then :consume
+                     when CharacterClass then :consume_class
+                     when Property then :consume_property
+                     when Escape then :consume_escape
+                     when Any then :consume_any
+                     when Anchor then :assert_anchor
+                     when Backreference then :backreference
+                     when Assertion then :assert
+                     when Absence then :absence
+                     else :consume
+                     end
+            emit_command(opcode, index_for(node), nil)
+          end
+
+          def atomic_safe?(node)
+            case node
+            when Literal, Any
+              true
+            when Sequence
+              node.parts.all? { |part| atomic_safe?(part) }
+            else
+              false
+            end
+          end
+
+          def repeatable_group?(node)
+            return false unless node.expression.is_a?(Group)
+            return false if node.lazy_exact
+            return false if node.maximum && node.maximum > 32
+            return false unless node.maximum.nil? || node.maximum >= node.minimum
+            return false unless %i[greedy lazy].include?(node.mode)
+
+            repeatable_body?(node.expression.body) && supported?(node.expression)
+          end
+
+          def zero_width_repeat?(node)
+            return false unless node.expression.is_a?(Group) || node.expression.is_a?(Assertion) ||
+                                node.expression.is_a?(Escape)
+            return false if node.maximum && node.maximum > 32
+            return false if node.maximum.nil? && node.minimum > 1
+            return false if node.maximum && node.maximum < node.minimum
+
+            body = node.expression.is_a?(Group) ? node.expression.body : node.expression
+            body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+            body.is_a?(Anchor) || body.is_a?(Assertion) ||
+              (body.is_a?(Escape) && %i[word_boundary not_word_boundary].include?(body.kind))
+          end
+
+          def possessive_group?(node)
+            return false unless node.expression.is_a?(Group) && node.mode == :possessive
+            return false if node.maximum && node.maximum > 32
+
+            group = node.expression
+            group.capture && literal_body?(group.body) &&
+              !nested_capture?(group.body) && supported?(group)
+          end
+
+          def possessive_group_loop?(node)
+            return false unless node.expression.is_a?(Group) && node.mode == :possessive
+            return false if node.maximum && node.maximum > 32
+            return false unless node.maximum.nil? || node.maximum >= node.minimum
+
+            repeatable_body?(node.expression.body) && supported?(node.expression)
+          end
+
+          def emit_possessive_group_quantifier(node)
+            start = emit_command(:atomic_start, index_for(node), nil)
+            emit_group_quantifier(node)
+            emit_command(:atomic_end, index_for(node), nil)
+            start
+          end
+
+          def nested_capture?(node)
+            return node.capture if node.is_a?(Group)
+            return node.parts.any? { |part| nested_capture?(part) } if node.is_a?(Sequence)
+
+            false
+          end
+
+          def scoped_casefold_safe?(node)
+            case node
+            when Literal
+              unless node.value.ascii_only?
+                folded = node.value.downcase(:fold)
+                return true if full_fold_literal?(node)
+
+                return node.value.each_char.one? && folded == node.value &&
+                       Onibi::UnicodeProperties.reverse_casefold_variants(folded).empty?
+              end
+              return false unless node.value.each_char.one?
+
+              folded = node.value.downcase(:fold)
+              Onibi::UnicodeProperties.reverse_casefold_variants(folded).all? do |variant|
+                variant.ascii_only? && variant.each_char.one?
+              end
+            when Sequence
+              node.parts.all? { |part| scoped_casefold_safe?(part) }
+            when Alternation
+              node.branches.all? { |branch| scoped_casefold_safe?(branch) }
+            when CharacterClass
+              node.casefolds.empty? &&
+                node.folded_characters.all? { |character| character.each_char.count == 1 } &&
+                node.fold_boundaries.empty?
+            when Property
+              fold_invariant_property?(node)
+            when Group, AtomicGroup, OptionGroup
+              scoped_casefold_safe?(node.body)
+            else
+              false
+            end
+          end
+
+          def fold_invariant_property?(node)
+            node.casefolds.empty?
+          rescue RegexpError, KeyError
+            false
+          end
+
+          def literal_body?(node)
+            case node
+            when Literal
+              node.casefold.nil?
+            when Sequence
+              !node.parts.empty? && node.parts.all? { |part| literal_body?(part) }
+            else
+              false
+            end
+          end
+
+          def repeatable_body?(node)
+            case node
+            when Literal, CharacterClass, Any, Property
+              true
+            when Escape
+              !%i[word_boundary not_word_boundary].include?(node.kind)
+            when Sequence
+              !node.parts.empty? && node.parts.all? { |part| repeatable_body?(part) }
+            when Group
+              repeatable_body?(node.body)
+            else
+              false
+            end
+          end
+
+          def flat_character_class_safe?(_node)
+            true
+          end
+
+          def flat_property_safe?(node)
+            normalized = Onibi::UnicodeProperties.normalize_name(node.name.to_s)
+            Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(normalized) ||
+              (normalized.start_with?("In") &&
+               Onibi::UnicodeProperties::BLOCK_LOOKUP.key?(normalized.delete_prefix("In")))
+          rescue RegexpError, KeyError
+            false
+          end
+
+          def ascii_casefold_safe_literal?(node)
+            return true if node.casefold.nil?
+
+            node.value.ascii_only? && node.casefold.to_s.ascii_only? &&
+              node.casefold.length == node.value.length
+          end
+
+          def full_fold_literal?(node)
+            node.value.each_char.count == 1 && node.casefold.to_s.each_char.count > 1
+          end
+
+          def absence_flat_safe?(node)
+            body = unwrap_single_sequence(node.body)
+            if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? && (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
+                             body.expression.is_a?(Property) ||
+                             body.expression.is_a?(Escape) ||
+                             body.expression.is_a?(Any) ||
+                             (body.expression.is_a?(Group) && absence_repeat_atoms(body.expression)))
+              return true
+            end
+
+            node.flat_atoms && flat_atoms_consuming?(node.flat_atoms) && supported?(node.body)
+          end
+
+          def absence_repeat_atoms(node)
+            case node
+            when Literal
+              node.casefold.nil? ? [node] : nil
+            when CharacterClass
+              node.casefolds.empty? ? [node] : nil
+            when Property
+              node.casefolds.empty? ? [node] : nil
+            when Escape
+              if %i[digit non_digit word not_word space not_space horizontal_space
+                    not_horizontal_space linebreak grapheme].include?(node.kind)
+                [node]
+              end
+            when Any
+              [node]
+            when Group
+              node.capture ? nil : absence_repeat_atoms(node.body)
+            when Sequence
+              parts = node.parts.map { |part| absence_repeat_atoms(part) }
+              parts.all? ? parts.flatten : nil
+            end
+          end
+
+          def flat_atoms_consuming?(atoms)
+            variants = atoms.first.is_a?(Array) ? atoms : [atoms]
+            variants.all? do |variant|
+              !variant.empty? && variant.all? do |atom|
+                if atom.is_a?(Escape)
+                  !%i[word_boundary not_word_boundary start_match].include?(atom.kind)
+                else
+                  !atom.is_a?(Anchor)
+                end
+              end
+            end
+          end
+
+          def supported_literal_absence?(node)
+            delimiters = literal_delimiters(node)
+            delimiters && !delimiters.empty?
+          end
+
+          def literal_delimiters(node)
+            case node
+            when Literal
+              return [node.value] if node.casefold.nil? && !node.value.empty?
+            when Sequence
+              value = node.parts.map { |part| literal_delimiters(part) }
+              return [value.flatten.join] if value.all? { |items| items&.one? }
+            when Alternation
+              values = node.branches.map { |branch| literal_delimiters(branch) }
+              return values.flatten if values.all? && values.all? { |items| items&.one? }
+            end
+            nil
+          end
+
+          def assertion_flat_body?(body)
+            body = unwrap_single_sequence(body)
+            return true if [Literal, CharacterClass, Any].include?(body.class)
+            return body.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } if body.is_a?(Sequence)
+            return body.branches.all? { |branch| literal_body?(branch) } if body.is_a?(Alternation)
+
+            false
+          end
+
+          def unwrap_single_sequence(node)
+            node.is_a?(Sequence) && node.parts.one? ? node.parts.first : node
+          end
+
+          def subexpression_body(node)
+            @subexpressions[node.identifier] || @subexpressions[node.identifier.to_s]
+          end
+
+          def emit_command(opcode, operand, target)
+            pc = @code.length
+            @code << VMInstruction.new(opcode: opcode, operand: operand, target: target)
+            pc
+          end
+        end
 
         NODE_TYPES = {
           Onibi::AST::Literal => Literal,
@@ -68,17 +783,61 @@ module Onibi
 
         module_function
 
+        # Lower the semantic tree to an immutable linear instruction table.
+        # The instruction operand is the precomputed semantic node; nested
+        # evaluation remains in the interpreter and never consults the AST.
+        def lower(root, extra: {})
+          instructions = []
+          active = {}.compare_by_identity
+          visit = lambda do |node|
+            return unless TYPES.include?(node.class)
+
+            index = instructions.index { |instruction| instruction && instruction.operand.equal?(node) }
+            return index if index
+
+            index = instructions.length
+            instructions << nil
+            return index if active[node]
+
+            active[node] = true
+            fields = node.each_pair.map { |_field, value| encode(value, visit) }
+            instructions[index] = SemanticInstruction.new(opcode: node.class, operand: fields.freeze)
+            active.delete(node)
+            index
+          end
+          entry = visit.call(root)
+          subexpressions = extra.each_with_object({}) do |(key, node), result|
+            result[key] = node
+            visit.call(node)
+          end
+          SemanticProgram.new(instructions: instructions, entry: entry, subexpressions: subexpressions)
+        end
+
+        def encode(value, visit)
+          return [:__semantic_ref, visit.call(value)].freeze if TYPES.include?(value.class)
+          return [:__semantic_array, *value.map { |item| encode(item, visit) }].freeze if value.is_a?(Array)
+          return [:__semantic_hash, *value.flat_map { |key, item| [key, encode(item, visit)] }].freeze if value.is_a?(Hash)
+
+          value
+        end
+
         def compile(node, casefold: false, parent: nil)
           type = NODE_TYPES.fetch(node.class)
           if node.is_a?(Onibi::AST::Assertion)
-            return type.new(compile_value(node.body, casefold: casefold), node.kind,
-                            Onibi::WidthAnalysis.widths(node.body),
-                            folded_widths(compile_value(node.body, casefold: casefold)))
+            body = compile_value(node.body, casefold: casefold)
+            return type.new(body, node.kind, Onibi::WidthAnalysis.widths(node.body),
+                            folded_widths(body), flat_assertion_atoms(body, capture: true))
+          end
+          if node.is_a?(Onibi::AST::Absence)
+            body = compile_value(node.body, casefold: casefold)
+            return type.new(body, flat_assertion_atoms(body))
           end
           if node.is_a?(Onibi::AST::Property)
             return type.new(node.name, node.negated,
                             Onibi::UnicodeProperties.casefold_sequences(node.name))
           end
+          return type.new(node.identifier, node.named) if node.is_a?(Onibi::AST::Backreference)
+
           if node.is_a?(Onibi::AST::Literal)
             folded = node.value.downcase(:fold)
             segments = node.value.each_char.map do |character|
@@ -169,6 +928,80 @@ module Onibi
             folded_widths(node.expression).map { |width| width * node.minimum }
           else
             []
+          end
+        end
+
+        def flat_assertion_atoms(node, capture: false)
+          case node
+          when Literal, CharacterClass, Property, Any, Backreference
+            [node].freeze
+          when Anchor
+            [node].freeze
+          when Escape
+            return nil unless %i[digit non_digit word not_word space not_space
+                                 horizontal_space not_horizontal_space linebreak
+                                 word_boundary not_word_boundary start_match grapheme].include?(node.kind)
+
+            [node].freeze
+          when Assertion
+            return nil unless capture && node.flat_atoms
+
+            [AssertionAtom.new(node.kind, node.widths, node.flat_atoms)].freeze
+          when Conditional
+            return nil unless capture
+
+            yes_atoms = flat_assertion_atoms(node.yes_branch, capture: capture)
+            no_atoms = flat_assertion_atoms(node.no_branch, capture: capture)
+            return nil unless yes_atoms && no_atoms
+
+            [ConditionalAtom.new(node.condition, yes_atoms, no_atoms)].freeze
+          when Sequence
+            return [] if node.parts.empty?
+
+            atoms = node.parts.map { |part| flat_assertion_atoms(part, capture: capture) }
+            return nil unless atoms.all?
+
+            variants = atoms.map do |value|
+              value.is_a?(Array) && value.first.is_a?(Array) ? value : [value]
+            end
+            combined = variants.first.product(*variants.drop(1)).map(&:flatten)
+            combined.length == 1 ? combined.first.freeze : combined.freeze
+          when Alternation
+            variants = node.branches.map { |branch| flat_assertion_atoms(branch, capture: capture) }
+            return nil unless variants.all?
+
+            variants.freeze
+          when Quantifier
+            if node.kind == :+ && node.expression.is_a?(Quantifier) &&
+               node.expression.kind == :bounded &&
+               node.expression.minimum == node.expression.maximum
+              return flat_assertion_atoms(node.expression, capture: capture)
+            end
+
+            atoms = flat_assertion_atoms(node.expression, capture: capture)
+            return nil unless atoms
+
+            return RepeatAtom.new(atoms.freeze, node.minimum, node.maximum, node.mode) if node.maximum.nil? && capture
+            return nil if node.maximum.nil?
+            return nil if node.maximum > 32
+
+            if node.minimum == node.maximum
+              Array.new(node.minimum) { atoms }.flatten.freeze
+            else
+              counts = (node.minimum..node.maximum).to_a
+              counts.reverse! unless node.mode == :lazy
+              counts.map { |count| Array.new(count) { atoms }.flatten }.freeze
+            end
+          when Group
+            if node.capture && capture
+              atoms = flat_assertion_atoms(node.body, capture: capture)
+              return nil unless atoms
+
+              return CaptureAtom.new(node.number, node.name, atoms.freeze)
+            end
+            return nil if node.capture
+
+            flat_assertion_atoms(node.body, capture: capture)
           end
         end
 
@@ -331,6 +1164,22 @@ module Onibi
           end
         end
 
+        # ASCII regular operands are fully represented by DFA labels. Keep
+        # them out of the semantic evaluator and execute the flat automaton
+        # stream directly.
+        def ascii_automaton_only?(node)
+          case node
+          when Literal
+            node.value.ascii_only?
+          when Sequence
+            node.parts.all? { |part| ascii_automaton_only?(part) }
+          when Alternation
+            node.branches.all? { |branch| ascii_automaton_only?(branch) }
+          else
+            false
+          end
+        end
+
         # MatchData needs byte offsets when every literal is non-ASCII.
         # Keep this fact in the semantic bytecode, so the interpreter does
         # not need to inspect compiler AST nodes at runtime.
@@ -386,9 +1235,11 @@ module Onibi
         def initialize(opcode:, operand: nil) = super.freeze
       end
 
-      Program = Struct.new(:instructions, :entry, :automaton, :flags, keyword_init: true) do
-        def initialize(instructions:, entry: 0, automaton: nil, flags: {})
-          super(instructions: instructions.freeze, entry: entry, automaton: automaton, flags: flags.freeze)
+      Program = Struct.new(:instructions, :entry, :automaton, :flags, :tagged_automaton,
+                           keyword_init: true) do
+        def initialize(instructions:, entry: 0, automaton: nil, flags: {}, tagged_automaton: nil)
+          super(instructions: instructions.freeze, entry: entry, automaton: automaton,
+                flags: flags.freeze, tagged_automaton: tagged_automaton)
           freeze
         end
 
@@ -404,34 +1255,98 @@ module Onibi
         def execute_with_captures(input, start_position = 0, input_view: nil)
           Onibi::IRGen::YARVIR.execute_with_captures(self, input, start_position, input_view: input_view)
         end
+
+        def tree_free?
+          flat = instructions.find { |instruction| instruction.opcode == :semantic_flat }&.operand
+          return false unless flat
+
+          flat.tree_free? && !contains_ast_payload?(flags)
+        end
+
+        private
+
+        def contains_ast_payload?(value)
+          return value.any? { |item| contains_ast_payload?(item) } if value.is_a?(Array)
+          return value.any? { |key, item| contains_ast_payload?(key) || contains_ast_payload?(item) } if value.is_a?(Hash)
+          return true if value.class.name&.start_with?("Onibi::AST::")
+
+          value.respond_to?(:each_pair) && value.each_pair.any? { |_key, item| contains_ast_payload?(item) }
+        end
       end
       ISeq = Program
 
       module_function
 
-      def generate(automaton, mode: nil, flags: {})
+      def generate(automaton, mode: nil, flags: {}, semantic_root: nil)
         mode ||= automaton.is_a?(Onibi::Automata::DFA) ? :dfa : :nfa
-        return generate_nfa(automaton, flags: flags) if mode == :nfa
+        return generate_nfa(automaton, flags: flags, semantic_root: semantic_root) if mode == :nfa
 
-        generate_dfa(automaton, flags: flags)
+        generate_dfa(automaton, flags: flags, semantic_root: semantic_root)
       end
 
-      def generate_dfa(dfa, flags: {})
+      def generate_dfa(dfa, flags: {}, semantic_root: nil)
         instructions = [Instruction.new(opcode: :start, operand: dfa.start_state.id)]
+        flat_runtime = false
+        # The semantic matcher is part of the instruction stream. It is
+        # placed after `start` so the stream keeps the DFA entry contract.
+        if semantic_root
+          extras = semantic_contains_call?(semantic_root) ? (flags[:subexpressions] || {}) : {}
+          semantic_program = SemanticBytecode.lower(semantic_root, extra: extras)
+          flat = semantic_program.flat_program && flat_vm_safe?(flags, semantic_root)
+          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, true)
+          instructions << Instruction.new(opcode: :semantic_match, operand: semantic_program) unless
+            flat_runtime
+          instructions << if flat
+                            Instruction.new(opcode: :semantic_flat, operand: semantic_program.flat_program)
+                          else
+                            Instruction.new(opcode: :semantic_vm, operand: semantic_program.vm_instructions)
+                          end
+        end
+        tagged = if flags[:tagged_vm] && !dfa.is_a?(Onibi::Automata::TaggedDFA)
+                   Onibi::Automata::TaggedDFA.from_tagged_tnfa(
+                     Onibi::Automata::TaggedTNFA.from_tnfa(dfa.tnfa)
+                   )
+                 else
+                   (dfa if dfa.is_a?(Onibi::Automata::TaggedDFA))
+                 end
+        transitions = tagged ? tagged.transitions : dfa.transitions
         dfa.states.each do |state|
-          dfa.transitions.each do |(source, label), target|
+          transitions.each do |key, target|
+            source, label, tags = key.is_a?(Array) && key.length == 3 ? key : [key[0], key[1], []]
             next unless source == state.id
 
-            instructions << Instruction.new(opcode: :match, operand: semantic_label(label))
+            opcode = tags.empty? ? :match : :tagged_match
+            semantic_tags = tags.map do |tag|
+              Onibi::Automata::Tag.new(kind: tag.kind, value: semantic_value(tag.value))
+            end
+            operand = semantic_tags.empty? ? semantic_label(label) : [semantic_label(label), semantic_tags.freeze]
+            instructions << Instruction.new(opcode: opcode, operand: operand)
             instructions << Instruction.new(opcode: :jump, operand: target)
           end
           instructions << Instruction.new(opcode: :accept, operand: state.id) if state.accepting
         end
-        Program.new(instructions: instructions, automaton: semantic_automaton(dfa), flags: flags)
+        tagged_program = tagged && semantic_tagged_automaton(tagged)
+        runtime_flags = flat_runtime ? flags.reject { |key, _value| key == :subexpressions } : flags
+        Program.new(instructions: instructions, automaton: semantic_automaton(dfa), flags: runtime_flags,
+                    tagged_automaton: tagged_program)
       end
 
-      def generate_nfa(tnfa, flags: {})
+      def generate_nfa(tnfa, flags: {}, semantic_root: nil)
         instructions = [Instruction.new(opcode: :nfa_start, operand: tnfa.start_positions)]
+        flat_runtime = false
+        if semantic_root
+          extras = semantic_contains_call?(semantic_root) ? (flags[:subexpressions] || {}) : {}
+          semantic_program = SemanticBytecode.lower(semantic_root, extra: extras)
+          flat = semantic_program.flat_program && flat_vm_safe?(flags, semantic_root)
+          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, true)
+          instructions << Instruction.new(opcode: :semantic_match, operand: semantic_program) unless
+            flat_runtime
+          instructions << if flat
+                            Instruction.new(opcode: :semantic_flat, operand: semantic_program.flat_program)
+                          else
+                            Instruction.new(opcode: :semantic_vm, operand: semantic_program.vm_instructions)
+                          end
+        end
         tnfa.transitions.each do |transition|
           instructions << Instruction.new(
             opcode: :nfa_match,
@@ -440,7 +1355,8 @@ module Onibi
           )
         end
         instructions << Instruction.new(opcode: :nfa_accept, operand: tnfa.accept_positions)
-        Program.new(instructions: instructions, automaton: semantic_automaton(tnfa), flags: flags)
+        runtime_flags = flat_runtime ? flags.reject { |key, _value| key == :subexpressions } : flags
+        Program.new(instructions: instructions, automaton: semantic_automaton(tnfa), flags: runtime_flags)
       end
 
       # Automata are compiler output. Convert their operands before the
@@ -470,6 +1386,401 @@ module Onibi
         copy.instance_variable_set(:@transitions, transitions)
         copy.instance_variable_set(:@tnfa, nil) if automaton.is_a?(Onibi::Automata::DFA)
         copy
+      end
+
+      def semantic_tagged_automaton(tagged)
+        copy = tagged.dup
+        transitions = tagged.transitions.transform_keys do |(source, label, tags)|
+          semantic_tags = Array(tags).map do |tag|
+            Onibi::Automata::Tag.new(kind: tag.kind, value: semantic_value(tag.value))
+          end
+          [source, semantic_label(label), semantic_tags.freeze]
+        end.freeze
+        copy.instance_variable_set(:@transitions, transitions)
+        copy.remove_instance_variable(:@dfa) if copy.instance_variable_defined?(:@dfa)
+        copy
+      end
+
+      def flat_vm_safe?(flags, semantic_root = nil)
+        # Global ignorecase is flat-safe only for one-character ASCII folds.
+        # Multi-character reverse folds keep the compatibility path.
+        # Boundary-sensitive folds also require source-width conversion before
+        # they can enter the character-indexed flat VM.
+        return false if flags[:binary_escape]
+        return false if flags[:ignorecase] &&
+                        !semantic_simple_casefold_safe?(semantic_root) &&
+                        !semantic_ascii_literal_sequence_casefold_safe?(semantic_root) &&
+                        !semantic_full_fold_literal_only?(semantic_root) &&
+                        !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
+                        !semantic_terminal_boundary_fold_safe?(semantic_root) &&
+                        !semantic_boundary_fold_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+        return false if flags[:full_casefold] &&
+                        !semantic_predicate_only?(semantic_root) &&
+                        !semantic_full_fold_literal_only?(semantic_root) &&
+                        !semantic_simple_casefold_safe?(semantic_root) &&
+                        !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
+                        !semantic_terminal_boundary_fold_safe?(semantic_root) &&
+                        !semantic_boundary_fold_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+        return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
+                        !semantic_full_fold_literal_only?(semantic_root)
+        return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
+                        !semantic_terminal_boundary_fold_safe?(semantic_root) &&
+                        !semantic_boundary_fold_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
+                        !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+        return false if semantic_root && semantic_contains_anchor_assertion?(semantic_root) &&
+                        !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+        return false if semantic_root && flags[:encoding] && flags[:encoding] != Encoding::UTF_8 &&
+                        semantic_contains_non_ascii_operand?(semantic_root)
+
+        !semantic_root.nil?
+      end
+
+      def semantic_simple_casefold_safe?(node)
+        case node
+        when SemanticBytecode::Literal
+          value = node.value
+          return false unless value.each_char.count == 1
+
+          folded = value.downcase(:fold)
+          return false if Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
+            [codepoint].pack("U").downcase(:fold) == folded
+          end
+
+          folded.length == value.length &&
+            Onibi::UnicodeProperties.reverse_casefold_variants(folded).to_a.all? do |variant|
+              variant.each_char.count == folded.each_char.count
+            end && folded.each_char.all? do |character|
+                     Onibi::UnicodeProperties.reverse_casefold_variants(character).all? do |variant|
+                       variant.each_char.count == 1
+                     end
+                   end
+        when SemanticBytecode::Sequence
+          node.parts.one? && semantic_simple_casefold_safe?(node.parts.first)
+        when SemanticBytecode::Alternation
+          node.branches.all? { |branch| semantic_simple_casefold_safe?(branch) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
+          semantic_simple_casefold_safe?(node.body)
+        when SemanticBytecode::Quantifier
+          node.maximum && node.maximum <= 1 && semantic_simple_casefold_safe?(node.expression)
+        else
+          false
+        end
+      end
+
+      def semantic_ascii_literal_sequence_casefold_safe?(node)
+        case node
+        when SemanticBytecode::Literal
+          node.value.ascii_only? && node.value.each_char.one? &&
+            (node.casefold.nil? || (node.casefold.ascii_only? && node.casefold.each_char.one?))
+        when SemanticBytecode::Sequence
+          node.parts.all? { |part| semantic_ascii_literal_sequence_casefold_safe?(part) }
+        when SemanticBytecode::Alternation
+          node.branches.all? { |branch| semantic_ascii_literal_sequence_casefold_safe?(branch) }
+        when SemanticBytecode::Group
+          !node.capture && semantic_ascii_literal_sequence_casefold_safe?(node.body)
+        else
+          false
+        end
+      end
+
+      def semantic_contains_full_fold_sequence?(node)
+        case node
+        when SemanticBytecode::Sequence
+          values = node.parts.map { |part| part.value if part.is_a?(SemanticBytecode::Literal) }
+          return true if values.all? && values.join.length > 1 &&
+                         Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
+                           [codepoint].pack("U").downcase(:fold) == values.join.downcase(:fold)
+                         end
+
+          node.parts.any? { |part| semantic_contains_full_fold_sequence?(part) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          semantic_contains_full_fold_sequence?(node.body)
+        when SemanticBytecode::Alternation
+          node.branches.any? { |branch| semantic_contains_full_fold_sequence?(branch) }
+        else
+          false
+        end
+      end
+
+      def semantic_full_fold_literal_only?(node)
+        return semantic_full_fold_literal_only?(node.body) if
+          [SemanticBytecode::Group, SemanticBytecode::OptionGroup].include?(node.class) &&
+          (!node.respond_to?(:capture) || !node.capture)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        literal = node.parts.first
+        return semantic_full_fold_literal_only?(literal) if
+          [SemanticBytecode::Group, SemanticBytecode::OptionGroup].include?(literal.class)
+
+        literal.is_a?(SemanticBytecode::Literal) && !literal.fold_boundary_sensitive &&
+          literal.value.each_char.count == 1 &&
+          literal.casefold.to_s.each_char.count > 1
+      end
+
+      # Predicate operands carry their own compiled table. Their casefold
+      # metadata is not used when ignorecase is off, so full-casefold analysis
+      # does not require the tree evaluator for this restricted form.
+      def semantic_predicate_only?(node)
+        case node
+        when SemanticBytecode::Property, SemanticBytecode::CharacterClass
+          true
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+             SemanticBytecode::AtomicGroup
+          semantic_predicate_only?(node.body)
+        when SemanticBytecode::Sequence
+          node.parts.all? { |part| semantic_predicate_only?(part) }
+        when SemanticBytecode::Quantifier
+          semantic_predicate_only?(node.expression)
+        else
+          false
+        end
+      end
+
+      def semantic_contains_non_ascii_operand?(node)
+        return true if node.is_a?(SemanticBytecode::Property) && node.name.to_s.casecmp?("ASCII") == false
+        return true if node.is_a?(SemanticBytecode::Literal) && !node.value.ascii_only?
+        return true if node.is_a?(SemanticBytecode::CharacterClass) && !node.value.ascii_only?
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_non_ascii_operand?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_non_ascii_operand?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_scoped_ignorecase_non_ascii?(node)
+        return semantic_contains_non_ascii_operand?(node.body) if node.is_a?(SemanticBytecode::OptionGroup) && node.ignorecase
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_scoped_ignorecase_non_ascii?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_scoped_ignorecase_non_ascii?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_scoped_ignorecase_non_ascii_unsafe?(node)
+        if node.is_a?(SemanticBytecode::OptionGroup) && node.ignorecase && semantic_contains_non_ascii_operand?(node.body) &&
+           !semantic_scoped_casefold_simple_safe?(node.body) &&
+           !semantic_full_fold_literal_only?(node.body) &&
+           !semantic_fixed_casefold_sequence_safe?(node.body) &&
+           !semantic_scoped_casefold_predicate_safe?(node.body)
+          return true
+        end
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_scoped_ignorecase_non_ascii_unsafe?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_scoped_ignorecase_non_ascii_unsafe?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_scoped_casefold_simple_safe?(node)
+        case node
+        when SemanticBytecode::Literal
+          folded = node.value.downcase(:fold)
+          return true if node.value.each_char.one? && node.casefold.to_s.each_char.count > 1 &&
+                         !node.fold_boundary_sensitive
+
+          node.value.each_char.one? && folded == node.value &&
+            Onibi::UnicodeProperties.reverse_casefold_variants(folded).empty?
+        when SemanticBytecode::Sequence
+          node.parts.all? { |part| semantic_scoped_casefold_simple_safe?(part) }
+        when SemanticBytecode::Alternation
+          node.branches.all? { |branch| semantic_scoped_casefold_simple_safe?(branch) }
+        when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
+          semantic_scoped_casefold_simple_safe?(node.body)
+        else
+          false
+        end
+      end
+
+      def semantic_fixed_casefold_sequence_safe?(node)
+        case node
+        when SemanticBytecode::Literal
+          folded = node.value.downcase(:fold)
+          node.value.each_char.one? &&
+            ((node.casefold.to_s.each_char.count > 1 && !node.fold_boundary_sensitive) ||
+             (folded == node.value && Onibi::UnicodeProperties.reverse_casefold_variants(folded).empty?))
+        when SemanticBytecode::Sequence
+          node.parts.any? && node.parts.all? { |part| semantic_fixed_casefold_sequence_safe?(part) }
+        when SemanticBytecode::OptionGroup
+          node.ignorecase && semantic_fixed_casefold_sequence_safe?(node.body)
+        else
+          false
+        end
+      end
+
+      def semantic_terminal_boundary_fold_safe?(node)
+        scoped = if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+                   node.parts.first
+                 else
+                   node
+                 end
+        return false unless scoped.is_a?(SemanticBytecode::OptionGroup) && scoped.ignorecase
+
+        body = scoped.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::Literal) && body.fold_boundary_sensitive &&
+          body.value.each_char.one?
+      end
+
+      def semantic_boundary_fold_anchor_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length >= 2
+
+        scoped = node.parts.first
+        return false unless scoped.is_a?(SemanticBytecode::OptionGroup) && scoped.ignorecase
+
+        body = scoped.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Literal) && body.fold_boundary_sensitive
+
+        body.value.each_char.one? && node.parts.drop(1).all? do |part|
+          part.is_a?(SemanticBytecode::Anchor)
+        end
+      end
+
+      def semantic_boundary_fold_start_anchor_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+        return false unless node.parts.first.is_a?(SemanticBytecode::Anchor) &&
+                            node.parts.first.kind == :anchor_absolute_start
+
+        scoped = node.parts.last
+        return false unless scoped.is_a?(SemanticBytecode::OptionGroup) && scoped.ignorecase
+
+        body = scoped.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::Literal) && body.fold_boundary_sensitive &&
+          body.value.each_char.one?
+      end
+
+      def semantic_contains_anchor_assertion?(node)
+        return true if node.is_a?(SemanticBytecode::Assertion) &&
+                       Array(node.flat_atoms).flatten.any? { |atom| atom.is_a?(SemanticBytecode::Anchor) }
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_anchor_assertion?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_anchor_assertion?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_boundary_fold_lookahead_end_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+
+        scoped, assertion = node.parts
+        return false unless scoped.is_a?(SemanticBytecode::OptionGroup) && scoped.ignorecase
+
+        body = scoped.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Literal) && body.fold_boundary_sensitive
+        return false unless assertion.is_a?(SemanticBytecode::Assertion) &&
+                            %i[positive negative].include?(assertion.kind)
+
+        atoms = Array(assertion.flat_atoms).flatten
+        atoms.length == 1 && atoms.first.is_a?(SemanticBytecode::Anchor) &&
+          atoms.first.kind == :anchor_absolute_end && body.value.each_char.one?
+      end
+
+      # A trailing anchor assertion is safe when the assertion follows a
+      # consuming prefix. A leading assertion can change search semantics.
+      def semantic_trailing_anchor_assertion_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length >= 2
+
+        assertion = node.parts.last
+        return false unless assertion.is_a?(SemanticBytecode::Assertion)
+        return false unless %i[positive negative].include?(assertion.kind)
+
+        atoms = Array(assertion.flat_atoms).flatten
+        return false unless atoms.length == 1 && atoms.first.is_a?(SemanticBytecode::Anchor)
+        return false unless %i[anchor_absolute_end anchor_absolute_start].include?(atoms.first.kind)
+
+        prefix = node.parts[0...-1]
+        prefix.none? { |part| semantic_contains_anchor_assertion?(part) } &&
+          prefix.all? { |part| semantic_consuming_operand?(part) }
+      end
+
+      def semantic_consuming_operand?(node)
+        case node
+        when SemanticBytecode::Literal, SemanticBytecode::CharacterClass,
+             SemanticBytecode::Property, SemanticBytecode::Any,
+             SemanticBytecode::Escape, SemanticBytecode::Backreference
+          true
+        when SemanticBytecode::Group, SemanticBytecode::AtomicGroup
+          !node.capture && semantic_consuming_operand?(node.body)
+        when SemanticBytecode::OptionGroup
+          semantic_consuming_operand?(node.body)
+        when SemanticBytecode::Sequence
+          node.parts.all? { |part| semantic_consuming_operand?(part) }
+        when SemanticBytecode::Alternation
+          node.branches.all? { |branch| semantic_consuming_operand?(branch) }
+        when SemanticBytecode::Quantifier
+          node.minimum.positive? && semantic_consuming_operand?(node.expression)
+        else
+          false
+        end
+      end
+
+      def semantic_scoped_casefold_predicate_safe?(node)
+        case node
+        when SemanticBytecode::CharacterClass
+          node.casefolds.empty? &&
+            node.folded_characters.all? { |character| character.each_char.count == 1 } &&
+            node.fold_boundaries.empty?
+        when SemanticBytecode::Property
+          fold_invariant_property?(node)
+        when SemanticBytecode::Sequence
+          node.parts.all? { |part| semantic_scoped_casefold_predicate_safe?(part) }
+        when SemanticBytecode::OptionGroup, SemanticBytecode::Group, SemanticBytecode::AtomicGroup
+          semantic_scoped_casefold_predicate_safe?(node.body)
+        else
+          false
+        end
+      end
+
+      def fold_invariant_property?(node)
+        node.casefolds.empty?
+      rescue RegexpError, KeyError
+        false
+      end
+
+      def semantic_contains_call?(node)
+        return true if node.is_a?(SemanticBytecode::SubexpressionCall)
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_call?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_call?(value)
+          else
+            false
+          end
+        end
       end
 
       def semantic_label(label)

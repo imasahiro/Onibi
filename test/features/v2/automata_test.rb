@@ -3,6 +3,23 @@
 require "test_helper"
 
 class V2AutomataTest < Minitest::Test
+  def test_tagged_tnfa_retains_operation_effect_tags
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("(a)")).graph
+    tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(cfg)
+    tagged = Onibi::Automata::TaggedTNFA.from_tnfa(tnfa)
+
+    assert(tagged.transitions.any? { |edge| edge.tags.any? { |tag| tag.kind == :capture } })
+  end
+
+  def test_tagged_dfa_retains_transition_tags
+    cfg = Onibi::Compiler.compile(Onibi::Parser.parse("(a)")).graph
+    tagged = Onibi::Automata::TaggedDFA.from_tagged_tnfa(
+      Onibi::Automata::TaggedTNFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
+    )
+
+    assert(tagged.transitions.keys.any? { |key| key.length == 3 && key.last.any? })
+  end
+
   def test_literal_cfg_becomes_one_tnfa_position_and_accepting_dfa_state
     literal = Onibi::AST::Literal.new("a")
     tnfa, dfa = automata_for(literal)

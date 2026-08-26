@@ -29,7 +29,12 @@ The parser owns syntax, option scopes, capture numbering, and source errors.
 The compiler lowers AST nodes to CFG blocks and operations. Optimization passes
 transform CFG to CFG and preserve ordered control semantics. Automata lowering
 maps CFG facts to position-based TNFA states, then to a full or partial DFA.
-IR generation emits immutable instructions for the dedicated Onibi VM.
+IR generation emits immutable automaton instructions and a linear semantic
+instruction table. The automaton stream contains one `semantic_match` entry;
+the interpreter obtains semantic operands from that stream, not from an
+execution-only AST side channel.
+
+The target instruction contract is defined in [`flat-vm-design.md`](flat-vm-design.md).
 
 ## Interfaces
 

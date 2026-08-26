@@ -9,7 +9,7 @@ class InterpreterTest < Minitest::Test
     assert_equal %i[match_literal match_class match_escape match_property match_any
                     match_assertion test_anchor match_absence match_group match_quantifier
                     match_atomic_group match_backreference match_conditional
-                    match_subexpression_call match_option_group],
+                    match_subexpression_call semantic_match match_option_group],
                  Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).keys
   end
 
@@ -54,6 +54,24 @@ class InterpreterTest < Minitest::Test
     assert_equal :no_match, policy.classify(literal, "x")
   end
 
+  def test_literal_exposes_source_and_folded_character_widths
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode.compile(Onibi::AST::Literal.new("ᾀ"))
+
+    assert_equal 1, literal.source_width
+    assert_equal 2, literal.folded_width
+  end
+
+  def test_casefold_lengths_accepts_literal_width_metadata
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode.compile(Onibi::AST::Literal.new("ᾀ"))
+    executor = Onibi::Interpreter::Executor.new(Onibi::Regexp.new("a").send(:bytecode_program))
+    characters = Onibi::InputView.new("ἀι").characters
+
+    assert_equal [2], executor.send(:casefold_lengths, literal.value, characters, 0,
+                                    folded: literal.casefold,
+                                    source_width: literal.source_width,
+                                    folded_width: literal.folded_width)
+  end
+
   def test_execution_frame_contains_scope_checkpoint_fields
     frame = Onibi::Interpreter::ExecutionFrame.new(
       kind: :absence,
@@ -71,6 +89,57 @@ class InterpreterTest < Minitest::Test
     assert_equal 3, frame.scope_end
     assert_equal 0, frame.position
     assert_equal [[0, [[1, {}]]]], frame.checkpoints
+  end
+
+  def test_execution_state_exposes_explicit_vm_call_and_backtrack_records
+    state = Onibi::ExecutionState.new(cursor: 3)
+    call = state.push_call(7)
+    point = state.push_backtrack_point(11)
+
+    assert_equal [7, 3], [call.return_pc, call.cursor]
+    assert_equal [11, 3], [point.pc, point.cursor]
+    assert_same point, state.pop_backtrack_point
+    assert_same call, state.pop_call
+  end
+
+  def test_execution_state_resumes_backtrack_as_semantic_frame
+    state = Onibi::ExecutionState.new
+    point = state.push_backtrack_point(
+      11, cursor: 3, captures: { 1 => [1, 2] }, flags: { ignorecase: true }
+    )
+
+    assert_same point, state.resume_backtrack
+    frame = state.pop_semantic_frame
+    assert_equal [11, 3], [frame.pc, frame.cursor]
+    assert_equal({ 1 => [1, 2] }, frame.captures)
+    assert_equal({ ignorecase: true }, frame.flags)
+    assert_nil state.resume_backtrack
+  end
+
+  def test_flat_vm_does_not_enter_tree_evaluator
+    program = Onibi::Regexp.new("(a|b)c").send(:bytecode_program)
+    flat = program.instructions.find { |instruction| instruction.opcode == :semantic_flat }
+    assert flat
+
+    executor = Onibi::Interpreter::Executor.new(program)
+    assert_nil executor.instance_variable_get(:@semantic_entry)
+    assert_nil executor.instance_variable_get(:@semantic_program)
+    assert_instance_of Onibi::Interpreter::FlatExecutor, executor
+    refute executor.respond_to?(:tree_results)
+    assert_equal [0, 2], executor.match("ac")
+  end
+
+  def test_flat_assertion_and_absence_do_not_enter_tree_evaluator
+    [
+      ["(?=a[0-9])a[0-9]", "a7"],
+      ["((?~[a-z]))", "12a"]
+    ].each do |pattern, input|
+      program = Onibi::Regexp.new(pattern).send(:bytecode_program)
+      assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+      executor = Onibi::Interpreter::Executor.new(program)
+      refute executor.respond_to?(:tree_results)
+      assert executor.match(input)
+    end
   end
 
   def test_interpreter_executes_dfa_start_match_jump_and_accept
@@ -99,14 +168,210 @@ class InterpreterTest < Minitest::Test
     assert_equal({ 1 => [2, 5], "word" => [2, 5] }, result[2])
   end
 
+  def test_flat_vm_never_enters_compatibility_tree_evaluator
+    regexp = Onibi::Regexp.new("(a|b)c")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    assert_equal [0, 2], executor.match("ac")
+  end
+
+  def test_executor_selects_flat_subclass_for_single_character_unicode_fold
+    regexp = Onibi::Regexp.new("(?i:ß)")
+    executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
+
+    assert_instance_of Onibi::Interpreter::FlatExecutor, executor
+    refute_respond_to executor, :tree_results
+    assert_equal [0, 2], executor.match("ss")
+  end
+
+  def test_executor_uses_flat_vm_for_safe_scoped_unicode_casefold
+    regexp = Onibi::Regexp.new("(?i:é)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_vm })
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("É")
+  end
+
+  def test_executor_uses_flat_vm_for_scoped_ascii_predicate
+    regexp = Onibi::Regexp.new("(?i:[0-9])")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("7")
+  end
+
+  def test_executor_uses_flat_vm_for_scoped_ascii_property
+    regexp = Onibi::Regexp.new("(?i:\\p{ASCII})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("Z")
+  end
+
+  def test_executor_uses_flat_vm_for_scoped_ascii_hex_property
+    regexp = Onibi::Regexp.new("(?i:\\p{ASCII_Hex_Digit})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("f")
+  end
+
+  def test_executor_uses_flat_vm_for_ascii_hex_property_aliases
+    %w[XDigit Hex_Digit].each do |property|
+      program = Onibi::Regexp.new("(?i:\\p{#{property}})").send(:bytecode_program)
+
+      assert program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }, property
+      assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("F"), property
+    end
+  end
+
+  def test_executor_uses_flat_vm_for_fold_invariant_digit_property
+    regexp = Onibi::Regexp.new("(?i:\\p{Digit})")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("٤")
+  end
+
+  def test_executor_uses_flat_vm_for_fold_invariant_properties
+    { "Punct" => "!", "Space" => " ", "Blank" => "\t", "Cntrl" => "\u0001" }.each do |property, input|
+      program = Onibi::Regexp.new("(?i:\\p{#{property}})").send(:bytecode_program)
+
+      assert program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }, property
+      assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match(input), property
+    end
+  end
+
+  def test_executor_uses_flat_vm_for_metadata_proven_fold_invariant_property
+    { "White_Space" => "\u2003", "Pattern_Syntax" => "!", "Mark" => "\u0301" }.each do |property, input|
+      program = Onibi::Regexp.new("(?i:\\p{#{property}})").send(:bytecode_program)
+
+      assert program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }, property
+      assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match(input), property
+    end
+  end
+
+  def test_executor_uses_flat_vm_for_fixed_width_unicode_class_fold
+    { "é" => "É", "Α" => "α" }.each do |source, input|
+      program = Onibi::Regexp.new("(?i:[#{source}])").send(:bytecode_program)
+
+      assert program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }, source
+      assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match(input), source
+    end
+  end
+
+  def test_executor_uses_flat_vm_for_terminal_boundary_sensitive_fold
+    program = Onibi::Regexp.new("(?i:ᾀ)").send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 2], Onibi::Interpreter::Executor.new(program).match("ἀι")
+  end
+
+  def test_executor_uses_flat_vm_for_boundary_fold_with_end_anchor
+    regexp = Onibi::Regexp.new("(?i:ᾀ)\\z")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 2], Onibi::Interpreter::Executor.new(program).match("ἀι")
+    assert_nil Onibi::Interpreter::Executor.new(program).match("ᾀ")
+    assert_nil Onibi::Interpreter::Executor.new(program).match("ἀιx")
+  end
+
+  def test_executor_uses_flat_vm_for_boundary_fold_with_start_anchor
+    regexp = Onibi::Regexp.new("\\A(?i:ᾀ)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 2], Onibi::Interpreter::Executor.new(program).match("ἀι")
+    assert_nil Onibi::Interpreter::Executor.new(program).match("xἀι")
+  end
+
+  def test_executor_uses_flat_vm_for_boundary_fold_with_negative_end_lookahead
+    regexp = Onibi::Regexp.new("(?i:ᾀ)(?!\\z)")
+    program = regexp.send(:bytecode_program)
+
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert_equal [0, 2], Onibi::Interpreter::Executor.new(program).match("ἀιx")
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(program).match("ᾀx")
+    assert_nil Onibi::Interpreter::Executor.new(program).match("ἀι")
+    assert_nil Onibi::Interpreter::Executor.new(program).match("ᾀ")
+  end
+
+  def test_executor_uses_flat_vm_for_trailing_anchor_lookahead
+    positive = Onibi::Regexp.new("a(?=\\z)").send(:bytecode_program)
+    negative = Onibi::Regexp.new("a(?!\\z)").send(:bytecode_program)
+
+    [positive, negative].each do |program|
+      assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    end
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(positive).match("a")
+    assert_nil Onibi::Interpreter::Executor.new(positive).match("ax")
+    assert_nil Onibi::Interpreter::Executor.new(negative).match("a")
+    assert_equal [0, 1], Onibi::Interpreter::Executor.new(negative).match("ax")
+  end
+
+  def test_executor_rebuilds_input_view_for_each_input
+    program = Onibi::Regexp.new("(?i:ᾀ)").send(:bytecode_program)
+    executor = Onibi::Interpreter::Executor.new(program)
+
+    assert_equal [0, 1], executor.match("ᾀ")
+    assert_equal [0, 2], executor.match("ἀι")
+  end
+
+  def test_execution_state_has_a_dedicated_absence_frame
+    state = Onibi::ExecutionState.new
+    frame = state.push_absence_frame(
+      resume_pc: 4,
+      body_pc: 7,
+      absent_start: 1,
+      absent_end: 5,
+      probe_position: 1,
+      possible_points: [],
+      body_checkpoints: [],
+      capture_checkpoints: []
+    )
+
+    assert_instance_of Onibi::ExecutionState::AbsenceFrame, frame
+    assert_equal 4, frame.resume_pc
+    assert_equal 7, frame.body_pc
+    assert_equal frame, state.current_frame
+  end
+
+  def test_execution_state_capture_frame_records_span
+    state = Onibi::ExecutionState.new
+    frame = state.start_capture(number: 1, name: "word", start: 2)
+    captures = {}
+
+    assert_instance_of Onibi::ExecutionState::CaptureFrame, frame
+    assert_equal [2, 5], state.commit_capture(captures, frame, finish: 5)
+    assert_equal({ 1 => [2, 5], "word" => [2, 5] }, captures)
+    assert_empty state.capture_frames
+  end
+
+  def test_execution_state_restores_capture_frames_with_semantic_frame
+    state = Onibi::ExecutionState.new
+    state.start_capture(number: 1, start: 3)
+    state.push_semantic_frame(
+      Onibi::ExecutionState::SemanticFrame.new(pc: 2, cursor: 3, captures: {}, flags: {})
+    )
+    state.capture_frames.clear
+
+    state.pop_semantic_frame
+
+    assert_equal 1, state.active_capture_frame(1).number
+    assert_equal 3, state.active_capture_frame(1).start
+  end
+
   def test_bytecode_program_embeds_semantic_operands_without_ast_nodes
     regexp = Onibi::Regexp.new("(?<word>[a-z]+)(?(<word>)!|c)")
     program = regexp.send(:bytecode_program)
 
-    assert program.flags[:semantic_root]
-    assert(program.flags[:subexpressions].values.all? { |body| semantic_node?(body) })
-    assert semantic_node?(program.flags[:semantic_root])
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    refute program.flags.key?(:subexpressions)
     assert(program.instructions.all? { |instruction| semantic_node?(instruction.operand) })
+    assert program.tree_free?
   end
 
   def test_interpreter_executes_each_semantic_operand_kind
@@ -129,12 +394,12 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?~(?:.*(ab|a)))")
     program = regexp.send(:bytecode_program)
     executor = Onibi::Interpreter::Executor.new(program)
-    body = program.flags[:semantic_root].parts.first.body.parts.first.body
+    body = semantic_root(program).parts.first.body.parts.first.body
     characters = "aba".chars
     executor.instance_variable_set(:@characters, characters)
     executor.instance_variable_set(:@steps, 0)
 
-    results = executor.send(:node_results, body, characters, 0, {}, program.flags)
+    results = executor.send(:tree_results, body, characters, 0, {}, program.flags)
 
     assert_equal([1, 0, 1], results.map { |_length, state| state[:__match_alternative_index] })
   end
@@ -239,6 +504,10 @@ class InterpreterTest < Minitest::Test
 
     refute value.class.name.start_with?("Onibi::AST::")
     value.each_pair.all? { |_field, child| semantic_node?(child) }
+  end
+
+  def semantic_root(program)
+    program.instructions.find { |instruction| instruction.opcode == :semantic_match }.operand.entry_node
   end
 
   def dfa_program_for(source)

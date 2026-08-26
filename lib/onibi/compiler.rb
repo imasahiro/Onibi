@@ -8,17 +8,23 @@ module Onibi
     # Build the execution program from compiler output. Runtime objects pass
     # semantic flags and subexpressions; this keeps IR generation out of the
     # public regexp facade.
-    def bytecode_program(ast, options:, encoding:, flags: {})
+    def bytecode_program(ast, options:, encoding:, flags: {}, semantic_root: nil)
       compiled = compile(ast, options: options, encoding: encoding)
       tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
       dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
-      semantic_root = flags[:semantic_root] ||
-                      Onibi::IRGen::YARVIR::SemanticBytecode.compile(
-                        ast, casefold: flags.fetch(:casefold, false)
-                      )
+      semantic_root ||= Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+        ast, casefold: flags.fetch(:casefold, false)
+      )
+      semantic_entry = if !flags[:ignorecase] && !flags[:full_casefold] &&
+                          Onibi::IRGen::YARVIR::SemanticBytecode.ascii_automaton_only?(semantic_root)
+                         nil
+                       else
+                         semantic_root
+                       end
       Onibi::IRGen::YARVIR.generate(
         dfa,
-        flags: flags.merge(semantic_root: semantic_root)
+        flags: flags.merge(tagged_vm: true),
+        semantic_root: semantic_entry
       )
     end
     module_function :bytecode_program
@@ -78,7 +84,11 @@ module Onibi
       end
 
       values = node.each_pair.map { |_field, value| normalize_numeric_value(value, captures) }
-      node.class.new(*values)
+      normalized = node.class.new(*values)
+      if node.is_a?(Onibi::AST::Backreference) && (width = node.instance_variable_get(:@fixed_width))
+        normalized.instance_variable_set(:@fixed_width, width)
+      end
+      normalized
     end
     private_class_method :normalize_numeric_node
 

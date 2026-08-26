@@ -17,6 +17,7 @@ module Onibi
       @tokens = source.is_a?(Array) ? source : Lexer.new(source, options).tokens
       @index = 0
       @group_number = 0
+      @capture_widths = {}
     end
 
     def parse
@@ -58,7 +59,12 @@ module Onibi
       raise RegexpError, "unexpected token #{token.type}" unless builder
 
       consume
-      builder.call(token)
+      node = builder.call(token)
+      if node.is_a?(AST::Backreference)
+        width = @capture_widths[node.identifier]
+        node.instance_variable_set(:@fixed_width, width) if width
+      end
+      node
     end
 
     def parse_group
@@ -79,6 +85,9 @@ module Onibi
       body = parse_alternation
       expect(:close_group)
       name = opening.type == :open_named_group ? opening.value : nil
+      width = node_width(body)
+      @capture_widths[number] = width if capture && width
+      @capture_widths[name] = width if capture && name && width
       AST::Group.new(body, number, capture, name)
     end
 

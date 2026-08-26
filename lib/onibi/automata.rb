@@ -2,6 +2,77 @@
 
 module Onibi
   module Automata
+    Tag = Struct.new(:kind, :value, keyword_init: true) do
+      def initialize(kind:, value: nil)
+        super
+        freeze
+      end
+    end
+
+    TaggedTransition = Struct.new(:from, :to, :operation, :tags, keyword_init: true) do
+      def initialize(from:, to:, operation:, tags: [])
+        super(from: from, to: to, operation: operation, tags: tags.freeze)
+        freeze
+      end
+    end
+
+    # Tagged automata retain state effects that ordinary DFA determinization
+    # must not merge, such as capture and call boundaries.
+    class TaggedTNFA
+      attr_reader :tnfa, :transitions, :start_positions, :accept_positions
+
+      def self.from_tnfa(tnfa)
+        new(tnfa)
+      end
+
+      def initialize(tnfa)
+        @tnfa = tnfa
+        @transitions = tnfa.transitions.map do |transition|
+          TaggedTransition.new(from: transition.from, to: transition.to,
+                               operation: transition.operation,
+                               tags: tags_for(transition.operation))
+        end.freeze
+        @start_positions = tnfa.start_positions
+        @accept_positions = tnfa.accept_positions
+        freeze
+      end
+
+      private
+
+      def tags_for(operation)
+        operation.effects.filter_map do |effect|
+          Tag.new(kind: effect, value: operation.operand)
+        end
+      end
+    end
+
+    class TaggedDFA
+      attr_reader :dfa, :states, :transitions, :start_state
+
+      def self.from_tagged_tnfa(tagged_tnfa)
+        new(tagged_tnfa)
+      end
+
+      def initialize(tagged_tnfa)
+        @dfa = DFA.from_tnfa(tagged_tnfa.tnfa)
+        @states = @dfa.states
+        @start_state = @dfa.start_state
+        # Keep the source state in the lookup key.  The same operation can
+        # occur in several states, but its capture effects are local to the
+        # edge that carries them.
+        @transitions = @dfa.transitions.transform_keys do |(source, label)|
+          state = @states.fetch(source)
+          sources = state.positions.empty? ? [:start] : state.positions
+          tagged = tagged_tnfa.transitions.select do |edge|
+            sources.include?(edge.from) &&
+              edge.operation.opcode == label[0] && edge.operation.operand == label[1]
+          end
+          [source, label, tagged ? tagged.flat_map(&:tags).freeze : []]
+        end.freeze
+        freeze
+      end
+    end
+
     Position = Struct.new(:id, :operation, keyword_init: true) { def initialize(**kwargs) = super(**kwargs).freeze }
     Transition = Struct.new(:from, :to, :operation, keyword_init: true) { def initialize(**kwargs) = super(**kwargs).freeze }
 

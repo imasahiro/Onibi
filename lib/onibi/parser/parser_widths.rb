@@ -9,6 +9,9 @@ module Onibi
     def widths(node)
       case node
       when AST::Literal then [node.value.chars.length]
+      when AST::Backreference
+        width = node.instance_variable_get(:@fixed_width)
+        width && [width]
       when AST::CharacterClass, AST::Property, AST::Any then [1]
       when AST::Anchor, AST::Assertion then [0]
       when AST::Escape
@@ -24,6 +27,11 @@ module Onibi
         branch_widths.flatten.uniq.sort
       when AST::Group, AST::AtomicGroup, AST::OptionGroup then widths(node.body)
       when AST::Quantifier
+        if node.kind == :+ && node.expression.is_a?(AST::Quantifier) &&
+           node.expression.kind == :bounded &&
+           node.expression.minimum == node.expression.maximum
+          return widths(node.expression)
+        end
         return unless node.kind == :bounded && node.minimum == node.maximum
 
         widths(node.expression)&.map { |width| width * node.minimum }
@@ -118,6 +126,11 @@ module Onibi
     end
 
     def quantifier_width(node)
+      if node.kind == :+ && node.expression.is_a?(AST::Quantifier) &&
+         node.expression.kind == :bounded &&
+         node.expression.minimum == node.expression.maximum
+        return node_width(node.expression)
+      end
       return unless node.kind == :bounded && node.minimum == node.maximum
 
       body_width = node_width(node.expression)

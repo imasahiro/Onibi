@@ -935,8 +935,12 @@ module Onibi
                   linebreak_escape: analysis_source.include?("\\R"),
                   nullable: minimum_match_width(@ast).zero?,
                   literal_only: !literal_value(@ast).nil?,
-                  semantic_root: semantic_root }
-        Onibi::Compiler.bytecode_program(@ast, options: @options, encoding: @source.encoding, flags: flags)
+                  retain_semantic_tree: false }
+        Onibi::Compiler.bytecode_program(
+          @ast, options: @options, encoding: @source.encoding,
+                flags: flags,
+                semantic_root: semantic_root
+        )
       end
     end
 
@@ -1188,4 +1192,5 @@ require_relative "onibi/optimization"
 require_relative "onibi/compiler"
 require_relative "onibi/automata"
 require_relative "onibi/irgen"
+require_relative "onibi/semantic_tree_evaluator"
 require_relative "onibi/interpreter"

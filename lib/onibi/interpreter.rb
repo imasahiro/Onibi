@@ -173,6 +173,12 @@ module Onibi
           stack_transition: :push_results, local_transition: :call_and_merge,
           cursor_transition: :advance_by_result, control: :continue, failure: :reject
         },
+        semantic_match: {
+          signature: "semantic_match(program)", operand: :semantic_program,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
         match_option_group: {
           signature: "match_option_group(option_group)", operand: :option_group,
           input: { operand: :read, characters: :read, flags: :read }.freeze,
@@ -289,16 +295,44 @@ module Onibi
     end
 
     class Executor
+      class << self
+        def new(program, input_view: nil)
+          return super unless self == Executor
+
+          flat = program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }
+          (flat ? FlatExecutor : CompatibilityExecutor).new(program, input_view: input_view)
+        end
+      end
+
       def initialize(program, input_view: nil)
         @program = program
-        @automaton = program.automaton
+        # Tagged automata are the execution source when the compiler emits
+        # tagged VM code. Plain programs keep the compact DFA path.
+        @automaton = program.tagged_automaton || program.automaton
+        @tagged_vm = !program.tagged_automaton.nil?
+        # Semantic matching is an instruction, not a side channel in flags.
+        # Programs produced by the current generator carry this operand.
+        @flat_program = program.instructions.find { |instruction| instruction.opcode == :semantic_flat }&.operand
+        semantic_program = program.instructions.find { |instruction| instruction.opcode == :semantic_match }&.operand
+        @semantic_program = semantic_program unless @flat_program
+        @semantic_commands = if @flat_program
+                               []
+                             else
+                               program.instructions.find { |instruction| instruction.opcode == :semantic_vm }&.operand || []
+                             end
+        # A flat program owns its complete control flow.  Do not materialize
+        # or retain the semantic tree on this execution path.
+        @semantic_entry = semantic_program&.entry_node unless @flat_program
         @automaton_mode = case program.instructions.first&.opcode
                           when :start then :dfa
                           when :nfa_start then :nfa
                           end
-        @subexpressions = program.flags[:subexpressions] || {}
-        @retry_shifted_absence = shifted_absence_suffix?(program.flags[:semantic_root])
+        # Flat bytecode contains subexpression bodies as PC targets. Do not
+        # retain the source tree table on that path.
+        @subexpressions = @flat_program ? {} : (program.flags[:subexpressions] || {})
+        @retry_shifted_absence = shifted_absence_suffix?(@semantic_entry)
         @input_view = input_view
+        @external_input_view = !input_view.nil?
         @fold_policy = FoldPolicy.new
         @state = ExecutionState.new
       end
@@ -319,7 +353,11 @@ module Onibi
         input_ascii_only = String.instance_method(:ascii_only?).bind_call(input)
         byte_input = input_encoding == Encoding::ASCII_8BIT ||
                      (@program.flags[:binary_escape] && input_encoding == Encoding::ISO_8859_1)
-        input_view = @input_view || Onibi::InputView.new(input, byte_mode: byte_input)
+        input_view = if @external_input_view
+                       @input_view
+                     else
+                       Onibi::InputView.new(input, byte_mode: byte_input)
+                     end
         characters = input_view.characters
         characters = normalize_runtime_characters(characters, input_encoding)
         @input_view = input_view
@@ -338,8 +376,12 @@ module Onibi
         )
         first.upto(characters.length) do |start|
           @state.cursor = start
-          result = if (root = @program.flags[:semantic_root])
-                     raw_results = node_results(root, characters, start, {}, runtime_flags)
+          result = if @flat_program || @semantic_entry
+                     raw_results = if @flat_program
+                                     execute_flat_semantic_vm(start, characters, {}, runtime_flags)
+                                   else
+                                     execute_compatibility_vm(start, characters, {}, runtime_flags)
+                                   end
                      raw_results.first&.then do |length, captures|
                        next if captures.delete(:__defer_expanded_match)
                        next if expanded_fold_tail_rejected?(captures, characters, start + length)
@@ -390,6 +432,499 @@ module Onibi
         characters.map { |character| character.encode(Encoding::UTF_8) }.freeze
       rescue EncodingError
         characters
+      end
+
+      # Execute the compatibility semantic stream through the tree evaluator.
+      # Flat programs never enter this method.
+      def execute_compatibility_vm(cursor, characters, captures, flags)
+        command = @semantic_commands[@semantic_program.entry]
+        return tree_results(@semantic_entry, characters, cursor, captures, flags) unless command
+
+        case command.opcode
+        when :consume, :consume_class, :consume_property, :consume_escape, :consume_any,
+             :assert_anchor, :capture, :scope_flags, :atomic, :repeat, :assert,
+             :backreference, :conditional, :call, :absence
+          node = @semantic_program.entry_node
+          opcode = semantic_opcode(node)
+          return tree_results(node, characters, cursor, captures, flags) if opcode == :semantic
+
+          transition_results([opcode, node], characters, cursor, captures, flags)
+        else
+          tree_results(@semantic_entry, characters, cursor, captures, flags)
+        end
+      end
+
+      # Execute PC-based semantic commands. The stack stores continuations for
+      # ordered choice. Capture boundaries use the same capture hash as the
+      # compatibility path, so match-data construction stays unchanged.
+      def execute_flat_semantic_vm(cursor, characters, captures, flags)
+        @state.semantic_stack.clear
+        @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                     pc: @flat_program.entry, cursor: cursor, captures: captures.dup, flags: flags
+                                   ))
+        results = []
+        until @state.semantic_stack.empty?
+          frame = @state.pop_semantic_frame
+          pc = frame.pc
+          position = frame.cursor
+          state = frame.captures
+          frame_flags = frame.flags
+          @state.steps += 1
+          next if @state.steps > 2_000_000
+
+          if pc >= @flat_program.instructions.length
+            results << [position - cursor, state]
+            next
+          end
+
+          instruction = @flat_program.instruction_at(pc)
+          next unless instruction
+
+          case instruction.opcode
+          when :accept
+            results << [position - cursor, state]
+          when :call
+            target = @flat_program.call_target(instruction.operand)
+            next unless target
+
+            @state.push_call(pc + 1)
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: target, cursor: position, captures: state,
+                                         flags: frame_flags
+                                       ))
+          when :return
+            call_frame = @state.calls.last
+            return_pc = call_frame&.return_pc
+            next unless return_pc
+
+            @state.pop_call
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: return_pc, cursor: position, captures: state,
+                                         flags: frame_flags
+                                       ))
+          when :split
+            # Keep ordered alternatives in the VM state. The semantic frame
+            # stack executes the first branch; points resume alternatives.
+            instruction.target.drop(1).reverse_each do |target|
+              @state.push_backtrack_point(target, cursor: position,
+                                                  captures: state.dup, flags: frame_flags)
+            end
+            target = instruction.target.first
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: target, cursor: position, captures: state.dup, flags: frame_flags
+                                       ))
+          when :jump
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: instruction.target, cursor: position, captures: state, flags: frame_flags
+                                       ))
+          when :consume, :consume_class, :consume_property, :consume_escape, :consume_any,
+               :assert_anchor
+            node = @flat_program.operand(instruction.operand)
+            semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
+            matches = transition_results(semantic_label, characters, position, state, frame_flags)
+            next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
+              @flat_program.opcode_at(index) != :scope_end
+            end
+            next_instruction = next_pc && @flat_program.instruction_at(next_pc)
+            if node.is_a?(SemanticBytecode::Literal) && node.fold_boundary_sensitive
+              anchor = if next_instruction&.opcode == :assert_anchor
+                         @flat_program.operand(next_instruction.operand)
+                       elsif next_instruction&.opcode == :assert
+                         assertion = @flat_program.operand(next_instruction.operand)
+                         assertion.flat_atoms&.first if assertion.is_a?(SemanticBytecode::Assertion) &&
+                                                        assertion.kind == :positive
+                       end
+              if anchor.is_a?(SemanticBytecode::Anchor) && anchor.kind == :anchor_absolute_end
+                matches = matches.reject { |length, _inner| length == node.source_width }
+              end
+            end
+            matches.reverse_each do |length, inner|
+              next_state = state.merge(inner)
+              if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
+                next_state[:__match_start] = position
+                next_state[:__match_reset] = true
+              end
+              captures_for(semantic_label, position, length, next_state, characters, frame_flags)
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position + length, captures: next_state, flags: frame_flags
+                                         ))
+            end
+            resume_backtrack if matches.empty?
+          when :backreference
+            node = @flat_program.operand(instruction.operand)
+            semantic_label = [:match_backreference, node]
+            matches = transition_results(semantic_label, characters, position, state, frame_flags)
+            matches.reverse_each do |length, inner|
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position + length, captures: state.merge(inner), flags: frame_flags
+                                         ))
+            end
+            resume_backtrack if matches.empty?
+          when :assert
+            assertion = @flat_program.operand(instruction.operand)
+            assertion_states = flat_assertion_capture_matches(assertion, characters, position, state, frame_flags)
+            if assertion_states.any?
+              assertion_states.reverse_each do |assertion_state|
+                @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                             pc: pc + 1, cursor: position,
+                                             captures: assertion_state, flags: frame_flags
+                                           ))
+              end
+            else
+              resume_backtrack
+            end
+          when :conditional
+            conditional = @flat_program.operand(instruction.operand)
+            condition = conditional.condition.is_a?(Array) ? conditional.condition.first : conditional.condition
+            branch = state.key?(condition) && state[condition]
+            target = branch ? instruction.target[0] : instruction.target[1]
+            if target
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: target, cursor: position, captures: state, flags: frame_flags
+                                         ))
+            else
+              resume_backtrack
+            end
+          when :fail
+            # A failed branch has no continuation. The next semantic frame
+            # already contains the rollback snapshot for ordered choice.
+            next
+          when :repeat
+            quantifier = @flat_program.operand(instruction.operand)
+            lengths = quantifier_lengths(quantifier, characters, position, state, frame_flags)
+            if lengths.empty?
+              resume_backtrack
+              next
+            end
+            @state.with_repeat_frame(pc: pc, cursor: position, lengths: lengths.reverse,
+                                     minimum: quantifier.minimum, maximum: quantifier.maximum) do |repeat|
+              lazy_exact_capture_probe = quantifier.lazy_exact && pc.positive? &&
+                                         @flat_program.opcode_at(pc - 1) == :capture_start
+              lazy_probe = if lazy_exact_capture_probe
+                             lengths.reverse.find(&:positive?) || 0
+                           else
+                             0
+                           end
+              repeat.lengths = [0] if lazy_exact_capture_probe
+              while repeat.next_index < repeat.lengths.length
+                length = repeat.lengths[repeat.next_index]
+                repeat.next_index += 1
+                next_state = state.dup
+                label = [:match_quantifier, quantifier]
+                captures_for(label, position, length, next_state, characters, frame_flags)
+                continuation_cursor = position + (length.zero? ? lazy_probe : length)
+                if lazy_exact_capture_probe && length.zero?
+                  next_state[:__match_start] = continuation_cursor
+                  next_state[:__match_reset] = true
+                end
+                @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                             pc: pc + 1, cursor: continuation_cursor, captures: next_state,
+                                             flags: frame_flags
+                                           ))
+              end
+            end
+          when :repeat_zero_width
+            quantifier = @flat_program.operand(instruction.operand)
+            body = quantifier.predicate
+            matched_all = quantifier.minimum.times.all? do
+              matched = if body.is_a?(SemanticBytecode::Assertion)
+                          flat_assertion_match?(body, characters, position, state, frame_flags)
+                        elsif body.is_a?(SemanticBytecode::Anchor)
+                          anchor_length(body, characters, position)
+                        else
+                          transition_results([:match_escape, body], characters, position, state, frame_flags).any?
+                        end
+              matched
+            end
+            next unless matched_all
+
+            next_state = state.dup
+            next_state[quantifier.number] = [position, position] if quantifier.capture
+            next_state[quantifier.name] = [position, position] if quantifier.capture && quantifier.name
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: next_state,
+                                         flags: frame_flags
+                                       ))
+          when :repeat_possessive
+            quantifier = @flat_program.operand(instruction.operand)
+            length = quantifier_lengths(quantifier, characters, position).first
+            next unless length
+
+            next_state = state.dup
+            group = quantifier.expression
+            unit = literal_value(group.body)&.length
+            start = unit&.positive? ? position + length - unit : position
+            next_state[group.number] = [start, position + length]
+            next_state[group.name] = [start, position + length] if group.name
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position + length, captures: next_state,
+                                         flags: frame_flags
+                                       ))
+          when :absence
+            absence = @flat_program.operand(instruction.operand)
+            lengths = @state.with_absence_frame(
+              resume_pc: pc + 1,
+              body_pc: instruction.operand,
+              absent_start: position,
+              absent_end: characters.length,
+              probe_position: position,
+              possible_points: [],
+              body_checkpoints: [],
+              capture_checkpoints: []
+            ) do
+              if absence.is_a?(SemanticBytecode::AbsenceRepeat)
+                flat_quantified_absence_lengths(absence, characters, position, frame_flags)
+              else
+                flat_literal_absence_lengths(absence, characters, position, state, frame_flags)
+              end
+            end
+            unless lengths
+              resume_backtrack
+              next
+            end
+
+            lengths.reverse_each do |length|
+              next_state = state.dup
+              captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
+                absence.is_a?(SemanticBytecode::AbsenceRepeat)
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position + length, captures: next_state,
+                                           flags: frame_flags
+                                         ))
+            end
+          when :scope_start
+            option_group = @flat_program.operand(instruction.operand)
+            saved = state.dup
+            saved[[:__flat_scope, instruction.operand]] = frame_flags
+            scoped = frame_flags.dup
+            scoped[:ignorecase] = option_group.ignorecase unless option_group.ignorecase.nil?
+            scoped[:multiline] = option_group.multiline unless option_group.multiline.nil?
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: saved, flags: scoped
+                                       ))
+          when :scope_end
+            key = [:__flat_scope, instruction.operand]
+            previous = state[key]
+            next_state = state.dup
+            next_state.delete(key)
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: next_state,
+                                         flags: previous || frame_flags
+                                       ))
+          when :atomic_start
+            next_state = state.dup
+            next_state[[:__flat_atomic, instruction.operand]] = [@state.semantic_stack.length,
+                                                                 @state.backtracks.length]
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: next_state,
+                                         flags: frame_flags
+                                       ))
+          when :atomic_end
+            depth, backtrack_depth = Array(state[[:__flat_atomic, instruction.operand]])
+            next_state = state.dup
+            next_state.delete([:__flat_atomic, instruction.operand])
+            @state.semantic_stack.slice!(depth, @state.semantic_stack.length - depth) if depth
+            @state.backtracks.slice!(backtrack_depth, @state.backtracks.length - backtrack_depth) if backtrack_depth
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: next_state,
+                                         flags: frame_flags
+                                       ))
+          when :capture_start
+            next_state = state.dup
+            @state.start_capture(number: instruction.target, start: position)
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: next_state, flags: frame_flags
+                                       ))
+          when :capture_end
+            next_state = state.dup
+            number, name = instruction.target
+            capture_frame = @state.active_capture_frame(number)
+            if capture_frame&.number == number
+              capture_frame.name = name
+              @state.commit_capture(next_state, capture_frame, finish: position)
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position, captures: next_state, flags: frame_flags
+                                         ))
+            end
+          when :nop
+            @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                         pc: pc + 1, cursor: position, captures: state, flags: frame_flags
+                                       ))
+          end
+
+        end
+        @state.backtracks.clear
+        @state.capture_frames.clear
+        results
+      end
+
+      def semantic_opcode(node)
+        case node
+        when SemanticBytecode::Literal then :match_literal
+        when SemanticBytecode::CharacterClass then :match_class
+        when SemanticBytecode::Property then :match_property
+        when SemanticBytecode::Escape then :match_escape
+        when SemanticBytecode::Any then :match_any
+        when SemanticBytecode::Anchor then :test_anchor
+        when SemanticBytecode::Group then :match_group
+        when SemanticBytecode::OptionGroup then :match_option_group
+        when SemanticBytecode::AtomicGroup then :match_atomic_group
+        when SemanticBytecode::Quantifier then :match_quantifier
+        when SemanticBytecode::Assertion then :match_assertion
+        when SemanticBytecode::Backreference then :match_backreference
+        when SemanticBytecode::Conditional then :match_conditional
+        when SemanticBytecode::SubexpressionCall then :match_subexpression_call
+        when SemanticBytecode::Absence then :match_absence
+        else :semantic
+        end
+      end
+
+      def resume_backtrack
+        !@state.resume_backtrack.nil?
+      end
+
+      # Map a flat VM operation to the primitive semantic matcher.
+      # The VM dispatches by instruction kind, while the matcher keeps one
+      # stable transition interface for the compatibility and flat paths.
+      def flat_transition_opcode(opcode, node)
+        case opcode
+        when :consume then :match_literal
+        when :consume_class then :match_class
+        when :consume_property then :match_property
+        when :consume_escape then :match_escape
+        when :consume_any then :match_any
+        when :assert_anchor then :test_anchor
+        else semantic_opcode(node)
+        end
+      end
+
+      # Match a compile-time flat atom list without entering tree_results.
+      # Return nil when the assertion has no flat atom representation.
+      def flat_assertion_match?(assertion, characters, cursor, captures, flags)
+        !flat_assertion_capture_matches(assertion, characters, cursor, captures, flags).empty?
+      end
+
+      def flat_assertion_capture_match(assertion, characters, cursor, captures, flags)
+        flat_assertion_capture_matches(assertion, characters, cursor, captures, flags).first
+      end
+
+      def flat_assertion_capture_matches(assertion, characters, cursor, captures, flags)
+        atoms = assertion.flat_atoms
+        return [] unless atoms
+
+        variants = atoms.first.is_a?(Array) ? atoms : [atoms]
+        lookbehind = %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
+        matched = if lookbehind
+                    Array(assertion.widths).flat_map do |width|
+                      next [] unless width.is_a?(Integer) && width <= cursor
+
+                      flat_assertion_results(variants, characters, cursor - width, captures, flags).filter_map do |length, state|
+                        state if length == width
+                      end
+                    end
+                  else
+                    flat_assertion_results(variants, characters, cursor, captures, flags).map(&:last)
+                  end
+        negative = %i[negative negative_lookahead negative_lookbehind].include?(assertion.kind)
+        if negative
+          matched.empty? ? [captures] : []
+        else
+          matched
+        end
+      end
+
+      def flat_assertion_results(variants, characters, cursor, captures, flags)
+        variants.flat_map do |atoms|
+          Array(atoms).reduce([[0, captures]]) do |partial, atom|
+            partial.flat_map do |consumed, current_captures|
+              position = cursor + consumed
+              case atom
+              when SemanticBytecode::CaptureAtom
+                nested_variants = atom.atoms.first.is_a?(Array) ? atom.atoms : [atom.atoms]
+                nested = flat_assertion_results(nested_variants, characters, position,
+                                                current_captures, flags)
+                nested.map do |length, nested_captures|
+                  updated = nested_captures.dup
+                  span = [position, position + length]
+                  updated[atom.number] = span
+                  updated[atom.name] = span if atom.name
+                  [consumed + length, updated]
+                end
+              when SemanticBytecode::RepeatAtom
+                repeat_variants = atom.atoms.first.is_a?(Array) ? atom.atoms : [atom.atoms]
+                zero_results = flat_assertion_results(repeat_variants, characters, position,
+                                                      current_captures, flags).select { |length, _state| length.zero? }
+                if zero_results.any?
+                  zero_limit = atom.maximum || atom.minimum
+                  zero_limit = [zero_limit, 32].min
+                  zero_state = zero_results.first.last
+                  (atom.minimum..zero_limit).map do |_count|
+                    [consumed, zero_state]
+                  end
+                else
+                  frontier = [[0, current_captures, 0]]
+                  candidates = []
+                  limit = atom.maximum || (characters.length - position)
+                  while frontier.any?
+                    expanded = frontier.flat_map do |total, repeat_captures, count|
+                      next [] if count >= limit
+
+                      flat_assertion_results(repeat_variants, characters, position + total,
+                                             repeat_captures, flags).filter_map do |length, nested_captures|
+                        next if length.zero? || total + length > limit
+
+                        [total + length, nested_captures, count + 1]
+                      end
+                    end
+                    break if expanded.empty?
+
+                    candidates.concat(expanded)
+                    frontier = expanded
+                  end
+                  ordered = candidates.select { |_total, _state, count| count >= atom.minimum }
+                  ordered.sort_by! { |total, _state, _count| atom.mode == :lazy ? total : -total }
+                  ordered = ordered.first(1) if atom.mode == :possessive
+                  ordered.map { |total, repeat_captures, _count| [consumed + total, repeat_captures] }
+                end
+              when SemanticBytecode::AssertionAtom
+                nested = flat_assertion_capture_matches(atom, characters, position,
+                                                        current_captures, flags)
+                nested.map { |nested_captures| [consumed, nested_captures] }
+              when SemanticBytecode::ConditionalAtom
+                condition = atom.condition.is_a?(Array) ? atom.condition.first : atom.condition
+                branch = current_captures.key?(condition) ? atom.yes_atoms : atom.no_atoms
+                nested_variants = branch.first.is_a?(Array) ? branch : [branch]
+                flat_assertion_results(nested_variants, characters, position,
+                                       current_captures, flags).map do |length, nested_captures|
+                  [consumed + length, nested_captures]
+                end
+              else
+                label = [semantic_opcode(atom), atom]
+                transition_lengths(label, characters, position, current_captures, flags).filter_map do |width|
+                  next unless width && width >= 0
+
+                  [consumed + width, current_captures]
+                end
+              end
+            end
+          end
+        end.uniq
+      end
+
+      def flat_assertion_lengths(variants, characters, cursor, captures, flags)
+        variants.flat_map do |atoms|
+          atoms.reduce([0]) do |partial, atom|
+            partial.flat_map do |consumed|
+              position = cursor + consumed
+              label = [semantic_opcode(atom), atom]
+              transition_lengths(label, characters, position, captures, flags).filter_map do |width|
+                next unless width && width >= 0
+
+                consumed + width
+              end
+            end.uniq
+          end
+        end.uniq
       end
 
       def expanded_fold_tail_rejected?(captures, characters, cursor)
@@ -468,49 +1003,56 @@ module Onibi
       # The `case` below is the VM's automaton opcode dispatch.  Semantic
       # operands are dispatched by `transition_results` after this point.
       def walk_bytecode(state, characters, cursor, captures, start, flags)
-        @state.steps += 1
-        return nil if @state.steps > 2_000_000
+        @state.push_vm_frame(ExecutionState::VMFrame.new(
+                               state: state, cursor: cursor, captures: captures, start: start,
+                               edges: nil, edge_index: 0
+                             ))
+        until @state.vm_stack.empty?
+          @state.steps += 1
+          return nil if @state.steps > 2_000_000
 
-        opcode, operand = case @automaton_mode
-                          when :dfa
-                            if accepting?(state)
-                              [:accept, state]
-                            else
-                              [:match, transitions_for(state)]
-                            end
-                          when :nfa
-                            if tnfa_accepting?(state)
-                              [:nfa_accept, state]
-                            else
-                              [:nfa_match, transitions_for_tnfa(state)]
-                            end
-                          end
+          frame = @state.vm_stack.last
+          if frame.edges.nil?
+            if (@automaton_mode == :dfa && accepting?(frame.state)) ||
+               (@automaton_mode == :nfa && tnfa_accepting?(frame.state))
+              return [frame.start, frame.cursor, frame.captures]
+            end
 
-        case opcode
-        when :accept, :nfa_accept
-          return [start, cursor, captures]
-        when :match
-          edges = operand
-        when :nfa_match
-          edges = operand.map do |edge|
-            [[edge.operation.opcode, edge.operation.operand], edge.to]
+            edges = if @automaton_mode == :dfa
+                      transitions_for(frame.state)
+                    elsif @automaton_mode == :nfa
+                      transitions_for_tnfa(frame.state).map do |edge|
+                        [[edge.operation.opcode, edge.operation.operand], edge.to, edge.respond_to?(:tags) ? edge.tags : []]
+                      end
+                    else
+                      []
+                    end
+            frame.edges = edges
           end
-        else
-          return nil
-        end
 
-        edges.each do |label, target|
-          transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
-            next_captures = captures.dup
+          if frame.edge_index >= frame.edges.length
+            @state.pop_vm_frame
+            next
+          end
+
+          label, target, tags = frame.edges[frame.edge_index]
+          frame.edge_index += 1
+          results = transition_results(label, characters, frame.cursor, frame.captures, flags)
+          results.reverse_each do |length, inner_captures|
+            next_captures = frame.captures.dup
             next_captures.merge!(inner_captures)
-            captures_for(label, cursor, length, next_captures, characters, flags)
+            captures_for(label, frame.cursor, length, next_captures, characters, flags)
+            apply_tag_effects(tags, label, frame.cursor, length, next_captures)
             next_start = if label[0] == :match_escape && label[1].kind == :match_reset
-                           cursor
+                           frame.cursor
                          else
-                           start
+                           frame.start
                          end
-            result = walk_bytecode(target, characters, cursor + length, next_captures, next_start, flags)
-            return result if result
+            @state.push_vm_frame(ExecutionState::VMFrame.new(
+                                   state: target, cursor: frame.cursor + length,
+                                   captures: next_captures, start: next_start,
+                                   edges: nil, edge_index: 0
+                                 ))
           end
         end
         nil
@@ -529,14 +1071,14 @@ module Onibi
           [[0, {}]]
         when :match_group
           # group: evaluate the body in the current scope.
-          node_results(operand.body, characters, cursor, captures, flags)
+          tree_results(operand.body, characters, cursor, captures, flags)
         when :match_atomic_group
           # atomic_group: evaluate the body, then commit its first candidate.
-          node_results(operand.body, characters, cursor, captures, flags).first(1)
+          tree_results(operand.body, characters, cursor, captures, flags).first(1)
         when :match_option_group
           # option_group: evaluate the body with scoped flags. The outer
           # flags remain unchanged after this result returns.
-          node_results(operand.body, characters, cursor, captures,
+          tree_results(operand.body, characters, cursor, captures,
                        flags.merge(ignorecase: operand.ignorecase, multiline: operand.multiline))
         when :match_quantifier
           # quantifier: push ordered repetition candidates and captures.
@@ -546,7 +1088,7 @@ module Onibi
           assertion_results(operand, characters, cursor, captures, flags)
         when :match_subexpression_call
           # subexpression_call: invoke the compiled target and merge its state.
-          node_results(operand, characters, cursor, captures, flags)
+          tree_results(operand, characters, cursor, captures, flags)
         when :match_absence
           # absence: probe the bounded complement. Each result carries its
           # length and the frame-restored local state.
@@ -573,7 +1115,7 @@ module Onibi
         # assertion are returned as local state, but the caller advances by 0.
         if %i[positive positive_lookahead].include?(assertion.kind)
           lookahead_captures = captures.merge(__fold_lookahead_operand: true)
-          results = node_results(assertion.body, characters, cursor, lookahead_captures, flags).first(1).map do |_length, inner|
+          results = tree_results(assertion.body, characters, cursor, lookahead_captures, flags).first(1).map do |_length, inner|
             inner = inner.dup
             inner.delete(:__fold_lookahead_operand)
             # Keep a boundary marker when the lookahead consumed a source
@@ -594,7 +1136,7 @@ module Onibi
         end
 
         if %i[negative negative_lookahead].include?(assertion.kind)
-          matched = node_results(assertion.body, characters, cursor, captures, flags).any?
+          matched = tree_results(assertion.body, characters, cursor, captures, flags).any?
           return mark_end_zero_width(matched ? [] : [[0, captures]], characters, cursor, flags)
         end
 
@@ -634,7 +1176,7 @@ module Onibi
         # The loop carries all branch-specific fold metadata into VM state.
         # rubocop:disable Metrics/BlockLength
         widths.select { |width| width <= cursor }.sort.reverse_each do |width|
-          results = node_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
+          results = tree_results(assertion.body, characters, cursor - width, captures, lookbehind_flags)
           matching = results.select { |length, _inner| length == width }
           if flags[:ignorecase] && cursor < characters.length &&
              expanded_lookbehind_source_at_boundary?(assertion.body, characters, cursor)
@@ -887,7 +1429,7 @@ module Onibi
           return quantifier.minimum.zero? && captures[:__lookbehind_overlap_alternation] &&
                  (prior_single_source || repeated_overlap_source) ? [[0, clean]] : []
         end
-        results = node_results(quantifier, characters, cursor, clean, flags)
+        results = tree_results(quantifier, characters, cursor, clean, flags)
         if quantifier.maximum
           overlap = captures[:__lookbehind_overlap].to_i
           remaining = characters.length - cursor
@@ -923,1035 +1465,6 @@ module Onibi
         folded_lookbehind_values(node)
       end
 
-      # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-      def node_results(node, characters, cursor, captures, flags = {})
-        @state.steps += 1
-        return [] if @state.steps > 2_000_000
-
-        # A captured expanded fold that matched its source code point cannot
-        # split before a normal consuming operand. MRI permits the split only
-        # when the next operand is an alternation, whose bytecode carries its
-        # own fold-boundary policy.
-
-        expanded_source = captures[:__expanded_literal_source]
-        grouped_expanded_source = captures[:__group_expanded_literal_source]
-        operand_fold = expanded_fold_operand_value(node)
-        boundary_node = !operand_fold.nil?
-        deferred_group_fold = nil
-        if (expanded_source || grouped_expanded_source) && node.is_a?(SemanticBytecode::Quantifier)
-          captures = captures.dup
-          captures.delete(:__expanded_literal_source)
-          captures.delete(:__expanded_literal_fold)
-          captures.delete(:__expanded_literal_boundary)
-          captures.delete(:__group_expanded_literal_source)
-          captures.delete(:__group_expanded_literal_fold)
-          captures.delete(:__group_expanded_literal_boundary)
-          captures.delete(:__group_expanded_literal_prefix)
-          expanded_source = false
-          grouped_expanded_source = false
-        end
-        expanded_marker_boundary = node.is_a?(SemanticBytecode::Literal) || simple_group_literal_node?(node)
-        if expanded_source && (expanded_marker_boundary || captures[:__expanded_literal_from_class])
-          captures = captures.dup
-          captures.delete(:__expanded_literal_source)
-          captures.delete(:__expanded_literal_from_class)
-          captures[:__group_expanded_literal_source] = true
-          captures[:__group_expanded_literal_fold] ||= captures[:__expanded_literal_fold]
-          captures[:__group_expanded_literal_boundary] ||= captures[:__expanded_literal_boundary]
-          captures[:__group_expanded_literal_value] ||= captures[:__expanded_literal_value]
-          captures.delete(:__expanded_literal_fold)
-          captures.delete(:__expanded_literal_boundary)
-          captures.delete(:__expanded_literal_value)
-          grouped_expanded_source = true
-        end
-        if grouped_expanded_source && node.is_a?(SemanticBytecode::Literal) &&
-           captures[:__group_expanded_literal_fold] == node.value
-          captures = captures.dup
-          captures.delete(:__group_expanded_literal_source)
-          captures.delete(:__group_expanded_literal_fold)
-          captures.delete(:__group_expanded_literal_boundary)
-          captures.delete(:__group_expanded_literal_prefix)
-          grouped_expanded_source = false
-        end
-        if grouped_expanded_source && boundary_node
-          source_fold = captures[:__group_expanded_literal_fold]
-          prefix = captures[:__group_expanded_literal_prefix] || +""
-          combined = prefix + operand_fold.to_s
-          if (captures[:__captured_expanded_fold] || captures[:__expanded_fold]) &&
-             captures[:__fold_alternation_operand] &&
-             source_fold && !source_fold.start_with?(combined)
-            captures = captures.dup
-            captures[:__captured_fold_incompatible] = true
-          end
-          if (captures[:__captured_expanded_fold] || captures[:__expanded_fold]) &&
-             captures[:__fold_alternation_operand] && cursor + 1 >= characters.length &&
-             source_fold&.start_with?(combined) && combined != source_fold
-            return []
-          end
-
-          if source_fold && combined == source_fold
-            if !(captures[:__fold_alternation_operand] &&
-                   captures[:__group_expanded_literal_value] == characters[cursor]) && captures[:__group_expanded_literal_boundary]
-              return []
-            end
-
-            captures = captures.dup
-            captures.delete(:__group_expanded_literal_source)
-            captures.delete(:__group_expanded_literal_fold)
-            captures.delete(:__group_expanded_literal_boundary)
-            captures.delete(:__group_expanded_literal_prefix)
-            captures.delete(:__group_expanded_literal_value)
-            grouped_expanded_source = false
-          end
-
-          if grouped_expanded_source && captures[:__group_expanded_literal_boundary] &&
-             node.is_a?(SemanticBytecode::Literal) && source_fold &&
-             !captures[:__fold_alternation_context] && !captures[:__fold_lookahead_operand] &&
-             (!captures[:__fold_alternation_operand] || cursor + 1 >= characters.length) &&
-             (captures[:__group_expanded_literal_boundary][:kind] != :simple_fold_source ||
-              !captures[:__lookbehind_simple_fold_source]) &&
-             !captures[:__optional_fold_zero] &&
-             !source_fold.start_with?(combined)
-            return []
-          end
-
-          captures = captures.dup unless source_fold && combined == source_fold
-          if grouped_expanded_source && ((node.is_a?(SemanticBytecode::Group) && !node.capture) ||
-             node.is_a?(SemanticBytecode::OptionGroup) || node.is_a?(SemanticBytecode::AtomicGroup)
-                                        )
-            deferred_group_fold = [source_fold, combined,
-                                   captures[:__group_expanded_literal_boundary]]
-            captures.delete(:__group_expanded_literal_source)
-            captures.delete(:__group_expanded_literal_fold)
-            captures.delete(:__group_expanded_literal_boundary)
-            captures.delete(:__group_expanded_literal_prefix)
-          elsif grouped_expanded_source && source_fold&.start_with?(combined)
-            captures[:__group_expanded_literal_prefix] = combined
-          elsif grouped_expanded_source
-            captures.delete(:__group_expanded_literal_source)
-            captures.delete(:__group_expanded_literal_fold)
-            captures.delete(:__group_expanded_literal_boundary)
-            captures.delete(:__group_expanded_literal_prefix)
-          end
-        elsif (expanded_source || grouped_expanded_source) && boundary_node
-          captures = captures.dup
-          captures.delete(:__expanded_literal_source)
-          captures.delete(:__expanded_literal_fold)
-          captures.delete(:__expanded_literal_boundary)
-          captures.delete(:__expanded_literal_from_class)
-          captures.delete(:__group_expanded_literal_source)
-          captures.delete(:__group_expanded_literal_fold)
-          captures.delete(:__group_expanded_literal_boundary)
-          captures.delete(:__group_expanded_literal_prefix)
-          captures.delete(:__group_expanded_literal_value)
-        end
-
-        case node
-        when SemanticBytecode::Sequence
-          return [] if lookahead_variant_barrier?(node, characters, cursor, flags)
-          return [] if expanded_quantifier_anchor_barrier?(node, characters, cursor, flags)
-          if node.parts.each_index.any? do |index|
-               reverse_fold_optional_barrier?(node.parts[index], node.parts[index + 1],
-                                              node.parts[index + 2], characters, cursor, flags)
-             end
-            return []
-          end
-
-          if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
-            value = node.parts.map(&:value).join
-            first_expands = node.parts.first &&
-                            node.parts.first.value.downcase(:fold).length > node.parts.first.value.length
-            has_mark = value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
-            reverse_fold = reverse_casefold_sequence?(value)
-            folded_value = node.parts.map { |part| part.casefold || part.value }.join
-            fold_boundary_sensitive = node.parts.each_cons(2).any? do |left, right|
-              left_literal = left.is_a?(SemanticBytecode::Literal)
-              right_expands = right.is_a?(SemanticBytecode::Literal) &&
-                              (right.casefold || right.value).length > right.value.length
-              left_literal && right_expands &&
-                (left.casefold.nil? || left.casefold.length == left.value.length)
-            end
-            if !value.empty? && !fold_boundary_sensitive && (value.ascii_only? || first_expands ||
-              has_mark || reverse_fold || folded_value != value)
-              folded_length = casefold_lengths(value, characters, cursor,
-                                               folded: folded_value,
-                                               expanded_only: flags[:lookbehind_casefold] &&
-                                                              !flags[:lookbehind_fold_source]).first
-              if folded_length
-                next_captures = captures.dup
-                simple_source = node.parts.length == 1 &&
-                                simple_fold_source_match?(node.parts.first, characters[cursor]) &&
-                                characters[cursor] != folded_value
-                if !flags[:skip_fold_marker] && folded_length == 1 &&
-                   characters[cursor]&.downcase(:fold) == folded_value &&
-                   (folded_value.length > value.length || simple_source)
-                  next_captures[:__expanded_literal_source] = true
-                  next_captures[:__expanded_literal_fold] = folded_value
-                  next_captures[:__expanded_literal_boundary] = node.parts.filter_map do |part|
-                    simple_fold_boundary_for(part, characters[cursor]) || part.fold_boundary
-                  end.first
-                  next_captures[:__expanded_literal_value] = characters[cursor]
-                end
-                return [[folded_length, next_captures]]
-              end
-              return []
-            end
-          end
-
-          class_repetition = flags[:ignorecase] && flags[:casefold_repetition] &&
-                             node.parts.length > 1 &&
-                             node.parts.map { |part| repeated_class_operand(part) }.all? &&
-                             node.parts.none? { |part| repeated_class_operand(part).value.start_with?("^") } &&
-                             node.parts.all? { |part| fold_repetition_class?(repeated_class_operand(part)) } &&
-                             (node.parts.all? { |part| repeated_class_operand(part).casefolds.empty? } ||
-                              node.parts.all? do |part|
-                                operand = repeated_class_operand(part)
-                                operand.casefolds.any? && operand.value.each_char.one?
-                              end)
-          if class_repetition
-            class_lengths = casefold_class_sequence_lengths(
-              node.parts.map { |part| repeated_class_operand(part) }, characters, cursor, flags
-            )
-            return class_lengths.map { |length| [length, captures.dup] } unless class_lengths.empty?
-          end
-
-          parts = node.parts
-          if parts.length == 2 && fold_property_alternation_anchor_expansion?(parts[0], parts[1], characters,
-                                                                              cursor)
-            expanded_flags = flags.merge(property_alternation_anchor: true)
-            first_results = node_results(parts[0], characters, cursor, captures, expanded_flags)
-            maximum = first_results.map(&:first).max
-            return first_results.select { |length, _state| length == maximum }.flat_map do |length, state|
-              node_results(parts[1], characters, cursor + length, state, expanded_flags).map do |tail, inner|
-                [length + tail, inner]
-              end
-            end
-          end
-          if parts.length == 3 && parts[0].is_a?(SemanticBytecode::Anchor) &&
-             parts[0].kind == :anchor_absolute_start &&
-             fold_property_alternation_anchor_expansion?(parts[1], parts[2], characters, cursor)
-            expanded_flags = flags.merge(property_alternation_anchor: true)
-            prefix = node_results(parts[0], characters, cursor, captures, expanded_flags)
-            return prefix.flat_map do |prefix_length, state|
-              first_results = node_results(parts[1], characters, cursor + prefix_length, state, expanded_flags)
-              maximum = first_results.map(&:first).max
-              first_results.select { |length, _inner| length == maximum }.flat_map do |length, inner|
-                node_results(parts[2], characters, cursor + prefix_length + length, inner, expanded_flags).map do |tail, final_state|
-                  [prefix_length + length + tail, final_state]
-                end
-              end
-            end
-          end
-
-          states = [[0, captures]]
-          index = 0
-          while index < parts.length
-            part_index = index
-            part = parts[index]
-            if flags[:ignorecase] && part.is_a?(SemanticBytecode::Literal)
-              # A UTF-8 case fold can consume several source literals, such
-              # as `ss` matching one `ß`. Keep the bytecode nodes intact for
-              # captures, but match one adjacent literal run as one operand.
-              run = [part]
-              index += 1
-              while index < parts.length && parts[index].is_a?(SemanticBytecode::Literal)
-                first_expands = (run.first.casefold || run.first.value).length > run.first.value.length
-                next_literal = parts[index]
-                next_expands = (next_literal.casefold || next_literal.value).length > next_literal.value.length
-                break if !first_expands && next_expands
-
-                run << parts[index]
-                index += 1
-              end
-              run_value = run.map(&:value).join
-              first_expands = (run.first.casefold || run.first.value).length > run.first.value.length
-              has_mark = run_value.each_char.any? { |character| Onibi::UnicodeProperties.mark?(character) }
-              reverse_fold = reverse_casefold_sequence?(run_value)
-              folded_run = run.map { |literal| literal.casefold || literal.value }.join
-              if run.length > 1 &&
-                 (run_value.ascii_only? || first_expands || has_mark || reverse_fold || folded_run != run_value)
-                part = SemanticBytecode::Literal.new(run_value, folded_run == run_value ? nil : folded_run,
-                                                     nil, false)
-              else
-                index = part_index + 1
-              end
-            else
-              index += 1
-            end
-            previous_states = states
-            # rubocop:disable Metrics/BlockLength
-            states = previous_states.flat_map do |consumed, state_captures|
-              fold_marker = state_captures[:__captured_expanded_fold] ||
-                            state_captures[:__expanded_fold] ||
-                            state_captures[:__quantifier_expanded_fold]
-              next [] if captured_fold_literal_tail_rejected?(part, state_captures)
-
-              if part.is_a?(SemanticBytecode::CharacterClass) &&
-                 state_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
-                state_captures = clear_fold_boundary_markers(state_captures)
-              end
-
-              keep_capture_fold = state_captures[:__fold_alternation_operand] ||
-                                  fold_alternation_operand_node?(part) ||
-                                  (part.is_a?(SemanticBytecode::Assertion) && part.kind == :positive)
-              unless keep_capture_fold || !fold_marker
-                state_captures = state_captures.dup
-                state_captures.delete(:__captured_expanded_fold)
-                state_captures.delete(:__captured_expanded_fold_source)
-                state_captures.delete(:__expanded_fold)
-                state_captures.delete(:__quantifier_expanded_fold)
-                state_captures.delete(:__quantifier_expanded_optional)
-                state_captures.delete(:__group_expanded_literal_source)
-                state_captures.delete(:__group_expanded_literal_fold)
-                state_captures.delete(:__group_expanded_literal_boundary)
-                state_captures.delete(:__group_expanded_literal_prefix)
-              end
-              # A match-reset before an absence is a zero-width VM marker.
-              # Do not expose its synthetic start to the absence probe; the
-              # probe must still scan the remaining input. Restore the marker
-              # after the absence consumes its complement.
-              reset_start = (state_captures[:__match_start] if contains_absence_node?(part) && state_captures[:__match_reset])
-              probe_captures = if reset_start
-                                 state_captures.dup.tap { |state| state.delete(:__match_start) }
-                               else
-                                 state_captures
-                               end
-              part_flags = if negated_class_casefold_barrier?(part, parts[index], flags)
-                             flags.merge(negated_class_casefold_barrier: true)
-                           else
-                             flags
-                           end
-              part_cursor = cursor + consumed
-              # A shifted absence carries its internal start and end in VM
-              # state. Execute the next operand at that start, not at the
-              # sequence origin. The reported match still uses the end.
-              if state_captures[:__match_start].is_a?(Integer) &&
-                 state_captures[:__match_end].is_a?(Integer) &&
-                 state_captures[:__match_start] > part_cursor
-                part_cursor = state_captures[:__match_start]
-              end
-              part_flags = part_flags.merge(posix_anchor_expansion: true) if posix_expanded_optional_anchor?(part, parts[index], characters, cursor + consumed)
-              if fold_property_alternation_anchor_expansion?(part, parts[index],
-                                                             characters, cursor + consumed)
-                part_flags = part_flags.merge(property_alternation_anchor: true)
-              end
-              part_results = if state_captures[:__lookbehind_overlap_source] &&
-                                state_captures[:__lookbehind_prior_overlap_source] &&
-                                part.is_a?(SemanticBytecode::Quantifier) &&
-                                part.expression.is_a?(SemanticBytecode::Literal) &&
-                                part.expression.value.length == 1 &&
-                                prior_overlap_exact?(state_captures, part.expression.value)
-                               next_state = state_captures.dup
-                               next_state.delete(:__lookbehind_overlap)
-                               next_state.delete(:__lookbehind_overlap_source)
-                               next_state.delete(:__lookbehind_overlap_values)
-                               next_state.delete(:__lookbehind_overlap_alternation)
-                               next_state.delete(:__lookbehind_overlap_expanded)
-                               next_state.delete(:__lookbehind_direct_tail_reject)
-                               next_state.delete(:__lookbehind_prior_overlap_source)
-                               next_state.delete(:__lookbehind_prior_overlap_values)
-                               node_results(part, characters, cursor + consumed, next_state, part_flags)
-                             elsif state_captures[:__lookbehind_overlap_source] &&
-                                   part.is_a?(SemanticBytecode::Quantifier) &&
-                                   part.expression.is_a?(SemanticBytecode::Literal)
-                               lookbehind_overlap_quantifier_results(
-                                 part, characters, cursor + consumed, state_captures, part_flags
-                               )
-                             elsif state_captures[:__lookbehind_overlap_source] &&
-                                   part.is_a?(SemanticBytecode::CharacterClass) &&
-                                   state_captures[:__lookbehind_overlap].to_i == 1 &&
-                                   class_match?(part, state_captures[:__lookbehind_overlap_source],
-                                                part_flags.merge(ignorecase: true))
-                               [[0, clear_lookbehind_overlap_state(state_captures)]]
-                             elsif state_captures[:__lookbehind_prior_overlap_source] &&
-                                   part.is_a?(SemanticBytecode::Literal) &&
-                                   part.value.length == 1 &&
-                                   prior_overlap_exact?(state_captures, part.value) &&
-                                   casefold_equal?(part.value.each_char.first.to_s,
-                                                   state_captures[:__lookbehind_overlap_source])
-                               next_state = state_captures.dup
-                               next_state.delete(:__lookbehind_overlap)
-                               next_state.delete(:__lookbehind_overlap_source)
-                               next_state.delete(:__lookbehind_overlap_values)
-                               next_state.delete(:__lookbehind_overlap_alternation)
-                               next_state.delete(:__lookbehind_overlap_expanded)
-                               next_state.delete(:__lookbehind_direct_tail_reject)
-                               next_state.delete(:__lookbehind_prior_overlap_source)
-                               next_state.delete(:__lookbehind_prior_overlap_values)
-                               next_state.delete(:__lookbehind_prior_overlap_source)
-                               node_results(part, characters, cursor + consumed, next_state, part_flags)
-                             elsif state_captures[:__lookbehind_overlap_source] && part.is_a?(SemanticBytecode::Literal)
-                               overlap_source = state_captures[:__lookbehind_overlap_source]
-                               overlap_chars = part.value.each_char.to_a
-                               overlap_count = state_captures[:__lookbehind_overlap].to_i
-                               overlap_prefix = overlap_chars.first(overlap_count).join
-                               folded_chars = (part.casefold || part.value).each_char.to_a
-                               overlap_values = state_captures[:__lookbehind_overlap_values] || []
-                               body_matches_source = overlap_values.any? do |value|
-                                 casefold_equal?(value, overlap_source)
-                               end
-                               body_matches_source ||= lookbehind_overlap_suffix?(
-                                 overlap_values, overlap_source, overlap_count
-                               )
-                               expanded_overlap_allowed = (state_captures[:__lookbehind_overlap_expanded] ||
-                                                           state_captures[:__lookbehind_reverse_fold]) &&
-                                                          (index < parts.length - 1 ||
-                                                           part.value.length > 1 ||
-                                                           (part.casefold && part.casefold.length > part.value.length))
-                               if overlap_count.positive? &&
-                                  (!state_captures[:__lookbehind_direct_tail_reject] ||
-                                   (part.casefold && part.casefold.length > part.value.length)) &&
-                                  casefold_equal?(overlap_prefix, overlap_source) &&
-                                  (body_matches_source || expanded_overlap_allowed)
-                                 remainder = overlap_chars.drop(overlap_count).join
-                                 next_state = state_captures.dup
-                                 next_state.delete(:__lookbehind_overlap)
-                                 next_state.delete(:__lookbehind_overlap_source)
-                                 next_state.delete(:__lookbehind_overlap_values)
-                                 next_state.delete(:__lookbehind_overlap_alternation)
-                                 next_state.delete(:__lookbehind_overlap_expanded)
-                                 next_state.delete(:__lookbehind_direct_tail_reject)
-                                 next_state.delete(:__lookbehind_prior_overlap_source)
-                                 next_state.delete(:__lookbehind_prior_overlap_values)
-                                 if remainder.empty?
-                                   [[0, next_state]]
-                                 else
-                                   node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
-                                                characters, cursor + consumed, next_state, part_flags)
-                                 end
-                               elsif overlap_count == 1 &&
-                                     cursor + consumed < characters.length &&
-                                     casefold_equal?(part.value, characters[cursor + consumed])
-                                 next_state = state_captures.dup
-                                 next_state.delete(:__lookbehind_overlap)
-                                 next_state.delete(:__lookbehind_overlap_source)
-                                 next_state.delete(:__lookbehind_overlap_values)
-                                 next_state.delete(:__lookbehind_overlap_alternation)
-                                 next_state.delete(:__lookbehind_overlap_expanded)
-                                 next_state.delete(:__lookbehind_direct_tail_reject)
-                                 next_state.delete(:__lookbehind_prior_overlap_source)
-                                 next_state.delete(:__lookbehind_prior_overlap_values)
-                                 [[0, next_state]]
-                               elsif overlap_count.positive? &&
-                                     (overlap_count <= overlap_source.to_s.downcase(:fold).length ||
-                                      (part.casefold && part.casefold.length > part.value.length)) &&
-                                     overlap_count < folded_chars.length &&
-                                     (part.casefold && part.casefold.length > part.value.length ||
-                                      !state_captures[:__lookbehind_overlap_alternation] ||
-                                      lookbehind_overlap_suffix?(overlap_values, overlap_source, overlap_count))
-                                 remainder = folded_chars.drop(overlap_count).join
-                                 next_state = state_captures.dup
-                                 next_state.delete(:__lookbehind_overlap)
-                                 next_state.delete(:__lookbehind_overlap_source)
-                                 next_state.delete(:__lookbehind_overlap_values)
-                                 next_state.delete(:__lookbehind_overlap_alternation)
-                                 next_state.delete(:__lookbehind_overlap_expanded)
-                                 next_state.delete(:__lookbehind_direct_tail_reject)
-                                 next_state.delete(:__lookbehind_prior_overlap_source)
-                                 next_state.delete(:__lookbehind_prior_overlap_values)
-                                 node_results(SemanticBytecode::Literal.new(remainder, nil, nil, false),
-                                              characters, cursor + consumed, next_state, part_flags)
-                               else
-                                 []
-                               end
-                             else
-                               node_results(part, characters, part_cursor, probe_captures, part_flags)
-                             end
-              original_part_results = part_results
-              optional_order = fold_casefold_optional_order?(part, parts[index], characters,
-                                                             cursor + consumed, flags)
-              optional_order = nil if posix_expanded_optional_anchor?(part, parts[index],
-                                                                      characters, cursor + consumed)
-              case optional_order
-              when :zero_only
-                part_results = part_results.select { |length, _inner| length.zero? }
-              when :single_greedy
-                part_results = part_results.select { |length, _inner| length <= 1 }
-                part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
-              when :greedy
-                part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
-              end
-              if reverse_fold_optional_barrier?(part, parts[index + 1], parts[index + 2],
-                                                characters, cursor + consumed, flags)
-                return []
-              end
-
-              previous_part = part_index.positive? ? parts[part_index - 1] : nil
-              if previous_part.is_a?(SemanticBytecode::Assertion) &&
-                 previous_part.kind == :positive &&
-                 state_captures[:__expanded_literal_source] &&
-                 part.is_a?(SemanticBytecode::Literal) &&
-                 simple_fold_source_match?(part, characters[cursor + consumed])
-                part_results = []
-              end
-              if previous_part.is_a?(SemanticBytecode::Assertion) &&
-                 previous_part.kind == :positive &&
-                 (lookahead_fold = state_captures[:__fold_lookahead_expanded]) &&
-                 (boundary = boundary_operand(part))
-                candidate = if boundary.is_a?(SemanticBytecode::Literal)
-                              boundary
-                            elsif boundary.is_a?(SemanticBytecode::Quantifier) &&
-                                  boundary.expression.is_a?(SemanticBytecode::Literal)
-                              boundary.expression
-                            end
-                candidate_fold = candidate&.value&.downcase(:fold)
-                input_fold = characters[cursor + consumed]&.downcase(:fold)
-                if candidate && ((lookahead_fold.is_a?(String) && candidate_fold == lookahead_fold && input_fold == lookahead_fold) ||
-                                 (lookahead_fold == true && candidate_fold == input_fold && input_fold.length > 1))
-                  part_results = []
-                end
-              end
-              part_results = [] if part.is_a?(SemanticBytecode::Anchor) && state_captures[:__lookbehind_direct_tail_reject]
-              if state_captures[:__expanded_literal_source] &&
-                 state_captures[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source &&
-                 previous_part.is_a?(SemanticBytecode::OptionGroup) &&
-                 part.is_a?(SemanticBytecode::Literal) &&
-                 !state_captures[:__optional_fold_zero] &&
-                 !state_captures[:__lookbehind_simple_fold_source] &&
-                 !state_captures[:__fold_alternation_context] &&
-                 !state_captures[:__match_alternative]
-                part_results = []
-              end
-              part_results = [] if state_captures[:__simple_fold_alternation_source] &&
-                                   ((part.is_a?(SemanticBytecode::Literal) &&
-                                     !simple_fold_source_match?(part, characters[cursor + consumed])) ||
-                                    part.is_a?(SemanticBytecode::Anchor) ||
-                                    part.is_a?(SemanticBytecode::Assertion))
-              part_results = [] if state_captures[:__expanded_fold_alternation_source] &&
-                                   ((part.is_a?(SemanticBytecode::Literal) &&
-                                     !simple_fold_source_match?(part, characters[cursor + consumed])) ||
-                                    part.is_a?(SemanticBytecode::Anchor) ||
-                                    part.is_a?(SemanticBytecode::Assertion))
-              if simple_fold_lookahead_boundary?(part, parts[index], characters,
-                                                 cursor + consumed, flags)
-                part_results = []
-              end
-              if simple_fold_sequence_boundary?(part, parts[index], characters,
-                                                cursor + consumed, flags)
-                part_results = []
-              end
-              boundary_relaxed = state_captures[:__optional_fold_zero] ||
-                                 fold_boundary_relaxed?(previous_part, part, consumed) ||
-                                 fold_boundary_lookahead_relaxed?(previous_part, part,
-                                                                  parts[index], characters,
-                                                                  cursor + consumed) ||
-                                 alternate_anchor_relaxed?(part, parts[index],
-                                                           characters, cursor + consumed,
-                                                           flags) ||
-                                 optional_expanded_quantifier?(part)
-              if !boundary_relaxed &&
-                 multi_fold_literal_boundary?(part, parts[index], characters,
-                                              cursor + consumed, flags)
-                part_results = []
-              end
-              if !boundary_relaxed &&
-                 multi_fold_quantifier_boundary?(part, parts[index], characters,
-                                                 cursor + consumed, flags)
-                part_results = []
-              end
-              if alternate_fold_quantifier_anchor_boundary?(part, parts[index],
-                                                            characters, cursor + consumed,
-                                                            flags)
-                part_results = []
-              end
-              if distinct_expanded_anchor_boundary?(part, parts[index], characters,
-                                                    cursor + consumed,
-                                                    flags) &&
-                 part_results.all? { |length, _inner| length <= 1 }
-                part_results = []
-              end
-              if expanded_fold_prefix_boundary?(part, parts[index], characters,
-                                                cursor + consumed, flags)
-                part_results = []
-              end
-              if reverse_fold_quantifier_anchor_reject?(part, parts[index], characters,
-                                                        cursor + consumed, flags)
-                part_results = []
-              elsif reverse_fold_quantifier_anchor_source_width?(part, parts[index], characters,
-                                                                 cursor + consumed, flags)
-                part_results = part_results.select { |length, _inner| length <= part.minimum }
-              end
-              if split_reverse_fold_quantifier_anchor_boundary?(part_index.positive? && parts[part_index - 1],
-                                                                part, parts[index], characters,
-                                                                cursor + consumed, flags)
-                part_results = []
-              end
-              posix_anchor_mode = posix_anchor_source_width?(part, parts[index], characters, cursor + consumed)
-              if posix_anchor_mode == :source_only
-                limit = part.is_a?(SemanticBytecode::Quantifier) ? part.maximum : 1
-                part_results = part_results.select { |length, _inner| length <= limit }
-              elsif posix_anchor_mode == :expanded_greedy
-                part_results = part_results.sort_by { |length, _inner| -length }
-              end
-              if reverse_fold_literal_anchor_boundary?(part, parts[index], characters,
-                                                       cursor + consumed, flags)
-                part_results = []
-              end
-              if strict_end_anchor?(parts[index]) &&
-                 (anchor_operand = boundary_operand(part))
-                anchor_operand = anchor_operand.parts.last if anchor_operand.is_a?(SemanticBytecode::Sequence)
-                if anchor_operand.is_a?(SemanticBytecode::Literal) &&
-                   !anchor_operand.value.match?(/\p{M}/) &&
-                   anchor_operand.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
-                   Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(anchor_operand.value) &&
-                   characters[cursor + consumed - 1] == anchor_operand.value
-                  part_results = []
-                end
-                if anchor_operand.is_a?(SemanticBytecode::Literal) &&
-                   anchor_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
-                  source = characters[cursor + consumed - 1]
-                  if source && !source.match?(/\p{M}/) &&
-                     Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(source)
-                    part_results = []
-                  end
-                end
-              end
-              if strict_end_anchor?(parts[index]) &&
-                 (anchor_operand = boundary_operand(part)).is_a?(SemanticBytecode::Literal)
-                source = characters[cursor + consumed - 1]
-                if source && !source.match?(/\p{M}/) &&
-                   anchor_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
-                   Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(source)
-                  part_results = []
-                end
-              end
-              if previous_part.is_a?(SemanticBytecode::Assertion) && previous_part.kind == :positive &&
-                 strict_end_anchor?(parts[index]) &&
-                 (lookahead_operand = boundary_operand(part))
-                lookahead_operand = lookahead_operand.parts.last if lookahead_operand.is_a?(SemanticBytecode::Sequence)
-                if lookahead_operand.is_a?(SemanticBytecode::Literal) &&
-                   lookahead_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
-                  source = characters[cursor + consumed]
-                  if source && !source.match?(/\p{M}/) &&
-                     Onibi::UnicodeProperties.reverse_casefold_variants(lookahead_operand.value.downcase(:fold)).include?(source)
-                    part_results = []
-                  end
-                end
-              end
-              if strict_end_anchor?(parts[index]) &&
-                 (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation)
-                source = characters[cursor + consumed - 1]
-                if source && !source.match?(/\p{M}/) &&
-                   alternative.fold_policy&.fetch(:anchor_alternation, nil) == :reject_reverse_variant &&
-                   alternative.branches.any? do |branch|
-                     operand = boundary_operand(branch)
-                     operand.is_a?(SemanticBytecode::Literal) &&
-                     Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
-                   end
-                  part_results = []
-                end
-                if source && !source.match?(/\p{M}/) && alternative.branches.any? do |branch|
-                  operand = boundary_operand(branch)
-                  operand.is_a?(SemanticBytecode::Literal) &&
-                  operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
-                  Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
-                end
-                  part_results = []
-                end
-              end
-              if (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation) &&
-                 parts[index].is_a?(SemanticBytecode::Literal)
-                source = characters[cursor + consumed]
-                if source && !source.match?(/\p{M}/) &&
-                   alternative.branches.any? do |branch|
-                     operand = boundary_operand(branch)
-                     operand.is_a?(SemanticBytecode::Literal) &&
-                     operand.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant &&
-                     Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
-                   end && characters[cursor + consumed + 1] &&
-                   casefold_equal?(parts[index].value, characters[cursor + consumed + 1])
-                  part_results = []
-                end
-              end
-              if reverse_fold_optional_anchor_boundary?(part, parts[index],
-                                                        characters, cursor + consumed, flags)
-                part_results = part_results.select { |length, _inner| length.zero? }
-              end
-              if part.is_a?(SemanticBytecode::OptionGroup) &&
-                 part.body.is_a?(SemanticBytecode::Sequence) && part.body.parts.one? &&
-                 (optional = part.body.parts.first).is_a?(SemanticBytecode::Quantifier) &&
-                 optional.minimum.zero? && optional.maximum == 1 &&
-                 optional.expression.is_a?(SemanticBytecode::Literal) &&
-                 parts[index].is_a?(SemanticBytecode::Literal)
-                source = characters[cursor + consumed]
-                variants = Onibi::UnicodeProperties.reverse_casefold_variants(
-                  optional.expression.value.downcase(:fold)
-                )
-                if source && !source.match?(/\p{M}/) && variants.include?(source) &&
-                   characters[cursor + consumed + 1] &&
-                   casefold_equal?(parts[index].value, characters[cursor + consumed + 1])
-                  part_results = part_results.select { |length, _inner| length.zero? }
-                end
-              end
-              if posix_alternation_anchor_source_width?(part, parts[index],
-                                                        characters, cursor + consumed)
-                part_results = part_results.select { |length, _inner| length <= 1 }
-              end
-              if fold_property_alternation_anchor_expansion?(part, parts[index],
-                                                             characters, cursor + consumed)
-                maximum = part_results.map(&:first).max
-                part_results = part_results.select { |length, _inner| length == maximum }
-              end
-              if alternate_fold_alternation_anchor_boundary?(part, parts[index],
-                                                             characters, cursor + consumed, flags)
-                part_results = []
-              end
-              if alternate_fold_literal_run_anchor_boundary?(part, parts[index],
-                                                             characters, cursor + consumed,
-                                                             flags)
-                part_results = []
-              end
-              if backreference_anchor_boundary?(part, parts[index], state_captures,
-                                                flags)
-                part_results = []
-              end
-              if positive_lookahead_extra_character_relaxed?(part, parts[index],
-                                                             characters, cursor + consumed)
-                part_results = original_part_results
-              end
-              part_results.filter_map do |length, inner|
-                if state_captures[:__zero_absence] &&
-                   state_captures[:__match_start] == state_captures[:__match_end] &&
-                   state_captures[:__match_start].is_a?(Integer) &&
-                   state_captures[:__match_start] > cursor + consumed
-                  next
-                end
-
-                inner = discard_absence_body_captures(part, inner) if part.is_a?(SemanticBytecode::Absence) &&
-                                                                      part_index < parts.length - 1
-                if reset_start
-                  inner = inner.dup
-                  inner[:__match_start] = reset_start
-                  inner[:__match_reset] = true
-                end
-                next_state = if node.parts.length > 1 && inner.key?(:__match_start) && !inner.key?(:__match_prefix)
-                               marked = inner.dup
-                               marked[:__match_prefix] = consumed
-                               marked[:__match_prefix_value] = characters[cursor, consumed].join
-                               marked[:__match_prefix_zero_absence] = state_captures[:__zero_absence]
-                               marked
-                             else
-                               inner
-                             end
-                if part.is_a?(SemanticBytecode::Literal) &&
-                   (state_captures[:__simple_fold_alternation_source] ||
-                    state_captures[:__expanded_fold_alternation_source]) &&
-                   Array((state_captures[:__expanded_literal_boundary] ||
-                         state_captures[:__group_expanded_literal_boundary])&.[](:variants)).include?(
-                           characters[cursor + consumed]
-                         )
-                  next_state = next_state.dup
-                  next_state.delete(:__simple_fold_alternation_source)
-                  next_state.delete(:__expanded_fold_alternation_source)
-                  next_state.delete(:__group_expanded_literal_source)
-                  next_state.delete(:__group_expanded_literal_fold)
-                  next_state.delete(:__group_expanded_literal_boundary)
-                  next_state.delete(:__group_expanded_literal_value)
-                end
-                if part.is_a?(SemanticBytecode::Quantifier) && part.minimum.zero? && length.zero? &&
-                   (state_captures[:__simple_fold_alternation_source] ||
-                    state_captures[:__expanded_fold_alternation_source]) &&
-                   boundary_operand(part.expression).is_a?(SemanticBytecode::Literal) &&
-                   (state_captures[:__expanded_fold_alternation_source] ||
-                    characters[cursor]&.downcase(:fold) ==
-                    boundary_operand(part.expression).value.downcase(:fold))
-                  next_state = next_state.dup
-                  next_state.delete(:__simple_fold_alternation_source)
-                  next_state.delete(:__expanded_fold_alternation_source)
-                end
-                if optional_order == :zero_only && length.zero?
-                  next_state = next_state.dup
-                  next_state[:__optional_fold_zero] = true
-                end
-                [consumed + length, next_state]
-              end
-            end
-            # rubocop:enable Metrics/BlockLength
-            next unless states.empty?
-
-            folded = if previous_states.any? { |_consumed, state| state[:__group_expanded_literal_source] }
-                       []
-                     else
-                       previous_states.flat_map do |consumed, state_captures|
-                         casefold_sequence_results(parts.drop(part_index), characters,
-                                                   cursor + consumed, state_captures, flags).map do |length, inner|
-                           [consumed + length, inner]
-                         end
-                       end
-                     end
-            return folded unless folded.empty?
-
-            return []
-          end
-          states
-        when SemanticBytecode::Conditional
-          # conditional: select one compiled branch from local capture state.
-          conditional_results(node, characters, cursor, captures, flags)
-        when SemanticBytecode::Alternation
-          # alternation: evaluate branches in bytecode order. Each branch
-          # receives a copy of local state and returns ordered candidates.
-          branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
-          branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
-          expanding_alternative = node.branches.any? do |candidate|
-            capture_body_has_expanding_literal?(candidate) ||
-              (branch_fold_literals(candidate).length > 1 &&
-               branch_fold_literals(candidate).any? { |literal| !literal.value.ascii_only? }) ||
-              boundary_literal_operands(candidate).any? do |literal|
-                folded = literal.value.downcase(:fold)
-                variants = Onibi::UnicodeProperties.reverse_casefold_variants(folded)
-                variants.any? &&
-                  (variants - Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)).any? ||
-                  literal.fold_prefix_boundary
-              end
-          end
-          fold_prefix_alternative = node.branches.any? do |candidate|
-            boundary_literal_operands(candidate).any?(&:fold_prefix_boundary)
-          end
-          distinct_alternative = node.branches.map { |candidate| alternation_branch_operand_value(candidate) }.compact.uniq.length > 1
-          multichar_alternative = node.branches.any? { |candidate| capture_body_has_expanding_literal?(candidate) }
-          expanding_alternative ||= node.fold_policy&.fetch(:expanded_branch, false)
-          node.branches.each_with_index.flat_map do |branch, branch_index|
-            branch_captures = captures.merge(branch_marker => true)
-            branch_value = alternation_branch_operand_value(branch)
-            if (captures[:__captured_expanded_fold] || captures[:__expanded_fold]) &&
-               node.operand_context &&
-               branch_value && captures[:__group_expanded_literal_fold] &&
-               !captures[:__group_expanded_literal_fold].start_with?(branch_value) &&
-               branch_value != captures[:__captured_expanded_fold_source]
-              branch_captures[:__captured_fold_incompatible] = true
-            end
-            node_results(branch, characters, cursor, branch_captures, branch_flags).map do |length, state|
-              marked = state.dup
-              marked.delete(branch_marker)
-              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 (state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail && distinct_alternative ||
-                  (expanding_alternative &&
-                   (state[:__expanded_literal_fold] == "s" || state[:__expanded_literal_fold] == "k" && multichar_alternative ||
-                    (fold_prefix_alternative && distinct_alternative)) &&
-                   state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source))
-                marked[:__fold_alternation_context] = true
-              end
-              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 !expanding_alternative &&
-                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
-                marked[:__simple_fold_alternation_source] = true
-              end
-              branch_operand = boundary_operand(branch)
-              if branch_marker == :__fold_alternation_operand &&
-                 branch_operand.is_a?(SemanticBytecode::Literal) &&
-                 branch_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_non_mark_variant &&
-                 characters[cursor] != branch_operand.value &&
-                 characters[cursor] && !characters[cursor].match?(/\p{M}/) &&
-                 characters[cursor].downcase(:fold) == branch_operand.value.downcase(:fold)
-                marked[:__expanded_fold_alternation_source] = true
-              end
-              if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
-                 !distinct_alternative &&
-                 state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
-                marked[:__expanded_fold_alternation_source] = true
-              end
-              marked[:__match_alternative] = true
-              marked[:__match_alternative_index] = branch_index
-              [length, marked]
-            end
-          end
-        when SemanticBytecode::Group
-          # group: evaluate the body in a nested capture scope, then publish
-          # the group's span together with the body result state.
-          with_scope_frame(:group, characters, cursor) do
-            group_results = node_results(node.body, characters, cursor, captures, flags)
-            if flags[:property_alternation_anchor]
-              maximum = group_results.map(&:first).max
-              group_results = group_results.select { |length, _inner| length == maximum }
-            end
-            group_results.map do |length, inner|
-              next_captures = inner.dup
-              if flags[:ignorecase] && node.body.is_a?(SemanticBytecode::Alternation) &&
-                 node.body.fold_policy&.fetch(:expanded_branch, false) &&
-                 next_captures[:__simple_fold_alternation_source]
-                next_captures[:__fold_alternation_context] = true
-              end
-              if deferred_group_fold
-                next_captures[:__group_expanded_literal_source] = true
-                next_captures[:__group_expanded_literal_fold] = deferred_group_fold.first
-                next_captures[:__group_expanded_literal_prefix] = deferred_group_fold[1]
-                next_captures[:__group_expanded_literal_boundary] = deferred_group_fold[2]
-              end
-              expanded_source = next_captures.delete(:__expanded_literal_source)
-              expanded_boundary = next_captures.delete(:__expanded_literal_boundary)
-              if expanded_source
-                next_captures[:__group_expanded_literal_source] = true
-                next_captures[:__group_expanded_literal_fold] ||= characters[cursor]&.downcase(:fold)
-                next_captures[:__group_expanded_literal_boundary] ||= expanded_boundary
-                next_captures[:__group_expanded_literal_value] ||= characters[cursor]
-              end
-              if node.capture && next_captures[:__group_expanded_literal_source] &&
-                 next_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
-                next_captures[:__captured_expanded_fold] = true
-                next_captures[:__captured_expanded_fold_source] = characters[cursor]
-              end
-              if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
-                 characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
-                next_captures[:__group_expanded_literal_source] = true
-                next_captures[:__group_expanded_literal_fold] = characters[cursor].downcase(:fold)
-                next_captures[:__group_expanded_literal_boundary] = fold_boundary_for_node(node.body)
-              end
-              if node.capture
-                next_captures[node.number] = [cursor, cursor + length]
-                next_captures[node.name] = [cursor, cursor + length] if node.name
-                if capture_body_has_class?(node.body)
-                  next_captures[:__class_capture_numbers] = Array(next_captures[:__class_capture_numbers])
-                  next_captures[:__class_capture_numbers] << node.number
-                end
-              end
-              [length, next_captures]
-            end
-          end
-        when SemanticBytecode::Quantifier
-          # quantifier: delegate repeat-frame creation and ordered candidates.
-          with_scope_frame(:quantifier, characters, cursor) do
-            quantifier_results(node, characters, cursor, captures, flags)
-          end
-        when SemanticBytecode::OptionGroup
-          # option_group: replace only the flags declared by the operand;
-          # cursor and capture state are returned by the body.
-          with_scope_frame(:option_group, characters, cursor) do
-            scoped_flags = flags.dup
-            scoped_flags[:ignorecase] = node.ignorecase unless node.ignorecase.nil?
-            scoped_flags[:multiline] = node.multiline unless node.multiline.nil?
-            node_results(node.body, characters, cursor, captures, scoped_flags)
-          end
-        when SemanticBytecode::AtomicGroup
-          # atomic_group: keep the first body candidate and discard later
-          # backtracking candidates.
-          with_scope_frame(:atomic_group, characters, cursor) do
-            node_results(node.body, characters, cursor, captures, flags).first(1)
-          end
-        when SemanticBytecode::Assertion
-          # assertion: evaluate the body without consuming input.
-          with_scope_frame(:assertion, characters, cursor) do
-            assertion_results(node, characters, cursor, captures, flags)
-          end
-        when SemanticBytecode::SubexpressionCall
-          # subexpression_call: call the compiled operand with the same cursor
-          # and local state, subject to the recursion limit.
-          body = @subexpressions[node.identifier]
-          return [] unless body
-          return [] if (@subexpression_depth ||= 0) > 32
-
-          @subexpression_depth += 1
-          results = node_results(body, characters, cursor, captures, flags)
-          @subexpression_depth -= 1
-          results
-        when SemanticBytecode::Absence
-          # absence: evaluate the complement probe and preserve its frame
-          # checkpoint in each result's local state.
-          absence_results(node, characters, cursor, captures, flags).map do |length, state|
-            next [length, state] unless length.zero?
-
-            marked = state.dup
-            marked[:__zero_absence] = true
-            [length, marked]
-          end
-        else
-          if node.is_a?(SemanticBytecode::Escape) && node.kind == :grapheme
-            lengths = grapheme_cluster_lengths(characters, cursor)
-            return lengths.to_a.map { |length| [length, captures.dup] }
-          end
-
-          # Onigmo keeps a reverse-fold lookbehind overlap at the end of the
-          # string as a zero-width match for class and any-character opcodes.
-          # Preserve that VM state until the following opcode consumes it.
-          if captures[:__lookbehind_reverse_fold] && cursor >= characters.length &&
-             (node.is_a?(SemanticBytecode::CharacterClass) || node.is_a?(SemanticBytecode::Property) ||
-              node.is_a?(SemanticBytecode::Any))
-            next_captures = captures.dup
-            next_captures.delete(:__lookbehind_overlap)
-            next_captures.delete(:__lookbehind_reverse_fold)
-            next_captures.delete(:__lookbehind_overlap_source)
-            next_captures.delete(:__lookbehind_overlap_values)
-            next_captures.delete(:__lookbehind_overlap_alternation)
-            next_captures.delete(:__lookbehind_overlap_expanded)
-            next_captures.delete(:__lookbehind_direct_tail_reject)
-            next_captures.delete(:__lookbehind_prior_overlap_source)
-            next_captures.delete(:__lookbehind_prior_overlap_values)
-            return [[0, next_captures]]
-          end
-
-          length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
-          if captures[:__lookbehind_overlap] || captures[:__lookbehind_reverse_fold]
-            return [] unless length
-
-            next_captures = captures.dup
-            next_captures.delete(:__lookbehind_overlap)
-            next_captures.delete(:__lookbehind_reverse_fold)
-            next_captures.delete(:__lookbehind_overlap_source)
-            next_captures.delete(:__lookbehind_overlap_values)
-            next_captures.delete(:__lookbehind_overlap_alternation)
-            next_captures.delete(:__lookbehind_overlap_expanded)
-            next_captures.delete(:__lookbehind_direct_tail_reject)
-            next_captures.delete(:__lookbehind_prior_overlap_source)
-            next_captures.delete(:__lookbehind_prior_overlap_values)
-            captures = next_captures
-          else
-            return [] unless length
-          end
-
-          if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
-            next_captures = captures.dup
-            next_captures[:__match_start] = cursor
-            next_captures[:__match_reset] = true
-            return [[length, next_captures]]
-          end
-
-          if length.zero? && flags[:multiline] && cursor == characters.length &&
-             node.is_a?(SemanticBytecode::Anchor)
-            marked = captures.dup
-            marked[:__end_zero_width] = true
-            return [[length, marked]]
-          end
-
-          if node.is_a?(SemanticBytecode::Property)
-            return property_match_lengths(node, characters, cursor, flags).map do |property_length|
-              [property_length, captures]
-            end
-          end
-
-          if node.is_a?(SemanticBytecode::CharacterClass)
-            return class_match_lengths(node, characters, cursor, flags).map do |class_length|
-              if !flags[:skip_fold_marker] && flags[:ignorecase] && class_length == 1 &&
-                 (fold = class_expanded_fold(node, characters[cursor]))
-                marked = captures.dup
-                marked[:__expanded_literal_source] = true
-                marked[:__expanded_literal_fold] = fold
-                marked[:__expanded_literal_boundary] = node.fold_boundaries[characters[cursor]]
-                marked[:__expanded_literal_from_class] = true
-                marked[:__expanded_literal_value] = characters[cursor]
-                marked[:__expanded_fold] = true if marked[:__expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
-                next [class_length, marked]
-              end
-              [class_length, captures]
-            end
-          end
-
-          if (marked = literal_fold_marker(node, characters, cursor, captures, flags, length))
-            return [[length, marked]]
-          end
-
-          if node.is_a?(SemanticBytecode::Anchor) && strict_end_anchor?(node) &&
-             (captures[:__group_expanded_literal_source] || captures[:__expanded_literal_source])
-            captures = captures.dup
-            captures[:__expanded_fold_anchor] = true
-            if captures[:__expanded_literal_source]
-              captures[:__group_expanded_literal_source] = true
-              captures[:__group_expanded_literal_fold] ||= captures[:__expanded_literal_fold]
-              captures[:__group_expanded_literal_boundary] ||= captures[:__expanded_literal_boundary]
-            end
-          end
-          [[length, captures]]
-        end
-      end
-
       def literal_fold_marker(node, characters, cursor, captures, flags, length)
         return unless node.is_a?(SemanticBytecode::Literal)
         return if flags[:skip_fold_marker] || !flags[:ignorecase] || length != 1
@@ -1970,8 +1483,6 @@ module Onibi
           __expanded_literal_value: character
         )
       end
-
-      # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
       # Onigmo can split one expanded fold across adjacent operands. For
       # example, `[s]s` matches one `ß` under `/i`. The normal cursor model
@@ -1992,7 +1503,7 @@ module Onibi
             suffix = SemanticBytecode::Sequence.new(parts.drop(literal_prefix.length))
             lengths = casefold_lengths(reverse_value, characters, cursor, folded: folded_pattern)
             return lengths.flat_map do |width|
-              node_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
+              tree_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
                 [width + length, inner]
               end
             end
@@ -2050,7 +1561,7 @@ module Onibi
           next [[width, captures.dup]] if prefix.length == parts.length
 
           suffix = SemanticBytecode::Sequence.new(parts.drop(prefix.length))
-          node_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
+          tree_results(suffix, characters, cursor + width, captures, flags).map do |length, inner|
             [width + length, inner]
           end
         end.flatten(1)
@@ -3356,7 +2867,7 @@ module Onibi
         if flags[:ignorecase] && flags[:posix_anchor_expansion] && quantifier.maximum == 1 &&
            quantifier.expression.is_a?(SemanticBytecode::CharacterClass) &&
            quantifier.expression.value.include?(":")
-          expanded = node_results(quantifier.expression, characters, cursor, captures, flags)
+          expanded = tree_results(quantifier.expression, characters, cursor, captures, flags)
           expanded = expanded.select { |length, _state| length > 1 }
           return expanded + [[0, captures]] if expanded.any? && quantifier.minimum.zero?
           return expanded if expanded.any?
@@ -3377,7 +2888,7 @@ module Onibi
                              else
                                flags
                              end
-          exact = node_results(repeated, characters, cursor, captures, repetition_flags)
+          exact = tree_results(repeated, characters, cursor, captures, repetition_flags)
           return exact + [[0, captures]] unless exact.any? { |length, _state| length.zero? }
 
           return exact
@@ -3396,7 +2907,7 @@ module Onibi
                              else
                                flags
                              end
-          return node_results(repeated, characters, cursor, captures, repetition_flags)
+          return tree_results(repeated, characters, cursor, captures, repetition_flags)
         end
 
         return possessive_quantifier_results(quantifier, characters, cursor, captures, flags) if quantifier.mode == :possessive
@@ -3452,7 +2963,7 @@ module Onibi
             repetition_state.delete(:__quantifier_expanded_fold)
             repetition_state.delete(:__quantifier_expanded_optional)
           end
-          node_results(quantifier.expression, characters, cursor + consumed, repetition_state,
+          tree_results(quantifier.expression, characters, cursor + consumed, repetition_state,
                        repetition_flags).each do |length, inner|
             inner = clear_repeated_absence_captures(quantifier.expression, inner)
             expanded_fold = expanded_fold_boundary_state?(inner)
@@ -3613,7 +3124,7 @@ module Onibi
         while count < limit
           next_frontier = frontier.flat_map do |consumed, state_captures|
             zero_results = []
-            nonzero_results = node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
+            nonzero_results = tree_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
               if length.zero?
                 zero_results << [consumed, inner]
                 next
@@ -3650,7 +3161,7 @@ module Onibi
         # contains an anchor. Probe the compiled operand at input end too.
         # This lets a possessive repeat keep its terminal zero-width unit.
         nullable_body = minimum_node_width(quantifier.expression)&.zero? ||
-                        node_results(quantifier.expression, characters, characters.length, captures, flags).any? do |length, _state|
+                        tree_results(quantifier.expression, characters, characters.length, captures, flags).any? do |length, _state|
                           length.zero?
                         end
         limit = quantifier.maximum || [characters.length - cursor + (nullable_body ? 1 : 0), 1].max
@@ -3659,7 +3170,7 @@ module Onibi
         count = 0
         accepted = quantifier.minimum.zero? ? [[0, current]] : []
         while count < limit
-          result = node_results(quantifier.expression, characters, cursor + consumed, current, flags).find do |length, _state|
+          result = tree_results(quantifier.expression, characters, cursor + consumed, current, flags).find do |length, _state|
             length.positive? || count + 1 >= quantifier.minimum
           end
           break unless result
@@ -3691,7 +3202,7 @@ module Onibi
             next
           end
 
-          results = node_results(quantifier.expression, characters, cursor + consumed, state, flags)
+          results = tree_results(quantifier.expression, characters, cursor + consumed, state, flags)
           if results.empty?
             accepted << current if count >= quantifier.minimum
             next
@@ -3728,27 +3239,47 @@ module Onibi
         end
         return false if characters.empty? && node.is_a?(SemanticBytecode::Escape) &&
                         %i[word_boundary not_word_boundary].include?(node.kind)
-        return !node_results(node, characters, cursor, captures, flags).empty? unless
+        return !tree_results(node, characters, cursor, captures, flags).empty? unless
           node.is_a?(SemanticBytecode::Quantifier)
         return true if node.minimum.zero?
         return zero_width_nested_unit_valid?(node.expression, characters, cursor, captures, flags) if
           node.is_a?(SemanticBytecode::Quantifier)
 
-        !node_results(node, characters, cursor, captures, flags).empty?
+        !tree_results(node, characters, cursor, captures, flags).empty?
       end
 
       def transition_lengths(label, characters, cursor, captures, flags = {})
         opcode, operand = label
         return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
-        return grapheme_cluster_lengths(characters, cursor) if opcode == :match_escape && operand.kind == :grapheme
+        return grapheme_cluster_lengths(characters, cursor) || [] if opcode == :match_escape && operand.kind == :grapheme
 
         length = transition_length(label, characters, cursor, flags, captures)
         length ? [length] : []
       end
 
       def transitions_for(state)
-        @automaton.transitions.filter_map do |(source, label), target|
-          [label, target] if source == state
+        @automaton.transitions.filter_map do |key, target|
+          source, label, tags = key
+          [label, target, tags || []] if source == state
+        end
+      end
+
+      # Apply tag effects after a transition succeeds. The operation itself
+      # remains responsible for semantic matching. Tags provide a stable VM
+      # event stream for capture, choice, repeat, assertion, and call edges.
+      def apply_tag_effects(tags, label, cursor, length, captures)
+        Array(tags).each do |tag|
+          case tag.kind
+          when :capture
+            operand = tag.value
+            next unless operand.respond_to?(:capture) && operand.capture
+
+            captures[operand.number] = [cursor, cursor + length]
+            captures[operand.name] = [cursor, cursor + length] if operand.name
+          when :choice, :repeat, :assertion, :call
+            @state.push_backtrack_point([label, cursor, length, tag.kind])
+            @state.pop_backtrack_point
+          end
         end
       end
 
@@ -3783,6 +3314,8 @@ module Onibi
 
             casefold_lengths(value.join, characters, cursor,
                              folded: operand.casefold,
+                             source_width: operand.source_width,
+                             folded_width: operand.folded_width,
                              expanded_only: flags[:lookbehind_casefold] &&
                                             !flags[:lookbehind_fold_source],
                              overlap: captures[:__lookbehind_overlap]).first
@@ -3888,7 +3421,7 @@ module Onibi
         quantifier.mode == :lazy ? quantifier.minimum : count
       end
 
-      def quantifier_lengths(quantifier, characters, cursor)
+      def quantifier_lengths(quantifier, characters, cursor, captures = {}, flags = {})
         if quantifier.expression.is_a?(SemanticBytecode::Group)
           unit = sequence_length(quantifier.expression.body, characters, cursor)
           return [] unless unit&.positive?
@@ -3911,12 +3444,31 @@ module Onibi
         end
 
         count = 0
+        consumed = 0
         limit = quantifier.maximum || (characters.length - cursor)
-        while count < limit && cursor + count < characters.length &&
-              atom_matches?(quantifier.expression, characters[cursor + count])
+        while count < limit && cursor + consumed < characters.length
+          width = case quantifier.expression
+                  when SemanticBytecode::Backreference
+                    backreference_length(quantifier.expression, characters, cursor + consumed, captures, flags)
+                  when SemanticBytecode::Literal
+                    transition_length([:match_literal, quantifier.expression], characters, cursor + consumed, flags)
+                  else
+                    atom_matches?(quantifier.expression, characters[cursor + consumed], flags) ? 1 : nil
+                  end
+          break unless width&.positive?
+
           count += 1
+          consumed += width
         end
         return [] if count < quantifier.minimum
+
+        if quantifier.lazy_exact
+          exact = quantifier.maximum
+          return [0] unless exact && count >= exact
+
+          return [0, consumed] if exact == count
+          return [0, exact * (consumed / count)] if exact.positive? && count >= exact
+        end
 
         lengths = (quantifier.minimum..count).to_a
         return [lengths.last] if quantifier.mode == :possessive
@@ -3932,7 +3484,7 @@ module Onibi
         # Failed candidates therefore leave the caller's local state intact.
         opcode, operand = label
         if opcode == :match_absence
-          capture_absence(operand.body, cursor, length, captures)
+          capture_absence(operand.body, cursor, length, captures) if operand.body
           return
         end
         if opcode == :match_quantifier &&
@@ -3950,7 +3502,7 @@ module Onibi
         captures[operand.name] = [cursor, cursor + length] if operand.name
         return unless characters
 
-        nested = node_results(operand.body, characters, cursor, captures, flags).find do |inner_length, _inner|
+        nested = tree_results(operand.body, characters, cursor, captures, flags).find do |inner_length, _inner|
           inner_length == length
         end
         captures.merge!(nested[1]) if nested
@@ -4019,7 +3571,7 @@ module Onibi
                                            captures.fetch(:__absence_captures, {}).key?(key)
         return [] unless branch
 
-        node_results(branch, characters, cursor, captures, flags)
+        tree_results(branch, characters, cursor, captures, flags)
       end
 
       def atom_matches?(expression, character, flags = {})
@@ -4168,6 +3720,106 @@ module Onibi
         maximum.downto(0).to_a
       end
 
+      def flat_literal_absence_lengths(node, characters, cursor, captures = {}, flags = {})
+        if node.respond_to?(:flat_atoms) && node.flat_atoms && !node.flat_atoms.empty?
+          return flat_atom_absence_lengths(node.flat_atoms, characters, cursor, captures, flags)
+        end
+
+        delimiters = literal_absence_delimiters(node.body)
+        return unless delimiters
+
+        limit = characters.length - cursor
+        boundary = cursor.upto(characters.length).find do |position|
+          delimiters.any? do |delimiter|
+            characters[position, delimiter.length].to_a.join == delimiter
+          end
+        end
+        maximum = boundary ? boundary - cursor : limit
+        maximum.downto(0).to_a
+      end
+
+      def flat_quantified_absence_lengths(node, characters, cursor, flags)
+        limit = characters.length - cursor
+        run = 0
+        unit_width = node.atoms.sum { |atom| atom.is_a?(SemanticBytecode::Literal) ? atom.value.each_char.count : 1 }
+        while run < limit && flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags).any?
+          widths = flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags)
+          run += widths.select(&:positive?).min || unit_width
+        end
+        if run < node.minimum
+          if node.minimum == 1
+            boundary = cursor.upto(characters.length).find do |probe|
+              flat_assertion_lengths([node.atoms], characters, probe, {}, flags).any?
+            end
+            maximum = boundary ? boundary - cursor : limit
+            return maximum.downto(0).to_a
+          end
+
+          boundary = cursor.upto(characters.length).find do |probe|
+            flat_repeated_match?(node, characters, probe, flags)
+          end
+          maximum = boundary ? boundary - cursor + node.minimum - 1 : limit
+          return maximum.downto(0).to_a
+        end
+
+        maximum = node.minimum >= 2 ? (run + node.minimum - 1) / 2 : run / 2
+        [maximum, limit].min.downto(0).to_a
+      end
+
+      def flat_repeated_match?(node, characters, cursor, flags)
+        lengths = [0]
+        node.minimum.times do
+          lengths = lengths.flat_map do |consumed|
+            flat_assertion_lengths([node.atoms], characters, cursor + consumed, {}, flags).map do |width|
+              consumed + width
+            end
+          end.select(&:positive?).uniq
+        end
+        !lengths.empty?
+      end
+
+      def flat_atom_absence_lengths(atoms, characters, cursor, captures, flags)
+        variants = atoms.first.is_a?(Array) ? atoms : [atoms]
+        limit = characters.length - cursor
+        boundary = cursor.upto(characters.length).find do |position|
+          variants.any? do |variant|
+            flat_assertion_lengths([variant], characters, position, captures, flags).any?
+          end
+        end
+        body_width = if boundary && boundary < characters.length
+                       variants.flat_map do |variant|
+                         flat_assertion_lengths([variant], characters, boundary, captures, flags)
+                       end.max.to_i
+                     end
+        maximum = if boundary && boundary < characters.length
+                    [boundary - cursor + body_width - 1, limit].min
+                  else
+                    limit
+                  end
+        maximum.downto(0).to_a
+      end
+
+      def literal_absence_delimiters(node)
+        return [node.value] if node.is_a?(SemanticBytecode::Literal) && node.casefold.nil? && !node.value.empty?
+
+        if node.is_a?(SemanticBytecode::Sequence)
+          values = node.parts.map { |part| literal_absence_delimiters(part) }
+          return [values.flatten.join] if values.all? { |items| items&.one? }
+        elsif node.is_a?(SemanticBytecode::Alternation)
+          values = node.branches.map { |branch| literal_absence_delimiters(branch) }
+          return values.flatten if values.all? && values.all? { |items| items&.one? }
+        end
+        nil
+      end
+
+      def literal_assertion_values(node)
+        return [node.value] if node.is_a?(SemanticBytecode::Literal) && node.casefold.nil?
+        return literal_absence_delimiters(node) if node.is_a?(SemanticBytecode::Sequence) ||
+                                                   node.is_a?(SemanticBytecode::Alternation)
+
+        nil
+      end
+
       # The VM dispatch keeps all OP_ABSENT state transitions in one method.
       # rubocop:disable Metrics/BlockLength
       def absence_results(node, characters, cursor, captures, flags)
@@ -4186,18 +3838,17 @@ module Onibi
         delimiter = literal_value(node.body) unless capture_numbers(node.body).any? || flags[:ignorecase]
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
-        frame = @state.push_frame(@state.new_frame(
-                                    kind: :absence,
-                                    absent_start: cursor,
-                                    absent_end: characters.length,
-                                    probe_position: cursor,
-                                    possible_points: [],
-                                    body_checkpoints: [],
-                                    capture_checkpoints: []
-                                  ))
+        frame = @state.push_absence_frame(
+          absent_start: cursor,
+          absent_end: characters.length,
+          probe_position: cursor,
+          possible_points: [],
+          body_checkpoints: [],
+          capture_checkpoints: []
+        )
 
         begin
-          body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
+          body_at_cursor = tree_results(node.body, characters, cursor, captures, flags)
           first_result = body_at_cursor.find { |length, _state| length.positive? } || body_at_cursor.first
           first_length = first_result&.first
           first_state = first_result&.last || {}
@@ -4207,7 +3858,7 @@ module Onibi
 
           if zero_at_cursor && !consuming_at_cursor
             later_consuming = cursor.upto(characters.length).any? do |position|
-              node_results(node.body, characters, position, captures, flags).any? do |length, _state|
+              tree_results(node.body, characters, position, captures, flags).any? do |length, _state|
                 length.positive?
               end
             end
@@ -4254,7 +3905,7 @@ module Onibi
 
           quantified = quantified_absence_length(node.body, characters, cursor, flags)
           if quantified
-            body_results = node_results(node.body, characters, cursor, captures, flags)
+            body_results = tree_results(node.body, characters, cursor, captures, flags)
             body_result = body_results.find { |length, _state| length.positive? } || body_results.first
             body_captures = body_result ? body_result.last : captures
             body_captures = body_captures.dup
@@ -4270,7 +3921,7 @@ module Onibi
 
           failure_state = nil
           cursor.upto(characters.length) do |position|
-            results = node_results(node.body, characters, position, captures, flags)
+            results = tree_results(node.body, characters, position, captures, flags)
             record_absence_checkpoint(frame, position, results, captures)
             if results.empty?
               candidate = sequence_failure_state(node.body, characters, position, captures, flags)
@@ -4463,7 +4114,7 @@ module Onibi
 
       def body_match_exists_after_probe?(body, characters, cursor, captures, flags)
         cursor.upto(characters.length) do |position|
-          return true if node_results(body, characters, position, captures, flags).any?
+          return true if tree_results(body, characters, position, captures, flags).any?
         end
         false
       end
@@ -4474,7 +4125,7 @@ module Onibi
 
         minimum = minimum_node_width(scope.first.expression)
         cursor.upto(characters.length) do |position|
-          results = node_results(scope.first.expression, characters, position, captures, flags)
+          results = tree_results(scope.first.expression, characters, position, captures, flags)
           return true if results.any? { |length, _state| length > minimum }
         end
         false
@@ -4524,7 +4175,7 @@ module Onibi
         checkpoint = nil
         checkpoint_position = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
-          results = node_results(body, characters, position, captures, flags)
+          results = tree_results(body, characters, position, captures, flags)
           target_end = endpoint + 1
           candidate = results.find { |body_length, _state| position + body_length == target_end }&.last
           if candidate && checkpoint.nil?
@@ -4589,7 +4240,7 @@ module Onibi
         scope = context[:scope]
         parent = scope[3]
         return state unless parent
-        return state if node_results(body, characters, cursor, captures, flags).any? do |length, _checkpoint|
+        return state if tree_results(body, characters, cursor, captures, flags).any? do |length, _checkpoint|
           cursor + length == endpoint
         end
 
@@ -4598,7 +4249,7 @@ module Onibi
         wide_seen = false
         candidate = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
-          node_results(expression, characters, position, captures, flags).each do |length, checkpoint|
+          tree_results(expression, characters, position, captures, flags).each do |length, checkpoint|
             wide_seen ||= length > minimum
             next unless wide_seen && length == minimum
 
@@ -4633,7 +4284,7 @@ module Onibi
             suffix_body = outer ? absence_sequence_parts(outer.body).drop(1) : []
             if suffix_numbers.empty? && static_node_width(quantifier.expression) &&
                parent_span.is_a?(Array) && suffix_body.any?
-              suffix_matches = node_results(
+              suffix_matches = tree_results(
                 Onibi::IRGen::YARVIR::SemanticBytecode::Sequence.new(suffix_body),
                 characters, parent_span[1], captures, flags
               ).any? { |length, _state| length.positive? }
@@ -4646,7 +4297,7 @@ module Onibi
               nested_parts = absence_sequence_parts(outer.body)
               suffix_body = nested_parts.drop(1)
               suffix_matches = parent_span.is_a?(Array) && suffix_body.any? &&
-                               node_results(
+                               tree_results(
                                  Onibi::IRGen::YARVIR::SemanticBytecode::Sequence.new(suffix_body),
                                  characters, parent_span[1], captures, flags
                                ).any? { |length, _state| length.positive? }
@@ -4693,7 +4344,7 @@ module Onibi
         return captures unless outer_span.is_a?(Array) && outer_span.length == 2
 
         suffix = SemanticBytecode::Sequence.new(parts.drop(1))
-        suffix_matches = node_results(suffix, characters, outer_span[1], captures, flags).any? do |length, _state|
+        suffix_matches = tree_results(suffix, characters, outer_span[1], captures, flags).any? do |length, _state|
           length.positive?
         end
         hidden = [outer.number] + capture_numbers(quantifier.expression)
@@ -4751,7 +4402,7 @@ module Onibi
         endpoint = cursor + length
         checkpoint = nil
         cursor.upto([endpoint - 1, characters.length].min) do |position|
-          candidate = node_results(body, characters, position, captures, flags).find do |body_length, _inner|
+          candidate = tree_results(body, characters, position, captures, flags).find do |body_length, _inner|
             position + body_length == endpoint + 1
           end
           checkpoint = candidate.last if candidate && checkpoint.nil?
@@ -4806,7 +4457,7 @@ module Onibi
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
           return unless run >= quantifier.minimum
 
-          results = node_results(body, characters, cursor, captures, flags)
+          results = tree_results(body, characters, cursor, captures, flags)
           target = results.find { |length, _state| length == run }
           return unless target
 
@@ -4824,7 +4475,7 @@ module Onibi
           atom = literal_value(quantifier.expression)
           run = quantified_atom_run_length(quantifier.expression, characters, cursor, flags)
           if run >= 3 && !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
-            results = node_results(body, characters, cursor, captures, flags)
+            results = tree_results(body, characters, cursor, captures, flags)
             minimum = results.map(&:first).min
             boundary = if cursor + run == characters.length && minimum
                          minimum
@@ -4854,7 +4505,7 @@ module Onibi
           return unless run >= quantifier.minimum
 
           boundary = (run + suffix_width - 1) / 2
-          results = node_results(body, characters, cursor, captures, flags)
+          results = tree_results(body, characters, cursor, captures, flags)
           target = results.find { |length, _state| length == boundary + 1 }
           if target
             state = target.last.dup
@@ -4882,7 +4533,7 @@ module Onibi
           if run.positive? && cursor + run < characters.length &&
              !quantified_atom_matches?(quantifier.expression, characters, cursor + run, flags)
             boundary = (run + 1) / 2
-            results = node_results(body, characters, cursor, captures, flags)
+            results = tree_results(body, characters, cursor, captures, flags)
             target = results.find { |length, _state| length == boundary + 1 }
             if target
               state = target.last.dup
@@ -4897,7 +4548,7 @@ module Onibi
         maximum = quantified_absence_length(quantifier, characters, cursor)
         return unless maximum&.positive?
 
-        results = node_results(body, characters, cursor, captures, flags)
+        results = tree_results(body, characters, cursor, captures, flags)
         target = results.find { |length, _state| length == maximum + 1 }
         return unless target
 
@@ -4924,7 +4575,7 @@ module Onibi
           while position < frame.absent_end
             frame.probe_position = position
             bounded = characters[0...frame.absent_end]
-            results = node_results(body, bounded, position, captures, flags)
+            results = tree_results(body, bounded, position, captures, flags)
             record_absence_checkpoint(frame, position, results, captures)
             if results.empty?
               current_captures = nil unless preserve_failed_capture
@@ -5169,7 +4820,7 @@ module Onibi
         position = start
         count = 0
         while position < finish
-          length = node_results(expression, characters, position, {}, flags)
+          length = tree_results(expression, characters, position, {}, flags)
                    .map(&:first).select(&:positive?).min
           break unless length && position + length <= finish
 
@@ -5185,7 +4836,7 @@ module Onibi
           return 0 if position == finish
           return memo[position] if memo.key?(position)
 
-          counts = node_results(expression, characters, position, {}, flags).filter_map do |length, _state|
+          counts = tree_results(expression, characters, position, {}, flags).filter_map do |length, _state|
             next unless length.positive? && position + length <= finish
 
             tail = minimum_count.call(position + length)
@@ -5332,7 +4983,7 @@ module Onibi
         if atom
           position += atom.length while characters[position, atom.length].join == atom
         else
-          position += 1 while node_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
+          position += 1 while tree_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
         end
         position - cursor
       end
@@ -5341,7 +4992,7 @@ module Onibi
         atom = literal_value(expression)
         return characters[position, atom.length].join == atom if atom
 
-        node_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
+        tree_results(expression, characters, position, {}, flags).any? { |length, _state| length == 1 }
       end
 
       def contains_absence_node?(node)
@@ -5395,7 +5046,7 @@ module Onibi
         states = [[0, captures]]
         body.parts.each do |part|
           next_states = states.flat_map do |consumed, state|
-            node_results(part, characters, cursor + consumed, state, flags).map do |length, inner|
+            tree_results(part, characters, cursor + consumed, state, flags).map do |length, inner|
               [consumed + length, inner]
             end
           end
@@ -5411,7 +5062,7 @@ module Onibi
         position_states = {}
         has_consuming_match = false
         cursor.upto(characters.length) do |position|
-          results = node_results(body, characters, position, captures, flags)
+          results = tree_results(body, characters, position, captures, flags)
           zero_width = results.find do |length, state|
             length.zero? && (state[:__match_start] || position) == position
           end
@@ -5424,7 +5075,7 @@ module Onibi
         return if positions.empty? || has_consuming_match
 
         start = cursor.upto(characters.length).find do |position|
-          node_results(body, characters, position, captures, flags).none? do |length, state|
+          tree_results(body, characters, position, captures, flags).none? do |length, state|
             length.zero? && (state[:__match_start] || position) == position
           end
         end || characters.length
@@ -5432,7 +5083,7 @@ module Onibi
                    start
                  else
                    (start + 1).upto(characters.length).find do |position|
-                     node_results(body, characters, position, captures, flags).any? do |length, state|
+                     tree_results(body, characters, position, captures, flags).any? do |length, state|
                        length.zero? && (state[:__match_start] || position) == position
                      end
                    end || characters.length
@@ -5517,7 +5168,7 @@ module Onibi
         return false unless literal && !literal.empty? && cursor < characters.length
 
         if flags[:ignorecase]
-          return node_results(body, characters, cursor, {}, flags).none? do |length, _state|
+          return tree_results(body, characters, cursor, {}, flags).none? do |length, _state|
             length.positive?
           end
         end
@@ -5644,7 +5295,7 @@ module Onibi
         return quantified if quantified
 
         cursor.upto(characters.length) do |position|
-          results = node_results(node.body, characters, position, {}, flags)
+          results = tree_results(node.body, characters, position, {}, flags)
           next if results.empty?
 
           quantified_length = quantified_absence_length(node.body, characters, position)
@@ -5679,7 +5330,7 @@ module Onibi
           run = 0
           position = cursor
           while position < characters.length
-            length = node_results(quantifier.expression, characters, position, {}, flags).map(&:first).select(&:positive?).max
+            length = tree_results(quantifier.expression, characters, position, {}, flags).map(&:first).select(&:positive?).max
             break unless length
 
             run += length
@@ -5694,7 +5345,7 @@ module Onibi
           run = 0
           position = cursor
           while position < characters.length
-            length = node_results(quantifier.expression, characters, position, {}, flags)
+            length = tree_results(quantifier.expression, characters, position, {}, flags)
                      .map(&:first).select(&:positive?).max
             break unless length
 
@@ -5741,7 +5392,7 @@ module Onibi
             matched = if literal
                         characters[position, unit.length].join == unit
                       else
-                        node_results(quantifier.expression, characters, position, {}, {}).any? do |length, _captures|
+                        tree_results(quantifier.expression, characters, position, {}, {}).any? do |length, _captures|
                           length == unit.length
                         end
                       end
@@ -6095,7 +5746,8 @@ module Onibi
         right_fold == left.downcase
       end
 
-      def casefold_lengths(value, characters, cursor, folded: nil, expanded_only: false, overlap: 0)
+      def casefold_lengths(value, characters, cursor, folded: nil, source_width: nil,
+                           folded_width: nil, expanded_only: false, overlap: 0)
         overlap = overlap.to_i
 
         if value.encoding != Encoding::UTF_8 && value.encoding != Encoding::ASCII_8BIT && !value.ascii_only?
@@ -6106,8 +5758,9 @@ module Onibi
         folded_value = folded || value.downcase(:fold)
         folded_value = folded_value[overlap..] || "" if overlap.positive?
         folded_value = folded_value.encode(Encoding::UTF_8) unless [Encoding::UTF_8, Encoding::ASCII_8BIT].include?(folded_value.encoding)
-        maximum = folded_value.length
-        minimum = expanded_only && maximum > value.length ? value.length + 1 : 1
+        maximum = folded_width || folded_value.length
+        source_width ||= value.length
+        minimum = expanded_only && maximum > source_width ? source_width + 1 : 1
         (minimum..maximum).select do |length|
           slice = characters[cursor, length]
           next false unless slice && slice.length == length
@@ -6167,6 +5820,21 @@ module Onibi
       rescue EncodingError
         character
       end
+    end
+
+    # The flat VM has no semantic tree evaluator in its ancestor chain.
+    class FlatExecutor < Executor
+      private
+
+      def tree_results(*)
+        raise "flat VM attempted to enter semantic tree evaluation"
+      end
+    end
+
+    # Compatibility programs retain the recursive evaluator until their
+    # remaining semantic forms are lowered to flat instructions.
+    class CompatibilityExecutor < Executor
+      include SemanticTreeEvaluator
     end
   end
 end
