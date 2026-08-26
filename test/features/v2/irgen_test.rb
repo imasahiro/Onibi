@@ -183,6 +183,17 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_suffix_variable_nested_capture_stays_on_compatibility_vm
+    source = "(?~((a|b)+)c)"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    assert program.instructions.any? { |item| item.opcode == :semantic_match }
+    { "abc" => ["ab", "b", nil], "aac" => ["aa", "a", nil] }.each do |input, expected|
+      assert_equal expected, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_compiler_keeps_zero_length_suffix_candidate_for_capture_absence
     source = "(?~((?:a|ab){2,}))c"
     regexp = Onibi::Regexp.new(source)
