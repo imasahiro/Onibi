@@ -1717,7 +1717,8 @@ module Onibi
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
-                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root) &&
+                        !semantic_scoped_negated_class_suffix_safe?(semantic_root)
         return false if flags[:full_casefold] &&
                         !semantic_predicate_only?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
@@ -1736,7 +1737,8 @@ module Onibi
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
-                        !semantic_trailing_anchor_assertion_safe?(semantic_root)
+                        !semantic_trailing_anchor_assertion_safe?(semantic_root) &&
+                        !semantic_scoped_negated_class_suffix_safe?(semantic_root)
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
@@ -1771,7 +1773,8 @@ module Onibi
                         !semantic_leading_start_anchor_assertion_safe?(semantic_root) &&
                         !semantic_terminal_end_assertion_only_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
-        return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
+        return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root) &&
+                        !semantic_scoped_negated_class_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
@@ -2132,6 +2135,19 @@ module Onibi
           body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
           body.is_a?(SemanticBytecode::Literal) && body.casefold &&
             body.value != body.casefold && body.value.each_char.one? && body.casefold.each_char.one?
+        end
+      end
+
+      def semantic_scoped_negated_class_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.each_cons(2).any? do |part, suffix|
+          next false unless suffix.is_a?(SemanticBytecode::OptionGroup) && suffix.ignorecase
+          next false unless suffix.body.is_a?(SemanticBytecode::Sequence) && suffix.body.parts.one?
+          next false unless suffix.body.parts.first.is_a?(SemanticBytecode::Literal)
+          next false unless part.is_a?(SemanticBytecode::Quantifier) && part.expression.is_a?(SemanticBytecode::CharacterClass)
+
+          part.expression.value.start_with?("^") && part.maximum.nil?
         end
       end
 

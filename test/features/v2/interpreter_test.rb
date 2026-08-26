@@ -1050,6 +1050,17 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_negated_class_repeat_scoped_suffix_uses_flat_vm
+    regexp = Onibi::Regexp.new("[^a]+(?i:a)")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["ba", "bxa", "bA", "a"].each do |input|
+      assert_equal ::Regexp.new("[^a]+(?i:a)").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
+  end
+
   def test_fixed_scoped_unicode_fold_alternation_matches_mri_boundaries
     regexp = Onibi::Regexp.new("(?i:(?:ſ|a)){1}b")
     expected = ::Regexp.new("(?i:(?:ſ|a)){1}b").match("ſb")

@@ -537,6 +537,9 @@ module Onibi
               matches, instruction.opcode, node, next_instruction, boundary_metadata,
               characters, position, frame_flags
             )
+            matches = reject_flat_negated_class_suffix_matches(
+              matches, pc, node, characters, position, frame_flags
+            )
             matches.reverse_each do |length, inner|
               next_state = state.merge(inner)
               if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
@@ -872,6 +875,26 @@ module Onibi
         return matches unless Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).include?(node.value)
 
         matches.reject { |length, _inner| length == node.source_width }
+      end
+
+      def reject_flat_negated_class_suffix_matches(matches, program_counter, node, characters, position, flags)
+        return matches unless flags[:ignorecase] && node.is_a?(SemanticBytecode::Literal)
+        return matches unless node.value.ascii_only? && characters && position
+        return matches unless characters[position] && characters[position] != node.value &&
+                              characters[position].downcase == node.value.downcase
+
+        scope_pc = program_counter - 1
+        repeat_pc = scope_pc - 1
+        return matches unless scope_pc >= 0 && repeat_pc >= 0
+        return matches unless @flat_program.opcode_at(scope_pc) == :scope_start &&
+                              @flat_program.opcode_at(repeat_pc) == :repeat
+
+        quantifier = @flat_program.operand(@flat_program.instruction_at(repeat_pc).operand)
+        expression = quantifier.expression if quantifier.is_a?(SemanticBytecode::Quantifier)
+        return matches unless expression.is_a?(SemanticBytecode::CharacterClass) &&
+                              expression.value.start_with?("^")
+
+        []
       end
 
       # Match a compile-time flat atom list without entering tree_results.
