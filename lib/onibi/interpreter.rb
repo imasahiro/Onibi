@@ -809,12 +809,12 @@ module Onibi
                    assertion.flat_atoms&.first if assertion.is_a?(SemanticBytecode::Assertion) &&
                                                   assertion.kind == :positive
                  end
-        if metadata&.expanded_tail? && metadata.tail_matches_next_fold? &&
+        if metadata&.expanded_tail? && metadata.tail_matches_any_next_fold? &&
            %i[consume fold_boundary].include?(next_instruction&.opcode) && characters && position
           remaining = characters.length - position
           return matches.reject do |length, _inner|
             metadata.source_width_match?(length) &&
-              metadata.next_source_width_match?(remaining - length)
+              metadata.matching_next_fold_width?(remaining - length)
           end
         end
         return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
