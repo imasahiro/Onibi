@@ -371,7 +371,8 @@ module Onibi
                 return true
               end
               return false if atom.is_a?(Escape) && %i[word_boundary not_word_boundary].include?(atom.kind)
-              return false unless [Literal, CharacterClass, Any, Escape, Property, Backreference].include?(atom.class) &&
+              return false unless [Literal, CharacterClass, Any, Escape, Property, Backreference,
+                                   OptionGroup].include?(atom.class) &&
                                   supported?(atom)
 
               return node.maximum.nil? || node.maximum <= 32
@@ -1463,6 +1464,7 @@ module Onibi
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_full_fold_class_only?(semantic_root) &&
+                        !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
@@ -1472,11 +1474,13 @@ module Onibi
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
-                        !semantic_full_fold_literal_only?(semantic_root)
+                        !semantic_full_fold_literal_only?(semantic_root) &&
+                        !semantic_scoped_property_quantifier_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
+                        !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
@@ -1912,6 +1916,15 @@ module Onibi
         end
 
         semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([scope]))
+      end
+
+      def semantic_scoped_property_quantifier_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        quantifier = node.parts.first
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+
+        semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([quantifier.expression]))
       end
 
       def fold_invariant_property?(node)

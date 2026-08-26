@@ -3422,8 +3422,17 @@ module Onibi
       end
 
       def quantifier_lengths(quantifier, characters, cursor, captures = {}, flags = {})
-        if quantifier.expression.is_a?(SemanticBytecode::Group)
-          unit = sequence_length(quantifier.expression.body, characters, cursor)
+        if quantifier.expression.is_a?(SemanticBytecode::Group) ||
+           quantifier.expression.is_a?(SemanticBytecode::OptionGroup)
+          expression = quantifier.expression
+          scoped_flags = flags
+          if expression.is_a?(SemanticBytecode::OptionGroup)
+            scoped_flags = flags.dup
+            scoped_flags[:ignorecase] = expression.ignorecase unless expression.ignorecase.nil?
+            scoped_flags[:multiline] = expression.multiline unless expression.multiline.nil?
+          end
+          body = expression.body
+          unit = sequence_length(body, characters, cursor, scoped_flags)
           return [] unless unit&.positive?
 
           count = 0
@@ -3431,7 +3440,7 @@ module Onibi
           limit = quantifier.maximum || characters.length
           lengths = []
           while count < limit
-            unit_length = sequence_length(quantifier.expression.body, characters, cursor + consumed)
+            unit_length = sequence_length(body, characters, cursor + consumed, scoped_flags)
             break unless unit_length&.positive?
 
             count += 1
