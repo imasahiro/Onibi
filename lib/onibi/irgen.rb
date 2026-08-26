@@ -2970,7 +2970,7 @@ module Onibi
                        %i[digit non_digit word not_word space not_space horizontal_space
                           not_horizontal_space linebreak grapheme].include?(node.kind)
 
-        node.is_a?(SemanticBytecode::Literal) && node.value.ascii_only? && node.value.each_char.one?
+        semantic_scoped_repeat_operand_safe?(node)
       rescue RegexpError, KeyError
         false
       end
