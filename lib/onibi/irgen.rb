@@ -392,9 +392,18 @@ module Onibi
               return emit_command(:nop, index_for(node), nil) if node.parts.empty?
 
               first = nil
+              starts = []
               node.parts.each do |part|
                 pc = emit(part)
                 first ||= pc
+                starts << pc
+              end
+              starts.each_with_index do |pc, index|
+                next unless @code[pc]&.opcode == :fold_boundary
+
+                @code[pc] = VMInstruction.new(opcode: :fold_boundary,
+                                              operand: @code[pc].operand,
+                                              target: starts[index + 1])
               end
               first
             when Alternation

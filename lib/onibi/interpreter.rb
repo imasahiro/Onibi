@@ -522,10 +522,14 @@ module Onibi
             node = @flat_program.operand(instruction.operand)
             semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
             matches = transition_results(semantic_label, characters, position, state, frame_flags)
-            next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
-              @flat_program.opcode_at(index) != :scope_end
-            end
-            next_instruction = next_pc && @flat_program.instruction_at(next_pc)
+            next_instruction = if instruction.opcode == :fold_boundary && instruction.target
+                                 @flat_program.instruction_at(instruction.target)
+                               else
+                                 next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
+                                   @flat_program.opcode_at(index) != :scope_end
+                                 end
+                                 next_pc && @flat_program.instruction_at(next_pc)
+                               end
             matches = reject_flat_fold_boundary_matches(
               matches, instruction.opcode, node, next_instruction
             )
