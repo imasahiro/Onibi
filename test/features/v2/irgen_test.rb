@@ -1012,6 +1012,16 @@ class V2IRGenTest < Minitest::Test
     assert_equal [0, 2], program.execute("いう!", 0)
   end
 
+  def test_flat_semantic_vm_executes_exact_full_fold_literal_without_ignorecase
+    source = "ﬃ"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }, source
+    assert_equal ["ﬃ"], regexp.match("ﬃ").to_a
+    assert_nil regexp.match("ffi")
+  end
+
   def test_flat_semantic_vm_executes_negated_character_class
     regexp = Onibi::Regexp.new("([^a]+)")
     program = regexp.send(:bytecode_program)

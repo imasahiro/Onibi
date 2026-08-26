@@ -537,7 +537,7 @@ module Onibi
 
           def supported_node?(node)
             if node.is_a?(Literal)
-              return full_fold_literal?(node) || ascii_casefold_safe_literal?(node) ||
+              return node.casefold.nil? || full_fold_literal?(node) || ascii_casefold_safe_literal?(node) ||
                      Onibi::IRGen::YARVIR.semantic_simple_casefold_safe?(node)
             end
             return flat_character_class_safe?(node) if node.is_a?(CharacterClass)
@@ -1928,6 +1928,7 @@ module Onibi
                         !semantic_trailing_anchor_assertion_safe?(semantic_root) &&
                         !semantic_scoped_negated_class_suffix_safe?(semantic_root)
         return false if flags[:full_casefold] &&
+                        !(!flags[:ignorecase] && flags[:literal_only]) &&
                         !semantic_predicate_only?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
