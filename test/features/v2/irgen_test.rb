@@ -174,6 +174,16 @@ class V2IRGenTest < Minitest::Test
     assert_equal ["c", nil], regexp.match("c")&.to_a
   end
 
+  def test_flat_compiler_retries_internal_suffix_for_capture_absence
+    source = "(?~((?:a|ab){2,}))c"
+    regexp = Onibi::Regexp.new(source)
+
+    { "aac" => ["ac", nil], "aaac" => ["ac", nil],
+      "aabc" => ["abc", nil], "ababc" => ["babc", nil] }.each do |input, expected|
+      assert_equal expected, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_program_does_not_embed_legacy_semantic_command_stream
     program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
     flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
