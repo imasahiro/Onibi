@@ -976,6 +976,19 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_anchored_scoped_simple_unicode_casefold_uses_flat_vm
+    ["\\A(?i:ſ)"].each do |source|
+      regexp = Onibi::Regexp.new(source)
+      program = regexp.send(:bytecode_program)
+
+      refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+      ["s", "S", "ſ", "xs", "sx"].each do |input|
+        assert_equal ::Regexp.new(source).match(input)&.to_a,
+                     regexp.match(input)&.to_a
+      end
+    end
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

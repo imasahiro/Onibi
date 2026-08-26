@@ -1573,7 +1573,8 @@ module Onibi
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
-                        !semantic_standalone_scoped_simple_unicode_literal?(semantic_root)
+                        !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
+                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -1809,6 +1810,20 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
 
         group = node.parts.first
+        scoped_simple_unicode_literal?(group)
+      end
+
+      def semantic_anchored_scoped_simple_unicode_literal?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+
+        anchor, group = node.parts
+        anchor, group = group, anchor unless anchor.is_a?(SemanticBytecode::Anchor)
+        anchor.is_a?(SemanticBytecode::Anchor) &&
+          anchor.kind == :anchor_absolute_start &&
+          scoped_simple_unicode_literal?(group)
+      end
+
+      def scoped_simple_unicode_literal?(group)
         return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
 
         body = group.body
