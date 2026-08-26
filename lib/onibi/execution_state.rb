@@ -137,6 +137,11 @@ module Onibi
       def tighten_absent_end(boundary)
         self.absent_end = [absent_end, boundary].min
       end
+
+      def record_body_checkpoint(position, results, captures)
+        possible_points << [position, captures]
+        body_checkpoints << [position, results]
+      end
     end
 
     attr_accessor :cursor, :search_origin, :steps

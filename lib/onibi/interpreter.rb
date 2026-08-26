@@ -4227,8 +4227,7 @@ module Onibi
 
       def record_absence_checkpoint(frame, position, results, captures)
         frame.probe_position = position
-        frame.possible_points << [position, captures]
-        frame.body_checkpoints << [position, results]
+        frame.record_body_checkpoint(position, results, captures)
         branches = results.filter_map do |length, state|
           branch = state[:__match_alternative_index]
           [branch, length] if branch.is_a?(Integer)

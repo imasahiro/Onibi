@@ -375,6 +375,9 @@ class InterpreterTest < Minitest::Test
     frame.tighten_absent_end(5)
     frame.tighten_absent_end(6)
     assert_equal 5, frame.absent_end
+    frame.record_body_checkpoint(4, [[1, {}]], {})
+    assert_equal [[4, {}]], frame.possible_points.last(1)
+    assert_equal [[4, [[1, {}]]]], frame.body_checkpoints.last(1)
   end
 
   def test_absence_capture_checkpoint_restores_latest_non_discarded_state
