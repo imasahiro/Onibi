@@ -2864,6 +2864,11 @@ module Onibi
           return []
         end
 
+        if quantifier.minimum == 1 && quantifier.maximum == 1 &&
+           quantifier.expression.is_a?(SemanticBytecode::OptionGroup)
+          return tree_results(quantifier.expression, characters, cursor, captures, flags)
+        end
+
         if flags[:ignorecase] && flags[:posix_anchor_expansion] && quantifier.maximum == 1 &&
            quantifier.expression.is_a?(SemanticBytecode::CharacterClass) &&
            quantifier.expression.value.include?(":")

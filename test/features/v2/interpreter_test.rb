@@ -1022,6 +1022,14 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ſb")&.to_a
   end
 
+  def test_fixed_scoped_unicode_fold_alternation_matches_mri_boundaries
+    regexp = Onibi::Regexp.new("(?i:(?:ſ|a)){1}b")
+    expected = ::Regexp.new("(?i:(?:ſ|a)){1}b").match("ſb")
+
+    assert_equal [expected&.to_a, expected&.offset(0)],
+                 [regexp.match("ſb")&.to_a, regexp.match("ſb")&.offset(0)]
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

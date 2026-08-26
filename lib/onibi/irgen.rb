@@ -1859,9 +1859,21 @@ module Onibi
       def semantic_scoped_simple_unicode_with_suffix?(node)
         return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
 
-        node.parts.any? do |part|
-          part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase &&
-            semantic_contains_simple_unicode_literal?(part.body)
+        node.parts.any? { |part| semantic_contains_scoped_simple_unicode_group?(part) }
+      end
+
+      def semantic_contains_scoped_simple_unicode_group?(node)
+        return true if node.is_a?(SemanticBytecode::OptionGroup) && node.ignorecase &&
+                       semantic_contains_simple_unicode_literal?(node.body)
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_scoped_simple_unicode_group?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_scoped_simple_unicode_group?(value)
+          else
+            false
+          end
         end
       end
 
