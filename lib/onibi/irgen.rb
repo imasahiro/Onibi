@@ -632,7 +632,9 @@ module Onibi
               end
             when Sequence
               return false if node.parts.length > 1 && node.parts.any? do |part|
-                part.is_a?(Literal) && !part.value.ascii_only?
+                part.is_a?(Literal) && !part.value.ascii_only? &&
+                  (part.fold_boundary_sensitive ||
+                   Onibi::UnicodeProperties.reverse_casefold_variants(part.casefold.to_s).any?)
               end
 
               node.parts.all? { |part| scoped_casefold_safe?(part) }
@@ -1786,7 +1788,8 @@ module Onibi
             end
         when SemanticBytecode::Sequence
           return false if node.parts.length > 1 && node.parts.any? do |part|
-            semantic_contains_non_ascii_operand?(part)
+            part.is_a?(SemanticBytecode::Literal) && !part.value.ascii_only? &&
+              (part.fold_boundary_sensitive || semantic_simple_unicode_literal?(part))
           end
 
           node.parts.all? { |part| semantic_scoped_casefold_simple_safe?(part) }
