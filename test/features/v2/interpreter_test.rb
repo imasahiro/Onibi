@@ -1128,6 +1128,17 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_scoped_unicode_fold_bounded_repeat_with_suffix_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:Ω{1,2})b")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["Ωb", "ωb", "ΩΩb", "Ωωb", "b"].each do |input|
+      assert_equal ::Regexp.new("(?i:Ω{1,2})b").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
+  end
+
   def test_scoped_non_reverse_unicode_fold_unbounded_positive_repeat_uses_flat_vm
     regexp = Onibi::Regexp.new("(?i:Ω+)")
     program = regexp.send(:bytecode_program)

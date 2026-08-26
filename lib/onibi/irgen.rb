@@ -1779,7 +1779,8 @@ module Onibi
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_scoped_reverse_fold_suffix_safe?(semantic_root)
-        return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root)
+        return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root) &&
+                        !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -2120,6 +2121,25 @@ module Onibi
 
         node.parts.any? do |part|
           semantic_contains_scoped_unicode_bounded_repeat?(part)
+        end
+      end
+
+      def semantic_scoped_simple_bounded_repeat_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.each_cons(2).any? do |part, suffix|
+          next false unless suffix.is_a?(SemanticBytecode::Literal)
+          next false unless part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase
+
+          body = part.body
+          body = body.parts if body.is_a?(SemanticBytecode::Sequence)
+          body = [body] unless body.is_a?(Array)
+          quantifier = body.find { |item| item.is_a?(SemanticBytecode::Quantifier) }
+          next false unless quantifier && quantifier.maximum && quantifier.maximum > quantifier.minimum
+
+          expression = quantifier.expression
+          expression.is_a?(SemanticBytecode::Literal) && expression.casefold &&
+            expression.value.each_char.one? && expression.casefold.each_char.one?
         end
       end
 
