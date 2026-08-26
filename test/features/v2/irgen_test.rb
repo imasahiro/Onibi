@@ -611,6 +611,20 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_semantic_vm_executes_scoped_unicode_repeat_alternation
+    source = "(?i:é+|a)"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }, source
+    assert program.instructions.any? { |item| item.opcode == :semantic_flat }, source
+    ["é", "É", "éé", "Éé", "a", "A", "éa", "xé", "xA", ""].each do |input|
+      expected = ::Regexp.new(source).match(input)
+      actual = regexp.match(input)
+      assert_equal expected&.to_a, actual&.to_a, [source, input]
+    end
+  end
+
   def test_flat_semantic_vm_executes_exact_utf8_character_class
     regexp = Onibi::Regexp.new("([あ-お]+)")
     program = regexp.send(:bytecode_program)
