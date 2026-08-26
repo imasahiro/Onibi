@@ -1007,9 +1007,6 @@ module Onibi
           end
 
           def absence_assertion(node)
-            root = @program.entry_node
-            return unless root == node || (root.is_a?(Sequence) && root.parts.one? && root.parts.first == node)
-
             body = unwrap_single_sequence(node.body)
             assertion = if body.is_a?(Group) && !body.capture
                           unwrap_single_sequence(body.body)

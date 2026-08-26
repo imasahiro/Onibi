@@ -713,6 +713,10 @@ module Onibi
             end
 
             outcomes.reverse_each do |length, absence_captures|
+              if absence_captures&.key?(:__match_start) &&
+                 @flat_program.instruction_at(pc + 1)&.opcode != :accept
+                next
+              end
               next_state = state.merge(absence_captures || {})
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
