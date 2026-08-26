@@ -2966,6 +2966,10 @@ module Onibi
                        )
 
         return true if node.is_a?(SemanticBytecode::Any)
+        return Array(node.flat_atoms).flatten.all? do |atom|
+          semantic_scoped_repeat_operand_safe?(atom)
+        end if node.is_a?(SemanticBytecode::Assertion) &&
+               %i[positive positive_lookahead negative negative_lookahead].include?(node.kind)
         return true if node.is_a?(SemanticBytecode::Escape) &&
                        %i[digit non_digit word not_word space not_space horizontal_space
                           not_horizontal_space linebreak grapheme].include?(node.kind)
