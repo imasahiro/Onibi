@@ -1814,7 +1814,7 @@ module Onibi
           unbounded = node.maximum.nil? && node.minimum.positive?
           unbounded_optional = node.maximum.nil? && node.minimum.zero?
           (fixed || optional || bounded || unbounded || unbounded_optional) &&
-            semantic_flat_unicode_literal?(node.expression)
+            semantic_flat_unicode_repeat_operand?(node.expression)
         else
           false
         end
@@ -1832,6 +1832,20 @@ module Onibi
           Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
             variant.each_char.one?
           end
+      end
+
+      def semantic_flat_unicode_repeat_operand?(node)
+        return true if semantic_flat_unicode_literal?(node) ||
+                       (node.is_a?(SemanticBytecode::Literal) && node.value.ascii_only? &&
+                        node.value.each_char.one?)
+        return node.branches.all? { |branch| semantic_flat_unicode_repeat_operand?(branch) } if
+          node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.all? { |part| semantic_flat_unicode_repeat_operand?(part) } if
+          node.is_a?(SemanticBytecode::Sequence)
+        return semantic_flat_unicode_repeat_operand?(node.body) if
+          node.is_a?(SemanticBytecode::Group) || node.is_a?(SemanticBytecode::OptionGroup)
+
+        false
       end
 
       def semantic_contains_scoped_simple_unicode_literal?(node)
