@@ -839,6 +839,13 @@ module Onibi
 
         case node
         when SemanticBytecode::Sequence
+          if node.parts.each_index.any? do |index|
+               reverse_fold_optional_barrier?(node.parts[index], node.parts[index + 1],
+                                              node.parts[index + 2], characters, cursor, flags)
+             end
+            return []
+          end
+
           if flags[:ignorecase] && node.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
             value = node.parts.map(&:value).join
             first_expands = node.parts.first &&
@@ -1153,6 +1160,11 @@ module Onibi
               when :greedy
                 part_results = part_results.sort_by { |length, _inner| length.zero? ? 1 : 0 }
               end
+              if reverse_fold_optional_barrier?(part, parts[index + 1], parts[index + 2],
+                                                characters, cursor + consumed, flags)
+                return []
+              end
+
               previous_part = part_index.positive? ? parts[part_index - 1] : nil
               if previous_part.is_a?(SemanticBytecode::Assertion) &&
                  previous_part.kind == :positive &&
@@ -2027,6 +2039,33 @@ module Onibi
         return false if same_fold_literal?(next_node, expression)
 
         :zero_only
+      end
+
+      # A reverse-fold optional followed by the same fold operand cannot
+      # fall back to the empty branch when a suffix remains. This is encoded
+      # by the compiler's reverse source table, not by a character special case.
+      def reverse_fold_optional_barrier?(node, next_node, suffix_node, characters, cursor, flags)
+        if node.is_a?(SemanticBytecode::OptionGroup) && node.body.is_a?(SemanticBytecode::Sequence)
+          inner = node.body.parts
+          return reverse_fold_optional_barrier?(inner[0], inner[1], suffix_node || next_node, characters, cursor,
+                                                flags.merge(ignorecase: node.ignorecase))
+        end
+        return false unless flags[:ignorecase] || option_group_ignorecase?(node)
+        return false unless node.is_a?(SemanticBytecode::Quantifier)
+        return false unless node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
+        return false unless next_node.is_a?(SemanticBytecode::Literal)
+        return false unless suffix_node
+
+        expression = boundary_operand(node.expression)
+        return false unless expression.is_a?(SemanticBytecode::Literal)
+        return false unless expression.value.each_char.one? && next_node.value.each_char.one?
+        return false unless expression.value.downcase(:fold) == next_node.value.downcase(:fold)
+
+        source = characters[cursor]
+        variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(
+          expression.value.downcase(:fold)
+        )
+        source && variants.include?(source)
       end
 
       def same_fold_literal?(node, expression)
