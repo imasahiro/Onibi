@@ -2928,7 +2928,7 @@ module Onibi
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless conditional.is_a?(SemanticBytecode::Conditional)
         condition = conditional.condition.is_a?(Array) ? conditional.condition.first : conditional.condition
-        return false unless condition == capture.number
+        return false unless condition == capture.number || condition == capture.name
 
         [conditional.yes_branch, conditional.no_branch].compact.all? do |branch|
           semantic_scoped_conditional_branch_safe?(branch)
