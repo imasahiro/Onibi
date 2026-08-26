@@ -591,6 +591,9 @@ module Onibi
           when :repeat
             quantifier = @flat_program.operand(instruction.operand)
             lengths = quantifier_lengths(quantifier, characters, position, state, frame_flags)
+            lengths = reject_flat_scoped_unicode_optional_suffix_lengths(
+              lengths, quantifier, pc, position, characters, frame_flags
+            )
             if lengths.empty?
               resume_backtrack
               next
@@ -755,6 +758,26 @@ module Onibi
         @state.backtracks.clear
         @state.capture_frames.clear
         results
+      end
+
+      def reject_flat_scoped_unicode_optional_suffix_lengths(lengths, quantifier, program_counter,
+                                                             position, characters, flags)
+        return lengths unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return lengths unless quantifier.minimum.zero? && quantifier.maximum == 1
+        return lengths unless flags[:ignorecase]
+
+        body = quantifier.expression
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return lengths unless body.is_a?(SemanticBytecode::Literal)
+        return lengths if body.value.ascii_only? || body.value.downcase(:fold) == body.value
+        return lengths unless characters[position] == body.value
+
+        next_pc = (program_counter + 1...@flat_program.instructions.length).find do |index|
+          @flat_program.opcode_at(index) != :scope_end
+        end
+        return lengths unless next_pc && @flat_program.opcode_at(next_pc) != :accept
+
+        lengths.reject { |length| length == body.value.length }
       end
 
       def semantic_opcode(node)

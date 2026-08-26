@@ -1097,9 +1097,11 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?i:Ω?)b")
     program = regexp.send(:bytecode_program)
 
-    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
-    assert_equal ::Regexp.new("(?i:Ω?)b").match("Ωb")&.to_a,
-                 regexp.match("Ωb")&.to_a
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["Ωb", "ωb", "b", "xΩb"].each do |input|
+      assert_equal ::Regexp.new("(?i:Ω?)b").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
   end
 
   def test_scoped_non_reverse_unicode_fold_fixed_repeat_uses_flat_vm

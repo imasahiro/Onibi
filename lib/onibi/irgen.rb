@@ -1777,7 +1777,6 @@ module Onibi
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
-        return false if semantic_root && semantic_scoped_unicode_optional_with_suffix?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
