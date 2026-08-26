@@ -1564,7 +1564,7 @@ module Onibi
           when Anchor
             [node].freeze
           when Escape
-            return nil unless %i[digit non_digit word not_word space not_space
+            return nil unless %i[digit non_digit not_digit word not_word space not_space
                                  horizontal_space not_horizontal_space linebreak
                                  word_boundary not_word_boundary start_match grapheme].include?(node.kind)
 

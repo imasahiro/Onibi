@@ -100,6 +100,17 @@ class V2IRGenTest < Minitest::Test
     assert_equal ["x"], regexp.match("x1")&.to_a
   end
 
+  def test_flat_compiler_lowers_non_digit_escape_in_absence_assertion
+    source = "(?~(?!\\D))"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    ["x1", "1x"].each do |input|
+      assert_equal ::Regexp.new(source).match(input)&.to_a, regexp.match(input)&.to_a, [source, input]
+    end
+  end
+
   def test_flat_compiler_lowers_bounded_nested_capture_alternation_absence
     source = "(?~((a|b)){2,})"
     regexp = Onibi::Regexp.new(source)
