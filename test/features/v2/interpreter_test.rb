@@ -690,6 +690,17 @@ class InterpreterTest < Minitest::Test
                  regexp.match("x")&.to_a
   end
 
+  def test_scoped_mixed_alternation_bounded_optional_suffix_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:(?:\\p{Letter}|a)){0,3}x")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:(?:\\p{Letter}|a)){0,3}x").match("ſax")&.to_a,
+                 regexp.match("ſax")&.to_a
+    assert_equal ::Regexp.new("(?i:(?:\\p{Letter}|a)){0,3}x").match("x")&.to_a,
+                 regexp.match("x")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
