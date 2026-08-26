@@ -804,6 +804,8 @@ module Onibi
                 flat_fixed_capture_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceAlternationCaptureRepeat)
                 flat_alternation_capture_absence_results(absence, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceSuffixCaptureRepeat)
+                flat_suffix_capture_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -827,6 +829,7 @@ module Onibi
                 absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
                 absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceAlternationCaptureRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceSuffixCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
@@ -4341,6 +4344,27 @@ module Onibi
         span = [cursor + capture_start, cursor + capture_start + capture_length]
         capture = { node.number => span, node.name => span }.compact
         [[prefix, capture]]
+      end
+
+      def flat_suffix_capture_absence_results(node, characters, cursor, _flags)
+        suffix = node.suffix.value
+        position = cursor
+        while position < characters.length
+          if characters[position, suffix.length].join == suffix
+            run_start = position
+            run_start -= 1 while run_start > cursor && node.variants.any? do |variant|
+              variant.first.value == characters[run_start - 1]
+            end
+            if run_start < position
+              span = [position - 1, position]
+              capture = { node.number => span, node.name => span }.compact
+              node.clear_numbers.each { |number| capture.delete(number) }
+              return [[position - cursor, capture]]
+            end
+          end
+          position += 1
+        end
+        [[characters.length - cursor, {}]]
       end
 
       def flat_nullable_absence_repeat_results(atom, characters, cursor, flags)
