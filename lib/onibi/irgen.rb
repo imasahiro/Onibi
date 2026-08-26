@@ -648,6 +648,11 @@ module Onibi
                 )
             when Any
               true
+            when Assertion
+              %i[positive positive_lookahead].include?(node.kind) &&
+                Array(node.flat_atoms).flatten.all? do |atom|
+                atom.is_a?(Literal) && atom.value.ascii_only?
+              end
             when Escape
               %i[digit non_digit word not_word space not_space horizontal_space
                  not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(node.kind)
@@ -1501,6 +1506,7 @@ module Onibi
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
+                        !semantic_scoped_property_assertion_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1516,6 +1522,7 @@ module Onibi
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
+                        !semantic_scoped_property_assertion_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
@@ -1525,6 +1532,7 @@ module Onibi
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
+                        !semantic_scoped_property_assertion_sequence_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
@@ -1983,6 +1991,23 @@ module Onibi
              %i[digit non_digit word not_word space not_space horizontal_space
                 not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(part.kind))
         end
+      end
+
+      def semantic_scoped_property_assertion_sequence_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        scope, *suffix = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only? }
+
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
+
+        assertion, property = body.parts
+        assertion.is_a?(SemanticBytecode::Assertion) && %i[positive positive_lookahead].include?(assertion.kind) &&
+          Array(assertion.flat_atoms).flatten.all? { |atom| atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only? } &&
+          property.is_a?(SemanticBytecode::Property)
       end
 
       def semantic_scoped_property_quantifier_safe?(node)
