@@ -455,6 +455,16 @@ class InterpreterTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_full_fold_literal_sequence_uses_one_flat_operand
+    regexp = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ["ß"], regexp.match("ß")&.to_a
+    assert_equal ::Regexp.new("ss", ::Regexp::IGNORECASE).match("ß")&.to_a,
+                 regexp.match("ß")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

@@ -839,25 +839,11 @@ module Onibi
           return type.new(node.identifier, node.named) if node.is_a?(Onibi::AST::Backreference)
 
           if node.is_a?(Onibi::AST::Literal)
-            folded = node.value.downcase(:fold)
-            segments = node.value.each_char.map do |character|
-              [character, character.downcase(:fold)]
-            end
-            segments = nil if segments.all? { |source, value| source == value }
-            # An expanded fold with distinct, non-mark code points can cross
-            # operand boundaries in Onigmo. Derive this from fold structure,
-            # not from a script-specific table.
-            boundary_sensitive = folded.length > node.value.length &&
-                                 folded.each_char.uniq.length > 1 &&
-                                 folded.each_char.none? { |character| character.match?(/\p{M}/) }
-            fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
-            fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
-            return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
-                            boundary_sensitive, fold_boundary, fold_prefix_boundary,
-                            fold_policy_for_literal(node.value))
+            return compile_literal(node.value, type)
           end
           if node.is_a?(Onibi::AST::Sequence)
             parts = node.parts.map { |part| compile_value(part, casefold: casefold, parent: :sequence) }
+            parts = fuse_casefold_literals(parts) if casefold
             return type.new(parts)
           end
           if node.is_a?(Onibi::AST::Alternation)
@@ -899,6 +885,45 @@ module Onibi
           end
 
           type.new(*node.each_pair.map { |_field, value| compile_value(value, casefold: casefold) })
+        end
+
+        def compile_literal(value, type = Literal)
+          folded = value.downcase(:fold)
+          segments = value.each_char.map { |character| [character, character.downcase(:fold)] }
+          segments = nil if segments.all? { |source, item| source == item }
+          boundary_sensitive = folded.length > value.length &&
+                               folded.each_char.uniq.length > 1 &&
+                               folded.each_char.none? { |character| character.match?(/\p{M}/) }
+          fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
+          fold_prefix_boundary = fold_prefix_boundary_metadata(value)
+          type.new(value, folded == value ? nil : folded, segments&.freeze,
+                   boundary_sensitive, fold_boundary, fold_prefix_boundary,
+                   fold_policy_for_literal(value))
+        end
+
+        def fuse_casefold_literals(parts)
+          return parts unless parts.all? { |part| part.is_a?(Literal) }
+
+          parts.chunk_while do |left, right|
+            left.is_a?(Literal) && right.is_a?(Literal)
+          end.flat_map do |run|
+            next run unless run.all? { |part| part.is_a?(Literal) }
+
+            value = run.map(&:value).join
+            if run.length > 1 && multi_char_casefold_source?(value)
+              [compile_literal(value)]
+            else
+              run
+            end
+          end
+        end
+
+        def multi_char_casefold_source?(value)
+          return false unless value.ascii_only?
+
+          Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
+            [codepoint].pack("U").downcase(:fold) == value
+          end
         end
 
         def folded_widths(node)
@@ -1410,6 +1435,7 @@ module Onibi
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_ascii_literal_sequence_casefold_safe?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
+                        !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
@@ -1419,6 +1445,7 @@ module Onibi
         return false if flags[:full_casefold] &&
                         !semantic_predicate_only?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
+                        !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
@@ -1496,7 +1523,7 @@ module Onibi
         case node
         when SemanticBytecode::Sequence
           values = node.parts.map { |part| part.value if part.is_a?(SemanticBytecode::Literal) }
-          return true if values.all? && values.join.length > 1 &&
+          return true if values.length > 1 && values.all? && values.join.length > 1 &&
                          Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
                            [codepoint].pack("U").downcase(:fold) == values.join.downcase(:fold)
                          end
@@ -1525,6 +1552,17 @@ module Onibi
         literal.is_a?(SemanticBytecode::Literal) && !literal.fold_boundary_sensitive &&
           literal.value.each_char.count == 1 &&
           literal.casefold.to_s.each_char.count > 1
+      end
+
+      def semantic_fused_full_fold_literal?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        literal = node.parts.first
+        return false unless literal.is_a?(SemanticBytecode::Literal)
+
+        Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
+          [codepoint].pack("U").downcase(:fold) == literal.value
+        end
       end
 
       # Predicate operands carry their own compiled table. Their casefold

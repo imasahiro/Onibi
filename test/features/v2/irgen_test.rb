@@ -1184,8 +1184,9 @@ class V2IRGenTest < Minitest::Test
     assert_equal :non_split_prefix, lookahead.parts.first.fold_prefix_boundary
 
     ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
-    refute semantic_root(ascii.send(:bytecode_program)).parts.first.fold_boundary_sensitive
-    assert_nil semantic_root(ascii.send(:bytecode_program)).parts.first.fold_boundary
+    ascii_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(ascii.ast, casefold: true)
+    refute ascii_root.parts.first.fold_boundary_sensitive
+    assert_nil ascii_root.parts.first.fold_boundary
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
