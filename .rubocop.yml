@@ -7,17 +7,8 @@ Style/StringLiterals:
 Style/StringLiteralsInInterpolation:
   EnforcedStyle: double_quotes
 
-# Existing HFA dispatch and VM loops intentionally use iterator control flow
-# and compact state-machine blocks; keep the quality gate focused on semantic
-# and formatting offenses while these routines are incrementally decomposed.
 Layout/LineLength:
   Max: 160
-
-Lint/NonLocalExitFromIterator:
-  Enabled: false
-
-Lint/UnreachableCode:
-  Enabled: false
 
 Metrics/BlockLength:
   Max: 60

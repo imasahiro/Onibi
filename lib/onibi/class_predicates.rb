@@ -1,30 +1,178 @@
 # frozen_string_literal: true
 
+# rubocop:disable Metrics/ModuleLength
+
 module Onibi
   # Evaluates character class source without delegating to another regexp engine.
   module ClassPredicates
     module_function
 
-    def matches?(source, character, ignorecase: false)
+    def matches?(source, character, ignorecase: false, encoding: nil)
+      return match_source(source, character, ignorecase, encoding) if non_utf8_encoding?(encoding)
+
       compiled(source, ignorecase: ignorecase).matches?(character)
     end
 
-    def match_source(source, character, ignorecase)
-      posix = POSIX_PROPERTIES[source]
-      return UnicodeProperties.matches?(posix, character) if posix
-
-      intersection = split_intersection(source)
-      return intersection_matches?(intersection, character, ignorecase) if intersection
-
+    def match_source(source, character, ignorecase, encoding = nil)
       negated = source.start_with?("^")
-      result = union_matches?(negated ? source[1..] : source, character, ignorecase)
+      body = negated ? source[1..] : source
+      posix = POSIX_PROPERTIES[body]
+      if posix
+        result = posix_matches?(posix, character, ignorecase, encoding)
+        return negated if result == :incompatible
+
+        return negated ? !result : result
+      end
+
+      intersection = split_intersection(body)
+      if intersection
+        result = intersection_matches?(intersection, character, ignorecase, encoding)
+        return negated if result == :incompatible
+
+        return negated ? !result : result
+      end
+
+      result = union_matches?(body, character, ignorecase, encoding)
+      return negated if result == :incompatible
+
       negated ? !result : result
     end
 
-    def intersection_matches?(intersection, character, ignorecase)
-      left = matches?(intersection[0], character, ignorecase: ignorecase)
-      right = matches?(intersection[1], character, ignorecase: ignorecase)
+    def posix_matches?(property, character, ignorecase, encoding)
+      return :incompatible if incompatible_property?(property, character, encoding)
+
+      return true if property == "Word" && encoding && !EncodingSupport.unicode?(encoding) &&
+                     !EncodingSupport.binary?(encoding) && !character.ascii_only?
+
+      normalized_character = if property == "Word" && encoding && !EncodingSupport.unicode?(encoding) &&
+                                !EncodingSupport.binary?(encoding)
+                               character.encode(Encoding::UTF_8)
+                             else
+                               character
+                             end
+      return true if UnicodeProperties.matches_normalized?(property, normalized_character)
+      return false unless ignorecase && %w[Lower Upper].include?(property)
+
+      UnicodeProperties.casefold_matches?(property, normalized_character)
+    rescue EncodingError
+      false
+    end
+
+    def intersection_matches?(intersection, character, ignorecase, encoding)
+      if ignorecase
+        # MRI intersects the raw class tables first, then applies the
+        # case-fold closure to the resulting table. Do not fold operands
+        # independently, or [a-z&&A-Z] becomes unexpectedly non-empty.
+        if intersection[1].start_with?("[^")
+          unless intersection[0].include?("\\p") || intersection[0].include?("[:")
+            return casefold_candidates(character).any? do |candidate|
+              intersection_matches?(intersection, candidate, false, encoding)
+            end
+          end
+
+          left = matches?(intersection[0], character, ignorecase: true, encoding: encoding)
+          right = negated_intersection_matches?(intersection[1], character, encoding,
+                                                left_source: intersection[0])
+          return :incompatible if left == :incompatible || right == :incompatible
+
+          return left && right
+        end
+
+        return casefold_candidates(character).any? do |candidate|
+          intersection_matches?(intersection, candidate, false, encoding)
+        end
+      end
+
+      left = matches?(intersection[0], character, ignorecase: ignorecase, encoding: encoding)
+      right = matches?(intersection[1], character, ignorecase: ignorecase, encoding: encoding)
+      return :incompatible if left == :incompatible || right == :incompatible
+
       left && right
+    end
+
+    def negated_intersection_matches?(source, character, encoding, left_source: nil)
+      body = source[2...-1]
+      if left_source&.include?("\\p") && !body.include?("\\p") && !body.include?("[:")
+        script = literal_script(body)
+        character_script = unicode_script(character)
+        return character_script != script if script && character_script
+      end
+
+      if intersection_casefold_mode?(left_source, body)
+        return casefold_candidates(character).none? do |candidate|
+          matches?(body, candidate, ignorecase: true, encoding: encoding)
+        end
+      end
+
+      casefold_candidates(character).any? do |candidate|
+        !matches?(body, candidate, ignorecase: false, encoding: encoding)
+      end
+    end
+
+    def literal_script(source)
+      scripts = %w[Latin Greek Cyrillic Arabic Han Hiragana Katakana]
+      scripts.find do |script|
+        letters = source.each_char.select { |character| character.match?(/\p{L}/) }
+        !letters.empty? && letters.all? { |character| UnicodeProperties.matches?(script, character) }
+      end
+    end
+
+    def unicode_script(character)
+      %w[Latin Greek Cyrillic Arabic Han Hiragana Katakana].find do |script|
+        UnicodeProperties.matches?(script, character)
+      end
+    end
+
+    def intersection_casefold_mode?(left_source, body)
+      source_case_orientation(left_source) == source_case_orientation(body)
+    end
+
+    def source_case_orientation(source)
+      return :property_lower if source.match?(/\\p\{(?:Lower|Ll|Lowercase)\}/)
+      return :property_upper if source.match?(/\\p\{(?:Upper|Lu|Uppercase)\}/)
+      return :mixed if source.include?("\\p") || source.include?("[:")
+
+      letters = source.each_char.to_a
+      has_lower = letters.any? { |character| UnicodeProperties.matches?("Lower", character) }
+      has_upper = letters.any? { |character| UnicodeProperties.matches?("Upper", character) }
+      return :lower if has_lower && !has_upper
+      return :upper if has_upper && !has_lower
+
+      :mixed
+    end
+
+    def casefold_candidates(character)
+      normalized = character.encoding == Encoding::UTF_8 ? character : unicode_character(character, nil)
+      ([normalized, normalized.downcase, normalized.upcase, normalized.capitalize] +
+        UnicodeProperties.reverse_casefold_variants(normalized)).select do |candidate|
+        candidate.each_char.one? && normalized.casecmp?(candidate)
+      end.uniq
+    end
+
+    # Return Unicode simple-fold equivalence groups. Ruby's fold operation
+    # includes compatibility members such as Kelvin sign and OHM sign.
+    # Build this table once, then let the compiler embed only groups used by
+    # one character-class operand.
+    def casefold_groups
+      @casefold_groups ||= begin
+        groups = Hash.new { |hash, key| hash[key] = [] }
+        add_codepoint = lambda do |codepoint|
+          character = codepoint.chr(Encoding::UTF_8)
+          folded = character.downcase(:fold)
+          groups[folded] << character
+          groups[folded] << folded if folded.each_char.one?
+        end
+        UnicodeProperties::UNICODE_CHANGES_WHEN_CASEFOLDED_RANGES.each do |first, last|
+          first.upto(last, &add_codepoint)
+        end
+        (UnicodeProperties::MULTI_CHAR_CASEFOLD_CODEPOINTS +
+         UnicodeProperties::CASEFOLD_GROUP_CODEPOINTS).uniq.each(&add_codepoint)
+        groups.each_value do |members|
+          members.uniq!
+          members.freeze
+        end
+        groups.select { |_folded, members| members.length > 1 }.freeze
+      end
     end
 
     def split_intersection(source)
@@ -39,17 +187,34 @@ module Onibi
       nil
     end
 
-    def union_matches?(source, character, ignorecase)
+    def union_matches?(source, character, ignorecase, encoding)
       index = 0
+      incompatible = false
       while index < source.length
         first, index = atom(source, index)
-        return true if range_matches?(source, index, first, character)
-        return true if atom_matches?(first, character, ignorecase)
+        if literal?(first) && source[index] == "-" && index + 1 < source.length
+          nested, nested_end = atom(source, index + 1)
+          if nested && nested[0] == :nested
+            result = atom_matches?(nested, character, ignorecase, encoding)
+            return true if result == true
+
+            incompatible = true if result == :incompatible
+            index = nested_end
+            next
+          end
+        end
+        return true if range_matches?(source, index, first, character,
+                                      ignorecase: ignorecase, encoding: encoding)
+
+        result = atom_matches?(first, character, ignorecase, encoding)
+        return true if result == true
+
+        incompatible = true if result == :incompatible
 
         index = range_end(source, index, first)
       end
 
-      false
+      incompatible ? :incompatible : false
     end
 
     def atom(source, index)
@@ -61,7 +226,9 @@ module Onibi
 
     def nested_atom(source, index)
       ending = nested_end(source, index)
-      [[:nested, source[(index + 1)...ending]], ending + 1]
+      value = source[(index + 1)...ending]
+      value = "[#{value}]" if source[index, 2] == "[:"
+      [[:nested, value], ending + 1]
     end
 
     def escaped_atom(source, index)
@@ -79,6 +246,11 @@ module Onibi
     end
 
     def nested_end(source, index)
+      if source[index, 2] == "[:"
+        closing = source.index(":]", index + 2)
+        return closing + 1 if closing
+      end
+
       depth = 1
       cursor = index + 1
       loop do
@@ -101,11 +273,44 @@ module Onibi
       [depth, false]
     end
 
-    def range_matches?(source, index, first, character)
+    def range_matches?(source, index, first, character, ignorecase: false, encoding: nil)
       return false unless source[index] == "-" && index + 1 < source.length
 
       last, = atom(source, index + 1)
-      literal?(first) && literal?(last) && character.between?(first[1], last[1])
+      return false unless literal?(first) && literal?(last)
+
+      character_value = character.codepoints.first
+      return true if character_value.between?(first[1].ord, last[1].ord)
+      return false unless ignorecase
+
+      normalized_character = unicode_character(character, encoding)
+      normalized_first = unicode_character(first[1], encoding)
+      normalized_last = unicode_character(last[1], encoding)
+      variants = [normalized_character.downcase(:fold), normalized_character.downcase,
+                  normalized_character.upcase, normalized_character.capitalize]
+      variants.concat(UnicodeProperties.reverse_casefold_variants(normalized_character))
+      variants.select! { |variant| normalized_character.casecmp?(variant) }
+      variants.any? do |variant|
+        next false unless variant.each_char.one?
+
+        encoded_variant = begin
+          variant.encode(character.encoding)
+        rescue EncodingError
+          nil
+        end
+        encoded_match = if encoded_variant && non_utf8_encoding?(encoding)
+                          (normalized_character.ascii_only? ||
+                           non_utf8_casefold_character?(normalized_character)) &&
+                            encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
+                        elsif encoded_variant
+                          encoded_variant.codepoints.first.between?(first[1].ord, last[1].ord)
+                        else
+                          false
+                        end
+        unicode_match = !non_utf8_encoding?(encoding) &&
+                        variant.codepoints.first.between?(normalized_first.ord, normalized_last.ord)
+        encoded_match || unicode_match
+      end
     end
 
     def range_end(source, index, first)
@@ -123,19 +328,74 @@ module Onibi
       [depth, cursor + 1]
     end
 
-    def atom_matches?(atom, character, ignorecase)
+    def atom_matches?(atom, character, ignorecase, encoding)
       kind, value = atom
-      return ignorecase ? value.casecmp?(character) : value == character if kind == :literal
-      return matches?(value, character, ignorecase: ignorecase) if kind == :nested
-      return property_matches?(value, character) if kind == :property
+      if kind == :literal
+        return ignorecase ? value.casecmp?(character) : value.codepoints == character.codepoints
+      end
+      return matches?(value, character, ignorecase: ignorecase, encoding: encoding) if kind == :nested
+
+      if kind == :property
+        name, negated = value
+        return true if ignorecase && negated && %w[Lower Upper Ll Lu Lt].include?(name)
+
+        return property_matches?(value, character, ignorecase: ignorecase, encoding: encoding)
+      end
 
       escaped_matches?(value, character)
     end
 
-    def property_matches?(property, character)
+    def property_matches?(property, character, ignorecase: false, encoding: nil)
       name, negated = property
-      matched = UnicodeProperties.matches?(name, character)
+      name = UnicodeProperties.normalize_name(name)
+      if incompatible_property?(name, character, encoding)
+        return negated ? true : :incompatible
+      end
+
+      normalized_character = unicode_character(character, encoding) unless
+        encoding_specific_ascii_property?(name, encoding) || EncodingSupport.binary?(encoding)
+      normalized_character ||= character
+      matched = UnicodeProperties.matches_normalized?(name, normalized_character)
+      matched = casefold_property_match?(name, normalized_character) if ignorecase && !negated && !matched &&
+                                                                        casefold_property?(name)
       negated ? !matched : matched
+    end
+
+    def casefold_property_match?(name, character)
+      UnicodeProperties.casefold_matches?(name, character)
+    end
+
+    def casefold_property?(name)
+      UnicodeProperties.normalize_name(name) != "ASCII"
+    end
+
+    def incompatible_property?(name, character, encoding)
+      non_utf8_encoding?(encoding) &&
+        (encoding_specific_ascii_property?(name, encoding) ||
+         (name == "Word" && EncodingSupport.binary?(encoding))) &&
+        !character.ascii_only?
+    end
+
+    def encoding_specific_ascii_property?(name, encoding)
+      properties = %w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Punct]
+      properties << "Graph" << "Print" if EncodingSupport.binary?(encoding)
+      properties.include?(name)
+    end
+
+    def non_utf8_encoding?(encoding)
+      EncodingSupport.binary?(encoding) || EncodingSupport.legacy_multibyte?(encoding)
+    end
+
+    def unicode_character(character, encoding)
+      return character unless EncodingSupport.legacy_multibyte?(encoding)
+
+      character.encode(Encoding::UTF_8)
+    rescue EncodingError
+      character
+    end
+
+    def non_utf8_casefold_character?(character)
+      UnicodeProperties.greek?(character) || UnicodeProperties.cyrillic?(character)
     end
 
     def property_escape(source, index)
@@ -166,6 +426,8 @@ module Onibi
 
     def literal_escape(source, index)
       escaped = source[index + 1]
+      return named_character_escape(source, index) if escaped == "N"
+
       simple = { "a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n", "r" => "\r", "t" => "\t", "v" => "\v" }[escaped]
       return [simple, index + 2] if simple
       return decode_control_escape(source, index) if %w[c C].include?(escaped)
@@ -174,6 +436,13 @@ module Onibi
       return decode_unicode_escape(source, index) if escaped == "u"
 
       [nil, nil]
+    end
+
+    def named_character_escape(source, index)
+      ending = source.index("}", index + 3)
+      return [source[index + 1], index + 2] unless ending
+
+      [source[index + 1], index + 2]
     end
 
     def decode_control_escape(source, index)
@@ -286,3 +555,5 @@ module Onibi
     end
   end
 end
+
+# rubocop:enable Metrics/ModuleLength

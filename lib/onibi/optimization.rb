@@ -308,7 +308,7 @@ module Onibi
             next unless disjoint_quantifier?(left, right)
 
             parts[index] = AST::Quantifier.new(left.expression, left.kind, left.minimum,
-                                               left.maximum, :possessive)
+                                               left.maximum, :possessive, left.exact_bound)
           end
         end
 
@@ -358,7 +358,7 @@ module Onibi
           return quantifier unless quantifier.minimum == quantifier.maximum
 
           AST::Quantifier.new(expression, quantifier.kind, quantifier.minimum,
-                              quantifier.maximum, :possessive)
+                              quantifier.maximum, :possessive, quantifier.exact_bound)
         end
       end
 
@@ -379,7 +379,10 @@ module Onibi
         def transform_sequence(sequence)
           parts = sequence.parts.map { |part| transform(part) }
           tail = parts.last
-          parts[-1] = AST::Quantifier.new(tail.expression, tail.kind, tail.minimum, tail.maximum, :possessive) if terminal_loop?(tail)
+          if terminal_loop?(tail)
+            parts[-1] = AST::Quantifier.new(tail.expression, tail.kind, tail.minimum, tail.maximum,
+                                            :possessive, tail.exact_bound)
+          end
           parts == sequence.parts ? sequence : AST::Sequence.new(parts)
         end
 

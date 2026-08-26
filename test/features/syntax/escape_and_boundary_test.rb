@@ -39,11 +39,37 @@ class EscapeAndBoundaryTest < Minitest::Test
     refute regexp.match?("x")
   end
 
+  def test_grapheme_escape_matches_extended_clusters
+    ["a\u0301", "🇯🇵", "क्\u200dष", "👩‍🚀", "ς‍aςß"].each do |input|
+      expected = Regexp.new("\\X").match(input)
+      actual = Onibi::Regexp.new("\\X").match(input)
+      assert_equal expected[0], actual[0], input.inspect
+      assert_equal expected.offset(0), actual.offset(0), input.inspect
+    end
+  end
+
+  def test_grapheme_escape_backtracks_cluster_boundaries
+    input = "क्\u200dष"
+    expected = Regexp.new("\\X\\X").match(input)
+    actual = Onibi::Regexp.new("\\X\\X").match(input)
+
+    assert_equal expected[0], actual[0]
+    assert_equal expected.offset(0), actual.offset(0)
+  end
+
   def test_word_boundaries
     assert Onibi::Regexp.new("\\bcat\\b").match?("a cat!")
     refute Onibi::Regexp.new("\\bcat\\b").match?("scatter")
     assert Onibi::Regexp.new("\\Bcat\\B").match?("scatter")
     refute Onibi::Regexp.new("\\Bcat\\B").match?("a cat!")
+  end
+
+  def test_word_boundaries_include_mri_numeric_symbols
+    pattern = "\\bx"
+    input = "²x"
+
+    assert_equal Regexp.new(pattern).match?(input), Onibi::Regexp.new(pattern).match?(input)
+    assert_equal Regexp.new("\\Bx").match?(input), Onibi::Regexp.new("\\Bx").match?(input)
   end
 
   def test_start_match_anchor

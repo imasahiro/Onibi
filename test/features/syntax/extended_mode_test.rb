@@ -3,6 +3,12 @@
 require "test_helper"
 
 class ExtendedModeTest < Minitest::Test
+  def test_scoped_extended_comment_cannot_close_the_group
+    pattern = "(?x:a # comment\\n)"
+
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.new(pattern) }
+  end
+
   def test_extended_mode_ignores_whitespace_and_hash_comments
     pattern = "a b # middle comment\n c"
 

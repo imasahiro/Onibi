@@ -8,10 +8,19 @@ module Onibi
     def character_escape_token(index, escaped)
       return hex_escape_token(index) if escaped == "x"
       return unicode_escape_token(index) if escaped == "u"
+      return named_character_token(index) if escaped == "N"
       return control_escape_token(index, escaped) if %w[c C].include?(escaped)
       return meta_escape_token(index) if escaped == "M"
 
       nil
+    end
+
+    def named_character_token(index)
+      ending = @source.index("}", index + 3)
+      return [Lexer::Token.new(:literal, "N", index), index + 2] unless ending
+
+      value = @source[(index + 1)..ending]
+      [Lexer::Token.new(:literal, value, index), ending + 1]
     end
 
     def meta_escape_token(index)
@@ -52,7 +61,13 @@ module Onibi
     end
 
     def control_escape_token(index, escaped)
-      character_index = escaped == "C" && @source[index + 2] == "-" ? index + 3 : index + 2
+      if escaped == "C"
+        raise RegexpError, "invalid control escape" unless @source[index + 2] == "-"
+
+        character_index = index + 3
+      else
+        character_index = index + 2
+      end
       character = @source[character_index]
       raise RegexpError, "invalid control escape" unless character && character.length == 1
 
@@ -61,15 +76,40 @@ module Onibi
     end
 
     def hex_escape_token(index)
-      cursor = index + 2
-      digits = +""
-      while digits.length < 2 && hex_digit?(@source[cursor])
-        digits << @source[cursor]
-        cursor += 1
-      end
-      raise RegexpError, "invalid hex escape" if digits.empty?
+      cursor = index
+      bytes = []
+      while @source[cursor] == "\\" && @source[cursor + 1] == "x"
+        digits = @source[(cursor + 2), 2]
+        break unless hex_sequence?(digits, 2)
 
-      [Lexer::Token.new(:literal, codepoint_character(digits.to_i(16)), index), cursor]
+        bytes << digits.to_i(16)
+        cursor += 4
+      end
+      raise RegexpError, "invalid hex escape" if bytes.empty?
+
+      value = escaped_bytes(bytes)
+      [Lexer::Token.new(:literal, value, index), cursor]
+    end
+
+    def escaped_bytes(bytes)
+      return escaped_byte(bytes.first) if bytes.length == 1
+
+      value = bytes.pack("C*").force_encoding(escape_encoding)
+      return value if value.valid_encoding?
+
+      # US-ASCII patterns can contain a valid encoded byte sequence. MRI keeps
+      # the regexp encoding as US-ASCII, but matches the sequence as Unicode.
+      if escape_encoding == Encoding::US_ASCII
+        utf8 = bytes.pack("C*").force_encoding(Encoding::UTF_8)
+        return utf8 if utf8.valid_encoding?
+
+        # MRI defers this invalid US-ASCII byte sequence until match time.
+        # Keep the payload as binary so parsing can continue and the VM can
+        # apply the same encoding compatibility check.
+        return bytes.pack("C*")
+      end
+
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/"
     end
 
     def unicode_escape_token(index)
@@ -105,7 +145,8 @@ module Onibi
     end
 
     def codepoint_character(codepoint)
-      codepoint.chr(@source.encoding)
+      encoding = codepoint > 0x7f ? Encoding::UTF_8 : escape_encoding
+      codepoint.chr(encoding)
     rescue RangeError, EncodingError
       raise RegexpError, "invalid Unicode escape"
     end
@@ -118,11 +159,26 @@ module Onibi
       digits && digits.length == length && digits.each_char.all? { |digit| hex_digit?(digit) }
     end
 
-    def special_escape_token(index, escaped)
-      return backreference_token(index) if digit_escape?(escaped) || escaped == "k"
-      return subexpression_token(index) if escaped == "g"
+    def escape_encoding
+      @noencoding ? Encoding::ASCII_8BIT : @source.encoding
+    end
 
-      property_token(index) if %w[p P].include?(escaped)
+    def escaped_byte(codepoint)
+      encoding = escape_encoding
+      encoding = Encoding::ASCII_8BIT if codepoint > 0x7f && encoding == Encoding::US_ASCII
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/" if codepoint > 0x7f && [Encoding::UTF_8, Encoding::EUC_JP].include?(encoding)
+
+      codepoint.chr(encoding)
+    rescue RangeError, EncodingError
+      raise RegexpError, "too short escaped multibyte character: /#{@source}/"
+    end
+
+    def special_escape_token(index, escaped)
+      return backreference_token(index) if digit_escape?(escaped) ||
+                                           (escaped == "k" && @source[index + 2] == "<")
+      return subexpression_token(index) if escaped == "g" && @source[index + 2] == "<"
+
+      property_token(index) if %w[p P].include?(escaped) && @source[index + 2] == "{"
     end
 
     def escaped_type_token(type, escaped, index)

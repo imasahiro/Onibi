@@ -18,14 +18,184 @@ class RegexpSyntaxSemanticsTest < Minitest::Test
   end
 
   def test_octal_escapes_match_the_encoded_byte
+    assert Onibi::Regexp.new("\\0").match?("\0")
+    assert Onibi::Regexp.new("\\01").match?("\x01")
+    assert Onibi::Regexp.new("\\10").match?("\b")
+    assert Onibi::Regexp.new("\\80").match?("80")
     assert Onibi::Regexp.new("\\101").match?("A")
     assert Onibi::Regexp.new("\\141").match?("a")
+  end
+
+  def test_multi_digit_escape_uses_an_existing_capture_as_a_backreference
+    pattern = "(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)\\10"
+    expected = ::Regexp.new(pattern).match("abcdefghijj").to_a
+
+    assert_equal expected, Onibi::Regexp.new(pattern).match("abcdefghijj").to_a
   end
 
   def test_invalid_hex_and_unicode_escapes_raise_regexp_error
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\x") }
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u12") }
     assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\u{}") }
+  end
+
+  def test_short_multibyte_hex_escape_matches_mri_error
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\xE9") }
+
+    assert_equal "too short escaped multibyte character: /\\xE9/", error.message
+  end
+
+  def test_contiguous_utf8_hex_escapes_match_as_one_character
+    regexp = Onibi::Regexp.new("\\xE3\\x81\\x82")
+    us_ascii_regexp = Onibi::Regexp.new("\\xE3\\x81\\x82".encode(Encoding::US_ASCII))
+
+    assert_equal Encoding::UTF_8, regexp.encoding
+    assert regexp.fixed_encoding?
+    assert regexp.match?("あ")
+    assert us_ascii_regexp.match?("あ")
+    assert us_ascii_regexp.match?("\xE3\x81\x82".b)
+    refute regexp.match?("い")
+    assert_raises(Encoding::CompatibilityError) { regexp.match?("\xE3\x81\x82".b) }
+  end
+
+  def test_contiguous_utf8_octal_escapes_match_as_one_character
+    regexp = Onibi::Regexp.new("\\343\\201\\202")
+    us_ascii_regexp = Onibi::Regexp.new("\\343\\201\\202".encode(Encoding::US_ASCII))
+
+    assert regexp.match?("あ")
+    assert us_ascii_regexp.match?("あ")
+    refute regexp.match?("い")
+  end
+
+  def test_noencoding_property_does_not_match_non_ascii_binary_input
+    regexp = Onibi::Regexp.new("\\p{Alpha}", Onibi::Regexp::NOENCODING)
+
+    refute regexp.match?("\xFF".b)
+  end
+
+  def test_noencoding_negated_property_matches_non_ascii_binary_input
+    regexp = Onibi::Regexp.new("\\p{^Alpha}", Onibi::Regexp::NOENCODING)
+
+    assert regexp.match?("\xFF".b)
+  end
+
+  def test_non_utf8_casefold_does_not_apply_unicode_expansions
+    pattern = "ss".encode(Encoding::EUC_JP)
+    input = "ß".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?(input)
+  end
+
+  def test_ascii8bit_casefold_keeps_non_ascii_bytes_exact
+    pattern = "\x80".b
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("\x80".b)
+    refute regexp.match?("\x81".b)
+  end
+
+  def test_non_utf8_character_classes_use_unicode_codepoints
+    [Encoding::EUC_JP, Encoding::Windows_31J].each do |encoding|
+      range = Onibi::Regexp.new("[Α-Ω]".encode(encoding), Onibi::Regexp::IGNORECASE)
+      property = Onibi::Regexp.new("[\\p{Greek}]".encode(encoding))
+
+      assert range.match?("α".encode(encoding))
+      assert property.match?("Α".encode(encoding))
+    end
+  end
+
+  def test_ignorecase_closes_unicode_range_casefolds
+    regexp = Onibi::Regexp.new("[\\u{100}-\\u{200}]", Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("s")
+    assert regexp.match?("S")
+  end
+
+  def test_ignorecase_range_does_not_fold_turkish_dotless_i
+    regexp = Onibi::Regexp.new("[A-ê]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("ı")
+  end
+
+  def test_ignorecase_range_closes_folds_of_codepoints_inside_range
+    regexp = Onibi::Regexp.new("[ẞ-龠]", Onibi::Regexp::IGNORECASE)
+
+    assert regexp.match?("Ω")
+    assert regexp.match?("ω")
+  end
+
+  def test_ignorecase_intersection_folds_negated_class_operands
+    greek = Onibi::Regexp.new("[\\p{Greek}&&[^\\p{Lower}]]", Onibi::Regexp::IGNORECASE)
+    alpha = Onibi::Regexp.new("[\\p{Alpha}&&[^a-z]]", Onibi::Regexp::IGNORECASE)
+
+    assert greek.match?("Α")
+    assert greek.match?("α")
+    assert alpha.match?("a")
+    assert alpha.match?("A")
+
+    vowels = Onibi::Regexp.new("[[a-z]&&[^aeiou]]", Onibi::Regexp::IGNORECASE)
+    refute vowels.match?("a")
+    assert vowels.match?("b")
+
+    opposite_case = Onibi::Regexp.new("[a-z&&[^A-Z]]", Onibi::Regexp::IGNORECASE)
+    assert opposite_case.match?("a")
+    assert opposite_case.match?("A")
+  end
+
+  def test_ignorecase_intersection_compiles_before_casefold
+    regexp = Onibi::Regexp.new("[a-z&&A-Z]", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("a")
+    refute regexp.match?("A")
+  end
+
+  def test_ignorecase_property_intersection_closes_fold_groups
+    ascii = Onibi::Regexp.new("[\\p{Upper}&&[^A-Z]]", Onibi::Regexp::IGNORECASE)
+    greek = Onibi::Regexp.new("[\\p{Upper}&&[^Α-Ω]]", Onibi::Regexp::IGNORECASE)
+
+    refute ascii.match?("A")
+    assert ascii.match?("K")
+    assert ascii.match?("Ω")
+    refute greek.match?("Α")
+    assert greek.match?("Ω")
+  end
+
+  def test_ascii8bit_property_uses_byte_semantics
+    regexp = Onibi::Regexp.new("\\p{Alpha}".b)
+
+    refute regexp.match?("\xC3".b)
+    assert regexp.match?("A".b)
+  end
+
+  def test_noencoding_multibyte_escape_is_fixed_binary
+    regexp = Onibi::Regexp.new("\\xC3\\xA9", Onibi::Regexp::NOENCODING)
+
+    assert regexp.fixed_encoding?
+    assert regexp.match?("\xC3\xA9".b)
+    assert_raises(Encoding::CompatibilityError) { regexp.match?("é") }
+  end
+
+  def test_non_utf8_multibyte_escape_preserves_pattern_encoding
+    pattern = "\\xC3\\xA9".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal Encoding::EUC_JP, regexp.encoding
+    assert regexp.fixed_encoding?
+    refute regexp.match?("é".encode(Encoding::EUC_JP))
+  end
+
+  def test_non_utf8_casefold_does_not_apply_unicode_case_mapping
+    pattern = "é".encode(Encoding::EUC_JP)
+    regexp = Onibi::Regexp.new(pattern, Onibi::Regexp::IGNORECASE)
+
+    refute regexp.match?("É".encode(Encoding::EUC_JP))
+  end
+
+  def test_trailing_escape_error_matches_mri
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("\\") }
+
+    assert_equal "too short escape sequence: /\\/", error.message
   end
 
   def test_character_classes_decode_literal_escape_sequences

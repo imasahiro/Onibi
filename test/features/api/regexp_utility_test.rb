@@ -3,8 +3,18 @@
 require "test_helper"
 
 class RegexpUtilityTest < Minitest::Test
+  def test_escape_ignores_string_subclass_overrides
+    string_class = Class.new(String) do
+      def each_char
+        raise "Regexp.escape must not dispatch to String subclass"
+      end
+    end
+
+    assert_equal Regexp.escape(string_class.new("a.b")), Onibi::Regexp.escape(string_class.new("a.b"))
+  end
+
   UNSAFE_PATTERNS = [
-    "(?<word>a)\\k<word>", "(?=a)b", "(?!a)b", "(?<=a)b", "(?<!a)b", "(?>a|ab)", "(?~a)"
+    "(?<word>a)\\k<word>", "(?~a)", "(a)?(?(1)b|c)"
   ].freeze
   def test_escape_quotes_regexp_metacharacters
     assert_equal "a\\.b\\[c\\]\\ \\(x\\)\\\\", Onibi::Regexp.escape("a.b[c] (x)\\")
@@ -27,8 +37,24 @@ class RegexpUtilityTest < Minitest::Test
 
   def test_escape_matches_ruby_input_coercion_errors
     assert_equal "a", Onibi::Regexp.escape(:a)
-    assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
+    error = assert_raises(TypeError) { Onibi::Regexp.escape(nil) }
+    assert_equal "no implicit conversion of nil into String", error.message
     assert_raises(TypeError) { Onibi::Regexp.escape(1) }
+  end
+
+  def test_escape_rejects_non_string_to_str_results_like_mri
+    value = Object.new
+    value.define_singleton_method(:to_str) { nil }
+
+    error = assert_raises(TypeError) { Onibi::Regexp.escape(value) }
+    assert_equal "can't convert Object to String (Object#to_str gives NilClass)", error.message
+  end
+
+  def test_escape_reports_boolean_conversion_errors_like_mri
+    assert_equal "no implicit conversion of true into String",
+                 assert_raises(TypeError) { Onibi::Regexp.escape(true) }.message
+    assert_equal "no implicit conversion of false into String",
+                 assert_raises(TypeError) { Onibi::Regexp.escape(false) }.message
   end
 
   def test_quote_is_an_alias_for_escape
@@ -36,15 +62,36 @@ class RegexpUtilityTest < Minitest::Test
     assert_equal Onibi::Regexp.escape(:word), Onibi::Regexp.quote(:word)
   end
 
+  def test_last_match_matches_mri_and_match_question_does_not_change_it
+    regexp = Onibi::Regexp.new("(a)")
+
+    Onibi::Regexp.new("never").match("x")
+    assert_nil Onibi::Regexp.last_match
+    matched = regexp.match("a")
+    assert_equal matched, Onibi::Regexp.last_match
+    assert_equal "a", Onibi::Regexp.last_match(0)
+    assert_equal "a", Onibi::Regexp.last_match(1)
+
+    regexp.match?("b")
+    assert_equal matched, Onibi::Regexp.last_match
+    assert_nil regexp.match("b")
+    assert_nil Onibi::Regexp.last_match
+  end
+
   def test_try_convert_handles_to_regexp_contract
     regexp = Onibi::Regexp.new("a")
     convertible = Object.new
     convertible.define_singleton_method(:to_regexp) { regexp }
+    native_convertible = Object.new
+    native_convertible.define_singleton_method(:to_regexp) { ::Regexp.new("a") }
     invalid = Object.new
     invalid.define_singleton_method(:to_regexp) { "not a regexp" }
 
     assert_same regexp, Onibi::Regexp.try_convert(regexp)
+    native = ::Regexp.new("a")
+    assert_same native, Onibi::Regexp.try_convert(native)
     assert_same regexp, Onibi::Regexp.try_convert(convertible)
+    assert_instance_of ::Regexp, Onibi::Regexp.try_convert(native_convertible)
     assert_nil Onibi::Regexp.try_convert(Object.new)
     assert_raises(TypeError) { Onibi::Regexp.try_convert(invalid) }
   end
@@ -56,6 +103,39 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("a.b")
     assert regexp.match?("cat")
     refute regexp.match?("dog")
+  end
+
+  def test_union_ignores_string_subclass_overrides
+    pattern_class = Class.new(String) do
+      def encoding
+        raise "Regexp.union must not dispatch to pattern subclass"
+      end
+    end
+
+    regexp = Onibi::Regexp.union(pattern_class.new("a"))
+
+    assert regexp.match?("a")
+  end
+
+  def test_union_ignores_native_regexp_subclass_overrides
+    regexp_class = Class.new(::Regexp) do
+      def source
+        raise "Regexp.union must not dispatch to native regexp subclass"
+      end
+    end
+    regexp = regexp_class.new("a")
+
+    assert Onibi::Regexp.union(regexp).match?("a")
+  end
+
+  def test_union_ignores_array_subclass_overrides
+    patterns_class = Class.new(Array) do
+      def length
+        raise "Regexp.union must not dispatch to array subclass"
+      end
+    end
+
+    assert Onibi::Regexp.union(patterns_class.new(["a"])).match?("a")
   end
 
   def test_union_of_no_patterns_never_matches
@@ -71,6 +151,10 @@ class RegexpUtilityTest < Minitest::Test
     assert regexp.match?("cat")
   end
 
+  def test_union_rejects_symbol_mixed_with_multiple_patterns
+    assert_raises(TypeError) { Onibi::Regexp.union("a", :foo) }
+  end
+
   def test_union_accepts_compiled_regexp_patterns
     regexp = Onibi::Regexp.union(::Regexp.new("a|b"), "cat")
 
@@ -83,6 +167,30 @@ class RegexpUtilityTest < Minitest::Test
     regexp = Onibi::Regexp.union(::Regexp.new("cat", ::Regexp::IGNORECASE))
 
     assert regexp.match?("CAT")
+  end
+
+  def test_union_embeds_each_compiled_pattern_scope
+    regexp = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+
+    assert_equal "(?i-mx:a)|(?-mix:b)", regexp.source
+    assert_equal 0, regexp.options
+  end
+
+  def test_union_to_s_keeps_scopes_outside_the_outer_wrapper
+    expected = ::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+    actual = Onibi::Regexp.union(::Regexp.new("a", ::Regexp::IGNORECASE), ::Regexp.new("b"))
+
+    assert_equal expected.to_s, actual.to_s
+  end
+
+  def test_to_s_escapes_slashes_inside_scoped_modifiers
+    regexp = Onibi::Regexp.new("(?imx:a/b)")
+
+    assert_equal "(?mix:a\\/b)", regexp.to_s
+  end
+
+  def test_to_s_escapes_slashes_in_plain_patterns
+    assert_equal "(?-mix:a\\/b)", Onibi::Regexp.new("a/b").to_s
   end
 
   def test_union_preserves_compiled_multiline_and_extended_options
@@ -122,17 +230,46 @@ class RegexpUtilityTest < Minitest::Test
     assert binary.fixed_encoding?
   end
 
+  def test_union_keeps_mri_binary_encoding_selection
+    ascii_binary = Onibi::Regexp.union("a".b, "b".b)
+    assert_equal Regexp.union("a".b, "b".b).encoding, ascii_binary.encoding
+    assert_equal Regexp.union("a".b, "b".b).options, ascii_binary.options
+
+    mixed = Onibi::Regexp.union("a".b, "é")
+    expected = Regexp.union("a".b, "é")
+    assert_equal expected.encoding, mixed.encoding
+    assert_equal expected.options, mixed.options
+    assert_equal expected.inspect, mixed.inspect
+  end
+
   def test_linear_time_reports_conservative_pattern_safety
     assert Onibi::Regexp.linear_time?("a*")
     assert Onibi::Regexp.linear_time?(::Regexp.new("a*"))
     refute Onibi::Regexp.linear_time?("(a*)\\1")
-    refute Onibi::Regexp.linear_time?("(?=a)b")
+    assert Onibi::Regexp.linear_time?("(?=a)b")
     refute Onibi::Regexp.linear_time?("(?~a)")
+  end
+
+  def test_linear_time_uses_mri_pattern_conversion_rules
+    assert_raises(TypeError) { Onibi::Regexp.linear_time?(1) }
+    assert_raises(TypeError) { Onibi::Regexp.linear_time?(nil) }
+
+    pattern_class = Class.new(String) do
+      def to_s
+        raise "linear_time? must not dispatch to pattern subclass"
+      end
+    end
+    assert Onibi::Regexp.linear_time?(pattern_class.new("a*"))
   end
 
   def test_linear_time_rejects_each_supported_non_linear_syntax_family
     UNSAFE_PATTERNS.each do |pattern|
       refute Onibi::Regexp.linear_time?(pattern), "expected #{pattern} to be unsafe"
     end
+  end
+
+  def test_linear_time_validates_references_before_classification
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.linear_time?("\\k<missing>") }
+    assert_raises(Onibi::RegexpError) { Onibi::Regexp.linear_time?("(?(1)a|b)") }
   end
 end

@@ -42,7 +42,7 @@ module Onibi
 
     def flag_options(flags)
       names = { "i" => "ignorecase", "m" => "multiline", "x" => "extended" }
-      raise ArgumentError, "invalid options" unless flags.chars.all? { |flag| names.key?(flag) }
+      raise ArgumentError, "unknown regexp option: #{flags}" unless flags.chars.all? { |flag| names.key?(flag) }
 
       flags.chars.map { |flag| names.fetch(flag) }.uniq
     end
@@ -50,10 +50,8 @@ module Onibi
     def integer_options(value)
       bits = { 1 => "ignorecase", 2 => "extended", 4 => "multiline", 16 => "fixedencoding", 32 => "noencoding" }
       supported = bits.keys.sum
-      raise ArgumentError, "invalid options" if value.negative? || (value & ~supported).positive?
-      raise ArgumentError, "invalid options" if (value & 48) == 48
 
-      bits.filter_map { |bit, name| name if (value & bit).positive? }
+      bits.filter_map { |bit, name| name if (value & supported & bit).positive? }
     end
 
     def normalize_inline_options(source, options)

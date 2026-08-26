@@ -15,6 +15,18 @@ class RegexpConstructorContractTest < Minitest::Test
     end
   end
 
+  def test_integer_options_ignore_legacy_bits_like_mri
+    [8, 64, 128].each do |legacy_bit|
+      expected = ::Regexp.new("cat", legacy_bit)
+      actual = Onibi::Regexp.new("cat", legacy_bit)
+
+      assert_equal expected.options, actual.options, legacy_bit
+      assert_equal expected.to_s, actual.to_s, legacy_bit
+    end
+
+    assert_equal ::Regexp.new("cat", -1).options, Onibi::Regexp.new("cat", -1).options
+  end
+
   def test_scoped_inline_modes_match_mri_introspection_without_leaking_to_outer_options
     ["(?i:cat)", "(?m:.)", "(?x:a b)"].each do |source|
       expected = ::Regexp.new(source)

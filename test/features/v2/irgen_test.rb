@@ -25,6 +25,22 @@ class V2IRGenTest < Minitest::Test
     ], instruction_signature(Onibi::IRGen::YARVIR.generate(dfa, mode: :dfa))
   end
 
+  def test_common_vm_executes_tnfa_bytecode
+    tnfa = tnfa_for(sequence("a", "b"))
+    program = Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
+
+    assert_equal [2, 4], Onibi::IRGen::YARVIR.execute(program, "xxabyy", 0)
+    assert_nil Onibi::IRGen::YARVIR.execute(program, "xxacyy", 0)
+  end
+
+  def test_common_vm_tracks_tnfa_captures
+    tnfa = tnfa_for(Onibi::AST::Group.new(sequence("a", "b"), 1, true, "pair"))
+    program = Onibi::IRGen::YARVIR.generate(tnfa, mode: :nfa)
+
+    assert_equal [2, 4, { 1 => [2, 4], "pair" => [2, 4] }],
+                 Onibi::IRGen::YARVIR.execute_with_captures(program, "xxabyy", 0)
+  end
+
   def test_nfa_mode_keeps_choice_edges_while_dfa_mode_merges_them_into_states
     ast = Onibi::AST::Alternation.new([sequence("a"), sequence("b")])
     tnfa = tnfa_for(ast)
@@ -47,6 +63,55 @@ class V2IRGenTest < Minitest::Test
     assert_equal [
       [:start, 0], [:match, [:match_class, node]], [:jump, 1], [:accept, 1]
     ], instruction_signature(program_for(node))
+  end
+
+  def test_character_class_embeds_casefold_split_policy
+    sharp_s = Onibi::Regexp.new("[ß]", Onibi::Regexp::IGNORECASE)
+    ligature = Onibi::Regexp.new("[ﬆ]", Onibi::Regexp::IGNORECASE)
+
+    assert sharp_s.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
+    refute ligature.send(:bytecode_program).flags[:semantic_root].parts.first.split_casefold
+  end
+
+  def test_character_class_embeds_fold_boundary_metadata
+    regexp = Onibi::Regexp.new("[ᾀ]", Onibi::Regexp::IGNORECASE)
+    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+
+    assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
+  end
+
+  def test_fold_policy_is_embedded_in_unicode_operands
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::Literal.new("ι"), casefold: true
+    )
+    character_class = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("ι"), casefold: true
+    )
+
+    assert_equal :fold_group_variant, literal.fold_policy[:anchor_source]
+    assert_equal :consume_source_variant, character_class.fold_policy[:optional_order]
+  end
+
+  def test_character_class_embeds_compiled_predicate_operands
+    regexp = Onibi::Regexp.new("[a-z]")
+    operand = regexp.send(:bytecode_program).flags[:semantic_root].parts.first
+
+    assert operand.compiled_sensitive
+    assert operand.compiled_insensitive
+    assert operand.compiled_sensitive.matches?("m")
+    refute operand.compiled_sensitive.matches?("0")
+  end
+
+  def test_character_class_fold_groups_are_only_compiled_for_casefolding
+    plain = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("[\\p{Upper}&&[^A-Z]]")
+    )
+    folded = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::AST::CharacterClass.new("[\\p{Upper}&&[^A-Z]]"), casefold: true
+    )
+
+    assert_empty plain.folded_characters
+    assert_includes folded.folded_characters, "K"
   end
 
   def test_escape_property_and_any_generate_exact_match_operands
@@ -87,6 +152,13 @@ class V2IRGenTest < Minitest::Test
     assert_equal [
       [:start, 0], [:match, [:match_quantifier, node]], [:jump, 1], [:accept, 1]
     ], instruction_signature(program_for(node))
+  end
+
+  def test_repeat_bytecode_records_fold_lazy_exact_bounds
+    node = Onibi::AST::Quantifier.new(Onibi::AST::Literal.new("a"), :bounded, 2, 2, :lazy, true)
+    operand = program_for(node).instructions[1].operand.last
+
+    assert_equal [0, 2, true], [operand.minimum, operand.maximum, operand.lazy_exact]
   end
 
   def test_capture_generates_exact_group_operand
@@ -151,17 +223,57 @@ class V2IRGenTest < Minitest::Test
     assert_same program, program.iseq
     assert_equal :start, program.instructions.first.opcode
     assert_equal :accept, program.instructions.last.opcode
-    assert_equal [[:match_literal, Onibi::AST::Literal.new("a")]],
+    assert_equal [[:match_literal, Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a", nil, nil, false)]],
                  program.instructions.select { |instruction| instruction.opcode == :match }.map(&:operand)
   end
 
-  def test_dedicated_executor_matches_literal_without_mri_regexp
+  def test_dedicated_executor_matches_literal_without_fold_regexp
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("cat")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
     program = Onibi::IRGen::YARVIR.generate(dfa)
 
     assert_equal [2, 5], Onibi::IRGen::YARVIR.execute(program, "xxcatyy", 0)
     assert_nil Onibi::IRGen::YARVIR.execute(program, "xxdogyy", 0)
+  end
+
+  def test_public_vm_passes_compiled_execution_facts_without_ast_lookup
+    literal = Onibi::Regexp.new("abc")
+    nullable = Onibi::Regexp.new("a*")
+
+    literal_flags = literal.send(:bytecode_program).flags
+    nullable_flags = nullable.send(:bytecode_program).flags
+
+    assert_equal true, literal_flags[:literal_only]
+    assert_equal false, literal_flags[:nullable]
+    assert_equal true, nullable_flags[:nullable]
+    assert Onibi::Interpreter::Executor
+    refute Onibi::IRGen::YARVIR.const_defined?(:Executor, false)
+  end
+
+  def test_unicode_capture_offset_fact_is_embedded_in_semantic_bytecode
+    literal = Onibi::Regexp.new("é")
+    repeated_capture = Onibi::Regexp.new("(é+)")
+
+    assert_equal true, literal.send(:bytecode_program).flags[:unicode_capture_byte_offsets]
+    assert_equal false, repeated_capture.send(:bytecode_program).flags[:unicode_capture_byte_offsets]
+    refute literal.respond_to?(:bytecode_unicode_capture_byte_offsets?, true)
+  end
+
+  def test_literal_casefold_is_embedded_in_semantic_bytecode
+    regexp = Onibi::Regexp.new("ᾀ")
+    root = regexp.send(:bytecode_program).flags[:semantic_root]
+
+    assert_equal "ἀι", root.parts.first.casefold
+    assert_equal [%w[ᾀ ἀι]], root.parts.first.casefold_segments
+    assert root.parts.first.fold_boundary_sensitive
+    assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, root.parts.first.fold_boundary)
+
+    lookahead = Onibi::Regexp.new("ω").send(:bytecode_program).flags[:semantic_root]
+    assert_equal :non_split_prefix, lookahead.parts.first.fold_prefix_boundary
+
+    ascii = Onibi::Regexp.new("ss", Onibi::Regexp::IGNORECASE)
+    refute ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary_sensitive
+    assert_nil ascii.send(:bytecode_program).flags[:semantic_root].parts.first.fold_boundary
   end
 
   def test_dedicated_executor_consumes_a_quantifier_run
@@ -198,6 +310,25 @@ class V2IRGenTest < Minitest::Test
                  Onibi::IRGen::YARVIR.execute_with_captures(program, "xxabab", 0)
   end
 
+  def test_program_automaton_contains_semantic_operands
+    program = program_for(Onibi::AST::Literal.new("a"))
+    labels = program.automaton.transitions.keys.map(&:last)
+
+    assert(labels.all? { |label| semantic_operand?(label[1]) })
+    refute(labels.any? { |label| label[1].is_a?(Onibi::AST::Literal) })
+    assert_nil program.automaton.tnfa
+  end
+
+  def test_ir_generation_is_idempotent_for_semantic_automata
+    original = program_for(Onibi::AST::Literal.new("a"))
+    regenerated = Onibi::IRGen::YARVIR.generate(original.automaton)
+
+    assert_equal original.instructions, regenerated.instructions
+    assert regenerated.instructions.all? do |instruction|
+      instruction.opcode != :match || semantic_operand?(instruction.operand[1])
+    end
+  end
+
   def test_ir_contains_state_id_jump_for_each_dfa_edge
     cfg = Onibi::Compiler.compile(Onibi::Parser.parse("a.")).graph
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
@@ -210,8 +341,11 @@ class V2IRGenTest < Minitest::Test
     dfa = Onibi::Automata::DFA.from_tnfa(Onibi::Automata::GlushkovTNFA.from_cfg(cfg))
     program = Onibi::IRGen::YARVIR.generate(dfa)
     expected = [
-      [:start, 0], [:match, [:match_literal, Onibi::AST::Literal.new("a")]], [:jump, 1],
-      [:match, [:match_any, Onibi::AST::Any.new(".")]], [:jump, 2], [:accept, 2]
+      [:start, 0],
+      [:match, [:match_literal, Onibi::AST::Literal.new("a")]],
+      [:jump, 1],
+      [:match, [:match_any, Onibi::AST::Any.new(".")]],
+      [:jump, 2], [:accept, 2]
     ]
     assert_equal expected, instruction_signature(program)
   end
@@ -234,6 +368,41 @@ class V2IRGenTest < Minitest::Test
   end
 
   def instruction_signature(program)
-    program.instructions.map { |instruction| [instruction.opcode, instruction.operand] }
+    program.instructions.map do |instruction|
+      [instruction.opcode, legacy_operand_signature(instruction.operand)]
+    end
+  end
+
+  def legacy_operand_signature(value)
+    return value.map { |item| legacy_operand_signature(item) } if value.is_a?(Array)
+
+    semantic = Onibi::IRGen::YARVIR::SemanticBytecode
+    case value
+    when semantic::Literal then Onibi::AST::Literal.new(value.value)
+    when semantic::CharacterClass then Onibi::AST::CharacterClass.new(value.value)
+    when semantic::Escape then Onibi::AST::Escape.new(value.kind)
+    when semantic::Property then Onibi::AST::Property.new(value.name, value.negated)
+    when semantic::Backreference then Onibi::AST::Backreference.new(value.identifier, value.named)
+    when semantic::Assertion then Onibi::AST::Assertion.new(legacy_operand_signature(value.body), value.kind)
+    when semantic::Any then Onibi::AST::Any.new(value.value)
+    when semantic::Anchor then Onibi::AST::Anchor.new(value.kind)
+    when semantic::Sequence then Onibi::AST::Sequence.new(value.parts.map { |part| legacy_operand_signature(part) })
+    when semantic::Alternation then Onibi::AST::Alternation.new(value.branches.map { |branch| legacy_operand_signature(branch) })
+    when semantic::Group then Onibi::AST::Group.new(legacy_operand_signature(value.body), value.number, value.capture, value.name)
+    when semantic::OptionGroup
+      Onibi::AST::OptionGroup.new(legacy_operand_signature(value.body), value.ignorecase, value.multiline, value.extended)
+    when semantic::AtomicGroup then Onibi::AST::AtomicGroup.new(legacy_operand_signature(value.body))
+    when semantic::Conditional
+      Onibi::AST::Conditional.new(value.condition, legacy_operand_signature(value.yes_branch), legacy_operand_signature(value.no_branch))
+    when semantic::SubexpressionCall then Onibi::AST::SubexpressionCall.new(value.identifier, value.named)
+    when semantic::Absence then Onibi::AST::Absence.new(legacy_operand_signature(value.body))
+    when semantic::Quantifier
+      Onibi::AST::Quantifier.new(legacy_operand_signature(value.expression), value.kind, value.minimum, value.maximum, value.mode)
+    else value
+    end
+  end
+
+  def semantic_operand?(operand)
+    operand.is_a?(Onibi::IRGen::YARVIR::SemanticBytecode::Literal)
   end
 end

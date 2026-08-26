@@ -53,9 +53,8 @@ entries:
   keywords: []
   block: false
   aliases: []
-  status: excluded
-  reason: 'Excluded from the opt-in API: global match state or Ruby class reflection
-    is outside the v1 contract.'
+  status: supported
+  reason: Implemented by the Onibi public API.
 - target: Regexp
   kind: class_method
   name: linear_time?

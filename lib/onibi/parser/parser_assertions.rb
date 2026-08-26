@@ -18,6 +18,7 @@ module Onibi
     def validate_lookbehind!(opening, body)
       return unless %i[open_positive_lookbehind open_negative_lookbehind].include?(opening.type)
       return if fixed_width?(body)
+      return if body.is_a?(AST::Alternation) && body.branches.all? { |branch| fixed_width?(branch) }
 
       raise RegexpError, "lookbehind must be fixed-width"
     end

@@ -17,12 +17,12 @@ module Onibi
 
     def bytebegin(index)
       offset = offset_at(index)
-      offset && (@offsets_are_bytes ? offset.first : byte_position(offset.first))
+      offset && byte_position(offset.first)
     end
 
     def byteend(index)
       offset = offset_at(index)
-      offset && (@offsets_are_bytes ? offset.last : byte_position(offset.last))
+      offset && byte_position(offset.last)
     end
 
     def byteoffset(index)
@@ -33,7 +33,7 @@ module Onibi
       offset = offset_at(index)
       return nil unless offset
 
-      @offsets_are_bytes ? @string.byteslice(offset.first, offset.last - offset.first).to_s.length : offset.last - offset.first
+      offset.last - offset.first
     end
 
     private
@@ -45,18 +45,44 @@ module Onibi
     end
 
     def named_index(index)
-      return @names[index.to_s] if index.is_a?(String) || index.is_a?(Symbol)
+      if index.is_a?(String) || index.is_a?(Symbol)
+        value = @names[index.to_s]
+        raise IndexError, "undefined group name reference: #{index}" if value.nil?
+
+        return value.reverse.find { |candidate| @values[candidate] } || value.last if value.is_a?(Array)
+
+        return value
+      end
 
       index
     end
 
     def validate_offset_index!(index)
-      raise TypeError, "no implicit conversion from #{index.class} into integer" unless index.is_a?(Integer)
+      index = integer_index(index) if index.is_a?(Float)
+      unless index.is_a?(Integer)
+        raise TypeError, "no implicit conversion from nil to integer" if index.nil?
+
+        raise TypeError, "no implicit conversion of #{index.class} into Integer"
+      end
       raise IndexError, "index #{index} out of matches" if index.negative? || index >= @offsets.length
     end
 
+    def integer_index(index)
+      Integer(index)
+    rescue FloatDomainError
+      label = if index.nan?
+                "NaN"
+              elsif index.positive?
+                "Inf"
+              else
+                "-Inf"
+              end
+      raise RangeError, "float #{label} out of range of integer"
+    end
+
     def byte_position(character_position)
-      @string[0, character_position].bytesize
+      prefix = String.instance_method(:[]).bind_call(@string, 0, character_position)
+      String.instance_method(:bytesize).bind_call(prefix)
     end
   end
 end

@@ -47,4 +47,37 @@ class MatchDataTest < Minitest::Test
     assert_equal "cat", match.match("animal")
     assert_equal "cat", match.match(:animal)
   end
+
+  def test_inspect_includes_unnamed_capture_values
+    expected = Regexp.new("(a)(b)?").match("ab").inspect
+    actual = Onibi::Regexp.new("(a)(b)?").match("ab").inspect
+
+    assert_equal expected, actual
+  end
+
+  def test_values_at_pads_ranges_past_capture_count
+    match = Onibi::Regexp.new("(a)(b)?").match("a")
+
+    assert_equal ["a", nil, nil, nil, nil], match.values_at(1..5)
+    assert_equal [nil, nil, nil], match.values_at(5..7)
+    assert_equal ["a", "a", nil], match.values_at(..2)
+    assert_equal ["a", nil], match.values_at(1..)
+    assert_equal ["a", nil], match.values_at(1...)
+  end
+
+  def test_offsets_report_unknown_group_names_as_index_errors
+    match = Onibi::Regexp.new("(?<name>a)").match("a")
+
+    assert_raises(IndexError) { match.begin("missing") }
+    assert_raises(IndexError) { match.offset(:missing) }
+  end
+
+  def test_deconstruct_keys_matches_mri_input_contract
+    match = Onibi::Regexp.new("(?<x>a)(?<y>b)?").match("a")
+
+    assert_equal({ x: "a", y: nil }, match.deconstruct_keys(nil))
+    assert_equal({ x: "a" }, match.deconstruct_keys(%i[x missing]))
+    assert_raises(TypeError) { match.deconstruct_keys({}) }
+    assert_raises(TypeError) { match.deconstruct_keys(:x) }
+  end
 end

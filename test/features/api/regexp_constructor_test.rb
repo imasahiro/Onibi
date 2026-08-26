@@ -3,6 +3,30 @@
 require "test_helper"
 
 class RegexpConstructorTest < Minitest::Test
+  def test_constructor_ignores_string_subclass_overrides
+    pattern_class = Class.new(String) do
+      def valid_encoding?
+        raise "Regexp compiler must not dispatch to pattern subclass"
+      end
+    end
+
+    pattern = pattern_class.new("a+")
+
+    assert Onibi::Regexp.new(pattern).match?("aaa")
+  end
+
+  def test_constructor_accepts_to_str_pattern_like_mri
+    pattern = Object.new
+    pattern.define_singleton_method(:to_str) { "a+" }
+
+    assert Onibi::Regexp.new(pattern).match?("aaa")
+  end
+
+  def test_constructor_treats_truthy_scalar_options_like_mri
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("a", 1.2).options
+    assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("a", Object.new).options
+  end
+
   def test_new_and_compile_create_equivalent_regexp_instances
     from_new = Onibi::Regexp.new("cat", ["ignorecase"])
     from_compile = Onibi::Regexp.compile("cat", ["ignorecase"])
@@ -26,6 +50,22 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal Onibi::Regexp::IGNORECASE | Onibi::Regexp::MULTILINE | Onibi::Regexp::EXTENDED,
                  Onibi::Regexp.new("cat", "imx").options
     assert_equal Onibi::Regexp::IGNORECASE, Onibi::Regexp.new("cat", :i).options
+  end
+
+  def test_constructor_reports_unknown_string_options_like_mri
+    error = assert_raises(ArgumentError) { Onibi::Regexp.new("cat", "bad") }
+
+    assert_equal "unknown regexp option: bad", error.message
+  end
+
+  def test_constructor_masks_negative_integer_options_like_mri
+    assert_equal Regexp.new("a", -3).options, Onibi::Regexp.new("a", -3).options
+    assert_equal Regexp.new("a", -2).options, Onibi::Regexp.new("a", -2).options
+  end
+
+  def test_constructor_treats_all_symbols_as_truthy_options_like_mri
+    assert_equal Regexp.new("a", :bad).options, Onibi::Regexp.new("a", :bad).options
+    assert_equal Regexp.new("a", :imx).options, Onibi::Regexp.new("a", :imx).options
   end
 
   def test_extended_integer_flag_enables_extended_mode
@@ -59,6 +99,29 @@ class RegexpConstructorTest < Minitest::Test
     assert_equal({ "animal" => [1], "sound" => [2] }, regexp.named_captures)
   end
 
+  def test_negated_unicode_property_sets_fixed_encoding
+    regexp = Onibi::Regexp.new("\\P{L}")
+
+    assert_equal Onibi::Regexp::FIXEDENCODING, regexp.options
+    assert_equal Encoding::UTF_8, regexp.encoding
+    assert regexp.fixed_encoding?
+  end
+
+  def test_named_capture_numbers_hide_unnamed_groups_like_mri
+    expected = ::Regexp.new("(a)(?<name>b)")
+    actual = Onibi::Regexp.new("(a)(?<name>b)")
+
+    assert_equal expected.named_captures, actual.named_captures
+    assert_equal expected.match("ab").to_a, actual.match("ab").to_a
+    assert_equal expected.match("ab")["name"], actual.match("ab")["name"]
+  end
+
+  def test_numbered_backreferences_are_rejected_when_named_groups_exist
+    error = assert_raises(Onibi::RegexpError) { Onibi::Regexp.new("(?<name>a)\\1") }
+
+    assert_equal "numbered backref/call is not allowed. (use name): /(?<name>a)\\1/", error.message
+  end
+
   def test_named_captures_collects_duplicate_group_numbers
     regexp = Onibi::Regexp.new("(?<value>x)(?<value>y)")
 
@@ -80,6 +143,12 @@ class RegexpConstructorTest < Minitest::Test
     regexp = Onibi::Regexp.new("cat", ["ignorecase"])
 
     assert_equal "(?i-mx:cat)", regexp.to_s
+  end
+
+  def test_to_s_merges_scoped_mode_changes_with_outer_options
+    regexp = Onibi::Regexp.new("(?i-m:a)", Onibi::Regexp::EXTENDED)
+
+    assert_equal "(?ix-m:a)", regexp.to_s
   end
 
   def test_to_s_and_inspect_use_ruby_mode_flag_order
@@ -146,10 +215,49 @@ class RegexpConstructorTest < Minitest::Test
   end
 
   def test_timeout_rejects_zero_and_negative_values
-    assert_raises(ArgumentError) { Onibi::Regexp.timeout = 0 }
-    assert_raises(ArgumentError) { Onibi::Regexp.timeout = -0.1 }
-    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }
-    assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }
+    assert_equal "invalid timeout: 0", assert_raises(ArgumentError) { Onibi::Regexp.timeout = 0 }.message
+    assert_equal "invalid timeout: -0.1", assert_raises(ArgumentError) { Onibi::Regexp.timeout = -0.1 }.message
+    assert_equal "invalid timeout: 0", assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: 0) }.message
+    assert_equal "invalid timeout: -0.1", assert_raises(ArgumentError) { Onibi::Regexp.new("cat", timeout: -0.1) }.message
+  end
+
+  def test_timeout_matches_mri_type_conversion_errors
+    assert_equal "no implicit conversion to float from string",
+                 assert_raises(TypeError) { Onibi::Regexp.timeout = "x" }.message
+    assert_equal "no implicit conversion to float from true",
+                 assert_raises(TypeError) { Onibi::Regexp.timeout = true }.message
+  end
+
+  def test_timeout_matches_mri_non_finite_values
+    Onibi::Regexp.timeout = Float::NAN
+    assert_nil Onibi::Regexp.timeout
+
+    Onibi::Regexp.timeout = Float::INFINITY
+    assert_equal (2**64) / 1_000_000_000.0, Onibi::Regexp.timeout
+    assert_raises(ArgumentError) { Onibi::Regexp.timeout = -Float::INFINITY }
+  ensure
+    Onibi::Regexp.timeout = nil
+  end
+
+  def test_timeout_converts_numeric_subclasses_before_sign_check
+    numeric_class = Class.new(Numeric) do
+      def positive?
+        raise "timeout must convert before checking sign"
+      end
+
+      def to_f
+        0.25
+      end
+
+      def coerce(other)
+        [other, 0]
+      end
+    end
+
+    Onibi::Regexp.timeout = numeric_class.new
+    assert_equal 0.25, Onibi::Regexp.timeout
+  ensure
+    Onibi::Regexp.timeout = nil
   end
 
   def test_timeout_raises_regexp_timeout_error

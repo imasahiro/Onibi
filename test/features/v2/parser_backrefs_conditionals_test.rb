@@ -39,6 +39,6 @@ class V2ParserBackreferencesConditionalsTest < Minitest::Test
                                           Onibi::AST::SubexpressionCall.new("letter", true)
                                         ])
 
-    assert_equal expected, Onibi::Parser.parse("\\g1\\g<letter>").ast
+    assert_equal expected, Onibi::Parser.parse("\\g<1>\\g<letter>").ast
   end
 end

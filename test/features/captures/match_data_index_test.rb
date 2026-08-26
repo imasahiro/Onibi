@@ -21,11 +21,53 @@ class MatchDataIndexTest < Minitest::Test
     assert_equal "a", match[-2]
   end
 
+  def test_match_value_access_supports_mri_slice_form
+    expected = Regexp.new("(a)(?<animal>b)?").match("ab")
+    actual = Onibi::Regexp.new("(a)(?<animal>b)?").match("ab")
+
+    assert_equal expected[0, 2], actual[0, 2]
+    assert_equal expected[1, 2], actual[1, 2]
+    assert_equal expected[0..1], actual[0..1]
+    assert_equal expected[0, nil], actual[0, nil]
+    assert_nil actual[5, 1]
+  end
+
   def test_match_values_at_normalizes_negative_range_bounds
     match = Onibi::Regexp.new("(a)(b)").match("ab")
 
     assert_equal %w[a b], match.values_at(1..-1)
     assert_equal %w[ab a b], match.values_at(-3..-1)
     assert_raises(RangeError) { match.values_at(-4..-1) }
+  end
+
+  def test_match_uses_integer_or_name_indices_only
+    match = Onibi::Regexp.new("(?<x>a)(b)?").match("a")
+
+    assert_raises(TypeError) { match.match(0..1) }
+    assert_raises(TypeError) { match.match([0, 1]) }
+    assert_equal "no implicit conversion from nil to integer",
+                 assert_raises(TypeError) { match.match(nil) }.message
+    assert_raises(IndexError) { match.match(-1.2) }
+    assert_raises(TypeError) { match[[0, 1]] }
+    assert_raises(TypeError) { match.values_at([0, 1]) }
+    assert_equal %w[a a], match[0..1]
+  end
+
+  def test_offsets_coerce_float_indices_like_mri
+    match = Onibi::Regexp.new("(?<x>é)").match("é")
+
+    assert_equal [0, 1], match.offset(0.9)
+    assert_equal [0, 2], match.byteoffset(0.9)
+    assert_equal 0, match.begin(-0.1)
+  end
+
+  def test_non_finite_indices_raise_mri_range_errors
+    match = Onibi::Regexp.new("(a)").match("a")
+
+    [Float::NAN, Float::INFINITY, -Float::INFINITY].each do |index|
+      error = assert_raises(RangeError) { match.match(index) }
+      assert_match(/float .+ out of range of integer/, error.message)
+      assert_raises(RangeError) { match.offset(index) }
+    end
   end
 end

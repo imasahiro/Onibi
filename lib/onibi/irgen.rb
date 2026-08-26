@@ -3,6 +3,385 @@
 module Onibi
   module IRGen
     module YARVIR
+      # rubocop:disable Metrics/ModuleLength
+      module SemanticBytecode
+        # `casefold` is the compiler-owned folded literal. `casefold_segments`
+        # keeps each source character boundary for VM backtracking.
+        # `fold_boundary_sensitive` tells the VM that MRI keeps this expanded
+        # fold aligned with the following operand during backtracking.
+        # `fold_boundary` describes a Unicode fold that has a special
+        # operand-boundary rule. The VM consumes this metadata directly.
+        Literal = Struct.new(:value, :casefold, :casefold_segments, :fold_boundary_sensitive,
+                             :fold_boundary, :fold_prefix_boundary, :fold_policy)
+        # `casefolds` contains reverse multi-character folds for this class.
+        # `split_casefold` records MRI's class-only split rule for sharp-s.
+        # `compiled_sensitive` and `compiled_insensitive` are immutable
+        # predicate tables. The interpreter selects one table from flags.
+        # It does not parse the class source during execution.
+        CharacterClass = Struct.new(:value, :casefolds, :split_casefold,
+                                    :compiled_sensitive, :compiled_insensitive,
+                                    :folded_characters, :fold_boundaries, :fold_policy)
+        Escape = Struct.new(:kind)
+        # `casefolds` is compiler output. It prevents the interpreter from
+        # consulting AST or rebuilding Unicode fold candidates at run time.
+        Property = Struct.new(:name, :negated, :casefolds)
+        Backreference = Struct.new(:identifier, :named)
+        # `folded_widths` is the finite width set used by the VM for
+        # encoding-aware lookbehind. It is compiler output, not AST state.
+        Assertion = Struct.new(:body, :kind, :widths, :folded_widths)
+        Any = Struct.new(:value)
+        Anchor = Struct.new(:kind)
+        Sequence = Struct.new(:parts)
+        # `operand_context` marks an alternation that is the next operand in
+        # a sequence. A root alternation selects a whole branch instead.
+        Alternation = Struct.new(:branches, :operand_context, :fold_policy)
+        Group = Struct.new(:body, :number, :capture, :name)
+        OptionGroup = Struct.new(:body, :ignorecase, :multiline, :extended)
+        AtomicGroup = Struct.new(:body)
+        Conditional = Struct.new(:condition, :yes_branch, :no_branch)
+        SubexpressionCall = Struct.new(:identifier, :named)
+        Absence = Struct.new(:body)
+        # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
+        # exactly `n` repetitions, not the intermediate counts.
+        Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
+
+        NODE_TYPES = {
+          Onibi::AST::Literal => Literal,
+          Onibi::AST::CharacterClass => CharacterClass,
+          Onibi::AST::Escape => Escape,
+          Onibi::AST::Property => Property,
+          Onibi::AST::Backreference => Backreference,
+          Onibi::AST::Assertion => Assertion,
+          Onibi::AST::Any => Any,
+          Onibi::AST::Anchor => Anchor,
+          Onibi::AST::Sequence => Sequence,
+          Onibi::AST::Alternation => Alternation,
+          Onibi::AST::Group => Group,
+          Onibi::AST::OptionGroup => OptionGroup,
+          Onibi::AST::AtomicGroup => AtomicGroup,
+          Onibi::AST::Conditional => Conditional,
+          Onibi::AST::SubexpressionCall => SubexpressionCall,
+          Onibi::AST::Absence => Absence,
+          Onibi::AST::Quantifier => Quantifier
+        }.freeze
+        TYPES = NODE_TYPES.values.freeze
+
+        module_function
+
+        def compile(node, casefold: false, parent: nil)
+          type = NODE_TYPES.fetch(node.class)
+          if node.is_a?(Onibi::AST::Assertion)
+            return type.new(compile_value(node.body, casefold: casefold), node.kind,
+                            Onibi::WidthAnalysis.widths(node.body),
+                            folded_widths(compile_value(node.body, casefold: casefold)))
+          end
+          if node.is_a?(Onibi::AST::Property)
+            return type.new(node.name, node.negated,
+                            Onibi::UnicodeProperties.casefold_sequences(node.name))
+          end
+          if node.is_a?(Onibi::AST::Literal)
+            folded = node.value.downcase(:fold)
+            segments = node.value.each_char.map do |character|
+              [character, character.downcase(:fold)]
+            end
+            segments = nil if segments.all? { |source, value| source == value }
+            # An expanded fold with distinct, non-mark code points can cross
+            # operand boundaries in Onigmo. Derive this from fold structure,
+            # not from a script-specific table.
+            boundary_sensitive = folded.length > node.value.length &&
+                                 folded.each_char.uniq.length > 1 &&
+                                 folded.each_char.none? { |character| character.match?(/\p{M}/) }
+            fold_boundary = fold_boundary_metadata(folded, boundary_sensitive)
+            fold_prefix_boundary = fold_prefix_boundary_metadata(node.value)
+            return type.new(node.value, folded == node.value ? nil : folded, segments&.freeze,
+                            boundary_sensitive, fold_boundary, fold_prefix_boundary,
+                            fold_policy_for_literal(node.value))
+          end
+          if node.is_a?(Onibi::AST::Sequence)
+            parts = node.parts.map { |part| compile_value(part, casefold: casefold, parent: :sequence) }
+            return type.new(parts)
+          end
+          if node.is_a?(Onibi::AST::Alternation)
+            branches = node.branches.map { |branch| compile_value(branch, casefold: casefold, parent: :alternation) }
+            policy = if branches.any? { |branch| literal_values(branch).length > 1 && literal_values(branch).any? { |literal| !literal.ascii_only? } }
+                       { expanded_branch: true }.freeze
+                     elsif branches.any? { |branch| reverse_variant_policy?(branch) }
+                       { anchor_alternation: :reject_reverse_variant }.freeze
+                     end
+            return type.new(branches, parent == :sequence, policy)
+          end
+          if node.is_a?(Onibi::AST::Group) || node.is_a?(Onibi::AST::OptionGroup) ||
+             node.is_a?(Onibi::AST::AtomicGroup)
+            body_parent = parent == :sequence ? :sequence : :group
+            body_casefold = casefold || (node.respond_to?(:ignorecase) && node.ignorecase)
+            body = compile_value(node.body, casefold: body_casefold, parent: body_parent)
+            fields = node.each_pair.map { |field, value| field == :body ? body : compile_value(value, casefold: casefold) }
+            return type.new(*fields)
+          end
+          if node.is_a?(Onibi::AST::CharacterClass)
+            folds = class_casefold_sequences(node.value)
+            split = folds.any? { |source, value| %w[ß ẞ].include?(source) && value == "ss" }
+            folded_characters = casefold ? class_casefold_characters(node.value) : [].freeze
+            return type.new(node.value, folds, split,
+                            Onibi::ClassPredicates.compiled(node.value, ignorecase: false),
+                            Onibi::ClassPredicates.compiled(node.value, ignorecase: true),
+                            folded_characters,
+                            class_fold_boundaries(folds, folded_characters),
+                            fold_policy_for_class(node.value, folded_characters))
+          end
+          if node.is_a?(Onibi::AST::OptionGroup)
+            body = compile_value(node.body, casefold: casefold || node.ignorecase)
+            return type.new(body, node.ignorecase, node.multiline, node.extended)
+          end
+          if node.is_a?(Onibi::AST::Quantifier)
+            minimum, maximum, lazy_exact = fold_lazy_exact_bounds(node)
+            return type.new(compile_value(node.expression, casefold: casefold), node.kind,
+                            minimum, maximum, node.mode, lazy_exact)
+          end
+
+          type.new(*node.each_pair.map { |_field, value| compile_value(value, casefold: casefold) })
+        end
+
+        def folded_widths(node)
+          case node
+          when SemanticBytecode::Literal
+            [(node.casefold || node.value).length]
+          when SemanticBytecode::CharacterClass
+            [1, *node.casefolds.to_a.map { |_source, value| value.length }].uniq
+          when SemanticBytecode::Property, SemanticBytecode::Any
+            [1]
+          when SemanticBytecode::Escape
+            [zero_width_escape?(node.kind) ? 0 : 1]
+          when SemanticBytecode::Anchor
+            [0]
+          when SemanticBytecode::Sequence
+            node.parts.reduce([0]) do |widths, part|
+              widths.product(folded_widths(part)).map { |left, right| left + right }.uniq
+            end
+          when SemanticBytecode::Alternation
+            node.branches.flat_map { |branch| folded_widths(branch) }.uniq
+          when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
+               SemanticBytecode::AtomicGroup, SemanticBytecode::Assertion
+            folded_widths(node.body)
+          when SemanticBytecode::Quantifier
+            return [] unless node.maximum && node.minimum == node.maximum
+
+            folded_widths(node.expression).map { |width| width * node.minimum }
+          else
+            []
+          end
+        end
+
+        def zero_width_escape?(kind)
+          %i[word_boundary not_word_boundary start_match match_reset].include?(kind)
+        end
+
+        # Onigmo treats an exact bound with a lazy suffix (`{n}?`) as a
+        # bounded optional repeat. The bytecode stores that rule explicitly,
+        # so the interpreter does not need to inspect the source AST.
+        def fold_lazy_exact_bounds(node)
+          return [node.minimum, node.maximum, false] unless node.kind == :bounded &&
+                                                            node.mode == :lazy &&
+                                                            node.exact_bound
+
+          [0, node.maximum, true]
+        end
+
+        def class_casefold_sequences(source)
+          Onibi::UnicodeProperties.casefold_codepoints.filter_map do |codepoint|
+            character = [codepoint].pack("U")
+            folded = character.downcase(:fold)
+            [character, folded] if Onibi::ClassPredicates.matches?(source, character,
+                                                                   encoding: source.encoding)
+          end.freeze
+        end
+
+        def fold_boundary_metadata(folded, boundary_sensitive)
+          return nil unless folded.encoding == Encoding::UTF_8
+          return nil unless folded.length > 1 && folded.end_with?("ι")
+
+          { kind: :expanded_tail, tail: folded.each_char.to_a.last,
+            sensitive: boundary_sensitive }.freeze
+        end
+
+        def simple_fold_boundary_metadata(folded)
+          variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(folded)
+          return if variants.empty?
+
+          { kind: :simple_fold_source, variants: variants.freeze }.freeze
+        end
+
+        def fold_prefix_boundary_metadata(value)
+          return nil unless value.encoding == Encoding::UTF_8
+
+          normalized = value.unicode_normalize(:nfd)
+          base = normalized.each_char.first
+          marks = normalized.each_char.drop(1)
+          return unless base == "ω" || marks.any? { |mark| %W[\u0300 \u0313 \u0314].include?(mark) }
+
+          :non_split_prefix
+        end
+
+        # The VM receives semantic boundary policy. It does not identify
+        # Unicode characters or infer policy from source text.
+        def fold_policy_for_literal(value)
+          group = Onibi::ClassPredicates.casefold_groups.values.find { |members| members.include?(value) }
+          return nil unless group
+
+          policy = {}
+          reverse_variants = Onibi::UnicodeProperties.reverse_casefold_variants(value.downcase(:fold))
+          policy[:anchor_source] = :fold_group_variant if group.any? { |character| character.match?(/\p{M}/) }
+          policy[:alternation_source] = :reject_reverse_variant if reverse_variants.any? &&
+                                                                   group.any? { |character| character.match?(/\p{M}/) }
+          variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(value.downcase(:fold))
+          policy[:sequence_source] = :allow_repeated_variant if variants.any? && variants.all? { |character| character == character.upcase }
+          policy.empty? ? nil : policy.freeze
+        end
+
+        def fold_policy_for_class(value, folded_characters)
+          return nil unless value.each_char.one?
+          return nil if folded_characters.empty?
+
+          combining_variant = folded_characters.any? { |character| character.match?(/\p{M}/) }
+          combining_variant ? { optional_order: :consume_source_variant }.freeze : nil
+        end
+
+        # MRI closes a range over every simple fold of every code point in
+        # that range. For example, U+2126 OHM SIGN is inside [ẞ-龠], and its
+        # fold U+03C9 makes Ω and ω valid class operands.
+        def class_casefold_characters(source)
+          return [].freeze unless source.encoding == Encoding::UTF_8
+          return [].freeze if source.start_with?("^")
+
+          metadata = Onibi::ClassPredicates::Normalizer.normalize(source)
+          raw_match = if metadata.kind == :ascii
+                        lambda do |member|
+                          metadata.literals.include?(member) ||
+                            metadata.ranges.any? { |first, last| member.ord.between?(first.ord, last.ord) }
+                        end
+                      else
+                        ->(member) { ClassPredicates.matches?(source, member) }
+                      end
+          characters = Onibi::ClassPredicates.casefold_groups.each_value.with_object([]) do |members, result|
+            next unless members.any? { |member| raw_match.call(member) }
+
+            result.concat(members)
+          end
+          characters.uniq.freeze
+        end
+
+        def class_fold_boundaries(folds, folded_characters)
+          characters = folds.map(&:first) | folded_characters
+          characters.each_with_object({}) do |character, metadata|
+            folded = character.downcase(:fold)
+            simple = simple_fold_boundary_metadata(folded)
+            if simple && simple[:variants].include?(character)
+              metadata[character] = simple
+              next
+            end
+            next unless folds.any? { |_source, value| value == folded }
+
+            metadata[character] = fold_boundary_metadata(folded, true) ||
+                                  simple_fold_boundary_metadata(folded)
+          end.freeze
+        end
+
+        def full_casefold?(node)
+          case node
+          when Literal
+            node.value.downcase(:fold).length > node.value.length
+          when Property
+            node.casefolds.any?
+          when CharacterClass
+            node.casefolds.any?
+          when Sequence
+            node.parts.any? { |part| full_casefold?(part) }
+          when Alternation
+            node.branches.any? { |branch| full_casefold?(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion
+            full_casefold?(node.body)
+          when Quantifier
+            full_casefold?(node.expression)
+          else
+            false
+          end
+        end
+
+        def compile_value(value, casefold: false, parent: nil)
+          if value.respond_to?(:each_pair)
+            compile(value, casefold: casefold, parent: parent)
+          elsif value.is_a?(Array)
+            value.map { |item| compile_value(item, casefold: casefold, parent: parent) }
+          else
+            value
+          end
+        end
+
+        def casefold_required?(node)
+          return true if node.is_a?(Onibi::AST::OptionGroup) && node.ignorecase
+
+          node.respond_to?(:each_pair) && node.each_pair.any? do |_field, value|
+            if value.respond_to?(:each_pair)
+              casefold_required?(value)
+            elsif value.is_a?(Array)
+              value.any? { |item| item.respond_to?(:each_pair) && casefold_required?(item) }
+            else
+              false
+            end
+          end
+        end
+
+        # MatchData needs byte offsets when every literal is non-ASCII.
+        # Keep this fact in the semantic bytecode, so the interpreter does
+        # not need to inspect compiler AST nodes at runtime.
+        def unicode_capture_byte_offsets?(node)
+          return false if repeated_literal_capture?(node)
+
+          literals = literal_values(node)
+          literals.any? && literals.all? { |value| !value.ascii_only? }
+        end
+
+        def literal_values(node)
+          case node
+          when Literal then [node.value]
+          when Sequence then node.parts.flat_map { |part| literal_values(part) }
+          when Alternation then node.branches.flat_map { |branch| literal_values(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion then literal_values(node.body)
+          when Quantifier then literal_values(node.expression)
+          else []
+          end
+        end
+
+        def reverse_variant_policy?(node)
+          case node
+          when Literal
+            node.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
+          when Sequence
+            node.parts.any? { |part| reverse_variant_policy?(part) }
+          when Alternation
+            node.branches.any? { |branch| reverse_variant_policy?(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion
+            reverse_variant_policy?(node.body)
+          when Quantifier
+            reverse_variant_policy?(node.expression)
+          else
+            false
+          end
+        end
+
+        def repeated_literal_capture?(node)
+          return false unless node.is_a?(Sequence) && node.parts.length == 1
+
+          group = node.parts.first
+          return false unless group.is_a?(Group) && group.body.is_a?(Sequence) && group.body.parts.length == 1
+
+          quantifier = group.body.parts.first
+          quantifier.is_a?(Quantifier) && quantifier.expression.is_a?(Literal) &&
+            !quantifier.expression.value.ascii_only?
+        end
+      end
+      # rubocop:enable Metrics/ModuleLength
+
       Instruction = Struct.new(:opcode, :operand, keyword_init: true) do
         def initialize(opcode:, operand: nil) = super.freeze
       end
@@ -34,12 +413,12 @@ module Onibi
           dfa.transitions.each do |(source, label), target|
             next unless source == state.id
 
-            instructions << Instruction.new(opcode: :match, operand: label)
+            instructions << Instruction.new(opcode: :match, operand: semantic_label(label))
             instructions << Instruction.new(opcode: :jump, operand: target)
           end
           instructions << Instruction.new(opcode: :accept, operand: state.id) if state.accepting
         end
-        Program.new(instructions: instructions, automaton: dfa, flags: flags)
+        Program.new(instructions: instructions, automaton: semantic_automaton(dfa), flags: flags)
       end
 
       def generate_nfa(tnfa, flags: {})
@@ -47,603 +426,69 @@ module Onibi
         tnfa.transitions.each do |transition|
           instructions << Instruction.new(
             opcode: :nfa_match,
-            operand: [transition.from, transition.to, [transition.operation.opcode, transition.operation.operand]]
+            operand: [transition.from, transition.to,
+                      [transition.operation.opcode, semantic_value(transition.operation.operand)]]
           )
         end
         instructions << Instruction.new(opcode: :nfa_accept, operand: tnfa.accept_positions)
-        Program.new(instructions: instructions, automaton: tnfa, flags: flags)
+        Program.new(instructions: instructions, automaton: semantic_automaton(tnfa), flags: flags)
+      end
+
+      # Automata are compiler output. Convert their operands before the
+      # program reaches the interpreter. The VM then consumes semantic
+      # operands and does not need AST objects at runtime.
+      def semantic_automaton(automaton)
+        copy = automaton.dup
+        transitions = if automaton.is_a?(Onibi::Automata::DFA)
+                        automaton.transitions.transform_keys do |(source, label)|
+                          [source, semantic_label(label)]
+                        end.freeze
+                      else
+                        automaton.transitions.map do |edge|
+                          operation = edge.operation
+                          semantic_operation = Onibi::CFG::Operation.new(
+                            opcode: operation.opcode,
+                            operand: semantic_value(operation.operand),
+                            effects: operation.effects,
+                            state_in: operation.state_in,
+                            state_out: operation.state_out
+                          )
+                          Onibi::Automata::Transition.new(
+                            from: edge.from, to: edge.to, operation: semantic_operation
+                          )
+                        end.freeze
+                      end
+        copy.instance_variable_set(:@transitions, transitions)
+        copy.instance_variable_set(:@tnfa, nil) if automaton.is_a?(Onibi::Automata::DFA)
+        copy
+      end
+
+      def semantic_label(label)
+        [label[0], semantic_value(label[1])]
+      end
+
+      def semantic_value(value)
+        return value if SemanticBytecode::TYPES.include?(value.class)
+
+        if value.respond_to?(:each_pair)
+          SemanticBytecode.compile(value)
+        elsif value.is_a?(Array)
+          value.map { |item| semantic_value(item) }
+        else
+          value
+        end
       end
 
       def generate_iseq(dfa)
         generate(dfa)
       end
 
-      class Executor
-        def initialize(program)
-          @program = program
-          @dfa = program.automaton
-          @subexpressions = program.flags[:subexpressions] || {}
-        end
-
-        def match(input, start_position = 0)
-          result = run(input, start_position)
-          result&.first(2)
-        end
-
-        def match_with_captures(input, start_position = 0)
-          run(input, start_position)
-        end
-
-        def absence_scan(input)
-          label = @dfa.transitions.keys.map(&:last).find { |opcode, _operand| opcode == :match_absence }
-          return [] unless label
-
-          characters = input.encoding == Encoding::ASCII_8BIT ? input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) } : input.each_char.to_a
-          length = characters.length
-          delimiter = literal_value(label[1].body)
-          return [] unless delimiter
-          return [[0, 0]] if delimiter.empty?
-
-          index = characters.join.index(delimiter)
-          return [[0, length], [length, length]] unless index
-
-          prefix_end = index + delimiter.length - 1
-          suffix_start = index + delimiter.length
-          ranges = [[0, prefix_end], [prefix_end, prefix_end + 1]]
-          ranges << [suffix_start, length] if suffix_start < length
-          ranges << [length, length]
-          ranges
-        end
-
-        private
-
-        def run(input, start_position)
-          return nil unless @dfa.is_a?(Onibi::Automata::DFA)
-
-          characters = if input.encoding == Encoding::ASCII_8BIT
-                         input.bytes.map { |byte| byte.chr(Encoding::ASCII_8BIT) }
-                       else
-                         input.codepoints.map { |codepoint| codepoint.chr(input.encoding) }
-                       end
-          @characters = characters
-          @steps = 0
-          first = [start_position, 0].max
-          @match_start = first
-          first.upto(characters.length) do |start|
-            result = walk(@dfa.start_state.id, characters, start, {}, start, @program.flags)
-            return result if result
-          end
-          nil
-        end
-
-        def walk(state, characters, cursor, captures, start, flags)
-          return [start, cursor, captures] if accepting?(state)
-
-          transitions_for(state).each do |label, target|
-            transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
-              next_captures = captures.dup
-              next_captures.merge!(inner_captures)
-              captures_for(label, cursor, length, next_captures)
-              next_start = if label[0] == :match_escape && label[1].kind == :match_reset
-                             cursor
-                           else
-                             start
-                           end
-              result = walk(target, characters, cursor + length, next_captures, next_start, flags)
-              return result if result
-            end
-          end
-          nil
-        end
-
-        def transition_results(label, characters, cursor, captures, flags = {})
-          opcode, operand = label
-          case opcode
-          when :epsilon
-            [[0, {}]]
-          when :match_group
-            node_results(operand.body, characters, cursor, captures, flags)
-          when :match_atomic_group
-            node_results(operand.body, characters, cursor, captures, flags).first(1)
-          when :match_option_group
-            node_results(operand.body, characters, cursor, captures,
-                         flags.merge(ignorecase: operand.ignorecase, multiline: operand.multiline))
-          when :match_quantifier
-            quantifier_results(operand, characters, cursor, captures, flags)
-          when :match_assertion
-            assertion_results(operand, characters, cursor, captures, flags)
-          when :match_subexpression_call
-            node_results(operand, characters, cursor, captures, flags)
-          when :match_absence
-            absence_lengths(operand, characters, cursor).map { |length| [length, {}] }
-          when :match_class
-            class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
-          else
-            transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
-          end
-        end
-
-        def assertion_results(assertion, characters, cursor, captures, flags = {})
-          if %i[positive positive_lookahead].include?(assertion.kind)
-            return node_results(assertion.body, characters, cursor, captures, flags).first(1).map { |_length, inner| [0, inner] }
-          end
-
-          if %i[negative negative_lookahead].include?(assertion.kind)
-            matched = node_results(assertion.body, characters, cursor, captures, flags).any?
-            return matched ? [] : [[0, captures]]
-          end
-
-          length = assertion_length(assertion, characters, cursor, flags)
-          length ? [[0, captures]] : []
-        end
-
-        def node_results(node, characters, cursor, captures, flags = {})
-          @steps += 1
-          return [] if @steps > 2_000_000
-
-          case node
-          when Onibi::AST::Sequence
-            states = [[0, captures]]
-            node.parts.each do |part|
-              states = states.flat_map do |consumed, state_captures|
-                node_results(part, characters, cursor + consumed, state_captures, flags).map do |length, inner|
-                  [consumed + length, inner]
-                end
-              end
-              return [] if states.empty?
-            end
-            states
-          when Onibi::AST::Alternation
-            node.branches.flat_map { |branch| node_results(branch, characters, cursor, captures, flags) }
-          when Onibi::AST::Group
-            node_results(node.body, characters, cursor, captures, flags).map do |length, inner|
-              next_captures = inner.dup
-              if node.capture
-                next_captures[node.number] = [cursor, cursor + length]
-                next_captures[node.name] = [cursor, cursor + length] if node.name
-              end
-              [length, next_captures]
-            end
-          when Onibi::AST::Quantifier
-            quantifier_results(node, characters, cursor, captures, flags)
-          when Onibi::AST::OptionGroup
-            node_results(node.body, characters, cursor, captures,
-                         flags.merge(ignorecase: node.ignorecase, multiline: node.multiline))
-          when Onibi::AST::Assertion
-            assertion_results(node, characters, cursor, captures, flags)
-          when Onibi::AST::SubexpressionCall
-            body = @subexpressions[node.identifier]
-            return [] unless body
-            return [] if (@subexpression_depth ||= 0) > 32
-
-            @subexpression_depth += 1
-            results = node_results(body, characters, cursor, captures, flags)
-            @subexpression_depth -= 1
-            results
-          else
-            length = transition_length([operation_for(node), node], characters, cursor, flags, captures)
-            length ? [[length, captures]] : []
-          end
-        end
-
-        def quantifier_results(quantifier, characters, cursor, captures, flags = {})
-          limit = quantifier.maximum || characters.length - cursor
-          frontier = [[0, captures]]
-          accepted = quantifier.minimum.zero? ? frontier.dup : []
-          count = 0
-          while count < limit
-            next_frontier = frontier.flat_map do |consumed, state_captures|
-              zero_results = []
-              nonzero_results = node_results(quantifier.expression, characters, cursor + consumed, state_captures, flags).filter_map do |length, inner|
-                if length.zero?
-                  zero_results << [consumed, inner]
-                  next
-                end
-                [consumed + length, inner]
-              end
-              accepted.concat(zero_results) if count + 1 >= quantifier.minimum
-              nonzero_results
-            end
-            break if next_frontier.empty?
-
-            count += 1
-            frontier = next_frontier
-            accepted.concat(frontier) if count >= quantifier.minimum
-          end
-          return [] if count < quantifier.minimum
-
-          accepted = accepted.uniq { |length, state| [length, state] }
-          return [accepted.max_by(&:first)] if quantifier.mode == :possessive
-
-          if quantifier.mode == :lazy
-            accepted.each_with_index.sort_by { |(state, index)| [state.first, index] }.map(&:first)
-          else
-            accepted.each_with_index.sort_by { |(state, index)| [-state.first, -index] }.map(&:first)
-          end
-        end
-
-        def transition_lengths(label, characters, cursor, captures, flags = {})
-          opcode, operand = label
-          return quantifier_lengths(operand, characters, cursor) if opcode == :match_quantifier
-
-          length = transition_length(label, characters, cursor, flags, captures)
-          length ? [length] : []
-        end
-
-        def transitions_for(state)
-          @dfa.transitions.filter_map do |(source, label), target|
-            [label, target] if source == state
-          end
-        end
-
-        def accepting?(state)
-          @dfa.states.any? { |candidate| candidate.id == state && candidate.accepting }
-        end
-
-        def transition_length(label, characters, cursor, flags = {}, captures = {})
-          opcode, operand = label
-          case opcode
-          when :match_literal
-            value = operand.value.each_char.to_a
-            if flags[:ignorecase]
-              (value.length..(value.length * 2)).find do |length|
-                candidate = characters[cursor, length].to_a.join
-                casefold_equal?(value.join, candidate)
-              end
-            else
-              characters[cursor, value.length] == value ? value.length : nil
-            end
-          when :match_class
-            class_match_lengths(operand, characters, cursor, flags).first
-          when :match_any
-            cursor < characters.length && (flags[:multiline] || operand.value != "." || characters[cursor] != "\n") ? 1 : nil
-          when :match_escape
-            case operand.kind
-            when :word_boundary, :not_word_boundary
-              left = cursor.positive? && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor - 1])
-              right = cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(:word, characters[cursor])
-              boundary = left != right
-              boundary = !boundary if operand.kind == :not_word_boundary
-              boundary ? 0 : nil
-            when :linebreak
-              return nil unless cursor < characters.length && Onibi::CharacterPredicates.linebreak?(characters[cursor])
-
-              characters[cursor] == "\r" && characters[cursor + 1] == "\n" ? 2 : 1
-            when :match_reset
-              0
-            when :start_match
-              cursor == @match_start ? 0 : nil
-            else
-              cursor < characters.length && Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor]) ? 1 : nil
-            end
-          when :match_property
-            if cursor < characters.length
-              matched = Onibi::UnicodeProperties.matches?(operand.name, unicode_character(characters[cursor]))
-              matched = !matched if operand.negated
-              matched ? 1 : nil
-            end
-          when :match_quantifier
-            quantifier_length(operand, characters, cursor)
-          when :match_group
-            sequence_length(operand.body, characters, cursor)
-          when :match_backreference
-            backreference_length(operand, characters, cursor, captures, flags)
-          when :match_conditional
-            conditional_length(operand, characters, cursor, captures)
-          when :match_atomic_group
-            sequence_length(operand.body, characters, cursor)
-          when :match_option_group
-            option_group_length(operand, characters, cursor)
-          when :match_absence
-            absence_length(operand, characters, cursor)
-          when :match_assertion
-            assertion_length(operand, characters, cursor, flags)
-          when :test_anchor
-            anchor_length(operand, characters, cursor)
-          end
-        end
-
-        def quantifier_length(quantifier, characters, cursor, flags = {})
-          if quantifier.expression.is_a?(Onibi::AST::Group)
-            count = 0
-            consumed = 0
-            limit = quantifier.maximum || characters.length
-            while count < limit
-              unit = sequence_length(quantifier.expression.body, characters, cursor + consumed, flags)
-              break unless unit&.positive?
-
-              count += 1
-              consumed += unit
-            end
-            return nil if count < quantifier.minimum
-
-            return quantifier.mode == :lazy ? sequence_length(quantifier.expression.body, characters, cursor, flags) : consumed
-          end
-
-          count = 0
-          limit = quantifier.maximum || (characters.length - cursor)
-          while count < limit && cursor + count < characters.length &&
-                atom_matches?(quantifier.expression, characters[cursor + count], flags)
-            count += 1
-          end
-          return nil if count < quantifier.minimum
-
-          quantifier.mode == :lazy ? quantifier.minimum : count
-        end
-
-        def quantifier_lengths(quantifier, characters, cursor)
-          if quantifier.expression.is_a?(Onibi::AST::Group)
-            unit = sequence_length(quantifier.expression.body, characters, cursor)
-            return [] unless unit&.positive?
-
-            count = 0
-            consumed = 0
-            limit = quantifier.maximum || characters.length
-            lengths = []
-            while count < limit
-              unit_length = sequence_length(quantifier.expression.body, characters, cursor + consumed)
-              break unless unit_length&.positive?
-
-              count += 1
-              consumed += unit_length
-              lengths << consumed if count >= quantifier.minimum
-            end
-            return [lengths.last] if quantifier.mode == :possessive
-
-            return quantifier.mode == :lazy ? lengths : lengths.reverse
-          end
-
-          count = 0
-          limit = quantifier.maximum || (characters.length - cursor)
-          while count < limit && cursor + count < characters.length &&
-                atom_matches?(quantifier.expression, characters[cursor + count])
-            count += 1
-          end
-          return [] if count < quantifier.minimum
-
-          lengths = (quantifier.minimum..count).to_a
-          return [lengths.last] if quantifier.mode == :possessive
-
-          quantifier.mode == :lazy ? lengths : lengths.reverse
-        end
-
-        def captures_for(label, cursor, length, captures)
-          opcode, operand = label
-          if opcode == :match_absence
-            capture_absence(operand.body, cursor, length, captures)
-            return
-          end
-          if opcode == :match_quantifier && operand.expression.is_a?(Onibi::AST::Group)
-            group = operand.expression
-            return unless group.capture && length.positive?
-
-            captures[group.number] ||= [cursor, cursor + length]
-            captures[group.name] ||= [cursor, cursor + length] if group.name
-            return
-          end
-          return unless opcode == :match_group && operand.capture
-
-          captures[operand.number] = [cursor, cursor + length]
-          captures[operand.name] = [cursor, cursor + length] if operand.name
-          capture_nested_groups(operand.body, cursor, captures)
-        end
-
-        def capture_nested_groups(node, cursor, captures)
-          position = cursor
-          parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
-          parts.each do |part|
-            if part.is_a?(Onibi::AST::Group)
-              value = literal_value(part.body)
-              if part.capture && value
-                captures[part.number] = [position, position + value.length]
-                captures[part.name] = [position, position + value.length] if part.name
-              end
-              capture_nested_groups(part.body, position, captures)
-            else
-              value = literal_value(part)
-            end
-            position += value.length if value
-          end
-        end
-
-        def capture_absence(node, cursor, _length, captures)
-          return unless node.is_a?(Onibi::AST::Sequence)
-
-          group = node.parts.find { |part| part.is_a?(Onibi::AST::Group) && part.capture }
-          return unless group
-
-          value = literal_value(group.body)
-          return unless value
-
-          relative_start = @characters[cursor..]&.join.to_s.index(value)
-          return unless relative_start
-
-          delimiter_start = cursor + relative_start
-          captures[group.number] = [delimiter_start, delimiter_start + value.length]
-          captures[group.name] = [delimiter_start, delimiter_start + value.length] if group.name
-        end
-
-        def backreference_length(reference, characters, cursor, captures, flags = {})
-          span = captures[reference.identifier]
-          return nil unless span
-
-          value = characters[span[0]...span[1]]
-          candidate = characters[cursor, value.length]
-          matched = flags[:ignorecase] ? casefold_equal?(value.join, candidate.join) : candidate == value
-          matched ? value.length : nil
-        end
-
-        def conditional_length(conditional, characters, cursor, captures)
-          condition = conditional.condition
-          key = condition.is_a?(Array) ? condition[0] : condition
-          branch = captures.key?(key) ? conditional.yes_branch : conditional.no_branch
-          return nil unless branch
-
-          sequence_length(branch, characters, cursor)
-        end
-
-        def atom_matches?(expression, character, flags = {})
-          case expression
-          when Onibi::AST::Literal
-            flags[:ignorecase] ? expression.value.casecmp?(character) : expression.value == character
-          when Onibi::AST::CharacterClass then Onibi::ClassPredicates.matches?(expression.value, character)
-          when Onibi::AST::Escape then Onibi::CharacterPredicates.escape_matches?(expression.kind, character)
-          when Onibi::AST::Property then Onibi::UnicodeProperties.matches?(expression.name, character)
-          when Onibi::AST::Any then flags[:multiline] || expression.value != "." || character != "\n"
-          else false
-          end
-        end
-
-        def sequence_length(node, characters, cursor, flags = {})
-          parts = node.is_a?(Onibi::AST::Sequence) ? node.parts : [node]
-          position = cursor
-          parts.each do |part|
-            length = case part
-                     when Onibi::AST::Quantifier then quantifier_length(part, characters, position, flags)
-                     when Onibi::AST::Group then sequence_length(part.body, characters, position, flags)
-                     else transition_length([operation_for(part), part], characters, position, flags)
-                     end
-            return nil unless length
-
-            position += length
-          end
-          position - cursor
-        end
-
-        def option_group_length(group, characters, cursor)
-          sequence_length(group.body, characters, cursor,
-                          ignorecase: group.ignorecase, multiline: group.multiline)
-        end
-
-        def operation_for(node)
-          case node
-          when Onibi::AST::Literal then :match_literal
-          when Onibi::AST::CharacterClass then :match_class
-          when Onibi::AST::Any then :match_any
-          when Onibi::AST::Escape then :match_escape
-          when Onibi::AST::Property then :match_property
-          when Onibi::AST::Backreference then :match_backreference
-          when Onibi::AST::Conditional then :match_conditional
-          when Onibi::AST::Absence then :match_absence
-          when Onibi::AST::Assertion then :match_assertion
-          when Onibi::AST::Anchor then :test_anchor
-          end
-        end
-
-        def absence_length(node, characters, cursor)
-          delimiter = literal_value(node.body)
-          return nil unless delimiter
-          return cursor == characters.length ? 0 : nil if delimiter.empty?
-
-          value = characters[cursor..]&.join.to_s
-          index = value.index(delimiter)
-          index ? index + delimiter.length - 1 : value.length
-        end
-
-        def absence_lengths(node, characters, cursor)
-          maximum = absence_length(node, characters, cursor)
-          return [] unless maximum
-
-          maximum.downto(0).to_a
-        end
-
-        def class_match_lengths(node, characters, cursor, flags)
-          return [] unless cursor < characters.length
-
-          lengths = []
-          character = characters[cursor]
-          lengths << 1 if Onibi::ClassPredicates.matches?(node.value, character, ignorecase: flags[:ignorecase])
-          lengths << 1 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
-            casefold_equal?(candidate, character)
-          end && !lengths.include?(1)
-          lengths << 2 if flags[:ignorecase] && node.value.each_char.any? do |candidate|
-            casefold_equal?(candidate, characters[cursor, 2].to_a.join)
-          end
-          lengths
-        rescue RangeError, ArgumentError
-          lengths
-        end
-
-        def assertion_length(assertion, characters, cursor, flags = {})
-          if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
-            guard = literal_value(assertion.body)
-            maximum = guard ? [guard.length * 2, 2].max : 2
-            matched = (1..[cursor, maximum].min).any? do |width|
-              sequence_length(assertion.body, characters, cursor - width, flags) == width
-            end
-            return matched == %i[positive_lookbehind].include?(assertion.kind) ? 0 : nil
-          end
-
-          guard = literal_value(assertion.body)
-          matched = if guard
-                      if %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
-                        characters[[cursor - guard.length, 0].max, guard.length].to_a.join == guard && cursor >= guard.length
-                      else
-                        characters[cursor, guard.length].to_a.join == guard
-                      end
-                    elsif %i[positive_lookbehind negative_lookbehind].include?(assertion.kind)
-                      width = sequence_length(assertion.body, characters, 0)
-                      width && cursor >= width && sequence_length(assertion.body, characters, cursor - width) == width
-                    else
-                      sequence_length(assertion.body, characters, cursor)
-                    end
-          if matched.nil?
-            return 0 if %i[negative negative_lookbehind].include?(assertion.kind)
-
-            return nil
-          end
-
-          matched = if %i[positive positive_lookahead positive_lookbehind].include?(assertion.kind)
-                      matched
-                    else
-                      !matched
-                    end
-          matched ? 0 : nil
-        end
-
-        def anchor_length(anchor, characters, cursor)
-          valid = case anchor.kind
-                  when :anchor_start then cursor.zero? || (cursor.positive? && characters[cursor - 1] == "\n")
-                  when :anchor_absolute_start then cursor.zero?
-                  when :anchor_end then cursor == characters.length || characters[cursor] == "\n"
-                  when :anchor_absolute_end then cursor == characters.length
-                  when :anchor_before_final_newline
-                    cursor == characters.length || (characters[cursor] == "\n" && cursor + 1 == characters.length)
-                  else false
-                  end
-          valid ? 0 : nil
-        end
-
-        def literal_value(node)
-          case node
-          when Onibi::AST::Literal then node.value
-          when Onibi::AST::Group then literal_value(node.body)
-          when Onibi::AST::Sequence
-            node.parts.map { |part| literal_value(part) }.then { |values| values.all? ? values.join : nil }
-          end
-        end
-
-        def casefold_equal?(left, right)
-          left.upcase.downcase == right.upcase.downcase
-        end
-
-        def unicode_character(character)
-          character.encoding == Encoding::UTF_8 ? character : character.encode(Encoding::UTF_8)
-        rescue EncodingError
-          character
-        end
+      def execute(program, input, start_position = 0, input_view: nil)
+        Onibi::Interpreter::Executor.new(program, input_view: input_view).match(input, start_position)
       end
 
-      def execute(program, input, start_position = 0)
-        Executor.new(program).match(input, start_position)
-      end
-
-      def execute_with_captures(program, input, start_position = 0)
-        Executor.new(program).match_with_captures(input, start_position)
-      end
-
-      def execute_absence_scan(program, input)
-        Executor.new(program).absence_scan(input)
+      def execute_with_captures(program, input, start_position = 0, input_view: nil)
+        Onibi::Interpreter::Executor.new(program, input_view: input_view).match_with_captures(input, start_position)
       end
     end
   end

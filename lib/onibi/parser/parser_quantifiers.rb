@@ -6,14 +6,30 @@ module Onibi
     private
 
     def parse_quantifier(atom)
-      return atom unless current_token&.type == :quantifier
+      expression = atom
+      while current_token&.type == :quantifier
+        value = consume.value
+        if value == "?" && nested_bounded_possessive?(expression)
+          expression.mode = :lazy
+          next
+        end
 
-      value = consume.value
-      mode, base = quantifier_mode(value)
-      kind, minimum, maximum = quantifier_bounds(base)
-      mode = :possessive_bounded if mode == :possessive && kind == :bounded
+        mode, base = quantifier_mode(value)
+        kind, minimum, maximum, exact_bound = quantifier_bounds(base)
+        if mode == :possessive && kind == :bounded
+          bounded = AST::Quantifier.new(expression, kind, minimum, maximum, :greedy, exact_bound)
+          expression = AST::Quantifier.new(bounded, :+, 1, nil, :possessive)
+        else
+          expression = AST::Quantifier.new(expression, kind, minimum, maximum, mode, exact_bound)
+        end
+      end
+      expression
+    end
 
-      AST::Quantifier.new(atom, kind, minimum, maximum, mode)
+    def nested_bounded_possessive?(expression)
+      expression.is_a?(AST::Quantifier) && expression.mode == :possessive &&
+        expression.kind == :+ && expression.expression.is_a?(AST::Quantifier) &&
+        expression.expression.kind == :bounded
     end
 
     def quantifier_mode(value)
@@ -33,7 +49,7 @@ module Onibi
       maximum = bounded_maximum(bounds, minimum)
       raise RegexpError, "invalid quantifier" if maximum && maximum < minimum
 
-      [:bounded, minimum, maximum]
+      [:bounded, minimum, maximum, bounds.length == 1 ? true : nil]
     rescue ArgumentError, TypeError
       raise RegexpError, "invalid quantifier"
     end
@@ -42,7 +58,7 @@ module Onibi
       minimum = { "*" => 0, "+" => 1, "?" => 0 }.fetch(value)
       maximum = { "*" => nil, "+" => nil, "?" => 1 }.fetch(value)
 
-      [value.to_sym, minimum, maximum]
+      [value.to_sym, minimum, maximum, nil]
     end
 
     def bounded_maximum(bounds, minimum)

@@ -15,7 +15,7 @@ module Onibi
 
     def self.captureless(input, start_position, finish_position, regexp)
       match_data = allocate
-      value = input[start_position, finish_position - start_position]
+      value = string_slice(input, start_position, finish_position - start_position)
       match_data.instance_variable_set(:@values, [value].freeze)
       match_data.instance_variable_set(:@captures, EMPTY_CAPTURES)
       match_data.instance_variable_set(:@offsets, [[start_position, finish_position]].freeze)
@@ -27,9 +27,9 @@ module Onibi
 
     def self.from_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       match_data = allocate
-      full_match = input[start_position, finish_position - start_position]
+      full_match = string_slice(input, start_position, finish_position - start_position)
       captures = capture_offsets.map do |offset|
-        offset && input[offset[0], offset[1] - offset[0]]
+        offset && string_slice(input, offset[0], offset[1] - offset[0])
       end
       match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)
@@ -42,17 +42,18 @@ module Onibi
 
     def self.from_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
       character_position = lambda do |byte_position|
-        input.byteslice(0, byte_position).to_s.length
+        prefix = string_byteslice(input, 0, byte_position).to_s
+        String.instance_method(:length).bind_call(prefix)
       end
       offsets = capture_offsets.map do |offset|
         offset && [character_position.call(offset[0]), character_position.call(offset[1])]
       end
       captures = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
+        offset && string_byteslice(input, offset[0], offset[1] - offset[0])
       end
       match_data = allocate
       match_data.instance_variable_set(:@values,
-                                       ([input.byteslice(start_position, finish_position - start_position)] + captures).freeze)
+                                       ([string_byteslice(input, start_position, finish_position - start_position)] + captures).freeze)
       match_data.instance_variable_set(:@captures, captures.freeze)
       match_data.instance_variable_set(
         :@offsets,
@@ -64,20 +65,12 @@ module Onibi
       match_data
     end
 
-    def self.from_raw_byte_offsets(input, start_position, finish_position, capture_offsets, names, regexp)
-      match_data = allocate
-      full_match = input.byteslice(start_position, finish_position - start_position)
-      captures = capture_offsets.map do |offset|
-        offset && input.byteslice(offset[0], offset[1] - offset[0])
-      end
-      match_data.instance_variable_set(:@values, ([full_match] + captures).freeze)
-      match_data.instance_variable_set(:@captures, captures.freeze)
-      match_data.instance_variable_set(:@offsets, [[start_position, finish_position], *capture_offsets].freeze)
-      match_data.instance_variable_set(:@names, names.freeze)
-      match_data.instance_variable_set(:@string, input)
-      match_data.instance_variable_set(:@regexp, regexp)
-      match_data.instance_variable_set(:@offsets_are_bytes, true)
-      match_data
+    def self.string_slice(input, start_position, length)
+      String.instance_method(:[]).bind_call(input, start_position, length)
+    end
+
+    def self.string_byteslice(input, start_position, length)
+      String.instance_method(:byteslice).bind_call(input, start_position, length)
     end
 
     def initialize(values, captures, offsets, names = {}, context = nil)
@@ -89,12 +82,19 @@ module Onibi
       @regexp = context&.regexp
     end
 
-    def [](index)
-      value_at(index)
+    def [](index, length = :__onibi_missing)
+      return @values[index] if length == :__onibi_missing && index.is_a?(Range)
+
+      normalize_public_index(index) unless index.is_a?(Range) || index.is_a?(String) || index.is_a?(Symbol)
+      return value_at(index) if length == :__onibi_missing || length.nil?
+
+      @values[index, length]
     end
 
     def match(index)
-      value_at(index)
+      index = integer_index(index) if index.is_a?(Float)
+      normalize_public_index(index) unless index.is_a?(String) || index.is_a?(Symbol)
+      value_at(index, strict: true)
     end
 
     def captures
@@ -121,16 +121,16 @@ module Onibi
 
     def pre_match
       start_position = self.begin(0)
-      @string[0, start_position]
+      String.instance_method(:[]).bind_call(@string, 0, start_position)
     end
 
     def post_match
       finish = self.end(0)
-      @string[finish..] || ""
+      String.instance_method(:[]).bind_call(@string, finish..) || ""
     end
 
     def named_captures
-      @names.transform_values { |index| self[index] }
+      @names.transform_values { |index| value_at(index, allow_array: true) }
     end
 
     def names
@@ -142,7 +142,7 @@ module Onibi
     end
 
     def inspect
-      details = inspect_names.map { |name, index| "#{name}:#{self[index].inspect}" }
+      details = inspect_names.map { |name, index| "#{name}:#{value_at(index, allow_array: true).inspect}" }
       suffix = details.empty? ? "" : " #{details.join(" ")}"
       "#<MatchData #{self[0].inspect}#{suffix}>"
     end
@@ -168,13 +168,16 @@ module Onibi
     def inspect_names
       return @names.flat_map { |name, index| [[name, index]] } unless @regexp
 
-      @regexp.named_captures.flat_map { |name, indices| indices.map { |index| [name, index] } }
+      named = @regexp.named_captures
+      return named.flat_map { |name, indices| indices.map { |index| [name, index] } } unless named.empty?
+
+      (1...@values.length).map { |index| [index, index] }
     end
 
     def range_values(range)
-      first = range_index(range.begin)
-      last = range_index(range.end)
-      last -= 1 if range.exclude_end?
+      first = range.begin.nil? ? 0 : range_index(range.begin)
+      last = range.end.nil? ? @values.length - 1 : range_index(range.end)
+      last -= 1 if range.exclude_end? && !range.end.nil?
       raise RangeError, "#{range} out of range" if first.negative?
 
       return [] if first > last
@@ -188,16 +191,50 @@ module Onibi
       index
     end
 
-    def value_at(index)
+    def value_at(index, strict: false, allow_array: false)
+      named = false
       if index.is_a?(String) || index.is_a?(Symbol)
         name = index.to_s
         raise IndexError, "undefined group name reference: #{name}" unless @names.key?(name)
 
         index = @names[name]
+        named = true
       end
-      return nil if index.is_a?(Integer) && index.negative? && index < -@captures.length
+      normalize_public_index(index) unless named || (index.is_a?(Array) && allow_array)
+      raise TypeError, "no implicit conversion of Array into Integer" if index.is_a?(Array) && !allow_array && !named
+
+      index = index.reverse.find { |candidate| @values[candidate] } || index.last if index.is_a?(Array)
+      if index.is_a?(Integer) && index.negative?
+        raise IndexError, "index #{index} out of matches" if strict
+
+        capture_index = index + @captures.length + 1
+        return capture_index.positive? ? @values[capture_index] : nil
+      end
+      raise IndexError, "index #{index} out of matches" if strict && index.is_a?(Integer) && index >= @values.length
 
       @values[index]
+    end
+
+    def normalize_public_index(index)
+      return index if index.is_a?(Integer) || index.is_a?(Float)
+      return Integer(index) if index.respond_to?(:to_int)
+
+      raise TypeError, "no implicit conversion from nil to integer" if index.nil?
+
+      raise TypeError, "no implicit conversion of #{index.class} into Integer"
+    end
+
+    def integer_index(index)
+      Integer(index)
+    rescue FloatDomainError
+      label = if index.nan?
+                "NaN"
+              elsif index.positive?
+                "Inf"
+              else
+                "-Inf"
+              end
+      raise RangeError, "float #{label} out of range of integer"
     end
   end
 end

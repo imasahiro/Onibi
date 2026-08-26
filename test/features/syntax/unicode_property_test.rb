@@ -3,6 +3,15 @@
 require "test_helper"
 
 class UnicodePropertyTest < Minitest::Test
+  def test_property_polarity_is_composed_once
+    ["\\p{^L}", "\\P{^L}"].each do |source|
+      expected = ::Regexp.new(source).match("a")&.to_a
+      actual = Onibi::Regexp.new(source).match("a")&.to_a
+
+      assert_equal expected, actual, source
+    end
+  end
+
   def test_ascii_and_han_properties
     assert Onibi::Regexp.new("\\p{ASCII}").match?("A")
     refute Onibi::Regexp.new("\\p{ASCII}").match?("é")

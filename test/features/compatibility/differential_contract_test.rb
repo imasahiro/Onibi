@@ -20,9 +20,9 @@ class DifferentialContractTest < Minitest::Test
   end
 
   def test_classifies_inventory_support_and_covers_every_inventory_target
-    excluded = excluded_fixture
+    last_match = last_match_fixture
 
-    assert_equal :unsupported_by_design, excluded.fetch(:support)
+    assert_equal :supported, last_match.fetch(:support)
     assert_equal inventory_identities.sort_by(&:to_s), matrix_identities.sort_by(&:to_s)
     assert_equal error_categories, @matrix.fetch("error_categories").sort
   end
@@ -45,10 +45,10 @@ class DifferentialContractTest < Minitest::Test
     )
   end
 
-  def excluded_fixture
+  def last_match_fixture
     DifferentialHarness.compare(
-      id: "v1-excluded-last-match",
-      inventory: { target: "Regexp", kind: "class_method", name: "last_match", status: "excluded" },
+      id: "v1-last-match",
+      inventory: { target: "Regexp", kind: "class_method", name: "last_match", status: "supported" },
       operation: :inventory, pattern: "a", options: [], input: "a"
     )
   end

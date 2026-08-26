@@ -23,7 +23,9 @@ module Onibi
       identifier = @source[(index + 3)...ending]
       raise RegexpError, "invalid subexpression call" if identifier.empty?
 
-      [Lexer::Token.new(:subexpression_call, [identifier, true], index), ending + 1]
+      numeric = identifier.match?(/\A\d+\z/)
+      value = numeric ? [Integer(identifier), false] : [identifier, true]
+      [Lexer::Token.new(:subexpression_call, value, index), ending + 1]
     end
 
     def backreference_token(index)
@@ -43,7 +45,9 @@ module Onibi
       ending = index + 2
       ending += 1 while @source[ending] && @source[ending] >= "0" && @source[ending] <= "9"
 
-      [Lexer::Token.new(:backreference, @source[(index + 1)...ending].to_i, index), ending]
+      digits = @source[(index + 1)...ending]
+      value = digits.length == 1 ? digits.to_i : digits
+      [Lexer::Token.new(:backreference, value, index), ending]
     end
   end
 end

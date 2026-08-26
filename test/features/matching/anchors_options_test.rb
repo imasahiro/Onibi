@@ -15,4 +15,12 @@ class AnchorsOptionsTest < Minitest::Test
   def test_multiline_option
     assert Onibi::Regexp.new("^cat$", ["multiline"]).match?("dog\ncat\nbird")
   end
+
+  def test_line_start_does_not_match_the_empty_line_after_a_final_newline
+    pattern = "^\\z"
+    input = "a\n"
+
+    assert_nil ::Regexp.new(pattern).match(input)
+    assert_nil Onibi::Regexp.new(pattern).match(input)
+  end
 end

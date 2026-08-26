@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/encoding"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -16,10 +17,12 @@ require_relative "onibi/lexer/lexer_escapes"
 require_relative "onibi/lexer"
 require_relative "onibi/character_predicates"
 require_relative "onibi/class_predicates"
+require_relative "onibi/class_predicates_validation"
 require_relative "onibi/class_predicates_posix"
 require_relative "onibi/compiled_class_predicate"
 require_relative "onibi/ast"
 require_relative "onibi/input_view"
+require_relative "onibi/execution_state"
 require_relative "onibi/invocation_state"
 require_relative "onibi/parser/parser_widths"
 require_relative "onibi/parser/parser_assertions"
@@ -45,8 +48,20 @@ module Onibi
     NOENCODING = 32
 
     class TimeoutError < RegexpError; end
+    LAST_MATCH_KEY = :onibi_regexp_last_match
+    LAST_MATCH_UNSET = Object.new.freeze
 
     class << self
+      ESCAPE_REPLACEMENTS = {
+        9 => "\\t",
+        10 => "\\n",
+        11 => "\\v",
+        12 => "\\f",
+        13 => "\\r"
+      }.freeze
+      ESCAPE_METACHARACTERS = "\\[]{}().*+?^$| #-"
+      ESCAPE_METACHARACTER_CODES = ESCAPE_METACHARACTERS.bytes.freeze
+
       def compile(pattern, options = nil, timeout: nil)
         new(pattern, options, timeout: timeout)
       end
@@ -57,82 +72,174 @@ module Onibi
 
       attr_reader :timeout
 
+      def last_match(index = LAST_MATCH_UNSET)
+        matched = Thread.current[LAST_MATCH_KEY]
+        return matched if index.equal?(LAST_MATCH_UNSET)
+
+        matched&.[](index)
+      end
+
       def escape(string)
         value = if string.is_a?(String)
                   string
                 elsif string.is_a?(Symbol)
                   string.to_s
                 elsif string.respond_to?(:to_str)
-                  string.to_str
+                  converted = string.to_str
+                  unless converted.is_a?(String)
+                    raise TypeError,
+                          "can't convert #{string.class} to String (#{string.class}#to_str gives #{converted.class})"
+                  end
+
+                  converted
                 else
-                  raise TypeError, "no implicit conversion of #{string.class} into String"
+                  type = case string
+                         when nil then "nil"
+                         when true then "true"
+                         when false then "false"
+                         else string.class
+                         end
+                  raise TypeError, "no implicit conversion of #{type} into String"
                 end
+        value = String.new(value)
         escaped = value.each_char.map do |character|
-          case character
-          when "\t" then "\\t"
-          when "\n" then "\\n"
-          when "\v" then "\\v"
-          when "\f" then "\\f"
-          when "\r" then "\\r"
-          when /[\\\[\]{}().*+?^$| #-]/ then "\\#{character}"
-          else character
-          end
+          replacement = ESCAPE_REPLACEMENTS[character.ord]
+          replacement ||= "\\#{character.encode(Encoding::US_ASCII)}" if character.ord < 128 && ESCAPE_METACHARACTER_CODES.include?(character.ord)
+          (replacement || character).encode(value.encoding)
         end.join
         escaped.force_encoding(escaped.ascii_only? ? Encoding::US_ASCII : value.encoding)
       end
 
       alias quote escape
 
+      def regexp_scope(pattern)
+        native = pattern.is_a?(::Regexp)
+        pattern_options = native ? ::Regexp.instance_method(:options).bind_call(pattern) : pattern.options
+        pattern_source = native ? ::Regexp.instance_method(:source).bind_call(pattern) : pattern.source
+        enabled = [[::Regexp::IGNORECASE, "i"], [::Regexp::MULTILINE, "m"],
+                   [::Regexp::EXTENDED, "x"]].filter_map do |bit, flag|
+          flag if (pattern_options & bit).positive?
+        end.join
+        disabled = ("mix".chars - enabled.chars).join
+        prefix = "(?#{enabled}-#{disabled}:".encode(pattern_source.encoding)
+        suffix = ")".encode(pattern_source.encoding)
+        prefix + pattern_source + suffix
+      end
+
       def try_convert(object)
-        return object if object.is_a?(Regexp)
+        return object if object.is_a?(Regexp) || object.is_a?(::Regexp)
         return nil unless object.respond_to?(:to_regexp)
 
         converted = object.to_regexp
-        return converted if converted.is_a?(Regexp)
+        return converted if converted.is_a?(Regexp) || converted.is_a?(::Regexp)
 
-        raise TypeError, "can't convert #{object.class} into Onibi::Regexp"
+        raise TypeError,
+              "can't convert #{object.class} to Regexp (#{object.class}#to_regexp gives #{converted.class})"
       end
 
       def union(*patterns)
-        patterns = patterns.first if patterns.length == 1 && patterns.first.is_a?(Array)
+        patterns = Array.instance_method(:to_a).bind_call(patterns.first) if patterns.length == 1 && patterns.first.is_a?(Array)
         return new("(?!)") if patterns.empty?
+
+        raise TypeError, "no implicit conversion of Symbol into String" if patterns.length > 1 && patterns.any? { |pattern| pattern.is_a?(Symbol) }
+
+        if patterns.length == 1 && (patterns.first.is_a?(::Regexp) || patterns.first.is_a?(Regexp))
+          native = patterns.first.is_a?(::Regexp)
+          source = native ? ::Regexp.instance_method(:source).bind_call(patterns.first) : patterns.first.source
+          options = native ? ::Regexp.instance_method(:options).bind_call(patterns.first) : patterns.first.options
+          return new(source, options)
+        end
 
         options = 0
         has_string = false
         has_binary_string = false
+        has_non_ascii_source = false
         sources = patterns.map do |pattern|
           if pattern.is_a?(::Regexp)
-            options |= pattern.options
-            pattern.source
+            native_options = ::Regexp.instance_method(:options).bind_call(pattern)
+            native_source = ::Regexp.instance_method(:source).bind_call(pattern)
+            options |= native_options & FIXEDENCODING
+            has_non_ascii_source ||= !native_source.ascii_only?
+            regexp_scope(pattern)
           elsif pattern.is_a?(Regexp)
-            options |= pattern.options
-            pattern.source
+            options |= pattern.options & FIXEDENCODING
+            has_non_ascii_source ||= !pattern.source.ascii_only?
+            regexp_scope(pattern)
           else
+            pattern = String.new(pattern) if pattern.is_a?(String)
             has_string = true
-            has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
+            has_binary_string ||= pattern.is_a?(String) && Onibi::EncodingSupport.binary?(pattern.encoding)
+            has_non_ascii_source ||= pattern.is_a?(String) && !pattern.ascii_only?
             escape(pattern)
           end
         end
         options &= ~NOENCODING if has_string
-        options |= FIXEDENCODING if has_binary_string
-        result = new(sources.join("|"), options)
-        result.instance_variable_set(:@source, result.source.force_encoding(Encoding::ASCII_8BIT)) if has_binary_string
-        result
+        options |= FIXEDENCODING if has_binary_string && has_non_ascii_source
+        new(join_union_sources(sources), options)
       end
 
       def linear_time?(pattern)
-        source = pattern.is_a?(::Regexp) || pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
-        !source.include?("\\k") && !source.include?("\\1") && !source.include?("(?=") &&
-          !source.include?("(?<=") && !source.include?("(?!") && !source.include?("(?<!") &&
-          !source.include?("(?>") && !source.include?("(?~")
+        regexp = if pattern.is_a?(::Regexp) || pattern.is_a?(Regexp)
+                   native = pattern.is_a?(::Regexp)
+                   source = native ? ::Regexp.instance_method(:source).bind_call(pattern) : pattern.source
+                   options = native ? ::Regexp.instance_method(:options).bind_call(pattern) : pattern.options
+                   new(source, options)
+                 else
+                   new(pattern)
+                 end
+        linear_time_ast?(regexp.ast)
+      end
+
+      def linear_time_ast?(node)
+        case node
+        when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall, Onibi::AST::Absence,
+             Onibi::AST::Conditional
+          false
+        when Onibi::AST::Sequence
+          node.parts.all? { |part| linear_time_ast?(part) }
+        when Onibi::AST::Alternation
+          node.branches.all? { |branch| linear_time_ast?(branch) }
+        when Onibi::AST::Group, Onibi::AST::AtomicGroup, Onibi::AST::OptionGroup,
+             Onibi::AST::Quantifier, Onibi::AST::Assertion
+          linear_time_ast?(node.respond_to?(:body) ? node.body : node.expression)
+        else
+          true
+        end
       end
 
       private
 
-      def normalize_timeout_value(value)
-        raise ArgumentError, "timeout must be positive" unless value.is_a?(Numeric) && value.positive?
+      def join_union_sources(sources)
+        non_ascii_compatible = sources.filter_map do |source|
+          source.encoding unless Onibi::EncodingSupport.ascii_compatible?(source.encoding)
+        end.uniq
+        encoding = non_ascii_compatible.first
+        return sources.join("|") unless encoding
 
-        value.to_f
+        raise ArgumentError, "ASCII incompatible encoding: #{encoding.name}" if sources.any? { |source| source.encoding != encoding }
+
+        separator = "|".encode(encoding)
+        sources.join(separator)
+      end
+
+      def normalize_timeout_value(value)
+        unless value.is_a?(Numeric)
+          type = case value
+                 when String then "string"
+                 when true then "true"
+                 when false then "false"
+                 end
+          raise TypeError, "no implicit conversion to float from #{type}" if type
+
+          raise TypeError, "can't convert #{value.class} into Float"
+        end
+        converted = value.to_f
+        return nil if converted.nan?
+        return (2**64) / 1_000_000_000.0 if converted.infinite? == 1
+
+        raise ArgumentError, "invalid timeout: #{value}" unless converted.positive?
+
+        converted
       end
     end
 
@@ -143,26 +250,63 @@ module Onibi
         options = pattern.options if options.nil?
         timeout = pattern.timeout if timeout.nil?
       when ::Regexp
-        source = pattern.source
-        options = pattern.options if options.nil?
+        source = ::Regexp.instance_method(:source).bind_call(pattern)
+        options = ::Regexp.instance_method(:options).bind_call(pattern) if options.nil?
       when String
         source = pattern.dup
       else
-        raise TypeError, "no implicit conversion of #{pattern.class} into String"
+        source = String.try_convert(pattern)
+        raise TypeError, "no implicit conversion of #{pattern.class} into String" unless source
       end
 
+      # Compile from a plain String. MRI's regexp compiler reads the string
+      # payload and encoding directly; String subclass overrides must not
+      # affect lexer or parser input.
+      source = String.new(source)
       @source = source
+      unicode_escape = @source.valid_encoding? && non_ascii_unicode_escape_pattern?
+      source_encoding = @source.encoding
+      @source = @source.dup.force_encoding(Encoding::UTF_8) if unicode_escape
       @options = option_bits(options)
       raise RegexpError, "invalid pattern encoding" unless @source.valid_encoding?
-      if no_encoding? && ((!@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT) || @source.include?("\\p{"))
+      raise RegexpError, "incompatible character encoding" if unicode_escape &&
+                                                              source_encoding != Encoding::UTF_8 && fixed_encoding?
+      if no_encoding? && ((!@source.ascii_only? && !Onibi::EncodingSupport.binary?(@source.encoding)) ||
+                          non_ascii_unicode_escape_pattern?)
         raise RegexpError, "non-ASCII pattern with no encoding"
       end
-      raise RegexpError, "Unicode property in binary pattern" if @source.encoding == Encoding::ASCII_8BIT && @source.include?("\\p{")
 
-      @options |= FIXEDENCODING if (!@source.ascii_only? || @source.include?("\\p{")) && !no_encoding?
+      if no_encoding? && property_names.any?
+        unless property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
+          raise RegexpError, "non-ASCII pattern with no encoding"
+        end
+
+        @options |= FIXEDENCODING
+      end
+      if Onibi::EncodingSupport.binary?(@source.encoding) && property_names.any? &&
+         !property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
+        invalid_name = property_names.find do |name|
+          !Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII)
+        end
+        raise RegexpError, "invalid character property name {#{invalid_name}}: /#{@source}/"
+      end
+
+      validate_property_encoding!
+
+      @options |= FIXEDENCODING if (!@source.ascii_only? || property_names.any?) && !no_encoding?
+      @options |= FIXEDENCODING if non_ascii_escape_pattern? &&
+                                   (no_encoding? || !Onibi::EncodingSupport.us_ascii?(@source.encoding))
+      @options |= FIXEDENCODING if !Onibi::EncodingSupport.us_ascii?(@source.encoding) && non_ascii_escape_present?
+      @options |= FIXEDENCODING if no_encoding? && non_ascii_escape_present?
+      @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
-      @parsed = Onibi::Parser.parse(source, options: @options)
-      @ast = @parsed.ast
+      # The parser consumes Unicode scalar text. Keep the original pattern
+      # encoding on the regexp object, but compile a UTF-8 view for the AST.
+      @parsed = Onibi::Parser.parse(analysis_source, options: @options)
+      @ast = Onibi::Compiler.normalize_numeric_escapes(@parsed.ast)
+      Onibi::Compiler.validate(@ast)
+      validate_subexpression_calls!
+      validate_backreferences!
       @effective_casefold = casefold? || scoped_casefold?(@ast)
       @effective_multiline = multiline? || scoped_multiline?(@ast)
       freeze_source_encoding
@@ -184,6 +328,12 @@ module Onibi
 
     def no_encoding?
       (@options & NOENCODING).positive?
+    end
+
+    def property_names
+      @property_names ||= analysis_source.scan(/\\[pP]\{([^}]+)\}/).flatten.map do |name|
+        Onibi::UnicodeProperties.normalize_name(name)
+      end
     end
 
     def casefold?
@@ -219,6 +369,16 @@ module Onibi
     end
 
     def named_captures
+      return {} if raw_named_captures.empty?
+
+      raw_named_captures.transform_values do |indices|
+        indices.map { |index| public_capture_numbers.index(index) + 1 }
+      end
+    end
+
+    # The VM uses parser capture numbers. MRI uses a separate public number
+    # space when a pattern has named captures: unnamed groups are hidden.
+    def raw_named_captures
       groups = {}
       walk_ast(@ast) do |node|
         next unless node.is_a?(Onibi::AST::Group) && node.name
@@ -230,7 +390,12 @@ module Onibi
     end
 
     def match?(input, position = 0)
-      !match(input, position).nil?
+      requested_position = normalize_match_position(position)
+      matched = match_without_last_match(input, requested_position)
+      return false unless matched
+      return false if requested_position >= 0 && requested_position > match_input_length(input)
+
+      true
     end
 
     define_method("=".dup << "~") do |input|
@@ -239,61 +404,112 @@ module Onibi
     end
 
     def ===(input)
-      match?(input)
+      !match(input).nil?
+    rescue TypeError
+      Thread.current[LAST_MATCH_KEY] = nil
+      false
     end
 
     def ~
       input = eval("$_", TOPLEVEL_BINDING, __FILE__, __LINE__)
-      return nil unless input
+      unless input
+        Thread.current[LAST_MATCH_KEY] = nil
+        return nil
+      end
+      unless input.is_a?(String)
+        Thread.current[LAST_MATCH_KEY] = nil
+        return nil
+      end
 
       send("=".dup << "~", input)
     end
 
     def match(input, position = 0)
-      raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
+      result = match_without_last_match(input, position)
+      Thread.current[LAST_MATCH_KEY] = result if result.is_a?(Onibi::MatchData)
+      Thread.current[LAST_MATCH_KEY] = nil unless result.is_a?(Onibi::MatchData)
+      block_given? && result ? yield(result) : result
+    end
 
-      ascii_input = input.ascii_only?
-      @ascii_input = ascii_input
-      @input_encoding = input.encoding
-      raise ArgumentError, "invalid input encoding" if (!@source.ascii_only? || !ascii_input) && !input.valid_encoding?
-      if fixed_encoding? && !ascii_input && input.encoding != encoding
-        raise Encoding::CompatibilityError, "incompatible character encodings: #{encoding} and #{input.encoding}"
+    def match_without_last_match(input, position = 0)
+      requested_position = normalize_match_position(position)
+      return nil if input.nil?
+
+      input = input.to_s if input.is_a?(Symbol)
+
+      unless input.is_a?(String)
+        original_input = input
+        input = String.try_convert(original_input)
+        unless input
+          type = case original_input
+                 when nil then "nil"
+                 when true then "true"
+                 when false then "false"
+                 else original_input.class
+                 end
+          raise TypeError, "no implicit conversion of #{type} into String"
+        end
       end
 
-      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input.bytesize > 100_000 && literal_value(@ast).nil?
+      program = bytecode_program
 
-      return bytecode_match(input, start_position(position)) if bytecode_applicable?
+      string_encoding = String.instance_method(:encoding).bind_call(input)
+      ascii_input = String.instance_method(:ascii_only?).bind_call(input)
+      @ascii_input = ascii_input
+      @input_encoding = string_encoding
+      input_length = String.instance_method(:length).bind_call(input)
+      return nil if requested_position.negative? && (requested_position + input_length).negative?
 
-      nil
+      input_valid = String.instance_method(:valid_encoding?).bind_call(input)
+      raise ArgumentError, "invalid byte sequence in #{string_encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input_valid
+
+      if program.flags[:binary_escape] && !ascii_input && !Onibi::EncodingSupport.binary?(string_encoding) &&
+         !(Onibi::EncodingSupport.us_ascii?(@source.encoding) && !no_encoding? &&
+           Onibi::EncodingSupport.iso_8859_1?(string_encoding))
+        if Onibi::EncodingSupport.us_ascii?(@source.encoding) && !no_encoding? &&
+           Onibi::EncodingSupport.binary_escape_multibyte?(string_encoding)
+          raise ArgumentError, "regexp preprocess failed: too short escaped multibyte character"
+        end
+
+        raise_incompatible_encoding(input)
+      end
+      raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && string_encoding != encoding
+      raise_incompatible_encoding(input) if Onibi::EncodingSupport.non_ascii_compatible?(encoding) && string_encoding != encoding
+      # MRI does not allow an ASCII-compatible regexp to run on a
+      # non-ASCII-compatible string. Such strings use a code-unit width that
+      # the regexp encoding must declare explicitly (UTF-16 or UTF-32).
+      raise_incompatible_encoding(input) if Onibi::EncodingSupport.non_ascii_compatible?(string_encoding) && string_encoding != encoding
+
+      input_bytesize = String.instance_method(:bytesize).bind_call(input)
+      raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input_bytesize > 100_000 && !program.flags[:literal_only]
+
+      start = if program.flags[:nullable]
+                nullable_match_position(requested_position, input_length)
+              else
+                start_position(requested_position, input_length)
+              end
+      return nil unless start
+
+      matched = bytecode_match(input, start, program)
+      matched && block_given? ? yield(matched) : matched
     end
+
+    private :match_without_last_match
 
     def scan(input, &block)
       raise TypeError, "no implicit conversion of #{input.class} into String" unless input.is_a?(String)
 
-      if @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-         @ast.parts.first.is_a?(Onibi::AST::Absence) && capture_count.zero?
-        ranges = Onibi::IRGen::YARVIR.execute_absence_scan(bytecode_program, input)
-        values = ranges.map { |start, finish| input[start...finish] }
-        values.each { |value| block.call(value) } if block
-        return block ? input : values
-      end
-
       results = []
       position = 0
-      while (matched = internal_match(input, position))
-        value = if source.include?("?(1)")
-                  matched[0]
-                else
-                  named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
-                end
+      input_length = String.instance_method(:length).bind_call(input)
+      while position <= input_length && (matched = internal_match(input, position))
+        value = named_captures.empty? && matched.captures.empty? ? matched[0] : matched.captures
         results << value
         yield(value) if block_given?
+        match_start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
-        position = finish > position ? finish : position + 1
-        break if matched[0].empty? && @ast.is_a?(Onibi::AST::Sequence) &&
-                 @ast.parts.length == 1 && @ast.parts.first.is_a?(Onibi::AST::Absence) &&
-                 (matched.captures.empty? || matched.captures.all?(&:nil?))
-        break if position > input.length
+        position = finish > match_start ? finish : match_start + 1
+        break if position > input_length
       end
       block_given? ? input : results
     end
@@ -302,23 +518,30 @@ module Onibi
       raise TypeError, "no implicit conversion of nil into String" if !block_given? && replacement.nil?
       raise TypeError, "no implicit conversion of #{replacement.class} into String" unless block_given? || replacement.is_a?(String)
 
-      output = String.new(encoding: input.encoding)
+      input_length = String.instance_method(:length).bind_call(input)
+      output = String.new(encoding: String.instance_method(:encoding).bind_call(input))
       cursor = 0
-      while (matched = internal_match(input, cursor))
+      search_position = 0
+      while search_position <= input_length && (matched = internal_match(input, search_position))
         start = character_position_for_match(input, matched, :begin)
         finish = character_position_for_match(input, matched)
-        output << input[cursor...start]
+        output << String.instance_method(:[]).bind_call(input, cursor...start)
         value = block_given? ? yield(matched[0]) : replacement_value(replacement, matched)
-        output << value.to_s
+        output << if value.is_a?(String)
+                    String.instance_method(:to_s).bind_call(value)
+                  else
+                    value.to_s
+                  end
         if finish == start
-          output << input[cursor] if cursor < input.length
-          cursor += 1
+          cursor = start
+          search_position = start + 1
         else
           cursor = finish
+          search_position = finish
         end
-        break if cursor > input.length
+        break if cursor > input_length
       end
-      output << input[cursor..] if cursor <= input.length
+      output << String.instance_method(:[]).bind_call(input, cursor..) if cursor <= input_length
       output
     end
 
@@ -334,34 +557,159 @@ module Onibi
 
     def to_s
       enabled = mode_flags
-      body = source
-      if source.start_with?("(?") && source.include?(":") && source.end_with?(")")
-        close = source.index(":")
-        header = source[2...close]
-        if header.chars.all? { |flag| %w[i m x].include?(flag) }
-          enabled = (enabled.chars + header.chars).uniq.join
-          body = source[(close + 1)...-1]
-        end
+      display_source = source_for_display
+      body = display_source.gsub("/", '\\/')
+      if single_inline_scope?
+        close = display_source.index(":")
+        header = display_source[2...close]
+        return to_s_without_scope unless header.each_char.all? { |flag| %w[i m x -].include?(flag) }
+
+        positive, negative = header.split("-", 2)
+        enabled_flags = enabled.chars + positive.to_s.chars
+        enabled_flags -= negative.to_s.chars
+        enabled = ("mix".chars & enabled_flags).join
+        body = display_source[(close + 1)...-1].gsub("/", '\\/')
       end
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
-      "(?#{scope}:#{body})"
+      rendered = "(?#{scope}:#{body})"
+      Onibi::EncodingSupport.ascii_compatible?(encoding) ? rendered : rendered.encode(encoding)
+    end
+
+    def to_s_without_scope
+      enabled = mode_flags
+      disabled = ("mix".chars - enabled.chars).join
+      scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
+      rendered = "(?#{scope}:#{source_for_display.gsub("/", '\\/')})"
+      Onibi::EncodingSupport.ascii_compatible?(encoding) ? rendered : rendered.encode(encoding)
     end
 
     def inspect
       flags = mode_flags
       flags += "n" if no_encoding?
-      "/#{source.gsub("/", '\\/')}/#{flags}"
+      "/#{inspect_source}/#{flags}"
     end
 
     private
 
+    def source_for_display
+      Onibi::EncodingSupport.ascii_compatible?(@source.encoding) ? source : source.encode(Encoding::UTF_8)
+    end
+
+    def inspect_source
+      return inspect_non_ascii_compatible_source unless Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
+
+      if Onibi::EncodingSupport.binary?(@source.encoding)
+        return @source.bytes.map do |byte|
+          if byte == 0x2f
+            "\\/"
+          else
+            byte.between?(0x09, 0x7e) ? byte.chr : format("\\x%02X", byte)
+          end
+        end.join
+      end
+
+      source_for_display.each_char.map do |character|
+        if Onibi::EncodingSupport.utf8?(@source.encoding) || Onibi::EncodingSupport.us_ascii?(@source.encoding)
+          next character == "/" ? "\\/" : character
+        end
+
+        if Onibi::EncodingSupport.ascii_compatible?(@source.encoding) && character.ord < 128
+          next character == "/" ? "\\/" : character
+        end
+
+        codepoint = character.codepoints.first
+        next format("\\x{%X}", codepoint) if Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
+
+        if codepoint < 128
+          character == "/" ? "\\/" : character
+        elsif codepoint <= 0xffff
+          format("\\u%04X", codepoint)
+        else
+          format("\\u{%X}", codepoint)
+        end
+      end.join
+    end
+
+    def inspect_non_ascii_compatible_source
+      bytes = @source.each_char.flat_map do |character|
+        if character.ord < 128
+          prefix = character == "/" ? "\\/" : character
+          prefix.bytes
+        elsif character.ord <= 0xffff
+          format("\\u%04X", character.ord).bytes
+        else
+          format("\\u{%X}", character.ord).bytes
+        end
+      end
+      bytes.pack("C*").force_encoding(Encoding::US_ASCII)
+    end
+
+    def single_inline_scope?
+      display_source = source_for_display
+      return false unless display_source.start_with?("(?") && display_source.include?(":") && display_source.end_with?(")")
+
+      depth = 0
+      escaped = false
+      in_class = false
+      display_source.each_char.with_index do |character, index|
+        if escaped
+          escaped = false
+          next
+        end
+        if character == "\\"
+          escaped = true
+          next
+        end
+        if character == "["
+          in_class = true
+          next
+        end
+        in_class = false if character == "]"
+        next if in_class
+
+        depth += 1 if character == "("
+        next unless character == ")"
+
+        depth -= 1
+        return false if depth.zero? && index != source.length - 1
+      end
+      depth.zero?
+    end
+
+    def raise_incompatible_encoding(input)
+      pattern_encoding = Onibi::EncodingSupport.binary?(encoding) ? "BINARY (ASCII-8BIT)" : encoding.name
+      input_encoding_value = String.instance_method(:encoding).bind_call(input)
+      input_encoding = Onibi::EncodingSupport.binary?(input_encoding_value) ? "BINARY (ASCII-8BIT)" : input_encoding_value.name
+      raise Encoding::CompatibilityError,
+            "incompatible encoding regexp match (#{pattern_encoding} regexp with #{input_encoding} string)"
+    end
+
     def option_bits(options)
+      return IGNORECASE if options.is_a?(Symbol)
+
+      unless options.nil? || options == false || options == true ||
+             options.is_a?(Integer) || options.is_a?(String) || options.is_a?(Array)
+        return IGNORECASE
+      end
+
       normalized = Onibi::Parser.send(:normalize_options, options)
       normalized.sum do |name|
         { "ignorecase" => IGNORECASE, "extended" => EXTENDED, "multiline" => MULTILINE,
           "fixedencoding" => FIXEDENCODING, "noencoding" => NOENCODING }.fetch(name)
       end
+    end
+
+    def validate_property_encoding!
+      analysis_source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
+        next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
+
+        raise RegexpError, "Unicode property is not supported by #{encoding_name_for_property}"
+      end
+    end
+
+    def encoding_name_for_property
+      @source.encoding.name
     end
 
     def normalize_timeout(value)
@@ -371,10 +719,15 @@ module Onibi
     end
 
     def freeze_source_encoding
+      if no_encoding? && fixed_encoding?
+        @source = @source.dup.force_encoding(Encoding::ASCII_8BIT)
+        return
+      end
       if no_encoding?
         @source = @source.dup.force_encoding(Encoding::US_ASCII)
         return
       end
+      return unless Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
       return if fixed_encoding? || !@source.ascii_only?
 
       @source = @source.dup.force_encoding(Encoding::US_ASCII)
@@ -396,14 +749,98 @@ module Onibi
       end
     end
 
-    def start_position(position)
+    def start_position(position, input_length)
       start = position.is_a?(Integer) ? position : Integer(position)
-      start += @source.length if start.negative?
-      [start, 0].max
+      start += input_length if start.negative?
+      return nil if start.negative? || start > input_length
+
+      start
+    end
+
+    def normalize_match_position(position)
+      return position if position.is_a?(Integer)
+
+      if position.is_a?(Float)
+        begin
+          return Integer(position)
+        rescue FloatDomainError
+          value = if position.infinite?
+                    position.positive? ? "Inf" : "-Inf"
+                  else
+                    "NaN"
+                  end
+          raise RangeError, "float #{value} out of range of integer"
+        end
+      end
+      if position.respond_to?(:to_int)
+        converted = position.to_int
+        return converted if converted.is_a?(Integer)
+
+        raise TypeError,
+              "can't convert #{position.class} to Integer (#{position.class}#to_int gives #{converted.class})"
+      end
+
+      raise TypeError, "no implicit conversion from nil to integer" if position.nil?
+
+      type = case position
+             when true then "true"
+             when false then "false"
+             else position.class
+             end
+      raise TypeError, "no implicit conversion of #{type} into Integer"
+    end
+
+    def match_input_length(input)
+      return String.instance_method(:length).bind_call(input) if input.is_a?(String)
+      return 0 if input.nil? || input.is_a?(Symbol)
+
+      converted = String.try_convert(input)
+      String.instance_method(:length).bind_call(converted)
+    end
+
+    def nullable_match_position(position, input_length)
+      start = position.is_a?(Integer) ? position : Integer(position)
+      start += input_length if start.negative?
+      return nil if start.negative?
+      return nil if input_length.zero? && start.positive? && !nullable_position_clamp?(input_length)
+      return start_position(position, input_length) unless nullable_position_clamp?(input_length)
+
+      [start, input_length].min
+    end
+
+    def nullable_position_clamp?(_input_length)
+      # MRI runs a nullable bytecode at the input end when the requested
+      # position is beyond the input. The bytecode decides if that position
+      # is valid; anchors and assertions must not be classified here.
+      true
+    end
+
+    def bytecode_nullable?
+      bytecode_program.flags[:nullable]
+    end
+
+    def minimum_match_width(node)
+      case node
+      when Onibi::AST::Literal then node.value.length
+      when Onibi::AST::CharacterClass, Onibi::AST::Property, Onibi::AST::Any then 1
+      when Onibi::AST::Escape then %i[word_boundary not_word_boundary start_match].include?(node.kind) ? 0 : 1
+      when Onibi::AST::Anchor, Onibi::AST::Assertion, Onibi::AST::Absence then 0
+      when Onibi::AST::Backreference, Onibi::AST::SubexpressionCall then 0
+      when Onibi::AST::Sequence then node.parts.sum { |part| minimum_match_width(part) }
+      when Onibi::AST::Alternation then node.branches.map { |branch| minimum_match_width(branch) }.min
+      when Onibi::AST::Group, Onibi::AST::AtomicGroup then minimum_match_width(node.body)
+      when Onibi::AST::OptionGroup then minimum_match_width(node.body)
+      when Onibi::AST::Conditional
+        [node.yes_branch, node.no_branch].compact.map { |branch| minimum_match_width(branch) }.min
+      when Onibi::AST::Quantifier
+        minimum = node.exact_bound && node.mode == :lazy ? 0 : node.minimum
+        minimum_match_width(node.expression) * minimum
+      else 1
+      end
     end
 
     def replacement_value(replacement, matched)
-      replacement.gsub(/\\([0-9&+`'\\]|k<[^>]+>)/) do |token|
+      String.instance_method(:gsub).bind_call(replacement, /\\([0-9&+`'\\]|k<[^>]+>)/) do |token|
         case token
         when "\\0", "\\&" then matched[0].to_s
         when "\\+" then matched.captures.reverse.find { |capture| capture }.to_s
@@ -411,122 +848,143 @@ module Onibi
         when "\\'" then matched.post_match
         when "\\\\" then "\\"
         when /^\\k<(.+)>$/ then matched[token[3...-1]].to_s
-        else matched[token[1].to_i].to_s
+        else matched.names.empty? ? matched[token[1].to_i].to_s : ""
         end
       end
     end
 
-    def character_position_for_match(input, matched, endpoint = :end)
-      position = endpoint == :begin ? matched.begin(0) : matched.end(0)
-      return position unless matched.instance_variable_get(:@offsets_are_bytes)
-
-      input.byteslice(0, position).to_s.length
+    def character_position_for_match(_input, matched, endpoint = :end)
+      endpoint == :begin ? matched.begin(0) : matched.end(0)
     end
 
     def internal_match(input, position)
       Onibi::Regexp.instance_method(:match).bind_call(self, input, position)
     end
 
-    def bytecode_match(input, start)
-      program = bytecode_program
-      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start)
+    def bytecode_match(input, start, program = bytecode_program)
+      byte_input = Onibi::EncodingSupport.byte_mode?(@input_encoding) ||
+                   (program.flags[:binary_escape] && Onibi::EncodingSupport.iso_8859_1?(@input_encoding))
+      input_view = Onibi::InputView.new(input, byte_mode: byte_input)
+      result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start, input_view: input_view)
       return nil unless result
 
       range = result.first(2)
-      captures = bytecode_adjust_captures(range, result[2])
+      captures = result[2]
       if capture_count.positive?
         offsets = Array.new(capture_count)
-        captures.each { |key, value| offsets[key - 1] = value if key.is_a?(Integer) }
+        captures.each do |key, value|
+          next unless key.is_a?(Integer)
+
+          index = named_captures.empty? ? key : public_capture_numbers.index(key)&.+(1)
+          offsets[index - 1] = value if index
+        end
         unless @ascii_input
-          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
-          if @input_encoding == Encoding::UTF_8 && !source.include?("\\R") && !bytecode_unicode_capture_byte_offsets?
+          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if Onibi::EncodingSupport.binary?(@input_encoding)
+          if Onibi::EncodingSupport.utf8?(@input_encoding) && !program.flags[:linebreak_escape] && !program.flags[:unicode_capture_byte_offsets]
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
-          to_bytes = ->(position) { input.each_char.take(position).join.bytesize }
+          byte_positions = character_byte_positions(input, input_view)
+          to_bytes = ->(position) { byte_positions.fetch(position) }
           byte_offsets = offsets.map { |offset| offset && [to_bytes.call(offset[0]), to_bytes.call(offset[1])] }
-          constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
-          return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                              byte_offsets, result_names, self)
+          return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                                    byte_offsets, result_names, self)
         end
         return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
       end
 
       unless @ascii_input
-        return Onibi::MatchData.captureless(input, range[0], range[1], self) if @input_encoding == Encoding::ASCII_8BIT
+        return Onibi::MatchData.captureless(input, range[0], range[1], self) if Onibi::EncodingSupport.binary?(@input_encoding)
 
-        to_bytes = if @input_encoding == Encoding::UTF_8
-                     ->(position) { input.codepoints.take(position).pack("U*").bytesize }
-                   else
-                     ->(position) { input.each_char.take(position).join.bytesize }
-                   end
-        constructor = source.include?("\\R") ? :from_byte_offsets : :from_raw_byte_offsets
-        return Onibi::MatchData.public_send(constructor, input, to_bytes.call(range[0]), to_bytes.call(range[1]),
-                                            [], result_names, self)
+        byte_positions = character_byte_positions(input, input_view)
+        to_bytes = ->(position) { byte_positions.fetch(position) }
+        return Onibi::MatchData.from_byte_offsets(input, to_bytes.call(range[0]), to_bytes.call(range[1]),
+                                                  [], result_names, self)
       end
       Onibi::MatchData.captureless(input, range[0], range[1], self)
     rescue Onibi::Error, ArgumentError
       nil
     end
 
-    def bytecode_adjust_captures(range, captures)
-      return captures unless @ast.is_a?(Onibi::AST::Sequence)
-
-      @ast.parts.each_with_index do |part, index|
-        next unless part.is_a?(Onibi::AST::Quantifier) && part.expression.is_a?(Onibi::AST::Group)
-        next unless part.expression.capture && part.expression.body.is_a?(Onibi::AST::Sequence)
-        next unless part.expression.body.parts.any? { |child| child.is_a?(Onibi::AST::Quantifier) && child.minimum.zero? }
-        next if @ast.parts[(index + 1)..].to_a.empty?
-
-        captures = captures.dup
-        captures[part.expression.number] = [range[1] - 1, range[1] - 1]
-        captures[part.expression.name] = [range[1] - 1, range[1] - 1] if part.expression.name
-      end
-      captures
-    end
-
-    def bytecode_unicode_capture_byte_offsets?
-      return false if unicode_repeated_literal_capture?
-
-      literals = []
-      collect_bytecode_literal_values(@ast, literals)
-      literals.any? && literals.all? { |value| !value.ascii_only? }
-    end
-
-    def collect_bytecode_literal_values(node, values)
-      case node
-      when Onibi::AST::Literal then values << node.value
-      when Onibi::AST::Sequence then node.parts.each { |part| collect_bytecode_literal_values(part, values) }
-      when Onibi::AST::Alternation then node.branches.each { |branch| collect_bytecode_literal_values(branch, values) }
-      when Onibi::AST::Group then collect_bytecode_literal_values(node.body, values)
-      when Onibi::AST::Quantifier then collect_bytecode_literal_values(node.expression, values)
-      end
-    end
-
-    def bytecode_applicable?
-      return false unless bytecode_supported_node?(@ast)
-
-      bytecode_program
-      true
-    rescue Onibi::Error, ArgumentError
-      false
+    # The VM cursor is a character index. Build the byte boundary table once
+    # when MatchData needs byte offsets. MRI keeps these boundaries in its
+    # encoding-aware matcher instead of rescanning the prefix for every
+    # capture.
+    def character_byte_positions(input, input_view = nil)
+      (input_view || Onibi::InputView.new(input)).byte_boundaries
     end
 
     def bytecode_program
       @bytecode_program ||= begin
-        compiled = Onibi::Compiler.compile(@parsed)
+        compiled = Onibi::Compiler.compile(@ast, options: @options, encoding: @source.encoding)
         tnfa = Onibi::Automata::GlushkovTNFA.from_cfg(compiled.graph)
         dfa = Onibi::Automata::DFA.from_tnfa(tnfa)
+        semantic_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+          @ast,
+          casefold: casefold? || Onibi::IRGen::YARVIR::SemanticBytecode.casefold_required?(@ast)
+        )
+        full_casefold = Onibi::IRGen::YARVIR::SemanticBytecode.full_casefold?(semantic_root)
+        unicode_capture_byte_offsets =
+          Onibi::IRGen::YARVIR::SemanticBytecode.unicode_capture_byte_offsets?(semantic_root)
         Onibi::IRGen::YARVIR.generate(
-          dfa, flags: { ignorecase: inline_global_flag_value(:i, casefold?),
+          dfa, flags: { encoding: @source.encoding,
+                        ignorecase: inline_global_flag_value(:i, casefold?),
+                        full_casefold: full_casefold,
                         multiline: inline_global_flag_value(:m, multiline?),
-                        subexpressions: bytecode_subexpressions }
+                        subexpressions: bytecode_subexpressions,
+                        named_capture_numbers: raw_named_captures,
+                        unicode_capture_byte_offsets: unicode_capture_byte_offsets,
+                        binary_escape: binary_escape_pattern?,
+                        ascii_escape_bytes: Onibi::EncodingSupport.us_ascii?(@source.encoding) &&
+                                            non_ascii_escape_present?,
+                        linebreak_escape: analysis_source.include?("\\R"),
+                        nullable: minimum_match_width(@ast).zero?,
+                        literal_only: !literal_value(@ast).nil?,
+                        semantic_root: semantic_root }
         )
       end
     end
 
     def inline_global_flag?(flag)
-      inline_global_modifier? && source.start_with?("(?#{flag}")
+      inline_global_modifier? && analysis_source.start_with?("(?#{flag}")
+    end
+
+    def binary_escape_pattern?
+      return false unless @source.ascii_only? &&
+                          (no_encoding? || Onibi::EncodingSupport.ascii?(@source.encoding) ||
+                           Onibi::EncodingSupport.binary?(@source.encoding))
+
+      return non_ascii_escape_present? if Onibi::EncodingSupport.binary?(@source.encoding)
+
+      non_ascii_escape_pattern?
+    end
+
+    def non_ascii_escape_present?
+      analysis_source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
+        analysis_source.scan(/\\([0-7]{1,3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
+    end
+
+    def non_ascii_escape_pattern?
+      analysis_source.scan(/(?:\\x[0-9a-fA-F]{2})+/).any? do |sequence|
+        bytes = sequence.scan(/\\x([0-9a-fA-F]{2})/).map { |digits| digits.first.to_i(16) }
+        bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
+      end ||
+        analysis_source.scan(/(?:\\[0-7]{1,3})+/).any? do |sequence|
+          bytes = []
+          cursor = 0
+          while (digits = sequence[cursor..].to_s[/\A\\([0-7]{1,3})/, 1])
+            bytes << digits.to_i(8)
+            cursor += 1 + digits.length
+          end
+          bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
+        end
+    end
+
+    def non_ascii_unicode_escape_pattern?
+      analysis_source.scan(/\\u\{([^}]*)\}|\\u([0-9a-fA-F]{4})/).any? do |braced, fixed|
+        digits = braced || fixed
+        digits.to_i(16) > 0x7f
+      end
     end
 
     def inline_global_flag_value(flag, default)
@@ -538,55 +996,52 @@ module Onibi
       modifier.include?(flag.to_s) || default
     end
 
-    def bytecode_supported_node?(node)
-      case node
-      when Onibi::AST::Sequence
-        node.parts.all? { |part| bytecode_supported_node?(part) }
-      when Onibi::AST::Alternation
-        node.branches.all? { |branch| bytecode_supported_node?(branch) }
-      when Onibi::AST::Quantifier
-        bytecode_supported_node?(node.expression)
-      when Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Any, Onibi::AST::Property
-        true
-      when Onibi::AST::Absence
-        !absence_literal_value(node.body).nil?
-      when Onibi::AST::OptionGroup
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::AtomicGroup
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Group
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Backreference
-        true
-      when Onibi::AST::SubexpressionCall
-        true
-      when Onibi::AST::Conditional
-        bytecode_supported_node?(node.yes_branch) && bytecode_supported_node?(node.no_branch)
-      when Onibi::AST::Assertion
-        bytecode_supported_node?(node.body)
-      when Onibi::AST::Anchor
-        true
-      when Onibi::AST::Escape
-        true
-      else
-        false
-      end
-    end
-
-    def absence_literal_value(node)
-      case node
-      when Onibi::AST::Literal then node.value
-      when Onibi::AST::Group then absence_literal_value(node.body)
-      when Onibi::AST::Sequence
-        values = node.parts.map { |part| absence_literal_value(part) }
-        values.all? ? values.join : nil
-      end
-    end
-
     def bytecode_subexpressions
       groups = {}
       collect_bytecode_subexpressions(@ast, groups)
-      groups
+      validate_bytecode_subexpression_calls(groups)
+      groups.transform_values { |body| Onibi::IRGen::YARVIR::SemanticBytecode.compile(body) }
+    end
+
+    def validate_subexpression_calls!
+      groups = {}
+      collect_bytecode_subexpressions(@ast, groups)
+      validate_bytecode_subexpression_calls(groups)
+    end
+
+    def validate_backreferences!
+      walk_ast(@ast) do |node|
+        if node.is_a?(Onibi::AST::Conditional)
+          identifier, named = node.condition
+          raise RegexpError, "undefined name <#{identifier}> condition: /#{@source}/" if named && !raw_named_captures.key?(identifier.to_s)
+          raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/" if !named && raw_named_captures.any?
+          raise RegexpError, "invalid conditional reference: /#{@source}/" if !named && identifier.to_i > capture_count
+        end
+
+        next unless node.is_a?(Onibi::AST::Backreference)
+
+        identifier = node.identifier.to_s
+        raise RegexpError, "undefined name <#{identifier}> reference: /#{@source}/" if node.named && !raw_named_captures.key?(identifier)
+        next unless identifier.match?(/\A\d+\z/)
+        raise RegexpError, "invalid backref number/name: /#{@source}/" if identifier.to_i > capture_count
+        next if raw_named_captures.empty?
+
+        raise RegexpError, "numbered backref/call is not allowed. (use name): /#{@source}/"
+      end
+    end
+
+    def validate_bytecode_subexpression_calls(groups)
+      walk_ast(@ast) do |node|
+        next unless node.is_a?(Onibi::AST::SubexpressionCall)
+
+        identifier = node.identifier.to_s
+        raise RegexpError, "numbered subexpression call is not allowed with named captures" if
+          identifier.match?(/\A\d+\z/) && named_captures.any?
+        raise RegexpError, "never ending recursion: /#{@source}/" if identifier == "0"
+
+        key = groups.key?(node.identifier) ? node.identifier : identifier.to_i
+        raise RegexpError, "undefined subexpression call <#{node.identifier}>" unless groups.key?(key)
+      end
     end
 
     def collect_bytecode_subexpressions(node, groups)
@@ -596,8 +1051,11 @@ module Onibi
       when Onibi::AST::Alternation
         node.branches.each { |branch| collect_bytecode_subexpressions(branch, groups) }
       when Onibi::AST::Group
-        groups[node.number] = node.body if node.capture
-        groups[node.name] = node.body if node.capture && node.name
+        # A subexpression call re-enters the capturing group. Keep the Group
+        # wrapper in bytecode, so the VM updates its capture span at call time.
+        groups[node.number] = node if node.capture
+        groups[node.number.to_s] = node if node.capture
+        groups[node.name] = node if node.capture && node.name
         collect_bytecode_subexpressions(node.body, groups)
       when Onibi::AST::Quantifier
         collect_bytecode_subexpressions(node.expression, groups)
@@ -606,54 +1064,33 @@ module Onibi
       end
     end
 
-    def inline_global_modifier?
-      return false unless source.start_with?("(?")
+    def analysis_source
+      @analysis_source ||= if Onibi::EncodingSupport.binary?(@source.encoding) ||
+                              Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
+                             @source
+                           else
+                             @source.encode(Encoding::UTF_8)
+                           end
+    end
 
-      close = source.index(")")
-      colon = source.index(":")
+    def inline_global_modifier?
+      return false unless analysis_source.start_with?("(?")
+
+      close = analysis_source.index(")")
+      colon = analysis_source.index(":")
       return false if colon && close && colon < close
 
-      modifier = source[2, (colon || close || source.length) - 2].to_s
+      # Only the first group header can define a global modifier. A later
+      # non-capturing group may contain `:` but must not change this header.
+      modifier = analysis_source[2, (close || analysis_source.length) - 2].to_s
       !modifier.empty? && modifier.each_char.all? { |character| %w[i m x -].include?(character) } &&
         modifier.each_char.any? { |character| %w[i m x].include?(character) }
     end
 
-    def bytecode_literal_choice_group?(node)
-      case node
-      when Onibi::AST::Literal then true
-      when Onibi::AST::Sequence then node.parts.all? { |part| bytecode_literal_choice_group?(part) }
-      when Onibi::AST::Alternation then node.branches.all? { |branch| bytecode_literal_choice_group?(branch) }
-      when Onibi::AST::Group then bytecode_literal_choice_group?(node.body)
-      when Onibi::AST::Quantifier
-        source.include?("\\k") &&
-          [Onibi::AST::Literal, Onibi::AST::CharacterClass, Onibi::AST::Property].any? do |klass|
-            node.expression.is_a?(klass)
-          end
-      else false
-      end
-    end
-
-    def bytecode_unicode_safe_node?(node)
-      bytecode_supported_node?(node)
-    end
-
-    def bytecode_unicode_absence_only?
-      @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-        @ast.parts.first.is_a?(Onibi::AST::Absence) && !absence_literal_value(@ast.parts.first.body).nil?
-    end
-
-    def unicode_repeated_literal_capture?
-      @ast.is_a?(Onibi::AST::Sequence) && @ast.parts.length == 1 &&
-        @ast.parts.first.is_a?(Onibi::AST::Group) &&
-        @ast.parts.first.body.is_a?(Onibi::AST::Sequence) &&
-        @ast.parts.first.body.parts.length == 1 &&
-        @ast.parts.first.body.parts.first.is_a?(Onibi::AST::Quantifier) &&
-        @ast.parts.first.body.parts.first.expression.is_a?(Onibi::AST::Literal) &&
-        !@ast.parts.first.body.parts.first.expression.value.ascii_only?
-    end
-
     def capture_count
       @capture_count ||= begin
+        return public_capture_numbers.length unless named_captures.empty?
+
         count = 0
         walk_ast(@ast) { |node| count += 1 if node.is_a?(Onibi::AST::Group) && node.capture }
         count
@@ -661,7 +1098,17 @@ module Onibi
     end
 
     def result_names
-      @result_names ||= named_captures.transform_values(&:first)
+      @result_names ||= named_captures
+    end
+
+    def public_capture_numbers
+      @public_capture_numbers ||= begin
+        numbers = []
+        walk_ast(@ast) do |node|
+          numbers << node.number if node.is_a?(Onibi::AST::Group) && node.capture && node.name
+        end
+        numbers
+      end
     end
 
     def ast_contains_node?(node, klass)
@@ -691,3 +1138,4 @@ require_relative "onibi/optimization"
 require_relative "onibi/compiler"
 require_relative "onibi/automata"
 require_relative "onibi/irgen"
+require_relative "onibi/interpreter"

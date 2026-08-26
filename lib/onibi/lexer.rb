@@ -13,7 +13,7 @@ module Onibi
     include LexerEscapes
     Token = Struct.new(:type, :value, :position)
 
-    ESCAPED_LITERALS = ".^$*+?{}[]()|\\ #".chars.freeze
+    ESCAPED_LITERALS = ".^$*+?{}[]()|\\ #QE".chars.freeze
     ESCAPED_CHARACTERS = {
       "a" => "\a", "e" => "\e", "f" => "\f", "n" => "\n",
       "r" => "\r", "t" => "\t", "v" => "\v"
@@ -32,6 +32,7 @@ module Onibi
       "B" => :not_word_boundary,
       "G" => :start_match,
       "K" => :match_reset,
+      "X" => :grapheme,
       "A" => :anchor_absolute_start,
       "Z" => :anchor_before_final_newline,
       "z" => :anchor_absolute_end
@@ -48,6 +49,7 @@ module Onibi
     def initialize(source, options = [])
       @source = LexerScopedExtended.normalize(source)
       @extended = options.include?("extended")
+      @noencoding = options.include?("noencoding")
       @extended_scopes = []
     end
 
@@ -66,12 +68,22 @@ module Onibi
     end
 
     def quantifier_token(index)
+      return literal_token("{", index) if @source[index] == "{" && !bounded_quantifier?(index)
+
       [Token.new(:quantifier, quantifier_value(index), index), quantifier_end(index)]
+    end
+
+    def bounded_quantifier?(index)
+      ending = @source.index("}", index + 1)
+      return false unless ending
+
+      body = @source[(index + 1)...ending]
+      body.match?(/\A(?:\d+|\d+,\d*|,\d+)\z/)
     end
 
     def escaped_token(index)
       escaped = @source[index + 1]
-      raise RegexpError, "trailing escape" if escaped.nil?
+      raise RegexpError, "too short escape sequence: /#{@source}/" if escaped.nil?
 
       return octal_escape_token(index) if octal_escape?(index)
       return special_escape_token(index, escaped) if special_escape_token(index, escaped)
@@ -87,22 +99,37 @@ module Onibi
       type = ESCAPED_TYPES[escaped]
       return escaped_type_token(type, escaped, index) if type || ESCAPED_LITERALS.include?(escaped)
 
-      raise RegexpError, "unknown escape \\#{escaped}"
+      [Token.new(:literal, escaped, index), index + 2]
     end
 
     def digit_escape?(character)
-      character >= "0" && character <= "9"
+      character && character >= "0" && character <= "9"
     end
 
     def octal_escape?(index)
       digits = @source[(index + 1), 3]
-      digits&.length == 3 && digits.each_char.all? { |digit| digit >= "0" && digit <= "7" }
+      return false unless digits
+
+      return true if digits.length == 3 && digits.each_char.all? { |digit| digit >= "0" && digit <= "7" }
+
+      @source[index + 1] == "0" && digits.match?(/\A[0-7]{1,3}/)
     end
 
     def octal_escape_token(index)
-      digits = @source[(index + 1), 3]
-      value = digits.to_i(8).chr(@source.encoding)
-      [Token.new(:literal, value, index), index + 4]
+      cursor = index
+      bytes = []
+      while @source[cursor] == "\\"
+        digits = @source[(cursor + 1), 3].to_s[/\A[0-7]{1,3}/]
+        break unless digits
+
+        codepoint = digits.to_i(8)
+        raise RegexpError, "invalid escape code" if codepoint > 0xFF
+
+        bytes << codepoint
+        cursor += 1 + digits.length
+      end
+
+      [Token.new(:literal, escaped_bytes(bytes), index), cursor]
     rescue RangeError, EncodingError
       raise RegexpError, "invalid octal escape"
     end
