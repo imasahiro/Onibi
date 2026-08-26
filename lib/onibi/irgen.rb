@@ -663,6 +663,8 @@ module Onibi
                  not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(node.kind)
             when Group, AtomicGroup, OptionGroup
               scoped_casefold_safe?(node.body)
+            when Quantifier
+              scoped_casefold_safe?(node.expression)
             else
               false
             end
@@ -1536,6 +1538,7 @@ module Onibi
                         !semantic_scoped_property_safe?(semantic_root) &&
                         !semantic_scoped_capture_backreference_safe?(semantic_root) &&
                         !semantic_scoped_capture_conditional_safe?(semantic_root) &&
+                        !semantic_scoped_optional_capture_conditional_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_unbounded_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_ascii_sequence_safe?(semantic_root) &&
@@ -1993,6 +1996,30 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
         capture, conditional = body.parts
+        return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
+        return false unless conditional.is_a?(SemanticBytecode::Conditional)
+        return false unless conditional.condition == capture.number
+
+        [conditional.yes_branch, conditional.no_branch].compact.all? do |branch|
+          literal = branch
+          literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
+          literal.is_a?(SemanticBytecode::Literal) && literal.value.ascii_only? && literal.value.each_char.one?
+        end
+      end
+
+      def semantic_scoped_optional_capture_conditional_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        group = node.parts.first
+        return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+        body = group.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
+
+        quantifier, conditional = body.parts
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.minimum.zero? && quantifier.maximum == 1
+        capture = quantifier.expression
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless conditional.is_a?(SemanticBytecode::Conditional)
         return false unless conditional.condition == capture.number
