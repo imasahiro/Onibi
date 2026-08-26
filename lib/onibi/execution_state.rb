@@ -130,6 +130,11 @@ module Onibi
         branch_checkpoints.select { |checkpoint| checkpoint[0] == position }
       end
 
+      def record_branch_checkpoint(position, branch, length)
+        branch_checkpoints << [position, branch, length]
+        self.preferred_branch = branch if length.positive? && preferred_branch.nil?
+      end
+
       def preferred_branch_at(position)
         branch_checkpoints_at(position).find { |_point, _branch, length| length.positive? }&.fetch(1)
       end

@@ -4225,8 +4225,7 @@ module Onibi
           branch = state[:__match_alternative_index]
           [branch, length] if branch.is_a?(Integer)
         end
-        frame.branch_checkpoints.concat(branches.map { |branch, length| [position, branch, length] })
-        frame.preferred_branch = branches.find { |_branch, length| length.positive? }&.first
+        branches.each { |branch, length| frame.record_branch_checkpoint(position, branch, length) }
       end
 
       def absence_capture_checkpoint_state(frame, fallback)

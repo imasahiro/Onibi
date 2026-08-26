@@ -369,6 +369,9 @@ class InterpreterTest < Minitest::Test
 
     assert_equal [[2, 3, 1], [2, 4, 2]], frame.branch_checkpoints
     assert_equal 3, frame.preferred_branch
+    frame.record_branch_checkpoint(3, 5, 1)
+    assert_equal [3, 5, 1], frame.branch_checkpoints.last
+    assert_equal 3, frame.preferred_branch
     assert_equal [[2, 3, 1], [2, 4, 2]], frame.branch_checkpoints_at(2)
     assert_equal 3, frame.preferred_branch_at(2)
     assert_equal [1, { __match_alternative_index: 3 }],
