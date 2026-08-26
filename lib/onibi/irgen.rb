@@ -450,6 +450,14 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+                 body.expression.is_a?(Group) && body.expression.capture
+                atoms = absence_repeat_atoms(body.expression.body)
+                return AbsenceRepeat.new(atoms, body.minimum) if atoms&.all? do |item|
+                  item.is_a?(Literal) || item.is_a?(CharacterClass) || item.is_a?(Property) ||
+                    item.is_a?(Escape) || item.is_a?(Any)
+                end
+              end
               if body.is_a?(Group) && body.capture
                 atom = unwrap_single_sequence(body.body)
                 if atom.is_a?(Quantifier) && atom.minimum.zero? && atom.maximum == 1 &&
@@ -1025,6 +1033,14 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+               body.expression.is_a?(Group) && body.expression.capture
+              atoms = absence_repeat_atoms(body.expression.body)
+              return true if atoms&.all? do |item|
+                item.is_a?(Literal) || item.is_a?(CharacterClass) || item.is_a?(Property) ||
+                  item.is_a?(Escape) || item.is_a?(Any)
+              end
+            end
             if body.is_a?(Group) && body.capture
               atom = unwrap_single_sequence(body.body)
               return true if atom.is_a?(Quantifier) && atom.minimum.zero? && atom.maximum == 1 &&
