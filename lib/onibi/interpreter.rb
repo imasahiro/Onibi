@@ -4125,6 +4125,20 @@ module Onibi
         limit = characters.length - cursor
         run = 0
         unit_width = node.atoms.sum { |atom| atom.is_a?(SemanticBytecode::Literal) ? atom.value.each_char.count : 1 }
+        if unit_width > 1
+          boundary = cursor.upto(characters.length).find do |probe|
+            local = 0
+            while probe + local < characters.length &&
+                  flat_assertion_lengths([node.atoms], characters, probe + local, {}, flags).any?
+              local += unit_width
+            end
+            if local >= node.minimum * unit_width
+              run = local
+              true
+            end
+          end
+          return [boundary ? [boundary - cursor + run - 1, limit].min : limit]
+        end
         while run < limit && flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags).any?
           widths = flat_assertion_lengths([node.atoms], characters, cursor + run, {}, flags)
           run += widths.select(&:positive?).min || unit_width
