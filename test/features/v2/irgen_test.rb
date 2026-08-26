@@ -75,6 +75,15 @@ class V2IRGenTest < Minitest::Test
     assert_includes flat.instructions.map(&:opcode), :consume_any
   end
 
+  def test_flat_compiler_lowers_non_digit_escape
+    regexp = Onibi::Regexp.new("\\D")
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    assert program.instructions.any? { |item| item.opcode == :semantic_flat }
+    assert_equal ["x"], regexp.match("x1")&.to_a
+  end
+
   def test_flat_program_does_not_embed_legacy_semantic_command_stream
     program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
     flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand

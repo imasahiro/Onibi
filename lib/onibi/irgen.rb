@@ -584,7 +584,7 @@ module Onibi
             return true if node.is_a?(Any)
             return true if node.is_a?(Anchor)
             if node.is_a?(Escape)
-              return %i[digit non_digit word not_word space not_space horizontal_space
+              return %i[digit non_digit not_digit word not_word space not_space horizontal_space
                         not_horizontal_space linebreak grapheme word_boundary not_word_boundary start_match match_reset].include?(node.kind)
             end
             return flat_property_safe?(node) if node.is_a?(Property)
