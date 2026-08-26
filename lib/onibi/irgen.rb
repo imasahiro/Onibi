@@ -78,9 +78,10 @@ module Onibi
         end
         FoldBoundary = Struct.new(:operand, :next_pc, :literal, :casefold, :boundary, :policy,
                                   :next_literal, :next_casefold, :next_source_width,
+                                  :next_literals,
                                   keyword_init: true) do
           def initialize(operand:, next_pc:, literal:, casefold:, boundary:, policy:,
-                         next_literal:, next_casefold:, next_source_width:)
+                         next_literal:, next_casefold:, next_source_width:, next_literals:)
             super.freeze
           end
 
@@ -94,6 +95,15 @@ module Onibi
             tail = boundary.fetch(:tail, nil)
             next_fold = next_casefold || next_literal&.value
             tail && next_fold && tail == next_fold
+          end
+
+          def tail_matches_any_next_fold?
+            return false unless expanded_tail?
+
+            tail = boundary.fetch(:tail, nil)
+            tail && next_literals.any? do |literal|
+              tail == (literal.casefold || literal.value)
+            end
           end
 
           def fold_width_delta
@@ -211,11 +221,13 @@ module Onibi
                               %i[consume fold_boundary].include?(next_instruction.opcode)
                              operand(next_instruction.operand)
                            end
+            next_literals = [next_literal].compact
             FoldBoundary.new(operand: instruction.operand, next_pc: next_pc, literal: literal,
                              casefold: literal&.casefold, boundary: literal&.fold_boundary,
                              policy: literal&.fold_policy, next_literal: next_literal,
                              next_casefold: next_literal&.casefold,
-                             next_source_width: next_literal&.source_width)
+                             next_source_width: next_literal&.source_width,
+                             next_literals: next_literals)
           end
 
           def tree_free?

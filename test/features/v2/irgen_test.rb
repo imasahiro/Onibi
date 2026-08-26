@@ -166,11 +166,13 @@ class V2IRGenTest < Minitest::Test
     assert_nil flat.boundary_target(2)
     assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
                    boundary: { kind: :expanded_tail, tail: "ι", sensitive: true }, policy: nil,
-                   next_literal: suffix, next_casefold: "ι", next_source_width: 1 },
+                   next_literal: suffix, next_casefold: "ι", next_source_width: 1,
+                   next_literals: [suffix] },
                   flat.boundary_metadata(0).to_h)
     metadata = flat.boundary_metadata(0)
     assert metadata.expanded_tail?
     assert metadata.tail_matches_next_fold?
+    assert metadata.tail_matches_any_next_fold?
     assert_equal(0, metadata.fold_width_delta)
     assert_equal(0, metadata.next_fold_width_delta)
     assert metadata.source_width_match?(1)
