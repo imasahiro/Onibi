@@ -371,6 +371,18 @@ class InterpreterTest < Minitest::Test
     assert_equal 3, frame.preferred_branch
   end
 
+  def test_absence_capture_checkpoint_restores_latest_non_discarded_state
+    executor = Onibi::Interpreter::Executor.new(Onibi::Regexp.new("a").send(:bytecode_program))
+    frame = Onibi::ExecutionState::AbsenceFrame.new(
+      kind: :absence, possible_points: [], body_checkpoints: [], capture_checkpoints: [
+        [1, 1, { 1 => [1, 2] }, true, false],
+        [2, 1, { 1 => [2, 3] }, false, true]
+      ], branch_checkpoints: [], preferred_branch: nil
+    )
+
+    assert_equal({ 1 => [2, 3] }, executor.send(:absence_capture_checkpoint_state, frame, {}))
+  end
+
   def test_execution_state_capture_frame_records_span
     state = Onibi::ExecutionState.new
     frame = state.start_capture(number: 1, name: "word", start: 2)

@@ -4238,6 +4238,11 @@ module Onibi
         frame.preferred_branch = branches.find { |_branch, length| length.positive? }&.first
       end
 
+      def absence_capture_checkpoint_state(frame, fallback)
+        checkpoint = frame.capture_checkpoints.reverse.find { |entry| !entry[3] }
+        checkpoint ? checkpoint[2].dup : fallback.dup
+      end
+
       def bounded_quantifier_body?(body)
         quantifier = bounded_absence_quantifier(body)
         return false unless quantifier
