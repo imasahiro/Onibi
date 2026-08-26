@@ -1562,6 +1562,7 @@ module Onibi
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
         return false if semantic_root && semantic_contains_anchor_assertion?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
+                        !semantic_leading_start_anchor_assertion_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
@@ -1846,6 +1847,19 @@ module Onibi
             false
           end
         end
+      end
+
+      def semantic_leading_start_anchor_assertion_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        assertion, *suffix = node.parts
+        return false unless assertion.is_a?(SemanticBytecode::Assertion) &&
+                            %i[positive positive_lookahead].include?(assertion.kind)
+        atoms = Array(assertion.flat_atoms).flatten
+        return false unless atoms.length == 1 && atoms.first.is_a?(SemanticBytecode::Anchor) &&
+                            atoms.first.kind == :anchor_absolute_start
+
+        suffix.all? { |part| semantic_consuming_operand?(part) }
       end
 
       def semantic_boundary_fold_lookahead_end_safe?(node)

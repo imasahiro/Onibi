@@ -920,6 +920,16 @@ class InterpreterTest < Minitest::Test
                  regexp.match("xc")&.to_a
   end
 
+  def test_leading_absolute_start_lookahead_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?=\\A)a")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?=\\A)a").match("a")&.to_a,
+                 regexp.match("a")&.to_a
+    assert_nil regexp.match("ba")
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
