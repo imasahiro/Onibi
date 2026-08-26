@@ -1333,6 +1333,14 @@ module Onibi
               if strict_end_anchor?(parts[index]) &&
                  (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation)
                 source = characters[cursor + consumed - 1]
+                if source && alternative.fold_policy&.fetch(:anchor_alternation, nil) == :reject_reverse_variant &&
+                   alternative.branches.any? do |branch|
+                     operand = boundary_operand(branch)
+                     operand.is_a?(SemanticBytecode::Literal) &&
+                     casefold_equal?(operand.value, source)
+                   end
+                  part_results = []
+                end
                 if source && !source.match?(/\p{M}/) && alternative.branches.any? do |branch|
                   operand = boundary_operand(branch)
                   operand.is_a?(SemanticBytecode::Literal) &&

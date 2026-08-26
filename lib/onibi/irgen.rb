@@ -3,6 +3,7 @@
 module Onibi
   module IRGen
     module YARVIR
+      # rubocop:disable Metrics/ModuleLength
       module SemanticBytecode
         # `casefold` is the compiler-owned folded literal. `casefold_segments`
         # keeps each source character boundary for VM backtracking.
@@ -104,6 +105,8 @@ module Onibi
             branches = node.branches.map { |branch| compile_value(branch, casefold: casefold, parent: :alternation) }
             policy = if branches.any? { |branch| literal_values(branch).length > 1 && literal_values(branch).any? { |literal| !literal.ascii_only? } }
                        { expanded_branch: true }.freeze
+                     elsif branches.any? { |branch| reverse_variant_policy?(branch) }
+                       { anchor_alternation: :reject_reverse_variant }.freeze
                      end
             return type.new(branches, parent == :sequence, policy)
           end
@@ -349,6 +352,23 @@ module Onibi
           end
         end
 
+        def reverse_variant_policy?(node)
+          case node
+          when Literal
+            node.fold_policy&.fetch(:alternation_source, nil) == :reject_reverse_variant
+          when Sequence
+            node.parts.any? { |part| reverse_variant_policy?(part) }
+          when Alternation
+            node.branches.any? { |branch| reverse_variant_policy?(branch) }
+          when Group, OptionGroup, AtomicGroup, Assertion
+            reverse_variant_policy?(node.body)
+          when Quantifier
+            reverse_variant_policy?(node.expression)
+          else
+            false
+          end
+        end
+
         def repeated_literal_capture?(node)
           return false unless node.is_a?(Sequence) && node.parts.length == 1
 
@@ -360,6 +380,7 @@ module Onibi
             !quantifier.expression.value.ascii_only?
         end
       end
+      # rubocop:enable Metrics/ModuleLength
 
       Instruction = Struct.new(:opcode, :operand, keyword_init: true) do
         def initialize(opcode:, operand: nil) = super.freeze
