@@ -193,6 +193,13 @@ module Onibi
               elsif next_instruction.opcode == :jump && next_instruction.target.is_a?(Integer) &&
                     next_instruction.target > program_counter
                 next_pc = next_instruction.target
+              elsif next_instruction.opcode == :split
+                target = Array(next_instruction.target).find do |candidate|
+                  candidate.is_a?(Integer) && candidate > program_counter
+                end
+                break unless target
+
+                next_pc = target
               else
                 break
               end

@@ -195,6 +195,22 @@ class V2IRGenTest < Minitest::Test
     assert_equal suffix, flat.boundary_metadata(0).next_literal
   end
 
+  def test_flat_program_resolves_fold_boundary_through_forward_split
+    instructions = [
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :fold_boundary, operand: 0, target: 1),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :split, target: [2, 3]),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :consume, operand: 1),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)
+    ]
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ᾀ", "ἀι")
+    suffix = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a")
+    flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
+      instructions: instructions, operands: [literal, suffix]
+    )
+
+    assert_equal suffix, flat.boundary_metadata(0).next_literal
+  end
+
   def test_flat_assertion_operands_keep_only_leaf_atoms
     flat = Onibi::Regexp.new("(?=a[0-9])a7").send(:bytecode_program).instructions
                         .find { |instruction| instruction.opcode == :semantic_flat }.operand
