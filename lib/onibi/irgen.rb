@@ -2428,6 +2428,8 @@ module Onibi
           node.is_a?(SemanticBytecode::Alternation)
         return node.parts.all? { |part| semantic_scoped_repeat_operand_safe?(part) } if
           node.is_a?(SemanticBytecode::Sequence)
+        return semantic_scoped_repeat_operand_safe?(node.body) if
+          node.is_a?(SemanticBytecode::Group) || node.is_a?(SemanticBytecode::OptionGroup)
 
         false
       end
