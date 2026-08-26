@@ -669,7 +669,13 @@ module Onibi
               %i[positive positive_lookahead negative negative_lookahead
                  positive_lookbehind negative_lookbehind].include?(node.kind) &&
                 Array(node.flat_atoms).flatten.all? do |atom|
-                atom.is_a?(Any) || (atom.is_a?(Literal) && atom.value.ascii_only?)
+                atom.is_a?(Any) || (atom.is_a?(Literal) &&
+                  (atom.value.ascii_only? ||
+                   (atom.value.each_char.one? && atom.casefold.to_s.each_char.one? &&
+                    !atom.fold_boundary_sensitive &&
+                    Onibi::UnicodeProperties.reverse_casefold_variants(atom.casefold).all? do |variant|
+                      variant.each_char.one?
+                    end)))
               end
             when Escape
               %i[digit non_digit word not_word space not_space horizontal_space
@@ -1786,12 +1792,29 @@ module Onibi
           node.branches.all? { |branch| semantic_scoped_casefold_simple_safe?(branch) }
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
           semantic_scoped_casefold_simple_safe?(node.body)
+        when SemanticBytecode::Assertion
+          %i[positive positive_lookahead negative negative_lookahead
+             positive_lookbehind negative_lookbehind].include?(node.kind) &&
+            Array(node.flat_atoms).flatten.all? do |atom|
+              atom.is_a?(SemanticBytecode::Any) ||
+                (atom.is_a?(SemanticBytecode::Literal) &&
+                 (atom.value.ascii_only? || semantic_simple_unicode_literal?(atom)))
+            end
         when SemanticBytecode::Quantifier
           node.minimum == 1 && node.maximum == 1 &&
             semantic_scoped_casefold_simple_safe?(node.expression)
         else
           false
         end
+      end
+
+      def semantic_simple_unicode_literal?(node)
+        node.is_a?(SemanticBytecode::Literal) && !node.value.ascii_only? &&
+          node.value.each_char.one? && node.casefold.to_s.each_char.one? &&
+          !node.fold_boundary_sensitive &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
+            variant.each_char.one?
+          end
       end
 
       def semantic_contains_scoped_simple_unicode_literal?(node)
