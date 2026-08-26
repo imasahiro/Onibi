@@ -92,7 +92,8 @@ module Onibi
             return false unless expanded_tail?
 
             tail = boundary.fetch(:tail, nil)
-            tail && next_casefold && tail == next_casefold
+            next_fold = next_casefold || next_literal&.value
+            tail && next_fold && tail == next_fold
           end
 
           def fold_width_delta
@@ -182,12 +183,18 @@ module Onibi
             return nil unless instruction.opcode == :fold_boundary
 
             literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
-            next_instruction = instruction.target && instruction_at(instruction.target)
+            next_pc = instruction.target
+            if next_pc.nil?
+              next_pc = (program_counter + 1...instructions.length).find do |index|
+                opcode_at(index) != :scope_end
+              end
+            end
+            next_instruction = next_pc && instruction_at(next_pc)
             next_literal = if next_instruction&.operand.is_a?(Integer) &&
                               %i[consume fold_boundary].include?(next_instruction.opcode)
                              operand(next_instruction.operand)
                            end
-            FoldBoundary.new(operand: instruction.operand, next_pc: instruction.target, literal: literal,
+            FoldBoundary.new(operand: instruction.operand, next_pc: next_pc, literal: literal,
                              casefold: literal&.casefold, boundary: literal&.fold_boundary,
                              policy: literal&.fold_policy, next_literal: next_literal,
                              next_casefold: next_literal&.casefold,

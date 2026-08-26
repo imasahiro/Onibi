@@ -278,6 +278,21 @@ class InterpreterTest < Minitest::Test
     assert_nil Onibi::Interpreter::Executor.new(program).match("ἀιx")
   end
 
+  def test_flat_fold_boundary_uses_next_fold_metadata
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("(?i:ᾀ)ι").ast
+    )
+    flat = Onibi::IRGen::YARVIR::SemanticBytecode.lower(root).flat_program
+    program = Onibi::IRGen::YARVIR::Program.new(
+      instructions: [Onibi::IRGen::YARVIR::Instruction.new(opcode: :semantic_flat, operand: flat)],
+      flags: { encoding: Encoding::UTF_8, tagged_vm: true }
+    )
+
+    assert_nil program.execute("ᾀι")
+    assert_equal [0, 2], program.execute("ᾀιι")
+    assert_equal [0, 3], program.execute("ἀιι")
+  end
+
   def test_executor_uses_flat_vm_for_boundary_fold_with_start_anchor
     regexp = Onibi::Regexp.new("\\A(?i:ᾀ)")
     program = regexp.send(:bytecode_program)
