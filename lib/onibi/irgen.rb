@@ -395,6 +395,15 @@ module Onibi
         def iseq
           self
         end
+
+        # Execute this immutable program through the interpreter boundary.
+        def execute(input, start_position = 0, input_view: nil)
+          Onibi::IRGen::YARVIR.execute(self, input, start_position, input_view: input_view)
+        end
+
+        def execute_with_captures(input, start_position = 0, input_view: nil)
+          Onibi::IRGen::YARVIR.execute_with_captures(self, input, start_position, input_view: input_view)
+        end
       end
       ISeq = Program
 
