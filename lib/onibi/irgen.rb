@@ -1814,6 +1814,7 @@ module Onibi
         node.is_a?(SemanticBytecode::Literal) && !node.value.ascii_only? &&
           node.value.each_char.one? && node.casefold.to_s.each_char.one? &&
           !node.fold_boundary_sensitive &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).any? &&
           Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
             variant.each_char.one?
           end
@@ -1899,6 +1900,7 @@ module Onibi
         body.is_a?(SemanticBytecode::Literal) && !body.value.ascii_only? &&
           body.value.each_char.one? && body.casefold.to_s.each_char.one? &&
           !body.fold_boundary_sensitive &&
+          Onibi::UnicodeProperties.reverse_casefold_variants(body.casefold).any? &&
           Onibi::UnicodeProperties.reverse_casefold_variants(body.casefold).all? do |variant|
             variant.each_char.one?
           end
