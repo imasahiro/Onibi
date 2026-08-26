@@ -160,7 +160,8 @@ class V2IRGenTest < Minitest::Test
 
     assert_equal :accept, flat.boundary_target(0).opcode
     assert_nil flat.boundary_target(1)
-    assert_equal({ operand: 0, next_pc: 1, literal: literal }, flat.boundary_metadata(0).to_h)
+    assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
+                   boundary: nil, policy: nil }, flat.boundary_metadata(0).to_h)
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

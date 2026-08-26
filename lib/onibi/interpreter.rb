@@ -533,7 +533,7 @@ module Onibi
                                  next_pc && @flat_program.instruction_at(next_pc)
                                end
             matches = reject_flat_fold_boundary_matches(
-              matches, instruction.opcode, node, next_instruction
+              matches, instruction.opcode, node, next_instruction, boundary_metadata
             )
             matches.reverse_each do |length, inner|
               next_state = state.merge(inner)
@@ -795,7 +795,7 @@ module Onibi
         end
       end
 
-      def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction)
+      def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction, metadata = nil)
         return matches unless node.is_a?(SemanticBytecode::Literal)
         return matches unless opcode == :fold_boundary || node.fold_boundary_sensitive
 
@@ -809,7 +809,8 @@ module Onibi
         return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
                               anchor.kind == :anchor_absolute_end
 
-        matches.reject { |length, _inner| length == node.source_width }
+        source_width = metadata&.literal&.source_width || node.source_width
+        matches.reject { |length, _inner| length == source_width }
       end
 
       # Match a compile-time flat atom list without entering tree_results.
