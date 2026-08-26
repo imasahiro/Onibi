@@ -2885,10 +2885,9 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Literal)
         return false unless node.value.each_char.one?
         return true if node.value.ascii_only?
-        return false unless node.value.encoding == Encoding::UTF_8 && node.value == node.value.upcase
-        return false unless node.casefold.to_s.each_char.one?
+        return false unless node.value.encoding == Encoding::UTF_8
 
-        Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
+        Onibi::UnicodeProperties.reverse_casefold_variants(node.value.downcase(:fold)).all? do |variant|
           variant.each_char.one?
         end
       end

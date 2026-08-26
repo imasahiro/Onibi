@@ -3735,6 +3735,7 @@ module Onibi
           candidate = characters[cursor, value.length]
           if flags[:ignorecase] && value.length == 1 && candidate&.length == 1 &&
              value.first.encoding == Encoding::UTF_8 && !value.first.ascii_only? &&
+             Onibi::UnicodeProperties.greek?(value.first) &&
              value.first.downcase(:fold).each_char.one? &&
              value.first == value.first.upcase &&
              value.first != value.first.downcase(:fold) &&
