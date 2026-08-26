@@ -1586,6 +1586,7 @@ module Onibi
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_optional_with_suffix?(semantic_root)
+        return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -1809,7 +1810,8 @@ module Onibi
         when SemanticBytecode::Quantifier
           fixed = node.maximum && node.minimum == node.maximum && node.minimum.positive?
           optional = node.minimum.zero? && node.maximum == 1
-          (fixed || optional) && semantic_flat_unicode_literal?(node.expression)
+          bounded = node.maximum && node.maximum <= 32 && node.minimum <= node.maximum
+          (fixed || optional || bounded) && semantic_flat_unicode_literal?(node.expression)
         else
           false
         end
@@ -1877,6 +1879,44 @@ module Onibi
 
         node.parts.any? do |part|
           semantic_contains_scoped_unicode_optional?(part)
+        end
+      end
+
+      def semantic_scoped_unicode_bounded_repeat_with_suffix?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.any? do |part|
+          semantic_contains_scoped_unicode_bounded_repeat?(part)
+        end
+      end
+
+      def semantic_contains_scoped_unicode_bounded_repeat?(node)
+        return true if node.is_a?(SemanticBytecode::OptionGroup) && node.ignorecase &&
+                       semantic_contains_unicode_bounded_repeat?(node.body)
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_scoped_unicode_bounded_repeat?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_scoped_unicode_bounded_repeat?(value)
+          else
+            false
+          end
+        end
+      end
+
+      def semantic_contains_unicode_bounded_repeat?(node)
+        return true if node.is_a?(SemanticBytecode::Quantifier) && node.maximum &&
+                       node.maximum > 1 && semantic_contains_non_ascii_operand?(node.expression)
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_unicode_bounded_repeat?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_unicode_bounded_repeat?(value)
+          else
+            false
+          end
         end
       end
 
