@@ -4776,8 +4776,10 @@ module Onibi
       # Execute the two loops used by Onigmo's OP_ABSENT protocol.
       # Each probe uses the current absent end as its input boundary.
       def absence_bounded_probe_results(body, characters, cursor, captures, flags, preserve_failed_capture: false)
-        frame = @state.new_frame(
+        frame = @state.new_absence_frame(
           kind: :absence,
+          resume_pc: nil,
+          body_pc: nil,
           absent_start: cursor,
           absent_end: characters.length,
           probe_position: cursor,
