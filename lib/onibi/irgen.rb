@@ -93,7 +93,10 @@ module Onibi
               targets = instruction.target.is_a?(Array) ? instruction.target : [instruction.target]
               (%i[jump split].include?(instruction.opcode) || instruction.opcode == :fold_boundary) &&
                 (instruction.opcode != :fold_boundary || instruction.target) &&
-                targets.any? { |target| !target.is_a?(Integer) || target.negative? || target >= limit }
+                targets.any? do |target|
+                  !target.is_a?(Integer) || target.negative? || target >= limit ||
+                    (instruction.opcode == :fold_boundary && target <= _index)
+                end
             end
             raise ArgumentError, "flat VM control-flow target is invalid" if invalid_pc
 
