@@ -1937,6 +1937,12 @@ module Onibi
 
         source = characters[cursor]
         return false unless source
+        if next_node.is_a?(SemanticBytecode::Anchor) &&
+           next_node.kind == :anchor_absolute_end &&
+           expression.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
+           source != expression.value && !source.match?(/\p{M}/)
+          return :zero_only
+        end
         if expression.is_a?(SemanticBytecode::CharacterClass) &&
            expression.fold_policy&.fetch(:optional_order, nil) == :consume_source_variant &&
            expression.folded_characters.include?(source)
@@ -2062,6 +2068,9 @@ module Onibi
         return false unless expression.value.downcase(:fold) == next_node.value.downcase(:fold)
 
         source = characters[cursor]
+        return false if suffix_node.is_a?(SemanticBytecode::Anchor) &&
+                        expression.fold_policy&.fetch(:sequence_source, nil) != :allow_repeated_variant
+
         variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(
           expression.value.downcase(:fold)
         )
