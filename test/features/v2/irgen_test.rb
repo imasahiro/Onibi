@@ -167,7 +167,7 @@ class V2IRGenTest < Minitest::Test
     assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
                    boundary: { kind: :expanded_tail, tail: "ι", sensitive: true }, policy: nil,
                    next_literal: suffix, next_casefold: "ι", next_source_width: 1,
-                   next_literals: [suffix] },
+                   next_literals: [suffix], next_fold_width_deltas: [0] },
                   flat.boundary_metadata(0).to_h)
     metadata = flat.boundary_metadata(0)
     assert metadata.expanded_tail?
@@ -179,6 +179,7 @@ class V2IRGenTest < Minitest::Test
     refute metadata.source_width_match?(2)
     assert metadata.next_source_width_match?(1)
     refute metadata.next_source_width_match?(2)
+    assert_equal [0], metadata.next_fold_width_delta_candidates
   end
 
   def test_flat_program_resolves_fold_boundary_through_forward_jump

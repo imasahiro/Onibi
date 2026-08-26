@@ -79,9 +79,11 @@ module Onibi
         FoldBoundary = Struct.new(:operand, :next_pc, :literal, :casefold, :boundary, :policy,
                                   :next_literal, :next_casefold, :next_source_width,
                                   :next_literals,
+                                  :next_fold_width_deltas,
                                   keyword_init: true) do
           def initialize(operand:, next_pc:, literal:, casefold:, boundary:, policy:,
-                         next_literal:, next_casefold:, next_source_width:, next_literals:)
+                         next_literal:, next_casefold:, next_source_width:, next_literals:,
+                         next_fold_width_deltas:)
             super.freeze
           end
 
@@ -124,6 +126,10 @@ module Onibi
 
           def next_source_width_match?(length)
             next_literal && length == next_source_width
+          end
+
+          def next_fold_width_delta_candidates
+            next_fold_width_deltas
           end
         end
 
@@ -233,7 +239,11 @@ module Onibi
                              policy: literal&.fold_policy, next_literal: next_literal,
                              next_casefold: next_literal&.casefold,
                              next_source_width: next_literal&.source_width,
-                             next_literals: next_literals)
+                             next_literals: next_literals,
+                             next_fold_width_deltas: next_literals.map do |candidate|
+                               next_fold = candidate.casefold
+                               next_fold ? next_fold.each_char.count - candidate.value.each_char.count : 0
+                             end)
           end
 
           def boundary_candidate_literals(starts, origin)
