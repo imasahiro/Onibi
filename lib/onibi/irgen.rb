@@ -2027,8 +2027,13 @@ module Onibi
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
-        assertion, property = body.parts
-        assertion.is_a?(SemanticBytecode::Assertion) &&
+        first, second = body.parts
+        assertion, property = if first.is_a?(SemanticBytecode::Assertion)
+                                [first, second]
+                              elsif second.is_a?(SemanticBytecode::Assertion)
+                                [second, first]
+                              end
+        assertion && property &&
           %i[positive positive_lookahead negative negative_lookahead
              positive_lookbehind negative_lookbehind].include?(assertion.kind) &&
           Array(assertion.flat_atoms).flatten.all? { |atom| atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only? } &&
