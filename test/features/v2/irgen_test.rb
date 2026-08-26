@@ -154,7 +154,9 @@ class V2IRGenTest < Minitest::Test
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :consume, operand: 1),
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)
     ]
-    literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ſ", "s", [["ſ", "s"]], true)
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new(
+      "ſ", "s", [["ſ", "s"]], true, { kind: :expanded_tail, sensitive: true }
+    )
     suffix = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a")
     flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
       instructions: instructions, operands: [literal, suffix]
@@ -163,8 +165,9 @@ class V2IRGenTest < Minitest::Test
     assert_equal :consume, flat.boundary_target(0).opcode
     assert_nil flat.boundary_target(2)
     assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
-                   boundary: nil, policy: nil, next_literal: suffix,
+                   boundary: { kind: :expanded_tail, sensitive: true }, policy: nil, next_literal: suffix,
                    next_casefold: nil, next_source_width: 1 }, flat.boundary_metadata(0).to_h)
+    assert flat.boundary_metadata(0).expanded_tail?
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

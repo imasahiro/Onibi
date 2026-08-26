@@ -83,6 +83,10 @@ module Onibi
                          next_literal:, next_casefold:, next_source_width:)
             super.freeze
           end
+
+          def expanded_tail?
+            boundary&.fetch(:kind, nil) == :expanded_tail
+          end
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any

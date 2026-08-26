@@ -797,7 +797,8 @@ module Onibi
 
       def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction, metadata = nil)
         return matches unless node.is_a?(SemanticBytecode::Literal)
-        return matches unless opcode == :fold_boundary || node.fold_boundary_sensitive
+        boundary_sensitive = node.fold_boundary_sensitive || metadata&.expanded_tail?
+        return matches unless opcode == :fold_boundary || boundary_sensitive
 
         anchor = if next_instruction&.opcode == :assert_anchor
                    @flat_program.operand(next_instruction.operand)
