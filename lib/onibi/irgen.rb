@@ -1128,7 +1128,10 @@ module Onibi
 
             atom = body.body
             atom = atom.parts.first if atom.is_a?(Sequence) && atom.parts.one?
-            capture_absence_atom_safe?(atom)
+            return false unless capture_absence_atom_safe?(atom)
+            return true unless atom.is_a?(Alternation)
+
+            atom.branches.all? { |branch| branch.parts.one? }
           end
 
           def capture_absence_atom_safe?(node)
@@ -1287,8 +1290,9 @@ module Onibi
           return false unless node.is_a?(Alternation)
 
           node.branches.all? do |branch|
-            branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
-              branch.parts.first.casefold.nil?
+            branch.is_a?(Sequence) && branch.parts.all? do |part|
+              part.is_a?(Literal) && part.casefold.nil?
+            end && branch.parts.any?
           end
         end
 
