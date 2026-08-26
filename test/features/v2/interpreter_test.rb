@@ -600,12 +600,19 @@ class InterpreterTest < Minitest::Test
     end
   end
 
-  def test_wildcard_capture_probe_with_internal_suffix_keeps_compatibility_path
-    source = "(?~(?:.*(a|b)c))"
-    regexp = Onibi::Regexp.new(source)
-    program = regexp.send(:bytecode_program)
+  def test_wildcard_capture_probe_with_internal_suffix_uses_partial_checkpoint
+    ["(?~(?:.*(a)c))", "(?~(?:.*(a|b)c))"].each do |source|
+      regexp = Onibi::Regexp.new(source)
+      program = regexp.send(:bytecode_program)
 
-    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+      refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+      ["a", "ac", "abc", "bac", "cabc", "caba", "ba"].each do |input|
+        expected = ::Regexp.new(source).match(input)
+        actual = regexp.match(input)
+        assert_equal [expected&.to_a, expected&.offset(0)],
+                     [actual&.to_a, actual&.offset(0)], [source, input]
+      end
+    end
   end
 
   def test_absence_followed_by_match_reset_keeps_zero_width_result

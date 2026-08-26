@@ -64,7 +64,7 @@ module Onibi
         AbsenceRepeat = Struct.new(:atoms, :minimum)
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceAssertion = Struct.new(:assertion)
-        AbsenceProbe = Struct.new(:program)
+        AbsenceProbe = Struct.new(:program, :capture_program)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
         Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
@@ -444,7 +444,7 @@ module Onibi
             when Absence
               body = unwrap_single_sequence(node.body)
               probe = absence_probe_program(node)
-              return AbsenceProbe.new(probe) if probe
+              return AbsenceProbe.new(*probe) if probe
 
               assertion = absence_assertion(node)
               return AbsenceAssertion.new(assertion) if assertion
@@ -1001,12 +1001,23 @@ module Onibi
             suffix = parts.parts.drop(1)
             return unless prefix.is_a?(Quantifier) && prefix.minimum.zero? && prefix.maximum.nil? &&
                           prefix.expression.is_a?(Any)
-            return if suffix.each_index.any? do |index|
-              suffix[index].is_a?(Group) && suffix[index].capture && index < suffix.length - 1
+            capture_index = suffix.each_index.find do |index|
+              suffix[index].is_a?(Group) && suffix[index].capture
+            end
+            capture_program = nil
+            if capture_index
+              return unless suffix.each_index.all? do |index|
+                index == capture_index ||
+                  (index > capture_index && suffix[index].is_a?(Literal) && suffix[index].casefold.nil?)
+              end
+              return unless capture_index == 0 && capture_absence_atom_safe?(unwrap_single_sequence(suffix.first.body))
+
+              capture_body = Sequence.new(parts.parts.take(2))
+              capture_program = SemanticBytecode.lower(capture_body).flat_program
             end
             return unless suffix.all? { |part| wildcard_absence_suffix?(part) }
 
-            SemanticBytecode.lower(node.body).flat_program
+            [SemanticBytecode.lower(node.body).flat_program, capture_program]
           end
 
           def absence_assertion(node)

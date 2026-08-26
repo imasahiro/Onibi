@@ -696,7 +696,8 @@ module Onibi
               capture_checkpoints: []
             ) do
               if absence.is_a?(SemanticBytecode::AbsenceProbe)
-                flat_absence_probe_results(absence.program, characters, position, state, frame_flags)
+                flat_absence_probe_results(absence.program, characters, position, state, frame_flags,
+                                           capture_program: absence.capture_program)
               elsif absence.is_a?(SemanticBytecode::AbsenceAssertion)
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
@@ -3955,7 +3956,7 @@ module Onibi
         maximum.downto(0).map { |candidate| [candidate, state] }
       end
 
-      def flat_absence_probe_results(program, characters, cursor, captures, flags)
+      def flat_absence_probe_results(program, characters, cursor, captures, flags, capture_program: nil)
         frame = @state.push_absence_frame(
           resume_pc: nil, body_pc: nil, absent_start: cursor, absent_end: characters.length,
           probe_position: cursor, possible_points: [], body_checkpoints: [], capture_checkpoints: []
@@ -3965,9 +3966,14 @@ module Onibi
         while position < frame.absent_end
           bounded = characters[0...frame.absent_end]
           results = flat_probe_results(program, bounded, position, current, flags)
+          partial_state = nil
+          if results.empty? && capture_program
+            partial = flat_probe_results(capture_program, bounded, position, current, flags).first
+            partial_state = partial.last if partial
+          end
           record_absence_checkpoint(frame, position, results, current)
           if results.empty?
-            current = captures
+            current = partial_state || captures
           else
             length, state = results.first
             frame.tighten_absent_end(position + length - 1)
