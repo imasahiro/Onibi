@@ -379,6 +379,17 @@ module Onibi
           results = node_results(assertion.body, characters, cursor, lookahead_captures, flags).first(1).map do |_length, inner|
             inner = inner.dup
             inner.delete(:__fold_lookahead_operand)
+            # Keep a boundary marker when the lookahead consumed a source
+            # character that expands to multiple folded characters.  The
+            # zero-width assertion must not donate that expansion to the
+            # following consuming operand.
+            expanded_fold = inner[:__expanded_literal_fold] ||
+                            inner[:__group_expanded_literal_fold] ||
+                            inner[:__captured_expanded_fold]
+            inner[:__fold_lookahead_expanded] = expanded_fold if expanded_fold && expanded_fold.length > 1
+            boundary = fold_boundary_for_node(assertion.body)
+            inner[:__fold_lookahead_expanded] ||= true if flags[:ignorecase] &&
+                                                          boundary&.fetch(:sensitive, false)
             [0, inner]
           end
           return mark_end_zero_width(results, characters, cursor, flags)
@@ -1174,6 +1185,23 @@ module Onibi
                  part.is_a?(SemanticBytecode::Literal) &&
                  simple_fold_source_match?(part, characters[cursor + consumed])
                 part_results = []
+              end
+              if previous_part.is_a?(SemanticBytecode::Assertion) &&
+                 previous_part.kind == :positive &&
+                 (lookahead_fold = state_captures[:__fold_lookahead_expanded]) &&
+                 (boundary = boundary_operand(part))
+                candidate = if boundary.is_a?(SemanticBytecode::Literal)
+                              boundary
+                            elsif boundary.is_a?(SemanticBytecode::Quantifier) &&
+                                  boundary.expression.is_a?(SemanticBytecode::Literal)
+                              boundary.expression
+                            end
+                candidate_fold = candidate&.value&.downcase(:fold)
+                input_fold = characters[cursor + consumed]&.downcase(:fold)
+                if candidate && ((lookahead_fold.is_a?(String) && candidate_fold == lookahead_fold && input_fold == lookahead_fold) ||
+                                 (lookahead_fold == true && candidate_fold == input_fold && input_fold.length > 1))
+                  part_results = []
+                end
               end
               part_results = [] if part.is_a?(SemanticBytecode::Anchor) && state_captures[:__lookbehind_direct_tail_reject]
               if state_captures[:__expanded_literal_source] &&
@@ -2902,6 +2930,8 @@ module Onibi
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup,
              SemanticBytecode::AtomicGroup
           fold_boundary_for_node(node.body)
+        when SemanticBytecode::Quantifier
+          fold_boundary_for_node(node.expression)
         end
       end
 
