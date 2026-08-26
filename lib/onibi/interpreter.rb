@@ -2226,6 +2226,9 @@ module Onibi
         operand = boundary_operand(node)
         return false unless operand.is_a?(SemanticBytecode::Sequence) && operand.parts.length > 1
         return false unless operand.parts.all? { |part| part.is_a?(SemanticBytecode::Literal) }
+        return false if !next_node.is_a?(SemanticBytecode::Anchor) && operand.parts.all? do |part|
+          part.fold_policy&.fetch(:sequence_source, nil) == :allow_repeated_variant
+        end
 
         source = characters[cursor, operand.parts.length]
         return false unless source.length == operand.parts.length

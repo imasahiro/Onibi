@@ -221,9 +221,12 @@ module Onibi
         def fold_policy_for_literal(value)
           group = Onibi::ClassPredicates.casefold_groups.values.find { |members| members.include?(value) }
           return nil unless group
-          return nil unless group.any? { |character| character.match?(/\p{M}/) }
 
-          { anchor_source: :fold_group_variant }.freeze
+          policy = {}
+          policy[:anchor_source] = :fold_group_variant if group.any? { |character| character.match?(/\p{M}/) }
+          variants = Onibi::UnicodeProperties.reverse_source_boundary_variants(value.downcase(:fold))
+          policy[:sequence_source] = :allow_repeated_variant if variants.any? && variants.all? { |character| character == character.upcase }
+          policy.empty? ? nil : policy.freeze
         end
 
         def fold_policy_for_class(value, folded_characters)
