@@ -501,7 +501,7 @@ class InterpreterTest < Minitest::Test
   end
 
   def test_capture_free_wildcard_literal_absence_uses_flat_probe
-    [".*a", ".*aa"].each do |body|
+    [".*a", ".*aa", ".*[a]", ".*\\d", ".*(?:ab|a)"].each do |body|
       source = "(?~(?:#{body}))"
       regexp = Onibi::Regexp.new(source)
       program = regexp.send(:bytecode_program)

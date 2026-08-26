@@ -985,9 +985,33 @@ module Onibi
             suffix = parts.parts.drop(1)
             return unless prefix.is_a?(Quantifier) && prefix.minimum.zero? && prefix.maximum.nil? &&
                           prefix.expression.is_a?(Any)
-            return unless suffix.all? { |part| part.is_a?(Literal) && part.casefold.nil? }
+            return unless suffix.all? { |part| wildcard_absence_suffix?(part) }
 
             SemanticBytecode.lower(node.body).flat_program
+          end
+
+          def wildcard_absence_suffix?(node)
+            case node
+            when Literal
+              node.casefold.nil?
+            when CharacterClass
+              node.casefolds.empty?
+            when Property
+              node.casefolds.empty?
+            when Escape
+              %i[digit non_digit word not_word space not_space horizontal_space
+                 not_horizontal_space linebreak grapheme].include?(node.kind)
+            when Any
+              true
+            when Group
+              !node.capture && wildcard_absence_suffix?(node.body)
+            when Sequence
+              !node.parts.empty? && node.parts.all? { |part| wildcard_absence_suffix?(part) }
+            when Alternation
+              !node.branches.empty? && node.branches.all? { |branch| wildcard_absence_suffix?(branch) }
+            else
+              false
+            end
           end
 
           def simple_capture_absence?(node)
