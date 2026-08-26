@@ -547,6 +547,9 @@ module Onibi
 
             if node.is_a?(Quantifier)
               atom = node.expression
+              if atom.is_a?(Group) && nested_nullable_group_repeat?(node)
+                return true
+              end
               if (atom.is_a?(Group) || atom.is_a?(Assertion) || atom.is_a?(Escape)) && (repeatable_group?(node) || possessive_group_loop?(node) ||
                                possessive_group?(node) || zero_width_repeat?(node))
                 return true
@@ -637,7 +640,7 @@ module Onibi
             when SubexpressionCall
               emit_command(:call, node.identifier, nil)
             when Quantifier
-              if node.expression.is_a?(Group) && repeatable_group?(node)
+              if node.expression.is_a?(Group) && (repeatable_group?(node) || nested_nullable_group_repeat?(node))
                 emit_group_quantifier(node)
               elsif zero_width_repeat?(node)
                 emit_command(:repeat_zero_width, index_for(node), nil)
@@ -729,6 +732,15 @@ module Onibi
             return false unless %i[greedy lazy].include?(node.mode)
 
             repeatable_body?(node.expression.body) && supported?(node.expression)
+          end
+
+          def nested_nullable_group_repeat?(node)
+            return false unless node.expression.is_a?(Group) && node.expression.capture
+            return false unless node.maximum && node.maximum == node.minimum && node.maximum <= 32
+
+            body = node.expression.body
+            body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+            body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 && supported?(body)
           end
 
           def repeatable_option_group?(node)

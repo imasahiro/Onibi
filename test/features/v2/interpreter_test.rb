@@ -1102,7 +1102,7 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?i:(?:ſ|a)){1}b")
     expected = ::Regexp.new("(?i:(?:ſ|a)){1}b").match("ſb")
 
-    refute regexp.send(:bytecode_program).instructions.any? { |instruction| instruction.opcode == :semantic_match }
+    refute(regexp.send(:bytecode_program).instructions.any? { |instruction| instruction.opcode == :semantic_match })
     assert_equal [expected&.to_a, expected&.offset(0)],
                  [regexp.match("ſb")&.to_a, regexp.match("ſb")&.offset(0)]
   end
@@ -1309,11 +1309,13 @@ class InterpreterTest < Minitest::Test
   end
 
   def test_exact_bounded_nullable_repeat_keeps_last_nonempty_capture
+    regexp = Onibi::Regexp.new("(a?){2}")
     expected = ::Regexp.new("(a?){2}").match("aa")
-    actual = Onibi::Regexp.new("(a?){2}").match("aa")
+    actual = regexp.match("aa")
 
     assert_equal expected.to_a, actual.to_a
     assert_equal expected.offset(1), actual.offset(1)
+    refute regexp.send(:bytecode_program).instructions.any? { |instruction| instruction.opcode == :semantic_match }
   end
 
   def test_lazy_inner_nullable_repeat_keeps_ordered_zero_width_choice
