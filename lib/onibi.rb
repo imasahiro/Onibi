@@ -331,7 +331,7 @@ module Onibi
     end
 
     def property_names
-      @property_names ||= analysis_source.scan(/\\[pP]\{([^}]+)\}/).flatten.map do |name|
+      @property_names ||= property_names_from_source.map do |name|
         Onibi::UnicodeProperties.normalize_name(name)
       end
     end
@@ -701,7 +701,7 @@ module Onibi
     end
 
     def validate_property_encoding!
-      analysis_source.scan(/\\[pP]\{([^}]+)\}/).each do |(name)|
+      property_names_from_source.each do |name|
         next if Onibi::UnicodeProperties.valid_for_encoding?(name, @source.encoding)
 
         raise RegexpError, "Unicode property is not supported by #{encoding_name_for_property}"
@@ -960,31 +960,96 @@ module Onibi
     end
 
     def non_ascii_escape_present?
-      analysis_source.scan(/\\x([0-9a-fA-F]{2})/).any? { |digits| digits.first.to_i(16) > 0x7f } ||
-        analysis_source.scan(/\\([0-7]{1,3})/).any? { |digits| digits.first.to_i(8) > 0x7f }
+      escape_values.any? { |value| value.any? { |byte| byte > 0x7f } }
     end
 
     def non_ascii_escape_pattern?
-      analysis_source.scan(/(?:\\x[0-9a-fA-F]{2})+/).any? do |sequence|
-        bytes = sequence.scan(/\\x([0-9a-fA-F]{2})/).map { |digits| digits.first.to_i(16) }
+      escape_values.any? do |bytes|
         bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
-      end ||
-        analysis_source.scan(/(?:\\[0-7]{1,3})+/).any? do |sequence|
-          bytes = []
-          cursor = 0
-          while (digits = sequence[cursor..].to_s[/\A\\([0-7]{1,3})/, 1])
-            bytes << digits.to_i(8)
-            cursor += 1 + digits.length
-          end
-          bytes.any? { |byte| byte > 0x7f } && !bytes.pack("C*").force_encoding(Encoding::UTF_8).valid_encoding?
-        end
+      end
     end
 
     def non_ascii_unicode_escape_pattern?
-      analysis_source.scan(/\\u\{([^}]*)\}|\\u([0-9a-fA-F]{4})/).any? do |braced, fixed|
-        digits = braced || fixed
-        digits.to_i(16) > 0x7f
+      unicode_escape_values.any? { |value| value > 0x7f }
+    end
+
+    def property_names_from_source
+      names = []
+      source = analysis_source
+      index = 0
+      while index < source.length - 3
+        if source[index] == "\\" && %w[p P].include?(source[index + 1]) && source[index + 2] == "{"
+          ending = source.index("}", index + 3)
+          names << source[(index + 3)...ending] if ending
+          index = ending ? ending + 1 : index + 1
+        else
+          index += 1
+        end
       end
+      names
+    end
+
+    def escape_values
+      values = []
+      source = analysis_source
+      index = 0
+      current = nil
+      last_end = nil
+      while index < source.length - 1
+        next_index = source.index("\\", index)
+        break unless next_index
+
+        if last_end && next_index != last_end
+          values << current
+          current = nil
+        end
+
+        escaped = source[next_index + 1]
+        if escaped == "x" && hex_digit?(source[next_index + 2]) && hex_digit?(source[next_index + 3])
+          current ||= []
+          current << source[(next_index + 2), 2].to_i(16)
+          index = next_index + 4
+        elsif escaped && escaped >= "0" && escaped <= "7"
+          ending = next_index + 1
+          ending += 1 while ending < source.length && ending < next_index + 4 && source[ending] >= "0" && source[ending] <= "7"
+          current ||= []
+          current << source[(next_index + 1)...ending].to_i(8)
+          index = ending
+        else
+          index = next_index + 2
+          next
+        end
+        last_end = index
+      end
+      values << current if current
+      values
+    end
+
+    def unicode_escape_values
+      values = []
+      source = analysis_source
+      index = 0
+      while index < source.length - 2
+        next_index = source.index("\\u", index)
+        break unless next_index
+
+        if source[next_index + 2] == "{"
+          ending = source.index("}", next_index + 3)
+          values << source[(next_index + 3)...ending].to_i(16) if ending
+          index = ending ? ending + 1 : next_index + 2
+        else
+          digits = source[(next_index + 2), 4]
+          values << digits.to_i(16) if digits && digits.length == 4 && digits.each_char.all? { |char| hex_digit?(char) }
+          index = next_index + 6
+        end
+      end
+      values
+    end
+
+    def hex_digit?(character)
+      character && ((character >= "0" && character <= "9") ||
+                    (character >= "a" && character <= "f") ||
+                    (character >= "A" && character <= "F"))
     end
 
     def inline_global_flag_value(flag, default)

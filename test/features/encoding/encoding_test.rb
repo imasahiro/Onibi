@@ -57,6 +57,15 @@ class EncodingTest < Minitest::Test
     assert_equal expected.match?("あ"), actual.match?("あ")
   end
 
+  def test_escape_encoding_analysis_handles_byte_and_unicode_escapes
+    byte_pattern = Onibi::Regexp.new("\\xC3\\xA9")
+    unicode_pattern = Onibi::Regexp.new("\\u{e9}")
+
+    assert byte_pattern.send(:non_ascii_escape_present?)
+    refute byte_pattern.send(:non_ascii_escape_pattern?)
+    assert unicode_pattern.send(:non_ascii_unicode_escape_pattern?)
+  end
+
   def test_valid_utf8_input_matches_normally
     valid_utf8 = "é".encode(Encoding::UTF_8)
 
