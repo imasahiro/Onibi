@@ -1581,6 +1581,8 @@ module Onibi
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
+        return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
+                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -1852,6 +1854,29 @@ module Onibi
         anchor.is_a?(SemanticBytecode::Anchor) &&
           anchor.kind == :anchor_absolute_start &&
           scoped_simple_unicode_literal?(group)
+      end
+
+      def semantic_scoped_simple_unicode_with_suffix?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.any? do |part|
+          part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase &&
+            semantic_contains_simple_unicode_literal?(part.body)
+        end
+      end
+
+      def semantic_contains_simple_unicode_literal?(node)
+        return true if semantic_simple_unicode_literal?(node)
+
+        node.each_pair.any? do |_field, value|
+          if value.is_a?(Array)
+            value.any? { |item| item.respond_to?(:each_pair) && semantic_contains_simple_unicode_literal?(item) }
+          elsif value.respond_to?(:each_pair)
+            semantic_contains_simple_unicode_literal?(value)
+          else
+            false
+          end
+        end
       end
 
       def scoped_simple_unicode_literal?(group)
