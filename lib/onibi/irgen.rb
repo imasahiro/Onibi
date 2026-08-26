@@ -1807,8 +1807,9 @@ module Onibi
                  (atom.value.ascii_only? || semantic_flat_unicode_literal?(atom)))
             end
         when SemanticBytecode::Quantifier
-          node.maximum == 1 && node.minimum <= 1 &&
-            semantic_scoped_casefold_simple_safe?(node.expression)
+          fixed = node.maximum && node.minimum == node.maximum && node.minimum.positive?
+          optional = node.minimum.zero? && node.maximum == 1
+          (fixed || optional) && semantic_flat_unicode_literal?(node.expression)
         else
           false
         end
