@@ -1432,6 +1432,7 @@ module Onibi
         # Boundary-sensitive folds also require source-width conversion before
         # they can enter the character-indexed flat VM.
         return false if flags[:ignorecase] &&
+                        !semantic_predicate_leaf_only?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_ascii_literal_sequence_casefold_safe?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
@@ -1591,6 +1592,13 @@ module Onibi
         else
           false
         end
+      end
+
+      def semantic_predicate_leaf_only?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        node.parts.first.is_a?(SemanticBytecode::CharacterClass) ||
+          node.parts.first.is_a?(SemanticBytecode::Property)
       end
 
       def semantic_contains_non_ascii_operand?(node)

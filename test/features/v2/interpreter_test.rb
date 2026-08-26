@@ -474,6 +474,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("SS")&.to_a
   end
 
+  def test_casefold_invariant_property_uses_flat_vm
+    regexp = Onibi::Regexp.new("\\p{ASCII}", Onibi::Regexp::IGNORECASE)
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert regexp.match?("A")
+    refute regexp.match?("é")
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
