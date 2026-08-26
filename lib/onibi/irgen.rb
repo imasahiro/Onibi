@@ -2009,6 +2009,10 @@ module Onibi
       def semantic_scoped_conditional_branch_safe?(branch)
         node = branch
         node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        return node.branches.all? { |candidate| semantic_scoped_conditional_branch_safe?(candidate) } if
+          node.is_a?(SemanticBytecode::Alternation)
+        return semantic_scoped_conditional_branch_safe?(node.body) if
+          node.is_a?(SemanticBytecode::Group) && !node.capture
         return true if node.is_a?(SemanticBytecode::Property) &&
                        Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(
                          Onibi::UnicodeProperties.normalize_name(node.name.to_s)
