@@ -756,7 +756,7 @@ module Onibi
           end
 
           def nested_nullable_group_repeat?(node)
-            return false unless node.expression.is_a?(Group) && node.expression.capture
+            return false unless node.expression.is_a?(Group)
             return false unless node.maximum && node.maximum <= 32 && node.maximum >= node.minimum
 
             body = node.expression.body
