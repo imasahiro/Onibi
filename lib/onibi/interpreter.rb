@@ -541,7 +541,7 @@ module Onibi
               matches, pc, node, characters, position, frame_flags
             )
             matches.reverse_each do |length, inner|
-              next_state = state.merge(inner)
+              next_state = state.merge(inner || {})
               if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
                 next_state[:__match_start] = position
                 next_state[:__match_reset] = true
@@ -558,7 +558,7 @@ module Onibi
             matches = transition_results(semantic_label, characters, position, state, frame_flags)
             matches.reverse_each do |length, inner|
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
-                                           pc: pc + 1, cursor: position + length, captures: state.merge(inner), flags: frame_flags
+                                           pc: pc + 1, cursor: position + length, captures: state.merge(inner || {}), flags: frame_flags
                                          ))
             end
             resume_backtrack if matches.empty?
@@ -695,7 +695,9 @@ module Onibi
               body_checkpoints: [],
               capture_checkpoints: []
             ) do
-              if absence.is_a?(SemanticBytecode::AbsenceRepeat)
+              if absence.is_a?(SemanticBytecode::AbsenceProbe)
+                flat_absence_probe_results(absence.program, characters, position, state, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
                 flat_literal_absence_results(absence, characters, position, state, frame_flags)
@@ -709,7 +711,7 @@ module Onibi
             outcomes.reverse_each do |length, absence_captures|
               next_state = state.merge(absence_captures || {})
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
-                absence.is_a?(SemanticBytecode::AbsenceRepeat)
+                absence.is_a?(SemanticBytecode::AbsenceRepeat) || absence.is_a?(SemanticBytecode::AbsenceProbe)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                            pc: pc + 1, cursor: position + length, captures: next_state,
                                            flags: frame_flags
@@ -3940,6 +3942,37 @@ module Onibi
         length, state = flat_assertion_results([variant], characters, boundary, captures, flags).first
         maximum = [boundary - cursor + length - 1, characters.length - cursor].min
         maximum.downto(0).map { |candidate| [candidate, state] }
+      end
+
+      def flat_absence_probe_results(program, characters, cursor, captures, flags)
+        frame = @state.push_absence_frame(
+          resume_pc: nil, body_pc: nil, absent_start: cursor, absent_end: characters.length,
+          probe_position: cursor, possible_points: [], body_checkpoints: [], capture_checkpoints: []
+        )
+        current = captures
+        position = cursor
+        while position < frame.absent_end
+          bounded = characters[0...frame.absent_end]
+          results = flat_probe_results(program, bounded, position, current, flags)
+          record_absence_checkpoint(frame, position, results, current)
+          if results.empty?
+            current = captures
+          else
+            length, state = results.first
+            frame.tighten_absent_end(position + length - 1)
+            current = state
+          end
+          position += 1
+        end
+        [[frame.absent_end - cursor, current || captures]]
+      ensure
+        @state.pop_absence_frame(frame) if frame && @state.current_frame.equal?(frame)
+      end
+
+      def flat_probe_results(program, characters, cursor, captures, flags)
+        instruction = Onibi::IRGen::YARVIR::Instruction.new(opcode: :semantic_flat, operand: program)
+        wrapper = Onibi::IRGen::YARVIR::Program.new(instructions: [instruction], flags: flags)
+        FlatExecutor.new(wrapper).send(:execute_flat_semantic_vm, cursor, characters, captures, flags)
       end
 
       def flat_quantified_absence_lengths(node, characters, cursor, flags)

@@ -62,6 +62,7 @@ module Onibi
         SubexpressionCall = Struct.new(:identifier, :named)
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
+        AbsenceProbe = Struct.new(:program)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
         # exactly `n` repetitions, not the intermediate counts.
         Quantifier = Struct.new(:expression, :kind, :minimum, :maximum, :mode, :lazy_exact)
@@ -440,6 +441,9 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              probe = absence_probe_program(node)
+              return AbsenceProbe.new(probe) if probe
+
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                  (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
                   body.expression.is_a?(Property) ||
@@ -953,6 +957,8 @@ module Onibi
           end
 
           def absence_flat_safe?(node)
+            return true if absence_probe_program(node)
+
             return false if node.flat_atoms&.flatten&.any? { |atom| atom.is_a?(CaptureAtom) } &&
                             !simple_capture_absence?(node)
 
@@ -966,6 +972,22 @@ module Onibi
             end
 
             node.flat_atoms && flat_atoms_consuming?(node.flat_atoms) && supported?(node.body)
+          end
+
+          def absence_probe_program(node)
+            body = unwrap_single_sequence(node.body)
+            return unless body.is_a?(Group) && !body.capture
+
+            parts = body.body
+            return unless parts.is_a?(Sequence) && parts.parts.length > 1
+
+            prefix = parts.parts.first
+            suffix = parts.parts.drop(1)
+            return unless prefix.is_a?(Quantifier) && prefix.minimum.zero? && prefix.maximum.nil? &&
+                          prefix.expression.is_a?(Any)
+            return unless suffix.all? { |part| part.is_a?(Literal) && part.casefold.nil? }
+
+            SemanticBytecode.lower(node.body).flat_program
           end
 
           def simple_capture_absence?(node)

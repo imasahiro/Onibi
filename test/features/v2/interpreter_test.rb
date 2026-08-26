@@ -500,6 +500,23 @@ class InterpreterTest < Minitest::Test
     assert_equal "a", match[1]
   end
 
+  def test_capture_free_wildcard_literal_absence_uses_flat_probe
+    [".*a", ".*aa"].each do |body|
+      source = "(?~(?:#{body}))"
+      regexp = Onibi::Regexp.new(source)
+      program = regexp.send(:bytecode_program)
+
+      refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+      assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+      ["a", "aa", "aaa", "aaaa", "aaaaa", "ba", "baa", "ababa"].each do |input|
+        expected = ::Regexp.new(source).match(input)
+        actual = regexp.match(input)
+        assert_equal [expected&.to_a, expected&.offset(0)],
+                     [actual&.to_a, actual&.offset(0)], [source, input]
+      end
+    end
+  end
+
   def test_absence_followed_by_match_reset_keeps_zero_width_result
     expected = ::Regexp.new("a(?~a)\\K").match("abc")
     actual = Onibi::Regexp.new("a(?~a)\\K").match("abc")
