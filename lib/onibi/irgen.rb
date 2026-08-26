@@ -1553,6 +1553,8 @@ module Onibi
         end
 
         def tree_free?
+          return false if instructions.any? { |instruction| instruction.opcode == :semantic_match }
+
           flat = instructions.find { |instruction| instruction.opcode == :semantic_flat }&.operand
           return false unless flat
 

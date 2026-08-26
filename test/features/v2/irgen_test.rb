@@ -39,6 +39,7 @@ class V2IRGenTest < Minitest::Test
     assert_equal 0, instruction.operand.entry
     assert_operator instruction.operand.instructions.length, :>, 1
     assert_equal root, instruction.operand.entry_node
+    refute program.tree_free?
   end
 
   def test_flat_safe_semantic_root_does_not_retain_tree_by_default
