@@ -386,7 +386,8 @@ module Onibi
             expanded_fold = inner[:__expanded_literal_fold] ||
                             inner[:__group_expanded_literal_fold] ||
                             inner[:__captured_expanded_fold]
-            inner[:__fold_lookahead_expanded] = expanded_fold if expanded_fold && expanded_fold.length > 1
+            boundary = inner[:__expanded_literal_boundary] || inner[:__group_expanded_literal_boundary]
+            inner[:__fold_lookahead_expanded] = expanded_fold if expanded_fold && expanded_fold.length > 1 && boundary&.fetch(:sensitive, false)
             boundary = fold_boundary_for_node(assertion.body)
             inner[:__fold_lookahead_expanded] ||= true if flags[:ignorecase] &&
                                                           boundary&.fetch(:sensitive, false)
