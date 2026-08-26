@@ -1033,6 +1033,15 @@ class V2IRGenTest < Minitest::Test
     assert_nil regexp.match("a" * 3)
   end
 
+  def test_flat_program_operands_are_tree_free
+    ["a+", "(?~(a?))", "(?~(ab){2,})", "ﬃ"].each do |source|
+      program = Onibi::Regexp.new(source).send(:bytecode_program)
+      flat = program.instructions.find { |item| item.opcode == :semantic_flat }&.operand
+
+      assert flat&.tree_free?, source
+    end
+  end
+
   def test_flat_semantic_vm_executes_nullable_capture_absence
     source = "(?~(a?))"
     regexp = Onibi::Regexp.new(source)
