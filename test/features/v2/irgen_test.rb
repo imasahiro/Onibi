@@ -151,17 +151,20 @@ class V2IRGenTest < Minitest::Test
   def test_flat_program_resolves_fold_boundary_target
     instructions = [
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :fold_boundary, operand: 0, target: 1),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :consume, operand: 1),
       Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :accept)
     ]
     literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ſ", "s", [["ſ", "s"]], true)
+    suffix = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("a")
     flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
-      instructions: instructions, operands: [literal]
+      instructions: instructions, operands: [literal, suffix]
     )
 
-    assert_equal :accept, flat.boundary_target(0).opcode
-    assert_nil flat.boundary_target(1)
+    assert_equal :consume, flat.boundary_target(0).opcode
+    assert_nil flat.boundary_target(2)
     assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
-                   boundary: nil, policy: nil }, flat.boundary_metadata(0).to_h)
+                   boundary: nil, policy: nil, next_literal: suffix,
+                   next_casefold: nil, next_source_width: 1 }, flat.boundary_metadata(0).to_h)
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

@@ -77,8 +77,10 @@ module Onibi
           def initialize(opcode:, operand: nil, target: nil) = super.freeze
         end
         FoldBoundary = Struct.new(:operand, :next_pc, :literal, :casefold, :boundary, :policy,
+                                  :next_literal, :next_casefold, :next_source_width,
                                   keyword_init: true) do
-          def initialize(operand:, next_pc:, literal:, casefold:, boundary:, policy:)
+          def initialize(operand:, next_pc:, literal:, casefold:, boundary:, policy:,
+                         next_literal:, next_casefold:, next_source_width:)
             super.freeze
           end
         end
@@ -149,9 +151,16 @@ module Onibi
             return nil unless instruction.opcode == :fold_boundary
 
             literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
+            next_instruction = instruction.target && instruction_at(instruction.target)
+            next_literal = if next_instruction&.operand.is_a?(Integer) &&
+                              %i[consume fold_boundary].include?(next_instruction.opcode)
+                             operand(next_instruction.operand)
+                           end
             FoldBoundary.new(operand: instruction.operand, next_pc: instruction.target, literal: literal,
                              casefold: literal&.casefold, boundary: literal&.fold_boundary,
-                             policy: literal&.fold_policy)
+                             policy: literal&.fold_policy, next_literal: next_literal,
+                             next_casefold: next_literal&.casefold,
+                             next_source_width: next_literal&.source_width)
           end
 
           def tree_free?
