@@ -582,6 +582,21 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_semantic_vm_executes_scoped_unicode_bounded_repeats
+    ["(?i:é?)", "(?i:é{2})", "(?i:é{0,3})", "(?i:é{2,4})"].each do |source|
+      regexp = Onibi::Regexp.new(source)
+      program = regexp.send(:bytecode_program)
+
+      refute program.instructions.any? { |item| item.opcode == :semantic_match }, source
+      assert program.instructions.any? { |item| item.opcode == :semantic_flat }, source
+      ["", "é", "É", "éÉ", "Ééé", "éééé", "x"].each do |input|
+        expected = ::Regexp.new(source).match(input)
+        actual = regexp.match(input)
+        assert_equal expected&.to_a, actual&.to_a, [source, input]
+      end
+    end
+  end
+
   def test_flat_semantic_vm_executes_exact_utf8_character_class
     regexp = Onibi::Regexp.new("([あ-お]+)")
     program = regexp.send(:bytecode_program)
