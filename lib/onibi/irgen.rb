@@ -1775,10 +1775,12 @@ module Onibi
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
-                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root)
+                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
                         !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
-                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root)
+                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root) &&
                         !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
@@ -2113,6 +2115,20 @@ module Onibi
             literal.casefold && literal.value != literal.casefold && literal.value.each_char.one? &&
               literal.casefold.each_char.one?
           end
+        end
+      end
+
+      def semantic_scoped_reverse_literal_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.each_cons(2).any? do |part, suffix|
+          next false unless suffix.is_a?(SemanticBytecode::Literal)
+          next false unless part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase
+
+          body = part.body
+          body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+          body.is_a?(SemanticBytecode::Literal) && body.casefold &&
+            body.value != body.casefold && body.value.each_char.one? && body.casefold.each_char.one?
         end
       end
 
