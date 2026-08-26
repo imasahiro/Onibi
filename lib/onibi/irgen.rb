@@ -652,6 +652,8 @@ module Onibi
               true
             when Conditional
               true
+            when Absence
+              Array(node.flat_atoms).flatten.all? { |atom| atom.is_a?(Literal) && atom.value.ascii_only? }
             when Assertion
               %i[positive positive_lookahead negative negative_lookahead
                  positive_lookbehind negative_lookbehind].include?(node.kind) &&
@@ -1536,6 +1538,7 @@ module Onibi
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
+                        !semantic_scoped_literal_absence_safe?(semantic_root) &&
                         !semantic_scoped_capture_backreference_safe?(semantic_root) &&
                         !semantic_scoped_capture_conditional_safe?(semantic_root) &&
                         !semantic_scoped_optional_capture_conditional_safe?(semantic_root) &&
@@ -1965,6 +1968,19 @@ module Onibi
           )
       rescue RegexpError, KeyError
         false
+      end
+
+      def semantic_scoped_literal_absence_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        scope, *suffix = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        return false unless suffix.all? { |part| part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only? }
+
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::Absence) &&
+          Array(body.flat_atoms).flatten.all? { |atom| atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only? }
       end
 
       def semantic_scoped_capture_backreference_safe?(node)
