@@ -628,6 +628,24 @@ module Onibi
                                            ))
               end
             end
+          when :repeat_absence
+            quantifier = @flat_program.operand(instruction.operand)
+            lengths = flat_absence_repeat_lengths(quantifier, characters, position, state, frame_flags)
+            if lengths.empty?
+              resume_backtrack
+              next
+            end
+            @state.with_repeat_frame(pc: pc, cursor: position, lengths: lengths.reverse,
+                                     minimum: quantifier.minimum, maximum: quantifier.maximum) do |repeat|
+              while repeat.next_index < repeat.lengths.length
+                length = repeat.lengths[repeat.next_index]
+                repeat.next_index += 1
+                @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                             pc: pc + 1, cursor: position + length,
+                                             captures: state.dup, flags: frame_flags
+                                           ))
+              end
+            end
           when :repeat_zero_width
             quantifier = @flat_program.operand(instruction.operand)
             body = quantifier.predicate
@@ -3535,6 +3553,34 @@ module Onibi
         return nil if count < quantifier.minimum
 
         quantifier.mode == :lazy ? quantifier.minimum : count
+      end
+
+      def flat_absence_repeat_lengths(quantifier, characters, cursor, captures, flags)
+        return [] unless quantifier.is_a?(SemanticBytecode::Quantifier)
+
+        frontier = [0]
+        results = []
+        maximum = quantifier.maximum || characters.length - cursor + 1
+        maximum.times do |count|
+          zero_lengths = []
+          next_frontier = frontier.flat_map do |consumed|
+            absence = quantifier.expression
+            flat_literal_absence_lengths(absence, characters, cursor + consumed, captures, flags).filter_map do |length|
+              if length.zero?
+                zero_lengths << consumed
+                next
+              end
+
+              consumed + length
+            end
+          end.uniq
+          results.concat(zero_lengths.uniq) if count + 1 >= quantifier.minimum
+          break if next_frontier.empty?
+
+          frontier = next_frontier
+          results.concat(frontier) if count + 1 >= quantifier.minimum
+        end
+        quantifier.mode == :lazy ? results : results.reverse
       end
 
       def quantifier_lengths(quantifier, characters, cursor, captures = {}, flags = {})

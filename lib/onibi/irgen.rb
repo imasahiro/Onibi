@@ -165,7 +165,7 @@ module Onibi
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
                         assert_anchor split jump fail capture_start capture_end repeat
-                        repeat_possessive repeat_zero_width assert conditional backreference call return
+                        repeat_possessive repeat_zero_width repeat_absence assert conditional backreference call return
                         scope_start scope_end atomic_start atomic_end absence nop accept].freeze
         FlatProgram = Struct.new(:instructions, :entry, :subroutines, :operands, keyword_init: true) do
           def initialize(instructions:, entry: 0, subroutines: {}, operands: [])
@@ -553,8 +553,7 @@ module Onibi
               end
               return false if atom.is_a?(Escape) && %i[word_boundary not_word_boundary].include?(atom.kind)
               return false unless [Literal, CharacterClass, Any, Escape, Property, Backreference,
-                                   OptionGroup].include?(atom.class) &&
-                                  supported?(atom)
+                                   OptionGroup, Absence].include?(atom.class) && supported?(atom)
 
               return node.maximum.nil? || node.maximum <= 32
             end
@@ -650,6 +649,8 @@ module Onibi
                 emit_scoped_optional_choice(node)
               elsif repeatable_option_group?(node)
                 emit_group_quantifier(node)
+              elsif node.expression.is_a?(Absence) && absence_flat_safe?(node.expression)
+                emit_command(:repeat_absence, index_for(node), nil)
               else
                 emit_command(:repeat, index_for(node), nil)
               end
