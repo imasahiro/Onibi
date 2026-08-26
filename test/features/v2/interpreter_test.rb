@@ -13,6 +13,27 @@ class InterpreterTest < Minitest::Test
                  Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).keys
   end
 
+  def test_bytecode_spec_defines_input_and_state_transition_for_every_opcode
+    required = %i[signature operand input stack_transition local_transition
+                  cursor_transition control failure]
+
+    Onibi::Interpreter::BYTECODE_SPEC.each_value do |family|
+      assert family.frozen?
+      family.each_value do |spec|
+        assert_empty(required - spec.keys)
+        assert_equal %i[operand characters flags], spec[:input].keys
+        assert spec.frozen?
+        assert spec[:input].frozen?
+        assert_includes %i[preserve push_results push_first_result halt], spec[:stack_transition]
+        assert_includes %i[preserve merge_result restore_frame_state zero_width_result
+                           enter_capture_scope repeat_and_merge commit_scope branch
+                           call_and_merge scope_flags set_active_states return_result],
+                        spec[:local_transition]
+        assert_includes %i[preserve advance_by_result], spec[:cursor_transition]
+      end
+    end
+  end
+
   def test_bytecode_spec_defines_absence_as_complement_of_wrapped_body
     absence = Onibi::Interpreter::BYTECODE_SPEC.fetch(:semantic).fetch(:match_absence)
 
@@ -33,8 +54,9 @@ class InterpreterTest < Minitest::Test
     assert_equal :no_match, policy.classify(literal, "x")
   end
 
-  def test_absent_frame_contains_stack_checkpoint_fields
-    frame = Onibi::Interpreter::AbsentFrame.new(
+  def test_execution_frame_contains_scope_checkpoint_fields
+    frame = Onibi::Interpreter::ExecutionFrame.new(
+      kind: :absence,
       absent_start: 0,
       absent_end: 3,
       probe_position: 0,
@@ -43,8 +65,12 @@ class InterpreterTest < Minitest::Test
       capture_checkpoints: []
     )
 
-    assert_nil frame.kind
-    assert_equal [nil, 0, 3, 0, [[0, {}]], [[0, [[1, {}]]]], []], frame.to_a
+    assert_equal :absence, frame.kind
+    assert_equal [:absence, 0, 3, 0, [[0, {}]], [[0, [[1, {}]]]], []], frame.to_a
+    assert_equal 0, frame.scope_start
+    assert_equal 3, frame.scope_end
+    assert_equal 0, frame.position
+    assert_equal [[0, [[1, {}]]]], frame.checkpoints
   end
 
   def test_interpreter_executes_dfa_start_match_jump_and_accept
