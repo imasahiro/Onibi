@@ -784,7 +784,6 @@ module Onibi
 
             body = node.expression.body
             body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
-            return false if node.expression.capture && body.is_a?(Quantifier) && body.mode != :lazy
             body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 &&
               %i[greedy lazy].include?(body.mode) && supported?(body)
           end

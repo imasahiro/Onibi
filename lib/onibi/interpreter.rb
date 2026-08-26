@@ -645,8 +645,9 @@ module Onibi
                 repeat.next_index += 1
                 next_state = state.dup
                 if quantifier.number
-                  next_state[quantifier.number] = [position, position + length]
-                  next_state[quantifier.name] = [position, position + length] if quantifier.name
+                  capture_position = quantifier.body.mode == :greedy ? position + length : position
+                  next_state[quantifier.number] = [capture_position, capture_position]
+                  next_state[quantifier.name] = [capture_position, capture_position] if quantifier.name
                 end
                 @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                              pc: pc + 1, cursor: position + length,
@@ -3697,7 +3698,7 @@ module Onibi
       end
 
       def nullable_group_repeat_lengths(quantifier, body, characters, cursor, captures, flags)
-        limit = characters.length - cursor
+        limit = [characters.length - cursor, 1].max
         frontier = [0]
         lengths = []
         count = 0
