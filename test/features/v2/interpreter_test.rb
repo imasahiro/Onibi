@@ -1054,6 +1054,7 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?i:(?:ſ|a)){1}b")
     expected = ::Regexp.new("(?i:(?:ſ|a)){1}b").match("ſb")
 
+    refute regexp.send(:bytecode_program).instructions.any? { |instruction| instruction.opcode == :semantic_match }
     assert_equal [expected&.to_a, expected&.offset(0)],
                  [regexp.match("ſb")&.to_a, regexp.match("ſb")&.offset(0)]
   end

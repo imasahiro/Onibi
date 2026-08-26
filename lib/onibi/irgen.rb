@@ -2100,6 +2100,9 @@ module Onibi
 
         node.parts.each_cons(2).any? do |part, suffix|
           next false unless suffix.is_a?(SemanticBytecode::Literal)
+          if part.is_a?(SemanticBytecode::Quantifier) && part.minimum == 1 && part.maximum == 1
+            part = part.expression
+          end
           next false unless part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase
 
           body = part.body
