@@ -108,6 +108,18 @@ module Onibi
             end
           end
 
+          def matching_next_fold_indices
+            return [] unless expanded_tail?
+
+            tail = boundary.fetch(:tail, nil)
+            return [] unless tail
+
+            next_literals.each_index.select do |index|
+              literal = next_literals[index]
+              tail == (literal.casefold || literal.value)
+            end
+          end
+
           def fold_width_delta
             return 0 unless literal && casefold
 
