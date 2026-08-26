@@ -611,7 +611,10 @@ module Onibi
                   boundary[:kind] == :simple_fold_source
                 end
             when Property
-              fold_invariant_property?(node)
+              fold_invariant_property?(node) ||
+                Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(
+                  Onibi::UnicodeProperties.normalize_name(node.name.to_s)
+                )
             when Escape
               %i[digit non_digit word not_word space not_space horizontal_space
                  not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(node.kind)
@@ -1472,6 +1475,7 @@ module Onibi
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
+                        !semantic_scoped_property_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
@@ -1875,6 +1879,22 @@ module Onibi
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
         body.is_a?(SemanticBytecode::CharacterClass) && body.casefolds.length == 1 &&
           body.casefolds.all? { |_source, folded| folded.each_char.count == 2 }
+      end
+
+      def semantic_scoped_property_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        group = node.parts.first
+        return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+
+        body = group.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::Property) &&
+          Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(
+            Onibi::UnicodeProperties.normalize_name(body.name.to_s)
+          )
+      rescue RegexpError, KeyError
+        false
       end
 
       def fold_invariant_property?(node)
