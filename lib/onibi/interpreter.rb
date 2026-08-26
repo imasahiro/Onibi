@@ -4232,8 +4232,6 @@ module Onibi
           branch = state[:__match_alternative_index]
           [branch, length] if branch.is_a?(Integer)
         end
-        return unless frame.respond_to?(:branch_checkpoints)
-
         frame.branch_checkpoints.concat(branches.map { |branch, length| [position, branch, length] })
         frame.preferred_branch = branches.find { |_branch, length| length.positive? }&.first
       end
