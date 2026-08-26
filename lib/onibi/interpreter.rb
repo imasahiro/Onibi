@@ -798,6 +798,8 @@ module Onibi
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
                 flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceOptionalRepeat)
+                flat_optional_absence_repeat_results(absence.atom, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat)
                 flat_capture_variable_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat)
@@ -834,6 +836,7 @@ module Onibi
                   absence.is_a?(SemanticBytecode::AbsenceSuffixCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceSuffixRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceOptionalRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
                   absence.is_a?(SemanticBytecode::AbsenceProbe)
@@ -4401,6 +4404,15 @@ module Onibi
                                                                               cursor + run == characters.length
 
         maximum.downto(0).map { |length| [length, {}] }
+      end
+
+      def flat_optional_absence_repeat_results(atom, characters, cursor, flags)
+        position = cursor
+        position += 1 while position < characters.length &&
+                            flat_assertion_lengths([[atom]], characters, position, {}, flags).empty?
+        return [[0, {}]] if position == cursor
+
+        [[0, { __match_start: position, __zero_absence: true }]]
       end
 
       def flat_repeated_match?(node, characters, cursor, flags)

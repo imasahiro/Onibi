@@ -68,6 +68,7 @@ module Onibi
         AbsenceSuffixCaptureRepeat = Struct.new(:variants, :suffix, :number, :name, :clear_numbers)
         AbsenceSuffixRepeat = Struct.new(:variants, :suffix)
         AbsenceNullableRepeat = Struct.new(:atom)
+        AbsenceOptionalRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AlternationAtom = Struct.new(:variants)
         AlternationGroupRepeat = Struct.new(:variants, :minimum, :number, :name)
@@ -469,7 +470,10 @@ module Onibi
               body = unwrap_single_sequence(node.body)
               if body.is_a?(Group) && !body.capture
                 repeated = unwrap_single_sequence(body.body)
-                if repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum.nil?
+                if repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum == 1
+                  atom = absence_repeat_atoms(repeated.expression)
+                  return AbsenceOptionalRepeat.new(atom.first) if atom&.length == 1
+                elsif repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum.nil?
                   atom = absence_repeat_atoms(repeated.expression)
                   return AbsenceNullableRepeat.new(atom.first) if atom&.length == 1
                 end
@@ -603,6 +607,11 @@ module Onibi
               if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
                 atom = absence_repeat_atoms(body.expression)
                 return AbsenceNullableRepeat.new(atom.first) if atom&.length == 1
+              end
+
+              if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1
+                atom = absence_repeat_atoms(body.expression)
+                return AbsenceOptionalRepeat.new(atom.first) if atom&.length == 1
               end
 
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
@@ -1194,10 +1203,14 @@ module Onibi
             body = unwrap_single_sequence(node.body)
             if body.is_a?(Group) && !body.capture
               repeated = unwrap_single_sequence(body.body)
-              if repeated.is_a?(Quantifier) && repeated.minimum.zero? && repeated.maximum.nil?
+              if repeated.is_a?(Quantifier) && repeated.minimum.zero? && [1, nil].include?(repeated.maximum)
                 atom = absence_repeat_atoms(repeated.expression)
                 return true if atom&.length == 1
               end
+            end
+            if body.is_a?(Quantifier) && body.minimum.zero? && [1, nil].include?(body.maximum)
+              atom = absence_repeat_atoms(body.expression)
+              return true if atom&.length == 1
             end
             return true if suffix_repeat(body)
             return true if suffix_capture_repeat(body)
