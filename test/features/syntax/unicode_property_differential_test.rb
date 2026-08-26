@@ -976,6 +976,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
 
   def test_simple_fold_boundaries_across_assertions_option_groups_and_alternations
     [
+      ["(?i:s)\\z", "S"],
       ["(?i:(?=s)s)x", "ſx"],
       ["(?i:s?)x", "ſx"],
       ["(?i:^s)ſ", "ſſx"],

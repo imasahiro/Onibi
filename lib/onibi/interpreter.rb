@@ -2356,6 +2356,7 @@ module Onibi
 
         source = characters[cursor]
         return false unless source
+        return false if node.value.ascii_only? && source.ascii_only?
         return false if next_node.is_a?(SemanticBytecode::CharacterClass)
 
         if simple_fold_source_match?(node, source) && next_node.is_a?(SemanticBytecode::Literal) &&
