@@ -165,6 +165,13 @@ class V2IRGenTest < Minitest::Test
     refute program.instructions.any? { |item| item.opcode == :semantic_match }
   end
 
+  def test_flat_compiler_lowers_fixed_nested_capture_absence
+    source = "(?~((ab)+))"
+    program = Onibi::Regexp.new(source).send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+  end
+
   def test_flat_compiler_keeps_zero_length_suffix_candidate_for_capture_absence
     source = "(?~((?:a|ab){2,}))c"
     regexp = Onibi::Regexp.new(source)

@@ -800,6 +800,8 @@ module Onibi
                 flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat)
                 flat_capture_variable_absence_results(absence, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat)
+                flat_fixed_capture_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -820,7 +822,8 @@ module Onibi
               Array(next_state.delete(:__clear_captures)).each { |number| next_state.delete(number) }
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
-                  absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
+                absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceFixedCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
@@ -4298,6 +4301,27 @@ module Onibi
                   end
         capture[:__clear_captures] = node.clear_numbers unless node.clear_numbers.empty?
         lengths.map { |length| [length, capture] }
+      end
+
+      def flat_fixed_capture_absence_results(node, characters, cursor, flags)
+        atom = node.atom.parts
+        width = atom.sum { |literal| literal.value.each_char.count }
+        repetitions = 0
+        position = cursor
+        while position + width <= characters.length &&
+              flat_assertion_lengths([atom], characters, position, {}, flags).include?(width)
+          repetitions += 1
+          position += width
+        end
+        limit = characters.length - cursor
+        length = repetitions.zero? ? limit : [repetitions * width - 1, limit].min
+        capture = if repetitions.odd?
+                    span = [cursor, cursor + width]
+                    { node.number => span, node.name => span }.compact
+                  else
+                    {}
+                  end
+        [[length, capture]]
       end
 
       def flat_nullable_absence_repeat_results(atom, characters, cursor, flags)

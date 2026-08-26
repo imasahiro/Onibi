@@ -63,6 +63,7 @@ module Onibi
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
         AbsenceCaptureRepeat = Struct.new(:atoms, :minimum, :number, :name, :clear_numbers)
+        AbsenceFixedCaptureRepeat = Struct.new(:atom, :number, :name, :clear_numbers)
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AlternationAtom = Struct.new(:variants)
@@ -331,6 +332,7 @@ module Onibi
             return false if operand.is_a?(NestedPossessiveRepeat)
             return false if operand.is_a?(AlternationGroupRepeat)
             return false if operand.is_a?(AbsenceCaptureRepeat)
+            return false if operand.is_a?(AbsenceFixedCaptureRepeat)
             if operand.is_a?(AlternationAtom)
               return operand.variants.flatten.any? { |item| composite_payload?(item) }
             end
@@ -459,6 +461,18 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Group) && body.capture
+                repeated = unwrap_single_sequence(body.body)
+                if repeated.is_a?(Quantifier) && repeated.minimum == 1 && repeated.maximum.nil? &&
+                   repeated.expression.is_a?(Group) && repeated.expression.capture
+                  atom = unwrap_single_sequence(repeated.expression.body)
+                  if atom.is_a?(Sequence) && atom.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
+                     atom.parts.any?
+                    return AbsenceFixedCaptureRepeat.new(atom, body.number, body.name,
+                                                         [repeated.expression.number].freeze)
+                  end
+                end
+              end
               if body.is_a?(Group) && body.capture
                 repeated = unwrap_single_sequence(body.body)
                 if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
@@ -1140,6 +1154,16 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Group) && body.capture
+              repeated = unwrap_single_sequence(body.body)
+              if repeated.is_a?(Quantifier) && repeated.minimum == 1 && repeated.maximum.nil? &&
+                 repeated.expression.is_a?(Group) && repeated.expression.capture
+                atom = unwrap_single_sequence(repeated.expression.body)
+                return true if atom.is_a?(Sequence) && atom.parts.all? do |part|
+                  part.is_a?(Literal) && part.casefold.nil?
+                end && atom.parts.any?
+              end
+            end
             if body.is_a?(Group) && body.capture
               repeated = unwrap_single_sequence(body.body)
               if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
