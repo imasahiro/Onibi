@@ -416,6 +416,10 @@ module Onibi
       end
 
       def lookbehind_results(assertion, characters, cursor, captures, flags)
+        if cursor == characters.length && expanded_lookbehind_literal?(assertion.body)
+          folded = boundary_operand(assertion.body).casefold
+          return [] unless characters.join.downcase(:fold).end_with?(folded)
+        end
         widths = assertion.widths || (0..cursor).to_a
         if flags[:ignorecase]
           folded_widths = assertion.folded_widths || casefold_widths(assertion.body)
@@ -463,7 +467,7 @@ module Onibi
               folded_source = source&.downcase(:fold)
               folded_source && gap.all? { |character| folded_source.include?(character.downcase(:fold)) }
             end
-            if partial.empty? && source
+            if partial.empty? && source && !expanded_lookbehind_literal?(assertion.body)
               folded_bodies = folded_lookbehind_values(assertion.body)
               partial = results.select { |length, _inner| length < width } if
                 folded_bodies.any? { |body| source.downcase(:fold) == body }
@@ -536,6 +540,12 @@ module Onibi
         else
           []
         end
+      end
+
+      def expanded_lookbehind_literal?(node)
+        node = boundary_operand(node)
+        node.is_a?(SemanticBytecode::Literal) && node.casefold &&
+          node.casefold.length > node.value.length
       end
 
       def source_widths(node)
