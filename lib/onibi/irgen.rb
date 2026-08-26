@@ -2862,6 +2862,9 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
         capture, reference = body.parts
+        if capture.is_a?(SemanticBytecode::Quantifier) && capture.maximum && capture.minimum == capture.maximum
+          capture = capture.expression
+        end
         return false unless capture.is_a?(SemanticBytecode::Group) && capture.capture
         return false unless reference.is_a?(SemanticBytecode::Backreference)
         numbered_reference = !reference.named && reference.identifier == capture.number
@@ -2874,13 +2877,19 @@ module Onibi
       def semantic_capture_backreference_body_safe?(node)
         loop do
           unwrapped = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
-          unwrapped = node.body if node.is_a?(SemanticBytecode::Group) && !node.capture
+          unwrapped = node.body if node.is_a?(SemanticBytecode::Group)
           break unless unwrapped
 
           node = unwrapped
         end
         return node.branches.all? { |branch| semantic_capture_backreference_body_safe?(branch) } \
           if node.is_a?(SemanticBytecode::Alternation)
+
+        if node.is_a?(SemanticBytecode::Quantifier)
+          return false unless node.maximum && node.minimum == node.maximum && node.minimum.positive?
+
+          return semantic_capture_backreference_body_safe?(node.expression)
+        end
 
         return false unless node.is_a?(SemanticBytecode::Literal)
         return false unless node.value.each_char.one?
