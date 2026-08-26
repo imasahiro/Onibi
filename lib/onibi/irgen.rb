@@ -2025,22 +2025,28 @@ module Onibi
 
         body = scope.body
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
-        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
+        return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length > 1
 
-        first, second = body.parts
-        assertion, property = if first.is_a?(SemanticBytecode::Assertion)
-                                [first, second]
-                              elsif second.is_a?(SemanticBytecode::Assertion)
-                                [second, first]
-                              end
-        assertion && property &&
+        assertions = body.parts.select { |part| part.is_a?(SemanticBytecode::Assertion) }
+        properties = body.parts.select { |part| part.is_a?(SemanticBytecode::Property) }
+        return false unless assertions.one? && properties.one?
+
+        assertion = assertions.first
+        assertion &&
           %i[positive positive_lookahead negative negative_lookahead
              positive_lookbehind negative_lookbehind].include?(assertion.kind) &&
           Array(assertion.flat_atoms).flatten.all? do |atom|
             atom.is_a?(SemanticBytecode::Any) ||
               (atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only?)
           end &&
-          property.is_a?(SemanticBytecode::Property)
+          body.parts.all? do |part|
+            part.equal?(assertion) || part.equal?(properties.first) ||
+              part.is_a?(SemanticBytecode::Any) ||
+              (part.is_a?(SemanticBytecode::Escape) &&
+               %i[digit non_digit word not_word space not_space horizontal_space
+                  not_horizontal_space linebreak grapheme].include?(part.kind)) ||
+              (part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?)
+          end
       end
 
       def semantic_scoped_property_quantifier_safe?(node)
