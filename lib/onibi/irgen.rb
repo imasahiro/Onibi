@@ -1913,7 +1913,8 @@ module Onibi
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root) &&
                         !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root)
-        return false if semantic_root && semantic_capture_absence_with_suffix?(semantic_root)
+        return false if semantic_root && semantic_capture_absence_with_suffix?(semantic_root) &&
+                        !semantic_simple_capture_absence_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -2299,6 +2300,22 @@ module Onibi
         node.parts.any? do |part|
           part.is_a?(SemanticBytecode::Absence) &&
             part.flat_atoms&.flatten&.any? { |atom| atom.is_a?(SemanticBytecode::CaptureAtom) }
+        end
+      end
+
+      def semantic_simple_capture_absence_with_suffix?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence)
+
+        node.parts.each_with_index.any? do |part, index|
+          next false unless part.is_a?(SemanticBytecode::Absence)
+
+          variants = part.flat_atoms
+          variants = [variants] unless variants&.first.is_a?(Array)
+          next false unless variants&.all? { |variant| variant.length == 1 && variant.first.is_a?(SemanticBytecode::CaptureAtom) }
+
+          node.parts.drop(index + 1).all? do |suffix|
+            suffix.is_a?(SemanticBytecode::Literal) && suffix.casefold.nil?
+          end
         end
       end
 

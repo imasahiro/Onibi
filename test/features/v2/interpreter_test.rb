@@ -530,6 +530,21 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_simple_capture_absence_with_literal_suffix_uses_flat_vm
+    ["(?~(a))b", "(?~(a|b))c"].each do |source|
+      regexp = Onibi::Regexp.new(source)
+      program = regexp.send(:bytecode_program)
+
+      refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+      ["a", "ab", "b", "ba", "abc", "xbc", "xac"].each do |input|
+        expected = ::Regexp.new(source).match(input)
+        actual = regexp.match(input)
+        assert_equal [expected&.to_a, expected&.offset(0)],
+                     [actual&.to_a, actual&.offset(0)], [source, input]
+      end
+    end
+  end
+
   def test_absence_literal_alternation_capture_uses_flat_vm
     regexp = Onibi::Regexp.new("(?~(a|b))")
     program = regexp.send(:bytecode_program)
