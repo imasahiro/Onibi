@@ -3939,6 +3939,8 @@ module Onibi
       end
 
       def flat_literal_absence_results(node, characters, cursor, captures = {}, flags = {})
+        return [[0, captures]] if node.flat_atoms&.empty?
+
         return flat_literal_absence_lengths(node, characters, cursor, captures, flags).map { |length| [length, {}] } unless
           node.flat_atoms&.flatten&.any? { |atom| atom.is_a?(SemanticBytecode::CaptureAtom) }
 

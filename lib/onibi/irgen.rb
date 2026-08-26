@@ -971,6 +971,8 @@ module Onibi
             return true if absence_assertion(node)
 
             body = unwrap_single_sequence(node.body)
+            return true if body.is_a?(Sequence) && body.parts.empty?
+
             if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum.nil?
               atom = absence_repeat_atoms(body.expression)
               return true if atom&.length == 1
