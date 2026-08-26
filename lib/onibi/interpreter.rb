@@ -637,14 +637,17 @@ module Onibi
               resume_backtrack
               next
             end
-            @state.with_repeat_frame(pc: pc, cursor: position, lengths: lengths,
+            ordered_lengths = quantifier.body.mode == :greedy ? lengths.reverse : lengths
+            @state.with_repeat_frame(pc: pc, cursor: position, lengths: ordered_lengths,
                                      minimum: quantifier.minimum, maximum: quantifier.maximum) do |repeat|
               while repeat.next_index < repeat.lengths.length
                 length = repeat.lengths[repeat.next_index]
                 repeat.next_index += 1
                 next_state = state.dup
-                next_state[quantifier.number] = [position, position + length]
-                next_state[quantifier.name] = [position, position + length] if quantifier.name
+                if quantifier.number
+                  next_state[quantifier.number] = [position, position + length]
+                  next_state[quantifier.name] = [position, position + length] if quantifier.name
+                end
                 @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
                                              pc: pc + 1, cursor: position + length,
                                              captures: next_state, flags: frame_flags

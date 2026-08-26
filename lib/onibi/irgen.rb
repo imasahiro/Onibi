@@ -485,11 +485,12 @@ module Onibi
             when Alternation
               Alternation.new([])
             when Quantifier
-              if nullable_group_repeat?(node) && node.expression.capture
+              if nullable_group_repeat?(node)
                 body = unwrap_single_sequence(node.expression.body)
                 return NullableGroupRepeat.new(
                   flat_operand(body), node.kind, node.minimum, node.maximum, node.mode,
-                  node.lazy_exact, node.expression.number, node.expression.name
+                  node.lazy_exact, node.expression.capture ? node.expression.number : nil,
+                  node.expression.capture ? node.expression.name : nil
                 )
               end
               if zero_width_repeat?(node)
@@ -667,8 +668,7 @@ module Onibi
               emit_command(:call, node.identifier, nil)
             when Quantifier
               if nullable_group_repeat?(node)
-                opcode = node.expression.capture ? :repeat_nullable_group : :repeat
-                emit_command(opcode, index_for(node), nil)
+                emit_command(:repeat_nullable_group, index_for(node), nil)
               elsif node.expression.is_a?(Group) && (repeatable_group?(node) || nested_nullable_group_repeat?(node))
                 emit_group_quantifier(node)
               elsif zero_width_repeat?(node)
@@ -784,8 +784,9 @@ module Onibi
 
             body = node.expression.body
             body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+            return false if node.expression.capture && body.is_a?(Quantifier) && body.mode != :lazy
             body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 &&
-              body.mode == :lazy && supported?(body)
+              %i[greedy lazy].include?(body.mode) && supported?(body)
           end
 
           def repeatable_option_group?(node)
