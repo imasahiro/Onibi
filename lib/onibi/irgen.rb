@@ -1738,7 +1738,8 @@ module Onibi
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root) &&
-                        !semantic_scoped_negated_class_suffix_safe?(semantic_root)
+                        !semantic_scoped_negated_class_suffix_safe?(semantic_root) &&
+                        !semantic_nullable_repeat_assertion_safe?(semantic_root)
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
@@ -2149,6 +2150,20 @@ module Onibi
 
           part.expression.value.start_with?("^") && part.maximum.nil?
         end
+      end
+
+      def semantic_nullable_repeat_assertion_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+
+        repeat, assertion_repeat = node.parts
+        return false unless repeat.is_a?(SemanticBytecode::Quantifier) && repeat.minimum.zero? &&
+                            repeat.maximum == 1 && repeat.expression.is_a?(SemanticBytecode::Literal)
+        return false unless assertion_repeat.is_a?(SemanticBytecode::Quantifier) &&
+                            assertion_repeat.minimum == 1 && assertion_repeat.maximum == 1 &&
+                            assertion_repeat.expression.is_a?(SemanticBytecode::Assertion)
+
+        assertion = assertion_repeat.expression
+        assertion.kind == :negative && assertion.flat_atoms
       end
 
       def semantic_scoped_unicode_bounded_repeat_with_suffix?(node)

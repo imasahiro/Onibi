@@ -1061,6 +1061,18 @@ class InterpreterTest < Minitest::Test
     end
   end
 
+  def test_nullable_repeat_negative_assertion_uses_flat_vm
+    regexp = Onibi::Regexp.new("ς?(?!ß){1}")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["", "ς", "σ", "ß", "ss", "ςß", "ßς"].each do |input|
+      expected = ::Regexp.new("ς?(?!ß){1}").match(input)
+      assert_equal [expected&.to_a, expected&.offset(0)],
+                   [regexp.match(input)&.to_a, regexp.match(input)&.offset(0)]
+    end
+  end
+
   def test_fixed_scoped_unicode_fold_alternation_matches_mri_boundaries
     regexp = Onibi::Regexp.new("(?i:(?:ſ|a)){1}b")
     expected = ::Regexp.new("(?i:(?:ſ|a)){1}b").match("ſb")
