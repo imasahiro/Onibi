@@ -654,7 +654,7 @@ module Onibi
               %i[positive positive_lookahead negative negative_lookahead
                  positive_lookbehind negative_lookbehind].include?(node.kind) &&
                 Array(node.flat_atoms).flatten.all? do |atom|
-                atom.is_a?(Literal) && atom.value.ascii_only?
+                atom.is_a?(Any) || (atom.is_a?(Literal) && atom.value.ascii_only?)
               end
             when Escape
               %i[digit non_digit word not_word space not_space horizontal_space
@@ -2036,7 +2036,10 @@ module Onibi
         assertion && property &&
           %i[positive positive_lookahead negative negative_lookahead
              positive_lookbehind negative_lookbehind].include?(assertion.kind) &&
-          Array(assertion.flat_atoms).flatten.all? { |atom| atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only? } &&
+          Array(assertion.flat_atoms).flatten.all? do |atom|
+            atom.is_a?(SemanticBytecode::Any) ||
+              (atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only?)
+          end &&
           property.is_a?(SemanticBytecode::Property)
       end
 
