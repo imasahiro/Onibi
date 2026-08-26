@@ -1294,6 +1294,7 @@ module Onibi
                 anchor_operand = anchor_operand.parts.last if anchor_operand.is_a?(SemanticBytecode::Sequence)
                 if anchor_operand.is_a?(SemanticBytecode::Literal) &&
                    anchor_operand.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
+                   Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(anchor_operand.value) &&
                    characters[cursor + consumed - 1] == anchor_operand.value
                   part_results = []
                 end
