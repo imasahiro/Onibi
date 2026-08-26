@@ -646,6 +646,17 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ſ7x")&.to_a
   end
 
+  def test_scoped_property_ascii_literal_alternation_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:(?:\\p{Letter}|a))x")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:(?:\\p{Letter}|a))x").match("ſx")&.to_a,
+                 regexp.match("ſx")&.to_a
+    assert_equal ::Regexp.new("(?i:(?:\\p{Letter}|a))x").match("ax")&.to_a,
+                 regexp.match("ax")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

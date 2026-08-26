@@ -1971,9 +1971,16 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Alternation)
 
         body.branches.all? do |branch|
-          semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([
-            SemanticBytecode::OptionGroup.new(branch, true, nil, nil)
-          ]))
+          branch_node = branch
+          branch_node = branch_node.parts.first if
+            branch_node.is_a?(SemanticBytecode::Sequence) && branch_node.parts.one?
+          if branch_node.is_a?(SemanticBytecode::Property)
+            semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([
+              SemanticBytecode::OptionGroup.new(branch_node, true, nil, nil)
+            ]))
+          else
+            semantic_ascii_literal_sequence_casefold_safe?(SemanticBytecode::Sequence.new([branch_node]))
+          end
         end
       end
 
