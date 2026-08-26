@@ -201,6 +201,8 @@ module Onibi
           end
 
           parts = node.parts
+          return [] if reverse_fold_quantifier_suffix_boundary?(parts, characters, cursor, flags)
+
           if parts.length == 2 && fold_property_alternation_anchor_expansion?(parts[0], parts[1], characters,
                                                                               cursor)
             expanded_flags = flags.merge(property_alternation_anchor: true)
@@ -1035,6 +1037,33 @@ module Onibi
           end
           [[length, captures]]
         end
+      end
+
+      def reverse_fold_quantifier_suffix_boundary?(parts, characters, cursor, flags)
+        return false unless parts.length > 1
+
+        suffix = parts[1]
+        return false unless suffix.is_a?(SemanticBytecode::Literal)
+
+        quantifier = parts.first
+        quantifier.is_a?(SemanticBytecode::Quantifier) &&
+          quantifier.minimum == 1 && quantifier.maximum == 1 &&
+          quantifier.expression.is_a?(SemanticBytecode::OptionGroup) &&
+          quantifier.expression.ignorecase &&
+          semantic_reverse_fold_source?(quantifier.expression.body, characters[cursor])
+      end
+
+      def semantic_reverse_fold_source?(node, source)
+        return false unless source
+        return node.branches.any? { |branch| semantic_reverse_fold_source?(branch, source) } if
+          node.is_a?(SemanticBytecode::Alternation)
+        return node.parts.any? { |part| semantic_reverse_fold_source?(part, source) } if
+          node.is_a?(SemanticBytecode::Sequence)
+        return semantic_reverse_fold_source?(node.body, source) if
+          node.is_a?(SemanticBytecode::Group) || node.is_a?(SemanticBytecode::OptionGroup)
+
+        node.is_a?(SemanticBytecode::Literal) && node.value == source &&
+          reverse_fold_source_literal?(node.value)
       end
 
       # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
