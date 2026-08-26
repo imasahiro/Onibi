@@ -1921,7 +1921,7 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Quantifier)
         return false unless flags[:ignorecase] || wrapper_casefold || option_group_ignorecase?(node.expression)
 
-        optional = node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
+        optional = node.minimum.zero? && node.maximum&.positive? && node.mode == :greedy
         lazy_exact = node.lazy_exact && node.minimum.zero? && node.maximum.to_i > 1
         return false unless optional || lazy_exact
 
@@ -1994,6 +1994,11 @@ module Onibi
            Onibi::UnicodeProperties.reverse_source_boundary_variants(next_node.value.downcase(:fold)).include?(next_node.value)
           return :greedy if next_node.value.downcase(:fold) == expression_value.downcase(:fold)
 
+          return :zero_only
+        end
+
+        if expression.is_a?(SemanticBytecode::Literal) && expression.value.ascii_only? && next_node &&
+           normal_consuming_operand?(next_node) && reverse_simple_fold_source?(expression, source)
           return :zero_only
         end
 
