@@ -637,6 +637,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ſſſx")&.to_a
   end
 
+  def test_scoped_unicode_property_alternation_quantifier_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:(?:\\p{Letter}|\\p{Number})){2}x")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:(?:\\p{Letter}|\\p{Number})){2}x").match("ſ7x")&.to_a,
+                 regexp.match("ſ7x")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

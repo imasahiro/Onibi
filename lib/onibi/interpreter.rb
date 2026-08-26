@@ -3664,6 +3664,11 @@ module Onibi
                      quantifier_length(part, characters, position, flags)
                    when SemanticBytecode::Group
                      sequence_length(part.body, characters, position, flags)
+                   when SemanticBytecode::OptionGroup
+                     option_group_length(part, characters, position, flags)
+                   when SemanticBytecode::Alternation
+                     part.branches.lazy.map { |branch| sequence_length(branch, characters, position, flags) }.
+                       find(&:itself)
                    else transition_length([operation_for(part), part], characters, position, flags)
                    end
           return nil unless length

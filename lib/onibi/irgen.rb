@@ -1484,6 +1484,7 @@ module Onibi
                         !semantic_full_fold_class_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
+                        !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
@@ -1495,13 +1496,15 @@ module Onibi
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
-                        !semantic_scoped_property_alternation_safe?(semantic_root)
+                        !semantic_scoped_property_alternation_safe?(semantic_root) &&
+                        !semantic_scoped_property_alternation_quantifier_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
                         !semantic_scoped_property_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_alternation_safe?(semantic_root) &&
+                        !semantic_scoped_property_alternation_quantifier_safe?(semantic_root) &&
                         !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
@@ -1964,6 +1967,7 @@ module Onibi
 
         body = group.body
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body = body.body if body.is_a?(SemanticBytecode::Group) && !body.capture
         return false unless body.is_a?(SemanticBytecode::Alternation)
 
         body.branches.all? do |branch|
@@ -1971,6 +1975,21 @@ module Onibi
             SemanticBytecode::OptionGroup.new(branch, true, nil, nil)
           ]))
         end
+      end
+
+      def semantic_scoped_property_alternation_quantifier_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.any?
+
+        quantifier, *suffix = node.parts
+        return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.minimum.positive?
+        return false unless suffix.all? do |part|
+          part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
+        end
+
+        semantic_scoped_property_alternation_safe?(SemanticBytecode::Sequence.new([
+          quantifier.expression
+        ]))
       end
 
       def fold_invariant_property?(node)
