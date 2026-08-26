@@ -1022,6 +1022,17 @@ class V2IRGenTest < Minitest::Test
     assert_nil regexp.match("ffi")
   end
 
+  def test_flat_semantic_vm_executes_large_bounded_literal_repeat
+    source = "a{100000}"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }, source
+    input = "a" * 100_000
+    assert_equal [input], regexp.match(input).to_a
+    assert_nil regexp.match("a" * 3)
+  end
+
   def test_flat_semantic_vm_executes_nullable_capture_absence
     source = "(?~(a?))"
     regexp = Onibi::Regexp.new(source)

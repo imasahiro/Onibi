@@ -615,7 +615,8 @@ module Onibi
               return false unless [Literal, CharacterClass, Any, Escape, Property, Backreference,
                                    OptionGroup, Absence].include?(atom.class) && supported?(atom)
 
-              return node.maximum.nil? || node.maximum <= 32
+              return node.maximum.nil? || node.maximum <= 32 ||
+                     (atom.is_a?(Literal) && node.maximum.positive?)
             end
             false
           end
