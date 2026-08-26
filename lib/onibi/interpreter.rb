@@ -1385,6 +1385,7 @@ module Onibi
           end
           distinct_alternative = node.branches.map { |candidate| alternation_branch_operand_value(candidate) }.compact.uniq.length > 1
           multichar_alternative = node.branches.any? { |candidate| capture_body_has_expanding_literal?(candidate) }
+          expanding_alternative ||= node.fold_policy&.fetch(:expanded_branch, false)
           node.branches.each_with_index.flat_map do |branch, branch_index|
             branch_captures = captures.merge(branch_marker => true)
             branch_value = alternation_branch_operand_value(branch)
@@ -1439,7 +1440,7 @@ module Onibi
           group_results.map do |length, inner|
             next_captures = inner.dup
             if flags[:ignorecase] && node.body.is_a?(SemanticBytecode::Alternation) &&
-               alternation_has_multichar_unicode_branch?(node.body) &&
+               node.body.fold_policy&.fetch(:expanded_branch, false) &&
                next_captures[:__simple_fold_alternation_source]
               next_captures[:__fold_alternation_context] = true
             end
@@ -5612,13 +5613,6 @@ module Onibi
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
           branch_fold_literals(node.body)
         else []
-        end
-      end
-
-      def alternation_has_multichar_unicode_branch?(node)
-        node.branches.any? do |branch|
-          literals = branch_fold_literals(branch)
-          literals.length > 1 && literals.any? { |literal| !literal.value.ascii_only? }
         end
       end
 

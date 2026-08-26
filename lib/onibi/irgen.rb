@@ -33,7 +33,7 @@ module Onibi
         Sequence = Struct.new(:parts)
         # `operand_context` marks an alternation that is the next operand in
         # a sequence. A root alternation selects a whole branch instead.
-        Alternation = Struct.new(:branches, :operand_context)
+        Alternation = Struct.new(:branches, :operand_context, :fold_policy)
         Group = Struct.new(:body, :number, :capture, :name)
         OptionGroup = Struct.new(:body, :ignorecase, :multiline, :extended)
         AtomicGroup = Struct.new(:body)
@@ -102,7 +102,10 @@ module Onibi
           end
           if node.is_a?(Onibi::AST::Alternation)
             branches = node.branches.map { |branch| compile_value(branch, casefold: casefold, parent: :alternation) }
-            return type.new(branches, parent == :sequence)
+            policy = if branches.any? { |branch| literal_values(branch).length > 1 && literal_values(branch).any? { |literal| !literal.ascii_only? } }
+                       { expanded_branch: true }.freeze
+                     end
+            return type.new(branches, parent == :sequence, policy)
           end
           if node.is_a?(Onibi::AST::Group) || node.is_a?(Onibi::AST::OptionGroup) ||
              node.is_a?(Onibi::AST::AtomicGroup)

@@ -936,6 +936,7 @@ class UnicodePropertyDifferentialTest < Minitest::Test
       ["(?i:k|ß)x", "Kx"],
       ["(?i:s|ἀ)x", "ſx"],
       ["(?i:(?:ἀι|s))x", "ſx"],
+      ["(?i:(?:ἀι|s))x", "ſx"],
       ["(?i:k|ι)x", "Kx"],
       ["(?i:ᾀ|ᾀ)x", "ᾀx"],
       ["(?i:(ᾀ))\\1\\z", "ᾀᾀ"]
