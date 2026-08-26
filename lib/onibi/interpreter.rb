@@ -4814,7 +4814,7 @@ module Onibi
                          else
                            position + length - 1
                          end
-              frame.absent_end = [frame.absent_end, boundary].min
+              frame.tighten_absent_end(boundary)
               current_captures = state
             end
             position += 1

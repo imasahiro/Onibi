@@ -371,6 +371,10 @@ class InterpreterTest < Minitest::Test
     assert_equal 3, frame.preferred_branch
     assert_equal [[2, 3, 1], [2, 4, 2]], frame.branch_checkpoints_at(2)
     assert_equal 3, frame.preferred_branch_at(2)
+    frame.absent_end = 8
+    frame.tighten_absent_end(5)
+    frame.tighten_absent_end(6)
+    assert_equal 5, frame.absent_end
   end
 
   def test_absence_capture_checkpoint_restores_latest_non_discarded_state

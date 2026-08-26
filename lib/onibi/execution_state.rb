@@ -133,6 +133,10 @@ module Onibi
       def preferred_branch_at(position)
         branch_checkpoints_at(position).find { |_point, _branch, length| length.positive? }&.fetch(1)
       end
+
+      def tighten_absent_end(boundary)
+        self.absent_end = [absent_end, boundary].min
+      end
     end
 
     attr_accessor :cursor, :search_origin, :steps
