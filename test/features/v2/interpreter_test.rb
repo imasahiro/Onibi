@@ -532,6 +532,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("5x")&.to_a
   end
 
+  def test_scoped_ascii_full_fold_literal_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:ss)")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:ss)").match("ß")&.to_a,
+                 regexp.match("ß")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)

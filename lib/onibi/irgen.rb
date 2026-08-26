@@ -582,6 +582,8 @@ module Onibi
           def scoped_casefold_safe?(node)
             case node
             when Literal
+              return true if node.value.ascii_only? && SemanticBytecode.multi_char_casefold_source?(node.value)
+
               unless node.value.ascii_only?
                 folded = node.value.downcase(:fold)
                 return true if full_fold_literal?(node)
