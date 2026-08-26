@@ -686,6 +686,41 @@ module Onibi
             else
               resume_backtrack
             end
+          when :repeat_alternation_group
+            repeat = @flat_program.operand(instruction.operand)
+            consumed = 0
+            captures = state.dup
+            loop do
+              matches = repeat.variants.flat_map do |variant|
+                transition_results([semantic_opcode(variant), variant], characters,
+                                    position + consumed, captures, frame_flags).map do |length, inner|
+                  [length, inner]
+                end
+              end
+              positive = matches.select { |length, _inner| length.positive? }.max_by(&:first)
+              if positive
+                length, inner = positive
+                consumed += length
+                captures.merge!(inner || {})
+                captures[repeat.number] = [position + consumed - length, position + consumed]
+                captures[repeat.name] = captures[repeat.number] if repeat.name
+                next
+              end
+              zero = matches.find { |length, _inner| length.zero? }
+              if zero
+                captures[repeat.number] = [position + consumed, position + consumed]
+                captures[repeat.name] = captures[repeat.number] if repeat.name
+              end
+              break
+            end
+            if consumed.positive? || repeat.minimum.zero?
+              @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
+                                           pc: pc + 1, cursor: position + consumed,
+                                           captures: captures, flags: frame_flags
+                                         ))
+            else
+              resume_backtrack
+            end
           when :repeat_absence
             quantifier = @flat_program.operand(instruction.operand)
             lengths = flat_absence_repeat_lengths(quantifier, characters, position, state, frame_flags)

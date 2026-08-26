@@ -65,6 +65,7 @@ module Onibi
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AlternationAtom = Struct.new(:variants)
+        AlternationGroupRepeat = Struct.new(:variants, :minimum, :number, :name)
         AbsenceAssertion = Struct.new(:assertion)
         AbsenceProbe = Struct.new(:program, :capture_program, :capture_requires_end)
         # `lazy_exact` records MRI's special `{n}?` form. It accepts zero or
@@ -174,6 +175,7 @@ module Onibi
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
                         assert_anchor split jump fail capture_start capture_end repeat
                         repeat_nullable_group repeat_nested_possessive
+                        repeat_alternation_group
                         repeat_possessive repeat_zero_width repeat_absence assert conditional backreference call return
                         scope_start scope_end atomic_start atomic_end absence nop accept].freeze
         FlatProgram = Struct.new(:instructions, :entry, :subroutines, :operands, keyword_init: true) do
@@ -326,6 +328,7 @@ module Onibi
           def self.composite_payload?(operand)
             return false if operand.is_a?(NullableGroupRepeat)
             return false if operand.is_a?(NestedPossessiveRepeat)
+            return false if operand.is_a?(AlternationGroupRepeat)
             if operand.is_a?(AlternationAtom)
               return operand.variants.flatten.any? { |item| composite_payload?(item) }
             end
@@ -518,6 +521,12 @@ module Onibi
             when Alternation
               Alternation.new([])
             when Quantifier
+              if alternation_group_repeat?(node)
+                group = node.expression
+                body = unwrap_single_sequence(group.body)
+                variants = body.branches.map { |branch| flat_operand(unwrap_single_sequence(branch)) }
+                return AlternationGroupRepeat.new(variants, node.minimum, group.number, group.name)
+              end
               if node.mode == :possessive && node.maximum.nil? && node.expression.is_a?(Quantifier) &&
                  node.expression.maximum && node.expression.maximum <= 32 &&
                  [Literal, Any, CharacterClass, Escape, Property].any? { |type| node.expression.expression.is_a?(type) }
@@ -614,6 +623,7 @@ module Onibi
 
             if node.is_a?(Quantifier)
               atom = node.expression
+              return true if alternation_group_repeat?(node)
               return true if node.mode == :possessive && node.maximum.nil? && atom.is_a?(Quantifier) &&
                              atom.maximum && atom.maximum <= 32 &&
                              [Literal, Any, CharacterClass, Escape, Property].any? { |type| atom.expression.is_a?(type) } &&
@@ -715,7 +725,9 @@ module Onibi
             when SubexpressionCall
               emit_command(:call, node.identifier, nil)
             when Quantifier
-              if node.mode == :possessive && node.maximum.nil? && node.expression.is_a?(Quantifier) &&
+              if alternation_group_repeat?(node)
+                emit_command(:repeat_alternation_group, index_for(node), nil)
+              elsif node.mode == :possessive && node.maximum.nil? && node.expression.is_a?(Quantifier) &&
                  node.expression.maximum && node.expression.maximum <= 32 &&
                  [Literal, Any, CharacterClass, Escape, Property].any? { |type| node.expression.expression.is_a?(type) }
                 emit_command(:repeat_nested_possessive, index_for(node), nil)
@@ -838,6 +850,17 @@ module Onibi
             body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
             body.is_a?(Quantifier) && body.minimum.zero? && (body.maximum == 1 || body.maximum.nil?) &&
               %i[greedy lazy].include?(body.mode) && supported?(body)
+          end
+
+          def alternation_group_repeat?(node)
+            return false unless node.is_a?(Quantifier) && node.maximum.nil? && node.mode == :greedy
+            return false unless node.expression.is_a?(Group) && node.expression.capture
+
+            body = unwrap_single_sequence(node.expression.body)
+            body.is_a?(Alternation) && body.branches.all? do |branch|
+              atom = unwrap_single_sequence(branch)
+              atom.is_a?(Anchor) || atom.is_a?(Literal)
+            end
           end
 
           def repeatable_option_group?(node)
