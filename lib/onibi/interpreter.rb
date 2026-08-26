@@ -3599,6 +3599,14 @@ module Onibi
       end
 
       def quantifier_lengths(quantifier, characters, cursor, captures = {}, flags = {})
+        if quantifier.expression.is_a?(SemanticBytecode::Group) && quantifier.maximum.nil?
+          body = quantifier.expression.body
+          body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+          if body.is_a?(SemanticBytecode::Quantifier) && body.minimum.zero? && body.maximum == 1
+            return nullable_group_repeat_lengths(quantifier, body, characters, cursor, captures, flags)
+          end
+        end
+
         if quantifier.expression.is_a?(SemanticBytecode::Group) ||
            quantifier.expression.is_a?(SemanticBytecode::OptionGroup)
           expression = quantifier.expression
@@ -3662,6 +3670,33 @@ module Onibi
         quantifier.mode == :lazy ? lengths : lengths.reverse
       end
 
+      def nullable_group_repeat_lengths(quantifier, body, characters, cursor, captures, flags)
+        limit = characters.length - cursor
+        frontier = [0]
+        lengths = []
+        count = 0
+        while count < limit
+          next_frontier = []
+          frontier.each do |consumed|
+            quantifier_lengths(body, characters, cursor + consumed, captures, flags).each do |length|
+              total = consumed + length
+              next if total == consumed || next_frontier.include?(total)
+
+              next_frontier << total
+            end
+          end
+          count += 1
+          lengths.concat(frontier)
+          break if next_frontier.empty?
+
+          frontier = next_frontier
+        end
+        lengths.concat(frontier) unless frontier.empty?
+        lengths = lengths.uniq.select { |length| length >= 0 }
+        lengths = lengths.select { |length| count >= quantifier.minimum }
+        quantifier.mode == :lazy ? lengths : lengths.reverse
+      end
+
       def captures_for(label, cursor, length, captures, characters = nil, flags = {})
         # Capture transition:
         #   input  = <label, cursor, length, local_state>
@@ -3676,7 +3711,16 @@ module Onibi
         if opcode == :match_quantifier &&
            operand.expression.is_a?(SemanticBytecode::Group)
           group = operand.expression
-          return unless group.capture && length.positive?
+          return unless group.capture
+          if length.zero?
+            body = group.body
+            body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+            return unless body.is_a?(SemanticBytecode::Quantifier) && body.minimum.zero? && body.maximum == 1
+
+            captures[group.number] = [cursor, cursor]
+            captures[group.name] = [cursor, cursor] if group.name
+            return
+          end
 
           captures[group.number] ||= [cursor, cursor + length]
           captures[group.name] ||= [cursor, cursor + length] if group.name
