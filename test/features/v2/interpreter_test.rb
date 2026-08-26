@@ -455,6 +455,16 @@ class InterpreterTest < Minitest::Test
     assert_equal expected, actual
   end
 
+  def test_noencoding_byte_escape_uses_flat_vm
+    regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_flat })
+    assert regexp.match?("\xFF".b)
+    refute regexp.match?("a".b)
+  end
+
   def test_casefold_class_candidates_still_require_class_membership
     expected = ::Regexp.new("[a-z]", ::Regexp::IGNORECASE).match?("-".b)
     actual = Onibi::Regexp.new("[a-z]", Onibi::Regexp::IGNORECASE).match?("-".b)

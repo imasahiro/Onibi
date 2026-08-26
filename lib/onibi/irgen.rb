@@ -1406,7 +1406,6 @@ module Onibi
         # Multi-character reverse folds keep the compatibility path.
         # Boundary-sensitive folds also require source-width conversion before
         # they can enter the character-indexed flat VM.
-        return false if flags[:binary_escape]
         return false if flags[:ignorecase] &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_ascii_literal_sequence_casefold_safe?(semantic_root) &&
@@ -1438,7 +1437,8 @@ module Onibi
         return false if semantic_root && semantic_contains_anchor_assertion?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
-        return false if semantic_root && flags[:encoding] && flags[:encoding] != Encoding::UTF_8 &&
+        return false if semantic_root && flags[:encoding] &&
+                        ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         semantic_contains_non_ascii_operand?(semantic_root)
 
         !semantic_root.nil?
