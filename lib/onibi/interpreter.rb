@@ -1167,23 +1167,18 @@ module Onibi
                  part.is_a?(SemanticBytecode::Literal) &&
                  !state_captures[:__optional_fold_zero] &&
                  !state_captures[:__lookbehind_simple_fold_source] &&
-                 !state_captures[:__fold_alternation_context]
+                 !state_captures[:__fold_alternation_context] &&
+                 !state_captures[:__match_alternative]
                 part_results = []
               end
               part_results = [] if state_captures[:__simple_fold_alternation_source] &&
                                    ((part.is_a?(SemanticBytecode::Literal) &&
-                                     !Array((state_captures[:__expanded_literal_boundary] ||
-                                             state_captures[:__group_expanded_literal_boundary])&.[](:variants)).include?(
-                                               characters[cursor + consumed]
-                                             )) ||
+                                     !simple_fold_source_match?(part, characters[cursor + consumed])) ||
                                     part.is_a?(SemanticBytecode::Anchor) ||
                                     part.is_a?(SemanticBytecode::Assertion))
               part_results = [] if state_captures[:__expanded_fold_alternation_source] &&
                                    ((part.is_a?(SemanticBytecode::Literal) &&
-                                     !Array((state_captures[:__expanded_literal_boundary] ||
-                                             state_captures[:__group_expanded_literal_boundary])&.[](:variants)).include?(
-                                               characters[cursor + consumed]
-                                             )) ||
+                                     !simple_fold_source_match?(part, characters[cursor + consumed])) ||
                                     part.is_a?(SemanticBytecode::Anchor) ||
                                     part.is_a?(SemanticBytecode::Assertion))
               if simple_fold_lookahead_boundary?(part, parts[index], characters,
