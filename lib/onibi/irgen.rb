@@ -110,6 +110,10 @@ module Onibi
           def source_width_match?(length)
             literal && length == literal.source_width
           end
+
+          def next_source_width_match?(length)
+            next_literal && length == next_source_width
+          end
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
