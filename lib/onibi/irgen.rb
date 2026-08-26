@@ -1436,6 +1436,7 @@ module Onibi
                         !semantic_ascii_literal_sequence_casefold_safe?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
+                        !semantic_full_fold_class_only?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
@@ -1446,6 +1447,7 @@ module Onibi
                         !semantic_predicate_only?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
+                        !semantic_full_fold_class_only?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
@@ -1563,6 +1565,13 @@ module Onibi
         Onibi::UnicodeProperties.casefold_codepoints.any? do |codepoint|
           [codepoint].pack("U").downcase(:fold) == literal.value
         end
+      end
+
+      def semantic_full_fold_class_only?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        klass = node.parts.first
+        klass.is_a?(SemanticBytecode::CharacterClass) && klass.casefolds.any?
       end
 
       # Predicate operands carry their own compiled table. Their casefold

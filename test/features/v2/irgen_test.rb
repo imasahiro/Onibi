@@ -977,13 +977,16 @@ class V2IRGenTest < Minitest::Test
     sharp_s = Onibi::Regexp.new("[ß]", Onibi::Regexp::IGNORECASE)
     ligature = Onibi::Regexp.new("[ﬆ]", Onibi::Regexp::IGNORECASE)
 
-    assert semantic_root(sharp_s.send(:bytecode_program)).parts.first.split_casefold
-    refute semantic_root(ligature.send(:bytecode_program)).parts.first.split_casefold
+    sharp_s_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(sharp_s.ast, casefold: true)
+    ligature_root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(ligature.ast, casefold: true)
+
+    assert sharp_s_root.parts.first.split_casefold
+    refute ligature_root.parts.first.split_casefold
   end
 
   def test_character_class_embeds_fold_boundary_metadata
     regexp = Onibi::Regexp.new("[ᾀ]", Onibi::Regexp::IGNORECASE)
-    operand = semantic_root(regexp.send(:bytecode_program)).parts.first
+    operand = Onibi::IRGen::YARVIR::SemanticBytecode.compile(regexp.ast, casefold: true).parts.first
 
     assert_equal({ kind: :expanded_tail, tail: "ι", sensitive: true }, operand.fold_boundaries["ᾀ"])
   end
