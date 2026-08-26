@@ -646,6 +646,8 @@ module Onibi
                 Onibi::UnicodeProperties::PROPERTY_MATCHERS.key?(
                   Onibi::UnicodeProperties.normalize_name(node.name.to_s)
                 )
+            when Any
+              true
             when Escape
               %i[digit non_digit word not_word space not_space horizontal_space
                  not_horizontal_space linebreak grapheme word_boundary not_word_boundary].include?(node.kind)
@@ -1976,9 +1978,10 @@ module Onibi
         first, *rest = body.parts
         return false unless first.is_a?(SemanticBytecode::Property)
         rest.all? do |part|
-          part.is_a?(SemanticBytecode::Escape) &&
-            %i[digit non_digit word not_word space not_space horizontal_space
-               not_horizontal_space linebreak grapheme].include?(part.kind)
+          part.is_a?(SemanticBytecode::Any) ||
+            (part.is_a?(SemanticBytecode::Escape) &&
+             %i[digit non_digit word not_word space not_space horizontal_space
+                not_horizontal_space linebreak grapheme].include?(part.kind))
         end
       end
 
