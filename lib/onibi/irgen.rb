@@ -456,6 +456,8 @@ module Onibi
                 emit_possessive_group_quantifier(node)
               elsif node.expression.is_a?(Group) && possessive_group?(node)
                 emit_command(:repeat_possessive, index_for(node), nil)
+              elsif scoped_optional_choice?(node)
+                emit_scoped_optional_choice(node)
               else
                 emit_command(:repeat, index_for(node), nil)
               end
@@ -571,6 +573,22 @@ module Onibi
             emit_group_quantifier(node)
             emit_command(:atomic_end, index_for(node), nil)
             start
+          end
+
+          def scoped_optional_choice?(node)
+            node.expression.is_a?(OptionGroup) && node.minimum.zero? && node.maximum == 1 &&
+              !node.lazy_exact && %i[greedy lazy].include?(node.mode)
+          end
+
+          def emit_scoped_optional_choice(node)
+            split = @code.length
+            @code << VMInstruction.new(opcode: :split, target: [])
+            body_start = @code.length
+            emit(node.expression)
+            join = @code.length
+            targets = node.mode == :lazy ? [join, body_start] : [body_start, join]
+            @code[split] = VMInstruction.new(opcode: :split, target: targets.freeze)
+            split
           end
 
           def nested_capture?(node)
@@ -1926,7 +1944,8 @@ module Onibi
 
         quantifier, *suffix = node.parts
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
-        return false unless quantifier.minimum.positive?
+        return false unless quantifier.minimum.positive? ||
+                            (quantifier.minimum.zero? && quantifier.maximum == 1)
         return false unless suffix.all? do |part|
           part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
         end
