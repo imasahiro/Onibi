@@ -4133,7 +4133,11 @@ module Onibi
               next
             end
 
-            preferred = if results.any? { |_candidate, state| state.key?(:__match_alternative) }
+            preferred = if frame.preferred_branch && results.any? { |_candidate, state|
+                            state[:__match_alternative_index] == frame.preferred_branch
+                          }
+                          results.find { |_candidate, state| state[:__match_alternative_index] == frame.preferred_branch }
+                        elsif results.any? { |_candidate, state| state.key?(:__match_alternative) }
                           results.find { |_candidate, state| !state.key?(:__match_start) }
                         end
             length, inner_captures = preferred || results.find { |candidate, _state| candidate.positive? } || results.first
@@ -4228,6 +4232,8 @@ module Onibi
           branch = state[:__match_alternative_index]
           [branch, length] if branch.is_a?(Integer)
         end
+        return unless frame.respond_to?(:branch_checkpoints)
+
         frame.branch_checkpoints.concat(branches.map { |branch, length| [position, branch, length] })
         frame.preferred_branch = branches.find { |_branch, length| length.positive? }&.first
       end
