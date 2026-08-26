@@ -502,6 +502,18 @@ module Onibi
                 end
               end
               if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+                 body.expression.is_a?(Group) && !body.expression.capture
+                alternation = unwrap_single_sequence(body.expression.body)
+                if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                  branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
+                    branch.parts.any?
+                end
+                  variants = alternation.branches.map { |branch| branch.parts }
+                  values = variants.map { |variant| variant.map(&:value).join }
+                  return AbsenceRepeat.new([AlternationAtom.new(variants)], body.minimum) if values.map(&:length).uniq.length > 1
+                end
+              end
+              if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
                  body.expression.is_a?(Group) && body.expression.capture
                 atoms = absence_repeat_atoms(body.expression.body)
                 return AbsenceRepeat.new(atoms, body.minimum) if atoms&.all? do |item|
@@ -1133,6 +1145,14 @@ module Onibi
                 branch.is_a?(Sequence) && branch.parts.one? && branch.parts.first.is_a?(Literal) &&
                   branch.parts.first.casefold.nil?
               end
+              return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
+                  branch.parts.any?
+              end && alternation.branches.map { |branch| branch.parts.map(&:value).join.length }.uniq.length > 1
+            end
+            if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? &&
+               body.expression.is_a?(Group) && !body.expression.capture
+              alternation = unwrap_single_sequence(body.expression.body)
               return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
                 branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
                   branch.parts.any?
