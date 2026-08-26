@@ -1786,6 +1786,9 @@ module Onibi
           node.branches.all? { |branch| semantic_scoped_casefold_simple_safe?(branch) }
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
           semantic_scoped_casefold_simple_safe?(node.body)
+        when SemanticBytecode::Quantifier
+          node.minimum == 1 && node.maximum == 1 &&
+            semantic_scoped_casefold_simple_safe?(node.expression)
         else
           false
         end
@@ -1810,6 +1813,11 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
 
         group = node.parts.first
+        if group.is_a?(SemanticBytecode::Quantifier)
+          return false unless group.minimum == 1 && group.maximum == 1
+
+          group = group.expression
+        end
         scoped_simple_unicode_literal?(group)
       end
 
