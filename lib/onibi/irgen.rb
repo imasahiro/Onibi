@@ -607,6 +607,7 @@ module Onibi
               if atom.is_a?(Group) && nested_nullable_group_repeat?(node)
                 return true
               end
+              return true if atom.is_a?(Anchor) && zero_width_repeat?(node)
               if (atom.is_a?(Group) || atom.is_a?(Assertion) || atom.is_a?(Escape)) && (repeatable_group?(node) || possessive_group_loop?(node) ||
                                possessive_group?(node) || zero_width_repeat?(node))
                 return true
@@ -835,7 +836,7 @@ module Onibi
 
           def zero_width_repeat?(node)
             return false unless node.expression.is_a?(Group) || node.expression.is_a?(Assertion) ||
-                                node.expression.is_a?(Escape)
+                                node.expression.is_a?(Escape) || node.expression.is_a?(Anchor)
             return false if node.maximum && node.maximum > 32
             return false if node.maximum.nil? && node.minimum > 1
             return false if node.maximum && node.maximum < node.minimum
