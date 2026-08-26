@@ -523,7 +523,8 @@ module Onibi
             semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
             matches = transition_results(semantic_label, characters, position, state, frame_flags)
             next_instruction = if instruction.opcode == :fold_boundary && instruction.target
-                                 @flat_program.boundary_target(pc)
+                                 metadata = @flat_program.boundary_metadata(pc)
+                                 metadata && @flat_program.instruction_at(metadata.next_pc)
                                else
                                  next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
                                    @flat_program.opcode_at(index) != :scope_end
