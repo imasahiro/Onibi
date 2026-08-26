@@ -1032,9 +1032,11 @@ class InterpreterTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?i:(?:ſ|a))b")
     program = regexp.send(:bytecode_program)
 
-    assert(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
-    assert_equal ::Regexp.new("(?i:(?:ſ|a))b").match("ſb")&.to_a,
-                 regexp.match("ſb")&.to_a
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    ["ſb", "ab", "sb", "ſc"].each do |input|
+      assert_equal ::Regexp.new("(?i:(?:ſ|a))b").match(input)&.to_a,
+                   regexp.match(input)&.to_a
+    end
   end
 
   def test_fixed_scoped_unicode_fold_alternation_matches_mri_boundaries

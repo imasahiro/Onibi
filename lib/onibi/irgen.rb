@@ -1774,9 +1774,11 @@ module Onibi
         return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
         return false if semantic_root && semantic_contains_scoped_simple_unicode_literal?(semantic_root) &&
                         !semantic_standalone_scoped_simple_unicode_literal?(semantic_root) &&
-                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
+                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
+                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_simple_unicode_with_suffix?(semantic_root) &&
-                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root)
+                        !semantic_anchored_scoped_simple_unicode_literal?(semantic_root) &&
+                        !semantic_scoped_reverse_fold_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
@@ -2087,6 +2089,29 @@ module Onibi
 
         node.parts.any? do |part|
           semantic_contains_scoped_unicode_optional?(part)
+        end
+      end
+
+      def semantic_scoped_reverse_fold_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.each_cons(2).any? do |part, suffix|
+          next false unless suffix.is_a?(SemanticBytecode::Literal)
+          next false unless part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase
+
+          body = part.body
+          body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+          body = body.body if body.is_a?(SemanticBytecode::Group) && !body.capture
+          next false unless body.is_a?(SemanticBytecode::Alternation)
+
+          literals = body.branches.filter_map do |branch|
+            literal = branch.parts.first if branch.is_a?(SemanticBytecode::Sequence) && branch.parts.one?
+            literal if literal.is_a?(SemanticBytecode::Literal)
+          end
+          literals.length == body.branches.length && literals.any? do |literal|
+            literal.casefold && literal.value != literal.casefold && literal.value.each_char.one? &&
+              literal.casefold.each_char.one?
+          end
         end
       end
 

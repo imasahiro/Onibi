@@ -535,7 +535,7 @@ module Onibi
                                end
             matches = reject_flat_fold_boundary_matches(
               matches, instruction.opcode, node, next_instruction, boundary_metadata,
-              characters, position
+              characters, position, frame_flags
             )
             matches.reverse_each do |length, inner|
               next_state = state.merge(inner)
@@ -821,10 +821,13 @@ module Onibi
       end
 
       def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction, metadata = nil,
-                                            characters = nil, position = nil)
+                                            characters = nil, position = nil, flags = {})
         return matches unless node.is_a?(SemanticBytecode::Literal)
         boundary_sensitive = node.fold_boundary_sensitive || metadata&.expanded_tail?
-        return matches unless opcode == :fold_boundary || boundary_sensitive
+        unless opcode == :fold_boundary || boundary_sensitive
+          return reject_flat_reverse_fold_suffix_matches(matches, node, next_instruction,
+                                                         characters, position, flags)
+        end
 
         anchor = if next_instruction&.opcode == :assert_anchor
                    @flat_program.operand(next_instruction.operand)
@@ -847,6 +850,28 @@ module Onibi
         matches.reject do |length, _inner|
           metadata ? metadata.source_width_match?(length) : length == node.source_width
         end
+      end
+
+      def reject_flat_reverse_fold_suffix_matches(matches, node, next_instruction, characters, position, flags)
+        return matches unless flags[:ignorecase] && characters && position
+        if next_instruction&.opcode == :jump && next_instruction.target.is_a?(Integer)
+          next_pc = next_instruction.target
+          next_pc += 1 while @flat_program.opcode_at(next_pc) == :scope_end
+          next_instruction = @flat_program.instruction_at(next_pc)
+        elsif next_instruction&.opcode == :scope_end
+          next_pc = @flat_program.instructions.index(next_instruction) + 1
+          next_pc += 1 while @flat_program.opcode_at(next_pc) == :scope_end
+          next_instruction = @flat_program.instruction_at(next_pc)
+        end
+        return matches unless %i[consume fold_boundary].include?(next_instruction&.opcode)
+        suffix = @flat_program.operand(next_instruction.operand)
+        return matches unless suffix.is_a?(SemanticBytecode::Literal)
+        return matches unless node.casefold && node.value.each_char.one? && node.casefold.each_char.one?
+        return matches unless node.value != node.casefold && characters[position] == node.value
+        return matches unless suffix.value.downcase(:fold) != node.casefold
+        return matches unless Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).include?(node.value)
+
+        matches.reject { |length, _inner| length == node.source_width }
       end
 
       # Match a compile-time flat atom list without entering tree_results.
