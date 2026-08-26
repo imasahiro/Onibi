@@ -1437,6 +1437,11 @@ module Onibi
           end
           group_results.map do |length, inner|
             next_captures = inner.dup
+            if flags[:ignorecase] && node.body.is_a?(SemanticBytecode::Alternation) &&
+               alternation_has_multichar_unicode_branch?(node.body) &&
+               next_captures[:__simple_fold_alternation_source]
+              next_captures[:__fold_alternation_context] = true
+            end
             if deferred_group_fold
               next_captures[:__group_expanded_literal_source] = true
               next_captures[:__group_expanded_literal_fold] = deferred_group_fold.first
@@ -5606,6 +5611,13 @@ module Onibi
         when SemanticBytecode::Group, SemanticBytecode::OptionGroup, SemanticBytecode::AtomicGroup
           branch_fold_literals(node.body)
         else []
+        end
+      end
+
+      def alternation_has_multichar_unicode_branch?(node)
+        node.branches.any? do |branch|
+          literals = branch_fold_literals(branch)
+          literals.length > 1 && literals.any? { |literal| !literal.value.ascii_only? }
         end
       end
 
