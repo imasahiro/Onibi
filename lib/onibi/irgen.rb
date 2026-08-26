@@ -1293,7 +1293,7 @@ module Onibi
           extras = semantic_contains_call?(semantic_root) ? (flags[:subexpressions] || {}) : {}
           semantic_program = SemanticBytecode.lower(semantic_root, extra: extras)
           flat = semantic_program.flat_program && flat_vm_safe?(flags, semantic_root)
-          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, true)
+          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, false)
           instructions << Instruction.new(opcode: :semantic_match, operand: semantic_program) unless
             flat_runtime
           instructions << if flat
@@ -1338,7 +1338,7 @@ module Onibi
           extras = semantic_contains_call?(semantic_root) ? (flags[:subexpressions] || {}) : {}
           semantic_program = SemanticBytecode.lower(semantic_root, extra: extras)
           flat = semantic_program.flat_program && flat_vm_safe?(flags, semantic_root)
-          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, true)
+          flat_runtime = flat && !flags.fetch(:retain_semantic_tree, false)
           instructions << Instruction.new(opcode: :semantic_match, operand: semantic_program) unless
             flat_runtime
           instructions << if flat

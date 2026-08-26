@@ -30,13 +30,26 @@ class V2IRGenTest < Minitest::Test
       Onibi::Parser.parse("(ab)+").ast
     )
     dfa = Onibi::Automata::DFA.from_tnfa(tnfa_for(Onibi::Parser.parse("(ab)+").ast))
-    program = Onibi::IRGen::YARVIR.generate(dfa, semantic_root: root)
+    program = Onibi::IRGen::YARVIR.generate(
+      dfa, semantic_root: root, flags: { retain_semantic_tree: true }
+    )
     instruction = program.instructions.find { |item| item.opcode == :semantic_match }
 
     assert_instance_of Onibi::IRGen::YARVIR::SemanticBytecode::SemanticProgram, instruction.operand
     assert_equal 0, instruction.operand.entry
     assert_operator instruction.operand.instructions.length, :>, 1
     assert_equal root, instruction.operand.entry_node
+  end
+
+  def test_flat_safe_semantic_root_does_not_retain_tree_by_default
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(
+      Onibi::Parser.parse("(ab)+").ast
+    )
+    dfa = Onibi::Automata::DFA.from_tnfa(tnfa_for(Onibi::Parser.parse("(ab)+").ast))
+    program = Onibi::IRGen::YARVIR.generate(dfa, semantic_root: root)
+
+    refute(program.instructions.any? { |item| item.opcode == :semantic_match })
+    assert(program.instructions.any? { |item| item.opcode == :semantic_flat })
   end
 
   def test_semantic_program_exposes_flat_vm_commands
