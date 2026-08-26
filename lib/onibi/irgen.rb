@@ -649,7 +649,7 @@ module Onibi
             when Any
               true
             when Assertion
-              %i[positive positive_lookahead].include?(node.kind) &&
+              %i[positive positive_lookahead negative negative_lookahead].include?(node.kind) &&
                 Array(node.flat_atoms).flatten.all? do |atom|
                 atom.is_a?(Literal) && atom.value.ascii_only?
               end
@@ -2005,7 +2005,8 @@ module Onibi
         return false unless body.is_a?(SemanticBytecode::Sequence) && body.parts.length == 2
 
         assertion, property = body.parts
-        assertion.is_a?(SemanticBytecode::Assertion) && %i[positive positive_lookahead].include?(assertion.kind) &&
+        assertion.is_a?(SemanticBytecode::Assertion) &&
+          %i[positive positive_lookahead negative negative_lookahead].include?(assertion.kind) &&
           Array(assertion.flat_atoms).flatten.all? { |atom| atom.is_a?(SemanticBytecode::Literal) && atom.value.ascii_only? } &&
           property.is_a?(SemanticBytecode::Property)
       end
