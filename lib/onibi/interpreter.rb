@@ -1725,7 +1725,8 @@ module Onibi
         character = characters[cursor]
         expanded = node.casefold && node.casefold.length > node.value.length &&
                    character&.downcase(:fold) == node.casefold
-        simple_source = simple_fold_source_match?(node, character) && character != node.casefold
+        simple_source = simple_fold_source_match?(node, character) && character != node.casefold &&
+                        (!node.value.ascii_only? || !character.ascii_only?)
         return unless expanded || simple_source
 
         captures.merge(
