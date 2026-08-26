@@ -210,7 +210,9 @@ class V2IRGenTest < Minitest::Test
       instructions: instructions, operands: [literal, suffix]
     )
 
-    assert_equal suffix, flat.boundary_metadata(0).next_literal
+    metadata = flat.boundary_metadata(0)
+    assert_equal suffix, metadata.next_literal
+    assert_equal [suffix], metadata.next_literals
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

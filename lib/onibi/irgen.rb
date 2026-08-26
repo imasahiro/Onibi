@@ -194,6 +194,7 @@ module Onibi
 
             literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
             next_pc = instruction.target || program_counter + 1
+            split_targets = nil
             8.times do
               break if next_pc >= instructions.length
 
@@ -204,6 +205,7 @@ module Onibi
                     next_instruction.target > program_counter
                 next_pc = next_instruction.target
               elsif next_instruction.opcode == :split
+                split_targets = Array(next_instruction.target)
                 target = Array(next_instruction.target).find do |candidate|
                   candidate.is_a?(Integer) && candidate > program_counter
                 end
@@ -221,7 +223,16 @@ module Onibi
                               %i[consume fold_boundary].include?(next_instruction.opcode)
                              operand(next_instruction.operand)
                            end
-            next_literals = [next_literal].compact
+            next_literals = if split_targets
+                              split_targets.filter_map do |target|
+                                candidate = instructions[target]
+                                next unless candidate && %i[consume fold_boundary].include?(candidate.opcode)
+
+                                candidate.operand.is_a?(Integer) ? operand(candidate.operand) : nil
+                              end
+                            else
+                              [next_literal].compact
+                            end
             FoldBoundary.new(operand: instruction.operand, next_pc: next_pc, literal: literal,
                              casefold: literal&.casefold, boundary: literal&.fold_boundary,
                              policy: literal&.fold_policy, next_literal: next_literal,
