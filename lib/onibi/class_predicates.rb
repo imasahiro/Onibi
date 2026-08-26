@@ -41,10 +41,11 @@ module Onibi
     def posix_matches?(property, character, ignorecase, encoding)
       return :incompatible if incompatible_property?(property, character, encoding)
 
-      return true if property == "Word" && encoding && encoding != Encoding::UTF_8 && encoding != Encoding::ASCII_8BIT && !character.ascii_only?
+      return true if property == "Word" && encoding && !EncodingSupport.unicode?(encoding) &&
+                     !EncodingSupport.binary?(encoding) && !character.ascii_only?
 
-      normalized_character = if property == "Word" && encoding && encoding != Encoding::UTF_8 &&
-                                encoding != Encoding::ASCII_8BIT
+      normalized_character = if property == "Word" && encoding && !EncodingSupport.unicode?(encoding) &&
+                                !EncodingSupport.binary?(encoding)
                                character.encode(Encoding::UTF_8)
                              else
                                character
@@ -352,7 +353,7 @@ module Onibi
       end
 
       normalized_character = unicode_character(character, encoding) unless
-        encoding_specific_ascii_property?(name, encoding) || encoding == Encoding::ASCII_8BIT
+        encoding_specific_ascii_property?(name, encoding) || EncodingSupport.binary?(encoding)
       normalized_character ||= character
       matched = UnicodeProperties.matches_normalized?(name, normalized_character)
       matched = casefold_property_match?(name, normalized_character) if ignorecase && !negated && !matched &&
@@ -371,22 +372,22 @@ module Onibi
     def incompatible_property?(name, character, encoding)
       non_utf8_encoding?(encoding) &&
         (encoding_specific_ascii_property?(name, encoding) ||
-         (name == "Word" && encoding == Encoding::ASCII_8BIT)) &&
+         (name == "Word" && EncodingSupport.binary?(encoding))) &&
         !character.ascii_only?
     end
 
     def encoding_specific_ascii_property?(name, encoding)
       properties = %w[ASCII Alpha Alnum Digit Lower Upper Space XDigit Blank Cntrl Punct]
-      properties << "Graph" << "Print" if encoding == Encoding::ASCII_8BIT
+      properties << "Graph" << "Print" if EncodingSupport.binary?(encoding)
       properties.include?(name)
     end
 
     def non_utf8_encoding?(encoding)
-      [Encoding::ASCII_8BIT, Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+      EncodingSupport.binary?(encoding) || EncodingSupport.legacy_multibyte?(encoding)
     end
 
     def unicode_character(character, encoding)
-      return character unless [Encoding::EUC_JP, Encoding::Windows_31J].include?(encoding)
+      return character unless EncodingSupport.legacy_multibyte?(encoding)
 
       character.encode(Encoding::UTF_8)
     rescue EncodingError
