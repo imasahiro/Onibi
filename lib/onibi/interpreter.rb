@@ -1398,6 +1398,15 @@ module Onibi
                  state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :simple_fold_source
                 marked[:__simple_fold_alternation_source] = true
               end
+              branch_operand = boundary_operand(branch)
+              if branch_marker == :__fold_alternation_operand &&
+                 branch_operand.is_a?(SemanticBytecode::Literal) &&
+                 branch_operand.fold_policy&.fetch(:alternation_source, nil) == :reject_non_mark_variant &&
+                 characters[cursor] != branch_operand.value &&
+                 characters[cursor] && !characters[cursor].match?(/\p{M}/) &&
+                 characters[cursor].downcase(:fold) == branch_operand.value.downcase(:fold)
+                marked[:__simple_fold_alternation_source] = true
+              end
               if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
                  !distinct_alternative &&
                  state[:__expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
@@ -2563,6 +2572,7 @@ module Onibi
         policy = operand.fold_policy || {}
         return true if policy[:anchor_source] == :fold_group_variant &&
                        source != operand.value &&
+                       !source.match?(/\p{M}/) &&
                        source.downcase(:fold) == operand.value.downcase(:fold)
         return false if policy[:anchor_source] == :fold_group_variant && source == operand.value
 

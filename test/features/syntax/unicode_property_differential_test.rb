@@ -999,7 +999,10 @@ class UnicodePropertyDifferentialTest < Minitest::Test
       ["(?i:s?s)\\z", "ſ"],
       ["(?i:k?k)\\z", "K"],
       ["(?i:ι?)\\z", "ι"],
-      ["(?i:ι?)\\z", "ͅ"]
+      ["(?i:ι?)\\z", "ͅ"],
+      ["(?i:ι)\\z", "ͅ"],
+      ["(?i:(?:s|ι))x", "ιx"],
+      ["(?i:(?:ι|s))\\z", "ι"]
     ].each do |pattern, input|
       mri = Regexp.new(pattern).match(input)
       onibi = Onibi::Regexp.new(pattern).match(input)
