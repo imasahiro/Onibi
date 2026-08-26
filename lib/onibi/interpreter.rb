@@ -4224,6 +4224,12 @@ module Onibi
         frame.probe_position = position
         frame.possible_points << [position, captures]
         frame.body_checkpoints << [position, results]
+        branches = results.filter_map do |length, state|
+          branch = state[:__match_alternative_index]
+          [branch, length] if branch.is_a?(Integer)
+        end
+        frame.branch_checkpoints.concat(branches.map { |branch, length| [position, branch, length] })
+        frame.preferred_branch = branches.find { |_branch, length| length.positive? }&.first
       end
 
       def bounded_quantifier_body?(body)

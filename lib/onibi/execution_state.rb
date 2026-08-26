@@ -49,8 +49,6 @@ module Onibi
       :possible_points,
       :body_checkpoints,
       :capture_checkpoints,
-      :branch_checkpoints,
-      :preferred_branch,
       keyword_init: true
     ) do
       def scope_start
@@ -97,6 +95,8 @@ module Onibi
       :possible_points,
       :body_checkpoints,
       :capture_checkpoints,
+      :branch_checkpoints,
+      :preferred_branch,
       keyword_init: true
     ) do
       def position

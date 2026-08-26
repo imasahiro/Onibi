@@ -357,6 +357,20 @@ class InterpreterTest < Minitest::Test
     assert_equal frame, state.current_frame
   end
 
+  def test_absence_checkpoint_records_ordered_branch_results
+    executor = Onibi::Interpreter::Executor.new(Onibi::Regexp.new("a").send(:bytecode_program))
+    frame = Onibi::ExecutionState::AbsenceFrame.new(
+      kind: :absence, possible_points: [], body_checkpoints: [], capture_checkpoints: [],
+      branch_checkpoints: [], preferred_branch: nil
+    )
+
+    executor.send(:record_absence_checkpoint, frame, 2,
+                  [[1, { __match_alternative_index: 3 }], [2, { __match_alternative_index: 4 }]], {})
+
+    assert_equal [[2, 3, 1], [2, 4, 2]], frame.branch_checkpoints
+    assert_equal 3, frame.preferred_branch
+  end
+
   def test_execution_state_capture_frame_records_span
     state = Onibi::ExecutionState.new
     frame = state.start_capture(number: 1, name: "word", start: 2)
