@@ -167,7 +167,7 @@ class V2IRGenTest < Minitest::Test
     assert_equal({ operand: 0, next_pc: 1, literal: literal, casefold: "s",
                    boundary: { kind: :expanded_tail, tail: "ι", sensitive: true }, policy: nil,
                    next_literal: suffix, next_casefold: "ι", next_source_width: 1,
-                   next_literals: [suffix], next_fold_width_deltas: [0] },
+                   next_literals: [suffix], next_fold_width_deltas: [0], backedge_pcs: [] },
                   flat.boundary_metadata(0).to_h)
     metadata = flat.boundary_metadata(0)
     assert metadata.expanded_tail?
@@ -176,6 +176,7 @@ class V2IRGenTest < Minitest::Test
     assert_equal [0], metadata.matching_next_fold_indices
     assert metadata.matching_next_fold_width?(1)
     assert metadata.matching_next_fold_width_delta?(1, 0)
+    refute metadata.repeat_backedge?
     assert_equal(0, metadata.fold_width_delta)
     assert_equal(0, metadata.next_fold_width_delta)
     assert metadata.source_width_match?(1)
@@ -219,6 +220,21 @@ class V2IRGenTest < Minitest::Test
     metadata = flat.boundary_metadata(0)
     assert_equal suffix, metadata.next_literal
     assert_equal [suffix, alternate], metadata.next_literals
+  end
+
+  def test_flat_program_records_repeat_backedge
+    instructions = [
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :fold_boundary, operand: 0, target: 1),
+      Onibi::IRGen::YARVIR::SemanticBytecode::VMInstruction.new(opcode: :jump, target: 0)
+    ]
+    literal = Onibi::IRGen::YARVIR::SemanticBytecode::Literal.new("ᾀ", "ἀι")
+    flat = Onibi::IRGen::YARVIR::SemanticBytecode::FlatProgram.new(
+      instructions: instructions, operands: [literal]
+    )
+
+    metadata = flat.boundary_metadata(0)
+    assert_equal [0], metadata.backedge_pcs
+    assert metadata.repeat_backedge?
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

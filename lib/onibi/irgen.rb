@@ -80,10 +80,11 @@ module Onibi
                                   :next_literal, :next_casefold, :next_source_width,
                                   :next_literals,
                                   :next_fold_width_deltas,
+                                  :backedge_pcs,
                                   keyword_init: true) do
           def initialize(operand:, next_pc:, literal:, casefold:, boundary:, policy:,
                          next_literal:, next_casefold:, next_source_width:, next_literals:,
-                         next_fold_width_deltas:)
+                         next_fold_width_deltas:, backedge_pcs:)
             super.freeze
           end
 
@@ -131,6 +132,10 @@ module Onibi
               next_literals[index].value.each_char.count == length &&
                 next_fold_width_deltas[index] == delta
             end
+          end
+
+          def repeat_backedge?
+            backedge_pcs.any?
           end
 
           def fold_width_delta
@@ -226,6 +231,7 @@ module Onibi
             literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
             next_pc = instruction.target || program_counter + 1
             split_targets = nil
+            backedge_pcs = []
             8.times do
               break if next_pc >= instructions.length
 
@@ -235,8 +241,12 @@ module Onibi
               elsif next_instruction.opcode == :jump && next_instruction.target.is_a?(Integer) &&
                     next_instruction.target > program_counter
                 next_pc = next_instruction.target
+              elsif next_instruction.opcode == :jump && next_instruction.target.is_a?(Integer)
+                backedge_pcs << next_instruction.target
+                break
               elsif next_instruction.opcode == :split
                 split_targets = Array(next_instruction.target)
+                backedge_pcs.concat(split_targets.select { |candidate| candidate.is_a?(Integer) && candidate <= program_counter })
                 target = Array(next_instruction.target).find do |candidate|
                   candidate.is_a?(Integer) && candidate > program_counter
                 end
@@ -268,7 +278,8 @@ module Onibi
                              next_fold_width_deltas: next_literals.map do |candidate|
                                next_fold = candidate.casefold
                                next_fold ? next_fold.each_char.count - candidate.value.each_char.count : 0
-                             end)
+                             end,
+                             backedge_pcs: backedge_pcs.uniq)
           end
 
           def boundary_candidate_literals(starts, origin)
