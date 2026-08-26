@@ -1950,7 +1950,8 @@ module Onibi
                         !semantic_scoped_reverse_fold_suffix_safe?(semantic_root) &&
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root) &&
-                        !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root)
+                        !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root) &&
+                        !semantic_scoped_capture_backreference_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_capture_absence_with_suffix?(semantic_root) &&
                         !semantic_simple_capture_absence_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
