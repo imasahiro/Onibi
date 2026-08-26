@@ -519,12 +519,13 @@ module Onibi
                                        ))
           when :consume, :fold_boundary, :consume_class, :consume_property, :consume_escape, :consume_any,
                :assert_anchor
-            node = @flat_program.operand(instruction.operand)
+            boundary_metadata = instruction.opcode == :fold_boundary ?
+                                @flat_program.boundary_metadata(pc) : nil
+            node = boundary_metadata&.literal || @flat_program.operand(instruction.operand)
             semantic_label = [flat_transition_opcode(instruction.opcode, node), node]
             matches = transition_results(semantic_label, characters, position, state, frame_flags)
-            next_instruction = if instruction.opcode == :fold_boundary && instruction.target
-                                 metadata = @flat_program.boundary_metadata(pc)
-                                 metadata && @flat_program.instruction_at(metadata.next_pc)
+            next_instruction = if boundary_metadata&.next_pc
+                                 @flat_program.instruction_at(boundary_metadata.next_pc)
                                else
                                  next_pc = (pc + 1...@flat_program.instructions.length).find do |index|
                                    @flat_program.opcode_at(index) != :scope_end

@@ -76,8 +76,8 @@ module Onibi
         VMInstruction = Struct.new(:opcode, :operand, :target, keyword_init: true) do
           def initialize(opcode:, operand: nil, target: nil) = super.freeze
         end
-        FoldBoundary = Struct.new(:operand, :next_pc, keyword_init: true) do
-          def initialize(operand:, next_pc:) = super.freeze
+        FoldBoundary = Struct.new(:operand, :next_pc, :literal, keyword_init: true) do
+          def initialize(operand:, next_pc:, literal:) = super.freeze
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
@@ -145,7 +145,8 @@ module Onibi
             instruction = instruction_at(program_counter)
             return nil unless instruction.opcode == :fold_boundary
 
-            FoldBoundary.new(operand: instruction.operand, next_pc: instruction.target)
+            literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
+            FoldBoundary.new(operand: instruction.operand, next_pc: instruction.target, literal: literal)
           end
 
           def tree_free?
