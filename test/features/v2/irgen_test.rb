@@ -165,6 +165,15 @@ class V2IRGenTest < Minitest::Test
     refute program.instructions.any? { |item| item.opcode == :semantic_match }
   end
 
+  def test_flat_compiler_keeps_zero_length_suffix_candidate_for_capture_absence
+    source = "(?~((?:a|ab){2,}))c"
+    regexp = Onibi::Regexp.new(source)
+    program = regexp.send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+    assert_equal ["c", nil], regexp.match("c")&.to_a
+  end
+
   def test_flat_program_does_not_embed_legacy_semantic_command_stream
     program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
     flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand

@@ -4219,7 +4219,7 @@ module Onibi
               repetitions += 1
               position += value.length
             end
-            return [limit] if repetitions < node.minimum
+            return limit.downto(0).to_a if repetitions < node.minimum
 
             total = position - cursor
             return [(total + node.minimum - 1) / 2] if lengths.all? { |length| length == 1 }
