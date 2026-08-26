@@ -798,6 +798,8 @@ module Onibi
                 flat_absence_assertion_results(absence.assertion, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceNullableRepeat)
                 flat_nullable_absence_repeat_results(absence.atom, characters, position, frame_flags)
+              elsif absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat)
+                flat_capture_variable_absence_results(absence, characters, position, frame_flags)
               elsif absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
@@ -817,6 +819,7 @@ module Onibi
               next_state = state.merge(absence_captures || {})
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat) ||
+                  absence.is_a?(SemanticBytecode::AbsenceCaptureRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableRepeat) ||
                   absence.is_a?(SemanticBytecode::AbsenceNullableCapture) ||
                   absence.is_a?(SemanticBytecode::AbsenceAssertion) ||
@@ -4259,6 +4262,37 @@ module Onibi
 
         maximum = node.minimum >= 2 ? (run + node.minimum - 1) / 2 : run / 2
         [maximum, limit].min.downto(0).to_a
+      end
+
+      def flat_capture_variable_absence_results(node, characters, cursor, flags)
+        repeat = SemanticBytecode::AbsenceRepeat.new(node.atoms, node.minimum)
+        lengths = flat_quantified_absence_lengths(repeat, characters, cursor, flags)
+        values = node.atoms.first.variants.map { |variant| variant.map(&:value).join }
+        repetitions = 0
+        position = cursor
+        while position < characters.length
+          value = values.sort_by(&:length).reverse.find do |candidate|
+            characters[position, candidate.length].join == candidate
+          end
+          break unless value
+
+          repetitions += 1
+          position += value.length
+        end
+        capture = if repetitions == node.minimum
+                    capture_position = cursor
+                    node.minimum.times do
+                      value = values.find do |candidate|
+                        characters[capture_position, candidate.length].join == candidate
+                      end
+                      capture_position += value.length if value
+                    end
+                    span = [cursor, capture_position]
+                    { node.number => span, node.name => span }.compact
+                  else
+                    {}
+                  end
+        lengths.map { |length| [length, capture] }
       end
 
       def flat_nullable_absence_repeat_results(atom, characters, cursor, flags)

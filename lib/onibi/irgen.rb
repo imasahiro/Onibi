@@ -62,6 +62,7 @@ module Onibi
         SubexpressionCall = Struct.new(:identifier, :named)
         Absence = Struct.new(:body, :flat_atoms)
         AbsenceRepeat = Struct.new(:atoms, :minimum)
+        AbsenceCaptureRepeat = Struct.new(:atoms, :minimum, :number, :name)
         AbsenceNullableRepeat = Struct.new(:atom)
         AbsenceNullableCapture = Struct.new(:atom, :number, :name)
         AlternationAtom = Struct.new(:variants)
@@ -329,6 +330,7 @@ module Onibi
             return false if operand.is_a?(NullableGroupRepeat)
             return false if operand.is_a?(NestedPossessiveRepeat)
             return false if operand.is_a?(AlternationGroupRepeat)
+            return false if operand.is_a?(AbsenceCaptureRepeat)
             if operand.is_a?(AlternationAtom)
               return operand.variants.flatten.any? { |item| composite_payload?(item) }
             end
@@ -457,6 +459,24 @@ module Onibi
               Assertion.new(nil, node.kind, node.widths, node.folded_widths, node.flat_atoms)
             when Absence
               body = unwrap_single_sequence(node.body)
+              if body.is_a?(Group) && body.capture
+                repeated = unwrap_single_sequence(body.body)
+                if repeated.is_a?(Quantifier) && repeated.minimum.positive? && repeated.maximum.nil? &&
+                   repeated.expression.is_a?(Group) && !repeated.expression.capture
+                  alternation = unwrap_single_sequence(repeated.expression.body)
+                  if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                    branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
+                      branch.parts.any?
+                  end
+                    variants = alternation.branches.map { |branch| branch.parts }
+                    values = variants.map { |variant| variant.map(&:value).join }
+                    if values.map(&:length).uniq.length > 1
+                      return AbsenceCaptureRepeat.new([AlternationAtom.new(variants)], repeated.minimum,
+                                                      body.number, body.name)
+                    end
+                  end
+                end
+              end
               if body.is_a?(Group) && body.capture
                 repeated = unwrap_single_sequence(body.body)
                 if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
@@ -1119,6 +1139,17 @@ module Onibi
 
           def absence_flat_safe?(node)
             body = unwrap_single_sequence(node.body)
+            if body.is_a?(Group) && body.capture
+              repeated = unwrap_single_sequence(body.body)
+              if repeated.is_a?(Quantifier) && repeated.minimum.positive? && repeated.maximum.nil? &&
+                 repeated.expression.is_a?(Group) && !repeated.expression.capture
+                alternation = unwrap_single_sequence(repeated.expression.body)
+                return true if alternation.is_a?(Alternation) && alternation.branches.all? do |branch|
+                  branch.is_a?(Sequence) && branch.parts.all? { |part| part.is_a?(Literal) && part.casefold.nil? } &&
+                    branch.parts.any?
+                end && alternation.branches.map { |branch| branch.parts.map(&:value).join.length }.uniq.length > 1
+              end
+            end
             if body.is_a?(Group) && body.capture
               repeated = unwrap_single_sequence(body.body)
               if repeated.is_a?(Quantifier) && repeated.minimum > 1 && repeated.maximum.nil? &&
