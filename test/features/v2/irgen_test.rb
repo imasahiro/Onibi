@@ -1034,7 +1034,7 @@ class V2IRGenTest < Minitest::Test
   end
 
   def test_flat_program_operands_are_tree_free
-    ["a+", "(?~(a?))", "(?~(ab){2,})", "ﬃ"].each do |source|
+    ["a+", "(?~(a?))", "(?~(ab){2,})", "(?~(a|b){2,})", "ﬃ"].each do |source|
       program = Onibi::Regexp.new(source).send(:bytecode_program)
       flat = program.instructions.find { |item| item.opcode == :semantic_flat }&.operand
 

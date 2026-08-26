@@ -326,6 +326,9 @@ module Onibi
           def self.composite_payload?(operand)
             return false if operand.is_a?(NullableGroupRepeat)
             return false if operand.is_a?(NestedPossessiveRepeat)
+            if operand.is_a?(AlternationAtom)
+              return operand.variants.flatten.any? { |item| composite_payload?(item) }
+            end
             return true if operand.is_a?(Assertion) && !operand.tree_free?
             return true if operand.respond_to?(:body) && operand.body
             return true if operand.respond_to?(:parts) && operand.parts.any?
