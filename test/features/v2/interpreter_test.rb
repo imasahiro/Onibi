@@ -420,6 +420,9 @@ class InterpreterTest < Minitest::Test
   end
 
   def test_absence_literal_fast_path_preserves_wrapped_capture
+    program = Onibi::Regexp.new("(?~(a))").send(:bytecode_program)
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+
     expected = ::Regexp.new("(?~(a))").match("ba")
     actual = Onibi::Regexp.new("(?~(a))").match("ba")
 

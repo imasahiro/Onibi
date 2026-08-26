@@ -667,7 +667,7 @@ module Onibi
                                        ))
           when :absence
             absence = @flat_program.operand(instruction.operand)
-            lengths = @state.with_absence_frame(
+            outcomes = @state.with_absence_frame(
               resume_pc: pc + 1,
               body_pc: instruction.operand,
               absent_start: position,
@@ -680,16 +680,16 @@ module Onibi
               if absence.is_a?(SemanticBytecode::AbsenceRepeat)
                 flat_quantified_absence_lengths(absence, characters, position, frame_flags)
               else
-                flat_literal_absence_lengths(absence, characters, position, state, frame_flags)
+                flat_literal_absence_results(absence, characters, position, state, frame_flags)
               end
             end
-            unless lengths
+            unless outcomes
               resume_backtrack
               next
             end
 
-            lengths.reverse_each do |length|
-              next_state = state.dup
+            outcomes.reverse_each do |length, absence_captures|
+              next_state = state.merge(absence_captures || {})
               captures_for([:match_absence, absence], position, length, next_state, characters, frame_flags) unless
                 absence.is_a?(SemanticBytecode::AbsenceRepeat)
               @state.push_semantic_frame(ExecutionState::SemanticFrame.new(
@@ -3874,6 +3874,26 @@ module Onibi
         end
         maximum = boundary ? boundary - cursor : limit
         maximum.downto(0).to_a
+      end
+
+      def flat_literal_absence_results(node, characters, cursor, captures = {}, flags = {})
+        return flat_literal_absence_lengths(node, characters, cursor, captures, flags).map { |length| [length, {}] } unless
+          node.flat_atoms&.flatten&.any? { |atom| atom.is_a?(SemanticBytecode::CaptureAtom) }
+
+        variants = node.flat_atoms.first.is_a?(Array) ? node.flat_atoms : [node.flat_atoms]
+        boundary = cursor.upto(characters.length).find do |position|
+          variants.any? do |variant|
+            flat_assertion_results([variant], characters, position, captures, flags).any?
+          end
+        end
+        return flat_literal_absence_lengths(node, characters, cursor, captures, flags).map { |length| [length, {}] } unless boundary
+
+        variant = variants.find do |candidate|
+          flat_assertion_results([candidate], characters, boundary, captures, flags).any?
+        end
+        length, state = flat_assertion_results([variant], characters, boundary, captures, flags).first
+        maximum = [boundary - cursor + length - 1, characters.length - cursor].min
+        maximum.downto(0).map { |candidate| [candidate, state] }
       end
 
       def flat_quantified_absence_lengths(node, characters, cursor, flags)

@@ -940,6 +940,9 @@ module Onibi
           end
 
           def absence_flat_safe?(node)
+            return false if node.flat_atoms&.flatten&.any? { |atom| atom.is_a?(CaptureAtom) } &&
+                            !simple_capture_absence?(node)
+
             body = unwrap_single_sequence(node.body)
             if body.is_a?(Quantifier) && body.minimum.positive? && body.maximum.nil? && (body.expression.is_a?(Literal) || body.expression.is_a?(CharacterClass) ||
                              body.expression.is_a?(Property) ||
@@ -950,6 +953,12 @@ module Onibi
             end
 
             node.flat_atoms && flat_atoms_consuming?(node.flat_atoms) && supported?(node.body)
+          end
+
+          def simple_capture_absence?(node)
+            body = unwrap_single_sequence(node.body)
+            body.is_a?(Group) && body.capture && body.body.is_a?(Sequence) && body.body.parts.one? &&
+              body.body.parts.first.is_a?(Literal) && body.body.parts.first.casefold.nil?
           end
 
           def absence_repeat_atoms(node)
@@ -1101,7 +1110,10 @@ module Onibi
           end
           if node.is_a?(Onibi::AST::Absence)
             body = compile_value(node.body, casefold: casefold)
-            return type.new(body, flat_assertion_atoms(body))
+            capture = body.is_a?(Sequence) && body.parts.one? && body.parts.first.is_a?(Group) &&
+                      body.parts.first.capture && body.parts.first.body.is_a?(Sequence) &&
+                      body.parts.first.body.parts.one? && body.parts.first.body.parts.first.is_a?(Literal)
+            return type.new(body, flat_assertion_atoms(body, capture: capture))
           end
           if node.is_a?(Onibi::AST::Property)
             return type.new(node.name, node.negated,
@@ -1787,6 +1799,7 @@ module Onibi
                         !semantic_scoped_reverse_literal_suffix_safe?(semantic_root)
         return false if semantic_root && semantic_scoped_unicode_bounded_repeat_with_suffix?(semantic_root) &&
                         !semantic_scoped_simple_bounded_repeat_suffix_safe?(semantic_root)
+        return false if semantic_root && semantic_capture_absence_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
@@ -2164,6 +2177,15 @@ module Onibi
 
         assertion = assertion_repeat.expression
         assertion.kind == :negative && assertion.flat_atoms
+      end
+
+      def semantic_capture_absence_with_suffix?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.any? do |part|
+          part.is_a?(SemanticBytecode::Absence) &&
+            part.flat_atoms&.flatten&.any? { |atom| atom.is_a?(SemanticBytecode::CaptureAtom) }
+        end
       end
 
       def semantic_scoped_unicode_bounded_repeat_with_suffix?(node)
