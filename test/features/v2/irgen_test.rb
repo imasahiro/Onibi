@@ -173,6 +173,8 @@ class V2IRGenTest < Minitest::Test
     assert metadata.tail_matches_next_fold?
     assert_equal(0, metadata.fold_width_delta)
     assert_equal(0, metadata.next_fold_width_delta)
+    assert metadata.source_width_match?(1)
+    refute metadata.source_width_match?(2)
   end
 
   def test_flat_assertion_operands_keep_only_leaf_atoms

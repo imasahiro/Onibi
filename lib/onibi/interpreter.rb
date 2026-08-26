@@ -810,8 +810,9 @@ module Onibi
         return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
                               anchor.kind == :anchor_absolute_end
 
-        source_width = metadata&.literal&.source_width || node.source_width
-        matches.reject { |length, _inner| length == source_width }
+        matches.reject do |length, _inner|
+          metadata ? metadata.source_width_match?(length) : length == node.source_width
+        end
       end
 
       # Match a compile-time flat atom list without entering tree_results.

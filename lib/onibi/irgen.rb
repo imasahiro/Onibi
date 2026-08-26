@@ -106,6 +106,10 @@ module Onibi
 
             next_casefold.each_char.count - next_literal.value.each_char.count
           end
+
+          def source_width_match?(length)
+            literal && length == literal.source_width
+          end
         end
 
         VM_OPCODES = %i[consume fold_boundary consume_class consume_property consume_escape consume_any
