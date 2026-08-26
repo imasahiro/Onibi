@@ -5,69 +5,208 @@ module Onibi
     # SemanticBytecode is the compiler-owned operand model.
     SemanticBytecode = Onibi::IRGen::YARVIR::SemanticBytecode
 
-    # Runtime state for bounded probes and backtracking scopes.
-    # A frame owns the input range, the current probe position, and the
-    # checkpoints needed to restore local capture state. Absence uses the
-    # same frame shape as future group and quantifier scopes.
-    ExecutionFrame = Struct.new(
-      :kind,
-      :absent_start,
-      :absent_end,
-      :probe_position,
-      :possible_points,
-      :body_checkpoints,
-      :capture_checkpoints,
-      keyword_init: true
-    )
-    # Kept as a compatibility alias for callers that inspected the old name.
-    AbsentFrame = ExecutionFrame
+    # All mutable invocation and scope state has one owner.  ExecutionFrame
+    # names the nested scope shape only; it is not a second runtime state.
+    ExecutionState = Onibi::ExecutionState
+    ExecutionFrame = ExecutionState::Frame
 
     # Formal VM contract:
+    #
+    #   VM state = <cursor, operand_stack, local_state, frame_stack>
+    #   operand_stack = [[length, next_local_state], ...]
+    #   local_state = captures plus compiler-defined internal keys
+    #   frame_stack = nested ExecutionFrame values
+    #
+    # `cursor` is a character index in `InputView#characters`. An instruction
+    # reads one operand and one VM state, then pushes zero or more ordered
+    # results. A result does not mutate its input local state. The caller
+    # merges the result state and advances the cursor by `length`.
+    #
+    # The `input`, `stack_transition`, `local_transition`, `cursor_transition`,
+    # `control`, and `failure` fields below are the formal transition for each
+    # opcode. The shorter `stack` and `local` fields remain as labels for
+    # existing callers. `:read` means that a value is inspected but not
+    # changed. `:preserve` means that the value is returned unchanged.
+    #
     # DFA: start(state), match(label), jump(state), accept(state).
     # TNFA: nfa_start(states), nfa_match([from, to, [opcode, operand]]),
     # nfa_accept(states). Match consumes input and advances the cursor.
     # Jump and start change control state only. Accept returns the match.
-    # Semantic operands return [consumed_length, next_captures]. The operand
-    # stack is this result list. Local state is captures plus internal keys.
     BYTECODE_SPEC = {
       dfa: {
-        start: { operand: :state_id, stack: :unchanged, local: :state_selected },
-        match: { operand: :transition_label, stack: :push_result, local: :consume_and_merge },
-        jump: { operand: :state_id, stack: :unchanged, local: :state_selected },
-        accept: { operand: :state_id, stack: :halt, local: :return_match }
+        start: {
+          signature: "start(state_id)", operand: :state_id,
+          input: { operand: :read, characters: :unused, flags: :unused }.freeze,
+          stack_transition: :preserve, local_transition: :preserve,
+          cursor_transition: :preserve, control: :select_state, failure: :reject
+        },
+        match: {
+          signature: "match(transition_label)", operand: :transition_label,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :follow_transition,
+          failure: :try_next_transition
+        },
+        jump: {
+          signature: "jump(state_id)", operand: :state_id,
+          input: { operand: :read, characters: :unused, flags: :unused }.freeze,
+          stack_transition: :preserve, local_transition: :preserve,
+          cursor_transition: :preserve, control: :select_state, failure: :reject
+        },
+        accept: {
+          signature: "accept(state_id)", operand: :state_id,
+          input: { operand: :read, characters: :unused, flags: :unused }.freeze,
+          stack_transition: :halt, local_transition: :return_result,
+          cursor_transition: :preserve, control: :return_match, failure: :reject
+        }
       },
       tnfa: {
-        nfa_start: { operand: :state_ids, stack: :unchanged, local: :active_states },
-        nfa_match: { operand: :edge, stack: :push_result, local: :consume_and_merge },
-        nfa_accept: { operand: :state_ids, stack: :halt, local: :return_match }
+        nfa_start: {
+          signature: "nfa_start(state_ids)", operand: :state_ids,
+          input: { operand: :read, characters: :unused, flags: :unused }.freeze,
+          stack_transition: :preserve, local_transition: :set_active_states,
+          cursor_transition: :preserve, control: :follow_epsilon_closure,
+          failure: :reject
+        },
+        nfa_match: {
+          signature: "nfa_match(edge)", operand: :edge,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :follow_edge,
+          failure: :try_next_edge
+        },
+        nfa_accept: {
+          signature: "nfa_accept(state_ids)", operand: :state_ids,
+          input: { operand: :read, characters: :unused, flags: :unused }.freeze,
+          stack_transition: :halt, local_transition: :return_result,
+          cursor_transition: :preserve, control: :return_match, failure: :reject
+        }
       },
       semantic: {
-        match_literal: { operand: :literal, stack: :push_result, local: :consume_and_merge },
-        match_class: { operand: :character_class, stack: :push_result, local: :consume_and_merge },
-        match_escape: { operand: :escape, stack: :push_result, local: :consume_and_merge },
-        match_property: { operand: :property, stack: :push_result, local: :consume_and_merge },
-        match_any: { operand: :dot, stack: :push_result, local: :consume_and_merge },
-        match_assertion: { operand: :assertion, stack: :push_result, local: :zero_width },
-        test_anchor: { operand: :anchor, stack: :push_result, local: :zero_width },
+        match_literal: {
+          signature: "match_literal(literal)", operand: :literal,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_class: {
+          signature: "match_class(character_class)", operand: :character_class,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_escape: {
+          signature: "match_escape(escape)", operand: :escape,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_property: {
+          signature: "match_property(property)", operand: :property,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_any: {
+          signature: "match_any(dot)", operand: :dot,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_assertion: {
+          signature: "match_assertion(assertion)", operand: :assertion,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :zero_width_result,
+          cursor_transition: :preserve, control: :continue, failure: :reject
+        },
+        test_anchor: {
+          signature: "test_anchor(anchor)", operand: :anchor,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :zero_width_result,
+          cursor_transition: :preserve, control: :continue, failure: :reject
+        },
         match_absence: {
-          operand: :absence,
-          stack: :push_result,
-          local: :absent_frame,
+          signature: "match_absence(absence)", operand: :absence,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :restore_frame_state,
+          cursor_transition: :advance_by_result, control: :probe_with_bounded_end,
+          failure: :reject,
           language: :complement_of_wrapped_body,
           wrapped_language: ".* body .*",
           preserves: :ordered_body_candidates,
           capture_checkpoint: :repeat_frame_state,
           transition: :probe_with_bounded_end
         },
-        match_group: { operand: :group, stack: :push_result, local: :capture_scope },
-        match_quantifier: { operand: :quantifier, stack: :push_result, local: :repeat_and_merge },
-        match_atomic_group: { operand: :atomic_group, stack: :push_result, local: :atomic_scope },
-        match_backreference: { operand: :capture_number, stack: :push_result, local: :consume_and_merge },
-        match_conditional: { operand: :conditional, stack: :push_result, local: :branch },
-        match_subexpression_call: { operand: :capture_number, stack: :push_result, local: :call },
-        match_option_group: { operand: :option_group, stack: :push_result, local: :scoped_flags }
+        match_group: {
+          signature: "match_group(group)", operand: :group,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :enter_capture_scope,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_quantifier: {
+          signature: "match_quantifier(quantifier)", operand: :quantifier,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :repeat_and_merge,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_atomic_group: {
+          signature: "match_atomic_group(atomic_group)", operand: :atomic_group,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_first_result, local_transition: :commit_scope,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_backreference: {
+          signature: "match_backreference(capture_number)", operand: :capture_number,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :merge_result,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_conditional: {
+          signature: "match_conditional(conditional)", operand: :conditional,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :branch,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_subexpression_call: {
+          signature: "match_subexpression_call(capture_number)", operand: :capture_number,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :call_and_merge,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        },
+        match_option_group: {
+          signature: "match_option_group(option_group)", operand: :option_group,
+          input: { operand: :read, characters: :read, flags: :read }.freeze,
+          stack_transition: :push_results, local_transition: :scope_flags,
+          cursor_transition: :advance_by_result, control: :continue, failure: :reject
+        }
       }
-    }.freeze
+    }.each_value do |family|
+      family.each_value do |spec|
+        spec[:stack] = {
+          preserve: :unchanged,
+          push_results: :push_result,
+          push_first_result: :push_result,
+          halt: :halt
+        }.fetch(spec[:stack_transition])
+        spec[:local] = {
+          preserve: :state_selected,
+          merge_result: :consume_and_merge,
+          restore_frame_state: :execution_frame,
+          zero_width_result: :zero_width,
+          enter_capture_scope: :capture_scope,
+          repeat_and_merge: :repeat_and_merge,
+          commit_scope: :atomic_scope,
+          branch: :branch,
+          call_and_merge: :call,
+          scope_flags: :scoped_flags,
+          set_active_states: :active_states,
+          return_result: :return_match
+        }.fetch(spec[:local_transition])
+        spec[:input] = spec[:input].freeze
+        spec.freeze
+      end
+      family.freeze
+    end.freeze
 
     UNICODE_ENCODINGS = [Encoding::UTF_8, Encoding::UTF_16LE, Encoding::UTF_16BE,
                          Encoding::UTF_32LE, Encoding::UTF_32BE].freeze
@@ -153,10 +292,15 @@ module Onibi
       def initialize(program, input_view: nil)
         @program = program
         @automaton = program.automaton
+        @automaton_mode = case program.instructions.first&.opcode
+                          when :start then :dfa
+                          when :nfa_start then :nfa
+                          end
         @subexpressions = program.flags[:subexpressions] || {}
         @retry_shifted_absence = shifted_absence_suffix?(program.flags[:semantic_root])
         @input_view = input_view
         @fold_policy = FoldPolicy.new
+        @state = ExecutionState.new
       end
 
       def match(input, start_position = 0)
@@ -180,7 +324,8 @@ module Onibi
         characters = normalize_runtime_characters(characters, input_encoding)
         @input_view = input_view
         @characters = characters
-        @steps = 0
+        first = [start_position, 0].max
+        @state.reset!(cursor: first, search_origin: first)
         # MRI builds encoding-specific character-class tables during compile.
         # Reuse one decision for repeated code points in this execution.
         @property_match_cache = {}
@@ -191,9 +336,8 @@ module Onibi
           full_casefold: @program.flags[:full_casefold] ||
                          (input_encoding == Encoding::UTF_8 && !input_ascii_only)
         )
-        first = [start_position, 0].max
-        @match_start = first
         first.upto(characters.length) do |start|
+          @state.cursor = start
           result = if (root = @program.flags[:semantic_root])
                      raw_results = node_results(root, characters, start, {}, runtime_flags)
                      raw_results.first&.then do |length, captures|
@@ -228,10 +372,9 @@ module Onibi
                                 end
                        [match_start, finish, captures]
                      end
-                   elsif @automaton.is_a?(Onibi::Automata::DFA)
-                     walk_dfa(@automaton.start_state.id, characters, start, {}, start, runtime_flags)
-                   elsif @automaton.is_a?(Onibi::Automata::GlushkovTNFA)
-                     walk_tnfa(:start, characters, start, {}, start, runtime_flags)
+                   elsif @automaton_mode
+                     initial_state = @automaton_mode == :dfa ? @automaton.start_state.id : :start
+                     walk_bytecode(initial_state, characters, start, {}, start, runtime_flags)
                    end
           # A shifted zero-width result is valid when `\\K` reset the match
           # start after an absence probe. Retry only consuming shifted matches.
@@ -279,8 +422,15 @@ module Onibi
       end
 
       def shifted_absence_suffix?(node)
+        # Semantic operand transition:
+        #   input  = <operand, cursor, captures, flags>
+        #   output = ordered [[length, next_captures], ...]
+        # Sequence, alternation, and quantifier operands may push several
+        # candidates. The caller owns candidate selection and cursor advance.
         case node
         when SemanticBytecode::Sequence
+          # sequence: run each child from the prior result cursor. A child
+          # failure removes only that candidate; other candidates backtrack.
           node.parts.each_with_index.any? do |part, index|
             index < node.parts.length - 1 && part.is_a?(SemanticBytecode::Absence)
           end || node.parts.any? { |part| shifted_absence_suffix?(part) }
@@ -296,35 +446,60 @@ module Onibi
         end
       end
 
-      def walk_dfa(state, characters, cursor, captures, start, flags)
-        @steps += 1
-        return nil if @steps > 2_000_000
-        return [start, cursor, captures] if accepting?(state)
+      # Execute the automaton bytecode through one dispatcher.  DFA and TNFA
+      # differ only in the instruction that supplies outgoing edges; their
+      # candidate stack, capture state, ordered choice, and match-reset rule
+      # are identical.
+      #
+      # Formal transitions:
+      #   :match      [label, target_state] -> consume, then :jump(target)
+      #   :nfa_match  edge(from, to, operation) -> consume, then continue at
+      #               edge.to
+      #   :accept/:nfa_accept -> halt with the current [start, cursor, state]
+      #
+      # State transition notation:
+      #   input  = <state, cursor, captures, flags>
+      #   result = [length, next_captures]
+      #   success = <target, cursor + length, captures merged with result>
+      #   failure = input state is restored before the next edge is tried
+      # `transition_results` owns the result stack. This loop owns cursor,
+      # local-state merge, ordered edge selection, and control-state advance.
+      #
+      # The `case` below is the VM's automaton opcode dispatch.  Semantic
+      # operands are dispatched by `transition_results` after this point.
+      def walk_bytecode(state, characters, cursor, captures, start, flags)
+        @state.steps += 1
+        return nil if @state.steps > 2_000_000
 
-        transitions_for(state).each do |label, target|
-          transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
-            next_captures = captures.dup
-            next_captures.merge!(inner_captures)
-            captures_for(label, cursor, length, next_captures, characters, flags)
-            next_start = if label[0] == :match_escape && label[1].kind == :match_reset
-                           cursor
-                         else
-                           start
-                         end
-            result = walk_dfa(target, characters, cursor + length, next_captures, next_start, flags)
-            return result if result
+        opcode, operand = case @automaton_mode
+                          when :dfa
+                            if accepting?(state)
+                              [:accept, state]
+                            else
+                              [:match, transitions_for(state)]
+                            end
+                          when :nfa
+                            if tnfa_accepting?(state)
+                              [:nfa_accept, state]
+                            else
+                              [:nfa_match, transitions_for_tnfa(state)]
+                            end
+                          end
+
+        case opcode
+        when :accept, :nfa_accept
+          return [start, cursor, captures]
+        when :match
+          edges = operand
+        when :nfa_match
+          edges = operand.map do |edge|
+            [[edge.operation.opcode, edge.operation.operand], edge.to]
           end
+        else
+          return nil
         end
-        nil
-      end
 
-      def walk_tnfa(state, characters, cursor, captures, start, flags)
-        @steps += 1
-        return nil if @steps > 2_000_000
-        return [start, cursor, captures] if tnfa_accepting?(state)
-
-        transitions_for_tnfa(state).each do |edge|
-          label = [edge.operation.opcode, edge.operation.operand]
+        edges.each do |label, target|
           transition_results(label, characters, cursor, captures, flags).each do |length, inner_captures|
             next_captures = captures.dup
             next_captures.merge!(inner_captures)
@@ -334,7 +509,7 @@ module Onibi
                          else
                            start
                          end
-            result = walk_tnfa(edge.to, characters, cursor + length, next_captures, next_start, flags)
+            result = walk_bytecode(target, characters, cursor + length, next_captures, next_start, flags)
             return result if result
           end
         end
@@ -342,38 +517,60 @@ module Onibi
       end
 
       def transition_results(label, characters, cursor, captures, flags = {})
+        # Semantic dispatch transition:
+        #   input  = <opcode, operand, cursor, captures, flags>
+        #   output = ordered operand-stack values [[length, next_captures], ...]
+        # A zero-width operand pushes length `0`; a failed operand pushes no
+        # value. The caller owns cursor advancement and local-state merge.
         opcode, operand = label
         case opcode
         when :epsilon
+          # epsilon: <cursor, locals> -> [[0, locals]]
           [[0, {}]]
         when :match_group
+          # group: evaluate the body in the current scope.
           node_results(operand.body, characters, cursor, captures, flags)
         when :match_atomic_group
+          # atomic_group: evaluate the body, then commit its first candidate.
           node_results(operand.body, characters, cursor, captures, flags).first(1)
         when :match_option_group
+          # option_group: evaluate the body with scoped flags. The outer
+          # flags remain unchanged after this result returns.
           node_results(operand.body, characters, cursor, captures,
                        flags.merge(ignorecase: operand.ignorecase, multiline: operand.multiline))
         when :match_quantifier
+          # quantifier: push ordered repetition candidates and captures.
           quantifier_results(operand, characters, cursor, captures, flags)
         when :match_assertion
+          # assertion: push only zero-width candidates; cursor is preserved.
           assertion_results(operand, characters, cursor, captures, flags)
         when :match_subexpression_call
+          # subexpression_call: invoke the compiled target and merge its state.
           node_results(operand, characters, cursor, captures, flags)
         when :match_absence
-          # The absence operand returns both its bounded complement length and
-          # the capture state restored by the last body checkpoint. Do not
-          # reduce this to lengths: the bytecode edge carries semantic state.
+          # absence: probe the bounded complement. Each result carries its
+          # length and the frame-restored local state.
           absence_results(operand, characters, cursor, captures, flags)
         when :match_class
+          # class: each accepted character width becomes one stack result.
           class_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
         when :match_property
+          # property: each accepted property width becomes one stack result.
           property_match_lengths(operand, characters, cursor, flags).map { |length| [length, {}] }
         else
+          # literal, escape, any, and anchor use one transition length. A nil
+          # length means failure; zero means a successful zero-width operand.
           transition_lengths(label, characters, cursor, captures, flags).map { |length| [length, {}] }
         end
       end
 
       def assertion_results(assertion, characters, cursor, captures, flags = {})
+        # Assertion transition:
+        #   input  = <assertion, cursor, captures, flags>
+        #   success = [[0, next_captures]]
+        #   failure = []
+        # The input cursor never changes. Captures written by a positive
+        # assertion are returned as local state, but the caller advances by 0.
         if %i[positive positive_lookahead].include?(assertion.kind)
           lookahead_captures = captures.merge(__fold_lookahead_operand: true)
           results = node_results(assertion.body, characters, cursor, lookahead_captures, flags).first(1).map do |_length, inner|
@@ -728,8 +925,8 @@ module Onibi
 
       # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
       def node_results(node, characters, cursor, captures, flags = {})
-        @steps += 1
-        return [] if @steps > 2_000_000
+        @state.steps += 1
+        return [] if @state.steps > 2_000_000
 
         # A captured expanded fold that matched its source code point cannot
         # split before a normal consuming operand. MRI permits the split only
@@ -1488,8 +1685,11 @@ module Onibi
           end
           states
         when SemanticBytecode::Conditional
+          # conditional: select one compiled branch from local capture state.
           conditional_results(node, characters, cursor, captures, flags)
         when SemanticBytecode::Alternation
+          # alternation: evaluate branches in bytecode order. Each branch
+          # receives a copy of local state and returns ordered candidates.
           branch_flags = flags.merge(fold_alternation: !flags[:property_alternation_anchor])
           branch_marker = node.operand_context ? :__fold_alternation_operand : :__fold_alternation_context
           expanding_alternative = node.branches.any? do |candidate|
@@ -1556,65 +1756,85 @@ module Onibi
             end
           end
         when SemanticBytecode::Group
-          group_results = node_results(node.body, characters, cursor, captures, flags)
-          if flags[:property_alternation_anchor]
-            maximum = group_results.map(&:first).max
-            group_results = group_results.select { |length, _inner| length == maximum }
-          end
-          group_results.map do |length, inner|
-            next_captures = inner.dup
-            if flags[:ignorecase] && node.body.is_a?(SemanticBytecode::Alternation) &&
-               node.body.fold_policy&.fetch(:expanded_branch, false) &&
-               next_captures[:__simple_fold_alternation_source]
-              next_captures[:__fold_alternation_context] = true
+          # group: evaluate the body in a nested capture scope, then publish
+          # the group's span together with the body result state.
+          with_scope_frame(:group, characters, cursor) do
+            group_results = node_results(node.body, characters, cursor, captures, flags)
+            if flags[:property_alternation_anchor]
+              maximum = group_results.map(&:first).max
+              group_results = group_results.select { |length, _inner| length == maximum }
             end
-            if deferred_group_fold
-              next_captures[:__group_expanded_literal_source] = true
-              next_captures[:__group_expanded_literal_fold] = deferred_group_fold.first
-              next_captures[:__group_expanded_literal_prefix] = deferred_group_fold[1]
-              next_captures[:__group_expanded_literal_boundary] = deferred_group_fold[2]
-            end
-            expanded_source = next_captures.delete(:__expanded_literal_source)
-            expanded_boundary = next_captures.delete(:__expanded_literal_boundary)
-            if expanded_source
-              next_captures[:__group_expanded_literal_source] = true
-              next_captures[:__group_expanded_literal_fold] ||= characters[cursor]&.downcase(:fold)
-              next_captures[:__group_expanded_literal_boundary] ||= expanded_boundary
-              next_captures[:__group_expanded_literal_value] ||= characters[cursor]
-            end
-            if node.capture && next_captures[:__group_expanded_literal_source] &&
-               next_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
-              next_captures[:__captured_expanded_fold] = true
-              next_captures[:__captured_expanded_fold_source] = characters[cursor]
-            end
-            if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
-               characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
-              next_captures[:__group_expanded_literal_source] = true
-              next_captures[:__group_expanded_literal_fold] = characters[cursor].downcase(:fold)
-              next_captures[:__group_expanded_literal_boundary] = fold_boundary_for_node(node.body)
-            end
-            if node.capture
-              next_captures[node.number] = [cursor, cursor + length]
-              next_captures[node.name] = [cursor, cursor + length] if node.name
-              if capture_body_has_class?(node.body)
-                next_captures[:__class_capture_numbers] = Array(next_captures[:__class_capture_numbers])
-                next_captures[:__class_capture_numbers] << node.number
+            group_results.map do |length, inner|
+              next_captures = inner.dup
+              if flags[:ignorecase] && node.body.is_a?(SemanticBytecode::Alternation) &&
+                 node.body.fold_policy&.fetch(:expanded_branch, false) &&
+                 next_captures[:__simple_fold_alternation_source]
+                next_captures[:__fold_alternation_context] = true
               end
+              if deferred_group_fold
+                next_captures[:__group_expanded_literal_source] = true
+                next_captures[:__group_expanded_literal_fold] = deferred_group_fold.first
+                next_captures[:__group_expanded_literal_prefix] = deferred_group_fold[1]
+                next_captures[:__group_expanded_literal_boundary] = deferred_group_fold[2]
+              end
+              expanded_source = next_captures.delete(:__expanded_literal_source)
+              expanded_boundary = next_captures.delete(:__expanded_literal_boundary)
+              if expanded_source
+                next_captures[:__group_expanded_literal_source] = true
+                next_captures[:__group_expanded_literal_fold] ||= characters[cursor]&.downcase(:fold)
+                next_captures[:__group_expanded_literal_boundary] ||= expanded_boundary
+                next_captures[:__group_expanded_literal_value] ||= characters[cursor]
+              end
+              if node.capture && next_captures[:__group_expanded_literal_source] &&
+                 next_captures[:__group_expanded_literal_boundary]&.fetch(:kind, nil) == :expanded_tail
+                next_captures[:__captured_expanded_fold] = true
+                next_captures[:__captured_expanded_fold_source] = characters[cursor]
+              end
+              if !node.capture && flags[:ignorecase] && capture_body_has_expanding_literal?(node.body) &&
+                 characters[cursor]&.downcase(:fold)&.length.to_i > characters[cursor]&.length.to_i
+                next_captures[:__group_expanded_literal_source] = true
+                next_captures[:__group_expanded_literal_fold] = characters[cursor].downcase(:fold)
+                next_captures[:__group_expanded_literal_boundary] = fold_boundary_for_node(node.body)
+              end
+              if node.capture
+                next_captures[node.number] = [cursor, cursor + length]
+                next_captures[node.name] = [cursor, cursor + length] if node.name
+                if capture_body_has_class?(node.body)
+                  next_captures[:__class_capture_numbers] = Array(next_captures[:__class_capture_numbers])
+                  next_captures[:__class_capture_numbers] << node.number
+                end
+              end
+              [length, next_captures]
             end
-            [length, next_captures]
           end
         when SemanticBytecode::Quantifier
-          quantifier_results(node, characters, cursor, captures, flags)
+          # quantifier: delegate repeat-frame creation and ordered candidates.
+          with_scope_frame(:quantifier, characters, cursor) do
+            quantifier_results(node, characters, cursor, captures, flags)
+          end
         when SemanticBytecode::OptionGroup
-          scoped_flags = flags.dup
-          scoped_flags[:ignorecase] = node.ignorecase unless node.ignorecase.nil?
-          scoped_flags[:multiline] = node.multiline unless node.multiline.nil?
-          node_results(node.body, characters, cursor, captures, scoped_flags)
+          # option_group: replace only the flags declared by the operand;
+          # cursor and capture state are returned by the body.
+          with_scope_frame(:option_group, characters, cursor) do
+            scoped_flags = flags.dup
+            scoped_flags[:ignorecase] = node.ignorecase unless node.ignorecase.nil?
+            scoped_flags[:multiline] = node.multiline unless node.multiline.nil?
+            node_results(node.body, characters, cursor, captures, scoped_flags)
+          end
         when SemanticBytecode::AtomicGroup
-          node_results(node.body, characters, cursor, captures, flags).first(1)
+          # atomic_group: keep the first body candidate and discard later
+          # backtracking candidates.
+          with_scope_frame(:atomic_group, characters, cursor) do
+            node_results(node.body, characters, cursor, captures, flags).first(1)
+          end
         when SemanticBytecode::Assertion
-          assertion_results(node, characters, cursor, captures, flags)
+          # assertion: evaluate the body without consuming input.
+          with_scope_frame(:assertion, characters, cursor) do
+            assertion_results(node, characters, cursor, captures, flags)
+          end
         when SemanticBytecode::SubexpressionCall
+          # subexpression_call: call the compiled operand with the same cursor
+          # and local state, subject to the recursion limit.
           body = @subexpressions[node.identifier]
           return [] unless body
           return [] if (@subexpression_depth ||= 0) > 32
@@ -1624,6 +1844,8 @@ module Onibi
           @subexpression_depth -= 1
           results
         when SemanticBytecode::Absence
+          # absence: evaluate the complement probe and preserve its frame
+          # checkpoint in each result's local state.
           absence_results(node, characters, cursor, captures, flags).map do |length, state|
             next [length, state] unless length.zero?
 
@@ -3118,6 +3340,11 @@ module Onibi
       end
 
       def quantifier_results(quantifier, characters, cursor, captures, flags = {})
+        # Quantifier transition:
+        #   input  = <quantifier, cursor, captures, flags>
+        #   output = ordered [[total_length, repeat_state], ...]
+        # Each repeat starts from cursor + total_length. A zero-width repeat
+        # still changes only its local repeat state and cannot move the cursor.
         if captures[:__end_zero_width] && characters.join.bytesize > 1 && flags[:multiline] &&
            quantifier.mode != :lazy &&
            quantifier.minimum.zero? && quantifier.maximum.nil? &&
@@ -3199,6 +3426,11 @@ module Onibi
       end
 
       def ordered_quantifier_results(quantifier, characters, cursor, captures, flags)
+        # Ordered repeat transition:
+        #   <consumed, state, count> -> <consumed + unit_length, unit_state, count + 1>
+        # Greedy and lazy modes differ only in the order of pushed candidates.
+        # The repeat frame is restored when a later sequence operand rejects a
+        # candidate; no capture mutation escapes that candidate.
         limit = quantifier.maximum || characters.length - cursor + 1
         accepted = []
         visit = lambda do |consumed, state_captures, count|
@@ -3533,9 +3765,15 @@ module Onibi
       end
 
       def transition_length(label, characters, cursor, flags = {}, captures = {})
+        # Primitive transition:
+        #   input  = <opcode, operand, cursor, captures, flags>
+        #   output = one length or nil
+        # A positive length consumes that many input characters. Zero is a
+        # successful zero-width operation. Nil is failure and changes nothing.
         opcode, operand = label
         case opcode
         when :match_literal
+          # literal: compare the operand's compiled value with input at cursor.
           value = literal_characters(operand, flags)
           if flags[:ignorecase]
             if captures[:__lookbehind_reverse_fold] && cursor >= characters.length &&
@@ -3553,8 +3791,10 @@ module Onibi
             input_codepoints == value.map(&:ord) ? value.length : nil
           end
         when :match_class
+          # class: return the first accepted source width from the class table.
           class_match_lengths(operand, characters, cursor, flags).first
         when :match_any
+          # any: consume one character unless the dot rule rejects it.
           if captures[:__lookbehind_overlap]
             0
           elsif cursor < characters.length &&
@@ -3562,6 +3802,7 @@ module Onibi
             1
           end
         when :match_escape
+          # escape: consume the width defined by the compiled escape operand.
           case operand.kind
           when :grapheme
             grapheme_cluster_length(characters, cursor)
@@ -3579,7 +3820,7 @@ module Onibi
           when :match_reset
             0
           when :start_match
-            cursor == @match_start ? 0 : nil
+            cursor == @state.search_origin ? 0 : nil
           else
             if cursor < characters.length &&
                Onibi::CharacterPredicates.escape_matches?(operand.kind, characters[cursor], encoding: flags[:encoding])
@@ -3587,24 +3828,34 @@ module Onibi
             end
           end
         when :match_property
+          # property: return the first accepted width from the property table.
           property_match_lengths(operand, characters, cursor, flags).first
         when :match_quantifier
+          # quantifier: use the operand's ordered repeat policy for one length.
           quantifier_length(operand, characters, cursor)
         when :match_group
+          # group: calculate the body's fixed-width fast-path result.
           sequence_length(operand.body, characters, cursor)
         when :match_backreference
+          # backreference: consume the captured source width after comparison.
           backreference_length(operand, characters, cursor, captures, flags)
         when :match_conditional
+          # conditional: calculate the selected branch's fixed-width result.
           conditional_length(operand, characters, cursor, captures)
         when :match_atomic_group
+          # atomic_group: calculate the committed body's fixed-width result.
           sequence_length(operand.body, characters, cursor)
         when :match_option_group
+          # option_group: calculate the body under scoped flags.
           option_group_length(operand, characters, cursor, flags)
         when :match_absence
+          # absence: return the complement probe's bounded fast-path width.
           absence_length(operand, characters, cursor, flags)
         when :match_assertion
+          # assertion: return zero only when the assertion succeeds.
           assertion_length(operand, characters, cursor, flags)
         when :test_anchor
+          # anchor: return zero only when the anchor condition succeeds.
           anchor_length(operand, characters, cursor)
         end
       end
@@ -3674,6 +3925,11 @@ module Onibi
       end
 
       def captures_for(label, cursor, length, captures, characters = nil, flags = {})
+        # Capture transition:
+        #   input  = <label, cursor, length, local_state>
+        #   output = local_state plus the operand's capture span
+        # Captures are written only after the caller accepts a stack result.
+        # Failed candidates therefore leave the caller's local state intact.
         opcode, operand = label
         if opcode == :match_absence
           capture_absence(operand.body, cursor, length, captures)
@@ -3878,6 +4134,22 @@ module Onibi
         end
       end
 
+      # Every scoped operand uses the same frame stack.  The frame fields are
+      # intentionally neutral: each operand records only the checkpoints it
+      # needs, while the enclosing invocation owns lifetime and rollback.
+      def with_scope_frame(kind, characters, cursor)
+        frame = @state.new_frame(
+          kind: kind,
+          absent_start: cursor,
+          absent_end: characters.length,
+          probe_position: cursor,
+          possible_points: [],
+          body_checkpoints: [],
+          capture_checkpoints: []
+        )
+        @state.with_frame(frame) { yield frame }
+      end
+
       def absence_length(node, characters, cursor, flags = {})
         delimiter = literal_value(node.body)
         return generic_absence_length(node, characters, cursor, flags) unless delimiter
@@ -3899,6 +4171,13 @@ module Onibi
       # The VM dispatch keeps all OP_ABSENT state transitions in one method.
       # rubocop:disable Metrics/BlockLength
       def absence_results(node, characters, cursor, captures, flags)
+        # Absence transition:
+        #   input  = <absence(body), cursor, captures, flags>
+        #   probe  = execute body at each bounded probe position
+        #   output = complement lengths with a restored frame checkpoint
+        # The frame stores probe positions, body results, and capture
+        # checkpoints. Results remain ordered so the enclosing sequence keeps
+        # the same choice semantics as the compiled bytecode.
         # A literal delimiter is a safe fast path only when its body has no
         # capture. The wrapped body still owns capture state in MRI.
         # The literal delimiter shortcut performs exact string search. Case-folded
@@ -3907,175 +4186,182 @@ module Onibi
         delimiter = literal_value(node.body) unless capture_numbers(node.body).any? || flags[:ignorecase]
         return absence_lengths(node, characters, cursor, flags).map { |length| [length, captures] } if delimiter
 
-        frame = ExecutionFrame.new(
-          kind: :absence,
-          absent_start: cursor,
-          absent_end: characters.length,
-          probe_position: cursor,
-          possible_points: [],
-          body_checkpoints: [],
-          capture_checkpoints: []
-        )
+        frame = @state.push_frame(@state.new_frame(
+                                    kind: :absence,
+                                    absent_start: cursor,
+                                    absent_end: characters.length,
+                                    probe_position: cursor,
+                                    possible_points: [],
+                                    body_checkpoints: [],
+                                    capture_checkpoints: []
+                                  ))
 
-        body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
-        first_result = body_at_cursor.find { |length, _state| length.positive? } || body_at_cursor.first
-        first_length = first_result&.first
-        first_state = first_result&.last || {}
-        zero_at_cursor = first_length&.zero?
-        consuming_at_cursor = first_length&.positive?
-        return [] if zero_at_cursor && consuming_at_cursor
+        begin
+          body_at_cursor = node_results(node.body, characters, cursor, captures, flags)
+          first_result = body_at_cursor.find { |length, _state| length.positive? } || body_at_cursor.first
+          first_length = first_result&.first
+          first_state = first_result&.last || {}
+          zero_at_cursor = first_length&.zero?
+          consuming_at_cursor = first_length&.positive?
+          return [] if zero_at_cursor && consuming_at_cursor
 
-        if zero_at_cursor && !consuming_at_cursor
-          later_consuming = cursor.upto(characters.length).any? do |position|
-            node_results(node.body, characters, position, captures, flags).any? do |length, _state|
-              length.positive?
+          if zero_at_cursor && !consuming_at_cursor
+            later_consuming = cursor.upto(characters.length).any? do |position|
+              node_results(node.body, characters, position, captures, flags).any? do |length, _state|
+                length.positive?
+              end
             end
+            shifted = first_state[:__match_start].is_a?(Integer) && first_state[:__match_start] > cursor
+            return [] if later_consuming && !shifted
           end
-          shifted = first_state[:__match_start].is_a?(Integer) && first_state[:__match_start] > cursor
-          return [] if later_consuming && !shifted
-        end
 
-        return [] if zero_width_quantifier_absence?(node.body, characters, cursor, flags)
+          return [] if zero_width_quantifier_absence?(node.body, characters, cursor, flags)
 
-        zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
-        if zero_width
-          unless nested_quantifier_suffix_body?(node.body)
+          zero_width = zero_width_absence_results(node.body, characters, cursor, captures, flags)
+          if zero_width
+            unless nested_quantifier_suffix_body?(node.body)
+              return zero_width.map do |length, state|
+                [length, filter_outer_quantifier_suffix_captures(node.body, state, characters, flags)]
+              end
+            end
+
             return zero_width.map do |length, state|
-              [length, filter_outer_quantifier_suffix_captures(node.body, state, characters, flags)]
+              [length, filter_quantifier_suffix_captures(node.body, state, characters, flags)]
             end
           end
 
-          return zero_width.map do |length, state|
-            [length, filter_quantifier_suffix_captures(node.body, state, characters, flags)]
-          end
-        end
-
-        if !flags[:ignorecase] && nested_quantifier_suffix_body?(node.body) &&
-           (body_match_exists_after_probe?(node.body, characters, cursor, captures, flags) ||
-            prefix_quantifier_match_exists?(node.body, characters, cursor, captures, flags))
-          return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags)
-        end
-
-        if !flags[:ignorecase] && outer_quantifier_suffix_body?(node.body)
-          return outer_quantifier_suffix_absence_results(node.body, characters, cursor, captures, flags)
-        end
-
-        return bounded_quantifier_absence_results(node.body, characters, cursor, captures, flags) if !flags[:ignorecase] && bounded_quantifier_body?(node.body)
-
-        if !flags[:ignorecase] && nested_unbounded_quantifier_body?(node.body)
-          return nested_unbounded_quantifier_absence_results(node.body, characters, cursor, captures, flags)
-        end
-
-        quantified_suffix = flags[:ignorecase] ? nil : quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
-        return quantified_suffix if quantified_suffix
-
-        quantified = quantified_absence_length(node.body, characters, cursor, flags)
-        if quantified
-          body_results = node_results(node.body, characters, cursor, captures, flags)
-          body_result = body_results.find { |length, _state| length.positive? } || body_results.first
-          body_captures = body_result ? body_result.last : captures
-          body_captures = body_captures.dup
-          body_captures.delete(:__match_start)
-          body_captures = captures if captureless_absence_body?(node.body)
-          body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
-          body_captures = filter_nested_absence_captures(node.body, body_captures)
-          body_captures = filter_quantifier_suffix_captures(node.body, body_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
-          body_captures = filter_outer_quantifier_suffix_captures(node.body, body_captures, characters, flags)
-          body_captures = filter_absence_capture_scope(node.body, body_captures)
-          return quantified.downto(0).map { |length| [length, body_captures] }
-        end
-
-        failure_state = nil
-        cursor.upto(characters.length) do |position|
-          results = node_results(node.body, characters, position, captures, flags)
-          record_absence_checkpoint(frame, position, results, captures)
-          if results.empty?
-            candidate = sequence_failure_state(node.body, characters, position, captures, flags)
-            failure_state = candidate.first if candidate && candidate.last == characters.length && candidate.first.keys.any? { |key| key.is_a?(Integer) }
-            next
+          if !flags[:ignorecase] && nested_quantifier_suffix_body?(node.body) &&
+             (body_match_exists_after_probe?(node.body, characters, cursor, captures, flags) ||
+              prefix_quantifier_match_exists?(node.body, characters, cursor, captures, flags))
+            return nested_quantifier_suffix_results(node.body, characters, cursor, captures, flags)
           end
 
-          preferred = if results.any? { |_candidate, state| state.key?(:__match_alternative) }
-                        results.find { |_candidate, state| !state.key?(:__match_start) }
-                      end
-          length, inner_captures = preferred || results.find { |candidate, _state| candidate.positive? } || results.first
-          if flags[:ignorecase] && length.zero? && results.none? { |candidate, _state| candidate.positive? }
-            next if position < characters.length
+          if !flags[:ignorecase] && outer_quantifier_suffix_body?(node.body)
+            return outer_quantifier_suffix_absence_results(node.body, characters, cursor, captures, flags)
+          end
 
-            return [[characters.length - cursor, inner_captures]]
+          if !flags[:ignorecase] && bounded_quantifier_body?(node.body)
+            return bounded_quantifier_absence_results(node.body, characters, cursor, captures,
+                                                      flags)
           end
-          inner_captures = inner_captures.dup
-          internal_start = inner_captures.delete(:__match_start)
-          internal_end = inner_captures.delete(:__match_end)
-          internal_prefix = inner_captures.delete(:__match_prefix)
-          internal_prefix_value = inner_captures.delete(:__match_prefix_value)
-          internal_probe = inner_captures.delete(:__match_probe)
-          inner_captures.delete(:__match_alternative)
-          internal_alternative_index = inner_captures.delete(:__match_alternative_index)
-          inner_captures.delete(:__zero_absence)
-          prefix_zero_absence = inner_captures.delete(:__match_prefix_zero_absence)
-          inner_captures = captures if captureless_absence_body?(node.body)
-          inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
-          inner_captures = filter_nested_absence_captures(node.body, inner_captures)
-          inner_captures = filter_outer_quantifier_suffix_captures(node.body, inner_captures, characters, flags)
-          inner_captures = filter_absence_capture_scope(node.body, inner_captures)
-          inner_captures = discard_failed_quantified_suffix_captures(
-            node.body, characters, cursor, inner_captures, flags
-          )
-          inner_captures = filter_quantifier_suffix_captures(node.body, inner_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
-          if nested_unbounded_quantifier_body?(node.body) && body_result
-            outer_number = capture_numbers(node.body).first
-            outer_value = body_result.last[outer_number]
-            inner_captures = { outer_number => outer_value } if outer_number && outer_value
+
+          if !flags[:ignorecase] && nested_unbounded_quantifier_body?(node.body)
+            return nested_unbounded_quantifier_absence_results(node.body, characters, cursor, captures, flags)
           end
-          quantified_length = quantified_absence_length(node.body, characters, position, flags)
-          match_position = internal_start || position
-          maximum = if quantified_length
-                      match_position - cursor + quantified_length
-                    elsif length.zero? && match_position > cursor
-                      characters.length - cursor
-                    elsif internal_alternative_index&.positive? && internal_start && internal_prefix.nil?
-                      internal_start - cursor
-                    elsif internal_end
-                      effective_length = internal_end - internal_start
-                      prefix_length = internal_prefix || 0
-                      suffix_length = length - prefix_length - effective_length
-                      if suffix_length.positive?
-                        internal_end - cursor - 1
-                      elsif prefix_zero_absence && internal_prefix&.positive? && effective_length.zero?
-                        0
-                      elsif prefix_zero_absence && internal_prefix&.zero? && effective_length.positive?
-                        internal_end - cursor - 1
-                      elsif internal_prefix_value && internal_probe && internal_prefix_value == internal_probe
-                        internal_end - cursor - 1
-                      elsif internal_prefix&.zero? || effective_length.zero?
+
+          quantified_suffix = flags[:ignorecase] ? nil : quantified_suffix_absence_results(node.body, characters, cursor, captures, flags)
+          return quantified_suffix if quantified_suffix
+
+          quantified = quantified_absence_length(node.body, characters, cursor, flags)
+          if quantified
+            body_results = node_results(node.body, characters, cursor, captures, flags)
+            body_result = body_results.find { |length, _state| length.positive? } || body_results.first
+            body_captures = body_result ? body_result.last : captures
+            body_captures = body_captures.dup
+            body_captures.delete(:__match_start)
+            body_captures = captures if captureless_absence_body?(node.body)
+            body_captures = adjust_nested_repeat_capture(node.body, body_captures, body_result&.first, cursor)
+            body_captures = filter_nested_absence_captures(node.body, body_captures)
+            body_captures = filter_quantifier_suffix_captures(node.body, body_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
+            body_captures = filter_outer_quantifier_suffix_captures(node.body, body_captures, characters, flags)
+            body_captures = filter_absence_capture_scope(node.body, body_captures)
+            return quantified.downto(0).map { |length| [length, body_captures] }
+          end
+
+          failure_state = nil
+          cursor.upto(characters.length) do |position|
+            results = node_results(node.body, characters, position, captures, flags)
+            record_absence_checkpoint(frame, position, results, captures)
+            if results.empty?
+              candidate = sequence_failure_state(node.body, characters, position, captures, flags)
+              failure_state = candidate.first if candidate && candidate.last == characters.length && candidate.first.keys.any? { |key| key.is_a?(Integer) }
+              next
+            end
+
+            preferred = if results.any? { |_candidate, state| state.key?(:__match_alternative) }
+                          results.find { |_candidate, state| !state.key?(:__match_start) }
+                        end
+            length, inner_captures = preferred || results.find { |candidate, _state| candidate.positive? } || results.first
+            if flags[:ignorecase] && length.zero? && results.none? { |candidate, _state| candidate.positive? }
+              next if position < characters.length
+
+              return [[characters.length - cursor, inner_captures]]
+            end
+            inner_captures = inner_captures.dup
+            internal_start = inner_captures.delete(:__match_start)
+            internal_end = inner_captures.delete(:__match_end)
+            internal_prefix = inner_captures.delete(:__match_prefix)
+            internal_prefix_value = inner_captures.delete(:__match_prefix_value)
+            internal_probe = inner_captures.delete(:__match_probe)
+            inner_captures.delete(:__match_alternative)
+            internal_alternative_index = inner_captures.delete(:__match_alternative_index)
+            inner_captures.delete(:__zero_absence)
+            prefix_zero_absence = inner_captures.delete(:__match_prefix_zero_absence)
+            inner_captures = captures if captureless_absence_body?(node.body)
+            inner_captures = adjust_nested_repeat_capture(node.body, inner_captures, length, position)
+            inner_captures = filter_nested_absence_captures(node.body, inner_captures)
+            inner_captures = filter_outer_quantifier_suffix_captures(node.body, inner_captures, characters, flags)
+            inner_captures = filter_absence_capture_scope(node.body, inner_captures)
+            inner_captures = discard_failed_quantified_suffix_captures(
+              node.body, characters, cursor, inner_captures, flags
+            )
+            inner_captures = filter_quantifier_suffix_captures(node.body, inner_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
+            if nested_unbounded_quantifier_body?(node.body) && body_result
+              outer_number = capture_numbers(node.body).first
+              outer_value = body_result.last[outer_number]
+              inner_captures = { outer_number => outer_value } if outer_number && outer_value
+            end
+            quantified_length = quantified_absence_length(node.body, characters, position, flags)
+            match_position = internal_start || position
+            maximum = if quantified_length
+                        match_position - cursor + quantified_length
+                      elsif length.zero? && match_position > cursor
                         characters.length - cursor
+                      elsif internal_alternative_index&.positive? && internal_start && internal_prefix.nil?
+                        internal_start - cursor
+                      elsif internal_end
+                        effective_length = internal_end - internal_start
+                        prefix_length = internal_prefix || 0
+                        suffix_length = length - prefix_length - effective_length
+                        if suffix_length.positive?
+                          internal_end - cursor - 1
+                        elsif prefix_zero_absence && internal_prefix&.positive? && effective_length.zero?
+                          0
+                        elsif prefix_zero_absence && internal_prefix&.zero? && effective_length.positive?
+                          internal_end - cursor - 1
+                        elsif internal_prefix_value && internal_probe && internal_prefix_value == internal_probe
+                          internal_end - cursor - 1
+                        elsif internal_prefix&.zero? || effective_length.zero?
+                          characters.length - cursor
+                        else
+                          internal_end - cursor - 1
+                        end
+                      elsif internal_start && internal_start > position + length
+                        internal_start - cursor - 1
                       else
-                        internal_end - cursor - 1
+                        match_position - cursor + length - 1
                       end
-                    elsif internal_start && internal_start > position + length
-                      internal_start - cursor - 1
-                    else
-                      match_position - cursor + length - 1
-                    end
-          maximum = [maximum, 0].max
-          return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
-        end
-        if failure_state
-          failure_captures = filter_nested_absence_captures(node.body, failure_state)
-          failure_captures = filter_quantifier_suffix_captures(node.body, failure_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
-          failure_captures = filter_outer_quantifier_suffix_captures(node.body, failure_captures, characters, flags)
-          failure_captures = filter_absence_capture_scope(node.body, failure_captures)
-          if cursor == characters.length
-            failure_captures.delete_if do |key, value|
-              key.is_a?(Integer) && value.is_a?(Array) && value[0] == value[1]
+            maximum = [maximum, 0].max
+            return maximum.downto(0).map { |candidate| [candidate, inner_captures] }
+          end
+          if failure_state
+            failure_captures = filter_nested_absence_captures(node.body, failure_state)
+            failure_captures = filter_quantifier_suffix_captures(node.body, failure_captures, characters, flags) if nested_quantifier_suffix_body?(node.body)
+            failure_captures = filter_outer_quantifier_suffix_captures(node.body, failure_captures, characters, flags)
+            failure_captures = filter_absence_capture_scope(node.body, failure_captures)
+            if cursor == characters.length
+              failure_captures.delete_if do |key, value|
+                key.is_a?(Integer) && value.is_a?(Array) && value[0] == value[1]
+              end
             end
+            maximum = characters.length - cursor
+            return maximum.downto(0).map { |length| [length, failure_captures] }
           end
           maximum = characters.length - cursor
-          return maximum.downto(0).map { |length| [length, failure_captures] }
+          maximum.downto(0).map { |length| [length, captures] }
+        ensure
+          @state.pop_frame if @state.current_frame.equal?(frame)
         end
-        maximum = characters.length - cursor
-        maximum.downto(0).map { |length| [length, captures] }
       end
       # rubocop:enable Metrics/BlockLength
 
@@ -4623,7 +4909,7 @@ module Onibi
       # Execute the two loops used by Onigmo's OP_ABSENT protocol.
       # Each probe uses the current absent end as its input boundary.
       def absence_bounded_probe_results(body, characters, cursor, captures, flags, preserve_failed_capture: false)
-        frame = ExecutionFrame.new(
+        frame = @state.new_frame(
           kind: :absence,
           absent_start: cursor,
           absent_end: characters.length,
@@ -4632,39 +4918,43 @@ module Onibi
           body_checkpoints: [],
           capture_checkpoints: []
         )
-        current_captures = captures
-        position = cursor
-        while position < frame.absent_end
-          frame.probe_position = position
-          bounded = characters[0...frame.absent_end]
-          results = node_results(body, bounded, position, captures, flags)
-          record_absence_checkpoint(frame, position, results, captures)
-          if results.empty?
-            current_captures = nil unless preserve_failed_capture
-          else
-            length, state = results.first
-            state = state.dup
-            state[:__match_probe] = position
-            prior_ambiguous = frame.capture_checkpoints.any? { |checkpoint| checkpoint[4] }
-            discard_capture = repeat_capture_discard_required?(body, results, state, length,
-                                                               prior_ambiguous)
-            frame.capture_checkpoints << [position, length, state.dup, discard_capture,
-                                          results.length > 1]
-            boundary = if length.zero? && nested_nullable_repeat_body?(body)
-                         position
-                       else
-                         position + length - 1
-                       end
-            frame.absent_end = [frame.absent_end, boundary].min
-            current_captures = state
+        @state.with_frame(frame) do
+          current_captures = captures
+          position = cursor
+          while position < frame.absent_end
+            frame.probe_position = position
+            bounded = characters[0...frame.absent_end]
+            results = node_results(body, bounded, position, captures, flags)
+            record_absence_checkpoint(frame, position, results, captures)
+            if results.empty?
+              current_captures = nil unless preserve_failed_capture
+            else
+              length, state = results.first
+              state = state.dup
+              state[:__match_probe] = position
+              prior_ambiguous = frame.capture_checkpoints.any? { |checkpoint| checkpoint[4] }
+              discard_capture = repeat_capture_discard_required?(body, results, state, length,
+                                                                 prior_ambiguous)
+              frame.capture_checkpoints << [position, length, state.dup, discard_capture,
+                                            results.length > 1]
+              boundary = if length.zero? && nested_nullable_repeat_body?(body)
+                           position
+                         else
+                           position + length - 1
+                         end
+              frame.absent_end = [frame.absent_end, boundary].min
+              current_captures = state
+            end
+            position += 1
           end
-          position += 1
-        end
 
-        state = (current_captures || captures).dup
-        state.delete_if { |key, _value| key.is_a?(Integer) } if frame.capture_checkpoints.last&.fetch(3) && !bounded_wrapper_capture?(body)
-        state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
-        [[frame.absent_end - cursor, state]]
+          state = (current_captures || captures).dup
+          state.delete_if { |key, _value| key.is_a?(Integer) } if frame.capture_checkpoints.last&.fetch(3) && !bounded_wrapper_capture?(body)
+          state.delete_if { |key, _value| key.is_a?(Symbol) && key.to_s.start_with?("__") }
+          [[frame.absent_end - cursor, state]]
+        ensure
+          @state.pop_frame if @state.current_frame.equal?(frame)
+        end
       end
 
       # OP_ABSENT_END restores a repeat frame after a body candidate fails.

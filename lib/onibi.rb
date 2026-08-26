@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "onibi/version"
+require_relative "onibi/encoding"
 require_relative "onibi/unicode_property_scripts"
 require_relative "onibi/unicode_property_categories"
 require_relative "onibi/unicode_properties"
@@ -21,6 +22,7 @@ require_relative "onibi/class_predicates_posix"
 require_relative "onibi/compiled_class_predicate"
 require_relative "onibi/ast"
 require_relative "onibi/input_view"
+require_relative "onibi/execution_state"
 require_relative "onibi/invocation_state"
 require_relative "onibi/parser/parser_widths"
 require_relative "onibi/parser/parser_assertions"
@@ -166,7 +168,7 @@ module Onibi
           else
             pattern = String.new(pattern) if pattern.is_a?(String)
             has_string = true
-            has_binary_string ||= pattern.is_a?(String) && pattern.encoding == Encoding::ASCII_8BIT
+            has_binary_string ||= pattern.is_a?(String) && Onibi::EncodingSupport.binary?(pattern.encoding)
             has_non_ascii_source ||= pattern.is_a?(String) && !pattern.ascii_only?
             escape(pattern)
           end
@@ -209,7 +211,7 @@ module Onibi
 
       def join_union_sources(sources)
         non_ascii_compatible = sources.filter_map do |source|
-          source.encoding unless source.encoding.ascii_compatible?
+          source.encoding unless Onibi::EncodingSupport.ascii_compatible?(source.encoding)
         end.uniq
         encoding = non_ascii_compatible.first
         return sources.join("|") unless encoding
@@ -269,7 +271,7 @@ module Onibi
       raise RegexpError, "invalid pattern encoding" unless @source.valid_encoding?
       raise RegexpError, "incompatible character encoding" if unicode_escape &&
                                                               source_encoding != Encoding::UTF_8 && fixed_encoding?
-      if no_encoding? && ((!@source.ascii_only? && @source.encoding != Encoding::ASCII_8BIT) ||
+      if no_encoding? && ((!@source.ascii_only? && !Onibi::EncodingSupport.binary?(@source.encoding)) ||
                           non_ascii_unicode_escape_pattern?)
         raise RegexpError, "non-ASCII pattern with no encoding"
       end
@@ -281,7 +283,7 @@ module Onibi
 
         @options |= FIXEDENCODING
       end
-      if @source.encoding == Encoding::ASCII_8BIT && property_names.any? &&
+      if Onibi::EncodingSupport.binary?(@source.encoding) && property_names.any? &&
          !property_names.all? { |name| Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII) }
         invalid_name = property_names.find do |name|
           !Onibi::UnicodeProperties.valid_for_encoding?(name, Encoding::US_ASCII)
@@ -293,8 +295,8 @@ module Onibi
 
       @options |= FIXEDENCODING if (!@source.ascii_only? || property_names.any?) && !no_encoding?
       @options |= FIXEDENCODING if non_ascii_escape_pattern? &&
-                                   (no_encoding? || @source.encoding != Encoding::US_ASCII)
-      @options |= FIXEDENCODING if @source.encoding != Encoding::US_ASCII && non_ascii_escape_present?
+                                   (no_encoding? || !Onibi::EncodingSupport.us_ascii?(@source.encoding))
+      @options |= FIXEDENCODING if !Onibi::EncodingSupport.us_ascii?(@source.encoding) && non_ascii_escape_present?
       @options |= FIXEDENCODING if no_encoding? && non_ascii_escape_present?
       @options |= FIXEDENCODING if non_ascii_unicode_escape_pattern?
       @timeout = normalize_timeout(timeout.nil? ? self.class.timeout : timeout)
@@ -461,22 +463,22 @@ module Onibi
       input_valid = String.instance_method(:valid_encoding?).bind_call(input)
       raise ArgumentError, "invalid byte sequence in #{string_encoding.name}" if (!@source.ascii_only? || !ascii_input) && !input_valid
 
-      if program.flags[:binary_escape] && !ascii_input && string_encoding != Encoding::ASCII_8BIT &&
-         !(@source.encoding == Encoding::US_ASCII && !no_encoding? &&
-           string_encoding == Encoding::ISO_8859_1)
-        if @source.encoding == Encoding::US_ASCII && !no_encoding? &&
-           [Encoding::UTF_8, Encoding::EUC_JP, Encoding::Windows_31J].include?(string_encoding)
+      if program.flags[:binary_escape] && !ascii_input && !Onibi::EncodingSupport.binary?(string_encoding) &&
+         !(Onibi::EncodingSupport.us_ascii?(@source.encoding) && !no_encoding? &&
+           Onibi::EncodingSupport.iso_8859_1?(string_encoding))
+        if Onibi::EncodingSupport.us_ascii?(@source.encoding) && !no_encoding? &&
+           Onibi::EncodingSupport.binary_escape_multibyte?(string_encoding)
           raise ArgumentError, "regexp preprocess failed: too short escaped multibyte character"
         end
 
         raise_incompatible_encoding(input)
       end
       raise_incompatible_encoding(input) if fixed_encoding? && !ascii_input && string_encoding != encoding
-      raise_incompatible_encoding(input) if !encoding.ascii_compatible? && string_encoding != encoding
+      raise_incompatible_encoding(input) if Onibi::EncodingSupport.non_ascii_compatible?(encoding) && string_encoding != encoding
       # MRI does not allow an ASCII-compatible regexp to run on a
       # non-ASCII-compatible string. Such strings use a code-unit width that
       # the regexp encoding must declare explicitly (UTF-16 or UTF-32).
-      raise_incompatible_encoding(input) if !string_encoding.ascii_compatible? && string_encoding != encoding
+      raise_incompatible_encoding(input) if Onibi::EncodingSupport.non_ascii_compatible?(string_encoding) && string_encoding != encoding
 
       input_bytesize = String.instance_method(:bytesize).bind_call(input)
       raise TimeoutError, "regexp match timeout" if @timeout && @timeout <= 0.01 && input_bytesize > 100_000 && !program.flags[:literal_only]
@@ -571,7 +573,7 @@ module Onibi
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
       rendered = "(?#{scope}:#{body})"
-      encoding.ascii_compatible? ? rendered : rendered.encode(encoding)
+      Onibi::EncodingSupport.ascii_compatible?(encoding) ? rendered : rendered.encode(encoding)
     end
 
     def to_s_without_scope
@@ -579,7 +581,7 @@ module Onibi
       disabled = ("mix".chars - enabled.chars).join
       scope = disabled.empty? ? enabled : "#{enabled}-#{disabled}"
       rendered = "(?#{scope}:#{source_for_display.gsub("/", '\\/')})"
-      encoding.ascii_compatible? ? rendered : rendered.encode(encoding)
+      Onibi::EncodingSupport.ascii_compatible?(encoding) ? rendered : rendered.encode(encoding)
     end
 
     def inspect
@@ -591,13 +593,13 @@ module Onibi
     private
 
     def source_for_display
-      @source.encoding.ascii_compatible? ? source : source.encode(Encoding::UTF_8)
+      Onibi::EncodingSupport.ascii_compatible?(@source.encoding) ? source : source.encode(Encoding::UTF_8)
     end
 
     def inspect_source
-      return inspect_non_ascii_compatible_source unless @source.encoding.ascii_compatible?
+      return inspect_non_ascii_compatible_source unless Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
 
-      if @source.encoding == Encoding::ASCII_8BIT
+      if Onibi::EncodingSupport.binary?(@source.encoding)
         return @source.bytes.map do |byte|
           if byte == 0x2f
             "\\/"
@@ -608,16 +610,16 @@ module Onibi
       end
 
       source_for_display.each_char.map do |character|
-        if [Encoding::UTF_8, Encoding::US_ASCII].include?(@source.encoding)
+        if Onibi::EncodingSupport.utf8?(@source.encoding) || Onibi::EncodingSupport.us_ascii?(@source.encoding)
           next character == "/" ? "\\/" : character
         end
 
-        if @source.encoding.ascii_compatible? && character.ord < 128
+        if Onibi::EncodingSupport.ascii_compatible?(@source.encoding) && character.ord < 128
           next character == "/" ? "\\/" : character
         end
 
         codepoint = character.codepoints.first
-        next format("\\x{%X}", codepoint) if @source.encoding.ascii_compatible?
+        next format("\\x{%X}", codepoint) if Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
 
         if codepoint < 128
           character == "/" ? "\\/" : character
@@ -676,9 +678,9 @@ module Onibi
     end
 
     def raise_incompatible_encoding(input)
-      pattern_encoding = encoding == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : encoding.name
+      pattern_encoding = Onibi::EncodingSupport.binary?(encoding) ? "BINARY (ASCII-8BIT)" : encoding.name
       input_encoding_value = String.instance_method(:encoding).bind_call(input)
-      input_encoding = input_encoding_value == Encoding::ASCII_8BIT ? "BINARY (ASCII-8BIT)" : input_encoding_value.name
+      input_encoding = Onibi::EncodingSupport.binary?(input_encoding_value) ? "BINARY (ASCII-8BIT)" : input_encoding_value.name
       raise Encoding::CompatibilityError,
             "incompatible encoding regexp match (#{pattern_encoding} regexp with #{input_encoding} string)"
     end
@@ -725,7 +727,7 @@ module Onibi
         @source = @source.dup.force_encoding(Encoding::US_ASCII)
         return
       end
-      return unless @source.encoding.ascii_compatible?
+      return unless Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
       return if fixed_encoding? || !@source.ascii_only?
 
       @source = @source.dup.force_encoding(Encoding::US_ASCII)
@@ -860,8 +862,8 @@ module Onibi
     end
 
     def bytecode_match(input, start, program = bytecode_program)
-      byte_input = @input_encoding == Encoding::ASCII_8BIT ||
-                   (program.flags[:binary_escape] && @input_encoding == Encoding::ISO_8859_1)
+      byte_input = Onibi::EncodingSupport.byte_mode?(@input_encoding) ||
+                   (program.flags[:binary_escape] && Onibi::EncodingSupport.iso_8859_1?(@input_encoding))
       input_view = Onibi::InputView.new(input, byte_mode: byte_input)
       result = Onibi::IRGen::YARVIR.execute_with_captures(program, input, start, input_view: input_view)
       return nil unless result
@@ -877,8 +879,8 @@ module Onibi
           offsets[index - 1] = value if index
         end
         unless @ascii_input
-          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if @input_encoding == Encoding::ASCII_8BIT
-          if @input_encoding == Encoding::UTF_8 && !program.flags[:linebreak_escape] && !program.flags[:unicode_capture_byte_offsets]
+          return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self) if Onibi::EncodingSupport.binary?(@input_encoding)
+          if Onibi::EncodingSupport.utf8?(@input_encoding) && !program.flags[:linebreak_escape] && !program.flags[:unicode_capture_byte_offsets]
             return Onibi::MatchData.from_offsets(input, range[0], range[1], offsets, result_names, self)
           end
 
@@ -892,7 +894,7 @@ module Onibi
       end
 
       unless @ascii_input
-        return Onibi::MatchData.captureless(input, range[0], range[1], self) if @input_encoding == Encoding::ASCII_8BIT
+        return Onibi::MatchData.captureless(input, range[0], range[1], self) if Onibi::EncodingSupport.binary?(@input_encoding)
 
         byte_positions = character_byte_positions(input, input_view)
         to_bytes = ->(position) { byte_positions.fetch(position) }
@@ -933,7 +935,7 @@ module Onibi
                         named_capture_numbers: raw_named_captures,
                         unicode_capture_byte_offsets: unicode_capture_byte_offsets,
                         binary_escape: binary_escape_pattern?,
-                        ascii_escape_bytes: @source.encoding == Encoding::US_ASCII &&
+                        ascii_escape_bytes: Onibi::EncodingSupport.us_ascii?(@source.encoding) &&
                                             non_ascii_escape_present?,
                         linebreak_escape: analysis_source.include?("\\R"),
                         nullable: minimum_match_width(@ast).zero?,
@@ -949,9 +951,10 @@ module Onibi
 
     def binary_escape_pattern?
       return false unless @source.ascii_only? &&
-                          (no_encoding? || [Encoding::US_ASCII, Encoding::ASCII_8BIT].include?(@source.encoding))
+                          (no_encoding? || Onibi::EncodingSupport.ascii?(@source.encoding) ||
+                           Onibi::EncodingSupport.binary?(@source.encoding))
 
-      return non_ascii_escape_present? if @source.encoding == Encoding::ASCII_8BIT
+      return non_ascii_escape_present? if Onibi::EncodingSupport.binary?(@source.encoding)
 
       non_ascii_escape_pattern?
     end
@@ -1062,7 +1065,8 @@ module Onibi
     end
 
     def analysis_source
-      @analysis_source ||= if @source.encoding == Encoding::ASCII_8BIT || @source.encoding.ascii_compatible?
+      @analysis_source ||= if Onibi::EncodingSupport.binary?(@source.encoding) ||
+                              Onibi::EncodingSupport.ascii_compatible?(@source.encoding)
                              @source
                            else
                              @source.encode(Encoding::UTF_8)
