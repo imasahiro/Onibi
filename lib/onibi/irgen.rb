@@ -1597,8 +1597,13 @@ module Onibi
       def semantic_predicate_leaf_only?(node)
         return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
 
-        node.parts.first.is_a?(SemanticBytecode::CharacterClass) ||
-          node.parts.first.is_a?(SemanticBytecode::Property)
+        leaf = node.parts.first
+        return true if leaf.is_a?(SemanticBytecode::CharacterClass) ||
+                       leaf.is_a?(SemanticBytecode::Property)
+
+        leaf.is_a?(SemanticBytecode::Escape) &&
+          %i[digit non_digit word not_word space not_space horizontal_space
+             not_horizontal_space linebreak grapheme].include?(leaf.kind)
       end
 
       def semantic_contains_non_ascii_operand?(node)
