@@ -2287,16 +2287,23 @@ module Onibi
         named_reference = reference.named && reference.identifier == capture.name
         return false unless numbered_reference || named_reference
 
-        literal = capture.body
-        literal = literal.parts.first if literal.is_a?(SemanticBytecode::Sequence) && literal.parts.one?
-        literal.is_a?(SemanticBytecode::Literal) && literal.value.each_char.one? &&
-          (literal.value.ascii_only? ||
-           (literal.value.encoding == Encoding::UTF_8 && !literal.value.ascii_only? &&
-            literal.value == literal.value.upcase &&
-            literal.casefold.to_s.each_char.one? &&
-            Onibi::UnicodeProperties.reverse_casefold_variants(literal.casefold).all? do |variant|
-              variant.each_char.one?
-            end))
+        semantic_capture_backreference_body_safe?(capture.body)
+      end
+
+      def semantic_capture_backreference_body_safe?(node)
+        node = node.parts.first if node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        return node.branches.all? { |branch| semantic_capture_backreference_body_safe?(branch) } \
+          if node.is_a?(SemanticBytecode::Alternation)
+
+        return false unless node.is_a?(SemanticBytecode::Literal)
+        return false unless node.value.each_char.one?
+        return true if node.value.ascii_only?
+        return false unless node.value.encoding == Encoding::UTF_8 && node.value == node.value.upcase
+        return false unless node.casefold.to_s.each_char.one?
+
+        Onibi::UnicodeProperties.reverse_casefold_variants(node.casefold).all? do |variant|
+          variant.each_char.one?
+        end
       end
 
       def semantic_scoped_capture_conditional_safe?(node)
