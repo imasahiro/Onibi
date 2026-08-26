@@ -745,6 +745,13 @@ module Onibi
             return false unless node.maximum.nil? || node.maximum >= node.minimum
             return false unless %i[greedy lazy].include?(node.mode)
 
+            if node.minimum.zero? && node.maximum == 1
+              body = node.expression.body
+              body = body.parts.first if body.is_a?(Sequence) && body.parts.one?
+              return true if body.is_a?(Quantifier) && body.minimum.zero? && body.maximum == 1 &&
+                             body.expression.is_a?(Literal)
+            end
+
             repeatable_body?(node.expression.body) && supported?(node.expression)
           end
 
