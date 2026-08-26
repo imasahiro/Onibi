@@ -183,12 +183,22 @@ module Onibi
             return nil unless instruction.opcode == :fold_boundary
 
             literal = instruction.operand.is_a?(Integer) ? operand(instruction.operand) : nil
-            next_pc = instruction.target
-            if next_pc.nil?
-              next_pc = (program_counter + 1...instructions.length).find do |index|
-                opcode_at(index) != :scope_end
+            next_pc = instruction.target || program_counter + 1
+            8.times do
+              break if next_pc >= instructions.length
+
+              next_instruction = instruction_at(next_pc)
+              if next_instruction.opcode == :scope_end
+                next_pc += 1
+              elsif next_instruction.opcode == :jump && next_instruction.target.is_a?(Integer) &&
+                    next_instruction.target > program_counter
+                next_pc = next_instruction.target
+              else
+                break
               end
+              break if next_pc >= instructions.length
             end
+            next_pc = nil if next_pc >= instructions.length
             next_instruction = next_pc && instruction_at(next_pc)
             next_literal = if next_instruction&.operand.is_a?(Integer) &&
                               %i[consume fold_boundary].include?(next_instruction.opcode)
