@@ -526,18 +526,9 @@ module Onibi
               @flat_program.opcode_at(index) != :scope_end
             end
             next_instruction = next_pc && @flat_program.instruction_at(next_pc)
-            if node.is_a?(SemanticBytecode::Literal) && node.fold_boundary_sensitive
-              anchor = if next_instruction&.opcode == :assert_anchor
-                         @flat_program.operand(next_instruction.operand)
-                       elsif next_instruction&.opcode == :assert
-                         assertion = @flat_program.operand(next_instruction.operand)
-                         assertion.flat_atoms&.first if assertion.is_a?(SemanticBytecode::Assertion) &&
-                                                        assertion.kind == :positive
-                       end
-              if anchor.is_a?(SemanticBytecode::Anchor) && anchor.kind == :anchor_absolute_end
-                matches = matches.reject { |length, _inner| length == node.source_width }
-              end
-            end
+            matches = reject_flat_fold_boundary_matches(
+              matches, instruction.opcode, node, next_instruction
+            )
             matches.reverse_each do |length, inner|
               next_state = state.merge(inner)
               if node.is_a?(SemanticBytecode::Escape) && node.kind == :match_reset
@@ -796,6 +787,23 @@ module Onibi
         when :assert_anchor then :test_anchor
         else semantic_opcode(node)
         end
+      end
+
+      def reject_flat_fold_boundary_matches(matches, opcode, node, next_instruction)
+        return matches unless opcode == :fold_boundary
+        return matches unless node.is_a?(SemanticBytecode::Literal)
+
+        anchor = if next_instruction&.opcode == :assert_anchor
+                   @flat_program.operand(next_instruction.operand)
+                 elsif next_instruction&.opcode == :assert
+                   assertion = @flat_program.operand(next_instruction.operand)
+                   assertion.flat_atoms&.first if assertion.is_a?(SemanticBytecode::Assertion) &&
+                                                  assertion.kind == :positive
+                 end
+        return matches unless anchor.is_a?(SemanticBytecode::Anchor) &&
+                              anchor.kind == :anchor_absolute_end
+
+        matches.reject { |length, _inner| length == node.source_width }
       end
 
       # Match a compile-time flat atom list without entering tree_results.
