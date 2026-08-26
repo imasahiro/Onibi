@@ -1951,6 +1951,9 @@ module Onibi
       def reverse_fold_optional_barrier?(node, next_node, suffix_node, characters, cursor, flags)
         if node.is_a?(SemanticBytecode::OptionGroup) && node.body.is_a?(SemanticBytecode::Sequence)
           inner = node.body.parts
+          return reverse_fold_optional_barrier?(inner.first, next_node, suffix_node, characters, cursor,
+                                                flags.merge(ignorecase: node.ignorecase)) if inner.one?
+
           return reverse_fold_optional_barrier?(inner[0], inner[1], suffix_node || next_node, characters, cursor,
                                                 flags.merge(ignorecase: node.ignorecase))
         end
@@ -1958,14 +1961,23 @@ module Onibi
         return false unless node.is_a?(SemanticBytecode::Quantifier)
         return false unless node.minimum.zero? && node.maximum == 1 && node.mode == :greedy
         return false unless next_node.is_a?(SemanticBytecode::Literal)
-        return false unless suffix_node
 
         expression = boundary_operand(node.expression)
         return false unless expression.is_a?(SemanticBytecode::Literal)
         return false unless expression.value.each_char.one? && next_node.value.each_char.one?
-        return false unless expression.value.downcase(:fold) == next_node.value.downcase(:fold)
 
         source = characters[cursor]
+        if expression.value.encoding == Encoding::UTF_8 && !expression.value.ascii_only? &&
+           expression.value.downcase(:fold).each_char.one? &&
+           Onibi::UnicodeProperties.reverse_casefold_variants(expression.value.downcase(:fold)).empty? &&
+           source == expression.value &&
+           next_node.value.downcase(:fold) != expression.value.downcase(:fold)
+          return true
+        end
+
+        return false unless suffix_node
+        return false unless expression.value.downcase(:fold) == next_node.value.downcase(:fold)
+
         return false if suffix_node.is_a?(SemanticBytecode::Anchor) &&
                         expression.fold_policy&.fetch(:sequence_source, nil) != :allow_repeated_variant
 
