@@ -1922,10 +1922,14 @@ module Onibi
       end
 
       def semantic_scoped_property_quantifier_safe?(node)
-        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.any?
 
-        quantifier = node.parts.first
+        quantifier, *suffix = node.parts
         return false unless quantifier.is_a?(SemanticBytecode::Quantifier)
+        return false unless quantifier.minimum.positive?
+        return false unless suffix.all? do |part|
+          part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
+        end
 
         semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([quantifier.expression]))
       end
