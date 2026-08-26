@@ -1294,6 +1294,7 @@ module Onibi
                  (anchor_operand = boundary_operand(part))
                 anchor_operand = anchor_operand.parts.last if anchor_operand.is_a?(SemanticBytecode::Sequence)
                 if anchor_operand.is_a?(SemanticBytecode::Literal) &&
+                   !anchor_operand.value.match?(/\p{M}/) &&
                    anchor_operand.fold_policy&.fetch(:anchor_source, nil) == :fold_group_variant &&
                    Onibi::UnicodeProperties.reverse_casefold_variants(anchor_operand.value.downcase(:fold)).include?(anchor_operand.value) &&
                    characters[cursor + consumed - 1] == anchor_operand.value
@@ -1333,11 +1334,12 @@ module Onibi
               if strict_end_anchor?(parts[index]) &&
                  (alternative = boundary_operand(part)).is_a?(SemanticBytecode::Alternation)
                 source = characters[cursor + consumed - 1]
-                if source && alternative.fold_policy&.fetch(:anchor_alternation, nil) == :reject_reverse_variant &&
+                if source && !source.match?(/\p{M}/) &&
+                   alternative.fold_policy&.fetch(:anchor_alternation, nil) == :reject_reverse_variant &&
                    alternative.branches.any? do |branch|
                      operand = boundary_operand(branch)
                      operand.is_a?(SemanticBytecode::Literal) &&
-                     casefold_equal?(operand.value, source)
+                     Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source)
                    end
                   part_results = []
                 end
@@ -2780,6 +2782,7 @@ module Onibi
         return true if policy[:anchor_source] == :fold_group_variant &&
                        source != operand.value &&
                        !source.match?(/\p{M}/) &&
+                       Onibi::UnicodeProperties.reverse_casefold_variants(operand.value.downcase(:fold)).include?(source) &&
                        source.downcase(:fold) == operand.value.downcase(:fold)
         return false if policy[:anchor_source] == :fold_group_variant && source == operand.value
 
