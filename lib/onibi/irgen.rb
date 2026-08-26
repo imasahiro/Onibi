@@ -602,7 +602,9 @@ module Onibi
             when CharacterClass
               node.casefolds.empty? &&
                 node.folded_characters.all? { |character| character.each_char.count == 1 } &&
-                node.fold_boundaries.empty?
+                node.fold_boundaries.values.compact.all? do |boundary|
+                  boundary[:kind] == :simple_fold_source
+                end
             when Property
               fold_invariant_property?(node)
             when Group, AtomicGroup, OptionGroup
@@ -1438,6 +1440,7 @@ module Onibi
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_full_fold_class_only?(semantic_root) &&
+                        !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
@@ -1459,6 +1462,7 @@ module Onibi
         return false if flags[:ignorecase] && semantic_contains_full_fold_sequence?(semantic_root) &&
                         !semantic_full_fold_literal_only?(semantic_root)
         return false if semantic_root && semantic_scoped_ignorecase_non_ascii_unsafe?(semantic_root) &&
+                        !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
@@ -1467,8 +1471,10 @@ module Onibi
         return false if semantic_root && semantic_contains_anchor_assertion?(semantic_root) &&
                         !semantic_boundary_fold_lookahead_end_safe?(semantic_root) &&
                         !semantic_trailing_anchor_assertion_safe?(semantic_root)
+        return false if semantic_root && semantic_scoped_ascii_class_with_suffix?(semantic_root)
         return false if semantic_root && flags[:encoding] &&
                         ![Encoding::UTF_8, Encoding::ASCII_8BIT].include?(flags[:encoding]) &&
+                        !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         semantic_contains_non_ascii_operand?(semantic_root)
 
         !semantic_root.nil?
@@ -1820,6 +1826,28 @@ module Onibi
           semantic_scoped_casefold_predicate_safe?(node.body)
         else
           false
+        end
+      end
+
+      def semantic_scoped_ascii_class_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.one?
+
+        group = node.parts.first
+        return false unless group.is_a?(SemanticBytecode::OptionGroup) && group.ignorecase
+
+        body = group.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        body.is_a?(SemanticBytecode::CharacterClass) && body.casefolds.empty? &&
+          body.folded_characters.all? { |character| character.each_char.count == 1 } &&
+          body.fold_boundaries.values.compact.all? { |boundary| boundary[:kind] == :simple_fold_source }
+      end
+
+      def semantic_scoped_ascii_class_with_suffix?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
+
+        node.parts.any? do |part|
+          part.is_a?(SemanticBytecode::OptionGroup) && part.ignorecase &&
+            semantic_scoped_ascii_class_safe?(SemanticBytecode::Sequence.new([part]))
         end
       end
 
