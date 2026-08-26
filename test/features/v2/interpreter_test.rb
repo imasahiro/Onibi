@@ -344,12 +344,16 @@ class InterpreterTest < Minitest::Test
       probe_position: 1,
       possible_points: [],
       body_checkpoints: [],
-      capture_checkpoints: []
+      capture_checkpoints: [],
+      branch_checkpoints: [[1, 0, 1]],
+      preferred_branch: 1
     )
 
     assert_instance_of Onibi::ExecutionState::AbsenceFrame, frame
     assert_equal 4, frame.resume_pc
     assert_equal 7, frame.body_pc
+    assert_equal [[1, 0, 1]], frame.branch_checkpoints
+    assert_equal 1, frame.preferred_branch
     assert_equal frame, state.current_frame
   end
 

@@ -49,6 +49,8 @@ module Onibi
       :possible_points,
       :body_checkpoints,
       :capture_checkpoints,
+      :branch_checkpoints,
+      :preferred_branch,
       keyword_init: true
     ) do
       def scope_start
@@ -326,7 +328,8 @@ module Onibi
     end
 
     def new_absence_frame(**attributes)
-      AbsenceFrame.new(kind: :absence, **attributes)
+      AbsenceFrame.new(kind: :absence,
+                       branch_checkpoints: [], preferred_branch: nil, **attributes)
     end
 
     def push_absence_frame(**attributes)
