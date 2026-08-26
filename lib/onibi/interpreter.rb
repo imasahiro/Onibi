@@ -299,7 +299,8 @@ module Onibi
         def new(program, input_view: nil)
           return super unless self == Executor
 
-          flat = program.instructions.any? { |instruction| instruction.opcode == :semantic_flat }
+          flat = program.instructions.any? { |instruction| instruction.opcode == :semantic_flat } &&
+                 !program.instructions.any? { |instruction| instruction.opcode == :semantic_match }
           (flat ? FlatExecutor : CompatibilityExecutor).new(program, input_view: input_view)
         end
       end

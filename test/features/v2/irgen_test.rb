@@ -272,6 +272,20 @@ class V2IRGenTest < Minitest::Test
     refute executor.instance_variable_defined?(:@semantic_entry)
   end
 
+  def test_retained_semantic_tree_selects_compatibility_executor
+    root = Onibi::IRGen::YARVIR::SemanticBytecode.compile(Onibi::Parser.parse("a").ast)
+    semantic_program = Onibi::IRGen::YARVIR::SemanticBytecode.lower(root)
+    program = Onibi::IRGen::YARVIR::Program.new(
+      instructions: [
+        Onibi::IRGen::YARVIR::Instruction.new(opcode: :semantic_match, operand: semantic_program),
+        Onibi::IRGen::YARVIR::Instruction.new(opcode: :semantic_flat, operand: semantic_program.flat_program)
+      ]
+    )
+
+    assert_instance_of Onibi::Interpreter::CompatibilityExecutor,
+                       Onibi::Interpreter::Executor.new(program)
+  end
+
   def test_flat_call_return_uses_execution_state_frames
     regexp = Onibi::Regexp.new("(?<x>a)\\g<x>")
     executor = Onibi::Interpreter::Executor.new(regexp.send(:bytecode_program))
