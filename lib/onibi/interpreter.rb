@@ -4133,10 +4133,11 @@ module Onibi
               next
             end
 
-            preferred = if frame.preferred_branch && results.any? { |_candidate, state|
-                            state[:__match_alternative_index] == frame.preferred_branch
+            preferred_branch = frame.preferred_branch_at(position) || frame.preferred_branch
+            preferred = if preferred_branch && results.any? { |_candidate, state|
+                            state[:__match_alternative_index] == preferred_branch
                           }
-                          results.find { |_candidate, state| state[:__match_alternative_index] == frame.preferred_branch }
+                          results.find { |_candidate, state| state[:__match_alternative_index] == preferred_branch }
                         elsif results.any? { |_candidate, state| state.key?(:__match_alternative) }
                           results.find { |_candidate, state| !state.key?(:__match_start) }
                         end

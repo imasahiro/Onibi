@@ -125,6 +125,14 @@ module Onibi
       def record_capture_checkpoint(position, length, state, discard_capture, ambiguous)
         capture_checkpoints << [position, length, state.dup, discard_capture, ambiguous]
       end
+
+      def branch_checkpoints_at(position)
+        branch_checkpoints.select { |checkpoint| checkpoint[0] == position }
+      end
+
+      def preferred_branch_at(position)
+        branch_checkpoints_at(position).find { |_point, _branch, length| length.positive? }&.fetch(1)
+      end
     end
 
     attr_accessor :cursor, :search_origin, :steps
