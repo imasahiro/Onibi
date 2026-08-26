@@ -1900,14 +1900,16 @@ module Onibi
       end
 
       def semantic_scoped_property_suffix_safe?(node)
-        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length > 1
 
-        scope, suffix = node.parts
+        scope, *suffix = node.parts
         return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
         body = scope.body
         body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
         return false unless body.is_a?(SemanticBytecode::Property)
-        return false unless suffix.is_a?(SemanticBytecode::Literal) && suffix.value.ascii_only?
+        return false unless suffix.all? do |part|
+          part.is_a?(SemanticBytecode::Literal) && part.value.ascii_only?
+        end
 
         semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([scope]))
       end

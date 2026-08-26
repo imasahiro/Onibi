@@ -568,6 +568,15 @@ class InterpreterTest < Minitest::Test
                  regexp.match("ſx")&.to_a
   end
 
+  def test_scoped_unicode_property_multiple_ascii_suffixes_uses_flat_vm
+    regexp = Onibi::Regexp.new("(?i:\\p{Letter})xy")
+    program = regexp.send(:bytecode_program)
+
+    refute(program.instructions.any? { |instruction| instruction.opcode == :semantic_match })
+    assert_equal ::Regexp.new("(?i:\\p{Letter})xy").match("ſxy")&.to_a,
+                 regexp.match("ſxy")&.to_a
+  end
+
   def test_noencoding_byte_escape_uses_flat_vm
     regexp = Onibi::Regexp.new("\\xFF", Onibi::Regexp::NOENCODING)
     program = regexp.send(:bytecode_program)
