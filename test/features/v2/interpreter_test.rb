@@ -40,7 +40,7 @@ class InterpreterTest < Minitest::Test
     assert_equal :complement_of_wrapped_body, absence.fetch(:language)
     assert_equal ".* body .*", absence.fetch(:wrapped_language)
     assert_equal :ordered_body_candidates, absence.fetch(:preserves)
-    assert_equal :absent_frame, absence.fetch(:local)
+    assert_equal :execution_frame, absence.fetch(:local)
     assert_equal :probe_with_bounded_end, absence.fetch(:transition)
     assert_equal :repeat_frame_state, absence.fetch(:capture_checkpoint)
   end
