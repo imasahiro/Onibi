@@ -1331,12 +1331,15 @@ module Onibi
                   next_state.delete(:__group_expanded_literal_value)
                 end
                 if part.is_a?(SemanticBytecode::Quantifier) && part.minimum.zero? && length.zero? &&
-                   state_captures[:__simple_fold_alternation_source] &&
+                   (state_captures[:__simple_fold_alternation_source] ||
+                    state_captures[:__expanded_fold_alternation_source]) &&
                    boundary_operand(part.expression).is_a?(SemanticBytecode::Literal) &&
-                   characters[cursor]&.downcase(:fold) ==
-                   boundary_operand(part.expression).value.downcase(:fold)
+                   (state_captures[:__expanded_fold_alternation_source] ||
+                    characters[cursor]&.downcase(:fold) ==
+                    boundary_operand(part.expression).value.downcase(:fold))
                   next_state = next_state.dup
                   next_state.delete(:__simple_fold_alternation_source)
+                  next_state.delete(:__expanded_fold_alternation_source)
                 end
                 if optional_order == :zero_only && length.zero?
                   next_state = next_state.dup
@@ -1419,7 +1422,7 @@ module Onibi
                  characters[cursor] != branch_operand.value &&
                  characters[cursor] && !characters[cursor].match?(/\p{M}/) &&
                  characters[cursor].downcase(:fold) == branch_operand.value.downcase(:fold)
-                marked[:__simple_fold_alternation_source] = true
+                marked[:__expanded_fold_alternation_source] = true
               end
               if branch_marker == :__fold_alternation_operand && state[:__expanded_literal_source] &&
                  !distinct_alternative &&
