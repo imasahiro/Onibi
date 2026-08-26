@@ -82,6 +82,7 @@ module Onibi
       def checkpoints=(value)
         self.body_checkpoints = value
       end
+
     end
     # Dedicated probe frame for absence execution. It keeps unbounded probe
     # state separate from ordinary scope frames before flat lowering.
@@ -113,6 +114,12 @@ module Onibi
 
       def checkpoints=(value)
         self.body_checkpoints = value
+      end
+
+      def restorable_capture_checkpoint(require_ambiguous: false)
+        capture_checkpoints.reverse.find do |checkpoint|
+          !checkpoint[3] && (!require_ambiguous || checkpoint[4])
+        end
       end
     end
 

@@ -4237,7 +4237,7 @@ module Onibi
       end
 
       def absence_capture_checkpoint_state(frame, fallback)
-        checkpoint = frame.capture_checkpoints.reverse.find { |entry| !entry[3] }
+        checkpoint = frame.restorable_capture_checkpoint
         checkpoint ? checkpoint[2].dup : fallback.dup
       end
 
