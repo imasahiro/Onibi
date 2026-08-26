@@ -1463,6 +1463,7 @@ module Onibi
                         !semantic_full_fold_literal_only?(semantic_root) &&
                         !semantic_fused_full_fold_literal?(semantic_root) &&
                         !semantic_full_fold_class_only?(semantic_root) &&
+                        !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_simple_casefold_safe?(semantic_root) &&
                         !semantic_fixed_casefold_sequence_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
@@ -1476,6 +1477,7 @@ module Onibi
                         !semantic_scoped_ascii_class_safe?(semantic_root) &&
                         !semantic_scoped_full_fold_class_safe?(semantic_root) &&
                         !semantic_scoped_property_safe?(semantic_root) &&
+                        !semantic_scoped_property_suffix_safe?(semantic_root) &&
                         !semantic_terminal_boundary_fold_safe?(semantic_root) &&
                         !semantic_boundary_fold_anchor_safe?(semantic_root) &&
                         !semantic_boundary_fold_start_anchor_safe?(semantic_root) &&
@@ -1895,6 +1897,19 @@ module Onibi
           )
       rescue RegexpError, KeyError
         false
+      end
+
+      def semantic_scoped_property_suffix_safe?(node)
+        return false unless node.is_a?(SemanticBytecode::Sequence) && node.parts.length == 2
+
+        scope, suffix = node.parts
+        return false unless scope.is_a?(SemanticBytecode::OptionGroup) && scope.ignorecase
+        body = scope.body
+        body = body.parts.first if body.is_a?(SemanticBytecode::Sequence) && body.parts.one?
+        return false unless body.is_a?(SemanticBytecode::Property)
+        return false unless suffix.is_a?(SemanticBytecode::Literal) && suffix.value.ascii_only?
+
+        semantic_scoped_property_safe?(SemanticBytecode::Sequence.new([scope]))
       end
 
       def fold_invariant_property?(node)
