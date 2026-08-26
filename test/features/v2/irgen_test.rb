@@ -158,6 +158,13 @@ class V2IRGenTest < Minitest::Test
     end
   end
 
+  def test_flat_compiler_lowers_nested_variable_capture_absence
+    source = "(?~((a|ab){2,}))"
+    program = Onibi::Regexp.new(source).send(:bytecode_program)
+
+    refute program.instructions.any? { |item| item.opcode == :semantic_match }
+  end
+
   def test_flat_program_does_not_embed_legacy_semantic_command_stream
     program = Onibi::Regexp.new("(a|b)").send(:bytecode_program)
     flat = program.instructions.find { |item| item.opcode == :semantic_flat }.operand
