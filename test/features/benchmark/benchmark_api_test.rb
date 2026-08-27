@@ -200,6 +200,14 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.match?("xabc")
   end
 
+  def test_pipeline_tokenizes_escapes_as_single_semantic_units
+    pipeline = Onibi::Regexp.new("\\.\\d\\A").pipeline
+
+    assert_equal(%i[literal escape anchor], pipeline[:tokens].map { |token| token[:kind] })
+    assert_equal([46, 100, 65], pipeline[:tokens].map { |token| token[:byte] })
+    assert_equal(%i[CHAR ESCAPE ASSERT], pipeline[:gir].map { |op| op[:op] })
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

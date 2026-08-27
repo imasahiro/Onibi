@@ -138,23 +138,28 @@ static VALUE onibi_pipeline(VALUE self) {
   VALUE out = rb_hash_new();
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   VALUE tokens = rb_ary_new();
+  /* One escape is one semantic token.  Do not let an escaped metacharacter
+     enter the AST as syntax. */
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     VALUE token = rb_hash_new();
     const char *kind = "literal";
-    if (RSTRING_PTR(src)[i] == '[') kind = "class_start";
-    else if (RSTRING_PTR(src)[i] == ']') kind = "class_end";
-    else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
-    else if (RSTRING_PTR(src)[i] == '(') kind = "group_start";
-    else if (RSTRING_PTR(src)[i] == ')') kind = "group_end";
-    else if (strchr("*+?{} ,", RSTRING_PTR(src)[i])) kind = "quantifier";
-    else if (RSTRING_PTR(src)[i] == '.') kind = "wildcard";
-    else if (RSTRING_PTR(src)[i] == '^' || RSTRING_PTR(src)[i] == '$' ||
-             (RSTRING_PTR(src)[i] == '\\' && i + 1 < RSTRING_LEN(src) &&
-              (RSTRING_PTR(src)[i + 1] == 'A' || RSTRING_PTR(src)[i + 1] == 'z')) ||
-             (i > 0 && RSTRING_PTR(src)[i - 1] == '\\' &&
-              (RSTRING_PTR(src)[i] == 'A' || RSTRING_PTR(src)[i] == 'z'))) kind = "anchor";
+    unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
+    if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
+      unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
+      byte = escaped;
+      if (strchr("AzZG", escaped) != NULL) kind = "anchor";
+      else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
+      i++;
+    } else if (byte == '[') kind = "class_start";
+    else if (byte == ']') kind = "class_end";
+    else if (byte == '|') kind = "alternation";
+    else if (byte == '(') kind = "group_start";
+    else if (byte == ')') kind = "group_end";
+    else if (strchr("*+?{} ,", byte) != NULL) kind = "quantifier";
+    else if (byte == '.') kind = "wildcard";
+    else if (byte == '^' || byte == '$') kind = "anchor";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
-    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
+    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_ary_push(tokens, token);
   }
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
@@ -173,6 +178,7 @@ static VALUE onibi_pipeline(VALUE self) {
     ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
     const char *type = "character_class";
     if (kind == rb_intern("literal")) type = "literal";
+    else if (kind == rb_intern("escape")) type = "escape";
     else if (kind == rb_intern("wildcard")) type = "any";
     else if (kind == rb_intern("anchor")) type = "anchor";
     else if (kind == rb_intern("alternation")) type = "alternative";
@@ -235,8 +241,9 @@ static VALUE onibi_pipeline(VALUE self) {
     ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
               (kindid == rb_intern("alternation") ? rb_intern("ALT") :
                (kindid == rb_intern("quantifier") ? rb_intern("REPEAT") :
-                (kindid == rb_intern("wildcard") ? rb_intern("ANY") :
-                 (kindid == rb_intern("anchor") ? rb_intern("ASSERT") : rb_intern("CHAR")))));
+               (kindid == rb_intern("wildcard") ? rb_intern("ANY") :
+                (kindid == rb_intern("anchor") ? rb_intern("ASSERT") : rb_intern("CHAR")))));
+    if (kindid == rb_intern("escape")) opid = rb_intern("ESCAPE");
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
