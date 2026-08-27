@@ -32,4 +32,9 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxabcxx")
     refute regexp.vm_match?("xxabxx")
   end
+
+  def test_tokenizer_marks_classes_and_alternation
+    kinds = Onibi::Regexp.new("[ab]|cd").pipeline[:tokens].map { |token| token[:kind] }
+    assert_equal %i[class_start literal literal class_end alternation literal literal], kinds
+  end
 end

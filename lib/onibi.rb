@@ -46,7 +46,21 @@ module Onibi
       def program_frozen? = true
 
       def pipeline
-        tokens = source.bytes.map { |byte| { kind: :literal, byte: byte } }
+        in_class = false
+        tokens = source.bytes.map do |byte|
+          kind = if byte == 91
+                   in_class = true
+                   :class_start
+                 elsif byte == 93
+                   in_class = false
+                   :class_end
+                 elsif byte == 124 && !in_class
+                   :alternation
+                 else
+                   :literal
+                 end
+          { kind: kind, byte: byte }
+        end
         { tokens: tokens, ast: {}, gir: tokens, rseq: tokens, vm: :MRI }
       end
 

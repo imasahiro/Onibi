@@ -99,7 +99,11 @@ static VALUE onibi_pipeline(VALUE self) {
   VALUE tokens = rb_ary_new();
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     VALUE token = rb_hash_new();
-    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("literal")));
+    const char *kind = "literal";
+    if (RSTRING_PTR(src)[i] == '[') kind = "class_start";
+    else if (RSTRING_PTR(src)[i] == ']') kind = "class_end";
+    else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
+    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
     rb_ary_push(tokens, token);
   }
