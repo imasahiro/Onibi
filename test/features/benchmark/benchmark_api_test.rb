@@ -113,4 +113,11 @@ class BenchmarkApiTest < Minitest::Test
                   { from: 1, to: 0, actions: [] },
                   { from: 1, to: 2, actions: [] }], edges
   end
+
+  def test_simple_character_class_dispatches_to_rseq
+    regexp = Onibi::Regexp.new("[ab]")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.match?("xxbxx")
+    refute regexp.match?("xxcxx")
+  end
 end

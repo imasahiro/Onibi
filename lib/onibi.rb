@@ -111,8 +111,10 @@ module Onibi
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||
-                 source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
+                 source.match?(/\A.\{\d+(?:,\d+)?\}\z/) ||
+                 source.start_with?("[") && source.end_with?("]")
         simple = false unless @regexp.options.zero?
+        simple = false if source.include?("-")
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
           rseq: gir, vm: simple ? :RSEQ : :MRI }
