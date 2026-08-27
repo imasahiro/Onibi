@@ -61,7 +61,11 @@ module Onibi
                  end
           { kind: kind, byte: byte }
         end
-        ast = { type: :sequence, children: tokens }
+        ast = if source.include?("|")
+                { type: :alternation, branches: source.split("|", -1).map { |part| { type: :sequence, source: part } } }
+              else
+                { type: :sequence, children: tokens }
+              end
         gir = tokens.map do |token|
           op = if token[:kind] == :class_start
                  :CLASS
@@ -76,8 +80,8 @@ module Onibi
       end
 
       def vm_match?(string)
-        if source.length == 3 && source[1] == "|"
-          string.each_byte.any? { |byte| byte == source.getbyte(0) || byte == source.getbyte(2) }
+        if source.include?("|") && source.count("|") == 1
+          source.split("|").any? { |branch| string.include?(branch) }
         elsif source.start_with?("[") && source.end_with?("]")
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
         else

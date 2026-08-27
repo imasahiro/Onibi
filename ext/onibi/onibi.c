@@ -149,6 +149,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       if (RSTRING_PTR(str)[j] == p[0] || RSTRING_PTR(str)[j] == p[2]) return Qtrue;
     return Qfalse;
   }
+  for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
+    VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);
+    return (!NIL_P(rb_str_index(str, left, 0)) || !NIL_P(rb_str_index(str, right, 0))) ? Qtrue : Qfalse;
+  }
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
   return NIL_P(rb_str_index(str, src, 0)) ? Qfalse : Qtrue;

@@ -45,4 +45,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxbxx")
     refute regexp.vm_match?("xxcxx")
   end
+
+  def test_multi_character_alternation_rseq_vm
+    regexp = Onibi::Regexp.new("foo|bar")
+    assert regexp.vm_match?("xxbarxx")
+    refute regexp.vm_match?("xxbazxx")
+    assert_equal :alternation, regexp.pipeline[:ast][:type]
+  end
 end
