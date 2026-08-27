@@ -183,6 +183,8 @@ module Onibi
                     [{ op: :RUN_CLASS, arg: source }]
                   elsif source == "."
                     [{ op: :RUN_ANY, arg: 1 }]
+                  elsif source.include?("|")
+                    [{ op: :ALT, branches: source.split("|", -1) }]
                   else
                     gir
                   end

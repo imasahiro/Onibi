@@ -351,6 +351,14 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_ANY")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), INT2NUM(1));
     rb_ary_push(compact, op);
+  } else if (strchr(RSTRING_PTR(src), '|') != NULL) {
+    VALUE op = rb_hash_new(), branches = rb_ary_new(); long begin = 0;
+    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
+      rb_ary_push(branches, rb_str_substr(src, begin, i - begin)); begin = i + 1;
+    }
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ALT")));
+    rb_hash_aset(op, ID2SYM(rb_intern("branches")), branches);
+    rb_ary_push(compact, op);
   } else compact = gir;
   rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
   int simple = 1;
