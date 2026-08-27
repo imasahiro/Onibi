@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 static VALUE mOnibi, cRegexp, eRegexpError;
-static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
+static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
 static ID id_scan, id_gsub, id_encoding, id_index;
 
 typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
@@ -26,7 +26,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   int opts = NIL_P(options) ? 0 : NUM2INT(options);
   VALUE source = StringValue(pattern);
-  obj->regexp = rb_reg_new(RSTRING_PTR(source), RSTRING_LEN(source), opts);
+  obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->program_size = RSTRING_LEN(source) + 1;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
@@ -113,7 +113,8 @@ static VALUE onibi_pipeline(VALUE self) {
   VALUE ast = rb_hash_new();
   int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
                                            (RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src)-1] == '}'));
-  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : "sequence")));
+  int is_alt = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') is_alt = 1;
+  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : (is_alt ? "alternation" : "sequence"))));
   rb_hash_aset(ast, ID2SYM(rb_intern("children")), tokens);
   rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
   VALUE gir = rb_ary_new();
@@ -123,7 +124,7 @@ static VALUE onibi_pipeline(VALUE self) {
     ID kindid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind"))));
     ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
               (kindid == rb_intern("alternation") ? rb_intern("ALT") :
-               (kindid == rb_intern("quantifier") ? rb_intern("QUANT") : rb_intern("CHAR")));
+               (kindid == rb_intern("quantifier") ? rb_intern("REPEAT") : rb_intern("CHAR")));
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
@@ -185,6 +186,7 @@ static VALUE onibi_gsub(VALUE self, VALUE str, VALUE replacement) {
 
 void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
+  id_new = rb_intern("new");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect");
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
