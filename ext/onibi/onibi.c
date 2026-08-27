@@ -4,7 +4,7 @@
 
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
-static ID id_scan, id_gsub, id_encoding;
+static ID id_scan, id_gsub, id_encoding, id_index;
 
 typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
 
@@ -168,11 +168,11 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   }
   for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
     VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);
-    return (!NIL_P(rb_str_index(str, left, 0)) || !NIL_P(rb_str_index(str, right, 0))) ? Qtrue : Qfalse;
+    return (!NIL_P(rb_funcall(str, id_index, 1, left)) || !NIL_P(rb_funcall(str, id_index, 1, right))) ? Qtrue : Qfalse;
   }
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
-  return NIL_P(rb_str_index(str, src, 0)) ? Qfalse : Qtrue;
+  return NIL_P(rb_funcall(str, id_index, 1, src)) ? Qfalse : Qtrue;
 }
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -189,6 +189,7 @@ void Init_onibi(void) {
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect");
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   id_encoding = rb_intern("encoding");
+  id_index = rb_intern("index");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
