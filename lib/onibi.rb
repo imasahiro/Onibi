@@ -40,6 +40,10 @@ module Onibi
 
       def encoding = @regexp.encoding
 
+      def program_size = source.bytesize + 1
+
+      def program_frozen? = true
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)
