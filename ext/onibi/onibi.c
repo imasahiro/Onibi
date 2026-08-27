@@ -1,4 +1,5 @@
 #include "ruby.h"
+#include "onibi_ir.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
