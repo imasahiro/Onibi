@@ -287,6 +287,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :ASSERT_END_BUFFER, graph[:edges].last[:actions].first[:op]
   end
 
+  def test_compiler_keeps_all_glushkov_starts_for_nullable_prefix
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("a?b"))[:graph]
+
+    assert_equal([0, 1], graph[:start_edges].map { |edge| edge[:to] })
+    assert_equal([[0, 1], [1, 2], [0, 2]], graph[:edges].map { |edge| [edge[:from], edge[:to]] })
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

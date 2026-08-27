@@ -423,6 +423,7 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
       have_consuming = 1;
     } else {
       VALUE old_exits = result.exits;
+      if (result.nullable) onibi_append_values(result.starts, part.starts);
       onibi_connect_actions(builder, old_exits, part.starts, result.pending_actions);
       result.exits = rb_ary_dup(part.exits);
       if (result.nullable) onibi_append_values(result.exits, old_exits);
@@ -479,6 +480,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   if (type == ID2SYM(rb_intern("quantifier"))) {
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
+    if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
+      return onibi_fragment_empty();
+    if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
+      onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "atom"), builder);
+      result.nullable = 1;
+      return result;
+    }
     if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
       rb_raise(eRegexpError, "bounded range lowering is not implemented");
     VALUE atom = onibi_hash_value(ast, "atom");
