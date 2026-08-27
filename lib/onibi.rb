@@ -56,7 +56,7 @@ module Onibi
                    :class_end
                  elsif byte == 124 && !in_class
                    :alternation
-                 elsif [42, 43, 63].include?(byte)
+                 elsif [42, 43, 63, 123, 125, 44].include?(byte)
                    :quantifier
                  else
                    :literal
@@ -88,6 +88,11 @@ module Onibi
           source.split("|").any? { |branch| string.include?(branch) }
         elsif source.start_with?("[") && source.end_with?("]")
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
+        elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
+          min, max = source[2..-2].split(",").map(&:to_i)
+          max ||= min
+          run = string[/\A#{::Regexp.escape(source[0])}+/]&.length.to_i
+          run.between?(min, max)
         elsif source.length == 2 && "*+?".include?(source[1])
           string.include?(source[0]) || source[1] == "?"
         else

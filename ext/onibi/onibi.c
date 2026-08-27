@@ -1,5 +1,6 @@
 #include "ruby.h"
 #include <string.h>
+#include <stdio.h>
 
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
@@ -103,7 +104,7 @@ static VALUE onibi_pipeline(VALUE self) {
     if (RSTRING_PTR(src)[i] == '[') kind = "class_start";
     else if (RSTRING_PTR(src)[i] == ']') kind = "class_end";
     else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
-    else if (strchr("*+?", RSTRING_PTR(src)[i])) kind = "quantifier";
+    else if (strchr("*+?{} ,", RSTRING_PTR(src)[i])) kind = "quantifier";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
     rb_ary_push(tokens, token);
@@ -154,6 +155,14 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if (RSTRING_LEN(src) == 2 && strchr("*+?", p[1])) {
     for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
     return p[1] == '?' ? Qtrue : Qfalse;
+  }
+  if (RSTRING_LEN(src) >= 5 && p[1] == '{' && p[RSTRING_LEN(src)-1] == '}') {
+    long min = 0, max = 0; char tail;
+    if (sscanf(p + 2, "%ld,%ld%c", &min, &max, &tail) < 2) {
+      if (sscanf(p + 2, "%ld%c", &min, &tail) == 1) max = min;
+    }
+    long run = 0; for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) run++; else if (run) break;
+    return (run >= min && run <= max) ? Qtrue : Qfalse;
   }
   for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
     VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);
