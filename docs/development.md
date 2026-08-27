@@ -123,6 +123,41 @@ Git history retains the old documents.
 Neither source defines the new production architecture.
 
 Do not restore the Ruby matcher as production code.
+
+## Current architecture audit
+
+The current public load path defines only `Onibi::Regexp`.
+It does not define `Onibi::Lexer`, `Onibi::Parser`, `Onibi::Compiler`, or
+`Onibi::Interpreter`.
+
+The C `pipeline` method uses source-string heuristics. It does not consume a
+typed AST. Its graph is a synthetic linear graph with special cases for a few
+patterns. Its `rseq_compact` value is a Ruby array of hashes, not the
+relocatable immutable RSeq blob defined in `gir.md`.
+
+The C VM has pattern-specific branches. The execution-class value is metadata;
+three independent C interpreters do not yet exist. Most public matching calls
+MRI directly.
+
+Therefore the implementation is not complete at any compiler stage. The old
+v2 tests describe the target architecture, but they cannot exercise the
+current load path until these entry points exist.
+
+## Stage acceptance gates
+
+Each stage is complete only when it has a stable C data contract, a focused
+public test entry point, precise syntax errors, and tests for boundaries and
+encodings. Each stage must consume the previous stage's output.
+
+The implementation order is:
+
+```text
+Tokenizer -> Parser/AST -> G-IR compiler -> RSeq lowering -> VM dispatch
+```
+
+The first complete core will cover literals, sequences, alternation, character
+classes, wildcard, anchors, and bounded quantifiers. Unsupported features must
+cross an explicit dynamic boundary. They must not enter a partial fast path.
 # Current C pipeline status
 
 The C extension now exposes a small tokenizer, parser, GIR lowering step, and
