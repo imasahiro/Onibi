@@ -309,6 +309,7 @@ static VALUE onibi_pipeline(VALUE self) {
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
+  rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) : 0)));
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   VALUE compact = rb_ary_new();

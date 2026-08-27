@@ -183,7 +183,7 @@ module Onibi
                   else
                     gir
                   end
-        { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
+        { tokens: tokens, ast: ast, gir: gir, gir_graph: { start: pipe ? gir.length : 0, states: states, edges: edges },
           rseq: gir, rseq_compact: compact, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end
 

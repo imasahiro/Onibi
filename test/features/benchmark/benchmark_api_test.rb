@@ -50,6 +50,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :REGULAR_FAST, pipeline[:interpreter]
     assert_equal :ACCEPT, pipeline[:gir_graph][:states].last[:op]
     assert_equal({ from: 0, to: 1, actions: [] }, pipeline[:gir_graph][:edges].first)
+    assert_equal 0, pipeline[:gir_graph][:start]
     assert_equal [{ op: :STRING, arg: "abc" }], pipeline[:rseq_compact]
     assert_equal [{ op: :RUN_CLASS, arg: "[ab]" }], Onibi::Regexp.new("[ab]").pipeline[:rseq_compact]
     assert_equal [{ op: :RUN_ANY, arg: 1 }], Onibi::Regexp.new(".").pipeline[:rseq_compact]
