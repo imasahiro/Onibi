@@ -38,6 +38,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
         (p[i + 1] >= '1' && p[i + 1] <= '9'))) {
       obj->execution_class = rb_str_new_cstr("DYNAMIC"); rb_obj_freeze(obj->execution_class); break;
     }
+    if (p[i] == '(') {
+      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED"); rb_obj_freeze(obj->execution_class);
+    }
     if (p[i] == '(' && i + 2 < n && p[i + 1] == '?' &&
         (p[i + 2] == '=' || p[i + 2] == '!' || p[i + 2] == '<')) {
       obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
@@ -126,6 +129,8 @@ static VALUE onibi_pipeline(VALUE self) {
     if (RSTRING_PTR(src)[i] == '[') kind = "class_start";
     else if (RSTRING_PTR(src)[i] == ']') kind = "class_end";
     else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
+    else if (RSTRING_PTR(src)[i] == '(') kind = "group_start";
+    else if (RSTRING_PTR(src)[i] == ')') kind = "group_end";
     else if (strchr("*+?{} ,", RSTRING_PTR(src)[i])) kind = "quantifier";
     else if (RSTRING_PTR(src)[i] == '.') kind = "wildcard";
     else if (RSTRING_PTR(src)[i] == '^' || RSTRING_PTR(src)[i] == '$') kind = "anchor";
@@ -145,11 +150,13 @@ static VALUE onibi_pipeline(VALUE self) {
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i), node = rb_hash_new();
     ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
-    const char *type = kind == rb_intern("literal") ? "literal" :
-                      (kind == rb_intern("wildcard") ? "any" :
-                       (kind == rb_intern("anchor") ? "anchor" :
-                        (kind == rb_intern("alternation") ? "alternative" :
-                         (kind == rb_intern("quantifier") ? "quantifier" : "character_class"))));
+    const char *type = "character_class";
+    if (kind == rb_intern("literal")) type = "literal";
+    else if (kind == rb_intern("wildcard")) type = "any";
+    else if (kind == rb_intern("anchor")) type = "anchor";
+    else if (kind == rb_intern("alternation")) type = "alternative";
+    else if (kind == rb_intern("group_start") || kind == rb_intern("group_end")) type = "capture";
+    else if (kind == rb_intern("quantifier")) type = "quantifier";
     rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(type)));
     rb_hash_aset(node, ID2SYM(rb_intern("byte")), rb_hash_aref(token, ID2SYM(rb_intern("byte"))));
     rb_ary_push(children, node);

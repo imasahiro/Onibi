@@ -150,4 +150,10 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :ASSERT_BEGIN_BUFFER, edges.first[:actions].first[:op]
     assert_equal :ASSERT_END_BUFFER, edges.last[:actions].first[:op]
   end
+
+  def test_capture_tokens_and_execution_class
+    regexp = Onibi::Regexp.new("(abc)")
+    assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
+    assert_equal(%i[group_start literal literal literal group_end], regexp.pipeline[:tokens].map { |token| token[:kind] })
+  end
 end

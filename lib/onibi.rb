@@ -38,7 +38,7 @@ module Onibi
         if source.match?(/\\(?:[kg]|[1-9])/)
           "DYNAMIC"
         else
-          (source.match?(/\(\?[=!<]/) ? "TAGGED_ORDERED" : "REGULAR_FAST")
+          (source.include?("(") ? "TAGGED_ORDERED" : "REGULAR_FAST")
         end
       end
 
@@ -65,6 +65,10 @@ module Onibi
                    :wildcard
                  elsif [36, 94].include?(byte)
                    :anchor
+                 elsif byte == 40
+                   :group_start
+                 elsif byte == 41
+                   :group_end
                  else
                    :literal
                  end
@@ -84,7 +88,8 @@ module Onibi
         if ast[:type] == :sequence
           ast[:children] = tokens.map do |token|
             type = { literal: :literal, wildcard: :any, anchor: :anchor,
-                     alternation: :alternative, quantifier: :quantifier }.fetch(token[:kind], :character_class)
+                     alternation: :alternative, quantifier: :quantifier,
+                     group_start: :capture, group_end: :capture }.fetch(token[:kind], :character_class)
             { type: type, byte: token[:byte] }
           end
         end
