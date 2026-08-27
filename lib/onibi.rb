@@ -127,8 +127,10 @@ module Onibi
         simple = true if source == "[a-z]+[0-9]+" && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         interpreter = execution_class.to_sym
+        literal_only = !source.empty? && source.each_byte.none? { |byte| "\\^$|()[]{}*+?.".include?(byte.chr) }
+        compact = literal_only ? [{ op: :STRING, arg: source }] : gir
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
-          rseq: gir, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
+          rseq: gir, rseq_compact: compact, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end
 
       def vm_match?(string)

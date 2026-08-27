@@ -223,6 +223,16 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
+  VALUE compact = rb_ary_new();
+  int literal_only = RSTRING_LEN(src) > 0;
+  for (long i = 0; i < RSTRING_LEN(src); i++) if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) literal_only = 0;
+  if (literal_only) {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
+    rb_ary_push(compact, op);
+  } else compact = gir;
+  rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
   int simple = 1;
   int class_pair = 0;
   if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
