@@ -64,6 +64,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :alternation, regexp.pipeline[:ast][:type]
   end
 
+  def test_rseq_class_sequence_public_match
+    regexp = Onibi::Regexp.new("[a]b")
+    assert_equal :MRI, regexp.pipeline[:vm]
+    assert regexp.match?("xxabxx")
+    refute regexp.match?("xxacxx")
+  end
+
   def test_quantifier_ast_and_repeat_opcode
     pipeline = Onibi::Regexp.new("a{2,3}").pipeline
     assert_equal :quantifier, pipeline[:ast][:type]
