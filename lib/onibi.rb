@@ -96,6 +96,11 @@ module Onibi
             { type: type, byte: token[:byte] }
           end
         end
+        if ast[:type] == :character_class
+          body = source[1...-1]
+          ast[:ranges] = body.match?(/\A(.)-(.)\z/) ? [[body.getbyte(0), body.getbyte(2)]] : []
+          ast[:negated] = body.start_with?("^")
+        end
         gir = tokens.map do |token|
           op = case token[:kind]
                when :class_start

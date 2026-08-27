@@ -168,6 +168,17 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_ary_push(children, node);
   }
   rb_hash_aset(ast, ID2SYM(rb_intern("children")), children);
+  if (is_class) {
+    VALUE ranges = rb_ary_new();
+    if (RSTRING_LEN(src) == 5 && RSTRING_PTR(src)[2] == '-') {
+      VALUE range = rb_ary_new();
+      rb_ary_push(range, INT2NUM((unsigned char)RSTRING_PTR(src)[1]));
+      rb_ary_push(range, INT2NUM((unsigned char)RSTRING_PTR(src)[3]));
+      rb_ary_push(ranges, range);
+    }
+    rb_hash_aset(ast, ID2SYM(rb_intern("ranges")), ranges);
+    rb_hash_aset(ast, ID2SYM(rb_intern("negated")), RSTRING_LEN(src) > 2 && RSTRING_PTR(src)[1] == '^' ? Qtrue : Qfalse);
+  }
   if (is_alt) {
     VALUE branches = rb_ary_new(); long begin = 0;
     for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
