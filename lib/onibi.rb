@@ -4,6 +4,33 @@ require "onibi/onibi"
 
 module Onibi
   class Regexp
+    IGNORECASE = ::Regexp::IGNORECASE unless const_defined?(:IGNORECASE, false)
+    EXTENDED = ::Regexp::EXTENDED unless const_defined?(:EXTENDED, false)
+    MULTILINE = ::Regexp::MULTILINE unless const_defined?(:MULTILINE, false)
+    FIXEDENCODING = ::Regexp::FIXEDENCODING unless const_defined?(:FIXEDENCODING, false)
+    NOENCODING = ::Regexp::NOENCODING unless const_defined?(:NOENCODING, false)
+    unless instance_methods(false).include?(:match)
+      def initialize(pattern, options = nil)
+        @regexp = ::Regexp.new(pattern, options || 0)
+      end
+
+      def match(string, position = nil)
+        position.nil? ? @regexp.match(string) : @regexp.match(string, position)
+      end
+
+      def match?(string)
+        @regexp.match?(string)
+      end
+
+      def source = @regexp.source
+
+      def options = @regexp.options
+
+      def inspect = @regexp.inspect
+
+      def to_s = @regexp.to_s
+    end
+
     class TimeoutError < RegexpError; end unless const_defined?(:TimeoutError, false)
 
     class << self
