@@ -43,6 +43,16 @@ static VALUE onibi_tokenize(VALUE src) {
     const char *kind = "literal";
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
     VALUE backref_name = Qnil;
+    VALUE group_name = Qnil;
+    if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
+      long close = i + 3;
+      while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
+      if (close < RSTRING_LEN(src)) {
+        kind = "group_start";
+        group_name = rb_str_substr(src, i + 3, close - (i + 3));
+        i = close;
+      }
+    }
     if (!in_class && byte == '\\' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'k' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -81,6 +91,7 @@ static VALUE onibi_tokenize(VALUE src) {
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
     rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
     if (!NIL_P(backref_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name);
+    if (!NIL_P(group_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
   }
@@ -171,6 +182,8 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     VALUE node = onibi_ast_node("capture", token);
     rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(rb_intern("capturing")), Qtrue);
+    VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
+    if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
     rb_hash_aset(node, ID2SYM(rb_intern("end")),
                  rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
     rb_obj_freeze(node);
@@ -354,7 +367,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; } onibi_gir_builder_t;
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
@@ -487,13 +500,19 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
       type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
-    if (type == ID2SYM(rb_intern("backref")) && !NIL_P(onibi_hash_value(ast, "name")))
-      rb_raise(eRegexpError, "named backreference resolution is not implemented");
+    VALUE payload = ast;
+    if (type == ID2SYM(rb_intern("backref")) && !NIL_P(onibi_hash_value(ast, "name"))) {
+      VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value(ast, "name"));
+      if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
+      payload = rb_hash_dup(ast);
+      rb_hash_aset(payload, ID2SYM(rb_intern("capture")), LONG2NUM(NUM2LONG(id_value) + 1));
+      rb_obj_freeze(payload);
+    }
     long id = builder->next_id++;
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
       ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
        ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") : rb_intern("G_CLASS")));
-    onibi_gir_state(builder, id, op, ast);
+    onibi_gir_state(builder, id, op, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
     rb_ary_push(result.starts, LONG2NUM(id)); rb_ary_push(result.exits, LONG2NUM(id));
@@ -518,6 +537,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
+    VALUE capture_name = onibi_hash_value(ast, "name");
+    if (!NIL_P(capture_name)) rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
     return result;
@@ -586,7 +607,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE ast = onibi_hash_value(parsed, "ast");
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0 };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new() };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);

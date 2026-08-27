@@ -352,6 +352,8 @@ class BenchmarkApiTest < Minitest::Test
     ast = Onibi::Parser.parse("(a)\\k<x>")[:ast]
     assert_equal :backref, ast[:children].last[:type]
     assert_equal "x", ast[:children].last[:name]
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("(?<x>a)\\k<x>"))[:graph]
+    assert_equal 1, graph[:states][1][:payload][:capture]
   end
 
   def test_capture_tokens_and_execution_class
