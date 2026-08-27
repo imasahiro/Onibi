@@ -486,8 +486,17 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_ary_push(result.pending_actions, action);
     return result;
   }
-  if (type == ID2SYM(rb_intern("capture")))
-    rb_raise(eRegexpError, "capture lowering is not implemented");
+  if (type == ID2SYM(rb_intern("capture"))) {
+    onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
+    VALUE open = rb_hash_new(), close = rb_hash_new();
+    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
+    rb_hash_aset(open, ID2SYM(rb_intern("slot")), INT2NUM(2));
+    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
+    rb_hash_aset(close, ID2SYM(rb_intern("slot")), INT2NUM(3));
+    rb_ary_push(result.start_actions, open);
+    rb_ary_push(result.pending_actions, close);
+    return result;
+  }
   if (type == ID2SYM(rb_intern("quantifier"))) {
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);

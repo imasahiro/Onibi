@@ -309,6 +309,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_predicate rseq[:edges].first, :frozen?
   end
 
+  def test_compiler_lowers_capture_boundaries_to_actions
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)"))[:graph]
+    actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
+    assert_equal %i[CAPTURE_OPEN CAPTURE_CLOSE], actions.map { |action| action[:op] }
+    assert_equal [2, 3], actions.map { |action| action[:slot] }
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
