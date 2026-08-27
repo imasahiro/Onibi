@@ -383,6 +383,11 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(regular, "abc", :UNKNOWN) }
   end
 
+  def test_regexp_compiles_pipeline_once_at_initialize
+    assert Onibi::Regexp.new("abc").program_cached?
+    refute Onibi::Regexp.new("(?=a)b").program_cached?
+  end
+
   def test_posix_class_is_a_semantic_token_and_vm_predicate
     tokens = Onibi::Lexer.new("[[:alpha:]]").tokens
     assert_equal %i[class_start posix_class class_end], tokens.map { |token| token[:kind] }

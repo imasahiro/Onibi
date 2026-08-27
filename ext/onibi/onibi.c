@@ -10,7 +10,7 @@ static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 
-typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE execution_class; VALUE parsed; VALUE compiled; VALUE rseq; long program_size; } onibi_regexp_t;
 typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -669,9 +669,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), builder.edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(graph, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
   rb_obj_freeze(graph);
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), ast);
+  rb_hash_aset(result, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
   rb_hash_aset(result, ID2SYM(rb_intern("graph")), graph);
   rb_obj_freeze(result);
   return result;
@@ -722,6 +724,16 @@ static VALUE onibi_alloc(VALUE klass) {
   return TypedData_Make_Struct(klass, onibi_regexp_t, &onibi_type, obj);
 }
 
+static VALUE onibi_build_program(VALUE argument) {
+  VALUE source = rb_ary_entry(argument, 0);
+  VALUE options = rb_ary_entry(argument, 1);
+  VALUE parser_args[2] = { source, options };
+  VALUE parsed = onibi_parser_parse(2, parser_args, Qnil);
+  VALUE compiled = onibi_compiler_compile(Qnil, parsed);
+  VALUE rseq = onibi_rseq_lower(Qnil, compiled);
+  return rb_ary_new_from_args(3, parsed, compiled, rseq);
+}
+
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE pattern, options = Qnil;
   rb_scan_args(argc, argv, "11", &pattern, &options);
@@ -730,6 +742,17 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   int opts = NIL_P(options) ? 0 : NUM2INT(options);
   VALUE source = StringValue(pattern);
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
+  obj->parsed = obj->compiled = obj->rseq = Qnil;
+  VALUE program_args = rb_ary_new_from_args(2, source, options);
+  int program_state = 0;
+  VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
+  if (!program_state) {
+    obj->parsed = rb_ary_entry(program, 0);
+    obj->compiled = rb_ary_entry(program, 1);
+    obj->rseq = rb_ary_entry(program, 2);
+  } else {
+    rb_set_errinfo(Qnil);
+  }
   obj->program_size = RSTRING_LEN(source) + 1;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
@@ -832,6 +855,10 @@ static VALUE onibi_program_size(VALUE self) {
 static VALUE onibi_program_frozen(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return RTEST(rb_obj_frozen_p(obj->execution_class)) ? Qtrue : Qfalse;
+}
+static VALUE onibi_program_cached(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return NIL_P(obj->rseq) ? Qfalse : Qtrue;
 }
 static VALUE onibi_pipeline(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -1308,15 +1335,14 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
         !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
   if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
-    VALUE parser_args[1] = { src };
-    VALUE parsed = onibi_parser_parse(1, parser_args, Qnil);
-    VALUE compiled = onibi_compiler_compile(Qnil, parsed);
-    VALUE rseq = onibi_rseq_lower(Qnil, compiled);
+    VALUE rseq = obj->rseq;
+    if (NIL_P(rseq)) goto mri_fallback;
     int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL || strstr(RSTRING_PTR(src), "\\k<") != NULL;
     VALUE klass = has_backref ? ID2SYM(rb_intern("DYNAMIC")) :
       (strchr(RSTRING_PTR(src), '(') ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
     return onibi_vm_execute(Qnil, rseq, str, klass);
   }
+mri_fallback: ;
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
@@ -1474,9 +1500,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
         !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) graph_ok = 0;
   }
   if (graph_ok) {
-    VALUE parser_args[1] = { src };
-    VALUE compiled = onibi_compiler_compile(Qnil, onibi_parser_parse(1, parser_args, Qnil));
-    VALUE rseq = onibi_rseq_lower(Qnil, compiled);
+    VALUE rseq = obj->rseq;
+    if (NIL_P(rseq)) goto result_mri_fallback;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
       VALUE capture_state = rb_hash_new();
@@ -1500,6 +1525,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     }
     return Qnil;
   }
+result_mri_fallback: ;
   VALUE needle = src;
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
     needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
@@ -1581,6 +1607,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "encoding", onibi_encoding, 0);
   rb_define_method(cRegexp, "program_size", onibi_program_size, 0);
   rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
+  rb_define_method(cRegexp, "program_cached?", onibi_program_cached, 0);
   rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
   rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
   rb_define_method(cRegexp, "vm_match_result", onibi_vm_match_result, 1);
