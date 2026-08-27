@@ -1056,6 +1056,16 @@ static int onibi_vm_actions_ok(VALUE actions, long pos, long length) {
 }
 
 static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
+  VALUE type = onibi_hash_value(payload, "type");
+  if (type == ID2SYM(rb_intern("escape"))) {
+    VALUE name = onibi_hash_value(payload, "name");
+    int upper = RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]);
+    unsigned char n = (unsigned char)tolower((unsigned char)RSTRING_PTR(name)[0]);
+    int hit = n == 'd' ? isdigit(byte) : (n == 's' ? isspace(byte) :
+      (n == 'w' ? (isalnum(byte) || byte == '_') :
+       (n == 'h' ? isxdigit(byte) : 0)));
+    return upper ? !hit : hit;
+  }
   VALUE ranges = onibi_hash_value(payload, "ranges");
   VALUE children = onibi_hash_value(payload, "children");
   int hit = 0;
@@ -1117,7 +1127,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
     if (c == ':') regular_graph = 0;
     if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZG", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
+        !strchr("AzZGdDsSwWhH", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
   if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
     VALUE parser_args[1] = { src };
