@@ -81,4 +81,11 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :character_class, Onibi::Regexp.new("[ab]").pipeline[:ast][:type]
     assert_equal :anchor, Onibi::Regexp.new("^abc$").pipeline[:ast][:type]
   end
+
+  def test_literal_wildcard_sequence_rseq_vm
+    regexp = Onibi::Regexp.new("a.c")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("xxabcxx")
+    refute regexp.vm_match?("xxacxx")
+  end
 end

@@ -131,6 +131,11 @@ module Onibi
           !string.empty?
         elsif source.length == 2 && source[1] == "."
           string.each_char.each_cons(2).any? { |first, _| first == source[0] }
+        elsif source.count(".") == 1 && source.each_byte.none? { |byte| "\\^$|()[]{}*+?".include?(byte.chr) }
+          dot = source.index(".")
+          string.each_char.each_cons(source.length).any? do |window|
+            window.each_with_index.all? { |char, index| index == dot || char == source[index] }
+          end
         elsif ["^", "$"].include?(source)
           true
         else

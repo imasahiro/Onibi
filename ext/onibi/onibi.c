@@ -67,6 +67,9 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
     if (strchr("\\(){}", RSTRING_PTR(src)[i])) supported = 0;
   if (strchr(RSTRING_PTR(src), '-')) supported = 0;
   if (strchr(RSTRING_PTR(src), '|') && (strchr(RSTRING_PTR(src), '[') || strchr(RSTRING_PTR(src), ']'))) supported = 0;
+  long pipes = 0;
+  for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
+  if (pipes > 1) supported = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) supported = 0;
   if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
@@ -147,10 +150,12 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   int simple = 1;
-  const char *meta = "\\.^$|()[]{}*+?";
+  const char *meta = "\\^$|()[]{}*+?";
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
   if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
+  long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
+  if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   return out;
@@ -202,6 +207,25 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if (RSTRING_LEN(src) == 2 && p[1] == '.') {
     for (long j = 0; j + 1 < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
     return Qfalse;
+  }
+  if (RSTRING_LEN(src) >= 3) {
+    long dot = -1;
+    int literal = 1;
+    for (long i = 0; i < RSTRING_LEN(src); i++) {
+      if (p[i] == '.') {
+        if (dot >= 0) { literal = 0; break; }
+        dot = i;
+      } else if (strchr("\\^$|()[]{}*+?", p[i])) literal = 0;
+    }
+    if (literal && dot >= 0) {
+      for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
+        int hit = 1;
+        for (long i = 0; i < RSTRING_LEN(src); i++)
+          if (i != dot && RSTRING_PTR(str)[j + i] != p[i]) hit = 0;
+        if (hit) return Qtrue;
+      }
+      return Qfalse;
+    }
   }
   if (RSTRING_LEN(src) >= 5 && p[1] == '{' && p[RSTRING_LEN(src)-1] == '}') {
     long min = 0, max = 0; char tail;
