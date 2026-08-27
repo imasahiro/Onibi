@@ -269,6 +269,24 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::Parser.parse("a", 8) }
   end
 
+  def test_compiler_builds_gir_from_ast_without_source_inspection
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a|b"))
+    graph = compiled[:graph]
+
+    assert_equal(%i[G_START G_CHAR G_CHAR G_ACCEPT], graph[:states].map { |state| state[:op] })
+    assert_equal 0, graph[:start]
+    assert_equal :G_ACCEPT, graph[:states][graph[:accept]][:op]
+    assert_equal([[0, 1], [0, 2]],
+                 graph[:edges].select { |edge| edge[:from].zero? }.map { |edge| [edge[:from], edge[:to]] })
+    assert_predicate compiled, :frozen?
+  end
+
+  def test_compiler_rejects_ast_features_without_a_semantic_lowering
+    assert_raises(Onibi::RegexpError) do
+      Onibi::Compiler.compile(Onibi::Parser.parse("\\Aa\\z"))
+    end
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
