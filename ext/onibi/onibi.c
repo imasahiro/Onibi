@@ -114,6 +114,7 @@ static VALUE onibi_pipeline(VALUE self) {
     else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
     else if (strchr("*+?{} ,", RSTRING_PTR(src)[i])) kind = "quantifier";
     else if (RSTRING_PTR(src)[i] == '.') kind = "wildcard";
+    else if (RSTRING_PTR(src)[i] == '^' || RSTRING_PTR(src)[i] == '$') kind = "anchor";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
     rb_ary_push(tokens, token);
@@ -135,7 +136,8 @@ static VALUE onibi_pipeline(VALUE self) {
     ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
               (kindid == rb_intern("alternation") ? rb_intern("ALT") :
                (kindid == rb_intern("quantifier") ? rb_intern("REPEAT") :
-                (kindid == rb_intern("wildcard") ? rb_intern("ANY") : rb_intern("CHAR"))));
+                (kindid == rb_intern("wildcard") ? rb_intern("ANY") :
+                 (kindid == rb_intern("anchor") ? rb_intern("ASSERT") : rb_intern("CHAR")))));
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
