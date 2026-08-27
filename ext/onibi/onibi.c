@@ -563,6 +563,16 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
     needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
   VALUE start = rb_funcall(str, id_index, 1, needle);
+  if (RSTRING_LEN(src) == 1 && RSTRING_PTR(src)[0] == '.') {
+    start = Qnil;
+    for (long i = 0; i < RSTRING_LEN(str); i++) if (RSTRING_PTR(str)[i] != '\n') { start = LONG2NUM(i); break; }
+    needle = rb_str_new_cstr("x");
+  } else if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '.') {
+    start = Qnil;
+    for (long i = 0; i + 2 < RSTRING_LEN(str); i++) if (RSTRING_PTR(str)[i] == RSTRING_PTR(src)[0] &&
+        RSTRING_PTR(str)[i + 2] == RSTRING_PTR(src)[2]) { start = LONG2NUM(i); break; }
+    needle = rb_str_substr(src, 0, 3);
+  }
   if (RSTRING_PTR(src) && strchr(RSTRING_PTR(src), '|')) {
     start = Qnil; needle = Qnil;
     long begin = 0;

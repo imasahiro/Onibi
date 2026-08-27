@@ -262,6 +262,13 @@ module Onibi
           start, _, needle = candidates.min_by { |position, index, _| [position, index] }
         else
           start = string.index(needle)
+          if source == "."
+            start = string.index { |char| @regexp.options == ::Regexp::MULTILINE || char != "\n" }
+            needle = "x"
+          elsif source.length == 3 && source[1] == "."
+            start = string.each_char.each_cons(3).with_index.find { |window, _| window[0] == source[0] && window[2] == source[2] }&.last
+            needle = source
+          end
         end
         { start: start, end: start + needle.bytesize }
       end

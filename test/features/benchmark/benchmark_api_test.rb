@@ -129,6 +129,7 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxabcxx")
     refute regexp.vm_match?("xxacxx")
     refute regexp.vm_match?("xxa\ncxx")
+    assert_equal({ start: 2, end: 5 }, regexp.vm_match_result("xxabcxx"))
   end
 
   def test_wildcard_repeat_sequence_rseq_vm
