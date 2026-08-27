@@ -28,7 +28,8 @@ The gem PoC does not include native-code generation.
 ## Development stage
 
 Git history retains the previous Pure Ruby prototype.
-The legacy tests and documents remain as reference material.
+The legacy tests remain as reference material.
+Git history retains the old documents.
 New production work follows the G-IR design and the C extension plan.
 
 Early work starts with small unit tests.

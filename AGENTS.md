@@ -92,7 +92,8 @@ docs/development.md        # milestones and verification policy
 ```
 
 The Pure Ruby production files have been removed.
-Existing tests and documents remain as legacy reference material.
+Existing tests remain as legacy reference material.
+Git history retains the old code and documents.
 Do not restore the Ruby matcher as production code.
 
 ## Verification
