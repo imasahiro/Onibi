@@ -231,6 +231,12 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
+  } else if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' &&
+             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' && strchr(RSTRING_PTR(src) + 1, ']') != NULL) {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
+    rb_ary_push(compact, op);
   } else if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' &&
              RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') {
     VALUE op = rb_hash_new();

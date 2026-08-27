@@ -130,6 +130,8 @@ module Onibi
         literal_only = !source.empty? && source.each_byte.none? { |byte| "\\^$|()[]{}*+?.".include?(byte.chr) }
         compact = if literal_only
                     [{ op: :STRING, arg: source }]
+                  elsif source == "[a-z]+[0-9]+"
+                    [{ op: :RUN_CLASS, arg: source }]
                   elsif source.start_with?("[") && source.end_with?("]")
                     [{ op: :RUN_CLASS, arg: source }]
                   elsif source == "."
