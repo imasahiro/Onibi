@@ -5,6 +5,7 @@
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
 static ID id_scan, id_gsub, id_encoding, id_index;
+static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 
 typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
 
@@ -60,6 +61,13 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "11", &str, &pos);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  int supported = 1;
+  for (long i = 0; i < RSTRING_LEN(src); i++)
+    if (strchr("\\.^$(){}", RSTRING_PTR(src)[i])) supported = 0;
+  if (strchr(RSTRING_PTR(src), '-')) supported = 0;
+  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) supported = 0;
+  if (supported) return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
 }
