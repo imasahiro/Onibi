@@ -4,7 +4,7 @@ static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
 static ID id_scan, id_gsub;
 
-typedef struct { VALUE regexp; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE execution_class; } onibi_regexp_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
 static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
@@ -25,6 +25,20 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   int opts = NIL_P(options) ? 0 : NUM2INT(options);
   VALUE source = StringValue(pattern);
   obj->regexp = rb_reg_new(RSTRING_PTR(source), RSTRING_LEN(source), opts);
+  obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
+  rb_obj_freeze(obj->execution_class);
+  const char *p = RSTRING_PTR(source);
+  long n = RSTRING_LEN(source);
+  for (long i = 0; i < n; i++) {
+    if (p[i] == '\\' && i + 1 < n && (p[i + 1] == 'k' || p[i + 1] == 'g')) {
+      obj->execution_class = rb_str_new_cstr("DYNAMIC"); rb_obj_freeze(obj->execution_class); break;
+    }
+    if (p[i] == '(' && i + 2 < n && p[i + 1] == '?' &&
+        (p[i + 2] == '=' || p[i + 2] == '!' || p[i + 2] == '<')) {
+      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
+      rb_obj_freeze(obj->execution_class);
+    }
+  }
   return self;
 }
 
@@ -56,6 +70,10 @@ static VALUE onibi_inspect(VALUE self) {
   return rb_funcall(obj->regexp, id_inspect, 0);
 }
 static VALUE onibi_to_s(VALUE self) { return onibi_inspect(self); }
+static VALUE onibi_execution_class(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return obj->execution_class;
+}
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
@@ -82,6 +100,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "options", onibi_options, 0);
   rb_define_method(cRegexp, "inspect", onibi_inspect, 0);
   rb_define_method(cRegexp, "to_s", onibi_to_s, 0);
+  rb_define_method(cRegexp, "execution_class", onibi_execution_class, 0);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
   rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));

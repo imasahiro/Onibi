@@ -30,6 +30,14 @@ module Onibi
 
       def to_s = @regexp.to_s
 
+      def execution_class
+        if source.match?(/\\[kg]/)
+          "DYNAMIC"
+        else
+          (source.match?(/\(\?[=!<]/) ? "TAGGED_ORDERED" : "REGULAR_FAST")
+        end
+      end
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)
