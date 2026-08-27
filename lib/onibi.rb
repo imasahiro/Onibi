@@ -63,7 +63,9 @@ module Onibi
                  end
           { kind: kind, byte: byte }
         end
-        ast = if source.include?("|")
+        ast = if source.match?(/\A.\+\z/) || source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
+                { type: :quantifier, atom: source[0], quantifier: source[1..] }
+              elsif source.include?("|")
                 { type: :alternation, branches: source.split("|", -1).map { |part| { type: :sequence, source: part } } }
               else
                 { type: :sequence, children: tokens }
@@ -72,7 +74,7 @@ module Onibi
           op = if token[:kind] == :class_start
                  :CLASS
                elsif token[:kind] == :quantifier
-                 :QUANT
+                 :REPEAT
                else
                  (token[:kind] == :alternation ? :ALT : :CHAR)
                end

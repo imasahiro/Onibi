@@ -52,4 +52,10 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("xxbazxx")
     assert_equal :alternation, regexp.pipeline[:ast][:type]
   end
+
+  def test_quantifier_ast_and_repeat_opcode
+    pipeline = Onibi::Regexp.new("a{2,3}").pipeline
+    assert_equal :quantifier, pipeline[:ast][:type]
+    assert_includes pipeline[:rseq].map { |op| op[:op] }, :REPEAT
+  end
 end
