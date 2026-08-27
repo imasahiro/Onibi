@@ -172,8 +172,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     }
     if (kind == rb_intern("class_range") && i > begin + 1 && i + 1 < close) {
       VALUE range = rb_ary_new();
-      rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
-      rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
+      rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
+      rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
       rb_obj_freeze(range);
       rb_ary_push(ranges, range);
       i++;
@@ -222,7 +222,7 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
        (kind == rb_intern("backref") ? onibi_ast_node("backref", token) :
        (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil)))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
-  rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM(onibi_token_byte(token)));
+  rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
   if (kind == rb_intern("anchor")) {
     long marker = onibi_token_byte(token);
     const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
@@ -234,7 +234,7 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     rb_hash_aset(node, ID2SYM(rb_intern("name")), rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1));
   if (kind == rb_intern("backref")) {
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
-    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")), INT2NUM(onibi_token_byte(token) - '0'));
+    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")), LONG2NUM(onibi_token_byte(token) - '0'));
     else rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
   }
   rb_obj_freeze(node);
@@ -1477,7 +1477,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
           VALUE group = rb_hash_new();
           rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
           rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
-          rb_hash_aset(captures, INT2NUM(group_id), group);
+          rb_hash_aset(captures, LONG2NUM(group_id), group);
         }
       }
       if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
