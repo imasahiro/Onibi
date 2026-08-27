@@ -272,7 +272,9 @@ module Onibi
             needle = source
           end
         end
-        { start: start, end: start + needle.bytesize }
+        result = { start: start, end: start + needle.bytesize }
+        result[:captures] = { 1 => { start: start, end: start + needle.bytesize } } if source.start_with?("(") && source.end_with?(")")
+        result
       end
 
       def scan(string) = string.scan(@regexp)

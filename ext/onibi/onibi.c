@@ -595,6 +595,13 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("start")), start);
   rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(NUM2LONG(start) + RSTRING_LEN(needle)));
+  if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')') {
+    VALUE captures = rb_hash_new(), group = rb_hash_new();
+    rb_hash_aset(group, ID2SYM(rb_intern("start")), start);
+    rb_hash_aset(group, ID2SYM(rb_intern("end")), LONG2NUM(NUM2LONG(start) + RSTRING_LEN(needle)));
+    rb_hash_aset(captures, INT2NUM(1), group);
+    rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+  }
   return result;
 }
 static VALUE onibi_scan(VALUE self, VALUE str) {
