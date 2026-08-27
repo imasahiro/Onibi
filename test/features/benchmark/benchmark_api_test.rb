@@ -209,6 +209,17 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[CHAR ESCAPE ASSERT], pipeline[:gir].map { |op| op[:op] })
   end
 
+  def test_lexer_publishes_an_immutable_token_stream
+    lexer = Onibi::Lexer.new("a\\d")
+    tokens = lexer.tokens
+
+    assert_equal(%i[literal escape], tokens.map { |token| token[:kind] })
+    assert_equal([[0, 1], [1, 3]], tokens.map { |token| [token[:start], token[:end]] })
+    assert_predicate lexer, :frozen?
+    assert_predicate tokens, :frozen?
+    assert tokens.all?(&:frozen?)
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

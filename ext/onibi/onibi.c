@@ -4,19 +4,82 @@
 #include <stdio.h>
 #include <ctype.h>
 
-static VALUE mOnibi, cRegexp, eRegexpError;
+static VALUE mOnibi, cRegexp, cLexer, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 
 typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
+typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
 static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
 static const rb_data_type_t onibi_type = {
   "Onibi::Regexp", { 0, onibi_free, onibi_memsize }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
+
+static void onibi_lexer_free(void *ptr) { xfree(ptr); }
+static size_t onibi_lexer_memsize(const void *ptr) { return ptr ? sizeof(onibi_lexer_t) : 0; }
+static const rb_data_type_t onibi_lexer_type = {
+  "Onibi::Lexer", { 0, onibi_lexer_free, onibi_lexer_memsize }, 0, 0,
+  RUBY_TYPED_FREE_IMMEDIATELY
+};
+
+static VALUE onibi_lexer_alloc(VALUE klass) {
+  onibi_lexer_t *obj;
+  return TypedData_Make_Struct(klass, onibi_lexer_t, &onibi_lexer_type, obj);
+}
+
+static VALUE onibi_tokenize(VALUE src) {
+  VALUE tokens = rb_ary_new();
+  /* One escape is one semantic token.  Do not let an escaped metacharacter
+     enter the AST as syntax. */
+  for (long i = 0; i < RSTRING_LEN(src); i++) {
+    long start = i;
+    VALUE token = rb_hash_new();
+    const char *kind = "literal";
+    unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
+    if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
+      unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
+      byte = escaped;
+      if (strchr("AzZG", escaped) != NULL) kind = "anchor";
+      else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
+      i++;
+    } else if (byte == '[') kind = "class_start";
+    else if (byte == ']') kind = "class_end";
+    else if (byte == '|') kind = "alternation";
+    else if (byte == '(') kind = "group_start";
+    else if (byte == ')') kind = "group_end";
+    else if (strchr("*+?{} ,", byte) != NULL) kind = "quantifier";
+    else if (byte == '.') kind = "wildcard";
+    else if (byte == '^' || byte == '$') kind = "anchor";
+    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
+    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
+    rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
+    rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
+    rb_obj_freeze(token);
+    rb_ary_push(tokens, token);
+  }
+  rb_obj_freeze(tokens);
+  return tokens;
+}
+
+static VALUE onibi_lexer_initialize(VALUE self, VALUE source) {
+  onibi_lexer_t *obj;
+  TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
+  source = StringValue(source);
+  obj->source = rb_str_dup(source);
+  rb_obj_freeze(obj->source);
+  rb_obj_freeze(self);
+  return self;
+}
+
+static VALUE onibi_lexer_tokens(VALUE self) {
+  onibi_lexer_t *obj;
+  TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
+  return onibi_tokenize(obj->source);
+}
 
 static VALUE onibi_alloc(VALUE klass) {
   onibi_regexp_t *obj;
@@ -138,34 +201,7 @@ static VALUE onibi_pipeline(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE out = rb_hash_new();
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  VALUE tokens = rb_ary_new();
-  /* One escape is one semantic token.  Do not let an escaped metacharacter
-     enter the AST as syntax. */
-  for (long i = 0; i < RSTRING_LEN(src); i++) {
-    long start = i;
-    VALUE token = rb_hash_new();
-    const char *kind = "literal";
-    unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
-    if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
-      unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
-      byte = escaped;
-      if (strchr("AzZG", escaped) != NULL) kind = "anchor";
-      else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
-      i++;
-    } else if (byte == '[') kind = "class_start";
-    else if (byte == ']') kind = "class_end";
-    else if (byte == '|') kind = "alternation";
-    else if (byte == '(') kind = "group_start";
-    else if (byte == ')') kind = "group_end";
-    else if (strchr("*+?{} ,", byte) != NULL) kind = "quantifier";
-    else if (byte == '.') kind = "wildcard";
-    else if (byte == '^' || byte == '$') kind = "anchor";
-    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
-    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
-    rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
-    rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
-    rb_ary_push(tokens, token);
-  }
+  VALUE tokens = onibi_tokenize(src);
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
   int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
@@ -655,6 +691,10 @@ void Init_onibi(void) {
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
+  cLexer = rb_define_class_under(mOnibi, "Lexer", rb_cObject);
+  rb_define_alloc_func(cLexer, onibi_lexer_alloc);
+  rb_define_method(cLexer, "initialize", onibi_lexer_initialize, 1);
+  rb_define_method(cLexer, "tokens", onibi_lexer_tokens, 0);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);

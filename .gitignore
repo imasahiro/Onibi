@@ -2,6 +2,7 @@
 /.yardoc
 /_yardoc/
 /coverage/
+/ext/onibi/coverage/
 /doc/
 /pkg/
 /spec/reports/
