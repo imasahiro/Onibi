@@ -78,6 +78,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
       RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
   int class_plus = RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
                    RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+';
+  if (class_plus && (strchr(RSTRING_PTR(src) + 1, ':') || strchr(RSTRING_PTR(src) + 1, ']') != strrchr(RSTRING_PTR(src), ']'))) class_plus = 0;
   int class_pair = 0;
   if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
     const char *close = strchr(RSTRING_PTR(src) + 1, ']');
@@ -309,7 +310,8 @@ static VALUE onibi_pipeline(VALUE self) {
   if (capture_literal) simple = 1;
   if (strchr(RSTRING_PTR(src), '-') && !(RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
       RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+')) simple = 0;
-  if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') simple = 1;
+  if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' &&
+      !strchr(RSTRING_PTR(src) + 1, ':') && strchr(RSTRING_PTR(src) + 1, ']') == strrchr(RSTRING_PTR(src), ']')) simple = 1;
   if (class_pair) simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
@@ -326,6 +328,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
+  if (class_plus && (strchr(p + 1, ':') || strchr(p + 1, ']') != strrchr(p, ']'))) class_plus = 0;
   if (RSTRING_LEN(src) >= 3 && p[0] == '(' && p[RSTRING_LEN(src) - 1] == ')') {
     VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
     return NIL_P(rb_funcall(str, id_index, 1, body)) ? Qfalse : Qtrue;

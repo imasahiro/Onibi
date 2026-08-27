@@ -133,11 +133,11 @@ module Onibi
                  (source.length == 4 && source[1, 2] == ".*") ||
                  source.match?(/\A.\{\d+(?:,\d+)?\}\z/) ||
                  source.start_with?("[") && source.end_with?("]") ||
-                 source.start_with?("[") && source.end_with?("+")
+                 source.match?(/\A\[[^\]:]+\]\+\z/)
         simple = false unless @regexp.options.zero?
         simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
-        simple = true if source.match?(/\A\[[^\]]+\]\+\z/) && @regexp.options.zero?
-        simple = true if source.match?(/\A\([^()\\]+\)\z/) && @regexp.options.zero?
+        simple = true if source.match?(/\A\[[^\]:]+\]\+\z/) && @regexp.options.zero?
+        simple = true if source.match?(/\A\([^()?~:<>=!\\]+\)\z/) && @regexp.options.zero?
         simple = true if source == "[a-z]+[0-9]+" && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         interpreter = execution_class.to_sym
@@ -166,7 +166,7 @@ module Onibi
           string == source[1...-1]
         elsif source.include?("|") && source.count("|") == 1
           source.split("|").any? { |branch| string.include?(branch) }
-        elsif source.match?(/\A\([^()\\]+\)\z/)
+        elsif source.match?(/\A\([^()?~:<>=!\\]+\)\z/)
           string.include?(source[1...-1])
         elsif source.start_with?("[") && source.end_with?("]")
           if source.match?(/\A\[.-.\]\z/)
@@ -180,7 +180,7 @@ module Onibi
           chars = source[1...source.index("]")]
           tail = source[-1]
           string.each_char.each_cons(2).any? { |first, last| chars.include?(first) && last == tail }
-        elsif source.start_with?("[") && source.end_with?("+")
+        elsif source.match?(/\A\[[^\]:]+\]\+\z/)
           body = source[1...source.index("]")]
           string.each_char.any? do |char|
             body.each_char.each_cons(3).any? { |left, dash, right| dash == "-" && char.between?(left, right) } || body.include?(char)
@@ -194,7 +194,7 @@ module Onibi
           string.include?(source[0]) || source[1] == "?"
         elsif source.length == 4 && source[1, 2] == ".*"
           start = string.index(source[0])
-          start && string.index(source[3], start + 1)
+          !!(start && string.index(source[3], start + 1))
         elsif source == "."
           !string.empty?
         elsif source.length == 2 && source[1] == "."

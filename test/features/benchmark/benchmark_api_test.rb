@@ -20,6 +20,15 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_feature_corpus_contains_compiled_rseq_cases
+    rseq_cases = RegexpFeatureBenchmark::Suite.load.cases.select do |benchmark_case|
+      benchmark_case.onibi_regexp.pipeline[:vm] == :RSEQ
+    end
+    assert_operator rseq_cases.length, :>=, 5
+    assert_includes rseq_cases.map(&:label), "character_classes/ascii/range"
+    assert_includes rseq_cases.map(&:label), "greedy_quantifier/ascii/bounded-repeat"
+  end
+
   def test_rseq_vm_matches_mri_for_dispatched_cases
     RegexpFeatureBenchmark::Suite.load.cases.each do |benchmark_case|
       regexp = benchmark_case.onibi_regexp
