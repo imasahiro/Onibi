@@ -14,6 +14,11 @@ Ruby code loads the extension and provides small public wrappers when necessary.
 ZJIT work starts after the PoC.
 The PoC must not depend on ZJIT or MRI source-tree changes.
 
+The current C pipeline includes tokenization, parsing, ordered G-IR states and
+edges, RSeq lowering, and a regular VM for a tested ASCII subset. The VM covers
+literals, alternation, character classes, wildcard sequences, wildcard repeats,
+and bounded literal repeats. Other syntax remains outside this subset.
+
 ## Execution engines
 
 The compiler assigns one execution class to each compiled pattern.
