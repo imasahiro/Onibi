@@ -91,6 +91,225 @@ static VALUE onibi_lexer_tokens(VALUE self) {
   return onibi_tokenize(obj->source);
 }
 
+static ID onibi_token_kind(VALUE token) {
+  return SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
+}
+
+static long onibi_token_byte(VALUE token) {
+  return NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("byte"))));
+}
+
+static VALUE onibi_ast_node(const char *type, VALUE token) {
+  VALUE node = rb_hash_new();
+  rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(type)));
+  if (!NIL_P(token)) {
+    rb_hash_aset(node, ID2SYM(rb_intern("start")),
+                 rb_hash_aref(token, ID2SYM(rb_intern("start"))));
+    rb_hash_aset(node, ID2SYM(rb_intern("end")),
+                 rb_hash_aref(token, ID2SYM(rb_intern("end"))));
+  }
+  return node;
+}
+
+static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end);
+
+static long onibi_find_close(VALUE tokens, long begin, long end, ID open, ID close) {
+  long depth = 0;
+  for (long i = begin; i < end; i++) {
+    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
+    if (kind == open) depth++;
+    else if (kind == close && --depth == 0) return i;
+  }
+  return -1;
+}
+
+static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
+  VALUE node = onibi_ast_node("character_class", rb_ary_entry(tokens, begin));
+  VALUE children = rb_ary_new(), ranges = rb_ary_new();
+  int negated = 0;
+  for (long i = begin + 1; i < close; i++) {
+    VALUE token = rb_ary_entry(tokens, i);
+    ID kind = onibi_token_kind(token);
+    if (kind == rb_intern("class_negate")) { negated = 1; continue; }
+    if (kind == rb_intern("class_range") && i > begin + 1 && i + 1 < close) {
+      VALUE range = rb_ary_new();
+      rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
+      rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
+      rb_ary_push(ranges, range);
+      i++;
+      continue;
+    }
+    rb_ary_push(children, token);
+  }
+  rb_hash_aset(node, ID2SYM(rb_intern("children")), children);
+  rb_hash_aset(node, ID2SYM(rb_intern("ranges")), ranges);
+  rb_hash_aset(node, ID2SYM(rb_intern("negated")), negated ? Qtrue : Qfalse);
+  rb_obj_freeze(children); rb_obj_freeze(ranges);
+  return node;
+}
+
+static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
+  VALUE token = rb_ary_entry(tokens, *index);
+  ID kind = onibi_token_kind(token);
+  if (kind == rb_intern("group_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("group_start"), rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated group");
+    VALUE node = onibi_ast_node("capture", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
+    rb_hash_aset(node, ID2SYM(rb_intern("capturing")), Qtrue);
+    rb_hash_aset(node, ID2SYM(rb_intern("end")),
+                 rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
+  if (kind == rb_intern("class_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("class_start"), rb_intern("class_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated character class");
+    VALUE node = onibi_parse_class(tokens, *index, close);
+    rb_hash_aset(node, ID2SYM(rb_intern("end")),
+                 rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
+  VALUE node = NIL_P(token) ? Qnil :
+    (kind == rb_intern("wildcard") ? onibi_ast_node("any", token) :
+     (kind == rb_intern("anchor") ? onibi_ast_node("anchor", token) :
+      (kind == rb_intern("escape") ? onibi_ast_node("escape", token) :
+       (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil))));
+  if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
+  rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM(onibi_token_byte(token)));
+  rb_obj_freeze(node);
+  *index = *index + 1;
+  return node;
+}
+
+static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
+  VALUE branches = rb_ary_new();
+  long part = begin, depth = 0;
+  for (long i = begin; i < end; i++) {
+    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
+    if (kind == rb_intern("group_start") || kind == rb_intern("class_start")) depth++;
+    else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
+    else if (kind == rb_intern("alternation") && depth == 0) {
+      rb_ary_push(branches, onibi_parse_range(src, tokens, part, i));
+      part = i + 1;
+    }
+  }
+  if (RARRAY_LEN(branches) > 0) {
+    rb_ary_push(branches, onibi_parse_range(src, tokens, part, end));
+    VALUE node = onibi_ast_node("alternative", Qnil);
+    rb_hash_aset(node, ID2SYM(rb_intern("branches")), branches);
+    rb_obj_freeze(branches); rb_obj_freeze(node);
+    return node;
+  }
+
+  VALUE children = rb_ary_new();
+  for (long i = begin; i < end;) {
+    VALUE node = onibi_parse_atom(src, tokens, &i, end);
+    if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+      VALUE modifier = rb_ary_entry(tokens, i);
+      long marker = onibi_token_byte(modifier);
+      if (marker == '*' || marker == '+' || marker == '?') {
+        long min = marker == '+' ? 1 : 0;
+        VALUE max = marker == '?' ? LONG2NUM(1) : Qnil;
+        i++;
+        int greedy = 1, possessive = 0;
+        if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+          long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
+          if (suffix == '?') { greedy = 0; i++; }
+          else if (suffix == '+') { possessive = 1; i++; }
+        }
+        VALUE quantifier = onibi_ast_node("quantifier", modifier);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("min")), LONG2NUM(min));
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("max")), max);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("greedy")), greedy ? Qtrue : Qfalse);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), possessive ? Qtrue : Qfalse);
+        rb_obj_freeze(quantifier); node = quantifier;
+      } else if (marker == '{') {
+        long close = i + 1;
+        while (close < end && onibi_token_byte(rb_ary_entry(tokens, close)) != '}') close++;
+        if (close >= end) rb_raise(eRegexpError, "unterminated quantifier");
+        long spec_start = NUM2LONG(rb_hash_aref(rb_ary_entry(tokens, i), ID2SYM(rb_intern("start"))));
+        long spec_end = NUM2LONG(rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("start"))));
+        VALUE spec = rb_str_substr(src, spec_start, spec_end - spec_start);
+        long min = 0, max_value = 0;
+        const char *body = RSTRING_PTR(spec) + 1;
+        char *comma = strchr(body, ',');
+        int has_max = 1;
+        if (comma != NULL) {
+          char *endptr = NULL;
+          min = strtol(body, &endptr, 10);
+          if (endptr != comma) rb_raise(eRegexpError, "invalid quantifier");
+          if (comma[1] == '\0') has_max = 0;
+          else {
+            char *max_end = NULL;
+            max_value = strtol(comma + 1, &max_end, 10);
+            if (*max_end != '\0') rb_raise(eRegexpError, "invalid quantifier");
+          }
+        } else {
+          char *endptr = NULL;
+          min = strtol(body, &endptr, 10);
+          if (*endptr != '\0') rb_raise(eRegexpError, "invalid quantifier");
+          max_value = min;
+        }
+        VALUE quantifier = onibi_ast_node("quantifier", modifier);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("min")), LONG2NUM(min));
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("max")), has_max ? LONG2NUM(max_value) : Qnil);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("greedy")), Qtrue);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), Qfalse);
+        rb_obj_freeze(quantifier); node = quantifier;
+        i = close + 1;
+      }
+    }
+    rb_ary_push(children, node);
+  }
+  VALUE sequence = onibi_ast_node("sequence", Qnil);
+  rb_hash_aset(sequence, ID2SYM(rb_intern("children")), children);
+  rb_obj_freeze(children); rb_obj_freeze(sequence);
+  return sequence;
+}
+
+static VALUE onibi_parser_options(VALUE options) {
+  VALUE result = rb_ary_new();
+  if (NIL_P(options) || options == Qfalse) { rb_obj_freeze(result); return result; }
+  if (options == Qtrue) rb_ary_push(result, rb_str_new_cstr("ignorecase"));
+  else if (RB_TYPE_P(options, T_STRING)) {
+    const char *p = RSTRING_PTR(options);
+    for (long i = 0; i < RSTRING_LEN(options); i++) {
+      const char *name = p[i] == 'i' ? "ignorecase" : (p[i] == 'm' ? "multiline" : (p[i] == 'x' ? "extended" : NULL));
+      if (name != NULL) rb_ary_push(result, rb_str_new_cstr(name));
+      else rb_raise(rb_eArgError, "unknown regexp option");
+    }
+  } else {
+    int mask = NUM2INT(options);
+    if (mask & 1) rb_ary_push(result, rb_str_new_cstr("ignorecase"));
+    if (mask & 4) rb_ary_push(result, rb_str_new_cstr("multiline"));
+    if (mask & 2) rb_ary_push(result, rb_str_new_cstr("extended"));
+  }
+  rb_obj_freeze(result);
+  return result;
+}
+
+static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
+  VALUE source, options = Qnil;
+  rb_scan_args(argc, argv, "11", &source, &options);
+  source = StringValue(source);
+  VALUE tokens = onibi_tokenize(source);
+  VALUE result = rb_hash_new();
+  VALUE source_copy = rb_str_dup(source);
+  rb_obj_freeze(source_copy);
+  rb_hash_aset(result, ID2SYM(rb_intern("source")), source_copy);
+  rb_hash_aset(result, ID2SYM(rb_intern("options")), onibi_parser_options(options));
+  rb_hash_aset(result, ID2SYM(rb_intern("tokens")), tokens);
+  rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_parse_range(source, tokens, 0, RARRAY_LEN(tokens)));
+  rb_obj_freeze(result);
+  return result;
+}
+
 static VALUE onibi_alloc(VALUE klass) {
   onibi_regexp_t *obj;
   return TypedData_Make_Struct(klass, onibi_regexp_t, &onibi_type, obj);
@@ -705,6 +924,8 @@ void Init_onibi(void) {
   rb_define_alloc_func(cLexer, onibi_lexer_alloc);
   rb_define_method(cLexer, "initialize", onibi_lexer_initialize, 1);
   rb_define_method(cLexer, "tokens", onibi_lexer_tokens, 0);
+  VALUE parser = rb_define_module_under(mOnibi, "Parser");
+  rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);

@@ -227,6 +227,26 @@ class BenchmarkApiTest < Minitest::Test
                  tokens.map { |token| token[:kind] })
   end
 
+  def test_parser_consumes_lexer_tokens_to_build_regular_ast
+    parsed = Onibi::Parser.parse("a|[b-d]+?")
+
+    assert_equal "a|[b-d]+?", parsed[:source]
+    assert_equal :alternative, parsed[:ast][:type]
+    assert_equal(%i[sequence sequence], parsed[:ast][:branches].map { |branch| branch[:type] })
+    assert_equal :literal, parsed[:ast][:branches][0][:children][0][:type]
+    quantifier = parsed[:ast][:branches][1][:children][0]
+    assert_equal :quantifier, quantifier[:type]
+    assert_equal 1, quantifier[:min]
+    assert_nil quantifier[:max]
+    refute quantifier[:greedy]
+    assert_equal [[98, 100]], quantifier[:atom][:ranges]
+    assert_predicate parsed, :frozen?
+
+    open_ended = Onibi::Parser.parse("a{2,}")[:ast][:children].first
+    assert_equal 2, open_ended[:min]
+    assert_nil open_ended[:max]
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
