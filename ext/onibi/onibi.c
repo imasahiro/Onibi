@@ -335,7 +335,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; } onibi_gir_builder_t;
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
@@ -435,7 +435,9 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
     } else {
       VALUE old_exits = result.exits;
       if (result.nullable) onibi_append_values(result.starts, part.starts);
-      onibi_connect_actions(builder, old_exits, part.starts, result.pending_actions);
+      VALUE transition_actions = rb_ary_dup(result.pending_actions);
+      onibi_append_values(transition_actions, part.start_actions);
+      onibi_connect_actions(builder, old_exits, part.starts, transition_actions);
       result.exits = rb_ary_dup(part.exits);
       if (result.nullable) onibi_append_values(result.exits, old_exits);
       result.pending_actions = rb_ary_new();
@@ -487,12 +489,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     return result;
   }
   if (type == ID2SYM(rb_intern("capture"))) {
+    long capture_id = builder->capture_count++;
     onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
-    rb_hash_aset(open, ID2SYM(rb_intern("slot")), INT2NUM(2));
+    rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
-    rb_hash_aset(close, ID2SYM(rb_intern("slot")), INT2NUM(3));
+    rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
     return result;
@@ -561,7 +564,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE ast = onibi_hash_value(parsed, "ast");
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0 };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0 };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);

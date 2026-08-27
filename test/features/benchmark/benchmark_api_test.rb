@@ -313,7 +313,13 @@ class BenchmarkApiTest < Minitest::Test
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
     assert_equal %i[CAPTURE_OPEN CAPTURE_CLOSE], actions.map { |action| action[:op] }
-    assert_equal [2, 3], actions.map { |action| action[:slot] }
+    assert_equal [0, 1], actions.map { |action| action[:slot] }
+  end
+
+  def test_compiler_assigns_distinct_capture_slots
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a(b))"))[:graph]
+    actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
+    assert_equal [0, 2, 3, 1], actions.map { |action| action[:slot] }
   end
 
   def test_capture_tokens_and_execution_class
