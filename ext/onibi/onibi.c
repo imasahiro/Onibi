@@ -121,7 +121,11 @@ static VALUE onibi_pipeline(VALUE self) {
   }
   rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
-  rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern("MRI")));
+  int simple = 1;
+  const char *meta = "\\.^$|()[]{}*+?";
+  for (long i = 0; i < RSTRING_LEN(src); i++)
+    if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
+  rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   return out;
 }
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {

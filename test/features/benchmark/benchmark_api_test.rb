@@ -25,7 +25,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[literal literal literal], pipeline[:tokens].map { |token| token[:kind] })
     assert_equal([97, 98, 99], pipeline[:rseq].map { |op| op[:arg][:byte] })
     assert_equal :sequence, pipeline[:ast][:type]
-    assert_equal :MRI, pipeline[:vm]
+    assert_equal :RSEQ, pipeline[:vm]
   end
 
   def test_literal_rseq_vm_matches_substring
