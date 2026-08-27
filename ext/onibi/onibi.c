@@ -182,6 +182,21 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(right, ID2SYM(rb_intern("to")), LONG2NUM(pipe + 1));
     rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, left); rb_ary_push(edges, right);
+  } else if (RSTRING_LEN(src) == 2 && strchr("*+?", RSTRING_PTR(src)[1])) {
+    edges = rb_ary_new();
+    VALUE first = rb_hash_new();
+    rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
+    rb_hash_aset(first, ID2SYM(rb_intern("to")), LONG2NUM(1));
+    rb_hash_aset(first, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_ary_push(edges, first);
+    VALUE repeat = rb_hash_new(), exit = rb_hash_new();
+    rb_hash_aset(repeat, ID2SYM(rb_intern("from")), LONG2NUM(1));
+    rb_hash_aset(repeat, ID2SYM(rb_intern("to")), LONG2NUM(0));
+    rb_hash_aset(repeat, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_hash_aset(exit, ID2SYM(rb_intern("from")), LONG2NUM(1));
+    rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2));
+    rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);

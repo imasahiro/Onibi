@@ -106,4 +106,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("baaaac")
     refute regexp.match?("bc")
   end
+
+  def test_quantifier_gir_has_ordered_repeat_cycle
+    edges = Onibi::Regexp.new("a*").pipeline[:gir_graph][:edges]
+    assert_equal [{ from: 0, to: 1, actions: [] },
+                  { from: 1, to: 0, actions: [] },
+                  { from: 1, to: 2, actions: [] }], edges
+  end
 end

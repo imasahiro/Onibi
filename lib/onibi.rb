@@ -103,6 +103,10 @@ module Onibi
         if pipe
           edges = [{ from: gir.length, to: 0, actions: [] },
                    { from: gir.length, to: pipe + 1, actions: [] }]
+        elsif source.length == 2 && "*+?".include?(source[1])
+          edges = [{ from: 0, to: 1, actions: [] },
+                   { from: 1, to: 0, actions: [] },
+                   { from: 1, to: 2, actions: [] }]
         end
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
