@@ -280,10 +280,11 @@ class BenchmarkApiTest < Minitest::Test
     assert_predicate compiled, :frozen?
   end
 
-  def test_compiler_rejects_ast_features_without_a_semantic_lowering
-    assert_raises(Onibi::RegexpError) do
-      Onibi::Compiler.compile(Onibi::Parser.parse("\\Aa\\z"))
-    end
+  def test_compiler_lowers_buffer_anchors_to_edge_actions
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("\\Aa\\z"))[:graph]
+
+    assert_equal :ASSERT_BEGIN_BUFFER, graph[:start_edges].first[:actions].first[:op]
+    assert_equal :ASSERT_END_BUFFER, graph[:edges].last[:actions].first[:op]
   end
 
   def test_capture_tokens_and_execution_class

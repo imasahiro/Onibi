@@ -334,7 +334,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
   return result;
 }
 
-typedef struct { VALUE starts; VALUE exits; int nullable; } onibi_fragment_t;
+typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
 typedef struct { VALUE states; VALUE edges; long next_id; } onibi_gir_builder_t;
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
@@ -354,16 +354,26 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
 }
 
 static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
+  VALUE actions = rb_ary_new();
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
-  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
+  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+  rb_ary_push(builder->edges, edge);
+}
+
+static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
+  VALUE edge = rb_hash_new();
+  rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
+  rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
+  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
 }
 
 static onibi_fragment_t onibi_fragment_empty(void) {
   onibi_fragment_t fragment;
-  fragment.starts = rb_ary_new(); fragment.exits = rb_ary_new(); fragment.nullable = 1;
+  fragment.starts = rb_ary_new(); fragment.exits = rb_ary_new();
+  fragment.start_actions = rb_ary_new(); fragment.pending_actions = rb_ary_new(); fragment.nullable = 1;
   return fragment;
 }
 
@@ -371,6 +381,16 @@ static void onibi_connect(onibi_gir_builder_t *builder, VALUE exits, VALUE start
   for (long i = 0; i < RARRAY_LEN(exits); i++)
     for (long j = 0; j < RARRAY_LEN(starts); j++)
       onibi_gir_edge(builder, NUM2LONG(rb_ary_entry(exits, i)), NUM2LONG(rb_ary_entry(starts, j)));
+}
+
+static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(exits); i++)
+    for (long j = 0; j < RARRAY_LEN(starts); j++)
+      onibi_gir_edge_actions(builder, NUM2LONG(rb_ary_entry(exits, i)), NUM2LONG(rb_ary_entry(starts, j)), actions);
+}
+
+static void onibi_append_values(VALUE destination, VALUE values) {
+  for (long i = 0; i < RARRAY_LEN(values); i++) rb_ary_push(destination, rb_ary_entry(values, i));
 }
 
 static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
@@ -388,20 +408,27 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 
 static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder_t *builder) {
   onibi_fragment_t result = onibi_fragment_empty();
-  int first = 1;
+  int have_consuming = 0;
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     onibi_fragment_t part = onibi_compile_node(rb_ary_entry(children, i), builder);
-    if (first) {
-      result.starts = part.starts;
-      first = 0;
-    } else {
-      onibi_connect(builder, result.exits, part.starts);
-      if (result.nullable) {
-        for (long j = 0; j < RARRAY_LEN(result.starts); j++)
-          rb_ary_push(result.exits, rb_ary_entry(part.exits, j));
-      }
+    if (RARRAY_LEN(part.starts) == 0) {
+      if (have_consuming) onibi_append_values(result.pending_actions, part.pending_actions);
+      else onibi_append_values(result.start_actions, part.pending_actions);
+      result.nullable = result.nullable && part.nullable;
+      continue;
     }
-    result.exits = part.exits;
+    if (!have_consuming) {
+      result.starts = part.starts;
+      result.exits = part.exits;
+      have_consuming = 1;
+    } else {
+      VALUE old_exits = result.exits;
+      onibi_connect_actions(builder, old_exits, part.starts, result.pending_actions);
+      result.exits = rb_ary_dup(part.exits);
+      if (result.nullable) onibi_append_values(result.exits, old_exits);
+      result.pending_actions = rb_ary_new();
+    }
+    onibi_append_values(result.pending_actions, part.pending_actions);
     result.nullable = result.nullable && part.nullable;
   }
   return result;
@@ -419,6 +446,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       onibi_fragment_t branch = onibi_compile_node(rb_ary_entry(branches, i), builder);
       for (long j = 0; j < RARRAY_LEN(branch.starts); j++) rb_ary_push(result.starts, rb_ary_entry(branch.starts, j));
       for (long j = 0; j < RARRAY_LEN(branch.exits); j++) rb_ary_push(result.exits, rb_ary_entry(branch.exits, j));
+      if (RARRAY_LEN(branch.start_actions) > 0 || RARRAY_LEN(branch.pending_actions) > 0)
+        rb_raise(eRegexpError, "branch-specific anchor actions are not implemented");
       result.nullable = result.nullable || branch.nullable;
     }
     return result;
@@ -435,7 +464,16 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     return result;
   }
   if (type == ID2SYM(rb_intern("anchor")))
-    rb_raise(eRegexpError, "anchor lowering is not implemented");
+  {
+    onibi_fragment_t result = onibi_fragment_empty();
+    VALUE action = rb_hash_new();
+    long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
+    const char *op = (marker == '^' || marker == 'A' || marker == 'G') ?
+      "ASSERT_BEGIN_BUFFER" : "ASSERT_END_BUFFER";
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
+    rb_ary_push(result.pending_actions, action);
+    return result;
+  }
   if (type == ID2SYM(rb_intern("capture")))
     rb_raise(eRegexpError, "capture lowering is not implemented");
   if (type == ID2SYM(rb_intern("quantifier"))) {
@@ -473,18 +511,20 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
   VALUE accept_starts = rb_ary_new();
   rb_ary_push(accept_starts, LONG2NUM(accept));
-  onibi_connect(&builder, fragment.exits, accept_starts);
+  onibi_connect_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
   VALUE start_edges = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(fragment.starts); i++) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(rb_intern("to")), rb_ary_entry(fragment.starts, i));
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_dup(fragment.start_actions));
     rb_ary_push(start_edges, edge);
   }
   if (fragment.nullable) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(accept));
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
+    VALUE actions = rb_ary_dup(fragment.start_actions);
+    onibi_append_values(actions, fragment.pending_actions);
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
     rb_ary_push(start_edges, edge);
   }
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
