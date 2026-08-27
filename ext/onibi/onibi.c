@@ -103,6 +103,7 @@ static VALUE onibi_pipeline(VALUE self) {
     if (RSTRING_PTR(src)[i] == '[') kind = "class_start";
     else if (RSTRING_PTR(src)[i] == ']') kind = "class_end";
     else if (RSTRING_PTR(src)[i] == '|') kind = "alternation";
+    else if (strchr("*+?", RSTRING_PTR(src)[i])) kind = "quantifier";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
     rb_ary_push(tokens, token);
@@ -118,7 +119,8 @@ static VALUE onibi_pipeline(VALUE self) {
     VALUE tk = rb_ary_entry(tokens, i);
     ID kindid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind"))));
     ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
-              (kindid == rb_intern("alternation") ? rb_intern("ALT") : rb_intern("CHAR"));
+              (kindid == rb_intern("alternation") ? rb_intern("ALT") :
+               (kindid == rb_intern("quantifier") ? rb_intern("QUANT") : rb_intern("CHAR")));
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
@@ -148,6 +150,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     for (long j = 0; j < RSTRING_LEN(str); j++)
       if (RSTRING_PTR(str)[j] == p[0] || RSTRING_PTR(str)[j] == p[2]) return Qtrue;
     return Qfalse;
+  }
+  if (RSTRING_LEN(src) == 2 && strchr("*+?", p[1])) {
+    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
+    return p[1] == '?' ? Qtrue : Qfalse;
   }
   for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
     VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);

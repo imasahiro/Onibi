@@ -56,6 +56,8 @@ module Onibi
                    :class_end
                  elsif byte == 124 && !in_class
                    :alternation
+                 elsif [42, 43, 63].include?(byte)
+                   :quantifier
                  else
                    :literal
                  end
@@ -69,6 +71,8 @@ module Onibi
         gir = tokens.map do |token|
           op = if token[:kind] == :class_start
                  :CLASS
+               elsif token[:kind] == :quantifier
+                 :QUANT
                else
                  (token[:kind] == :alternation ? :ALT : :CHAR)
                end
@@ -84,6 +88,8 @@ module Onibi
           source.split("|").any? { |branch| string.include?(branch) }
         elsif source.start_with?("[") && source.end_with?("]")
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
+        elsif source.length == 2 && "*+?".include?(source[1])
+          string.include?(source[0]) || source[1] == "?"
         else
           source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)
         end
