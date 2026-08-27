@@ -77,7 +77,10 @@ module Onibi
         ast = if source.match?(/\A.\+\z/) || source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
                 { type: :quantifier, atom: source[0], quantifier: source[1..] }
               elsif source.include?("|")
-                { type: :alternation, branches: source.split("|", -1).map { |part| { type: :sequence, source: part } } }
+                { type: :alternation, branches: source.split("|", -1).map do |part|
+                  { type: :sequence, source: part,
+                    children: part.bytes.map { |byte| { type: :literal, byte: byte } } }
+                end }
               elsif source.start_with?("[") && source.end_with?("]")
                 { type: :character_class, children: tokens }
               elsif source.start_with?("^") || source.end_with?("$")

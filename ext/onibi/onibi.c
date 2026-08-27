@@ -168,6 +168,23 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_ary_push(children, node);
   }
   rb_hash_aset(ast, ID2SYM(rb_intern("children")), children);
+  if (is_alt) {
+    VALUE branches = rb_ary_new(); long begin = 0;
+    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
+      VALUE branch = rb_hash_new(), branch_children = rb_ary_new();
+      rb_hash_aset(branch, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("sequence")));
+      rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_substr(src, begin, i - begin));
+      for (long j = begin; j < i; j++) {
+        VALUE node = rb_hash_new();
+        rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+        rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[j]));
+        rb_ary_push(branch_children, node);
+      }
+      rb_hash_aset(branch, ID2SYM(rb_intern("children")), branch_children);
+      rb_ary_push(branches, branch); begin = i + 1;
+    }
+    rb_hash_aset(ast, ID2SYM(rb_intern("branches")), branches);
+  }
   rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {

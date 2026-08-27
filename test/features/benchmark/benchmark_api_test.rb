@@ -84,6 +84,7 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxbarxx")
     refute regexp.vm_match?("xxbazxx")
     assert_equal :alternation, regexp.pipeline[:ast][:type]
+    assert_equal(%i[literal literal literal], regexp.pipeline[:ast][:branches].first[:children].map { |node| node[:type] })
   end
 
   def test_rseq_class_sequence_public_match
