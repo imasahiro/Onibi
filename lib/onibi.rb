@@ -38,6 +38,8 @@ module Onibi
         end
       end
 
+      def encoding = @regexp.encoding
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)
