@@ -62,13 +62,23 @@ module Onibi
           { kind: kind, byte: byte }
         end
         ast = { type: :sequence, children: tokens }
-        gir = tokens.map { |token| { op: token[:kind] == :class_start ? :CLASS : :CHAR, arg: token } }
-        simple = source.each_byte.none? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) }
+        gir = tokens.map do |token|
+          op = if token[:kind] == :class_start
+                 :CLASS
+               else
+                 (token[:kind] == :alternation ? :ALT : :CHAR)
+               end
+          { op: op, arg: token }
+        end
+        simple = source.each_byte.none? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ||
+                 (source.length == 3 && source[1] == "|")
         { tokens: tokens, ast: ast, gir: gir, rseq: gir, vm: simple ? :RSEQ : :MRI }
       end
 
       def vm_match?(string)
-        if source.start_with?("[") && source.end_with?("]")
+        if source.length == 3 && source[1] == "|"
+          string.each_byte.any? { |byte| byte == source.getbyte(0) || byte == source.getbyte(2) }
+        elsif source.start_with?("[") && source.end_with?("]")
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
         else
           source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)

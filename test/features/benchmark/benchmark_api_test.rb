@@ -38,4 +38,11 @@ class BenchmarkApiTest < Minitest::Test
     kinds = Onibi::Regexp.new("[ab]|cd").pipeline[:tokens].map { |token| token[:kind] }
     assert_equal %i[class_start literal literal class_end alternation literal literal], kinds
   end
+
+  def test_single_character_alternation_rseq_vm
+    regexp = Onibi::Regexp.new("a|b")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("xxbxx")
+    refute regexp.vm_match?("xxcxx")
+  end
 end

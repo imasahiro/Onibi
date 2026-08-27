@@ -116,7 +116,9 @@ static VALUE onibi_pipeline(VALUE self) {
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE op = rb_hash_new();
     VALUE tk = rb_ary_entry(tokens, i);
-    ID opid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind")))) == rb_intern("class_start") ? rb_intern("CLASS") : rb_intern("CHAR");
+    ID kindid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind"))));
+    ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
+              (kindid == rb_intern("alternation") ? rb_intern("ALT") : rb_intern("CHAR"));
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
@@ -127,6 +129,7 @@ static VALUE onibi_pipeline(VALUE self) {
   const char *meta = "\\.^$|()[]{}*+?";
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
+  if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   return out;
 }
@@ -139,6 +142,11 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     for (long j = 0; j < RSTRING_LEN(str); j++)
       for (long i = 1; i < RSTRING_LEN(src)-1; i++)
         if (RSTRING_PTR(str)[j] == p[i]) return Qtrue;
+    return Qfalse;
+  }
+  if (RSTRING_LEN(src) == 3 && p[1] == '|') {
+    for (long j = 0; j < RSTRING_LEN(str); j++)
+      if (RSTRING_PTR(str)[j] == p[0] || RSTRING_PTR(str)[j] == p[2]) return Qtrue;
     return Qfalse;
   }
   for (long i = 0; i < RSTRING_LEN(src); i++)
