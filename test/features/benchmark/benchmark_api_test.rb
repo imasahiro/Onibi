@@ -49,6 +49,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :RSEQ, pipeline[:vm]
     assert_equal :REGULAR_FAST, pipeline[:interpreter]
     assert_equal :ACCEPT, pipeline[:gir_graph][:states].last[:op]
+    assert_equal :G_ACCEPT, pipeline[:gir_graph][:states].last[:gir_op]
+    assert_equal :G_CHAR, pipeline[:gir_graph][:states].first[:gir_op]
     assert_equal({ from: 0, to: 1, actions: [] }, pipeline[:gir_graph][:edges].first)
     assert_equal 0, pipeline[:gir_graph][:start]
     assert_equal [{ op: :STRING, arg: "abc" }], pipeline[:rseq_compact]

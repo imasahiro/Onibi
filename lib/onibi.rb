@@ -130,8 +130,10 @@ module Onibi
                end
           { op: op, arg: token }
         end
-        states = gir.each_with_index.map { |op, index| { id: index, op: op[:op], arg: op[:arg] } }
-        states << { id: gir.length, op: :ACCEPT }
+        states = gir.each_with_index.map do |op, index|
+          { id: index, op: op[:op], gir_op: op[:op] == :CHAR ? :G_CHAR : op[:op], arg: op[:arg] }
+        end
+        states << { id: gir.length, op: :ACCEPT, gir_op: :G_ACCEPT }
         edges = gir.each_index.map { |index| { from: index, to: index + 1, actions: [] } }
         pipe = tokens.index { |token| token[:kind] == :alternation }
         if pipe

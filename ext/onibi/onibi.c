@@ -232,6 +232,8 @@ static VALUE onibi_pipeline(VALUE self) {
     VALUE state = rb_hash_new();
     rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(i));
     rb_hash_aset(state, ID2SYM(rb_intern("op")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("op"))));
+    VALUE op = rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("op")));
+    rb_hash_aset(state, ID2SYM(rb_intern("gir_op")), rb_equal(op, ID2SYM(rb_intern("CHAR"))) ? ID2SYM(rb_intern("G_CHAR")) : op);
     rb_hash_aset(state, ID2SYM(rb_intern("arg")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("arg"))));
     rb_ary_push(states, state);
     VALUE edge = rb_hash_new();
@@ -243,6 +245,7 @@ static VALUE onibi_pipeline(VALUE self) {
   VALUE accept = rb_hash_new();
   rb_hash_aset(accept, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir)));
   rb_hash_aset(accept, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ACCEPT")));
+  rb_hash_aset(accept, ID2SYM(rb_intern("gir_op")), ID2SYM(rb_intern("G_ACCEPT")));
   rb_ary_push(states, accept);
   long pipe = -1;
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
