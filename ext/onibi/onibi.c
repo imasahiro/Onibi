@@ -1245,14 +1245,14 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
     if (c == ':') regular_graph = 0;
     if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhH123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
+        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
   if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
     VALUE parser_args[1] = { src };
     VALUE parsed = onibi_parser_parse(1, parser_args, Qnil);
     VALUE compiled = onibi_compiler_compile(Qnil, parsed);
     VALUE rseq = onibi_rseq_lower(Qnil, compiled);
-    int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL;
+    int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL || strstr(RSTRING_PTR(src), "\\k<") != NULL;
     for (long start = 0; start <= RSTRING_LEN(str); start++) {
       long end = 0;
       if (has_backref) {
@@ -1416,7 +1416,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   for (long i = 0; graph_ok && i < RSTRING_LEN(src); i++) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
     if (c == ':' || (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhH123456789", RSTRING_PTR(src)[i + 1])))) graph_ok = 0;
+        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1])))) graph_ok = 0;
   }
   if (graph_ok) {
     VALUE parser_args[1] = { src };
