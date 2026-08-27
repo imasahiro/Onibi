@@ -64,7 +64,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int supported = 1;
   for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr("\\.^$(){}", RSTRING_PTR(src)[i])) supported = 0;
+    if (strchr("\\.(){}", RSTRING_PTR(src)[i])) supported = 0;
   if (strchr(RSTRING_PTR(src), '-')) supported = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) supported = 0;
   if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
