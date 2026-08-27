@@ -179,6 +179,21 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(ast, ID2SYM(rb_intern("ranges")), ranges);
     rb_hash_aset(ast, ID2SYM(rb_intern("negated")), RSTRING_LEN(src) > 2 && RSTRING_PTR(src)[1] == '^' ? Qtrue : Qfalse);
   }
+  if (is_quant) {
+    rb_hash_aset(ast, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
+    rb_hash_aset(ast, ID2SYM(rb_intern("quantifier")), rb_str_substr(src, 1, RSTRING_LEN(src) - 1));
+    rb_hash_aset(ast, ID2SYM(rb_intern("greedy")), RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '?' ? Qfalse : Qtrue);
+    rb_hash_aset(ast, ID2SYM(rb_intern("possessive")), RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' ? Qtrue : Qfalse);
+    if (RSTRING_PTR(src)[1] == '{') {
+      long min = 0, max = 0; char tail;
+      if (sscanf(RSTRING_PTR(src) + 2, "%ld,%ld%c", &min, &max, &tail) >= 2 ||
+          sscanf(RSTRING_PTR(src) + 2, "%ld%c", &min, &tail) == 1) {
+        if (max == 0) max = min;
+        rb_hash_aset(ast, ID2SYM(rb_intern("min")), LONG2NUM(min));
+        rb_hash_aset(ast, ID2SYM(rb_intern("max")), LONG2NUM(max));
+      }
+    }
+  }
   if (is_alt) {
     VALUE branches = rb_ary_new(); long begin = 0;
     for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {

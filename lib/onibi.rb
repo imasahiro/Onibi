@@ -88,6 +88,20 @@ module Onibi
               else
                 { type: :sequence, children: tokens }
               end
+        if ast[:type] == :quantifier
+          quantifier = ast[:quantifier]
+          body = quantifier.sub(/[?+]\z/, "")
+          ast[:min], ast[:max] = case body
+                                 when "*" then [0, nil]
+                                 when "+" then [1, nil]
+                                 when "?" then [0, 1]
+                                 else body[1...-1].split(",").map do |value|
+                                        value.empty? ? nil : value.to_i
+                                      end.then { |values| [values[0], values[1] || values[0]] }
+                                 end
+          ast[:greedy] = !quantifier.end_with?("?")
+          ast[:possessive] = quantifier.end_with?("+")
+        end
         if ast[:type] == :sequence
           ast[:children] = tokens.map do |token|
             type = { literal: :literal, wildcard: :any, anchor: :anchor,
