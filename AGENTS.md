@@ -1,77 +1,121 @@
 # Onibi Development Guide
 
-Onibi is a pure Ruby regular-expression compiler prototype. The active design
-is in [`docs/onibi-design.md`](docs/onibi-design.md).
+Onibi is an MRI-only regular-expression engine.
+The active design is in [`docs/gir.md`](docs/gir.md).
+The current milestone is a Ruby gem with a C extension.
 
-## Development rules
+## Product scope
 
-Use test-driven development for every behavior change:
+The gem provides `Onibi::Regexp` under the `Onibi` namespace.
+Its public API follows MRI `Regexp` behavior for each supported feature.
+The PoC does not replace MRI `Regexp` or modify MRI.
 
-1. Add a focused test.
-2. Run it and confirm the expected failure.
-3. Implement the smallest change.
-4. Run focused tests, the available suite, RuboCop, and the package build.
+The implementation supports MRI only.
+Do not add support for JRuby, TruffleRuby, or mruby.
 
-Tests must check library behavior. Pipeline tests compare exact AST, CFG,
-automaton, and dedicated-bytecode results. Do not test file lists or tooling
-configuration as library behavior.
+The PoC has three execution classes:
 
-## Current pipeline
+- `REGULAR_FAST`;
+- `TAGGED_ORDERED`;
+- `DYNAMIC`.
+
+Implement each interpreter in C.
+Keep their shared program format and match results consistent.
+
+ZJIT integration starts after the gem PoC is complete.
+Do not add a separate native-code generator during the PoC.
+
+## Active pipeline
 
 ```text
 pattern + options
-  -> lexer / parser -> AST
-  -> semantic analysis -> optimized CFG
-  -> regular, tagged, and semantic region analysis
-  -> Glushkov TNFA -> DFA or partial DFA
-  -> dedicated Onibi bytecode
+  -> parser -> AST
+  -> tagged epsilon NFA
+  -> epsilon elimination
+  -> G-IR
+  -> RSeq
+  -> execution-class dispatcher
+       -> REGULAR_FAST C interpreter
+       -> TAGGED_ORDERED C interpreter
+       -> DYNAMIC C interpreter
 ```
 
-The dedicated bytecode is the current execution target. It proves that the
-pipeline is feasible before a future C implementation and MRI integration.
-The current milestone targets MRI as the reference environment. Other Ruby
-implementations are outside this milestone.
+G-IR is the canonical semantic form.
+RSeq is the compact execution form.
 
-## Repository layout
+## Development rules
+
+Test-driven development is optional.
+A change can start with a test, an implementation, or a small experiment.
+
+Add focused tests for behavior that is ready for review.
+Run the smallest useful test set during development.
+Run broader checks when the change can affect more code.
+
+The complete legacy suite does not have to pass during early PoC work.
+Do not change a correct test only to hide an unsupported feature.
+Record unsupported behavior clearly in test names, filters, or milestone notes.
+
+Start with small unit tests.
+Good first cases include extension loading, object creation, literals, and simple match results.
+Add differential tests against MRI when public behavior becomes available.
+
+## Implementation rules
+
+Put production matcher and compiler code in the C extension.
+Use Ruby only for gem loading, version data, and necessary public wrappers.
+Do not implement a second production matcher in Ruby.
+
+Keep runtime dependencies at zero.
+Do not add FFI or an external regular-expression library.
+Use MRI behavior as the compatibility reference.
+
+Preserve ordered choice, capture boundaries, byte offsets, encodings, interrupts, and timeouts as features become supported.
+Give each C allocation a clear owner and release path.
+Use immutable compiled programs after publication.
+
+Do not add ZJIT code during the PoC.
+Keep the RSeq contract suitable for later ZJIT compilation.
+
+## Repository direction
+
+The planned PoC layout is:
 
 ```text
-lib/onibi.rb
-lib/onibi/
-  lexer.rb and lexer/       # lexer and lexer support
-  parser/                   # parser and parser support
-  ast.rb                    # AST nodes
-  cfg.rb                    # compiler control-flow graph
-  optimization.rb           # CFG optimization passes
-  compiler.rb               # AST to optimized CFG
-  automata.rb               # CFG to TNFA/DFA/partial DFA
-  irgen.rb                  # automata to dedicated bytecode
-test/features/v2/           # pipeline tests (namespace-free implementation)
-test/features/syntax/       # syntax and parser behavior
-docs/                       # current design and historical records
+ext/onibi/                 # C extension and extconf.rb
+lib/onibi.rb               # extension loader and public entry point
+lib/onibi/version.rb       # gem version
+test/unit/                 # focused compiler and interpreter tests
+test/compatibility/        # MRI differential API tests
+docs/gir.md                # active engine design
+docs/development.md        # milestones and verification policy
 ```
 
-The parser, compiler, automata, and IR generator are internal interfaces. The
-current repository focuses on compilation and bytecode generation.
+The existing Pure Ruby files and tests are legacy reference material.
+Do not treat their pipeline as the new architecture.
+Remove or move them only in a separate, reviewable change.
 
-## Commands
+## Verification
+
+Use the commands that the current `Rakefile` provides.
+Update this section when C extension tasks become available.
 
 ```sh
 bundle install
 bundle exec rake test
 bundle exec rubocop
 bundle exec rake build
-ruby -Ilib -e 'require "onibi"; p Onibi::Parser.parse("a+").ast'
 ```
 
-Run focused pipeline tests when changing one stage, then run the complete
-available suite.
+For C changes, enable compiler warnings.
+Use ASAN and UBSAN when their build tasks become available.
 
-## Quality and safety
+Run focused tests before each commit.
+Treat the complete suite as a progress report until its milestone makes it required.
 
-Keep runtime dependencies at zero. Do not add C extensions or FFI. Keep
-optimizations derived from CFG, semantic, or automaton facts. Preserve ordered
-choice and capture semantics. Compare complete generated instruction streams;
-comparators may ignore unstable byte offsets only.
+## Change control
 
-Use one atomic commit per change. Work on a feature branch and use a pull
-request. Run formatting, lint, tests, and package checks before delivery.
+Commit every change as an atomic unit.
+Do not combine unrelated changes in one commit.
+Use a feature branch and a pull request.
+Update the active documents when architecture or milestone rules change.

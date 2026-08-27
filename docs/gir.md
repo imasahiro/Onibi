@@ -2,17 +2,29 @@
 
 **A Glushkov-based regular expression engine for MRI Ruby**
 
-Status: Design specification  
-Target: MRI mainline  
-JIT backend: ZJIT  
-Primary implementation languages: C and Rust  
-Document language: English  
+| Field | Value |
+| --- | --- |
+| Status | Active design specification |
+| PoC target | MRI-only Ruby gem |
+| Integration target | MRI mainline |
+| PoC implementation language | C |
+| Later JIT backend | ZJIT |
+| Later integration languages | C and Rust |
+| Document language | English |
 
 ---
 
 ## 1. Purpose
 
 Onibi is a new regular expression engine for MRI Ruby.
+
+The first proof of concept is a Ruby gem with a C extension.
+
+The gem provides `Onibi::Regexp` under the `Onibi` namespace.
+
+This class follows MRI `Regexp` behavior for each supported feature.
+
+The PoC does not replace the built-in MRI `Regexp` class.
 
 Onibi replaces the current backtracking execution model with a prioritized Glushkov NFA execution model.
 
@@ -38,11 +50,29 @@ Onibi must support non-regular Ruby features such as:
 
 Onibi must not require a separate architecture-specific JIT compiler.
 
-Onibi must use the ZJIT low-level backend to generate native code.
+The PoC must implement all three execution interpreters in C.
 
-Onibi must use the ZJIT register allocator, machine-code emitters, executable-memory support, and C-call support.
+The PoC does not include native-code generation.
 
-Onibi must not lower its automaton to YARV instructions before native code generation.
+After the PoC, MRI integration must use the ZJIT low-level backend to generate native code.
+
+MRI integration must use the ZJIT register allocator, machine-code emitters, executable-memory support, and C-call support.
+
+MRI integration must not lower its automaton to YARV instructions before native code generation.
+
+## 1.1 Delivery stages
+
+Onibi has two delivery stages.
+
+The gem PoC validates the C compiler, RSeq, three C interpreters, and namespaced API.
+
+The PoC supports MRI only and can add `Regexp` features in small groups.
+
+The complete existing test suite is not an initial PoC gate.
+
+MRI integration starts after the PoC proves the execution design.
+
+That stage connects RSeq to ZJIT and applies the complete MRI acceptance criteria.
 
 ---
 
@@ -60,11 +90,17 @@ The following words have a specific meaning in this document.
 
 An implementation that does not satisfy a MUST requirement does not conform to this design.
 
+Requirements that name ZJIT or MRI integration apply after the gem PoC.
+
 ---
 
 # 3. Compatibility Baseline
 
 The compatibility target is MRI `master` behavior as of 2026-08-27.
+
+The initial gem build target is MRI 4.0.6.
+
+JRuby, TruffleRuby, and mruby are outside the project scope.
 
 The following MRI files are primary compatibility references:
 
@@ -115,7 +151,7 @@ Onibi has the following goals.
 11. The engine must poll MRI interrupts.
 12. The engine must integrate with `RRegexp` and `MatchData`.
 13. The engine must support Ractor-safe immutable compiled programs.
-14. The interpreter and native code must use the same semantic program.
+14. All three interpreters and later native code must use the same semantic program.
 15. Native code generation must use ZJIT.
 16. Onibi must not contain x86-64 or AArch64 instruction encoders.
 17. Onibi must not require YARV instruction expansion for each regexp state.
@@ -140,7 +176,13 @@ Onibi does not guarantee linear execution time for patterns with non-regular fea
 
 Onibi does not expose its internal ISA as a public Ruby API.
 
-The RSeq binary format is an MRI internal format.
+Onibi does not provide a portable implementation for non-MRI Ruby runtimes.
+
+RSeq is an internal Onibi format.
+
+The gem must not expose or persist RSeq as a public format.
+
+After integration, RSeq becomes an MRI internal format.
 
 MRI must not persist RSeq or native Onibi code in Marshal data.
 
@@ -154,7 +196,8 @@ Onibi uses the following pipeline.
 Regexp source
     |
     v
-Ruby/Onigmo parser
+Onibi C parser
+or later MRI parser adapter
     |
     v
 Onibi AST
@@ -172,28 +215,23 @@ Prioritized Glushkov IR
     v
 RSeq lowering
     |
-    +----------------------+
-    |                      |
-    v                      v
-RSeq interpreter     native-code threshold
-                           |
-                           v
-                     RegCodePlan
-                           |
-                           v
-                  RegMacroAssembler
-                           |
-                           v
-                       ZJIT LIR
-                           |
-                           v
-                  ZJIT register allocator
-                           |
-                           v
-                 ZJIT machine assembler
-                           |
-                           v
-                      native code
+    v
+RSeq
+    |
+    v
+execution-class dispatcher
+    |
+    +--> REGULAR_FAST C interpreter
+    |
+    +--> TAGGED_ORDERED C interpreter
+    |
+    +--> DYNAMIC C interpreter
+
+After the gem PoC:
+
+RSeq -> native-code threshold -> RegCodePlan -> RegMacroAssembler
+     -> ZJIT LIR -> ZJIT register allocator
+     -> ZJIT machine assembler -> native code
 ```
 
 The compiler must discard temporary epsilon-NFA data after RSeq generation.
@@ -278,7 +316,9 @@ Assertions are represented by edge predicates.
 
 RSeq is the compact runtime format.
 
-The RSeq interpreter executes RSeq.
+The selected C interpreter executes RSeq.
+
+The PoC contains separate C interpreters for `REGULAR_FAST`, `TAGGED_ORDERED`, and `DYNAMIC`.
 
 The ZJIT Onibi backend also compiles RSeq.
 
@@ -309,6 +349,12 @@ enum OnibiExecKind {
     ONIBI_EXEC_DYNAMIC
 };
 ```
+
+Each execution class has a separate C interpreter.
+
+The interpreters share RSeq structures, predicates, and raw match results.
+
+The dispatcher selects exactly one interpreter for each compiled program.
 
 ---
 
@@ -2806,7 +2852,7 @@ When ZJIT is not enabled:
 
 ```text
 Onibi compiler -> RSeq
-Onibi execution -> RSeq interpreter
+Onibi execution -> selected C interpreter
 ```
 
 The existence of Onibi must not silently enable native JIT compilation.
@@ -2918,7 +2964,7 @@ A native Onibi function either:
 matches
 does not match
 requests generic retry
-requests interpreter fallback
+requests C interpreter fallback
 raises through MRI
 ```
 
@@ -2930,7 +2976,7 @@ No Onibi native state includes a YARV PC.
 
 Native compilation failure is not a regexp error.
 
-The engine must continue with RSeq interpretation when:
+The engine must continue with the selected C interpreter when:
 
 ```text
 ZJIT code memory is unavailable
@@ -2964,7 +3010,7 @@ The regexp subsystem decides:
 ```text
 native Onibi entry
 or
-RSeq interpreter
+selected C interpreter
 ```
 
 YARV does not see individual Onibi states.
@@ -3276,10 +3322,10 @@ Ractor use
 
 # 103. JIT Equivalence Tests
 
-For each JIT-supported pattern, run three modes:
+For each JIT-supported pattern, run these modes:
 
 ```text
-RSeq interpreter
+applicable C interpreter
 Onibi ZJIT native ASCII entry
 Onibi ZJIT native generic entry
 ```
@@ -3502,7 +3548,7 @@ JIT compilation uses one compile-state transition.
 
 Only one thread may compile one regexp variant.
 
-Other threads continue to use the interpreter while compilation occurs or waits for VM serialization.
+Other threads continue to use C interpreters while compilation occurs or waits for VM serialization.
 
 ---
 
@@ -3537,7 +3583,35 @@ Load recompiles the regexp.
 
 # 114. Source Layout
 
-Recommended C files:
+The gem PoC uses this top-level layout:
+
+```text
+ext/onibi/
+    extconf.rb
+    onibi.c
+    ast.c
+    compile.c
+    nfa.c
+    gir.c
+    rseq.c
+    rseq_verify.c
+    exec_regular.c
+    exec_tagged.c
+    exec_dynamic.c
+    match.c
+
+lib/
+    onibi.rb
+    onibi/version.rb
+
+test/
+    unit/
+    compatibility/
+```
+
+The exact C file split can grow with the implementation.
+
+The later MRI integration can use these C files:
 
 ```text
 onibi/
@@ -3584,7 +3658,9 @@ onibi/
     debug.c
 ```
 
-Recommended Rust files:
+The gem PoC does not contain a Rust execution component.
+
+The later ZJIT integration can use these Rust files:
 
 ```text
 zjit/src/onibi/
@@ -3606,7 +3682,9 @@ zjit/src/virtualmem.rs
 
 ---
 
-# 115. C and Rust Boundary
+# 115. PoC C Boundary and Later C and Rust Boundary
+
+The gem PoC keeps the complete execution path in C.
 
 C owns:
 
@@ -3615,14 +3693,14 @@ parser integration
 AST adaptation
 G-IR compilation
 RSeq
-interpreter
+three execution interpreters
 MRI Regexp API
 encoding integration
 MatchData integration
 runtime helpers
 ```
 
-Rust owns:
+After the PoC, Rust owns:
 
 ```text
 RSeq JIT analysis
@@ -4047,61 +4125,57 @@ Implementation should use these phases.
 
 ## Phase 1
 
-Build:
+Create the MRI-only gem C extension.
 
-```text
-Onibi AST adapter
-tagged epsilon NFA
-G-IR
-reference G-IR interpreter
-```
+Define `Onibi::Regexp` and the minimum compatible constructor API.
 
-Run differential tests against Onigmo.
+Add focused unit tests for extension loading, allocation, initialization, and errors.
 
 ---
 
 ## Phase 2
 
-Build RSeq and RSeq interpreter.
+Build the minimum parser, AST, tagged epsilon NFA, G-IR, and RSeq.
 
-Use Onibi only when an internal feature flag is enabled.
+Implement the `REGULAR_FAST` C interpreter.
 
-Keep Onigmo as the reference.
+Start with literals and small regular operators.
+
+Compare supported public results with MRI.
 
 ---
 
 ## Phase 3
 
-Enable regular patterns that pass the Onibi supported-feature classifier.
+Implement tag history, ordered threads, captures, and the `TAGGED_ORDERED` C interpreter.
 
-Keep automatic Onigmo fallback.
+Compare complete match and capture byte offsets with MRI.
 
 ---
 
 ## Phase 4
 
-Implement complete captures and ordered semantics.
+Implement runtime semantic state and the `DYNAMIC` C interpreter.
 
-Enable common Ruby patterns by default.
+Add backreferences, calls, recursion, conditions, atomic groups, and absence in small groups.
 
 ---
 
 ## Phase 5
 
-Implement Dynamic features:
+Complete the gem PoC for its declared feature set.
 
-```text
-backreferences
-calls
-recursion
-conditions
-atomic groups
-absence
-```
+Expand the `Onibi::Regexp` API and differential tests.
+
+Verify ownership, error cleanup, interrupts, timeouts, and supported encodings.
+
+Record features that remain unsupported.
 
 ---
 
 ## Phase 6
+
+Start MRI source-tree integration after the gem PoC is complete.
 
 Connect the ZJIT standalone LIR backend.
 
@@ -4161,7 +4235,24 @@ It must not become a public compatibility guarantee.
 
 # 133. Acceptance Criteria
 
-Onibi is ready to replace the current matcher when all of these conditions are true.
+## 133.1 Gem PoC acceptance
+
+The gem PoC is complete when all of these conditions are true.
+
+1. The gem builds and loads on its supported MRI version.
+2. `Onibi::Regexp` provides the declared compatible API subset.
+3. All three execution interpreters are implemented in C.
+4. The compiler selects the correct execution class for supported patterns.
+5. Focused tests cover each supported compiler and interpreter behavior.
+6. Differential tests show no known mismatch in the supported API subset.
+7. Unsupported features are explicit and do not cause unexpected process failures.
+8. The PoC does not depend on ZJIT or MRI source-tree changes.
+
+The complete legacy, MRI, and Ruby Spec suites are not PoC acceptance gates.
+
+## 133.2 MRI replacement acceptance
+
+Onibi is ready to replace the current MRI matcher when all of these conditions are true.
 
 1. The complete MRI test suite passes.
 2. Ruby Spec regexp tests pass.
@@ -4173,7 +4264,7 @@ Onibi is ready to replace the current matcher when all of these conditions are t
 8. Ractor tests pass.
 9. ASAN and UBSAN tests pass.
 10. RSeq verification finds no invalid generated program.
-11. Interpreter and ZJIT native results are identical.
+11. C interpreter and ZJIT native results are identical.
 12. Pathological regular patterns do not show exponential backtracking.
 13. Typical regexp performance is not materially worse than the current engine.
 14. Common regular patterns show a measurable performance improvement.
@@ -4249,7 +4340,7 @@ The final MRI architecture is:
               +---------------+---------------+
               |                               |
               v                               v
-       RSeq interpreter                  hot program
+       three C interpreters               hot program
                                               |
                                               v
                                        RegCodePlan

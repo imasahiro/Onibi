@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["Masahiro Ide"]
   spec.email = ["imasahiro9@gmail.com"]
 
-  spec.summary = "A pure Ruby regular expression engine"
-  spec.description = "A pure Ruby regular expression engine with a Ruby-compatible API."
+  spec.summary = "An MRI-focused regular expression engine"
+  spec.description = "An MRI-focused regular expression engine with an Onibi::Regexp API."
   spec.homepage = "https://github.com/imasahiro/Onibi"
   spec.required_ruby_version = ">= 4.0.6"
   spec.license = "Apache-2.0"
