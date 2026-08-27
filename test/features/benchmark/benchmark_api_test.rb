@@ -205,6 +205,7 @@ class BenchmarkApiTest < Minitest::Test
 
     assert_equal(%i[literal escape anchor], pipeline[:tokens].map { |token| token[:kind] })
     assert_equal([46, 100, 65], pipeline[:tokens].map { |token| token[:byte] })
+    assert_equal([[0, 2], [2, 4], [4, 6]], pipeline[:tokens].map { |token| [token[:start], token[:end]] })
     assert_equal(%i[CHAR ESCAPE ASSERT], pipeline[:gir].map { |op| op[:op] })
   end
 

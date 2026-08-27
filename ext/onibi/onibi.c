@@ -141,6 +141,7 @@ static VALUE onibi_pipeline(VALUE self) {
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
   for (long i = 0; i < RSTRING_LEN(src); i++) {
+    long start = i;
     VALUE token = rb_hash_new();
     const char *kind = "literal";
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
@@ -160,6 +161,8 @@ static VALUE onibi_pipeline(VALUE self) {
     else if (byte == '^' || byte == '$') kind = "anchor";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
+    rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
+    rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
     rb_ary_push(tokens, token);
   }
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
