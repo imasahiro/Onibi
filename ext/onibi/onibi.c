@@ -94,7 +94,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   int plain_literal = 1; for (long i = 0; i < RSTRING_LEN(src); i++) if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) plain_literal = 0;
   if (options_mask != 0 && !(options_mask == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
       !(options_mask == 1 && plain_literal)) supported = 0;
-  if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
+  if (NIL_P(pos) && supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
 }

@@ -68,6 +68,7 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxabcxx")
     refute regexp.vm_match?("xxabxx")
     assert_equal({ start: 2, end: 5 }, regexp.vm_match_result("xxabcxx"))
+    refute regexp.match?("abc", 1)
   end
 
   def test_tokenizer_marks_classes_and_alternation
