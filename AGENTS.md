@@ -91,9 +91,9 @@ docs/gir.md                # active engine design
 docs/development.md        # milestones and verification policy
 ```
 
-The existing Pure Ruby files and tests are legacy reference material.
-Do not treat their pipeline as the new architecture.
-Remove or move them only in a separate, reviewable change.
+The Pure Ruby production files have been removed.
+Existing tests and documents remain as legacy reference material.
+Do not restore the Ruby matcher as production code.
 
 ## Verification
 
@@ -102,10 +102,11 @@ Update this section when C extension tasks become available.
 
 ```sh
 bundle install
-bundle exec rake test
 bundle exec rubocop
 bundle exec rake build
 ```
+
+The legacy tests cannot run until the C extension adds a new loader.
 
 For C changes, enable compiler warnings.
 Use ASAN and UBSAN when their build tasks become available.

@@ -1,10 +1,8 @@
 # frozen_string_literal: true
 
-require_relative "lib/onibi/version"
-
 Gem::Specification.new do |spec|
   spec.name = "onibi"
-  spec.version = Onibi::VERSION
+  spec.version = "0.1.0"
   spec.authors = ["Masahiro Ide"]
   spec.email = ["imasahiro9@gmail.com"]
 
@@ -25,7 +23,9 @@ Gem::Specification.new do |spec|
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
-    ls.readlines("\x0", chomp: true).reject do |f|
+    files = ls.readlines("\x0", chomp: true)
+    files.select! { |file| File.file?(File.join(__dir__, file)) }
+    files.reject do |f|
       f.start_with?(*%w[bin/ Gemfile .gitignore test/ .github/ .rubocop.yml])
     end
   end

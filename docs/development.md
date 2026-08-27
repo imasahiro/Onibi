@@ -112,8 +112,8 @@ Add ASAN and UBSAN jobs when the extension scaffold can run them.
 
 ## Legacy prototype
 
-The previous Pure Ruby implementation remains useful for experiments and historical comparison.
-It does not define the new production architecture.
+Git history retains the previous Pure Ruby implementation.
+The legacy tests and documents remain useful for historical comparison.
+They do not define the new production architecture.
 
-Keep legacy removal separate from C extension behavior changes.
-This rule makes each migration change easy to review and recover.
+Do not restore the Ruby matcher as production code.

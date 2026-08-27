@@ -27,8 +27,8 @@ The gem PoC does not include native-code generation.
 
 ## Development stage
 
-The repository still contains the previous Pure Ruby prototype.
-That code is reference material during the C extension transition.
+Git history retains the previous Pure Ruby prototype.
+The legacy tests and documents remain as reference material.
 New production work follows the G-IR design and the C extension plan.
 
 Early work starts with small unit tests.
@@ -46,11 +46,11 @@ See these documents:
 
 ```sh
 bundle install
-bundle exec rake test
 bundle exec rubocop
 bundle exec rake build
 ```
 
+The legacy tests cannot run until the C extension adds a new loader.
 The build tasks will change when the C extension scaffold is added.
 
 Onibi is licensed under Apache License 2.0.
