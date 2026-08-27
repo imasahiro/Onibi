@@ -165,6 +165,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   }
   const char *meta = "\\.^$|()[]{}*+?";
   if (RSTRING_LEN(src) >= 3 && p[0] == '[' && p[RSTRING_LEN(src)-1] == ']') {
+    if (RSTRING_LEN(src) == 5 && p[2] == '-') {
+      for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] >= p[1] && RSTRING_PTR(str)[j] <= p[3]) return Qtrue;
+      return Qfalse;
+    }
     for (long j = 0; j < RSTRING_LEN(str); j++)
       for (long i = 1; i < RSTRING_LEN(src)-1; i++)
         if (RSTRING_PTR(str)[j] == p[i]) return Qtrue;

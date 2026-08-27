@@ -105,7 +105,11 @@ module Onibi
         elsif source.include?("|") && source.count("|") == 1
           source.split("|").any? { |branch| string.include?(branch) }
         elsif source.start_with?("[") && source.end_with?("]")
-          string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
+          if source.match?(/\A\[.-.\]\z/)
+            string.each_byte.any? { |byte| byte.between?(source.getbyte(1), source.getbyte(3)) }
+          else
+            string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
+          end
         elsif source.match?(/\A\[.\].\z/)
           string.each_char.each_cons(2).any? { |first, last| first == source[1] && last == source[3] }
         elsif source.match?(/\A\[[^\]]+\].\z/)
