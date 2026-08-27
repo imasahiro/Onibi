@@ -328,6 +328,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ 1 => { start: 2, end: 4 }, 2 => { start: 3, end: 4 } }, result[:captures])
   end
 
+  def test_backreference_has_explicit_dynamic_pipeline_nodes
+    tokens = Onibi::Lexer.new("(a)\\1").tokens
+    assert_equal :backref, tokens.last[:kind]
+    ast = Onibi::Parser.parse("(a)\\1")[:ast]
+    assert_equal :backref, ast[:children].last[:type]
+    assert_equal 1, ast[:children].last[:capture]
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a)\\1"))[:graph]
+    assert_includes graph[:states].map { |state| state[:op] }, :G_BACKREF
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

@@ -45,7 +45,8 @@ static VALUE onibi_tokenize(VALUE src) {
     if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       byte = escaped;
-      if (!in_class && strchr("AzZG", escaped) != NULL) kind = "anchor";
+    if (!in_class && strchr("AzZG", escaped) != NULL) kind = "anchor";
+      else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
       else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
       i++;
     } else if (byte == '[' && !in_class) {
@@ -177,8 +178,9 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
   VALUE node = NIL_P(token) ? Qnil :
     (kind == rb_intern("wildcard") ? onibi_ast_node("any", token) :
      (kind == rb_intern("anchor") ? onibi_ast_node("anchor", token) :
-      (kind == rb_intern("escape") ? onibi_ast_node("escape", token) :
-       (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil))));
+       (kind == rb_intern("escape") ? onibi_ast_node("escape", token) :
+       (kind == rb_intern("backref") ? onibi_ast_node("backref", token) :
+       (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil)))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM(onibi_token_byte(token)));
   if (kind == rb_intern("anchor")) {
@@ -190,6 +192,8 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
   }
   if (kind == rb_intern("escape"))
     rb_hash_aset(node, ID2SYM(rb_intern("name")), rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1));
+  if (kind == rb_intern("backref"))
+    rb_hash_aset(node, ID2SYM(rb_intern("capture")), INT2NUM(onibi_token_byte(token) - '0'));
   rb_obj_freeze(node);
   *index = *index + 1;
   return node;
@@ -467,10 +471,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     return result;
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
-      type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
+      type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
     long id = builder->next_id++;
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
-      ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") : rb_intern("G_CLASS"));
+      ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
+       ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") : rb_intern("G_CLASS")));
     onibi_gir_state(builder, id, op, ast);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
