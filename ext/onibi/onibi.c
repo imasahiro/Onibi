@@ -359,6 +359,16 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ALT")));
     rb_hash_aset(op, ID2SYM(rb_intern("branches")), branches);
     rb_ary_push(compact, op);
+  } else if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
+             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')') {
+    VALUE open = rb_hash_new(), string = rb_hash_new(), close = rb_hash_new();
+    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
+    rb_hash_aset(open, ID2SYM(rb_intern("slot")), INT2NUM(2));
+    rb_hash_aset(string, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
+    rb_hash_aset(string, ID2SYM(rb_intern("arg")), rb_str_substr(src, 1, RSTRING_LEN(src) - 2));
+    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
+    rb_hash_aset(close, ID2SYM(rb_intern("slot")), INT2NUM(3));
+    rb_ary_push(compact, open); rb_ary_push(compact, string); rb_ary_push(compact, close);
   } else compact = gir;
   rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
   int simple = 1;

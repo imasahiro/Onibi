@@ -188,5 +188,6 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[CAPTURE_OPEN CAPTURE_CLOSE], actions.map { |action| action[:op] })
     assert regexp.match?("xxabcxx")
     refute regexp.match?("xxabxx")
+    assert_equal(%i[CAPTURE_OPEN STRING CAPTURE_CLOSE], regexp.pipeline[:rseq_compact].map { |op| op[:op] })
   end
 end

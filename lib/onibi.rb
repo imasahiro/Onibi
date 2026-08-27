@@ -185,6 +185,9 @@ module Onibi
                     [{ op: :RUN_ANY, arg: 1 }]
                   elsif source.include?("|")
                     [{ op: :ALT, branches: source.split("|", -1) }]
+                  elsif source.match?(/\A\([^()?~:<>=!\\]+\)\z/)
+                    [{ op: :CAPTURE_OPEN, slot: 2 }, { op: :STRING, arg: source[1...-1] },
+                     { op: :CAPTURE_CLOSE, slot: 3 }]
                   else
                     gir
                   end
