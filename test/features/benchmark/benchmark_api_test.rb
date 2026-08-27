@@ -294,6 +294,21 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal([[0, 1], [1, 2], [0, 2]], graph[:edges].map { |edge| [edge[:from], edge[:to]] })
   end
 
+  def test_rseq_lowering_preserves_immutable_program_order
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("a{2,3}"))
+    rseq = Onibi::RSeq.lower(compiled)
+
+    assert_equal 1, rseq[:header][:version]
+    assert_equal compiled[:graph][:states].length, rseq[:header][:state_count]
+    assert_equal compiled[:graph][:edges].length, rseq[:header][:edge_count]
+    assert_equal rseq[:header][:edge_count], rseq[:edges].length
+    assert_equal :COUNTER_INIT, rseq[:start_edges].first[:actions].first[:op]
+    assert_equal :COUNTER_INCREMENT, rseq[:actions].first[:op]
+    assert_predicate rseq, :frozen?
+    assert_predicate rseq[:header], :frozen?
+    assert_predicate rseq[:edges].first, :frozen?
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

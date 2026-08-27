@@ -593,6 +593,45 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   return result;
 }
 
+static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
+  VALUE graph = onibi_hash_value(compiled, "graph");
+  if (NIL_P(graph)) rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
+  VALUE states = onibi_hash_value(graph, "states");
+  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE start_edges = onibi_hash_value(graph, "start_edges");
+  VALUE actions = rb_ary_new();
+  VALUE r_edges = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(edges); i++) {
+    VALUE edge = rb_ary_entry(edges, i);
+    VALUE edge_actions = onibi_hash_value(edge, "actions");
+    VALUE out = rb_hash_new();
+    rb_hash_aset(out, ID2SYM(rb_intern("from")), onibi_hash_value(edge, "from"));
+    rb_hash_aset(out, ID2SYM(rb_intern("to")), onibi_hash_value(edge, "to"));
+    rb_hash_aset(out, ID2SYM(rb_intern("action_offset")), LONG2NUM(RARRAY_LEN(actions)));
+    for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
+      VALUE action = rb_ary_entry(edge_actions, j);
+      rb_obj_freeze(action);
+      rb_ary_push(actions, action);
+    }
+    rb_obj_freeze(out);
+    rb_ary_push(r_edges, out);
+  }
+  VALUE header = rb_hash_new();
+  rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
+  rb_hash_aset(header, ID2SYM(rb_intern("state_count")), LONG2NUM(RARRAY_LEN(states)));
+  rb_hash_aset(header, ID2SYM(rb_intern("edge_count")), LONG2NUM(RARRAY_LEN(r_edges)));
+  rb_hash_aset(header, ID2SYM(rb_intern("action_count")), LONG2NUM(RARRAY_LEN(actions)));
+  rb_hash_aset(header, ID2SYM(rb_intern("start_edge_count")), LONG2NUM(RARRAY_LEN(start_edges)));
+  VALUE result = rb_hash_new();
+  rb_hash_aset(result, ID2SYM(rb_intern("header")), header);
+  rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
+  rb_hash_aset(result, ID2SYM(rb_intern("edges")), r_edges);
+  rb_hash_aset(result, ID2SYM(rb_intern("start_edges")), start_edges);
+  rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
+  rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
+  return result;
+}
+
 static VALUE onibi_alloc(VALUE klass) {
   onibi_regexp_t *obj;
   return TypedData_Make_Struct(klass, onibi_regexp_t, &onibi_type, obj);
@@ -1211,6 +1250,8 @@ void Init_onibi(void) {
   rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);
   VALUE compiler = rb_define_module_under(mOnibi, "Compiler");
   rb_define_singleton_method(compiler, "compile", onibi_compiler_compile, 1);
+  VALUE rseq = rb_define_module_under(mOnibi, "RSeq");
+  rb_define_singleton_method(rseq, "lower", onibi_rseq_lower, 1);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
