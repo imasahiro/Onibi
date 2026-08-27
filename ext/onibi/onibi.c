@@ -180,6 +180,15 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
        (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM(onibi_token_byte(token)));
+  if (kind == rb_intern("anchor")) {
+    long marker = onibi_token_byte(token);
+    const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
+      "anchor_start" : ((marker == '$' || marker == 'z' || marker == 'Z') ?
+      "anchor_end" : "anchor");
+    rb_hash_aset(node, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(anchor)));
+  }
+  if (kind == rb_intern("escape"))
+    rb_hash_aset(node, ID2SYM(rb_intern("name")), rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1));
   rb_obj_freeze(node);
   *index = *index + 1;
   return node;
@@ -255,6 +264,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
           if (*endptr != '\0') rb_raise(eRegexpError, "invalid quantifier");
           max_value = min;
         }
+        if (has_max && max_value < min) rb_raise(eRegexpError, "invalid quantifier range");
         VALUE quantifier = onibi_ast_node("quantifier", modifier);
         rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);
         rb_hash_aset(quantifier, ID2SYM(rb_intern("min")), LONG2NUM(min));
@@ -286,6 +296,7 @@ static VALUE onibi_parser_options(VALUE options) {
     }
   } else {
     int mask = NUM2INT(options);
+    if (mask & ~(1 | 2 | 4)) rb_raise(rb_eArgError, "unknown regexp option");
     if (mask & 1) rb_ary_push(result, rb_str_new_cstr("ignorecase"));
     if (mask & 4) rb_ary_push(result, rb_str_new_cstr("multiline"));
     if (mask & 2) rb_ary_push(result, rb_str_new_cstr("extended"));

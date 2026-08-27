@@ -247,6 +247,22 @@ class BenchmarkApiTest < Minitest::Test
     assert_nil open_ended[:max]
   end
 
+  def test_parser_records_anchor_and_escape_semantics
+    ast = Onibi::Parser.parse("\\A\\d\\z")[:ast]
+    children = ast[:children]
+
+    assert_equal :anchor_start, children[0][:kind]
+    assert_equal :escape, children[1][:type]
+    assert_equal "d", children[1][:name]
+    assert_equal :anchor_end, children[2][:kind]
+  end
+
+  def test_parser_rejects_invalid_regular_core_syntax
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
+    assert_raises(ArgumentError) { Onibi::Parser.parse("a", 8) }
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
