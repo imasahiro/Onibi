@@ -393,6 +393,16 @@ static void onibi_append_values(VALUE destination, VALUE values) {
   for (long i = 0; i < RARRAY_LEN(values); i++) rb_ary_push(destination, rb_ary_entry(values, i));
 }
 
+static VALUE onibi_counter_action(const char *op, long slot, VALUE limit) {
+  VALUE action = rb_hash_new();
+  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
+  rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
+  if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(rb_intern("limit")), limit);
+  if (strcmp(op, "COUNTER_INIT") == 0)
+    rb_hash_aset(action, ID2SYM(rb_intern("value")), INT2NUM(1));
+  return action;
+}
+
 static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
   for (long i = 0; i < RARRAY_LEN(builder->states); i++) rb_obj_freeze(rb_ary_entry(builder->states, i));
   for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
@@ -420,6 +430,7 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
     if (!have_consuming) {
       result.starts = part.starts;
       result.exits = part.exits;
+      onibi_append_values(result.start_actions, part.start_actions);
       have_consuming = 1;
     } else {
       VALUE old_exits = result.exits;
@@ -487,18 +498,45 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       result.nullable = 1;
       return result;
     }
-    if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
-      rb_raise(eRegexpError, "bounded range lowering is not implemented");
     VALUE atom = onibi_hash_value(ast, "atom");
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = min == 0;
-    for (long i = 0; i < (min > 0 ? min : 1); i++) {
+    if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
+      rb_raise(eRegexpError, "invalid quantifier range");
+    long max = NIL_P(max_value) ? -1 : NUM2LONG(max_value);
+    if (max >= 0 && max != min) {
+      /* Counted repeats use one counter slot.  The first start edge
+         initializes it.  Optional bodies use ordered test edges. */
+      VALUE init = onibi_counter_action("COUNTER_INIT", 0, Qnil);
+      rb_hash_aset(init, ID2SYM(rb_intern("value")), INT2NUM(min > 0 ? 1 : 0));
+      rb_ary_push(result.start_actions, init);
+    }
+    for (long i = 0; i < min; i++) {
       onibi_fragment_t part = onibi_compile_node(atom, builder);
       if (i == 0) result.starts = part.starts;
-      else onibi_connect(builder, result.exits, part.starts);
+      else {
+        VALUE actions = rb_ary_new();
+        rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", 0, Qnil));
+        onibi_connect_actions(builder, result.exits, part.starts, actions);
+      }
       result.exits = part.exits;
     }
-    if (NIL_P(max_value)) {
+    if (max >= 0 && max > min) {
+      long optional = max - min;
+      for (long i = 0; i < optional; i++) {
+        onibi_fragment_t part = onibi_compile_node(atom, builder);
+        if (RARRAY_LEN(result.starts) == 0) result.starts = part.starts;
+        VALUE repeat_actions = rb_ary_new();
+        rb_ary_push(repeat_actions, onibi_counter_action("TEST_COUNTER_LT", 0, LONG2NUM(max)));
+        rb_ary_push(repeat_actions, onibi_counter_action("COUNTER_INCREMENT", 0, Qnil));
+        if (RARRAY_LEN(result.exits) > 0)
+          onibi_connect_actions(builder, result.exits, part.starts, repeat_actions);
+        VALUE next_exits = rb_ary_dup(result.exits);
+        onibi_append_values(next_exits, part.exits);
+        result.exits = next_exits;
+      }
+      rb_ary_push(result.pending_actions, onibi_counter_action("TEST_COUNTER_GE", 0, LONG2NUM(min)));
+    } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       onibi_connect(builder, result.exits, repeat.starts);
       onibi_connect(builder, repeat.exits, repeat.starts);
