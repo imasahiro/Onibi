@@ -69,7 +69,12 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
       RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
   int class_plus = RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
                    RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+';
-  if (strchr(RSTRING_PTR(src), '-') && !class_plus) supported = 0;
+  int class_pair = 0;
+  if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
+    const char *close = strchr(RSTRING_PTR(src) + 1, ']');
+    class_pair = close && close[1] == '+' && close[2] == '[';
+  }
+  if (strchr(RSTRING_PTR(src), '-') && !class_plus && !class_pair) supported = 0;
   if (strchr(RSTRING_PTR(src), '|') && (strchr(RSTRING_PTR(src), '[') || strchr(RSTRING_PTR(src), ']'))) supported = 0;
   long pipes = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
@@ -205,6 +210,11 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   int simple = 1;
+  int class_pair = 0;
+  if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
+    const char *close = strchr(RSTRING_PTR(src) + 1, ']');
+    class_pair = close && close[1] == '+' && close[2] == '[';
+  }
   const char *meta = "\\^$|()[]{}*+?";
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
@@ -215,6 +225,7 @@ static VALUE onibi_pipeline(VALUE self) {
   if (strchr(RSTRING_PTR(src), '-') && !(RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
       RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+')) simple = 0;
   if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') simple = 1;
+  if (class_pair) simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
@@ -226,6 +237,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
+  int class_pair = RSTRING_LEN(src) >= 12 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+' &&
+                    strchr(p + 1, ']') && strchr(p + 1, ']')[1] == '+' && strchr(p + 1, ']')[2] == '[';
   if (RSTRING_LEN(src) >= 3 && p[0] == '^' && p[RSTRING_LEN(src)-1] == '$') {
     VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
     return rb_str_equal(body, str) ? Qtrue : Qfalse;
@@ -275,6 +288,18 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       }
       return Qfalse;
     }
+  }
+  if (class_pair) {
+    long first_close = (long)(strchr(p + 1, ']') - p);
+    long second_open = first_close + 2;
+    for (long j = 0; j < RSTRING_LEN(str); j++) {
+      long run1 = 0;
+      while (j + run1 < RSTRING_LEN(str) && RSTRING_PTR(str)[j + run1] >= p[1] && RSTRING_PTR(str)[j + run1] <= p[3]) run1++;
+      long run2 = 0, k = j + run1;
+      while (k + run2 < RSTRING_LEN(str) && RSTRING_PTR(str)[k + run2] >= p[second_open + 1] && RSTRING_PTR(str)[k + run2] <= p[second_open + 3]) run2++;
+      if (run1 > 0 && run2 > 0) return Qtrue;
+    }
+    return Qfalse;
   }
   if (RSTRING_LEN(src) == 3 && p[1] == '|') {
     for (long j = 0; j < RSTRING_LEN(str); j++)

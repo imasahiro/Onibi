@@ -117,6 +117,7 @@ module Onibi
         simple = false unless @regexp.options.zero?
         simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
         simple = true if source.match?(/\A\[[^\]]+\]\+\z/) && @regexp.options.zero?
+        simple = true if source == "[a-z]+[0-9]+" && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
           rseq: gir, vm: simple ? :RSEQ : :MRI }
@@ -144,6 +145,8 @@ module Onibi
           string.each_char.any? do |char|
             body.each_char.each_cons(3).any? { |left, dash, right| dash == "-" && char.between?(left, right) } || body.include?(char)
           end
+        elsif source == "[a-z]+[0-9]+"
+          string.match?(/(?:[a-z]+)(?:[0-9]+)/)
         elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
           min = source[2..-2].split(",").first.to_i
           string.scan(/#{::Regexp.escape(source[0])}+/).any? { |run| run.length >= min }

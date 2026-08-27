@@ -127,4 +127,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("item-2026")
     refute regexp.match?("123")
   end
+
+  def test_character_class_pair_repeat_dispatches_to_rseq
+    regexp = Onibi::Regexp.new("[a-z]+[0-9]+")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.match?("token-abc123-end")
+    refute regexp.match?("token-abc-end")
+  end
 end
