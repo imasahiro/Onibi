@@ -9,8 +9,9 @@ static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
+static VALUE onibi_pipeline_build(VALUE self);
 
-typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; long program_size; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; long program_size; } onibi_regexp_t;
 typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -800,6 +801,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   obj->execution_kind = rb_str_cmp(obj->execution_class, rb_str_new_cstr("DYNAMIC")) == 0 ? ID2SYM(rb_intern("DYNAMIC")) :
     (rb_str_cmp(obj->execution_class, rb_str_new_cstr("TAGGED_ORDERED")) == 0 ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
+  obj->pipeline = onibi_pipeline_build(self);
+  rb_obj_freeze(obj->pipeline);
   rb_obj_freeze(self);
   return self;
 }
@@ -888,7 +891,7 @@ static VALUE onibi_program_cached(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return NIL_P(obj->rseq) ? Qfalse : Qtrue;
 }
-static VALUE onibi_pipeline(VALUE self) {
+static VALUE onibi_pipeline_build(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE out = rb_hash_new();
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
@@ -1172,6 +1175,12 @@ static VALUE onibi_pipeline(VALUE self) {
     ID2SYM(rb_intern("DYNAMIC")) : (rb_equal(klass, rb_str_new_cstr("TAGGED_ORDERED")) ?
       ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST"))));
   return out;
+}
+
+static VALUE onibi_pipeline(VALUE self) {
+  onibi_regexp_t *obj;
+  TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return obj->pipeline;
 }
 
 static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length) {

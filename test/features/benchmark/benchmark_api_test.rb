@@ -384,7 +384,9 @@ class BenchmarkApiTest < Minitest::Test
   end
 
   def test_regexp_compiles_pipeline_once_at_initialize
-    assert Onibi::Regexp.new("abc").program_cached?
+    regexp = Onibi::Regexp.new("abc")
+    assert regexp.program_cached?
+    assert_same regexp.pipeline, regexp.pipeline
     refute Onibi::Regexp.new("(?=a)b").program_cached?
   end
 
