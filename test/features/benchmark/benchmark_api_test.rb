@@ -338,6 +338,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_includes graph[:states].map { |state| state[:op] }, :G_BACKREF
   end
 
+  def test_dynamic_vm_executes_numeric_backreference
+    regexp = Onibi::Regexp.new("(a)\\1")
+    assert regexp.vm_match?("xxaaxx")
+    refute regexp.vm_match?("xxabxx")
+    assert_equal({ start: 2, end: 4, captures: { 1 => { start: 2, end: 3 } } }, regexp.vm_match_result("xxaaxx"))
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

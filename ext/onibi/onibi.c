@@ -1149,14 +1149,25 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
   if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; *matched_captures = captures; return 1; }
-  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
+  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
     if (pos >= RSTRING_LEN(str)) return 0;
-    unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
-    VALUE payload = onibi_hash_value(state, "payload");
-    int hit = op == rb_intern("G_ANY") ? byte != '\n' :
-      (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
-    if (!hit) return 0;
-    pos++;
+    if (op == rb_intern("G_BACKREF")) {
+      VALUE payload = onibi_hash_value(state, "payload");
+      long capture = NUM2LONG(onibi_hash_value(payload, "capture"));
+      VALUE begin = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1)));
+      VALUE finish = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1) + 1));
+      if (NIL_P(begin) || NIL_P(finish)) return 0;
+      long length = NUM2LONG(finish) - NUM2LONG(begin);
+      if (pos + length > RSTRING_LEN(str) || memcmp(RSTRING_PTR(str) + pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) return 0;
+      pos += length;
+    } else {
+      unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
+      VALUE payload = onibi_hash_value(state, "payload");
+      int hit = op == rb_intern("G_ANY") ? byte != '\n' :
+        (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
+      if (!hit) return 0;
+      pos++;
+    }
   }
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
@@ -1196,16 +1207,20 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
     if (c == ':') regular_graph = 0;
     if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhH", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
+        !strchr("AzZGdDsSwWhH123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
   if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
     VALUE parser_args[1] = { src };
     VALUE parsed = onibi_parser_parse(1, parser_args, Qnil);
     VALUE compiled = onibi_compiler_compile(Qnil, parsed);
     VALUE rseq = onibi_rseq_lower(Qnil, compiled);
+    int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL;
     for (long start = 0; start <= RSTRING_LEN(str); start++) {
       long end = 0;
-      if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
+      if (has_backref) {
+        VALUE captures = rb_hash_new();
+        if (onibi_gir_match_captures(rseq, str, start, &end, &captures)) return Qtrue;
+      } else if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
     }
     return Qfalse;
   }
@@ -1363,7 +1378,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   for (long i = 0; graph_ok && i < RSTRING_LEN(src); i++) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
     if (c == ':' || (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhH", RSTRING_PTR(src)[i + 1])))) graph_ok = 0;
+        !strchr("AzZGdDsSwWhH123456789", RSTRING_PTR(src)[i + 1])))) graph_ok = 0;
   }
   if (graph_ok) {
     VALUE parser_args[1] = { src };
