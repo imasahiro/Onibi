@@ -108,9 +108,19 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_ary_push(tokens, token);
   }
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
-  rb_hash_aset(out, ID2SYM(rb_intern("ast")), rb_hash_new());
-  rb_hash_aset(out, ID2SYM(rb_intern("gir")), tokens);
-  rb_hash_aset(out, ID2SYM(rb_intern("rseq")), tokens);
+  VALUE ast = rb_hash_new();
+  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("sequence")));
+  rb_hash_aset(ast, ID2SYM(rb_intern("children")), tokens);
+  rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
+  VALUE gir = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CHAR")));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), rb_ary_entry(tokens, i));
+    rb_ary_push(gir, op);
+  }
+  rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
+  rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern("MRI")));
   return out;
 }

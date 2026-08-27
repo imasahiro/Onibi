@@ -61,7 +61,9 @@ module Onibi
                  end
           { kind: kind, byte: byte }
         end
-        { tokens: tokens, ast: {}, gir: tokens, rseq: tokens, vm: :MRI }
+        ast = { type: :sequence, children: tokens }
+        gir = tokens.map { |token| { op: :CHAR, arg: token } }
+        { tokens: tokens, ast: ast, gir: gir, rseq: gir, vm: :MRI }
       end
 
       def vm_match?(string)

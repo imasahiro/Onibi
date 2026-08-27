@@ -23,7 +23,8 @@ class BenchmarkApiTest < Minitest::Test
   def test_literal_pipeline_exposes_compiler_stages
     pipeline = Onibi::Regexp.new("abc").pipeline
     assert_equal(%i[literal literal literal], pipeline[:tokens].map { |token| token[:kind] })
-    assert_equal([97, 98, 99], pipeline[:rseq].map { |token| token[:byte] })
+    assert_equal([97, 98, 99], pipeline[:rseq].map { |op| op[:arg][:byte] })
+    assert_equal :sequence, pipeline[:ast][:type]
     assert_equal :MRI, pipeline[:vm]
   end
 
