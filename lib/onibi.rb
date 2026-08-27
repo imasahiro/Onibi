@@ -50,8 +50,11 @@ module Onibi
 
       def pipeline
         in_class = false
-        tokens = source.bytes.map do |byte|
-          kind = if byte == 91
+        tokens = source.bytes.each_with_index.map do |(byte, index)|
+          kind = if (byte == 92 && [65, 122].include?(source.getbyte(index + 1))) ||
+                    (index.positive? && source.getbyte(index - 1) == 92 && [65, 122].include?(byte))
+                   :anchor
+                 elsif byte == 91
                    in_class = true
                    :class_start
                  elsif byte == 93
@@ -83,7 +86,7 @@ module Onibi
                 end }
               elsif source.start_with?("[") && source.end_with?("]")
                 { type: :character_class, children: tokens }
-              elsif source.start_with?("^") || source.end_with?("$")
+              elsif source.start_with?("^") || source.end_with?("$") || source.start_with?("\\A") || source.end_with?("\\z")
                 { type: :anchor, children: tokens }
               else
                 { type: :sequence, children: tokens }

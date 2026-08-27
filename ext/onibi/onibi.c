@@ -143,7 +143,11 @@ static VALUE onibi_pipeline(VALUE self) {
     else if (RSTRING_PTR(src)[i] == ')') kind = "group_end";
     else if (strchr("*+?{} ,", RSTRING_PTR(src)[i])) kind = "quantifier";
     else if (RSTRING_PTR(src)[i] == '.') kind = "wildcard";
-    else if (RSTRING_PTR(src)[i] == '^' || RSTRING_PTR(src)[i] == '$') kind = "anchor";
+    else if (RSTRING_PTR(src)[i] == '^' || RSTRING_PTR(src)[i] == '$' ||
+             (RSTRING_PTR(src)[i] == '\\' && i + 1 < RSTRING_LEN(src) &&
+              (RSTRING_PTR(src)[i + 1] == 'A' || RSTRING_PTR(src)[i + 1] == 'z')) ||
+             (i > 0 && RSTRING_PTR(src)[i - 1] == '\\' &&
+              (RSTRING_PTR(src)[i] == 'A' || RSTRING_PTR(src)[i] == 'z'))) kind = "anchor";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
     rb_ary_push(tokens, token);
@@ -154,7 +158,9 @@ static VALUE onibi_pipeline(VALUE self) {
                                            (RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src)-1] == '}'));
   int is_alt = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') is_alt = 1;
   int is_class = RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']';
-  int is_anchor = RSTRING_LEN(src) > 0 && (RSTRING_PTR(src)[0] == '^' || RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$');
+  int is_anchor = RSTRING_LEN(src) > 0 && (RSTRING_PTR(src)[0] == '^' || RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$' ||
+      (RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A') ||
+      (RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z'));
   rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : (is_alt ? "alternation" : (is_class ? "character_class" : (is_anchor ? "anchor" : "sequence"))))));
   VALUE children = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
