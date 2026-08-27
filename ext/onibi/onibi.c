@@ -263,6 +263,13 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
+  } else if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' &&
+             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("REPEAT")));
+    rb_hash_aset(op, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
+    rb_hash_aset(op, ID2SYM(rb_intern("bounds")), rb_str_substr(src, 2, RSTRING_LEN(src) - 3));
+    rb_ary_push(compact, op);
   } else if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
              RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' && strchr(RSTRING_PTR(src) + 1, ']') != NULL) {
     VALUE op = rb_hash_new();

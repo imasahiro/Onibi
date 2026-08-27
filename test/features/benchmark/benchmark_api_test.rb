@@ -46,6 +46,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal [{ op: :RUN_ANY, arg: 1 }], Onibi::Regexp.new(".").pipeline[:rseq_compact]
     assert_equal [{ op: :RUN_CLASS, arg: "[a-z]+[0-9]+" }], Onibi::Regexp.new("[a-z]+[0-9]+").pipeline[:rseq_compact]
     assert_equal [{ op: :RUN_CLASS, arg: "[a-z]+" }], Onibi::Regexp.new("[a-z]+").pipeline[:rseq_compact]
+    assert_equal [{ op: :REPEAT, atom: "a", bounds: "2,3" }], Onibi::Regexp.new("a{2,3}").pipeline[:rseq_compact]
   end
 
   def test_literal_rseq_vm_matches_substring

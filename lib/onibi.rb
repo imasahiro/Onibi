@@ -146,6 +146,8 @@ module Onibi
                     [{ op: :STRING, arg: source }]
                   elsif source == "[a-z]+[0-9]+"
                     [{ op: :RUN_CLASS, arg: source }]
+                  elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
+                    [{ op: :REPEAT, atom: source[0], bounds: source[2...-1] }]
                   elsif source.match?(/\A\[[^\]]+\]\+\z/)
                     [{ op: :RUN_CLASS, arg: source }]
                   elsif source.start_with?("[") && source.end_with?("]")
