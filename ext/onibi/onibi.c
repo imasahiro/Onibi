@@ -40,6 +40,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       rb_obj_freeze(obj->execution_class);
     }
   }
+  rb_obj_freeze(self);
   return self;
 }
 

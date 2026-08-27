@@ -12,6 +12,7 @@ module Onibi
     unless instance_methods(false).include?(:match)
       def initialize(pattern, options = nil)
         @regexp = ::Regexp.new(pattern, options || 0)
+        freeze
       end
 
       def match(string, position = nil)
@@ -47,6 +48,7 @@ module Onibi
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)
+
     end
 
     class TimeoutError < RegexpError; end unless const_defined?(:TimeoutError, false)
