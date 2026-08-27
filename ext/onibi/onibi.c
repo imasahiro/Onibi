@@ -251,11 +251,15 @@ static VALUE onibi_pipeline(VALUE self) {
   }
   if (pipe >= 0) {
     edges = rb_ary_new();
+    VALUE start = rb_hash_new();
+    rb_hash_aset(start, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir) + 1));
+    rb_hash_aset(start, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("START")));
+    rb_ary_push(states, start);
     VALUE left = rb_hash_new(), right = rb_hash_new();
-    rb_hash_aset(left, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir)));
+    rb_hash_aset(left, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir) + 1));
     rb_hash_aset(left, ID2SYM(rb_intern("to")), LONG2NUM(0));
     rb_hash_aset(left, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_hash_aset(right, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir)));
+    rb_hash_aset(right, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir) + 1));
     rb_hash_aset(right, ID2SYM(rb_intern("to")), LONG2NUM(pipe + 1));
     rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, left); rb_ary_push(edges, right);
@@ -309,7 +313,7 @@ static VALUE onibi_pipeline(VALUE self) {
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) : 0)));
+  rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) + 1 : 0)));
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   VALUE compact = rb_ary_new();

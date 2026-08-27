@@ -135,8 +135,9 @@ module Onibi
         edges = gir.each_index.map { |index| { from: index, to: index + 1, actions: [] } }
         pipe = tokens.index { |token| token[:kind] == :alternation }
         if pipe
-          edges = [{ from: gir.length, to: 0, actions: [] },
-                   { from: gir.length, to: pipe + 1, actions: [] }]
+          states << { id: gir.length + 1, op: :START }
+          edges = [{ from: gir.length + 1, to: 0, actions: [] },
+                   { from: gir.length + 1, to: pipe + 1, actions: [] }]
         elsif source.length == 2 && "*+?".include?(source[1])
           edges = [{ from: 0, to: 1, actions: [] },
                    { from: 1, to: 0, actions: [] },
@@ -183,7 +184,7 @@ module Onibi
                   else
                     gir
                   end
-        { tokens: tokens, ast: ast, gir: gir, gir_graph: { start: pipe ? gir.length : 0, states: states, edges: edges },
+        { tokens: tokens, ast: ast, gir: gir, gir_graph: { start: pipe ? gir.length + 1 : 0, states: states, edges: edges },
           rseq: gir, rseq_compact: compact, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end
 

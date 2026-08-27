@@ -85,6 +85,8 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxbarxx")
     refute regexp.vm_match?("xxbazxx")
     assert_equal :alternation, regexp.pipeline[:ast][:type]
+    graph = regexp.pipeline[:gir_graph]
+    assert_equal graph[:states].last[:id], graph[:start]
     assert_equal(%i[literal literal literal], regexp.pipeline[:ast][:branches].first[:children].map { |node| node[:type] })
   end
 
