@@ -2,6 +2,7 @@
 
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
+static ID id_scan, id_gsub;
 
 typedef struct { VALUE regexp; } onibi_regexp_t;
 
@@ -55,11 +56,20 @@ static VALUE onibi_inspect(VALUE self) {
   return rb_funcall(obj->regexp, id_inspect, 0);
 }
 static VALUE onibi_to_s(VALUE self) { return onibi_inspect(self); }
+static VALUE onibi_scan(VALUE self, VALUE str) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return rb_funcall(str, id_scan, 1, obj->regexp);
+}
+static VALUE onibi_gsub(VALUE self, VALUE str, VALUE replacement) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return rb_funcall(str, id_gsub, 2, obj->regexp, replacement);
+}
 
 void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect");
+  id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
@@ -72,6 +82,8 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "options", onibi_options, 0);
   rb_define_method(cRegexp, "inspect", onibi_inspect, 0);
   rb_define_method(cRegexp, "to_s", onibi_to_s, 0);
+  rb_define_method(cRegexp, "scan", onibi_scan, 1);
+  rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
   rb_define_const(cRegexp, "EXTENDED", INT2NUM(2));
   rb_define_const(cRegexp, "MULTILINE", INT2NUM(4));

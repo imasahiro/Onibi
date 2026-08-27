@@ -29,6 +29,10 @@ module Onibi
       def inspect = @regexp.inspect
 
       def to_s = @regexp.to_s
+
+      def scan(string) = string.scan(@regexp)
+
+      def gsub(string, replacement) = string.gsub(@regexp, replacement)
     end
 
     class TimeoutError < RegexpError; end unless const_defined?(:TimeoutError, false)
