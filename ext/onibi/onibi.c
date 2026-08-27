@@ -1371,6 +1371,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
   if ((options == 0 || options == 1 || options == 4) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
+  return rb_funcall(obj->regexp, id_match_p, 1, str);
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
@@ -1521,6 +1522,14 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  if (NIL_P(obj->rseq)) {
+    VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
+    if (NIL_P(match)) return Qnil;
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("begin"), 1, INT2NUM(0)));
+    rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
+    return result;
+  }
   int graph_ok = (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 ||
                   NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1 ||
                   NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4) && !NIL_P(obj->rseq);
