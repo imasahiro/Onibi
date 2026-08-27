@@ -354,6 +354,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal "x", ast[:children].last[:name]
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(?<x>a)\\k<x>"))[:graph]
     assert_equal 1, graph[:states][1][:payload][:capture]
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("(?<1x>a)") }
   end
 
   def test_named_backreference_executes_in_dynamic_vm

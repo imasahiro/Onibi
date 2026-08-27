@@ -204,7 +204,14 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(rb_intern("capturing")), Qtrue);
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
-    if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
+    if (!NIL_P(name)) {
+      if (RSTRING_LEN(name) == 0 || !isalpha((unsigned char)RSTRING_PTR(name)[0]))
+        rb_raise(eRegexpError, "invalid capture name");
+      for (long n = 1; n < RSTRING_LEN(name); n++)
+        if (!isalnum((unsigned char)RSTRING_PTR(name)[n]) && RSTRING_PTR(name)[n] != '_')
+          rb_raise(eRegexpError, "invalid capture name");
+      rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
+    }
     rb_hash_aset(node, ID2SYM(rb_intern("end")),
                  rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
     rb_obj_freeze(node);
