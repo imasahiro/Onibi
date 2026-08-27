@@ -89,7 +89,8 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   long pipes = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) supported = 0;
-  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) supported = 0;
+  int options_mask = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
+  if (options_mask != 0 && !(options_mask == 4 && strchr(RSTRING_PTR(src), '.') != NULL)) supported = 0;
   if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -396,7 +397,8 @@ static VALUE onibi_pipeline(VALUE self) {
   if (class_pair) simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
-  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
+  int pipeline_options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
+  if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL)) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   VALUE klass = obj->execution_class;
   rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
@@ -408,6 +410,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
+  int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
   if (class_plus && (strchr(p + 1, ':') || strchr(p + 1, ']') != strrchr(p, ']'))) class_plus = 0;
   if (RSTRING_LEN(src) >= 3 && p[0] == '(' && p[RSTRING_LEN(src) - 1] == ')') {
@@ -493,7 +496,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     return Qfalse;
   }
   if (RSTRING_LEN(src) == 1 && p[0] == '.') {
-    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] != '\n') return Qtrue;
+    for (long j = 0; j < RSTRING_LEN(str); j++) if (multiline || RSTRING_PTR(str)[j] != '\n') return Qtrue;
     return Qfalse;
   }
   if (RSTRING_LEN(src) == 2 && p[1] == '.') {
@@ -513,7 +516,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
         int hit = 1;
         for (long i = 0; i < RSTRING_LEN(src); i++)
-          if (i == dot) { if (RSTRING_PTR(str)[j + i] == '\n') hit = 0; }
+          if (i == dot) { if (!multiline && RSTRING_PTR(str)[j + i] == '\n') hit = 0; }
           else if (RSTRING_PTR(str)[j + i] != p[i]) hit = 0;
         if (hit) return Qtrue;
       }

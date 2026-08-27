@@ -163,7 +163,7 @@ module Onibi
                  source.match?(/\A.\{\d+(?:,\d+)?\}\z/) ||
                  source.start_with?("[") && source.end_with?("]") ||
                  source.match?(/\A\[[^\]:]+\]\+\z/)
-        simple = false unless @regexp.options.zero?
+        simple = false unless @regexp.options.zero? || (@regexp.options == ::Regexp::MULTILINE && source.include?("."))
         simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
         simple = true if source.match?(/\A\[[^\]:]+\]\+\z/) && @regexp.options.zero?
         simple = true if source.match?(/\A\([^()?~:<>=!\\]+\)\z/) && @regexp.options.zero?
@@ -230,13 +230,13 @@ module Onibi
           start = string.index(source[0])
           !!(start && string.index(source[3], start + 1))
         elsif source == "."
-          string.each_char.any? { |char| char != "\n" }
+          string.each_char.any? { |char| @regexp.options == ::Regexp::MULTILINE || char != "\n" }
         elsif source.length == 2 && source[1] == "."
           string.each_char.each_cons(2).any? { |first, _| first == source[0] }
         elsif source.count(".") == 1 && source.each_byte.none? { |byte| "\\^$|()[]{}*+?".include?(byte.chr) }
           dot = source.index(".")
           string.each_char.each_cons(source.length).any? do |window|
-            window.each_with_index.all? { |char, index| index == dot ? char != "\n" : char == source[index] }
+            window.each_with_index.all? { |char, index| index == dot ? (@regexp.options == ::Regexp::MULTILINE || char != "\n") : char == source[index] }
           end
         elsif ["^", "$"].include?(source)
           true

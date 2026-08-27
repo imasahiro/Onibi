@@ -27,6 +27,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_operator rseq_cases.length, :>=, 5
     assert_includes rseq_cases.map(&:label), "character_classes/ascii/range"
     assert_includes rseq_cases.map(&:label), "greedy_quantifier/ascii/bounded-repeat"
+    assert_includes rseq_cases.map(&:label), "options/ascii/multiline-dot"
   end
 
   def test_rseq_vm_matches_mri_for_dispatched_cases
