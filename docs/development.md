@@ -118,3 +118,16 @@ Git history retains the old documents.
 Neither source defines the new production architecture.
 
 Do not restore the Ruby matcher as production code.
+# Current C pipeline status
+
+The C extension now exposes a small tokenizer, parser, GIR lowering step, and
+RSeq representation for simple ASCII patterns. The RSeq VM executes literals,
+single character classes, single and bounded quantifiers, and simple
+alternation. The public `match?` method dispatches these cases to the RSeq VM.
+
+Patterns with options, non-ASCII input, ranges, captures, anchors, or other
+complex syntax use the MRI compatibility path. This boundary is intentional
+until the corresponding GIR opcodes and VM states are implemented.
+
+The benchmark contract tests compare both paths with MRI. The regex-redux
+benchmark output is identical for Ruby and Onibi.
