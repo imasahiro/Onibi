@@ -81,6 +81,13 @@ module Onibi
               else
                 { type: :sequence, children: tokens }
               end
+        if ast[:type] == :sequence
+          ast[:children] = tokens.map do |token|
+            type = { literal: :literal, wildcard: :any, anchor: :anchor,
+                     alternation: :alternative, quantifier: :quantifier }.fetch(token[:kind], :character_class)
+            { type: type, byte: token[:byte] }
+          end
+        end
         gir = tokens.map do |token|
           op = case token[:kind]
                when :class_start

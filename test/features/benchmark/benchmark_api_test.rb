@@ -36,6 +36,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[literal literal literal], pipeline[:tokens].map { |token| token[:kind] })
     assert_equal([97, 98, 99], pipeline[:rseq].map { |op| op[:arg][:byte] })
     assert_equal :sequence, pipeline[:ast][:type]
+    assert_equal(%i[literal literal literal], pipeline[:ast][:children].map { |node| node[:type] })
     assert_equal :RSEQ, pipeline[:vm]
     assert_equal :ACCEPT, pipeline[:gir_graph][:states].last[:op]
     assert_equal({ from: 0, to: 1, actions: [] }, pipeline[:gir_graph][:edges].first)

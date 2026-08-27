@@ -140,7 +140,20 @@ static VALUE onibi_pipeline(VALUE self) {
   int is_class = RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']';
   int is_anchor = RSTRING_LEN(src) > 0 && (RSTRING_PTR(src)[0] == '^' || RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$');
   rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : (is_alt ? "alternation" : (is_class ? "character_class" : (is_anchor ? "anchor" : "sequence"))))));
-  rb_hash_aset(ast, ID2SYM(rb_intern("children")), tokens);
+  VALUE children = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    VALUE token = rb_ary_entry(tokens, i), node = rb_hash_new();
+    ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
+    const char *type = kind == rb_intern("literal") ? "literal" :
+                      (kind == rb_intern("wildcard") ? "any" :
+                       (kind == rb_intern("anchor") ? "anchor" :
+                        (kind == rb_intern("alternation") ? "alternative" :
+                         (kind == rb_intern("quantifier") ? "quantifier" : "character_class"))));
+    rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(type)));
+    rb_hash_aset(node, ID2SYM(rb_intern("byte")), rb_hash_aref(token, ID2SYM(rb_intern("byte"))));
+    rb_ary_push(children, node);
+  }
+  rb_hash_aset(ast, ID2SYM(rb_intern("children")), children);
   rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
