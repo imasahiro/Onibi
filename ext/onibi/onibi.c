@@ -111,7 +111,9 @@ static VALUE onibi_pipeline(VALUE self) {
   }
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
-  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("sequence")));
+  int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
+                                           (RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src)-1] == '}'));
+  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : "sequence")));
   rb_hash_aset(ast, ID2SYM(rb_intern("children")), tokens);
   rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
   VALUE gir = rb_ary_new();
