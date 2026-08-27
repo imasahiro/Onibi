@@ -64,7 +64,9 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int supported = 1;
   for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr("\\(){}", RSTRING_PTR(src)[i])) supported = 0;
+    if (strchr("\\()", RSTRING_PTR(src)[i])) supported = 0;
+  if (strchr(RSTRING_PTR(src), '{') && !(RSTRING_LEN(src) >= 5 &&
+      RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
   if (strchr(RSTRING_PTR(src), '-')) supported = 0;
   if (strchr(RSTRING_PTR(src), '|') && (strchr(RSTRING_PTR(src), '[') || strchr(RSTRING_PTR(src), ']'))) supported = 0;
   long pipes = 0;
@@ -155,6 +157,7 @@ static VALUE onibi_pipeline(VALUE self) {
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
   if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
   if (RSTRING_LEN(src) == 4 && RSTRING_PTR(src)[1] == '.' && RSTRING_PTR(src)[2] == '*') simple = 1;
+  if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
@@ -238,8 +241,12 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     if (sscanf(p + 2, "%ld,%ld%c", &min, &max, &tail) < 2) {
       if (sscanf(p + 2, "%ld%c", &min, &tail) == 1) max = min;
     }
-    long run = 0; for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) run++; else if (run) break;
-    return (run >= min && run <= max) ? Qtrue : Qfalse;
+    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) {
+      long run = 0; while (j + run < RSTRING_LEN(str) && RSTRING_PTR(str)[j + run] == p[0]) run++;
+      if (run >= min) return Qtrue;
+      j += run - 1;
+    }
+    return Qfalse;
   }
   for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
     VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);

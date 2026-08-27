@@ -95,4 +95,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("a-middle-z")
     refute regexp.vm_match?("a-middle")
   end
+
+  def test_bounded_repeat_dispatches_to_rseq
+    regexp = Onibi::Regexp.new("a{2,3}")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.match?("baaaac")
+    refute regexp.match?("bc")
+  end
 end

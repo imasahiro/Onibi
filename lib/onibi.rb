@@ -96,9 +96,10 @@ module Onibi
                end
           { op: op, arg: token }
         end
-        simple = source.each_byte.none? { |byte| "\\|()[]{}*+?".include?(byte.chr) } ||
+        simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
-                 (source.length == 4 && source[1, 2] == ".*")
+                 (source.length == 4 && source[1, 2] == ".*") ||
+                 source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
         simple = false unless @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         { tokens: tokens, ast: ast, gir: gir, rseq: gir, vm: simple ? :RSEQ : :MRI }
@@ -122,10 +123,8 @@ module Onibi
           tail = source[-1]
           string.each_char.each_cons(2).any? { |first, last| chars.include?(first) && last == tail }
         elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
-          min, max = source[2..-2].split(",").map(&:to_i)
-          max ||= min
-          run = string[/\A#{::Regexp.escape(source[0])}+/]&.length.to_i
-          run.between?(min, max)
+          min = source[2..-2].split(",").first.to_i
+          string.scan(/#{::Regexp.escape(source[0])}+/).any? { |run| run.length >= min }
         elsif source.length == 2 && "*+?".include?(source[1])
           string.include?(source[0]) || source[1] == "?"
         elsif source.length == 4 && source[1, 2] == ".*"
