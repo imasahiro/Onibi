@@ -20,7 +20,7 @@ module Onibi
       end
 
       def match?(string, position = nil)
-        simple = source.each_byte.none? { |byte| "\\.(){}-".include?(byte.chr) }
+        simple = source.each_byte.none? { |byte| "\\(){}-".include?(byte.chr) }
         return vm_match?(string) if position.nil? && simple && @regexp.options.zero? && string.bytesize == string.length
 
         position.nil? ? @regexp.match?(string) : @regexp.match?(string, position)
@@ -112,6 +112,8 @@ module Onibi
           string.include?(source[0]) || source[1] == "?"
         elsif source == "."
           !string.empty?
+        elsif source.length == 2 && source[1] == "."
+          string.each_char.each_cons(2).any? { |first, _| first == source[0] }
         elsif ["^", "$"].include?(source)
           true
         else

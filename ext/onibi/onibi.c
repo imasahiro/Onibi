@@ -64,7 +64,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int supported = 1;
   for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr("\\.(){}", RSTRING_PTR(src)[i])) supported = 0;
+    if (strchr("\\(){}", RSTRING_PTR(src)[i])) supported = 0;
   if (strchr(RSTRING_PTR(src), '-')) supported = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) supported = 0;
   if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
@@ -175,6 +175,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     return p[1] == '?' ? Qtrue : Qfalse;
   }
   if (RSTRING_LEN(src) == 1 && p[0] == '.') return RSTRING_LEN(str) > 0 ? Qtrue : Qfalse;
+  if (RSTRING_LEN(src) == 2 && p[1] == '.') {
+    for (long j = 0; j + 1 < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
+    return Qfalse;
+  }
   if (RSTRING_LEN(src) >= 5 && p[1] == '{' && p[RSTRING_LEN(src)-1] == '}') {
     long min = 0, max = 0; char tail;
     if (sscanf(p + 2, "%ld,%ld%c", &min, &max, &tail) < 2) {
