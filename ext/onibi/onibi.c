@@ -42,7 +42,18 @@ static VALUE onibi_tokenize(VALUE src) {
     VALUE token = rb_hash_new();
     const char *kind = "literal";
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
-    if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
+    VALUE backref_name = Qnil;
+    if (!in_class && byte == '\\' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'k' && RSTRING_PTR(src)[i + 2] == '<') {
+      long close = i + 3;
+      while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
+      if (close < RSTRING_LEN(src)) {
+        kind = "backref";
+        byte = 'k';
+        backref_name = rb_str_substr(src, i + 3, close - (i + 3));
+        i = close;
+      }
+    }
+    if (strcmp(kind, "literal") == 0 && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       byte = escaped;
     if (!in_class && strchr("AzZG", escaped) != NULL) kind = "anchor";
@@ -69,6 +80,7 @@ static VALUE onibi_tokenize(VALUE src) {
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
     rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
+    if (!NIL_P(backref_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
   }
@@ -192,8 +204,11 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
   }
   if (kind == rb_intern("escape"))
     rb_hash_aset(node, ID2SYM(rb_intern("name")), rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1));
-  if (kind == rb_intern("backref"))
-    rb_hash_aset(node, ID2SYM(rb_intern("capture")), INT2NUM(onibi_token_byte(token) - '0'));
+  if (kind == rb_intern("backref")) {
+    VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
+    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")), INT2NUM(onibi_token_byte(token) - '0'));
+    else rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
+  }
   rb_obj_freeze(node);
   *index = *index + 1;
   return node;
@@ -472,6 +487,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
       type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
+    if (type == ID2SYM(rb_intern("backref")) && !NIL_P(onibi_hash_value(ast, "name")))
+      rb_raise(eRegexpError, "named backreference resolution is not implemented");
     long id = builder->next_id++;
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
       ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
