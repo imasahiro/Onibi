@@ -167,6 +167,22 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(accept, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir)));
   rb_hash_aset(accept, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ACCEPT")));
   rb_ary_push(states, accept);
+  long pipe = -1;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    VALUE tk = rb_ary_entry(tokens, i);
+    if (SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind")))) == rb_intern("alternation")) { pipe = i; break; }
+  }
+  if (pipe >= 0) {
+    edges = rb_ary_new();
+    VALUE left = rb_hash_new(), right = rb_hash_new();
+    rb_hash_aset(left, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir)));
+    rb_hash_aset(left, ID2SYM(rb_intern("to")), LONG2NUM(0));
+    rb_hash_aset(left, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_hash_aset(right, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir)));
+    rb_hash_aset(right, ID2SYM(rb_intern("to")), LONG2NUM(pipe + 1));
+    rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_ary_push(edges, left); rb_ary_push(edges, right);
+  }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);

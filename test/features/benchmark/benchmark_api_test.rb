@@ -57,6 +57,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :RSEQ, regexp.pipeline[:vm]
     assert regexp.vm_match?("xxbxx")
     refute regexp.vm_match?("xxcxx")
+    edges = regexp.pipeline[:gir_graph][:edges]
+    assert_equal([0, 2], edges.map { |edge| edge[:to] })
   end
 
   def test_multi_character_alternation_rseq_vm

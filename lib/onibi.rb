@@ -99,6 +99,11 @@ module Onibi
         states = gir.each_with_index.map { |op, index| { id: index, op: op[:op], arg: op[:arg] } }
         states << { id: gir.length, op: :ACCEPT }
         edges = gir.each_index.map { |index| { from: index, to: index + 1, actions: [] } }
+        pipe = tokens.index { |token| token[:kind] == :alternation }
+        if pipe
+          edges = [{ from: gir.length, to: 0, actions: [] },
+                   { from: gir.length, to: pipe + 1, actions: [] }]
+        end
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||
