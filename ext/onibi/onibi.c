@@ -395,7 +395,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; int ignorecase; } onibi_gir_builder_t;
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
@@ -540,6 +540,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
       ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
        ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") : rb_intern("G_CLASS")));
+    if (builder->ignorecase && type == ID2SYM(rb_intern("literal"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
+      rb_obj_freeze(payload);
+    }
     onibi_gir_state(builder, id, op, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -635,7 +640,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE ast = onibi_hash_value(parsed, "ast");
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new() };
+  VALUE parsed_options = onibi_hash_value(parsed, "options");
+  int ignorecase = 0;
+  for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
+    if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new(), ignorecase };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -704,7 +713,12 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_ary_push(r_edges, out);
   }
   VALUE header = rb_hash_new();
+  VALUE options = onibi_hash_value(compiled, "options");
+  int ignorecase = 0;
+  for (long i = 0; i < RARRAY_LEN(options); i++)
+    if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
+  rb_hash_aset(header, ID2SYM(rb_intern("ignorecase")), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(rb_intern("state_count")), LONG2NUM(RARRAY_LEN(states)));
   rb_hash_aset(header, ID2SYM(rb_intern("edge_count")), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(rb_intern("action_count")), LONG2NUM(RARRAY_LEN(actions)));
@@ -1316,6 +1330,8 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
   int tagged = execution_class != ID2SYM(rb_intern("REGULAR_FAST"));
+  VALUE header = onibi_hash_value(rseq, "header");
+  if (RTEST(onibi_hash_value(header, "ignorecase"))) str = rb_funcall(str, rb_intern("downcase"), 0);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     long end = 0;
     if (tagged) {
@@ -1330,7 +1346,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  if (options == 0 && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+  if ((options == 0 || options == 1) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
@@ -1482,7 +1498,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  int graph_ok = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 && !NIL_P(obj->rseq);
+  int graph_ok = (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 ||
+                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1) && !NIL_P(obj->rseq);
   if (graph_ok) {
     VALUE rseq = obj->rseq;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {

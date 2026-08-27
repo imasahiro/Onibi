@@ -388,6 +388,15 @@ class BenchmarkApiTest < Minitest::Test
     refute Onibi::Regexp.new("(?=a)b").program_cached?
   end
 
+  def test_ignorecase_is_compiled_into_rseq_header
+    regexp = Onibi::Regexp.new("ABC", 1)
+    assert regexp.program_cached?
+    assert regexp.vm_match?("xxabcxx")
+    refute regexp.vm_match?("xxabDxx")
+    rseq = Onibi::RSeq.lower(Onibi::Compiler.compile(Onibi::Parser.parse("ABC", 1)))
+    assert_equal true, rseq[:header][:ignorecase]
+  end
+
   def test_posix_class_is_a_semantic_token_and_vm_predicate
     tokens = Onibi::Lexer.new("[[:alpha:]]").tokens
     assert_equal %i[class_start posix_class class_end], tokens.map { |token| token[:kind] }
