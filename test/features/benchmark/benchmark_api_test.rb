@@ -76,4 +76,9 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :quantifier, pipeline[:ast][:type]
     assert_includes pipeline[:rseq].map { |op| op[:op] }, :REPEAT
   end
+
+  def test_class_and_anchor_ast_types
+    assert_equal :character_class, Onibi::Regexp.new("[ab]").pipeline[:ast][:type]
+    assert_equal :anchor, Onibi::Regexp.new("^abc$").pipeline[:ast][:type]
+  end
 end

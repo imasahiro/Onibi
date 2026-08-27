@@ -74,6 +74,10 @@ module Onibi
                 { type: :quantifier, atom: source[0], quantifier: source[1..] }
               elsif source.include?("|")
                 { type: :alternation, branches: source.split("|", -1).map { |part| { type: :sequence, source: part } } }
+              elsif source.start_with?("[") && source.end_with?("]")
+                { type: :character_class, children: tokens }
+              elsif source.start_with?("^") || source.end_with?("$")
+                { type: :anchor, children: tokens }
               else
                 { type: :sequence, children: tokens }
               end
