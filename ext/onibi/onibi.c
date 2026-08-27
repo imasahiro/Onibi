@@ -1,4 +1,5 @@
 #include "ruby.h"
+#include <string.h>
 
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect;
@@ -109,6 +110,15 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern("MRI")));
   return out;
 }
+static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  const char *p = RSTRING_PTR(src);
+  const char *meta = "\\.^$|()[]{}*+?";
+  for (long i = 0; i < RSTRING_LEN(src); i++)
+    if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
+  return NIL_P(rb_str_index(str, src, 0)) ? Qfalse : Qtrue;
+}
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
@@ -141,6 +151,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "program_size", onibi_program_size, 0);
   rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
   rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
+  rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
   rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));

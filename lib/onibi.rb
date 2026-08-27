@@ -50,6 +50,10 @@ module Onibi
         { tokens: tokens, ast: {}, gir: tokens, rseq: tokens, vm: :MRI }
       end
 
+      def vm_match?(string)
+        source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)
+      end
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)

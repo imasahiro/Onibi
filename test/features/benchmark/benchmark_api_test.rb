@@ -26,4 +26,10 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal([97, 98, 99], pipeline[:rseq].map { |token| token[:byte] })
     assert_equal :MRI, pipeline[:vm]
   end
+
+  def test_literal_rseq_vm_matches_substring
+    regexp = Onibi::Regexp.new("abc")
+    assert regexp.vm_match?("xxabcxx")
+    refute regexp.vm_match?("xxabxx")
+  end
 end
