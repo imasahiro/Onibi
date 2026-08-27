@@ -397,6 +397,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal true, rseq[:header][:ignorecase]
   end
 
+  def test_multiline_anchors_are_compiled_into_line_assertions
+    regexp = Onibi::Regexp.new("^a$", 4)
+    assert regexp.vm_match?("x\na\nx")
+    refute regexp.vm_match?("x\nba\nx")
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("^a$", 4))[:graph]
+    assert_equal :ASSERT_BEGIN_LINE, graph[:start_edges].first[:actions].first[:op]
+    assert_equal :ASSERT_END_LINE, graph[:edges].last[:actions].first[:op]
+  end
+
   def test_posix_class_is_a_semantic_token_and_vm_predicate
     tokens = Onibi::Lexer.new("[[:alpha:]]").tokens
     assert_equal %i[class_start posix_class class_end], tokens.map { |token| token[:kind] }

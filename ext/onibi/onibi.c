@@ -395,7 +395,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; int ignorecase; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; int ignorecase; int multiline; } onibi_gir_builder_t;
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
@@ -545,6 +545,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
       rb_obj_freeze(payload);
     }
+    if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("multiline")), Qtrue);
+      rb_obj_freeze(payload);
+    }
     onibi_gir_state(builder, id, op, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -556,8 +561,10 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
     long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
-    const char *op = (marker == '^' || marker == 'A' || marker == 'G') ?
-      "ASSERT_BEGIN_BUFFER" : ((marker == 'Z') ? "ASSERT_SEMI_END_BUFFER" : "ASSERT_END_BUFFER");
+    const char *op = marker == '^' ? (builder->multiline ? "ASSERT_BEGIN_LINE" : "ASSERT_BEGIN_BUFFER") :
+      (marker == '$' ? (builder->multiline ? "ASSERT_END_LINE" : "ASSERT_END_BUFFER") :
+       ((marker == 'A' || marker == 'G') ? "ASSERT_BEGIN_BUFFER" :
+        ((marker == 'Z') ? "ASSERT_SEMI_END_BUFFER" : "ASSERT_END_BUFFER")));
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
     rb_ary_push(result.pending_actions, action);
     return result;
@@ -642,9 +649,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
   VALUE parsed_options = onibi_hash_value(parsed, "options");
   int ignorecase = 0;
+  int multiline = 0;
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new(), ignorecase };
+    else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -715,10 +724,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE header = rb_hash_new();
   VALUE options = onibi_hash_value(compiled, "options");
   int ignorecase = 0;
+  int multiline = 0;
   for (long i = 0; i < RARRAY_LEN(options); i++)
     if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
+    else if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("multiline"))) multiline = 1;
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
   rb_hash_aset(header, ID2SYM(rb_intern("ignorecase")), ignorecase ? Qtrue : Qfalse);
+  rb_hash_aset(header, ID2SYM(rb_intern("multiline")), multiline ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(rb_intern("state_count")), LONG2NUM(RARRAY_LEN(states)));
   rb_hash_aset(header, ID2SYM(rb_intern("edge_count")), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(rb_intern("action_count")), LONG2NUM(RARRAY_LEN(actions)));
@@ -1168,6 +1180,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     ID op = SYM2ID(onibi_hash_value(action, "op"));
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") && pos != 0) return 0;
     if (op == rb_intern("ASSERT_END_BUFFER") && pos != length) return 0;
+    if (op == rb_intern("ASSERT_BEGIN_LINE") && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
+    if (op == rb_intern("ASSERT_END_LINE") && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;
     if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
   }
@@ -1224,7 +1238,7 @@ static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, lo
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
     VALUE payload = onibi_hash_value(state, "payload");
-    int hit = op == rb_intern("G_ANY") ? byte != '\n' :
+    int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
       (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
     if (!hit) return 0;
     pos++;
@@ -1288,7 +1302,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
     } else {
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
       VALUE payload = onibi_hash_value(state, "payload");
-      int hit = op == rb_intern("G_ANY") ? byte != '\n' :
+      int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
         (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
       if (!hit) return 0;
       pos++;
@@ -1346,7 +1360,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  if ((options == 0 || options == 1) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+  if ((options == 0 || options == 1 || options == 4) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
@@ -1499,7 +1513,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int graph_ok = (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 ||
-                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1) && !NIL_P(obj->rseq);
+                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1 ||
+                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4) && !NIL_P(obj->rseq);
   if (graph_ok) {
     VALUE rseq = obj->rseq;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
