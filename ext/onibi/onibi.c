@@ -538,7 +538,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_ary_push(result.pending_actions, onibi_counter_action("TEST_COUNTER_GE", 0, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
-      onibi_connect(builder, result.exits, repeat.starts);
+      if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
+      if (RARRAY_LEN(result.exits) > 0) onibi_connect(builder, result.exits, repeat.starts);
       onibi_connect(builder, repeat.exits, repeat.starts);
       for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
     }
@@ -1033,9 +1034,90 @@ static VALUE onibi_pipeline(VALUE self) {
       ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST"))));
   return out;
 }
+
+static int onibi_vm_actions_ok(VALUE actions, long pos, long length) {
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    VALUE action = rb_ary_entry(actions, i);
+    ID op = SYM2ID(onibi_hash_value(action, "op"));
+    if (op == rb_intern("ASSERT_BEGIN_BUFFER") && pos != 0) return 0;
+    if (op == rb_intern("ASSERT_END_BUFFER") && pos != length) return 0;
+  }
+  return 1;
+}
+
+static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
+  VALUE ranges = onibi_hash_value(payload, "ranges");
+  VALUE children = onibi_hash_value(payload, "children");
+  int hit = 0;
+  for (long i = 0; i < RARRAY_LEN(ranges); i++) {
+    VALUE range = rb_ary_entry(ranges, i);
+    if (RARRAY_LEN(range) == 2 && byte >= NUM2INT(rb_ary_entry(range, 0)) && byte <= NUM2INT(rb_ary_entry(range, 1))) hit = 1;
+  }
+  for (long i = 0; i < RARRAY_LEN(children); i++) {
+    VALUE child = rb_ary_entry(children, i);
+    if (onibi_hash_value(child, "kind") == ID2SYM(rb_intern("literal")) && byte == NUM2INT(onibi_hash_value(child, "byte"))) hit = 1;
+  }
+  return RTEST(onibi_hash_value(payload, "negated")) ? !hit : hit;
+}
+
+static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited) {
+  VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
+  if (RTEST(rb_hash_aref(visited, key))) return 0;
+  rb_hash_aset(visited, key, Qtrue);
+  VALUE state = rb_ary_entry(states, state_id);
+  ID op = SYM2ID(onibi_hash_value(state, "op"));
+  if (op == rb_intern("G_ACCEPT")) return 1;
+  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
+    if (pos >= RSTRING_LEN(str)) return 0;
+    unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
+    VALUE payload = onibi_hash_value(state, "payload");
+    int hit = op == rb_intern("G_ANY") ? byte != '\n' :
+      (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
+    if (!hit) return 0;
+    pos++;
+  }
+  for (long i = 0; i < RARRAY_LEN(edges); i++) {
+    VALUE edge = rb_ary_entry(edges, i);
+    if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), pos, RSTRING_LEN(str))) continue;
+    if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited)) return 1;
+  }
+  return 0;
+}
+
+static int onibi_gir_match(VALUE graph, VALUE str, long start) {
+  VALUE states = onibi_hash_value(graph, "states");
+  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE starts = onibi_hash_value(graph, "start_edges");
+  VALUE visited = rb_hash_new();
+  for (long i = 0; i < RARRAY_LEN(starts); i++) {
+    VALUE edge = rb_ary_entry(starts, i);
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), start, RSTRING_LEN(str))) continue;
+    if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited)) return 1;
+  }
+  return 0;
+}
+
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
+  int regular_graph = options == 0;
+  for (long i = 0; regular_graph && i < RSTRING_LEN(src); i++) {
+    unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
+    if (c == '(' || c == ')' || c == ':') regular_graph = 0;
+    if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
+        !strchr("AzZG", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
+  }
+  if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
+    VALUE parser_args[1] = { src };
+    VALUE parsed = onibi_parser_parse(1, parser_args, Qnil);
+    VALUE compiled = onibi_compiler_compile(Qnil, parsed);
+    VALUE graph = onibi_hash_value(compiled, "graph");
+    for (long start = 0; start <= RSTRING_LEN(str); start++)
+      if (onibi_gir_match(graph, str, start)) return Qtrue;
+    return Qfalse;
+  }
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
