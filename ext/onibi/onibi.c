@@ -274,6 +274,18 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2));
     rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
+  } else if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') {
+    edges = rb_ary_new();
+    VALUE first = rb_hash_new();
+    rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
+    rb_hash_aset(first, ID2SYM(rb_intern("to")), LONG2NUM(1));
+    VALUE init = rb_hash_new(); rb_hash_aset(init, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("COUNTER_INIT"))); rb_hash_aset(init, ID2SYM(rb_intern("slot")), INT2NUM(0));
+    VALUE actions = rb_ary_new(); rb_ary_push(actions, init); rb_hash_aset(first, ID2SYM(rb_intern("actions")), actions); rb_ary_push(edges, first);
+    VALUE repeat = rb_hash_new(), exit = rb_hash_new();
+    rb_hash_aset(repeat, ID2SYM(rb_intern("from")), LONG2NUM(1)); rb_hash_aset(repeat, ID2SYM(rb_intern("to")), LONG2NUM(0));
+    VALUE repeat_actions = rb_ary_new(), increment = rb_hash_new(); rb_hash_aset(increment, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("COUNTER_INCREMENT"))); rb_hash_aset(increment, ID2SYM(rb_intern("slot")), INT2NUM(0)); rb_ary_push(repeat_actions, increment); rb_hash_aset(repeat, ID2SYM(rb_intern("actions")), repeat_actions);
+    rb_hash_aset(exit, ID2SYM(rb_intern("from")), LONG2NUM(1)); rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2)); rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
   }
   if (RSTRING_LEN(src) > 0 && RSTRING_PTR(src)[0] == '^' && RARRAY_LEN(edges) > 0) {
     VALUE action = rb_hash_new();

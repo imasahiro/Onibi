@@ -137,6 +137,12 @@ class BenchmarkApiTest < Minitest::Test
                   { from: 1, to: 2, actions: [] }], edges
   end
 
+  def test_bounded_repeat_gir_has_counter_actions
+    edges = Onibi::Regexp.new("a{2,3}").pipeline[:gir_graph][:edges]
+    assert_equal :COUNTER_INIT, edges.first[:actions].first[:op]
+    assert_equal :COUNTER_INCREMENT, edges[1][:actions].first[:op]
+  end
+
   def test_simple_character_class_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[ab]")
     assert_equal :RSEQ, regexp.pipeline[:vm]

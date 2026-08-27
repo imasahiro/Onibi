@@ -141,6 +141,10 @@ module Onibi
           edges = [{ from: 0, to: 1, actions: [] },
                    { from: 1, to: 0, actions: [] },
                    { from: 1, to: 2, actions: [] }]
+        elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
+          edges = [{ from: 0, to: 1, actions: [{ op: :COUNTER_INIT, slot: 0 }] },
+                   { from: 1, to: 0, actions: [{ op: :COUNTER_INCREMENT, slot: 0 }] },
+                   { from: 1, to: 2, actions: [] }]
         end
         edges.first[:actions] << { op: :ASSERT_BEGIN_BUFFER } if source.start_with?("^") && edges.any?
         edges.last[:actions] << { op: :ASSERT_END_BUFFER } if source.end_with?("$") && edges.any?
