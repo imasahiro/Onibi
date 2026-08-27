@@ -88,4 +88,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("xxabcxx")
     refute regexp.vm_match?("xxacxx")
   end
+
+  def test_wildcard_repeat_sequence_rseq_vm
+    regexp = Onibi::Regexp.new("a.*z")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("a-middle-z")
+    refute regexp.vm_match?("a-middle")
+  end
 end

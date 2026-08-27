@@ -154,6 +154,7 @@ static VALUE onibi_pipeline(VALUE self) {
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
   if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
+  if (RSTRING_LEN(src) == 4 && RSTRING_PTR(src)[1] == '.' && RSTRING_PTR(src)[2] == '*') simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
@@ -202,6 +203,11 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if (RSTRING_LEN(src) == 2 && strchr("*+?", p[1])) {
     for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
     return p[1] == '?' ? Qtrue : Qfalse;
+  }
+  if (RSTRING_LEN(src) == 4 && p[1] == '.' && p[2] == '*') {
+    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0])
+      for (long k = j + 1; k < RSTRING_LEN(str); k++) if (RSTRING_PTR(str)[k] == p[3]) return Qtrue;
+    return Qfalse;
   }
   if (RSTRING_LEN(src) == 1 && p[0] == '.') return RSTRING_LEN(str) > 0 ? Qtrue : Qfalse;
   if (RSTRING_LEN(src) == 2 && p[1] == '.') {
