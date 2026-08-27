@@ -380,6 +380,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("[[:alpha:]]")
     assert regexp.vm_match?("xxB")
     refute regexp.vm_match?("222")
+    assert_predicate tokens[1][:name], :frozen?
   end
 
   def test_capture_tokens_and_execution_class

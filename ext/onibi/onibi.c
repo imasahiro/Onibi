@@ -100,9 +100,9 @@ static VALUE onibi_tokenize(VALUE src) {
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
     rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
-    if (!NIL_P(backref_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name);
-    if (!NIL_P(group_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name);
-    if (!NIL_P(posix_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name);
+    if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name); }
+    if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name); }
+    if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
   }
