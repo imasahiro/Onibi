@@ -63,6 +63,8 @@ module Onibi
                    :quantifier
                  elsif byte == 46
                    :wildcard
+                 elsif [36, 94].include?(byte)
+                   :anchor
                  else
                    :literal
                  end
@@ -83,6 +85,8 @@ module Onibi
                  :REPEAT
                when :wildcard
                  :ANY
+               when :anchor
+                 :ASSERT
                else
                  (token[:kind] == :alternation ? :ALT : :CHAR)
                end
@@ -108,6 +112,8 @@ module Onibi
           string.include?(source[0]) || source[1] == "?"
         elsif source == "."
           !string.empty?
+        elsif ["^", "$"].include?(source)
+          true
         else
           source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)
         end
