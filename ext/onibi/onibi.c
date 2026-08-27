@@ -53,10 +53,13 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
                     : rb_funcall(obj->regexp, id_match, 2, str, pos);
 }
 
-static VALUE onibi_match_p(VALUE self, VALUE str) {
+static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
+  VALUE str, pos = Qnil;
+  rb_scan_args(argc, argv, "11", &str, &pos);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return rb_funcall(obj->regexp, id_match_p, 1, str);
+  return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
+                    : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
 }
 
 static VALUE onibi_source(VALUE self) {
@@ -110,7 +113,7 @@ void Init_onibi(void) {
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
   rb_define_method(cRegexp, "match", onibi_match, -1);
-  rb_define_method(cRegexp, "match?", onibi_match_p, 1);
+  rb_define_method(cRegexp, "match?", onibi_match_p, -1);
   rb_define_method(cRegexp, "source", onibi_source, 0);
   rb_define_method(cRegexp, "options", onibi_options, 0);
   rb_define_method(cRegexp, "inspect", onibi_inspect, 0);

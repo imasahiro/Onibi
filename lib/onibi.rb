@@ -19,8 +19,8 @@ module Onibi
         position.nil? ? @regexp.match(string) : @regexp.match(string, position)
       end
 
-      def match?(string)
-        @regexp.match?(string)
+      def match?(string, position = nil)
+        position.nil? ? @regexp.match?(string) : @regexp.match?(string, position)
       end
 
       def source = @regexp.source
