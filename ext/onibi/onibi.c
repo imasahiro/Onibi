@@ -175,6 +175,16 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       if (RSTRING_PTR(str)[j] == p[1] && RSTRING_PTR(str)[j+1] == p[3]) return Qtrue;
     return Qfalse;
   }
+  if (RSTRING_LEN(src) >= 5 && p[0] == '[') {
+    long close = 0; for (long i = 1; i < RSTRING_LEN(src); i++) if (p[i] == ']') { close = i; break; }
+    if (close > 1 && close + 2 == RSTRING_LEN(src)) {
+      for (long j = 0; j + 1 < RSTRING_LEN(str); j++) {
+        int hit = 0; for (long i = 1; i < close; i++) if (RSTRING_PTR(str)[j] == p[i]) hit = 1;
+        if (hit && RSTRING_PTR(str)[j + 1] == p[close + 1]) return Qtrue;
+      }
+      return Qfalse;
+    }
+  }
   if (RSTRING_LEN(src) == 3 && p[1] == '|') {
     for (long j = 0; j < RSTRING_LEN(str); j++)
       if (RSTRING_PTR(str)[j] == p[0] || RSTRING_PTR(str)[j] == p[2]) return Qtrue;

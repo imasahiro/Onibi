@@ -108,6 +108,10 @@ module Onibi
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }
         elsif source.match?(/\A\[.\].\z/)
           string.each_char.each_cons(2).any? { |first, last| first == source[1] && last == source[3] }
+        elsif source.match?(/\A\[[^\]]+\].\z/)
+          chars = source[1...source.index("]")]
+          tail = source[-1]
+          string.each_char.each_cons(2).any? { |first, last| chars.include?(first) && last == tail }
         elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
           min, max = source[2..-2].split(",").map(&:to_i)
           max ||= min
