@@ -194,7 +194,9 @@ module Onibi
                   else
                     gir
                   end
+        captures = source.include?("(") ? [{ id: 1, use: :CAPTURE_OUTPUT_ONLY, slots: [2, 3] }] : []
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { start: pipe ? gir.length + 1 : 0, states: states, edges: edges },
+          captures: captures,
           rseq: gir, rseq_compact: compact, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end
 

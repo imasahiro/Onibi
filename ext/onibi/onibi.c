@@ -322,6 +322,15 @@ static VALUE onibi_pipeline(VALUE self) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) + 1 : 0)));
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
+  VALUE captures = rb_ary_new();
+  if (strstr(RSTRING_PTR(src), "(") != NULL) {
+    VALUE capture = rb_hash_new();
+    rb_hash_aset(capture, ID2SYM(rb_intern("id")), INT2NUM(1));
+    rb_hash_aset(capture, ID2SYM(rb_intern("use")), ID2SYM(rb_intern("CAPTURE_OUTPUT_ONLY")));
+    VALUE slots = rb_ary_new(); rb_ary_push(slots, INT2NUM(2)); rb_ary_push(slots, INT2NUM(3));
+    rb_hash_aset(capture, ID2SYM(rb_intern("slots")), slots); rb_ary_push(captures, capture);
+  }
+  rb_hash_aset(out, ID2SYM(rb_intern("captures")), captures);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   VALUE compact = rb_ary_new();
   int literal_only = RSTRING_LEN(src) > 0;
