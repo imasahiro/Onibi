@@ -10,7 +10,7 @@ static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 
-typedef struct { VALUE regexp; VALUE execution_class; VALUE parsed; VALUE compiled; VALUE rseq; long program_size; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; long program_size; } onibi_regexp_t;
 typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -772,6 +772,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       rb_obj_freeze(obj->execution_class);
     }
   }
+  obj->execution_kind = rb_str_cmp(obj->execution_class, rb_str_new_cstr("DYNAMIC")) == 0 ? ID2SYM(rb_intern("DYNAMIC")) :
+    (rb_str_cmp(obj->execution_class, rb_str_new_cstr("TAGGED_ORDERED")) == 0 ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
   rb_obj_freeze(self);
   return self;
 }
@@ -1328,21 +1330,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  int regular_graph = options == 0;
-  for (long i = 0; regular_graph && i < RSTRING_LEN(src); i++) {
-    unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
-    if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
-  }
-  if (regular_graph && rb_str_strlen(str) == RSTRING_LEN(str)) {
-    VALUE rseq = obj->rseq;
-    if (NIL_P(rseq)) goto mri_fallback;
-    int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL || strstr(RSTRING_PTR(src), "\\k<") != NULL;
-    VALUE klass = has_backref ? ID2SYM(rb_intern("DYNAMIC")) :
-      (strchr(RSTRING_PTR(src), '(') ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
-    return onibi_vm_execute(Qnil, rseq, str, klass);
-  }
-mri_fallback: ;
+  if (options == 0 && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+    return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
@@ -1493,15 +1482,9 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  int graph_ok = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0;
-  for (long i = 0; graph_ok && i < RSTRING_LEN(src); i++) {
-    unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
-    if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) graph_ok = 0;
-  }
+  int graph_ok = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 && !NIL_P(obj->rseq);
   if (graph_ok) {
     VALUE rseq = obj->rseq;
-    if (NIL_P(rseq)) goto result_mri_fallback;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
       VALUE capture_state = rb_hash_new();
@@ -1525,7 +1508,6 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     }
     return Qnil;
   }
-result_mri_fallback: ;
   VALUE needle = src;
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
     needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
