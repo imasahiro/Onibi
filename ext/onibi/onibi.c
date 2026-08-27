@@ -144,6 +144,7 @@ static VALUE onibi_pipeline(VALUE self) {
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
   if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
+  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   return out;
 }
