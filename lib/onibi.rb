@@ -122,6 +122,12 @@ module Onibi
         end
         edges.first[:actions] << { op: :ASSERT_BEGIN_BUFFER } if source.start_with?("^") && edges.any?
         edges.last[:actions] << { op: :ASSERT_END_BUFFER } if source.end_with?("$") && edges.any?
+        tokens.each_with_index do |token, index|
+          next unless %i[group_start group_end].include?(token[:kind]) && edges[index]
+
+          edges[index][:actions] << { op: token[:kind] == :group_start ? :CAPTURE_OPEN : :CAPTURE_CLOSE,
+                                      slot: token[:kind] == :group_start ? 2 : 3 }
+        end
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||

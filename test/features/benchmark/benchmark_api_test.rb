@@ -155,5 +155,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
     assert_equal(%i[group_start literal literal literal group_end], regexp.pipeline[:tokens].map { |token| token[:kind] })
+    actions = regexp.pipeline[:gir_graph][:edges].flat_map { |edge| edge[:actions] }
+    assert_equal(%i[CAPTURE_OPEN CAPTURE_CLOSE], actions.map { |action| action[:op] })
   end
 end
