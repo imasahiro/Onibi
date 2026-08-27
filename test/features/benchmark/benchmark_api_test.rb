@@ -322,6 +322,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal [0, 2, 3, 1], actions.map { |action| action[:slot] }
   end
 
+  def test_tagged_vm_materializes_nested_captures
+    result = Onibi::Regexp.new("(a(b))").vm_match_result("xxabbxx")
+    assert_equal({ start: 2, end: 4 }, result.slice(:start, :end))
+    assert_equal({ 1 => { start: 2, end: 4 }, 2 => { start: 3, end: 4 } }, result[:captures])
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]

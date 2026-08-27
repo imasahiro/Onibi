@@ -1121,6 +1121,67 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   return 0;
 }
 
+static VALUE onibi_capture_copy(VALUE captures) {
+  VALUE copy = rb_hash_dup(captures);
+  return copy;
+}
+
+static void onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures) {
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    VALUE action = rb_ary_entry(actions, i);
+    ID op = SYM2ID(onibi_hash_value(action, "op"));
+    if (op != rb_intern("CAPTURE_OPEN") && op != rb_intern("CAPTURE_CLOSE")) continue;
+    VALUE slot = onibi_hash_value(action, "slot");
+    rb_hash_aset(captures, slot, LONG2NUM(pos));
+  }
+}
+
+static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long state_id, long pos,
+                                  VALUE visited, VALUE captures, long *matched_end, VALUE *matched_captures) {
+  VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
+  if (RTEST(rb_hash_aref(visited, key))) return 0;
+  rb_hash_aset(visited, key, Qtrue);
+  VALUE state = rb_ary_entry(states, state_id);
+  ID op = SYM2ID(onibi_hash_value(state, "op"));
+  if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; *matched_captures = captures; return 1; }
+  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
+    if (pos >= RSTRING_LEN(str)) return 0;
+    unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
+    VALUE payload = onibi_hash_value(state, "payload");
+    int hit = op == rb_intern("G_ANY") ? byte != '\n' :
+      (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
+    if (!hit) return 0;
+    pos++;
+  }
+  for (long i = 0; i < RARRAY_LEN(edges); i++) {
+    VALUE edge = rb_ary_entry(edges, i);
+    if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), pos, RSTRING_LEN(str))) continue;
+    VALUE next_captures = onibi_capture_copy(captures);
+    onibi_apply_capture_actions(onibi_hash_value(edge, "actions"), pos, next_captures);
+    if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
+                               visited, next_captures, matched_end, matched_captures)) return 1;
+  }
+  return 0;
+}
+
+static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end, VALUE *matched_captures) {
+  VALUE states = onibi_hash_value(graph, "states");
+  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE starts = onibi_hash_value(graph, "start_edges");
+  VALUE visited = rb_hash_new();
+  VALUE captures = rb_hash_new();
+  for (long i = 0; i < RARRAY_LEN(starts); i++) {
+    VALUE edge = rb_ary_entry(starts, i);
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), start, RSTRING_LEN(str))) continue;
+    VALUE branch_captures = onibi_capture_copy(captures);
+    onibi_apply_capture_actions(onibi_hash_value(edge, "actions"), start, branch_captures);
+    if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start,
+                               visited, branch_captures, matched_end, matched_captures)) return 1;
+  }
+  return 0;
+}
+
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
@@ -1305,17 +1366,23 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE rseq = onibi_rseq_lower(Qnil, compiled);
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
-      if (!onibi_gir_match(rseq, str, pos, &end)) continue;
+      VALUE capture_state = rb_hash_new();
+      if (!onibi_gir_match_captures(rseq, str, pos, &end, &capture_state)) continue;
       VALUE result = rb_hash_new();
       rb_hash_aset(result, ID2SYM(rb_intern("start")), LONG2NUM(pos));
       rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(end));
-      if (RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')') {
-        VALUE captures = rb_hash_new(), group = rb_hash_new();
-        rb_hash_aset(group, ID2SYM(rb_intern("start")), LONG2NUM(pos));
-        rb_hash_aset(group, ID2SYM(rb_intern("end")), LONG2NUM(end));
-        rb_hash_aset(captures, INT2NUM(1), group);
-        rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+      VALUE captures = rb_hash_new();
+      for (long group_id = 1; group_id <= 8; group_id++) {
+        VALUE begin = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1)));
+        VALUE finish = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1) + 1));
+        if (!NIL_P(begin) && !NIL_P(finish)) {
+          VALUE group = rb_hash_new();
+          rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
+          rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
+          rb_hash_aset(captures, INT2NUM(group_id), group);
+        }
       }
+      if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
       return result;
     }
     return Qnil;
