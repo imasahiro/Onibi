@@ -34,7 +34,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   const char *p = RSTRING_PTR(source);
   long n = RSTRING_LEN(source);
   for (long i = 0; i < n; i++) {
-    if (p[i] == '\\' && i + 1 < n && (p[i + 1] == 'k' || p[i + 1] == 'g')) {
+    if (p[i] == '\\' && i + 1 < n && (p[i + 1] == 'k' || p[i + 1] == 'g' ||
+        (p[i + 1] >= '1' && p[i + 1] <= '9'))) {
       obj->execution_class = rb_str_new_cstr("DYNAMIC"); rb_obj_freeze(obj->execution_class); break;
     }
     if (p[i] == '(' && i + 2 < n && p[i + 1] == '?' &&
@@ -243,6 +244,10 @@ static VALUE onibi_pipeline(VALUE self) {
   if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
+  VALUE klass = obj->execution_class;
+  rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
+    ID2SYM(rb_intern("DYNAMIC")) : (rb_equal(klass, rb_str_new_cstr("TAGGED_ORDERED")) ?
+      ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST"))));
   return out;
 }
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {

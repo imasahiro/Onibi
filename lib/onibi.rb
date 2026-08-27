@@ -35,7 +35,7 @@ module Onibi
       def to_s = @regexp.to_s
 
       def execution_class
-        if source.match?(/\\[kg]/)
+        if source.match?(/\\(?:[kg]|[1-9])/)
           "DYNAMIC"
         else
           (source.match?(/\(\?[=!<]/) ? "TAGGED_ORDERED" : "REGULAR_FAST")
@@ -126,8 +126,9 @@ module Onibi
         simple = true if source.match?(/\A\[[^\]]+\]\+\z/) && @regexp.options.zero?
         simple = true if source == "[a-z]+[0-9]+" && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
+        interpreter = execution_class.to_sym
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
-          rseq: gir, vm: simple ? :RSEQ : :MRI }
+          rseq: gir, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end
 
       def vm_match?(string)

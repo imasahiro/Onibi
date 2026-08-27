@@ -38,6 +38,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :sequence, pipeline[:ast][:type]
     assert_equal(%i[literal literal literal], pipeline[:ast][:children].map { |node| node[:type] })
     assert_equal :RSEQ, pipeline[:vm]
+    assert_equal :REGULAR_FAST, pipeline[:interpreter]
     assert_equal :ACCEPT, pipeline[:gir_graph][:states].last[:op]
     assert_equal({ from: 0, to: 1, actions: [] }, pipeline[:gir_graph][:edges].first)
   end
@@ -134,5 +135,9 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :RSEQ, regexp.pipeline[:vm]
     assert regexp.match?("token-abc123-end")
     refute regexp.match?("token-abc-end")
+  end
+
+  def test_dynamic_features_select_dynamic_interpreter
+    assert_equal :DYNAMIC, Onibi::Regexp.new("(a)-\\1").pipeline[:interpreter]
   end
 end
