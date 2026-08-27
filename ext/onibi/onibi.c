@@ -135,6 +135,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       VALUE range = rb_ary_new();
       rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
       rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
+      rb_obj_freeze(range);
       rb_ary_push(ranges, range);
       i++;
       continue;
@@ -221,6 +222,9 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
       VALUE modifier = rb_ary_entry(tokens, i);
       long marker = onibi_token_byte(modifier);
       if (marker == '*' || marker == '+' || marker == '?') {
+        VALUE node_type = rb_hash_aref(node, ID2SYM(rb_intern("type")));
+        if (node_type == ID2SYM(rb_intern("quantifier")))
+          rb_raise(eRegexpError, "nested quantifier");
         long min = marker == '+' ? 1 : 0;
         VALUE max = marker == '?' ? LONG2NUM(1) : Qnil;
         i++;
@@ -238,6 +242,9 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
         rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), possessive ? Qtrue : Qfalse);
         rb_obj_freeze(quantifier); node = quantifier;
       } else if (marker == '{') {
+        VALUE node_type = rb_hash_aref(node, ID2SYM(rb_intern("type")));
+        if (node_type == ID2SYM(rb_intern("quantifier")))
+          rb_raise(eRegexpError, "nested quantifier");
         long close = i + 1;
         while (close < end && onibi_token_byte(rb_ary_entry(tokens, close)) != '}') close++;
         if (close >= end) rb_raise(eRegexpError, "unterminated quantifier");
@@ -269,10 +276,16 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
         rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);
         rb_hash_aset(quantifier, ID2SYM(rb_intern("min")), LONG2NUM(min));
         rb_hash_aset(quantifier, ID2SYM(rb_intern("max")), has_max ? LONG2NUM(max_value) : Qnil);
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("greedy")), Qtrue);
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), Qfalse);
-        rb_obj_freeze(quantifier); node = quantifier;
         i = close + 1;
+        int greedy = 1, possessive = 0;
+        if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+          long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
+          if (suffix == '?') { greedy = 0; i++; }
+          else if (suffix == '+') { possessive = 1; i++; }
+        }
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("greedy")), greedy ? Qtrue : Qfalse);
+        rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), possessive ? Qtrue : Qfalse);
+        rb_obj_freeze(quantifier); node = quantifier;
       }
     }
     rb_ary_push(children, node);

@@ -245,6 +245,11 @@ class BenchmarkApiTest < Minitest::Test
     open_ended = Onibi::Parser.parse("a{2,}")[:ast][:children].first
     assert_equal 2, open_ended[:min]
     assert_nil open_ended[:max]
+
+    lazy = Onibi::Parser.parse("a{2,4}?")[:ast][:children].first
+    refute lazy[:greedy]
+    possessive = Onibi::Parser.parse("a{2,4}+")[:ast][:children].first
+    assert possessive[:possessive]
   end
 
   def test_parser_records_anchor_and_escape_semantics
@@ -260,6 +265,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a**") }
     assert_raises(ArgumentError) { Onibi::Parser.parse("a", 8) }
   end
 
