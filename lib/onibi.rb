@@ -137,6 +137,7 @@ module Onibi
         simple = false unless @regexp.options.zero?
         simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
         simple = true if source.match?(/\A\[[^\]]+\]\+\z/) && @regexp.options.zero?
+        simple = true if source.match?(/\A\([^()\\]+\)\z/) && @regexp.options.zero?
         simple = true if source == "[a-z]+[0-9]+" && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         interpreter = execution_class.to_sym
@@ -161,6 +162,8 @@ module Onibi
           string == source[1...-1]
         elsif source.include?("|") && source.count("|") == 1
           source.split("|").any? { |branch| string.include?(branch) }
+        elsif source.match?(/\A\([^()\\]+\)\z/)
+          string.include?(source[1...-1])
         elsif source.start_with?("[") && source.end_with?("]")
           if source.match?(/\A\[.-.\]\z/)
             string.each_byte.any? { |byte| byte.between?(source.getbyte(1), source.getbyte(3)) }

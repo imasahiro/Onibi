@@ -157,5 +157,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[group_start literal literal literal group_end], regexp.pipeline[:tokens].map { |token| token[:kind] })
     actions = regexp.pipeline[:gir_graph][:edges].flat_map { |edge| edge[:actions] }
     assert_equal(%i[CAPTURE_OPEN CAPTURE_CLOSE], actions.map { |action| action[:op] })
+    assert regexp.match?("xxabcxx")
+    refute regexp.match?("xxabxx")
   end
 end
