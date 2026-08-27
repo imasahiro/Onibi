@@ -115,8 +115,10 @@ static VALUE onibi_pipeline(VALUE self) {
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CHAR")));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), rb_ary_entry(tokens, i));
+    VALUE tk = rb_ary_entry(tokens, i);
+    ID opid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind")))) == rb_intern("class_start") ? rb_intern("CLASS") : rb_intern("CHAR");
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
     rb_ary_push(gir, op);
   }
   rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
@@ -133,6 +135,12 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
   const char *meta = "\\.^$|()[]{}*+?";
+  if (RSTRING_LEN(src) >= 3 && p[0] == '[' && p[RSTRING_LEN(src)-1] == ']') {
+    for (long j = 0; j < RSTRING_LEN(str); j++)
+      for (long i = 1; i < RSTRING_LEN(src)-1; i++)
+        if (RSTRING_PTR(str)[j] == p[i]) return Qtrue;
+    return Qfalse;
+  }
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
   return NIL_P(rb_str_index(str, src, 0)) ? Qfalse : Qtrue;
