@@ -563,6 +563,15 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
     needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
   VALUE start = rb_funcall(str, id_index, 1, needle);
+  if (RSTRING_PTR(src) && strchr(RSTRING_PTR(src), '|')) {
+    start = Qnil; needle = Qnil;
+    long begin = 0;
+    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
+      VALUE branch = rb_str_substr(src, begin, i - begin), candidate = rb_funcall(str, id_index, 1, branch);
+      if (!NIL_P(candidate) && (NIL_P(start) || NUM2LONG(candidate) < NUM2LONG(start))) { start = candidate; needle = branch; }
+      begin = i + 1;
+    }
+  }
   if (NIL_P(start)) return Qnil;
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("start")), start);

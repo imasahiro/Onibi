@@ -85,6 +85,11 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal([0, 2], edges.map { |edge| edge[:to] })
   end
 
+  def test_alternation_raw_result_preserves_priority
+    result = Onibi::Regexp.new("foo|bar").vm_match_result("bar foo")
+    assert_equal({ start: 0, end: 3 }, result)
+  end
+
   def test_multi_character_alternation_rseq_vm
     regexp = Onibi::Regexp.new("foo|bar")
     assert regexp.vm_match?("xxbarxx")

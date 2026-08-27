@@ -254,7 +254,15 @@ module Onibi
         return unless vm_match?(string)
 
         needle = source.start_with?("(") && source.end_with?(")") ? source[1...-1] : source
-        start = string.index(needle)
+        if source.include?("|")
+          candidates = source.split("|", -1).each_with_index.filter_map do |branch, index|
+            position = string.index(branch)
+            position && [position, index, branch]
+          end
+          start, _, needle = candidates.min_by { |position, index, _| [position, index] }
+        else
+          start = string.index(needle)
+        end
         { start: start, end: start + needle.bytesize }
       end
 
