@@ -35,6 +35,8 @@ static VALUE onibi_tokenize(VALUE src) {
   VALUE tokens = rb_ary_new();
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
+  int in_class = 0;
+  long class_body_start = -1;
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     long start = i;
     VALUE token = rb_hash_new();
@@ -43,12 +45,20 @@ static VALUE onibi_tokenize(VALUE src) {
     if (byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       byte = escaped;
-      if (strchr("AzZG", escaped) != NULL) kind = "anchor";
+      if (!in_class && strchr("AzZG", escaped) != NULL) kind = "anchor";
       else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
       i++;
-    } else if (byte == '[') kind = "class_start";
-    else if (byte == ']') kind = "class_end";
-    else if (byte == '|') kind = "alternation";
+    } else if (byte == '[' && !in_class) {
+      kind = "class_start";
+      in_class = 1;
+      class_body_start = i + 1;
+    } else if (byte == ']' && in_class) {
+      kind = "class_end";
+      in_class = 0;
+    } else if (in_class) {
+      if (byte == '-' && i > class_body_start) kind = "class_range";
+      else if (byte == '^' && i == class_body_start) kind = "class_negate";
+    } else if (byte == '|') kind = "alternation";
     else if (byte == '(') kind = "group_start";
     else if (byte == ')') kind = "group_end";
     else if (strchr("*+?{} ,", byte) != NULL) kind = "quantifier";

@@ -220,6 +220,13 @@ class BenchmarkApiTest < Minitest::Test
     assert tokens.all?(&:frozen?)
   end
 
+  def test_lexer_keeps_character_class_operators_inside_the_class
+    tokens = Onibi::Lexer.new("[a-z+|]").tokens
+
+    assert_equal(%i[class_start literal class_range literal literal literal class_end],
+                 tokens.map { |token| token[:kind] })
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
