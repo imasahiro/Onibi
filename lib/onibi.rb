@@ -115,6 +115,8 @@ module Onibi
                    { from: 1, to: 0, actions: [] },
                    { from: 1, to: 2, actions: [] }]
         end
+        edges.first[:actions] << { op: :ASSERT_BEGIN_BUFFER } if source.start_with?("^") && edges.any?
+        edges.last[:actions] << { op: :ASSERT_END_BUFFER } if source.end_with?("$") && edges.any?
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||

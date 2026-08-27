@@ -219,6 +219,16 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
   }
+  if (RSTRING_LEN(src) > 0 && RSTRING_PTR(src)[0] == '^' && RARRAY_LEN(edges) > 0) {
+    VALUE action = rb_hash_new();
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_BEGIN_BUFFER")));
+    rb_ary_push(rb_hash_aref(rb_ary_entry(edges, 0), ID2SYM(rb_intern("actions"))), action);
+  }
+  if (RSTRING_LEN(src) > 0 && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$' && RARRAY_LEN(edges) > 0) {
+    VALUE action = rb_hash_new();
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_END_BUFFER")));
+    rb_ary_push(rb_hash_aref(rb_ary_entry(edges, RARRAY_LEN(edges) - 1), ID2SYM(rb_intern("actions"))), action);
+  }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);

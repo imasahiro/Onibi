@@ -144,4 +144,10 @@ class BenchmarkApiTest < Minitest::Test
   def test_dynamic_features_select_dynamic_interpreter
     assert_equal :DYNAMIC, Onibi::Regexp.new("(a)-\\1").pipeline[:interpreter]
   end
+
+  def test_anchor_assertions_are_edge_actions
+    edges = Onibi::Regexp.new("^abc$").pipeline[:gir_graph][:edges]
+    assert_equal :ASSERT_BEGIN_BUFFER, edges.first[:actions].first[:op]
+    assert_equal :ASSERT_END_BUFFER, edges.last[:actions].first[:op]
+  end
 end
