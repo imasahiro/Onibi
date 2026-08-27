@@ -492,7 +492,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       for (long k = j + 1; k < RSTRING_LEN(str); k++) if (RSTRING_PTR(str)[k] == p[3]) return Qtrue;
     return Qfalse;
   }
-  if (RSTRING_LEN(src) == 1 && p[0] == '.') return RSTRING_LEN(str) > 0 ? Qtrue : Qfalse;
+  if (RSTRING_LEN(src) == 1 && p[0] == '.') {
+    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] != '\n') return Qtrue;
+    return Qfalse;
+  }
   if (RSTRING_LEN(src) == 2 && p[1] == '.') {
     for (long j = 0; j + 1 < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
     return Qfalse;
@@ -510,7 +513,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
         int hit = 1;
         for (long i = 0; i < RSTRING_LEN(src); i++)
-          if (i != dot && RSTRING_PTR(str)[j + i] != p[i]) hit = 0;
+          if (i == dot) { if (RSTRING_PTR(str)[j + i] == '\n') hit = 0; }
+          else if (RSTRING_PTR(str)[j + i] != p[i]) hit = 0;
         if (hit) return Qtrue;
       }
       return Qfalse;

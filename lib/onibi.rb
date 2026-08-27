@@ -230,13 +230,13 @@ module Onibi
           start = string.index(source[0])
           !!(start && string.index(source[3], start + 1))
         elsif source == "."
-          !string.empty?
+          string.each_char.any? { |char| char != "\n" }
         elsif source.length == 2 && source[1] == "."
           string.each_char.each_cons(2).any? { |first, _| first == source[0] }
         elsif source.count(".") == 1 && source.each_byte.none? { |byte| "\\^$|()[]{}*+?".include?(byte.chr) }
           dot = source.index(".")
           string.each_char.each_cons(source.length).any? do |window|
-            window.each_with_index.all? { |char, index| index == dot || char == source[index] }
+            window.each_with_index.all? { |char, index| index == dot ? char != "\n" : char == source[index] }
           end
         elsif ["^", "$"].include?(source)
           true
