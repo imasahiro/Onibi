@@ -69,12 +69,17 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   int supported = 1;
+  int buffer_literal = RSTRING_LEN(src) >= 4 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A' &&
+                       RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z';
+  for (long i = 2; buffer_literal && i < RSTRING_LEN(src) - 2; i++)
+    if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) buffer_literal = 0;
   int capture_literal = RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
                         RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')';
   for (long i = 1; capture_literal && i < RSTRING_LEN(src) - 1; i++)
     if (strchr("?~:<>=!", RSTRING_PTR(src)[i])) capture_literal = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr("\\()", RSTRING_PTR(src)[i]) && !(capture_literal && (i == 0 || i == RSTRING_LEN(src) - 1))) supported = 0;
+    if (strchr("\\()", RSTRING_PTR(src)[i]) && !(capture_literal && (i == 0 || i == RSTRING_LEN(src) - 1)) &&
+        !(buffer_literal && (i == 0 || i == 1 || i == RSTRING_LEN(src) - 2 || i == RSTRING_LEN(src) - 1))) supported = 0;
   if (strchr(RSTRING_PTR(src), '{') && !(RSTRING_LEN(src) >= 5 &&
       RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
   int class_plus = RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
@@ -391,6 +396,10 @@ static VALUE onibi_pipeline(VALUE self) {
   } else compact = gir;
   rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
   int simple = 1;
+  int buffer_literal = RSTRING_LEN(src) >= 4 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A' &&
+                       RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z';
+  for (long i = 2; buffer_literal && i < RSTRING_LEN(src) - 2; i++)
+    if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) buffer_literal = 0;
   int capture_literal = RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
                         RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')';
   for (long i = 1; capture_literal && i < RSTRING_LEN(src) - 1; i++)
@@ -408,6 +417,7 @@ static VALUE onibi_pipeline(VALUE self) {
   if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') simple = 1;
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') simple = 1;
   if (capture_literal) simple = 1;
+  if (buffer_literal) simple = 1;
   if (strchr(RSTRING_PTR(src), '-') && !(RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
       RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+')) simple = 0;
   if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' &&
@@ -431,6 +441,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
   int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
+  if (RSTRING_LEN(src) >= 4 && p[0] == '\\' && p[1] == 'A' && p[RSTRING_LEN(src) - 2] == '\\' && p[RSTRING_LEN(src) - 1] == 'z') {
+    VALUE body = rb_str_substr(src, 2, RSTRING_LEN(src) - 4);
+    return rb_str_equal(body, str) ? Qtrue : Qfalse;
+  }
   if (class_plus && (strchr(p + 1, ':') || strchr(p + 1, ']') != strrchr(p, ']'))) class_plus = 0;
   if (RSTRING_LEN(src) >= 3 && p[0] == '(' && p[RSTRING_LEN(src) - 1] == ')') {
     VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);

@@ -195,6 +195,9 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :anchor, tokens.first[:kind]
     assert_equal :anchor, tokens.last[:kind]
     assert_equal :anchor, Onibi::Regexp.new("\\Aabc\\z").pipeline[:ast][:type]
+    regexp = Onibi::Regexp.new("\\Aabc\\z")
+    assert regexp.match?("abc")
+    refute regexp.match?("xabc")
   end
 
   def test_capture_tokens_and_execution_class
