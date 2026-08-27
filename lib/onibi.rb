@@ -45,6 +45,11 @@ module Onibi
 
       def program_frozen? = true
 
+      def pipeline
+        tokens = source.bytes.map { |byte| { kind: :literal, byte: byte } }
+        { tokens: tokens, ast: {}, gir: tokens, rseq: tokens, vm: :MRI }
+      end
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)

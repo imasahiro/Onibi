@@ -91,6 +91,24 @@ static VALUE onibi_program_frozen(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return RTEST(rb_obj_frozen_p(obj->execution_class)) ? Qtrue : Qfalse;
 }
+static VALUE onibi_pipeline(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  VALUE out = rb_hash_new();
+  VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  VALUE tokens = rb_ary_new();
+  for (long i = 0; i < RSTRING_LEN(src); i++) {
+    VALUE token = rb_hash_new();
+    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("literal")));
+    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[i]));
+    rb_ary_push(tokens, token);
+  }
+  rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
+  rb_hash_aset(out, ID2SYM(rb_intern("ast")), rb_hash_new());
+  rb_hash_aset(out, ID2SYM(rb_intern("gir")), tokens);
+  rb_hash_aset(out, ID2SYM(rb_intern("rseq")), tokens);
+  rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern("MRI")));
+  return out;
+}
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
@@ -122,6 +140,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "encoding", onibi_encoding, 0);
   rb_define_method(cRegexp, "program_size", onibi_program_size, 0);
   rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
+  rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
   rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
