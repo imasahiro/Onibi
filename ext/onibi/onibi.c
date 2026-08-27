@@ -1,6 +1,7 @@
 #include "ruby.h"
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 
 static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
@@ -90,7 +91,9 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) supported = 0;
   int options_mask = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  if (options_mask != 0 && !(options_mask == 4 && strchr(RSTRING_PTR(src), '.') != NULL)) supported = 0;
+  int plain_literal = 1; for (long i = 0; i < RSTRING_LEN(src); i++) if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) plain_literal = 0;
+  if (options_mask != 0 && !(options_mask == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
+      !(options_mask == 1 && plain_literal)) supported = 0;
   if (supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -398,7 +401,8 @@ static VALUE onibi_pipeline(VALUE self) {
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
   int pipeline_options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL)) simple = 0;
+  if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
+      !(pipeline_options == 1 && literal_only)) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   VALUE klass = obj->execution_class;
   rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
@@ -541,6 +545,14 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   }
   for (long i = 0; i < RSTRING_LEN(src); i++)
     if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
+  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1) {
+    for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
+      int hit = 1; for (long i = 0; i < RSTRING_LEN(src); i++)
+        if (tolower((unsigned char)RSTRING_PTR(str)[j + i]) != tolower((unsigned char)p[i])) hit = 0;
+      if (hit) return Qtrue;
+    }
+    return Qfalse;
+  }
   return NIL_P(rb_funcall(str, id_index, 1, src)) ? Qfalse : Qtrue;
 }
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {

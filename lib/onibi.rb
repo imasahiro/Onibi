@@ -163,7 +163,10 @@ module Onibi
                  source.match?(/\A.\{\d+(?:,\d+)?\}\z/) ||
                  source.start_with?("[") && source.end_with?("]") ||
                  source.match?(/\A\[[^\]:]+\]\+\z/)
-        simple = false unless @regexp.options.zero? || (@regexp.options == ::Regexp::MULTILINE && source.include?("."))
+        plain_literal = source.each_byte.none? { |byte| "\\^$|()[]{}*+?.".include?(byte.chr) }
+        simple = false unless @regexp.options.zero? ||
+                              (@regexp.options == ::Regexp::MULTILINE && source.include?(".")) ||
+                              (@regexp.options == ::Regexp::IGNORECASE && plain_literal)
         simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
         simple = true if source.match?(/\A\[[^\]:]+\]\+\z/) && @regexp.options.zero?
         simple = true if source.match?(/\A\([^()?~:<>=!\\]+\)\z/) && @regexp.options.zero?
@@ -240,6 +243,8 @@ module Onibi
           end
         elsif ["^", "$"].include?(source)
           true
+        elsif @regexp.options == ::Regexp::IGNORECASE && source.each_byte.none? { |byte| "\\^$|()[]{}*+?.".include?(byte.chr) }
+          string.downcase.include?(source.downcase)
         else
           source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)
         end
