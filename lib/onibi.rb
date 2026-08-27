@@ -61,6 +61,8 @@ module Onibi
                    :alternation
                  elsif [42, 43, 63, 123, 125, 44].include?(byte)
                    :quantifier
+                 elsif byte == 46
+                   :wildcard
                  else
                    :literal
                  end
@@ -74,10 +76,13 @@ module Onibi
                 { type: :sequence, children: tokens }
               end
         gir = tokens.map do |token|
-          op = if token[:kind] == :class_start
+          op = case token[:kind]
+               when :class_start
                  :CLASS
-               elsif token[:kind] == :quantifier
+               when :quantifier
                  :REPEAT
+               when :wildcard
+                 :ANY
                else
                  (token[:kind] == :alternation ? :ALT : :CHAR)
                end
@@ -101,6 +106,8 @@ module Onibi
           run.between?(min, max)
         elsif source.length == 2 && "*+?".include?(source[1])
           string.include?(source[0]) || source[1] == "?"
+        elsif source == "."
+          !string.empty?
         else
           source.each_byte.any? { |byte| "\\.^$|()[]{}*+?".include?(byte.chr) } ? @regexp.match?(string) : string.include?(source)
         end
