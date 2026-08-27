@@ -1236,6 +1236,23 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
   return 0;
 }
 
+static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
+  StringValue(str);
+  if (execution_class != ID2SYM(rb_intern("REGULAR_FAST")) &&
+      execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
+      execution_class != ID2SYM(rb_intern("DYNAMIC")))
+    rb_raise(rb_eArgError, "unknown Onibi execution class");
+  int tagged = execution_class != ID2SYM(rb_intern("REGULAR_FAST"));
+  for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    long end = 0;
+    if (tagged) {
+      VALUE captures = rb_hash_new();
+      if (onibi_gir_match_captures(rseq, str, start, &end, &captures)) return Qtrue;
+    } else if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
+  }
+  return Qfalse;
+}
+
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
@@ -1253,14 +1270,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     VALUE compiled = onibi_compiler_compile(Qnil, parsed);
     VALUE rseq = onibi_rseq_lower(Qnil, compiled);
     int has_backref = strstr(RSTRING_PTR(src), "\\1") != NULL || strstr(RSTRING_PTR(src), "\\k<") != NULL;
-    for (long start = 0; start <= RSTRING_LEN(str); start++) {
-      long end = 0;
-      if (has_backref) {
-        VALUE captures = rb_hash_new();
-        if (onibi_gir_match_captures(rseq, str, start, &end, &captures)) return Qtrue;
-      } else if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
-    }
-    return Qfalse;
+    VALUE klass = has_backref ? ID2SYM(rb_intern("DYNAMIC")) :
+      (strchr(RSTRING_PTR(src), '(') ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
+    return onibi_vm_execute(Qnil, rseq, str, klass);
   }
   const char *p = RSTRING_PTR(src);
   int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
@@ -1511,6 +1523,8 @@ void Init_onibi(void) {
   rb_define_singleton_method(compiler, "compile", onibi_compiler_compile, 1);
   VALUE rseq = rb_define_module_under(mOnibi, "RSeq");
   rb_define_singleton_method(rseq, "lower", onibi_rseq_lower, 1);
+  VALUE vm = rb_define_module_under(mOnibi, "VM");
+  rb_define_singleton_method(vm, "execute", onibi_vm_execute, 3);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);

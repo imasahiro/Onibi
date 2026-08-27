@@ -363,6 +363,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 2, end: 4, captures: { 1 => { start: 2, end: 3 } } }, regexp.vm_match_result("xxaaxx"))
   end
 
+  def test_vm_dispatcher_executes_rseq_by_execution_class
+    regular = Onibi::RSeq.lower(Onibi::Compiler.compile(Onibi::Parser.parse("abc")))
+    tagged = Onibi::RSeq.lower(Onibi::Compiler.compile(Onibi::Parser.parse("(abc)")))
+    dynamic = Onibi::RSeq.lower(Onibi::Compiler.compile(Onibi::Parser.parse("(a)\\1")))
+    assert Onibi::VM.execute(regular, "xxabcxx", :REGULAR_FAST)
+    assert Onibi::VM.execute(tagged, "xxabcxx", :TAGGED_ORDERED)
+    assert Onibi::VM.execute(dynamic, "xxaaxx", :DYNAMIC)
+    assert_raises(ArgumentError) { Onibi::VM.execute(regular, "abc", :UNKNOWN) }
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
