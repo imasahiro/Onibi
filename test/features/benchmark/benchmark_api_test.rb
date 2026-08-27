@@ -285,6 +285,15 @@ class BenchmarkApiTest < Minitest::Test
 
     assert_equal :ASSERT_BEGIN_BUFFER, graph[:start_edges].first[:actions].first[:op]
     assert_equal :ASSERT_END_BUFFER, graph[:edges].last[:actions].first[:op]
+    semi = Onibi::Compiler.compile(Onibi::Parser.parse("a\\Z"))[:graph]
+    assert_equal :ASSERT_SEMI_END_BUFFER, semi[:edges].last[:actions].first[:op]
+  end
+
+  def test_semi_end_anchor_accepts_one_final_newline
+    regexp = Onibi::Regexp.new("a\\Z")
+    assert regexp.vm_match?("a")
+    assert regexp.vm_match?("a\n")
+    refute regexp.vm_match?("a\nb")
   end
 
   def test_compiler_keeps_all_glushkov_starts_for_nullable_prefix

@@ -552,7 +552,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     VALUE action = rb_hash_new();
     long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
     const char *op = (marker == '^' || marker == 'A' || marker == 'G') ?
-      "ASSERT_BEGIN_BUFFER" : "ASSERT_END_BUFFER";
+      "ASSERT_BEGIN_BUFFER" : ((marker == 'Z') ? "ASSERT_SEMI_END_BUFFER" : "ASSERT_END_BUFFER");
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
     rb_ary_push(result.pending_actions, action);
     return result;
@@ -1119,12 +1119,14 @@ static VALUE onibi_pipeline(VALUE self) {
   return out;
 }
 
-static int onibi_vm_actions_ok(VALUE actions, long pos, long length) {
+static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value(action, "op"));
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") && pos != 0) return 0;
     if (op == rb_intern("ASSERT_END_BUFFER") && pos != length) return 0;
+    if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
+        !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
   }
   return 1;
 }
@@ -1187,7 +1189,7 @@ static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, lo
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
     if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
-    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), pos, RSTRING_LEN(str))) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), str, pos, RSTRING_LEN(str))) continue;
     if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited, matched_end)) return 1;
   }
   return 0;
@@ -1200,7 +1202,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE visited = rb_hash_new();
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), start, RSTRING_LEN(str))) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), str, start, RSTRING_LEN(str))) continue;
     if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited, matched_end)) return 1;
   }
   return 0;
@@ -1252,7 +1254,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
     if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
-    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), pos, RSTRING_LEN(str))) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), str, pos, RSTRING_LEN(str))) continue;
     VALUE next_captures = onibi_capture_copy(captures);
     onibi_apply_capture_actions(onibi_hash_value(edge, "actions"), pos, next_captures);
     if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
@@ -1269,7 +1271,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
   VALUE captures = rb_hash_new();
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), start, RSTRING_LEN(str))) continue;
+    if (!onibi_vm_actions_ok(onibi_hash_value(edge, "actions"), str, start, RSTRING_LEN(str))) continue;
     VALUE branch_captures = onibi_capture_copy(captures);
     onibi_apply_capture_actions(onibi_hash_value(edge, "actions"), start, branch_captures);
     if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start,
