@@ -37,6 +37,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal([97, 98, 99], pipeline[:rseq].map { |op| op[:arg][:byte] })
     assert_equal :sequence, pipeline[:ast][:type]
     assert_equal :RSEQ, pipeline[:vm]
+    assert_equal :ACCEPT, pipeline[:gir_graph][:states].last[:op]
+    assert_equal({ from: 0, to: 1, actions: [] }, pipeline[:gir_graph][:edges].first)
   end
 
   def test_literal_rseq_vm_matches_substring

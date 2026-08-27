@@ -150,6 +150,26 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_ary_push(gir, op);
   }
   rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
+  VALUE graph = rb_hash_new(), states = rb_ary_new(), edges = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(gir); i++) {
+    VALUE state = rb_hash_new();
+    rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(i));
+    rb_hash_aset(state, ID2SYM(rb_intern("op")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("op"))));
+    rb_hash_aset(state, ID2SYM(rb_intern("arg")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("arg"))));
+    rb_ary_push(states, state);
+    VALUE edge = rb_hash_new();
+    rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(i));
+    rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(i + 1));
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
+    rb_ary_push(edges, edge);
+  }
+  VALUE accept = rb_hash_new();
+  rb_hash_aset(accept, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir)));
+  rb_hash_aset(accept, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ACCEPT")));
+  rb_ary_push(states, accept);
+  rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
+  rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
+  rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   int simple = 1;
   const char *meta = "\\^$|()[]{}*+?";

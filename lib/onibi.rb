@@ -96,13 +96,17 @@ module Onibi
                end
           { op: op, arg: token }
         end
+        states = gir.each_with_index.map { |op, index| { id: index, op: op[:op], arg: op[:arg] } }
+        states << { id: gir.length, op: :ACCEPT }
+        edges = gir.each_index.map { |index| { from: index, to: index + 1, actions: [] } }
         simple = source.each_byte.none? { |byte| "\\|()[]*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||
                  source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
         simple = false unless @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
-        { tokens: tokens, ast: ast, gir: gir, rseq: gir, vm: simple ? :RSEQ : :MRI }
+        { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
+          rseq: gir, vm: simple ? :RSEQ : :MRI }
       end
 
       def vm_match?(string)
