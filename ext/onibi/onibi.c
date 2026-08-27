@@ -167,6 +167,12 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     ID kind = onibi_token_kind(token);
     if (kind == rb_intern("class_negate")) { negated = 1; continue; }
     if (kind == rb_intern("posix_class")) {
+      VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
+      const char *posix = StringValueCStr(name);
+      if (strcmp(posix, "alpha") != 0 && strcmp(posix, "digit") != 0 && strcmp(posix, "alnum") != 0 &&
+          strcmp(posix, "space") != 0 && strcmp(posix, "blank") != 0 && strcmp(posix, "lower") != 0 &&
+          strcmp(posix, "upper") != 0 && strcmp(posix, "word") != 0 && strcmp(posix, "xdigit") != 0)
+        rb_raise(eRegexpError, "unknown POSIX character class");
       rb_ary_push(children, token);
       continue;
     }
