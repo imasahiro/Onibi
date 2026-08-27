@@ -1114,7 +1114,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   int regular_graph = options == 0;
   for (long i = 0; regular_graph && i < RSTRING_LEN(src); i++) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
-    if (c == '(' || c == ')' || c == ':') regular_graph = 0;
+    if (c == ':') regular_graph = 0;
     if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
         !strchr("AzZG", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
