@@ -120,4 +120,11 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("xxbxx")
     refute regexp.match?("xxcxx")
   end
+
+  def test_character_class_repeat_dispatches_to_rseq
+    regexp = Onibi::Regexp.new("[a-z]+")
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.match?("item-2026")
+    refute regexp.match?("123")
+  end
 end

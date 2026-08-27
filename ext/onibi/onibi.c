@@ -67,7 +67,9 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
     if (strchr("\\()", RSTRING_PTR(src)[i])) supported = 0;
   if (strchr(RSTRING_PTR(src), '{') && !(RSTRING_LEN(src) >= 5 &&
       RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
-  if (strchr(RSTRING_PTR(src), '-')) supported = 0;
+  int class_plus = RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
+                   RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+';
+  if (strchr(RSTRING_PTR(src), '-') && !class_plus) supported = 0;
   if (strchr(RSTRING_PTR(src), '|') && (strchr(RSTRING_PTR(src), '[') || strchr(RSTRING_PTR(src), ']'))) supported = 0;
   long pipes = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
@@ -210,7 +212,9 @@ static VALUE onibi_pipeline(VALUE self) {
   if (RSTRING_LEN(src) == 4 && RSTRING_PTR(src)[1] == '.' && RSTRING_PTR(src)[2] == '*') simple = 1;
   if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') simple = 1;
   if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') simple = 1;
-  if (strchr(RSTRING_PTR(src), '-')) simple = 0;
+  if (strchr(RSTRING_PTR(src), '-') && !(RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
+      RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+')) simple = 0;
+  if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
   if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) != 0) simple = 0;
@@ -221,6 +225,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
+  int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
   if (RSTRING_LEN(src) >= 3 && p[0] == '^' && p[RSTRING_LEN(src)-1] == '$') {
     VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
     return rb_str_equal(body, str) ? Qtrue : Qfalse;
@@ -241,12 +246,32 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       if (RSTRING_PTR(str)[j] == p[1] && RSTRING_PTR(str)[j+1] == p[3]) return Qtrue;
     return Qfalse;
   }
-  if (RSTRING_LEN(src) >= 5 && p[0] == '[') {
+  if (RSTRING_LEN(src) >= 5 && p[0] == '[' && !class_plus) {
     long close = 0; for (long i = 1; i < RSTRING_LEN(src); i++) if (p[i] == ']') { close = i; break; }
     if (close > 1 && close + 2 == RSTRING_LEN(src)) {
       for (long j = 0; j + 1 < RSTRING_LEN(str); j++) {
         int hit = 0; for (long i = 1; i < close; i++) if (RSTRING_PTR(str)[j] == p[i]) hit = 1;
         if (hit && RSTRING_PTR(str)[j + 1] == p[close + 1]) return Qtrue;
+      }
+      return Qfalse;
+    }
+  }
+  if (class_plus) {
+    long close = 0; for (long i = 1; i < RSTRING_LEN(src); i++) if (p[i] == ']') { close = i; break; }
+    if (close > 1 && close == RSTRING_LEN(src) - 2) {
+      for (long j = 0; j < RSTRING_LEN(str); j++) {
+        long run = 0;
+        while (j + run < RSTRING_LEN(str)) {
+          unsigned char c = (unsigned char)RSTRING_PTR(str)[j + run]; int hit = 0;
+          for (long i = 1; i < close; i++) {
+            if (p[i] == '-' && i > 1 && i + 1 < close && c >= (unsigned char)p[i - 1] && c <= (unsigned char)p[i + 1]) hit = 1;
+            else if (p[i] != '-' && c == (unsigned char)p[i]) hit = 1;
+          }
+          if (!hit) break;
+          run++;
+        }
+        if (run > 0) return Qtrue;
+        j += run;
       }
       return Qfalse;
     }

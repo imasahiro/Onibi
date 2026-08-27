@@ -112,9 +112,11 @@ module Onibi
                  (source.length == 3 && source[1] == "|") ||
                  (source.length == 4 && source[1, 2] == ".*") ||
                  source.match?(/\A.\{\d+(?:,\d+)?\}\z/) ||
-                 source.start_with?("[") && source.end_with?("]")
+                 source.start_with?("[") && source.end_with?("]") ||
+                 source.start_with?("[") && source.end_with?("+")
         simple = false unless @regexp.options.zero?
-        simple = false if source.include?("-")
+        simple = false if source.include?("-") && !(source.start_with?("[") && source.end_with?("+"))
+        simple = true if source.match?(/\A\[[^\]]+\]\+\z/) && @regexp.options.zero?
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
           rseq: gir, vm: simple ? :RSEQ : :MRI }
@@ -137,6 +139,11 @@ module Onibi
           chars = source[1...source.index("]")]
           tail = source[-1]
           string.each_char.each_cons(2).any? { |first, last| chars.include?(first) && last == tail }
+        elsif source.start_with?("[") && source.end_with?("+")
+          body = source[1...source.index("]")]
+          string.each_char.any? do |char|
+            body.each_char.each_cons(3).any? { |left, dash, right| dash == "-" && char.between?(left, right) } || body.include?(char)
+          end
         elsif source.match?(/\A.\{\d+(?:,\d+)?\}\z/)
           min = source[2..-2].split(",").first.to_i
           string.scan(/#{::Regexp.escape(source[0])}+/).any? { |run| run.length >= min }
