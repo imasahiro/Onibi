@@ -126,22 +126,22 @@ Do not restore the Ruby matcher as production code.
 
 ## Current architecture audit
 
-The current public load path defines only `Onibi::Regexp`.
-It does not define `Onibi::Lexer`, `Onibi::Parser`, `Onibi::Compiler`, or
-`Onibi::Interpreter`.
+The C extension now defines `Onibi::Lexer`, `Onibi::Parser`, `Onibi::Compiler`,
+`Onibi::RSeq`, and `Onibi::VM`.
 
-The C `pipeline` method uses source-string heuristics. It does not consume a
-typed AST. Its graph is a synthetic linear graph with special cases for a few
-patterns. Its `rseq_compact` value is a Ruby array of hashes, not the
-relocatable immutable RSeq blob defined in `gir.md`.
+The tokenizer publishes frozen semantic tokens with byte spans. The parser
+publishes a frozen regular-core AST. The compiler consumes only that AST and
+publishes a frozen G-IR graph with ordered start edges and edge actions.
 
-The C VM has pattern-specific branches. The execution-class value is metadata;
-three independent C interpreters do not yet exist. Most public matching calls
-MRI directly.
+RSeq lowering preserves state, edge, start-edge, and action order. The current
+RSeq value is an immutable Ruby representation. It is not yet the final
+one-blob relocatable allocation required by `gir.md`.
 
-Therefore the implementation is not complete at any compiler stage. The old
-v2 tests describe the target architecture, but they cannot exercise the
-current load path until these entry points exist.
+The C executor supports literals, alternation, classes, POSIX classes, common
+escapes, anchors, bounded repeats, captures, and numeric or named
+backreferences. The dispatcher exposes all three execution class names, but
+the implementations still share the executor. This is an incremental gate,
+not final VM completion.
 
 ## Stage acceptance gates
 
@@ -158,16 +158,15 @@ Tokenizer -> Parser/AST -> G-IR compiler -> RSeq lowering -> VM dispatch
 The first complete core will cover literals, sequences, alternation, character
 classes, wildcard, anchors, and bounded quantifiers. Unsupported features must
 cross an explicit dynamic boundary. They must not enter a partial fast path.
-# Current C pipeline status
 
-The C extension now exposes a small tokenizer, parser, GIR lowering step, and
-RSeq representation for simple ASCII patterns. The RSeq VM executes literals,
-single character classes, single and bounded quantifiers, and simple
-alternation. The public `match?` method dispatches these cases to the RSeq VM.
+## Current C pipeline status
 
-Patterns with options, non-ASCII input, ranges, captures, anchors, or other
-complex syntax use the MRI compatibility path. This boundary is intentional
-until the corresponding GIR opcodes and VM states are implemented.
+Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
+current suite has 44 cases and 225 assertions after an explicit C build.
+
+Remaining gates are the relocatable RSeq blob, independent interpreter
+implementations, option and encoding semantics, lookaround and atomic states,
+full tag-history sharing, interrupt polling, and timeout handling.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
