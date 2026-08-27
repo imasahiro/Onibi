@@ -6,6 +6,7 @@ static VALUE mOnibi, cRegexp, eRegexpError;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
+static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 
 typedef struct { VALUE regexp; VALUE execution_class; long program_size; } onibi_regexp_t;
 
@@ -444,6 +445,20 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
   return NIL_P(rb_funcall(str, id_index, 1, src)) ? Qfalse : Qtrue;
 }
+static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
+  if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  VALUE src = rb_funcall(obj->regexp, id_source, 0);
+  VALUE needle = src;
+  if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
+    needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
+  VALUE start = rb_funcall(str, id_index, 1, needle);
+  if (NIL_P(start)) return Qnil;
+  VALUE result = rb_hash_new();
+  rb_hash_aset(result, ID2SYM(rb_intern("start")), start);
+  rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(NUM2LONG(start) + RSTRING_LEN(needle)));
+  return result;
+}
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
@@ -479,6 +494,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
   rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
   rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
+  rb_define_method(cRegexp, "vm_match_result", onibi_vm_match_result, 1);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
   rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));

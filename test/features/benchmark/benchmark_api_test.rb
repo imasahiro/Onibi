@@ -51,6 +51,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("abc")
     assert regexp.vm_match?("xxabcxx")
     refute regexp.vm_match?("xxabxx")
+    assert_equal({ start: 2, end: 5 }, regexp.vm_match_result("xxabcxx"))
   end
 
   def test_tokenizer_marks_classes_and_alternation

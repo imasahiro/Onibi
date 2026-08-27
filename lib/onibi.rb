@@ -207,6 +207,14 @@ module Onibi
         end
       end
 
+      def vm_match_result(string)
+        return unless vm_match?(string)
+
+        needle = source.start_with?("(") && source.end_with?(")") ? source[1...-1] : source
+        start = string.index(needle)
+        { start: start, end: start + needle.bytesize }
+      end
+
       def scan(string) = string.scan(@regexp)
 
       def gsub(string, replacement) = string.gsub(@regexp, replacement)
