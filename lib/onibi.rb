@@ -92,14 +92,16 @@ module Onibi
                end
           { op: op, arg: token }
         end
-        simple = source.each_byte.none? { |byte| "\\^$|()[]{}*+?".include?(byte.chr) } ||
+        simple = source.each_byte.none? { |byte| "\\|()[]{}*+?".include?(byte.chr) } ||
                  (source.length == 3 && source[1] == "|")
         simple = false unless @regexp.options.zero?
         { tokens: tokens, ast: ast, gir: gir, rseq: gir, vm: simple ? :RSEQ : :MRI }
       end
 
       def vm_match?(string)
-        if source.include?("|") && source.count("|") == 1
+        if source.start_with?("^") && source.end_with?("$")
+          string == source[1...-1]
+        elsif source.include?("|") && source.count("|") == 1
           source.split("|").any? { |branch| string.include?(branch) }
         elsif source.start_with?("[") && source.end_with?("]")
           string.each_byte.any? { |byte| source.bytes[1...-1].include?(byte) }

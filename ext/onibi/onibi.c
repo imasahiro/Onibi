@@ -158,6 +158,10 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE src = rb_funcall(obj->regexp, id_source, 0);
   const char *p = RSTRING_PTR(src);
+  if (RSTRING_LEN(src) >= 3 && p[0] == '^' && p[RSTRING_LEN(src)-1] == '$') {
+    VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
+    return rb_str_equal(body, str) ? Qtrue : Qfalse;
+  }
   const char *meta = "\\.^$|()[]{}*+?";
   if (RSTRING_LEN(src) >= 3 && p[0] == '[' && p[RSTRING_LEN(src)-1] == ']') {
     for (long j = 0; j < RSTRING_LEN(str); j++)
