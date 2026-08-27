@@ -395,6 +395,7 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("xxabDxx")
     rseq = Onibi::RSeq.lower(Onibi::Compiler.compile(Onibi::Parser.parse("ABC", 1)))
     assert_equal true, rseq[:header][:ignorecase]
+    assert_predicate Onibi::Parser.parse("ABC", 1)[:options].first, :frozen?
   end
 
   def test_multiline_anchors_are_compiled_into_line_assertions

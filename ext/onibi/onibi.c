@@ -359,20 +359,20 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
 static VALUE onibi_parser_options(VALUE options) {
   VALUE result = rb_ary_new();
   if (NIL_P(options) || options == Qfalse) { rb_obj_freeze(result); return result; }
-  if (options == Qtrue) rb_ary_push(result, rb_str_new_cstr("ignorecase"));
+  if (options == Qtrue) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
   else if (RB_TYPE_P(options, T_STRING)) {
     const char *p = RSTRING_PTR(options);
     for (long i = 0; i < RSTRING_LEN(options); i++) {
       const char *name = p[i] == 'i' ? "ignorecase" : (p[i] == 'm' ? "multiline" : (p[i] == 'x' ? "extended" : NULL));
-      if (name != NULL) rb_ary_push(result, rb_str_new_cstr(name));
+      if (name != NULL) { VALUE value = rb_str_new_cstr(name); rb_obj_freeze(value); rb_ary_push(result, value); }
       else rb_raise(rb_eArgError, "unknown regexp option");
     }
   } else {
     int mask = NUM2INT(options);
     if (mask & ~(1 | 2 | 4)) rb_raise(rb_eArgError, "unknown regexp option");
-    if (mask & 1) rb_ary_push(result, rb_str_new_cstr("ignorecase"));
-    if (mask & 4) rb_ary_push(result, rb_str_new_cstr("multiline"));
-    if (mask & 2) rb_ary_push(result, rb_str_new_cstr("extended"));
+      if (mask & 1) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
+      if (mask & 4) { VALUE name = rb_str_new_cstr("multiline"); rb_obj_freeze(name); rb_ary_push(result, name); }
+      if (mask & 2) { VALUE name = rb_str_new_cstr("extended"); rb_obj_freeze(name); rb_ary_push(result, name); }
   }
   rb_obj_freeze(result);
   return result;
