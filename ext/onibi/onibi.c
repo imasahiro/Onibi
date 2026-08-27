@@ -44,6 +44,7 @@ static VALUE onibi_tokenize(VALUE src) {
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
     VALUE backref_name = Qnil;
     VALUE group_name = Qnil;
+    VALUE posix_name = Qnil;
     if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -51,6 +52,15 @@ static VALUE onibi_tokenize(VALUE src) {
         kind = "group_start";
         group_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
+      }
+    }
+    if (in_class && byte == '[' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == ':') {
+      long close = i + 2;
+      while (close + 1 < RSTRING_LEN(src) && !(RSTRING_PTR(src)[close] == ':' && RSTRING_PTR(src)[close + 1] == ']')) close++;
+      if (close + 1 < RSTRING_LEN(src)) {
+        kind = "posix_class";
+        posix_name = rb_str_substr(src, i + 2, close - (i + 2));
+        i = close + 1;
       }
     }
     if (!in_class && byte == '\\' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'k' && RSTRING_PTR(src)[i + 2] == '<') {
@@ -92,6 +102,7 @@ static VALUE onibi_tokenize(VALUE src) {
     rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
     if (!NIL_P(backref_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name);
     if (!NIL_P(group_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name);
+    if (!NIL_P(posix_name)) rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
   }
@@ -155,6 +166,10 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
     if (kind == rb_intern("class_negate")) { negated = 1; continue; }
+    if (kind == rb_intern("posix_class")) {
+      rb_ary_push(children, token);
+      continue;
+    }
     if (kind == rb_intern("class_range") && i > begin + 1 && i + 1 < close) {
       VALUE range = rb_ary_new();
       rb_ary_push(range, INT2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
@@ -1121,7 +1136,21 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   }
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
-    if (onibi_hash_value(child, "kind") == ID2SYM(rb_intern("literal")) && byte == NUM2INT(onibi_hash_value(child, "byte"))) hit = 1;
+    ID kind = SYM2ID(onibi_hash_value(child, "kind"));
+    if (kind == rb_intern("literal") && byte == NUM2INT(onibi_hash_value(child, "byte"))) hit = 1;
+    if (kind == rb_intern("posix_class")) {
+      VALUE name = onibi_hash_value(child, "name");
+      const char *n = StringValueCStr(name);
+      if (strcmp(n, "alpha") == 0) hit |= isalpha(byte);
+      else if (strcmp(n, "digit") == 0) hit |= isdigit(byte);
+      else if (strcmp(n, "alnum") == 0) hit |= isalnum(byte);
+      else if (strcmp(n, "space") == 0) hit |= isspace(byte);
+      else if (strcmp(n, "blank") == 0) hit |= (byte == ' ' || byte == '\t');
+      else if (strcmp(n, "lower") == 0) hit |= islower(byte);
+      else if (strcmp(n, "upper") == 0) hit |= isupper(byte);
+      else if (strcmp(n, "word") == 0) hit |= (isalnum(byte) || byte == '_');
+      else if (strcmp(n, "xdigit") == 0) hit |= isxdigit(byte);
+    }
   }
   return RTEST(onibi_hash_value(payload, "negated")) ? !hit : hit;
 }
@@ -1260,7 +1289,6 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   int regular_graph = options == 0;
   for (long i = 0; regular_graph && i < RSTRING_LEN(src); i++) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
-    if (c == ':') regular_graph = 0;
     if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
         !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) regular_graph = 0;
   }
@@ -1427,8 +1455,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   int graph_ok = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0;
   for (long i = 0; graph_ok && i < RSTRING_LEN(src); i++) {
     unsigned char c = (unsigned char)RSTRING_PTR(src)[i];
-    if (c == ':' || (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
-        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1])))) graph_ok = 0;
+    if (c == '\\' && (i + 1 >= RSTRING_LEN(src) ||
+        !strchr("AzZGdDsSwWhHk123456789", RSTRING_PTR(src)[i + 1]))) graph_ok = 0;
   }
   if (graph_ok) {
     VALUE parser_args[1] = { src };
