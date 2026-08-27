@@ -618,6 +618,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_hash_aset(out, ID2SYM(rb_intern("from")), onibi_hash_value(edge, "from"));
     rb_hash_aset(out, ID2SYM(rb_intern("to")), onibi_hash_value(edge, "to"));
     rb_hash_aset(out, ID2SYM(rb_intern("action_offset")), LONG2NUM(RARRAY_LEN(actions)));
+    rb_hash_aset(out, ID2SYM(rb_intern("actions")), edge_actions);
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
       rb_obj_freeze(action);
@@ -1122,9 +1123,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     VALUE parser_args[1] = { src };
     VALUE parsed = onibi_parser_parse(1, parser_args, Qnil);
     VALUE compiled = onibi_compiler_compile(Qnil, parsed);
-    VALUE graph = onibi_hash_value(compiled, "graph");
+    VALUE rseq = onibi_rseq_lower(Qnil, compiled);
     for (long start = 0; start <= RSTRING_LEN(str); start++)
-      if (onibi_gir_match(graph, str, start)) return Qtrue;
+      if (onibi_gir_match(rseq, str, start)) return Qtrue;
     return Qfalse;
   }
   const char *p = RSTRING_PTR(src);
