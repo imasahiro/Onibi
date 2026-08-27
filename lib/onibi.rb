@@ -128,7 +128,15 @@ module Onibi
         simple = false if source.include?("|") && source.match?(/[\[\]]/)
         interpreter = execution_class.to_sym
         literal_only = !source.empty? && source.each_byte.none? { |byte| "\\^$|()[]{}*+?.".include?(byte.chr) }
-        compact = literal_only ? [{ op: :STRING, arg: source }] : gir
+        compact = if literal_only
+                    [{ op: :STRING, arg: source }]
+                  elsif source.start_with?("[") && source.end_with?("]")
+                    [{ op: :RUN_CLASS, arg: source }]
+                  elsif source == "."
+                    [{ op: :RUN_ANY, arg: 1 }]
+                  else
+                    gir
+                  end
         { tokens: tokens, ast: ast, gir: gir, gir_graph: { states: states, edges: edges },
           rseq: gir, rseq_compact: compact, vm: simple ? :RSEQ : :MRI, interpreter: interpreter }
       end

@@ -231,6 +231,17 @@ static VALUE onibi_pipeline(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
+  } else if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' &&
+             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
+    rb_ary_push(compact, op);
+  } else if (RSTRING_LEN(src) == 1 && RSTRING_PTR(src)[0] == '.') {
+    VALUE op = rb_hash_new();
+    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_ANY")));
+    rb_hash_aset(op, ID2SYM(rb_intern("arg")), INT2NUM(1));
+    rb_ary_push(compact, op);
   } else compact = gir;
   rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
   int simple = 1;
