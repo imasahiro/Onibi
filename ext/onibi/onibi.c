@@ -55,6 +55,7 @@ static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_body, id_key_options, id_key_negative_options, id_key_capturing;
 static ID id_key_condition, id_key_branches, id_key_yes, id_key_no, id_key_atom;
 static ID id_key_min, id_key_max, id_key_greedy, id_key_possessive;
+static ID id_key_width;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
 static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_from, id_key_accept, id_key_action_offset;
@@ -5041,12 +5042,12 @@ static void onibi_rseq_validate(VALUE rseq) {
       op == id_a_counter_increment ? ONIBI_RA_COUNTER_ADD :
       (op == id_a_test_counter_lt || op == id_a_test_counter_ge) ? ONIBI_RA_COUNTER_TEST :
       op == id_a_end ? ONIBI_RA_END : 0xff;
-    VALUE slot = onibi_hash_value(semantic_action, "slot");
-    VALUE limit = onibi_hash_value(semantic_action, "limit");
-    VALUE value = onibi_hash_value(semantic_action, "value");
-    VALUE width = onibi_hash_value(semantic_action, "width");
+    VALUE slot = onibi_hash_value_id(semantic_action, id_key_slot);
+    VALUE limit = onibi_hash_value_id(semantic_action, id_key_limit);
+    VALUE value = onibi_hash_value_id(semantic_action, id_key_value);
+    VALUE width = onibi_hash_value_id(semantic_action, id_key_width);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
-      VALUE predicates = onibi_hash_value(semantic_action, "predicates");
+      VALUE predicates = onibi_hash_value_id(semantic_action, id_key_predicates);
       if (!RB_TYPE_P(predicates, T_ARRAY) || !RTEST(rb_obj_frozen_p(predicates)) ||
           NIL_P(width) || NUM2LONG(width) != RARRAY_LEN(predicates))
         rb_raise(rb_eArgError, "RSeq lookaround predicates are invalid");
@@ -5057,11 +5058,11 @@ static void onibi_rseq_validate(VALUE rseq) {
             NIL_P(kind_code) || NUM2UINT(kind_code) > ONIBI_PRED_ANY)
           rb_raise(rb_eArgError, "RSeq lookaround predicate has an invalid kind");
         if (NUM2UINT(kind_code) == ONIBI_PRED_BYTE) {
-          VALUE byte = onibi_hash_value(predicate, "byte");
+          VALUE byte = onibi_hash_value_id(predicate, id_key_byte);
           if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
             rb_raise(rb_eArgError, "RSeq lookaround byte predicate is invalid");
         } else if (NUM2UINT(kind_code) == ONIBI_PRED_BITMAP) {
-          VALUE bitmap = onibi_hash_value(predicate, "bitmap");
+          VALUE bitmap = onibi_hash_value_id(predicate, id_key_bitmap);
           if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32 || !RTEST(rb_obj_frozen_p(bitmap)))
             rb_raise(rb_eArgError, "RSeq lookaround bitmap predicate is invalid");
         }
@@ -5071,11 +5072,11 @@ static void onibi_rseq_validate(VALUE rseq) {
       (!NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
        (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0));
     uint8_t expected_flags = onibi_rseq_action_flags(op);
-    if (op == id_a_test_capture && !RTEST(onibi_hash_value(semantic_action, "set")))
+    if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(semantic_action, id_key_set)))
       expected_flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) : onibi_rseq_assert_kind(op);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
-      int positive = RTEST(onibi_hash_value(semantic_action, "positive"));
+      int positive = RTEST(onibi_hash_value_id(semantic_action, id_key_positive));
       expected_flags = op == id_a_assert_lookahead ? (positive ? 1 : 2) : (positive ? 5 : 6);
     }
     if (expected_op == 0xff || actions[i].op != expected_op || actions[i].flags != expected_flags || actions[i].arg16 != expected_arg16 ||
@@ -5483,7 +5484,7 @@ void Init_onibi(void) {
   id_key_negative_options = rb_intern("negative_options"); id_key_capturing = rb_intern("capturing");
   id_key_condition = rb_intern("condition"); id_key_branches = rb_intern("branches");
   id_key_yes = rb_intern("yes"); id_key_no = rb_intern("no"); id_key_atom = rb_intern("atom");
-  id_key_min = rb_intern("min"); id_key_max = rb_intern("max");
+  id_key_min = rb_intern("min"); id_key_max = rb_intern("max"); id_key_width = rb_intern("width");
   id_key_greedy = rb_intern("greedy"); id_key_possessive = rb_intern("possessive");
   id_key_negated = rb_intern("negated"); id_key_bitmap = rb_intern("bitmap");
   id_key_preserve_if_set = rb_intern("preserve_if_set");
