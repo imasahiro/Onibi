@@ -62,6 +62,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "onibi_feature_token_bytes(obj->feature_token_count)"
   end
 
+  def test_feature_classification_does_not_reintern_token_names
+    source = File.read(EXTENSION_SOURCE)
+    classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
+
+    refute_nil classifier
+    refute_includes classifier, "rb_intern_str"
+    assert_includes classifier, "token->name_id"
+    assert_includes classifier, "token->property_kind"
+  end
+
   def test_numeric_assertion_dispatch_preserves_public_matching
     assert Onibi::Regexp.new("^a$").match?("a")
     assert Onibi::Regexp.new("(?=a)a").match?("a")
