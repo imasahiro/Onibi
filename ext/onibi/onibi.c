@@ -48,7 +48,7 @@ static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
 static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code;
 static ID id_key_start, id_key_end, id_key_captures;
-static ID id_key_slot, id_key_set;
+static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
@@ -3913,8 +3913,8 @@ static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *c
   if (!counters || !counters->values) return 1;
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (op != id_a_test_counter_lt && op != id_a_test_counter_ge) continue;
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+    if (code != ONIBI_GA_TEST_COUNTER_LT && code != ONIBI_GA_TEST_COUNTER_GE) continue;
     VALUE slot_value = onibi_hash_value_id(action, id_key_slot);
     if (NIL_P(slot_value)) continue;
     long slot = NUM2LONG(slot_value);
@@ -3922,8 +3922,8 @@ static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *c
     VALUE limit_value = onibi_hash_value_id(action, id_key_limit);
     if (NIL_P(limit_value)) return 0;
     long limit = NUM2LONG(limit_value);
-    if ((op == id_a_test_counter_lt && !(count < limit)) ||
-        (op == id_a_test_counter_ge && !(count >= limit))) return 0;
+    if ((code == ONIBI_GA_TEST_COUNTER_LT && !(count < limit)) ||
+        (code == ONIBI_GA_TEST_COUNTER_GE && !(count >= limit))) return 0;
   }
   return 1;
 }
@@ -3932,16 +3932,16 @@ static void onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *c
   if (!counters || !counters->values) return;
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     VALUE slot_value = onibi_hash_value_id(action, id_key_slot);
     if (NIL_P(slot_value)) continue;
     long slot = NUM2LONG(slot_value);
     if (slot < 0 || (uint32_t)slot >= counters->count) continue;
-    if (op == id_a_counter_init) {
-      VALUE value = onibi_hash_value(action, "value");
+    if (code == ONIBI_GA_COUNTER_INIT) {
+      VALUE value = onibi_hash_value_id(action, id_key_value);
       counters->values[slot] = NIL_P(value) ? 0 : NUM2LONG(value);
     }
-    else if (op == id_a_counter_increment) counters->values[slot]++;
+    else if (code == ONIBI_GA_COUNTER_INCREMENT) counters->values[slot]++;
   }
 }
 
@@ -3949,14 +3949,15 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (op == id_a_test_capture) {
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+    if (code == ONIBI_GA_TEST_CAPTURE) {
       long capture = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
       int set = !NIL_P(captures) && !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture))) &&
         !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture + 1)));
       if (!set && !NIL_P(captures)) {
         for (long event = 0; event < RARRAY_LEN(actions); event++) {
           VALUE event_action = rb_ary_entry(actions, event);
-          if (SYM2ID(onibi_hash_value_id(event_action, id_key_op)) == id_capture_close &&
+          if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(event_action, id_key_action_code)) == ONIBI_GA_CAPTURE_CLOSE &&
               NUM2LONG(onibi_hash_value_id(event_action, id_key_slot)) == 2 * capture + 1 &&
               !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture)))) { set = 1; break; }
         }
@@ -3964,13 +3965,13 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       if (set != RTEST(onibi_hash_value_id(action, id_key_set))) return 0;
       continue;
     }
-    if (op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
+    if (code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
       if (NIL_P(counters)) continue;
       VALUE value = rb_hash_aref(counters, onibi_hash_value_id(action, id_key_slot));
       long count = NIL_P(value) ? 0 : NUM2LONG(value);
       long limit = NUM2LONG(onibi_hash_value_id(action, id_key_limit));
-      if ((op == id_a_test_counter_lt && !(count < limit)) ||
-          (op == id_a_test_counter_ge && !(count >= limit))) return 0;
+      if ((code == ONIBI_GA_TEST_COUNTER_LT && !(count < limit)) ||
+          (code == ONIBI_GA_TEST_COUNTER_GE && !(count >= limit))) return 0;
     }
     if (op == id_a_assert_begin_buffer && pos != 0) return 0;
     if (op == id_a_assert_search_origin && pos != 0) return 0;
@@ -5463,7 +5464,7 @@ void Init_onibi(void) {
   id_key_start = rb_intern("start"); id_key_end = rb_intern("end"); id_key_captures = rb_intern("captures");
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
-  id_key_set = rb_intern("set");
+  id_key_set = rb_intern("set"); id_key_value = rb_intern("value");
   id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name");
   id_key_ctype = rb_intern("ctype"); id_key_ranges = rb_intern("ranges");
   id_key_children = rb_intern("children"); id_key_operands = rb_intern("operands");
