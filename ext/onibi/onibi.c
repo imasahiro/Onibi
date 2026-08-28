@@ -1888,7 +1888,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int literal_only = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
-        if (NUM2UINT(onibi_hash_value(child, "kind_code")) != ONIBI_TOKEN_LITERAL) {
+        if (NUM2UINT(onibi_hash_value_id(child, id_key_kind_code)) != ONIBI_TOKEN_LITERAL) {
           literal_only = 0;
           break;
         }
@@ -1959,7 +1959,7 @@ skip_utf8_range_expansion:
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
      offsets, and the encoding gate below limits this path to valid UTF-8. */
   if (type_code == ONIBI_AST_LITERAL) {
-    VALUE literal_bytes = onibi_hash_value(ast, "bytes");
+    VALUE literal_bytes = onibi_hash_value_id(ast, id_key_bytes);
     if (!NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) > 1) {
       onibi_fragment_t result = onibi_fragment_empty();
       result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -1982,7 +1982,7 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_ALTERNATIVE) {
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
-    VALUE branches = onibi_hash_value(ast, "branches");
+    VALUE branches = onibi_hash_value_id(ast, id_key_branches);
     for (long i = 0; i < RARRAY_LEN(branches); i++) {
       onibi_fragment_t branch = onibi_compile_node(rb_ary_entry(branches, i), builder);
       for (long j = 0; j < RARRAY_LEN(branch.starts); j++) rb_ary_push(result.starts, rb_ary_entry(branch.starts, j));
@@ -2000,7 +2000,7 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_LITERAL || type_code == ONIBI_AST_ESCAPE ||
       type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_CHARACTER_CLASS ||
       type_code == ONIBI_AST_CLASS_INTERSECTION || type_code == ONIBI_AST_ANY) {
-    VALUE literal_bytes = onibi_hash_value(ast, "bytes");
+    VALUE literal_bytes = onibi_hash_value_id(ast, id_key_bytes);
     if (type_code == ONIBI_AST_LITERAL && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type_code == ONIBI_AST_ESCAPE) {
@@ -2038,7 +2038,7 @@ skip_utf8_range_expansion:
         (grapheme_escape ? id_g_grapheme : id_g_class)));
     if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
       payload = rb_hash_dup(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
+      rb_hash_aset(payload, ID2SYM(id_key_byte), INT2NUM(tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte)))));
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
@@ -2061,7 +2061,7 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
       rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
                    onibi_class_bitmap(payload, builder->ignorecase));
-      VALUE property_name = onibi_hash_value(payload, "name");
+      VALUE property_name = onibi_hash_value_id(payload, id_key_name);
       int property_ctype = NIL_P(property_name) ? -1 : onibi_unicode_ctype(property_name);
       if (property_ctype >= 0)
         rb_hash_aset(payload, ID2SYM(rb_intern("ctype")), INT2NUM(property_ctype));
@@ -2100,7 +2100,7 @@ skip_utf8_range_expansion:
   }
   if (type_code == ONIBI_AST_OPTION_GLOBAL) {
     VALUE option_names = onibi_hash_value_id(ast, id_key_options);
-    int negative = RTEST(onibi_hash_value(ast, "negative"));
+    int negative = RTEST(onibi_hash_value_id(ast, id_key_negative));
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "global option modifier has no flags");
     for (long i = 0; i < RSTRING_LEN(option_names); i++) {
@@ -2127,7 +2127,7 @@ skip_utf8_range_expansion:
       rb_raise(eRegexpError, "option scope has no flags");
     int saved_ignorecase = builder->ignorecase;
     int saved_multiline = builder->multiline;
-    int negative = RTEST(onibi_hash_value(ast, "negative"));
+    int negative = RTEST(onibi_hash_value_id(ast, id_key_negative));
     for (long i = 0; i < RSTRING_LEN(option_names); i++) {
       int enabled = negative ? 0 : 1;
       if (RSTRING_PTR(option_names)[i] == 'i') builder->ignorecase = enabled;
@@ -2245,7 +2245,7 @@ skip_utf8_range_expansion:
     VALUE body = onibi_hash_value_id(ast, id_key_body);
     if (!RB_TYPE_P(body, T_HASH))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
-    VALUE children = onibi_hash_value(body, "children");
+    VALUE children = onibi_hash_value_id(body, id_key_children);
     if (!RB_TYPE_P(children, T_ARRAY))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE bytes = rb_str_new(NULL, 0);
@@ -2269,7 +2269,7 @@ skip_utf8_range_expansion:
         continue;
       }
       if (child_type == ONIBI_AST_ESCAPE) {
-        VALUE name = onibi_hash_value(child, "name");
+        VALUE name = onibi_hash_value_id(child, id_key_name);
         int simple = !NIL_P(name) &&
            (onibi_ascii_property_name_p(name) ||
            (RSTRING_LEN(name) == 1 &&
@@ -2288,10 +2288,10 @@ skip_utf8_range_expansion:
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();
       rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
-      rb_hash_aset(predicate, ID2SYM(rb_intern("byte")), onibi_hash_value(child, "byte"));
+      rb_hash_aset(predicate, ID2SYM(id_key_byte), onibi_hash_value_id(child, id_key_byte));
       rb_hash_aset(predicate, ID2SYM(rb_intern("ignorecase")), builder->ignorecase ? Qtrue : Qfalse);
       rb_ary_push(predicates, predicate);
-      rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
+      rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value_id(child, id_key_byte))}, 1);
     }
     rb_obj_freeze(bytes);
     rb_obj_freeze(predicates);
@@ -2331,11 +2331,11 @@ skip_utf8_range_expansion:
       rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
-    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value(ast, "body"));
+    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body));
     if (!NIL_P(capture_name)) {
       if (NIL_P(rb_hash_aref(builder->capture_names, capture_name)))
         rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
-      rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value(ast, "body"));
+      rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body));
     }
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
@@ -2428,7 +2428,7 @@ skip_utf8_range_expansion:
       onibi_append_values(result.pending_actions, repeat.pending_actions);
       for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
     }
-    result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
+    result.lazy = !RTEST(onibi_hash_value_id(ast, id_key_greedy));
     return result;
   }
   rb_raise(eRegexpError, "unsupported AST node");
