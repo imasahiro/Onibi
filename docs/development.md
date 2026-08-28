@@ -141,9 +141,12 @@ publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
 
 RSeq lowering preserves state, edge, start-edge, and action order. It publishes
-an immutable semantic view and a validated, aligned, relocatable v1 blob. The
-blob contains the header, state, edge, action, class, and literal descriptor
-sections. The semantic and physical headers are checked before VM execution.
+an immutable semantic view, an immutable physical execution view, and a
+validated, aligned, relocatable v1 blob. The physical view is built during
+RSeq lowering. Match calls do not rebuild it or rescan the pattern. The blob
+contains the header, state, edge, action, class, and literal descriptor
+sections. The semantic and physical headers and cached view are checked before
+VM execution.
 
 The C executor supports literals, alternation, classes, POSIX classes, common
 escapes, anchors, bounded repeats, captures, word boundaries, search-origin
