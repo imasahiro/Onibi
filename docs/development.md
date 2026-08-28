@@ -219,6 +219,11 @@ GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
 only as a semantic adapter until the typed action vector conversion.
 
+The action Symbol is still required for assertion subtypes and ordering flags;
+`action_code` identifies the broad operation but does not identify each
+position assertion. Remove the Symbol only after those subtype flags have a
+typed C representation.
+
 The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
 conversion path and focused ordering tests.
