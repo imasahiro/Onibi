@@ -3611,7 +3611,6 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
     VALUE captures = rb_hash_new();
     long capture_count = NUM2LONG(rb_funcall(match, rb_intern("length"), 0)) - 1;
-    if (capture_count > 8) capture_count = 8;
     for (long group_id = 1; group_id <= capture_count; group_id++) {
       VALUE begin = rb_funcall(match, rb_intern("begin"), 1, LONG2NUM(group_id));
       VALUE finish = rb_funcall(match, rb_intern("end"), 1, LONG2NUM(group_id));
@@ -3636,7 +3635,9 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
       rb_hash_aset(result, ID2SYM(rb_intern("start")), LONG2NUM(reported_start));
       rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(end));
       VALUE captures = rb_hash_new();
-      for (long group_id = 1; group_id <= 8; group_id++) {
+      VALUE header = onibi_hash_value(rseq, "header");
+      long capture_count = NUM2LONG(onibi_hash_value(header, "capture_count"));
+      for (long group_id = 1; group_id <= capture_count; group_id++) {
         VALUE begin = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1)));
         VALUE finish = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1) + 1));
         if (!NIL_P(begin) && !NIL_P(finish)) {

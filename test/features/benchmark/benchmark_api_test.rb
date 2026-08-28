@@ -1058,6 +1058,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ 1 => { start: 2, end: 4 }, 2 => { start: 3, end: 4 } }, result[:captures])
   end
 
+  def test_tagged_vm_materializes_more_than_eight_captures
+    regexp = Onibi::Regexp.new("(a)(b)(c)(d)(e)(f)(g)(h)(i)")
+    result = regexp.vm_match_result("abcdefghi")
+
+    assert regexp.program_cached?
+    assert_equal 9, result[:captures].length
+    assert_equal({ start: 8, end: 9 }, result[:captures][9])
+  end
+
   def test_tagged_vm_materializes_nullable_captures
     ["(a*)", "(a?)", "()"].each do |source|
       regexp = Onibi::Regexp.new(source)
