@@ -2009,6 +2009,7 @@ static void onibi_rseq_validate(VALUE rseq) {
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   if (NIL_P(semantic) ||
+      header.start_edge_count > header.edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
       NUM2UINT(onibi_hash_value(semantic, "features")) != header.features ||
       NUM2UINT(onibi_hash_value(semantic, "edge_count")) != header.edge_count - header.start_edge_count ||
@@ -2041,6 +2042,8 @@ static void onibi_rseq_validate(VALUE rseq) {
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   for (uint32_t i = 0; i < header.state_count; i++) {
+    if (states[i].op > ONIBI_RS_RUN_ANY)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq state opcode");
     if ((uint64_t)states[i].edge_base + states[i].edge_count > header.edge_count - header.start_edge_count)
       rb_raise(rb_eArgError, "invalid Onibi RSeq state edge range");
     if (states[i].op == ONIBI_RS_CLASS && states[i].payload >= header.class_count)
