@@ -1185,13 +1185,6 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   return result;
 }
 
-static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
-  (void)self;
-  VALUE source, options = Qnil;
-  rb_scan_args(argc, argv, "11", &source, &options);
-  return onibi_parser_parse_internal(source, options, Qnil);
-}
-
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
 typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
@@ -5300,26 +5293,6 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
   return Qfalse;
 }
 
-static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
-  (void)self;
-  StringValue(str);
-  if (!rb_respond_to(rseq, id_trusted_rseq)) onibi_rseq_validate(rseq);
-  if (execution_class != ID2SYM(id_exec_regular) &&
-      execution_class != ID2SYM(id_exec_tagged) &&
-      execution_class != ID2SYM(id_exec_dynamic))
-    rb_raise(rb_eArgError, "unknown Onibi execution class");
-  VALUE physical_blob = onibi_hash_value_id(rseq, id_key_blob);
-  OnibiRSeqHeader physical_header;
-  memcpy(&physical_header, RSTRING_PTR(physical_blob), sizeof(physical_header));
-  uint8_t expected_kind = execution_class == ID2SYM(id_exec_dynamic) ? 2 :
-    (execution_class == ID2SYM(id_exec_tagged) ? 1 : 0);
-  if (physical_header.exec_kind != expected_kind)
-    rb_raise(rb_eArgError, "RSeq execution class does not match blob");
-  if (execution_class == ID2SYM(id_exec_regular)) return onibi_vm_regular_fast(rseq, str);
-  if (execution_class == ID2SYM(id_exec_tagged)) return onibi_vm_tagged_ordered(rseq, str, 1);
-  return onibi_vm_dynamic(rseq, str);
-}
-
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
@@ -5448,14 +5421,6 @@ void Init_onibi(void) {
   /* Lexer, parser, compiler, RSeq, and VM are implementation objects.
    * Keep their methods available to the C pipeline, but do not publish
   * Ruby constants for them.  Only Onibi::Regexp is public. */
-  VALUE parser = rb_module_new();
-  rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);
-  VALUE compiler = rb_module_new();
-  rb_define_singleton_method(compiler, "compile", onibi_compiler_compile, 1);
-  VALUE rseq = rb_module_new();
-  rb_define_singleton_method(rseq, "lower", onibi_rseq_lower, 1);
-  VALUE vm = rb_module_new();
-  rb_define_singleton_method(vm, "execute", onibi_vm_execute, 3);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   eTimeoutError = rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
   rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
