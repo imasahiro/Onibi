@@ -1510,6 +1510,21 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         rb_ary_push(predicates, predicate);
         continue;
       }
+      if (child_type == ID2SYM(rb_intern("escape"))) {
+        VALUE name = onibi_hash_value(child, "name");
+        int simple = !NIL_P(name) &&
+          (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
+           (RSTRING_LEN(name) == 1 && strchr("dDsSwWhH", RSTRING_PTR(name)[0]) != NULL));
+        if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");
+        VALUE payload = rb_hash_dup(child);
+        rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
+        rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
+        VALUE predicate = rb_hash_new();
+        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(payload, builder->ignorecase));
+        rb_ary_push(predicates, predicate);
+        continue;
+      }
       if (child_type != ID2SYM(rb_intern("literal")))
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();

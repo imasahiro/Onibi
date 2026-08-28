@@ -510,6 +510,17 @@ class BenchmarkApiTest < Minitest::Test
     assert multiline.vm_match?("\n")
   end
 
+  def test_escape_lookaround_uses_compiled_ascii_predicates
+    digit = Onibi::Regexp.new("(?=\\d)7")
+    nondigit = Onibi::Regexp.new("(?=\\D)x")
+
+    assert digit.program_cached?
+    assert nondigit.program_cached?
+    assert digit.vm_match?("7")
+    assert nondigit.vm_match?("x")
+    refute digit.vm_match?("x")
+  end
+
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
     lazy = Onibi::Regexp.new("a+?")
     possessive = Onibi::Regexp.new("a++")
@@ -1138,8 +1149,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
     assert_same regexp.pipeline[:compiled][:graph], canonical[:gir]
     assert_same regexp.pipeline[:rseq_program], canonical[:rseq]
-    refute Onibi::Regexp.new("(?=\\d)b").program_cached?
-    refute Onibi::Regexp.new("(?=\\d)b").program_frozen?
+    assert Onibi::Regexp.new("(?=\\d)b").program_cached?
+    assert Onibi::Regexp.new("(?=\\d)b").program_frozen?
   end
 
   def test_ignorecase_is_compiled_into_rseq_header
