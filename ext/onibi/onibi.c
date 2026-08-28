@@ -1419,8 +1419,24 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   return bitmap;
 }
 
+typedef struct { const char *name; ID id; } OnibiKeyCacheEntry;
+static OnibiKeyCacheEntry onibi_key_cache[128];
+static size_t onibi_key_cache_count = 0;
+
+static ID onibi_key_id(const char *name) {
+  for (size_t i = 0; i < onibi_key_cache_count; i++)
+    if (onibi_key_cache[i].name == name) return onibi_key_cache[i].id;
+  ID id = rb_intern(name);
+  if (onibi_key_cache_count < sizeof(onibi_key_cache) / sizeof(onibi_key_cache[0])) {
+    onibi_key_cache[onibi_key_cache_count].name = name;
+    onibi_key_cache[onibi_key_cache_count].id = id;
+    onibi_key_cache_count++;
+  }
+  return id;
+}
+
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
-  return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
+  return rb_hash_aref(hash, ID2SYM(onibi_key_id(name)));
 }
 
 static VALUE onibi_symbol_value(VALUE hash, const char *name) {
