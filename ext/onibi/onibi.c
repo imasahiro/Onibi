@@ -64,6 +64,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
+static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype(VALUE name);
@@ -1161,50 +1162,6 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   return sequence;
 }
 
-static VALUE onibi_parser_options(VALUE options) {
-  VALUE result = rb_ary_new();
-  if (NIL_P(options) || options == Qfalse) { rb_obj_freeze(result); return result; }
-  if (options == Qtrue) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
-  else if (RB_TYPE_P(options, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(options); i++) {
-      VALUE item = rb_ary_entry(options, i);
-      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      ID option_id = rb_intern_str(name);
-      if (option_id == id_opt_ignorecase || option_id == id_opt_multiline ||
-          option_id == id_opt_extended || option_id == id_opt_fixedencoding ||
-          option_id == id_opt_noencoding) {
-        VALUE copy = rb_str_dup(name); rb_obj_freeze(copy); rb_ary_push(result, copy);
-      } else rb_raise(rb_eArgError, "unknown regexp option");
-    }
-  }
-  else if (RB_TYPE_P(options, T_STRING)) {
-    const char *p = RSTRING_PTR(options);
-    for (long i = 0; i < RSTRING_LEN(options); i++) {
-      const char *name = p[i] == 'i' ? "ignorecase" :
-                         (p[i] == 'm' ? "multiline" :
-                         (p[i] == 'x' ? "extended" :
-                         (p[i] == 'n' ? "noencoding" : NULL)));
-      if (name != NULL) { VALUE value = rb_str_new_cstr(name); rb_obj_freeze(value); rb_ary_push(result, value); }
-      else rb_raise(rb_eArgError, "unknown regexp option");
-    }
-  } else {
-    int mask = NUM2INT(options);
-    if (mask & ~(1 | 2 | 4 | 16 | 32)) rb_raise(rb_eArgError, "unknown regexp option");
-      if (mask & 1) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
-      if (mask & 4) { VALUE name = rb_str_new_cstr("multiline"); rb_obj_freeze(name); rb_ary_push(result, name); }
-      if (mask & 2) { VALUE name = rb_str_new_cstr("extended"); rb_obj_freeze(name); rb_ary_push(result, name); }
-      if (mask & 16) { VALUE name = rb_str_new_cstr("fixedencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
-      if (mask & 32) { VALUE name = rb_str_new_cstr("noencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
-  }
-  VALUE unique = rb_ary_new();
-  for (long i = 0; i < RARRAY_LEN(result); i++) {
-    VALUE name = rb_ary_entry(result, i);
-    if (!RTEST(rb_ary_includes(unique, name))) rb_ary_push(unique, name);
-  }
-  rb_obj_freeze(unique);
-  return unique;
-}
-
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
   source = StringValue(source);
   VALUE tokens = supplied_tokens;
@@ -1215,7 +1172,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   VALUE source_copy = rb_str_dup(source);
   rb_obj_freeze(source_copy);
   rb_hash_aset(result, ID2SYM(rb_intern("source")), source_copy);
-  rb_hash_aset(result, ID2SYM(rb_intern("options")), onibi_parser_options(options));
+  rb_hash_aset(result, ID2SYM(rb_intern("options")), INT2NUM(onibi_option_mask(options)));
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens))));
   rb_obj_freeze(result);
   return result;
@@ -1419,24 +1376,8 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   return bitmap;
 }
 
-typedef struct { const char *name; ID id; } OnibiKeyCacheEntry;
-static OnibiKeyCacheEntry onibi_key_cache[128];
-static size_t onibi_key_cache_count = 0;
-
-static ID onibi_key_id(const char *name) {
-  for (size_t i = 0; i < onibi_key_cache_count; i++)
-    if (onibi_key_cache[i].name == name) return onibi_key_cache[i].id;
-  ID id = rb_intern(name);
-  if (onibi_key_cache_count < sizeof(onibi_key_cache) / sizeof(onibi_key_cache[0])) {
-    onibi_key_cache[onibi_key_cache_count].name = name;
-    onibi_key_cache[onibi_key_cache_count].id = id;
-    onibi_key_cache_count++;
-  }
-  return id;
-}
-
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
-  return rb_hash_aref(hash, ID2SYM(onibi_key_id(name)));
+  return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
 }
 
 static VALUE onibi_symbol_value(VALUE hash, const char *name) {
@@ -2463,14 +2404,9 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   (void)self;
   VALUE ast = onibi_hash_value(parsed, "ast");
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
-  VALUE parsed_options = onibi_hash_value(parsed, "options");
-  int ignorecase = 0;
-  int multiline = 0;
-  for (long i = 0; i < RARRAY_LEN(parsed_options); i++) {
-    ID option_id = rb_intern_str(rb_ary_entry(parsed_options, i));
-    if (option_id == id_opt_ignorecase) ignorecase = 1;
-    else if (option_id == id_opt_multiline) multiline = 1;
-  }
+  int parsed_options = NUM2INT(onibi_hash_value(parsed, "options"));
+  int ignorecase = (parsed_options & 1) != 0;
+  int multiline = (parsed_options & 4) != 0;
   VALUE subprograms = rb_ary_new();
   rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
   onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, rb_hash_new(), ignorecase, multiline, 0 };
@@ -2707,14 +2643,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_ary_push(r_start_edges, out);
   }
   VALUE header = rb_hash_new();
-  VALUE options = onibi_hash_value(compiled, "options");
-  int ignorecase = 0;
-  int multiline = 0;
-  for (long i = 0; i < RARRAY_LEN(options); i++) {
-    ID option_id = rb_intern_str(rb_ary_entry(options, i));
-    if (option_id == id_opt_ignorecase) ignorecase = 1;
-    else if (option_id == id_opt_multiline) multiline = 1;
-  }
+  int options = NUM2INT(onibi_hash_value(compiled, "options"));
+  int ignorecase = (options & 1) != 0;
+  int multiline = (options & 4) != 0;
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
   VALUE literal_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
