@@ -667,6 +667,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal [0, 1], actions.map { |action| action[:slot] }
   end
 
+  def test_vm_enforces_counted_repeat_bounds
+    regexp = Onibi::Regexp.new("\\Aa{2,3}\\z")
+    assert regexp.vm_match?("aa")
+    assert regexp.vm_match?("aaa")
+    refute regexp.vm_match?("aaaa")
+  end
+
   def test_compiler_assigns_distinct_capture_slots
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a(b))"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
