@@ -3835,6 +3835,21 @@ static int onibi_grapheme_hangul_t(OnigCodePoint code) {
   return (code >= 0x11a8 && code <= 0x11ff) || (code >= 0xd7cb && code <= 0xd7fb);
 }
 
+static int onibi_grapheme_prepend(OnigCodePoint code) {
+  return (code >= 0x0600 && code <= 0x0605) ||
+    (code >= 0x06dd && code <= 0x06dd) ||
+    (code >= 0x070f && code <= 0x070f) ||
+    (code >= 0x0890 && code <= 0x0891) ||
+    (code >= 0x0d4e && code <= 0x0d4e) ||
+    (code >= 0x110bd && code <= 0x110bd) ||
+    (code >= 0x111c2 && code <= 0x111c3) ||
+    (code >= 0x1193f && code <= 0x1193f) ||
+    (code >= 0x11941 && code <= 0x11941) ||
+    (code >= 0x11a3a && code <= 0x11a3a) ||
+    (code >= 0x11a84 && code <= 0x11a89) ||
+    (code >= 0x11d46 && code <= 0x11d46);
+}
+
 static long onibi_grapheme_width(VALUE str, long pos) {
   OnigCodePoint code; long width;
   if (!onibi_codepoint_at(str, pos, &code, &width)) return 0;
@@ -3857,7 +3872,7 @@ static long onibi_grapheme_width(VALUE str, long pos) {
            (onibi_grapheme_hangul_v(next) || onibi_grapheme_hangul_t(next))) end += next_width;
     return end - pos;
   }
-  int join = 0;
+  int join = onibi_grapheme_prepend(code);
   for (;;) {
     OnigCodePoint next; long next_width;
     if (!onibi_codepoint_at(str, end, &next, &next_width)) break;

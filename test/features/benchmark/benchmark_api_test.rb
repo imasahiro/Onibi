@@ -286,6 +286,8 @@ class BenchmarkApiTest < Minitest::Test
     ["🇯🇵", "가"].each do |input|
       assert_equal Regexp.new("\\X").match(input).byteend(0), regexp.vm_match_result(input)[:end]
     end
+    input = "\u0600a"
+    assert_equal Regexp.new("\\X").match(input).byteend(0), regexp.vm_match_result(input)[:end]
   end
 
   def test_ascii_property_escape_lowers_to_a_bitmap
