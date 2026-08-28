@@ -13,6 +13,9 @@
 #define ONIBI_AST_ANALYSIS_HAS_CAPTURE (1U << 0)
 #define ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE (1U << 1)
 #define ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE (1U << 2)
+#define ONIBI_FEATURE_DYNAMIC (1U << 0)
+#define ONIBI_FEATURE_TAGGED (1U << 1)
+#define ONIBI_FEATURE_ATOMIC (1U << 2)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -160,7 +163,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -3542,7 +3545,6 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->has_large_repeat = 0;
   obj->has_absence = 0;
   obj->has_conditional = 0;
-  obj->has_atomic = 0;
   obj->has_backref = 0;
   obj->has_ascii_property = 0;
   obj->has_unicode_property = 0;
@@ -3557,8 +3559,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->has_anchor = 0;
   obj->has_meta_escape = 0;
   obj->has_subroutine = 0;
-  obj->has_dynamic = 0;
-  obj->has_tagged = 0;
+  obj->execution_flags = 0;
   obj->has_inline_ignorecase = 0;
   for (size_t i = 0; i < feature_tokens->count; i++) {
     OnibiFeatureToken *token = &feature_tokens->items[i];
@@ -3616,20 +3617,20 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
       obj->has_class_intersection = 1;
     if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
       obj->has_subroutine = 1;
-      obj->has_dynamic = 1;
+      obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
     } else if (kind_code == ONIBI_TOKEN_BACKREF ||
                kind_code == ONIBI_TOKEN_ATOMIC_START ||
                kind_code == ONIBI_TOKEN_ABSENCE_START) {
-      obj->has_dynamic = 1;
+      obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
       if (kind_code == ONIBI_TOKEN_BACKREF) obj->has_backref = 1;
-      if (kind_code == ONIBI_TOKEN_ATOMIC_START) obj->has_atomic = 1;
+      if (kind_code == ONIBI_TOKEN_ATOMIC_START) obj->execution_flags |= ONIBI_FEATURE_ATOMIC;
       if (kind_code == ONIBI_TOKEN_ABSENCE_START) obj->has_absence = 1;
     } else if (kind_code == ONIBI_TOKEN_CONDITIONAL_START) {
       /* Simple capture conditionals lower to guarded GIR edges.  Mark the
          construct only for diagnostics; compile failure selects MRI. */
       obj->has_conditional = 1;
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
-      if (token->byte == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
+      if (token->byte == 'X') { obj->has_grapheme = 1; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
       if (token->byte == 'p' || token->byte == 'P') {
         if (token->property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
           obj->has_ascii_property = 1;
@@ -3638,15 +3639,15 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
             obj->has_unicode_property = 1;
           if (in_class) obj->has_unicode_property_in_class = 1;
         }
-        else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
+        else { obj->has_property_escape = 1; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
       }
       if (token->byte == 'u') obj->has_unicode_escape = 1;
     } else if (kind_code == ONIBI_TOKEN_META_ESCAPE) {
       obj->has_meta_escape = 1;
-      obj->has_dynamic = 1;
+      obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
     } else if (kind_code == ONIBI_TOKEN_GROUP_START ||
                (kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{')) {
-      obj->has_tagged = 1;
+      obj->execution_flags |= ONIBI_FEATURE_TAGGED;
     }
     previous = token;
   }
@@ -3924,11 +3925,11 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   } else {
     rb_set_errinfo(Qnil);
     /* Keep a failed lowering on the dynamic MRI boundary. */
-    obj->has_dynamic = 1;
+    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
   }
-  if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
-  obj->execution_kind = obj->has_dynamic ? ONIBI_EXEC_DYNAMIC :
-    (obj->has_tagged ? ONIBI_EXEC_TAGGED : ONIBI_EXEC_REGULAR);
+  if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
+  obj->execution_kind = (obj->execution_flags & ONIBI_FEATURE_DYNAMIC) ? ONIBI_EXEC_DYNAMIC :
+    ((obj->execution_flags & ONIBI_FEATURE_TAGGED) ? ONIBI_EXEC_TAGGED : ONIBI_EXEC_REGULAR);
   rb_obj_freeze(self);
   return self;
 }
@@ -4093,8 +4094,9 @@ static VALUE onibi_regexp_linear_time_p(VALUE klass, VALUE pattern) {
   VALUE regexp = rb_funcall(klass, id_new, 1, pattern);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(regexp, onibi_regexp_t, &onibi_type, obj);
-  return (!obj->has_dynamic && !obj->has_backref && !obj->has_subroutine &&
-          !obj->has_absence && !obj->has_conditional && !obj->has_atomic) ? Qtrue : Qfalse;
+  return (!(obj->execution_flags & (ONIBI_FEATURE_DYNAMIC | ONIBI_FEATURE_ATOMIC)) &&
+          !obj->has_backref && !obj->has_subroutine &&
+          !obj->has_absence && !obj->has_conditional) ? Qtrue : Qfalse;
 }
 
 #if 0 /* Private diagnostic pipeline; kept only as historical reference. */
