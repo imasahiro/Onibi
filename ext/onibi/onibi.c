@@ -1853,7 +1853,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_ANY")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), INT2NUM(1));
     rb_ary_push(compact, op);
-  } else if (strchr(RSTRING_PTR(src), '|') != NULL) {
+  } else if (is_alt) {
     VALUE op = rb_hash_new(), branches = rb_ary_new(); long begin = 0;
     for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
       rb_ary_push(branches, rb_str_substr(src, begin, i - begin)); begin = i + 1;
@@ -1901,10 +1901,15 @@ static VALUE onibi_pipeline_build(VALUE self) {
   if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' &&
       !strchr(RSTRING_PTR(src) + 1, ':') && strchr(RSTRING_PTR(src) + 1, ']') == strrchr(RSTRING_PTR(src), ']')) simple = 1;
   if (class_pair) simple = 1;
-  long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
+  long pipes = 0;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++)
+    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) pipes++;
   if (pipes > 1) simple = 0;
   int pipeline_options = obj->options;
-  if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
+  int has_wildcard = 0;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++)
+    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("wildcard")) has_wildcard = 1;
+  if (pipeline_options != 0 && !(pipeline_options == 4 && has_wildcard) &&
       !(pipeline_options == 1 && literal_only)) simple = 0;
   /* The canonical compiler result is authoritative.  Legacy display
      heuristics above are retained only for old fields, never for dispatch. */
