@@ -728,6 +728,11 @@ static void onibi_gir_validate(VALUE graph) {
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE starts = onibi_hash_value(graph, "start_edges");
   long state_count = RARRAY_LEN(states);
+  VALUE accept_value = onibi_hash_value(graph, "accept");
+  if (NIL_P(accept_value)) rb_raise(eRegexpError, "GIR accept state is missing");
+  long accept = NUM2LONG(accept_value);
+  if (accept < 0 || accept >= state_count)
+    rb_raise(eRegexpError, "GIR accept state is out of range");
   for (long i = 0; i < state_count; i++) {
     VALUE state = rb_ary_entry(states, i);
     if (NUM2LONG(onibi_hash_value(state, "id")) != i)
@@ -738,6 +743,8 @@ static void onibi_gir_validate(VALUE graph) {
         op != rb_intern("G_BACKREF") && op != rb_intern("G_CALL") &&
         op != rb_intern("G_ATOMIC") && op != rb_intern("G_ABSENT"))
       rb_raise(eRegexpError, "unknown GIR state opcode");
+    if (i == accept && op != rb_intern("G_ACCEPT"))
+      rb_raise(eRegexpError, "GIR accept state has a non-accept opcode");
   }
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
