@@ -2573,7 +2573,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE class_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     VALUE state = rb_ary_entry(states, i);
-    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CLASS")) continue;
+    if (NUM2UINT(onibi_hash_value_id(state, id_key_opcode)) != ONIBI_G_CLASS) continue;
     VALUE payload = onibi_hash_value(state, "payload");
     int found = 0;
     for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
@@ -2683,8 +2683,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
   uint32_t features = 0, capture_count = 0, counter_count = 0;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
-    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == id_g_backref) features |= 1U;
+    VALUE opcode = onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode);
+    if (!NIL_P(opcode) && NUM2UINT(opcode) == ONIBI_G_BACKREF) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
