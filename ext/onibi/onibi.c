@@ -5604,10 +5604,10 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     uint32_t action_offset = physical_edges[i].action_offset;
     if (action_offset != 0) {
       uint32_t action_index = action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-      for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
-        VALUE action = rb_ary_entry(semantic_actions, a);
+      uint32_t action_count = (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_edges, i), id_key_actions));
+      for (uint32_t n = 0; n < action_count; n++) {
+        VALUE action = rb_ary_entry(semantic_actions, action_index + n);
         rb_ary_push(physical_program, action);
-        if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(id_key_actions), physical_program);
@@ -5622,10 +5622,10 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     VALUE physical_program = rb_ary_new();
     if (physical_edge->action_offset != 0) {
       uint32_t action_index = physical_edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-      for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
-        VALUE action = rb_ary_entry(semantic_actions, a);
+      uint32_t action_count = (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_start_edges, i), id_key_actions));
+      for (uint32_t n = 0; n < action_count; n++) {
+        VALUE action = rb_ary_entry(semantic_actions, action_index + n);
         rb_ary_push(physical_program, action);
-        if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(id_key_actions), physical_program);

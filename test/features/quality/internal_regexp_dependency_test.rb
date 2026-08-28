@@ -268,6 +268,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "onibi_rseq_subprogram_vector_free(&subprogram_records)"
   end
 
+  def test_physical_graph_copies_cached_action_ranges
+    source = File.read(EXTENSION_SOURCE)
+    graph = source[/static VALUE onibi_rseq_physical_graph\(.*?\n}\n/m]
+
+    refute_nil graph
+    assert_includes graph, "uint32_t action_count = (uint32_t)RARRAY_LEN"
+    assert_includes graph, "action_index + n"
+    refute_includes graph, "id_key_action_code)) == ONIBI_GA_END"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"
