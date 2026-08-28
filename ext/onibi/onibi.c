@@ -1350,11 +1350,6 @@ static const OnibiGuardEntry *onibi_guard_vector_find_entry(const OnibiGuardVect
   return NULL;
 }
 
-static VALUE onibi_guard_vector_find(const OnibiGuardVector *vector, OnibiStateId state) {
-  const OnibiGuardEntry *entry = onibi_guard_vector_find_entry(vector, state);
-  return entry ? entry->actions : Qnil;
-}
-
 static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
@@ -2915,8 +2910,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (size_t i = 0; i < start_ids.count; i++) {
     VALUE edge = rb_hash_new();
     VALUE destination = UINT2NUM(start_ids.items[i]);
-    VALUE actions = rb_ary_new();
-    VALUE guard = onibi_guard_vector_find(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
+    const OnibiGuardEntry *capture_guard =
+      onibi_guard_vector_find_entry(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
+    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) +
+                                    (capture_guard ? (long)capture_guard->action_count : 0));
+    VALUE guard = capture_guard ? capture_guard->actions : Qnil;
     onibi_append_values(actions, fragment.start_actions);
     if (!NIL_P(guard)) onibi_append_values(actions, guard);
     rb_hash_aset(edge, ID2SYM(id_key_to), destination);
