@@ -849,6 +849,26 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
       RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
+  uint32_t features = 0, class_count = 0, capture_count = 0, counter_count = 0;
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
+    if (op == rb_intern("G_CLASS")) class_count++;
+    if (op == rb_intern("G_BACKREF")) features |= 1U;
+  }
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
+    if (op == rb_intern("CAPTURE_OPEN")) { capture_count++; features |= 2U; }
+    if (op == rb_intern("COUNTER_INIT")) { counter_count++; features |= 4U; }
+    if (op == rb_intern("MATCH_RESET")) features |= 8U;
+    if (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
+        op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
+        op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
+        op == rb_intern("ASSERT_NONWORD_BOUNDARY")) features |= 16U;
+  }
+  rb_hash_aset(header, ID2SYM(rb_intern("features")), UINT2NUM(features));
+  rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
+  rb_hash_aset(header, ID2SYM(rb_intern("capture_count")), UINT2NUM(capture_count));
+  rb_hash_aset(header, ID2SYM(rb_intern("counter_count")), UINT2NUM(counter_count));
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
   rb_hash_aset(header, ID2SYM(rb_intern("ignorecase")), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(rb_intern("multiline")), multiline ? Qtrue : Qfalse);
@@ -861,6 +881,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.magic = ONIBI_RSEQ_MAGIC;
   physical.version = ONIBI_RSEQ_VERSION;
   physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
+  physical.features = features;
+  physical.class_count = class_count;
+  physical.capture_count = capture_count;
+  physical.semantic_capture_count = capture_count;
+  physical.counter_count = counter_count;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
     if (op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
