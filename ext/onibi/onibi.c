@@ -218,7 +218,7 @@ static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
   if (rb_enc_compatible(str, obj->source) == NULL) return 0;
   if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex()) return 1;
   if (onibi_encoded_literal_program_p(obj) &&
-      encoding == rb_enc_get_index(obj->source))
+      encoding == obj->source_encoding_index)
     return onibi_valid_encoding(str);
   if (obj->has_unicode_property &&
       (!obj->has_unicode_property_in_class ||

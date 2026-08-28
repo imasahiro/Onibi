@@ -454,6 +454,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_equal 1, match_p.scan("rb_enc_get_index(str)").length
     assert_includes vm_match_p, "int str_encoding_index = rb_enc_get_index(str);"
     assert_equal 1, vm_match_p.scan("rb_enc_get_index(str)").length
+    refute_includes source, "rb_enc_get_index(obj->source)"
   end
 
   def test_vm_matchers_do_not_reintern_property_names
