@@ -765,6 +765,8 @@ static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
                  onibi_hash_value_id(token, id_key_start));
     rb_hash_aset(node, ID2SYM(id_key_end),
                  onibi_hash_value_id(token, id_key_end));
+    VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
+    if (!NIL_P(name_id)) rb_hash_aset(node, ID2SYM(id_key_name_id), name_id);
   }
   return node;
 }
@@ -2095,7 +2097,11 @@ skip_utf8_range_expansion:
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type_code == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(ast, id_key_name);
-      if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !onibi_ascii_property_name_p(name))
+      VALUE name_id = onibi_hash_value_id(ast, id_key_name_id);
+      int is_property = !NIL_P(name_id) ?
+        (onibi_ascii_property_kind_id(NUM2ULONG(name_id)) != ONIBI_ASCII_PROP_UNKNOWN) :
+        onibi_ascii_property_name_p(name);
+      if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !is_property)
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : (RSTRING_LEN(name) == 1 ?
         tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
