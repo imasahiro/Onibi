@@ -75,7 +75,6 @@ static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static void onibi_rseq_validate(VALUE rseq);
-static VALUE onibi_hash_value(VALUE hash, const char *name);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
 static OnibiGActionOp onibi_gir_action_opcode(ID op);
 static void onibi_set_gir_action_opcode(VALUE action, ID op);
@@ -1222,7 +1221,6 @@ static void onibi_id_vector_push(OnibiIdVector *vector, OnibiStateId value) {
 static void onibi_id_vector_free(OnibiIdVector *vector) {
   xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
-static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -1397,10 +1395,6 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   VALUE bitmap = rb_str_new((const char *)bits, sizeof(bits));
   rb_obj_freeze(bitmap);
   return bitmap;
-}
-
-static VALUE onibi_hash_value(VALUE hash, const char *name) {
-  return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
 }
 
 static int onibi_ast_has_capture(VALUE ast) {
