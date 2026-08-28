@@ -841,6 +841,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   for (long i = 0; i < RARRAY_LEN(options); i++)
     if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("multiline"))) multiline = 1;
+  uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
+  uint64_t physical_size = sizeof(OnibiRSeqHeader) +
+    (uint64_t)sizeof(OnibiRState) * (uint64_t)RARRAY_LEN(states) +
+    (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
+    (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions);
+  if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
+      RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
+    rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
   rb_hash_aset(header, ID2SYM(rb_intern("ignorecase")), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(rb_intern("multiline")), multiline ? Qtrue : Qfalse);
