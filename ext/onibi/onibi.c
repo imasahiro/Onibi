@@ -36,6 +36,7 @@ static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
 static ID id_key_bytes, id_type_class_intersection;
+static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
@@ -3960,7 +3961,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
         VALUE kind_value = onibi_hash_value(child, "kind");
         if (!SYMBOL_P(kind_value)) continue;
         ID kind = SYM2ID(kind_value);
-        if (kind == rb_intern("literal")) {
+        if (kind == id_kind_literal) {
           VALUE bytes = onibi_hash_value_id(child, id_key_bytes);
           if (NIL_P(bytes)) bytes = rb_str_new((const char[]){(char)NUM2INT(onibi_hash_value_id(child, id_key_byte))}, 1);
           const char *child_ptr = RSTRING_PTR(bytes);
@@ -3969,7 +3970,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
           if (child_len > 0 && child_ptr + child_len <= child_end &&
               ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
                                    (const OnigUChar *)child_end) == code) hit = 1;
-        } else if (kind == rb_intern("escape")) {
+        } else if (kind == id_kind_escape) {
           VALUE child_ctype_value = onibi_hash_value_id(child, id_key_ctype);
           int child_ctype = NIL_P(child_ctype_value) ? -1 : NUM2INT(child_ctype_value);
           if (child_ctype >= 0) {
@@ -5100,6 +5101,7 @@ void Init_onibi(void) {
   id_key_states = rb_intern("states"); id_key_outgoing = rb_intern("outgoing");
   id_key_start_edges = rb_intern("start_edges"); id_key_subprograms = rb_intern("subprograms");
   id_key_bytes = rb_intern("bytes"); id_type_class_intersection = rb_intern("class_intersection");
+  id_kind_literal = rb_intern("literal"); id_kind_escape = rb_intern("escape");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
