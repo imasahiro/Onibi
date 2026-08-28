@@ -359,6 +359,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal "aaa", possessive.match("aaa")[0]
   end
 
+  def test_encoding_flags_are_parsed_but_not_sent_to_ascii_rseq
+    assert_equal ["fixedencoding"], Onibi::Parser.parse("a", 16)[:options]
+    assert_equal ["noencoding"], Onibi::Parser.parse("a", 32)[:options]
+    refute Onibi::Regexp.new("a", 16).program_cached?
+    refute Onibi::Regexp.new("a", 32).program_cached?
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }

@@ -478,10 +478,12 @@ static VALUE onibi_parser_options(VALUE options) {
     }
   } else {
     int mask = NUM2INT(options);
-    if (mask & ~(1 | 2 | 4)) rb_raise(rb_eArgError, "unknown regexp option");
+    if (mask & ~(1 | 2 | 4 | 16 | 32)) rb_raise(rb_eArgError, "unknown regexp option");
       if (mask & 1) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
       if (mask & 4) { VALUE name = rb_str_new_cstr("multiline"); rb_obj_freeze(name); rb_ary_push(result, name); }
       if (mask & 2) { VALUE name = rb_str_new_cstr("extended"); rb_obj_freeze(name); rb_ary_push(result, name); }
+      if (mask & 16) { VALUE name = rb_str_new_cstr("fixedencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
+      if (mask & 32) { VALUE name = rb_str_new_cstr("noencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
   }
   rb_obj_freeze(result);
   return result;
@@ -1261,7 +1263,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = rb_ary_entry(program, 2);
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (!onibi_ascii_pattern(source) || strstr(RSTRING_PTR(source), "&&") != NULL ||
+    if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) || strstr(RSTRING_PTR(source), "&&") != NULL ||
         strstr(RSTRING_PTR(source), "\\g<") != NULL) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
