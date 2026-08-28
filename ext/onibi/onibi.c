@@ -168,6 +168,16 @@ static VALUE onibi_tokenize(VALUE src) {
         byte = 'k';
         backref_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
+        }
+    }
+    if (strcmp(kind, "literal") == 0 && !in_class && byte == '\\' &&
+        i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'g' && RSTRING_PTR(src)[i + 2] == '<') {
+      long close = i + 3;
+      while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
+      if (close < RSTRING_LEN(src)) {
+        kind = "subroutine";
+        byte = 'g';
+        i = close;
       }
     }
     if (strcmp(kind, "literal") == 0 && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
@@ -1486,6 +1496,30 @@ static VALUE onibi_build_program(VALUE argument) {
   return rb_ary_new_from_args(3, parsed, compiled, rseq);
 }
 
+static int onibi_tokens_have_class_intersection(VALUE tokens) {
+  int in_class = 0;
+  VALUE previous = Qnil;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    VALUE token = rb_ary_entry(tokens, i);
+    ID kind = onibi_token_kind(token);
+    if (kind == rb_intern("class_start")) { in_class = 1; previous = Qnil; continue; }
+    if (kind == rb_intern("class_end")) { in_class = 0; previous = Qnil; continue; }
+    if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
+        onibi_token_kind(token) == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
+        onibi_token_byte(token) == '&') return 1;
+    previous = token;
+  }
+  return 0;
+}
+
+static int onibi_tokens_have_subroutine(VALUE tokens) {
+  ID kind = rb_intern("subroutine");
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    if (onibi_token_kind(rb_ary_entry(tokens, i)) == kind) return 1;
+  }
+  return 0;
+}
+
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE pattern, options = Qnil;
   rb_scan_args(argc, argv, "11", &pattern, &options);
@@ -1527,8 +1561,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->tokens = onibi_hash_value(obj->parsed, "tokens");
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) || strstr(RSTRING_PTR(source), "&&") != NULL ||
-        strstr(RSTRING_PTR(source), "\\g<") != NULL) {
+    if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) ||
+        onibi_tokens_have_class_intersection(obj->tokens) || onibi_tokens_have_subroutine(obj->tokens)) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
