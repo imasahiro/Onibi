@@ -555,6 +555,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (builder->ignorecase && type == ID2SYM(rb_intern("literal"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
+      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
     if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
@@ -1323,7 +1324,10 @@ static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, lo
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
     VALUE payload = onibi_hash_value(state, "payload");
     int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
-      (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
+      (op == rb_intern("G_CHAR") ?
+        (RTEST(onibi_hash_value(payload, "ignorecase")) ?
+          tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
+          byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, byte));
     if (!hit) return 0;
     pos++;
   }
@@ -1387,7 +1391,10 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
       VALUE payload = onibi_hash_value(state, "payload");
       int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
-        (op == rb_intern("G_CHAR") ? byte == NUM2INT(onibi_hash_value(payload, "byte")) : onibi_vm_class_match(payload, byte));
+        (op == rb_intern("G_CHAR") ?
+          (RTEST(onibi_hash_value(payload, "ignorecase")) ?
+            tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
+            byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, byte));
       if (!hit) return 0;
       pos++;
     }
@@ -1466,8 +1473,6 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
       execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
-  VALUE header = onibi_hash_value(rseq, "header");
-  if (RTEST(onibi_hash_value(header, "ignorecase"))) str = rb_funcall(str, rb_intern("downcase"), 0);
   if (execution_class == ID2SYM(rb_intern("REGULAR_FAST"))) return onibi_vm_regular_fast(rseq, str);
   if (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED"))) return onibi_vm_tagged_ordered(rseq, str);
   return onibi_vm_dynamic(rseq, str);
