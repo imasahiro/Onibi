@@ -42,6 +42,15 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_rseq_contains_immutable_relocatable_blob
+    blob = Onibi::Regexp.new("abc").pipeline[:rseq_program][:blob]
+
+    assert_predicate blob, :frozen?
+    assert_operator blob.bytesize, :>=, 80
+    assert_equal 0x4f4e5251, blob.unpack1("L<")
+    assert_equal 1, blob.byteslice(4, 2).unpack1("S<")
+  end
+
   def test_literal_pipeline_exposes_compiler_stages
     pipeline = Onibi::Regexp.new("abc").pipeline
     assert_equal(%i[literal literal literal], pipeline[:tokens].map { |token| token[:kind] })

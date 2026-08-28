@@ -747,12 +747,55 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("edge_count")), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(rb_intern("action_count")), LONG2NUM(RARRAY_LEN(actions)));
   rb_hash_aset(header, ID2SYM(rb_intern("start_edge_count")), LONG2NUM(RARRAY_LEN(start_edges)));
+  OnibiRSeqHeader physical;
+  memset(&physical, 0, sizeof(physical));
+  physical.magic = ONIBI_RSEQ_MAGIC;
+  physical.version = ONIBI_RSEQ_VERSION;
+  physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
+  physical.state_count = (uint32_t)RARRAY_LEN(states);
+  physical.edge_count = (uint32_t)(RARRAY_LEN(r_edges) + RARRAY_LEN(start_edges));
+  physical.action_count = (uint32_t)RARRAY_LEN(actions);
+  physical.start_edge_count = (uint32_t)RARRAY_LEN(start_edges);
+  uint32_t offset = (uint32_t)sizeof(OnibiRSeqHeader);
+  physical.states_offset = offset;
+  offset += (uint32_t)(sizeof(OnibiRState) * RARRAY_LEN(states));
+  physical.edges_offset = offset;
+  offset += (uint32_t)(sizeof(OnibiREdge) * physical.edge_count);
+  physical.actions_offset = offset;
+  offset += (uint32_t)(sizeof(OnibiRAction) * RARRAY_LEN(actions));
+  physical.blob_size = offset;
+  VALUE blob = rb_str_new(NULL, offset);
+  memset(RSTRING_PTR(blob), 0, offset);
+  memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
+  OnibiRState *physical_states = (OnibiRState *)(RSTRING_PTR(blob) + physical.states_offset);
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    VALUE state = rb_ary_entry(states, i);
+    ID op = SYM2ID(onibi_hash_value(state, "op"));
+    physical_states[i].op = (uint8_t)(op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
+      op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS : op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
+      op == rb_intern("G_ACCEPT") ? 0 : ONIBI_RS_BACKREF);
+    physical_states[i].edge_base = 0;
+    physical_states[i].edge_count = 0;
+  }
+  OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
+  for (long i = 0; i < RARRAY_LEN(r_edges); i++) {
+    VALUE edge = rb_ary_entry(r_edges, i);
+    physical_edges[i].destination = (uint32_t)NUM2ULONG(onibi_hash_value(edge, "to"));
+    physical_edges[i].action_offset = (uint32_t)NUM2ULONG(onibi_hash_value(edge, "action_offset"));
+  }
+  for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
+    VALUE edge = rb_ary_entry(start_edges, i);
+    physical_edges[RARRAY_LEN(r_edges) + i].destination = (uint32_t)NUM2ULONG(onibi_hash_value(edge, "to"));
+    physical_edges[RARRAY_LEN(r_edges) + i].action_offset = 0;
+  }
+  rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("header")), header);
   rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(result, ID2SYM(rb_intern("edges")), r_edges);
   rb_hash_aset(result, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
+  rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
   return result;
 }
