@@ -481,10 +481,12 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       long part_begin = side == 0 ? begin + 1 : intersection + 2;
       long part_end = side == 0 ? intersection : close;
       VALUE slice = rb_ary_new();
-      VALUE open = rb_hash_dup(rb_ary_entry(tokens, begin));
-      VALUE finish = rb_hash_dup(rb_ary_entry(tokens, close));
+      VALUE open = rb_hash_dup(rb_ary_entry(tokens, part_begin));
+      VALUE finish = rb_hash_dup(rb_ary_entry(tokens, part_end - 1));
       rb_hash_aset(open, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_start")));
+      rb_hash_aset(open, ID2SYM(rb_intern("byte")), INT2NUM('['));
       rb_hash_aset(finish, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_end")));
+      rb_hash_aset(finish, ID2SYM(rb_intern("byte")), INT2NUM(']'));
       rb_ary_push(slice, open);
       for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
       rb_ary_push(slice, finish);

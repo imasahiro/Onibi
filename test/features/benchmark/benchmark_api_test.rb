@@ -586,6 +586,8 @@ class BenchmarkApiTest < Minitest::Test
 
     refute_nil nested
     assert_equal true, nested[:negated]
+    assert_equal 6, nested[:start]
+    assert_equal 14, nested[:end]
   end
 
   def test_class_intersection_bitmap_matches_mri_set_intersection
