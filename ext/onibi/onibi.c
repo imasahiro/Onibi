@@ -2594,12 +2594,15 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       obj->has_subroutine = 1;
       obj->has_dynamic = 1;
     } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start") ||
-               kind == rb_intern("absence_start") || kind == rb_intern("conditional_start")) {
+               kind == rb_intern("absence_start")) {
       obj->has_dynamic = 1;
       if (kind == rb_intern("backref")) obj->has_backref = 1;
       if (kind == rb_intern("atomic_start")) obj->has_atomic = 1;
       if (kind == rb_intern("absence_start")) obj->has_absence = 1;
-      if (kind == rb_intern("conditional_start")) obj->has_conditional = 1;
+    } else if (kind == rb_intern("conditional_start")) {
+      /* Simple capture conditionals lower to guarded GIR edges.  Mark the
+         construct only for diagnostics; compile failure selects MRI. */
+      obj->has_conditional = 1;
     } else if (kind == rb_intern("escape")) {
       if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
       if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
@@ -2825,6 +2828,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     }
   } else {
     rb_set_errinfo(Qnil);
+    /* Keep a failed lowering on the dynamic MRI boundary. */
+    obj->has_dynamic = 1;
     obj->tokens = tokens;
   }
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :

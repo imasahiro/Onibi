@@ -223,12 +223,12 @@ class BenchmarkApiTest < Minitest::Test
     refute Onibi::Regexp.new("(?~real)").program_cached?
   end
 
-  def test_conditional_group_has_explicit_ast_and_dynamic_boundary
+  def test_conditional_group_has_explicit_ast_and_guarded_tagged_execution
     parsed = Onibi::Parser.parse("(a)?(?(1)b|c)")
     conditional = parsed[:ast][:children].last
     assert_equal :conditional, conditional[:type]
     assert_equal "1", conditional[:condition]
-    assert_equal :DYNAMIC, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
+    assert_equal :TAGGED_ORDERED, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
   end
 
   def test_nullable_conditional_uses_capture_state_for_branch_selection
