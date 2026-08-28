@@ -1169,9 +1169,6 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
     tokens = onibi_tokenize_internal(source, onibi_extended_option_p(options));
   }
   VALUE result = rb_hash_new();
-  VALUE source_copy = rb_str_dup(source);
-  rb_obj_freeze(source_copy);
-  rb_hash_aset(result, ID2SYM(rb_intern("source")), source_copy);
   rb_hash_aset(result, ID2SYM(rb_intern("options")), INT2NUM(onibi_option_mask(options)));
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens))));
   rb_obj_freeze(result);
