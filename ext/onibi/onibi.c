@@ -740,8 +740,8 @@ static int onibi_extended_option_p(VALUE options) {
   if (RB_TYPE_P(options, T_ARRAY)) {
     for (long i = 0; i < RARRAY_LEN(options); i++) {
       VALUE item = rb_ary_entry(options, i);
-      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      if (rb_intern_str(name) == id_opt_extended) return 1;
+      ID option_id = SYMBOL_P(item) ? SYM2ID(item) : rb_intern_str(StringValue(item));
+      if (option_id == id_opt_extended) return 1;
     }
     return 0;
   }
@@ -3383,8 +3383,7 @@ static int onibi_option_mask(VALUE options) {
     int mask = 0;
     for (long i = 0; i < RARRAY_LEN(options); i++) {
       VALUE item = rb_ary_entry(options, i);
-      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      ID option_id = rb_intern_str(name);
+      ID option_id = SYMBOL_P(item) ? SYM2ID(item) : rb_intern_str(StringValue(item));
       if (option_id == id_opt_ignorecase) mask |= 1;
       else if (option_id == id_opt_multiline) mask |= 4;
       else if (option_id == id_opt_extended) mask |= 2;

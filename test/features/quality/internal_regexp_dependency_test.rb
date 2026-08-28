@@ -90,6 +90,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes classifier, "ID property"
   end
 
+  def test_option_arrays_use_symbol_ids_directly
+    source = File.read(EXTENSION_SOURCE)
+    option_code = source[/static int onibi_extended_option_p\(.*?\n}\n/m]
+
+    refute_nil option_code
+    assert_includes option_code, "SYMBOL_P(item) ? SYM2ID(item)"
+    refute_includes option_code, "rb_sym2str(item)"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
