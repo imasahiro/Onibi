@@ -261,8 +261,9 @@ class InternalRegexpDependencyTest < Minitest::Test
   def test_gir_guard_records_cache_action_count
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "uint32_t action_count; } OnibiGuardEntry"
-    assert_includes source, "onibi_guard_vector_count"
+    assert_includes source, "onibi_guard_vector_find_entry"
     assert_includes source, "rb_ary_new_capa((long)capture_count"
+    assert_includes source, "onibi_guard_vector_find_entry"
   end
 
   def test_rseq_subprograms_use_typed_records
