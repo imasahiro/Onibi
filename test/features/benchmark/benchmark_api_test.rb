@@ -1263,6 +1263,7 @@ class BenchmarkApiTest < Minitest::Test
     result = regexp.vm_match_result("aaab")
 
     assert regexp.program_cached?
+    assert_equal 1, regexp.pipeline[:compiled][:graph][:capture_count]
     assert_equal expected.offset(0), [result[:start], result[:end]]
     assert_equal expected.offset(1), [result[:captures][1][:start], result[:captures][1][:end]]
   end

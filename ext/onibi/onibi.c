@@ -1004,7 +1004,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -1777,7 +1777,13 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type == ID2SYM(rb_intern("capture"))) {
-    long capture_id = builder->capture_count++;
+    VALUE capture_ast_key = onibi_hash_value(ast, "start");
+    VALUE capture_id_value = rb_hash_aref(builder->capture_ids, capture_ast_key);
+    long capture_id;
+    if (NIL_P(capture_id_value)) {
+      capture_id = builder->capture_count++;
+      rb_hash_aset(builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
+    } else capture_id = NUM2LONG(capture_id_value);
     onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
@@ -1785,9 +1791,9 @@ skip_utf8_range_expansion:
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
-    char capture_key[32];
-    snprintf(capture_key, sizeof(capture_key), "%ld", capture_id + 1);
-    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_key), onibi_hash_value(ast, "body"));
+    char capture_name_key[32];
+    snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
+    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value(ast, "body"));
     if (!NIL_P(capture_name)) {
       rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
       rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value(ast, "body"));
@@ -1863,7 +1869,15 @@ skip_utf8_range_expansion:
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
       if (!repeat.nullable) onibi_append_values(result.start_actions, repeat.start_actions);
-      if (RARRAY_LEN(result.exits) > 0) onibi_connect(builder, result.exits, repeat.starts);
+      if (RARRAY_LEN(result.exits) > 0) {
+        if (repeat.nullable) {
+          onibi_connect(builder, result.exits, repeat.starts);
+        } else {
+          VALUE next_actions = rb_ary_dup(repeat.pending_actions);
+          onibi_append_values(next_actions, repeat.start_actions);
+          onibi_connect_actions(builder, result.exits, repeat.starts, next_actions);
+        }
+      }
       if (repeat.nullable) {
         onibi_connect(builder, repeat.exits, repeat.starts);
       } else {
@@ -1891,7 +1905,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -2562,6 +2576,7 @@ static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
   if (type == ID2SYM(rb_intern("quantifier"))) {
     VALUE min = onibi_hash_value(ast, "min");
     if (!NIL_P(min) && NUM2LONG(min) == 0) {
+      if (onibi_ast_has_capture(onibi_hash_value(ast, "atom"))) *nullable_capture = 1;
       (void)onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
       return 1;
     }
