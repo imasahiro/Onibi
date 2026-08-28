@@ -442,6 +442,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil matcher
     refute_includes matcher, "rb_intern"
     refute_includes matcher, "rb_intern_str"
+    assert_includes matcher, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
   end
 
   def test_compiler_value_maps_use_c_owned_growth

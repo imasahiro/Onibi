@@ -4773,10 +4773,11 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
           }
         } else if (kind == ONIBI_TOKEN_ESCAPE || kind == ONIBI_TOKEN_META_ESCAPE) {
           VALUE child_ctype_value = onibi_hash_value_id(child, id_key_ctype);
+          VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);
           int child_ctype = NIL_P(child_ctype_value) ? -1 : NUM2INT(child_ctype_value);
           if (child_ctype >= 0) {
             int child_hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, child_ctype);
-            if (NUM2INT(onibi_hash_value_id(child, id_key_byte)) == 'P') child_hit = !child_hit;
+            if (!NIL_P(child_byte_value) && NUM2INT(child_byte_value) == 'P') child_hit = !child_hit;
             if (child_hit) hit = 1;
           }
         }
