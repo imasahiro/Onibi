@@ -636,6 +636,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes parser_range, "VALUE children = rb_ary_new_capa((long)child_records.count)"
   end
 
+  def test_parser_alternative_branches_use_c_records_before_ast_materialization
+    source = File.read(EXTENSION_SOURCE)
+    parser_range = source[/static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
+
+    refute_nil parser_range
+    assert_includes parser_range, "OnibiValueVector branch_records"
+    assert_includes parser_range, "onibi_value_vector_push(&branch_records"
+    assert_includes parser_range, "VALUE branches = rb_ary_new_capa((long)branch_records.count)"
+  end
+
   def test_parser_uses_cached_id_accessor_for_token_fields
     source = File.read(EXTENSION_SOURCE)
     parser = source[/static long onibi_find_close\(.*?static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]

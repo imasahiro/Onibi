@@ -1161,7 +1161,9 @@ static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE
 static void onibi_value_vector_free(OnibiValueVector *vector);
 
 static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
-  VALUE branches = rb_ary_new_capa(end > begin ? end - begin : 0);
+  OnibiValueVector branch_records;
+  onibi_value_vector_init(&branch_records);
+  VALUE branch_roots = rb_ary_new_capa(end > begin ? end - begin : 0);
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     VALUE token = rb_ary_entry(tokens, i);
@@ -1173,12 +1175,16 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         kind == ONIBI_TOKEN_CLASS_START) depth++;
     else if (kind == ONIBI_TOKEN_GROUP_END || kind == ONIBI_TOKEN_CLASS_END) depth--;
     else if (kind == ONIBI_TOKEN_ALTERNATION && depth == 0) {
-      rb_ary_push(branches, onibi_parse_range(tokens, part, i));
+      onibi_value_vector_push(&branch_records, onibi_parse_range(tokens, part, i), branch_roots);
       part = i + 1;
     }
   }
-  if (RARRAY_LEN(branches) > 0) {
-    rb_ary_push(branches, onibi_parse_range(tokens, part, end));
+  if (branch_records.count > 0) {
+    onibi_value_vector_push(&branch_records, onibi_parse_range(tokens, part, end), branch_roots);
+    VALUE branches = rb_ary_new_capa((long)branch_records.count);
+    for (size_t i = 0; i < branch_records.count; i++) rb_ary_push(branches, branch_records.items[i]);
+    onibi_value_vector_free(&branch_records);
+    rb_ary_clear(branch_roots);
     VALUE node = onibi_ast_node(ONIBI_AST_ALTERNATIVE, Qnil);
     rb_hash_aset(node, ID2SYM(id_key_branches), branches);
     rb_obj_freeze(branches); rb_obj_freeze(node);
