@@ -4745,13 +4745,17 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
         OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(kind_value);
         if (kind == ONIBI_TOKEN_LITERAL) {
           VALUE bytes = onibi_hash_value_id(child, id_key_bytes);
-          if (NIL_P(bytes)) bytes = rb_str_new((const char[]){(char)NUM2INT(onibi_hash_value_id(child, id_key_byte))}, 1);
-          const char *child_ptr = RSTRING_PTR(bytes);
-          const char *child_end = child_ptr + RSTRING_LEN(bytes);
-          int child_len = rb_enc_mbclen(child_ptr, child_end, rb_enc_get(str));
-          if (child_len > 0 && child_ptr + child_len <= child_end &&
-              ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
-                                   (const OnigUChar *)child_end) == code) hit = 1;
+          if (NIL_P(bytes)) {
+            VALUE child_byte = onibi_hash_value_id(child, id_key_byte);
+            if (!NIL_P(child_byte) && code == (OnigCodePoint)NUM2INT(child_byte)) hit = 1;
+          } else {
+            const char *child_ptr = RSTRING_PTR(bytes);
+            const char *child_end = child_ptr + RSTRING_LEN(bytes);
+            int child_len = rb_enc_mbclen(child_ptr, child_end, rb_enc_get(str));
+            if (child_len > 0 && child_ptr + child_len <= child_end &&
+                ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
+                                     (const OnigUChar *)child_end) == code) hit = 1;
+          }
         } else if (kind == ONIBI_TOKEN_ESCAPE || kind == ONIBI_TOKEN_META_ESCAPE) {
           VALUE child_ctype_value = onibi_hash_value_id(child, id_key_ctype);
           int child_ctype = NIL_P(child_ctype_value) ? -1 : NUM2INT(child_ctype_value);

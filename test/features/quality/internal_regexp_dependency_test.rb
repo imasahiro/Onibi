@@ -322,6 +322,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN"
   end
 
+  def test_utf8_class_match_does_not_allocate_missing_literal_bytes
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static int onibi_vm_class_match\(.*?\n}\n/m]
+
+    refute_nil matcher
+    refute_includes matcher, "rb_str_new((const char[]){"
+    assert_includes matcher, "code == (OnigCodePoint)NUM2INT(child_byte)"
+  end
+
   def test_compiler_subprograms_use_c_vector_until_publication
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "OnibiValueVector subprograms"
