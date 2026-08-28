@@ -763,7 +763,8 @@ static int onibi_extended_option_p(VALUE options) {
 }
 
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
-  return (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
+  VALUE kind = onibi_hash_value_id(token, id_key_kind_code);
+  return NIL_P(kind) ? (OnibiTokenKind)-1 : (OnibiTokenKind)NUM2UINT(kind);
 }
 
 static long onibi_token_byte(VALUE token) {
@@ -1731,8 +1732,7 @@ class_children:
   VALUE children = onibi_hash_value_id(payload, id_key_children);
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
-    OnibiTokenKind token_kind = NIL_P(onibi_hash_value_id(child, id_key_kind_code)) ?
-      (OnibiTokenKind)-1 : onibi_token_kind_code(child);
+    OnibiTokenKind token_kind = onibi_token_kind_code(child);
     OnibiAstKind ast_kind = onibi_ast_kind(child);
     if (token_kind == ONIBI_TOKEN_LITERAL || ast_kind == ONIBI_AST_LITERAL) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)), fold);
