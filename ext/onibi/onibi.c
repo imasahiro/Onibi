@@ -49,7 +49,7 @@ static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedenco
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
-static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code, id_key_predicate_code;
+static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code, id_key_assert_kind, id_key_predicate_code;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_name_id, id_key_ctype, id_key_ranges, id_key_children;
@@ -81,6 +81,7 @@ static void onibi_rseq_validate(VALUE rseq);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
 static OnibiGActionOp onibi_gir_action_opcode(ID op);
 static void onibi_set_gir_action_opcode(VALUE action, ID op);
+static void onibi_set_assert_kind(VALUE action, ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_ascii_property_id_p(ID property);
@@ -2248,6 +2249,7 @@ skip_utf8_range_expansion:
     else if (marker == 'Z') op = id_a_assert_semi_end_buffer;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
     onibi_set_gir_action_opcode(action, op);
+    onibi_set_assert_kind(action, op);
     rb_ary_push(result.pending_actions, action);
     return result;
   }
@@ -2386,6 +2388,7 @@ skip_utf8_range_expansion:
       id_a_assert_lookbehind : id_a_assert_lookahead;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
+    onibi_set_assert_kind(action, assertion_op);
     rb_hash_aset(action, ID2SYM(id_key_positive), onibi_hash_value_id(ast, id_key_positive));
     rb_hash_aset(action, ID2SYM(id_key_bytes), bytes);
     if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(id_key_predicates), predicates);
@@ -2658,6 +2661,11 @@ static uint16_t onibi_rseq_assert_kind(ID op) {
   if (op == id_a_assert_lookahead) return ONIBI_RAP_LOOKAHEAD;
   if (op == id_a_assert_lookbehind) return ONIBI_RAP_LOOKBEHIND;
   return 0;
+}
+
+static void onibi_set_assert_kind(VALUE action, ID op) {
+  uint16_t kind = onibi_rseq_assert_kind(op);
+  if (kind != 0) rb_hash_aset(action, ID2SYM(id_key_assert_kind), UINT2NUM(kind));
 }
 
 static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
@@ -2992,7 +3000,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     physical_actions[i].flags = onibi_rseq_action_flags(op);
     if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_set)))
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
-    physical_actions[i].arg16 = onibi_rseq_assert_kind(op);
+    VALUE assert_kind = onibi_hash_value_id(action, id_key_assert_kind);
+    physical_actions[i].arg16 = NIL_P(assert_kind) ? onibi_rseq_assert_kind(op) :
+      (uint16_t)NUM2ULONG(assert_kind);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = RTEST(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_positive));
       physical_actions[i].flags = op == id_a_assert_lookahead ?
@@ -5152,7 +5162,9 @@ static void onibi_rseq_validate(VALUE rseq) {
     uint8_t expected_flags = onibi_rseq_action_flags(op);
     if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(semantic_action, id_key_set)))
       expected_flags = ONIBI_RA_TEST_CAPTURE_UNSET;
-    uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) : onibi_rseq_assert_kind(op);
+    VALUE assert_kind = onibi_hash_value_id(semantic_action, id_key_assert_kind);
+    uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) :
+      (NIL_P(assert_kind) ? onibi_rseq_assert_kind(op) : (uint16_t)NUM2ULONG(assert_kind));
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = RTEST(onibi_hash_value_id(semantic_action, id_key_positive));
       expected_flags = op == id_a_assert_lookahead ? (positive ? 1 : 2) : (positive ? 5 : 6);
@@ -5548,7 +5560,7 @@ void Init_onibi(void) {
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
   id_key_kind = rb_intern("kind"); id_key_kind_code = rb_intern("kind_code"); id_key_opcode = rb_intern("opcode");
-  id_key_action_code = rb_intern("action_code");
+  id_key_action_code = rb_intern("action_code"); id_key_assert_kind = rb_intern("assert_kind");
   id_key_predicate_code = rb_intern("predicate_code");
   id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
   id_key_start = rb_intern("start"); id_key_end = rb_intern("end"); id_key_captures = rb_intern("captures");
