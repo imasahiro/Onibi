@@ -60,7 +60,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -69,6 +69,7 @@ static void onibi_mark(void *ptr) {
   if (!obj) return;
   rb_gc_mark(obj->regexp);
   rb_gc_mark(obj->source);
+  rb_gc_mark(obj->tokens);
   rb_gc_mark(obj->execution_class);
   rb_gc_mark(obj->execution_kind);
   rb_gc_mark(obj->parsed);
@@ -1484,6 +1485,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->source);
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
+  obj->tokens = Qnil;
   VALUE program_args = rb_ary_new_from_args(2, source, options);
   int program_state = 0;
   VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
@@ -1491,6 +1493,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->parsed = rb_ary_entry(program, 0);
     obj->compiled = rb_ary_entry(program, 1);
     obj->rseq = rb_ary_entry(program, 2);
+    obj->tokens = onibi_hash_value(obj->parsed, "tokens");
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) || strstr(RSTRING_PTR(source), "&&") != NULL ||
@@ -1499,12 +1502,13 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     }
   } else {
     rb_set_errinfo(Qnil);
+    obj->tokens = onibi_tokenize(source);
   }
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
-  VALUE class_tokens = NIL_P(obj->parsed) ? onibi_tokenize(source) : onibi_hash_value(obj->parsed, "tokens");
+  VALUE class_tokens = obj->tokens;
   for (long i = 0; i < RARRAY_LEN(class_tokens); i++) {
     ID kind = onibi_token_kind(rb_ary_entry(class_tokens, i));
     if (kind == rb_intern("backref")) {
@@ -1602,7 +1606,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   VALUE out = rb_hash_new();
   VALUE parsed = obj->parsed;
   VALUE src = NIL_P(parsed) ? obj->source : onibi_hash_value(parsed, "source");
-  VALUE tokens = NIL_P(parsed) ? onibi_tokenize(src) : onibi_hash_value(parsed, "tokens");
+  VALUE tokens = obj->tokens;
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
   int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
