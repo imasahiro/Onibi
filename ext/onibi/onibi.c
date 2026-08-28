@@ -164,11 +164,21 @@ static VALUE onibi_tokenize(VALUE src) {
     if (strcmp(kind, "literal") == 0 && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       int hex_literal = 0;
+      int octal_literal = 0;
       byte = escaped;
       if (escaped == 'x' && i + 3 < RSTRING_LEN(src)) {
         int hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 2]);
         int lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
         if (hi >= 0 && lo >= 0) { byte = (unsigned char)((hi << 4) | lo); i += 3; hex_literal = 1; }
+      }
+      if (escaped == '0') {
+        int value = 0, digits = 0;
+        while (digits < 3 && i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' && RSTRING_PTR(src)[i + 1] <= '7') {
+          value = (value << 3) | (RSTRING_PTR(src)[i + 1] - '0');
+          i++; digits++;
+        }
+        byte = (unsigned char)value;
+        octal_literal = 1;
       }
       if (escaped == 'n') byte = '\n';
       else if (escaped == 'r') byte = '\r';
@@ -177,7 +187,7 @@ static VALUE onibi_tokenize(VALUE src) {
       else if (escaped == 'v') byte = '\v';
       else if (escaped == 'a') byte = '\a';
       else if (escaped == 'e') byte = 0x1b;
-    if (hex_literal) kind = "literal";
+    if (hex_literal || octal_literal) kind = "literal";
     else if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = "anchor";
       else if (!in_class && escaped == 'K') kind = "match_reset";
       else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
