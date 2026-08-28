@@ -832,6 +832,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_contiguous_hex_escapes_form_one_encoded_literal
     regexp = Onibi::Regexp.new("\\xE3\\x81\\x82")
     assert_equal 1, regexp.pipeline[:tokens].length
+    assert regexp.fixed_encoding?
     assert regexp.vm_match?("あ")
     refute regexp.vm_match?("い")
   end

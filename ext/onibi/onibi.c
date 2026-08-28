@@ -3185,7 +3185,9 @@ static VALUE onibi_options(VALUE self) {
 static VALUE onibi_fixed_encoding_p(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   /* MRI fixes NOENCODING only when syntax forces a binary property mode. */
-  return (obj->options & 16) || ((obj->options & 32) && obj->has_ascii_property) ? Qtrue : Qfalse;
+  return (obj->options & 16) ||
+    ((obj->options & 32) && obj->has_ascii_property) ||
+    (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal) ? Qtrue : Qfalse;
 }
 static VALUE onibi_no_encoding_p(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
