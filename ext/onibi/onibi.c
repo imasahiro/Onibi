@@ -1264,6 +1264,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 typedef struct { OnibiIdVector starts; OnibiIdVector exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
 typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
+typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
 typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t payload_index; } OnibiGirStateEntry;
@@ -1278,7 +1279,7 @@ typedef struct { VALUE payload; int byte; int ignorecase; } OnibiRSeqLiteralPayl
 typedef struct { OnibiRSeqLiteralPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqLiteralPayloadVector;
 typedef struct { VALUE descriptor; OnibiStateId entry; OnibiStateId accept; uint32_t flags; } OnibiRSeqSubprogramEntry;
 typedef struct { OnibiRSeqSubprogramEntry *entries; size_t count; size_t capacity; } OnibiRSeqSubprogramVector;
-typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; OnibiValueVector subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
@@ -1312,6 +1313,31 @@ static void onibi_id_vector_append(OnibiIdVector *destination, const OnibiIdVect
 static void onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value) {
   onibi_id_vector_init(vector);
   onibi_id_vector_push(vector, value);
+}
+
+static void onibi_value_vector_init(OnibiValueVector *vector) {
+  vector->items = NULL; vector->count = 0; vector->capacity = 0;
+}
+
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "value vector is too large");
+    vector->items = REALLOC_N(vector->items, VALUE, next);
+    vector->capacity = next;
+  }
+  vector->items[vector->count++] = value;
+  rb_ary_push(roots, value);
+}
+
+static void onibi_value_vector_store(OnibiValueVector *vector, size_t index, VALUE value, VALUE roots) {
+  if (index >= vector->count) rb_raise(rb_eArgError, "value vector index is out of range");
+  vector->items[index] = value;
+  rb_ary_push(roots, value);
+}
+
+static void onibi_value_vector_free(OnibiValueVector *vector) {
+  xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
 
 static void onibi_guard_vector_init(OnibiGuardVector *vector) {
@@ -1949,11 +1975,11 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
     rb_hash_aset(descriptor, ID2SYM(id_key_flags), UINT2NUM(flags));
     rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
-  rb_ary_push(builder->subprograms, descriptor);
+  onibi_value_vector_push(&builder->subprograms, descriptor, builder->map_roots);
   onibi_id_vector_free(&fragment.starts);
   onibi_id_vector_free(&fragment.exits);
   onibi_id_vector_free(&accept_starts);
-  return RARRAY_LEN(builder->subprograms) - 1;
+  return (long)builder->subprograms.count - 1;
 }
 
 static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long *next_capture) {
@@ -1995,8 +2021,8 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
 
 static long onibi_compile_named_subprogram(VALUE name, VALUE body,
                                            onibi_gir_builder_t *builder) {
-  long id = RARRAY_LEN(builder->subprograms);
-  rb_ary_push(builder->subprograms, Qnil); /* reserve the recursive target */
+  long id = (long)builder->subprograms.count;
+  onibi_value_vector_push(&builder->subprograms, Qnil, builder->map_roots); /* reserve the recursive target */
   onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id), builder->map_roots);
   onibi_value_map_set(&builder->active_subroutines, name, Qtrue, builder->map_roots);
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
@@ -2033,7 +2059,7 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     rb_hash_aset(descriptor, ID2SYM(id_key_flags), INT2NUM(0));
     rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
-  rb_ary_store(builder->subprograms, id, descriptor);
+  onibi_value_vector_store(&builder->subprograms, (size_t)id, descriptor, builder->map_roots);
   onibi_id_vector_free(&fragment.starts);
   onibi_id_vector_free(&fragment.exits);
   onibi_id_vector_free(&accept_starts);
@@ -2827,8 +2853,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   int parsed_options = parsed_data->options;
   int ignorecase = (parsed_options & 1) != 0;
   int multiline = (parsed_options & 4) != 0;
-  VALUE subprograms = rb_ary_new();
-  rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
+  OnibiValueVector subprogram_records;
+  onibi_value_vector_init(&subprogram_records);
   onibi_gir_builder_t builder;
   memset(&builder, 0, sizeof(builder));
   onibi_gir_edge_vector_init(&builder.edges);
@@ -2837,9 +2863,10 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_value_map_init(&builder.capture_bodies);
   onibi_value_map_init(&builder.capture_ids);
   onibi_value_map_init(&builder.active_subroutines);
-  builder.subprograms = subprograms;
+  builder.subprograms = subprogram_records;
   onibi_value_map_init(&builder.subprogram_ids);
   builder.map_roots = rb_ary_new();
+  onibi_value_vector_push(&builder.subprograms, Qnil, builder.map_roots); /* root descriptor is filled after compile */
   onibi_guard_vector_init(&builder.capture_guards);
   onibi_guard_vector_init(&builder.exit_guards);
   builder.ignorecase = ignorecase;
@@ -2909,8 +2936,9 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(root_descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
   rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));
   rb_obj_freeze(root_descriptor);
-  rb_ary_store(builder.subprograms, 0, root_descriptor);
-  subprograms = builder.subprograms;
+  onibi_value_vector_store(&builder.subprograms, 0, root_descriptor, builder.map_roots);
+  VALUE subprograms = rb_ary_new_capa((long)builder.subprograms.count);
+  for (size_t i = 0; i < builder.subprograms.count; i++) rb_ary_push(subprograms, builder.subprograms.items[i]);
   rb_obj_freeze(subprograms);
   rb_hash_aset(graph, ID2SYM(id_key_subprograms), subprograms);
   rb_hash_aset(graph, ID2SYM(id_key_capture_count), LONG2NUM(builder.capture_count));
@@ -2940,7 +2968,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     }
   }
   rb_hash_aset(graph, ID2SYM(id_key_counter_count), LONG2NUM(counter_count));
-  rb_hash_aset(graph, ID2SYM(id_key_subprogram_count), LONG2NUM(RARRAY_LEN(subprograms)));
+  rb_hash_aset(graph, ID2SYM(id_key_subprogram_count), LONG2NUM((long)builder.subprograms.count));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
   OnibiCompiled *compiled_result;
@@ -2954,6 +2982,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_value_map_free(&builder.capture_ids);
   onibi_value_map_free(&builder.active_subroutines);
   onibi_value_map_free(&builder.subprogram_ids);
+  onibi_value_vector_free(&builder.subprograms);
   onibi_gir_state_vector_free(&builder.states);
   onibi_gir_edge_vector_free(&builder.edges);
   rb_obj_freeze(result);
