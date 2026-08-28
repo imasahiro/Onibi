@@ -236,8 +236,8 @@ The AST is not part of the `Regexp` public API. The compiler uses these fields:
 | `name`, `name_id`, `bytes`, `ranges`, `predicates` | Ruby or encoded payloads | owned VALUE payload fields until GIR publication |
 
 The first AST migration unit is the node arena and its ordered child vectors.
-Payload VALUE fields stay GC-rooted in the arena. A frozen Ruby AST adapter is
-created only when a diagnostic or compatibility caller requests it.
+Payload VALUE fields stay GC-rooted in the arena. No Ruby AST adapter is
+created by the `Regexp` public API; diagnostics use the C analysis fields.
 
 The tagged VM counter migration is separate from capture maps. Capture maps
 can become public match data, but counter slots never cross the `Regexp` API.
