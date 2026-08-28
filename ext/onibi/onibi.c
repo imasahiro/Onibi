@@ -1711,6 +1711,14 @@ static VALUE onibi_timeout_set(VALUE klass, VALUE value) {
 static VALUE onibi_timeout_default(VALUE klass) {
   return onibi_default_timeout > 0.0 ? DBL2NUM(onibi_default_timeout) : Qnil;
 }
+
+static VALUE onibi_pipeline_token_slice(VALUE source, VALUE token) {
+  long start = NUM2LONG(onibi_hash_value(token, "start"));
+  long finish = NUM2LONG(onibi_hash_value(token, "end"));
+  VALUE slice = rb_str_substr(source, start, finish - start);
+  return NIL_P(slice) ? rb_str_new_cstr("") : slice;
+}
+
 static VALUE onibi_pipeline_build(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE out = rb_hash_new();
@@ -1750,27 +1758,40 @@ static VALUE onibi_pipeline_build(VALUE self) {
   rb_hash_aset(ast, ID2SYM(rb_intern("children")), children);
   if (is_class) {
     VALUE ranges = rb_ary_new();
-    if (RSTRING_LEN(src) == 5 && RSTRING_PTR(src)[2] == '-') {
-      VALUE range = rb_ary_new();
-      rb_ary_push(range, INT2NUM((unsigned char)RSTRING_PTR(src)[1]));
-      rb_ary_push(range, INT2NUM((unsigned char)RSTRING_PTR(src)[3]));
-      rb_ary_push(ranges, range);
+    for (long i = 1; i + 2 < RARRAY_LEN(tokens); i++) {
+      VALUE left = rb_ary_entry(tokens, i), marker = rb_ary_entry(tokens, i + 1), right = rb_ary_entry(tokens, i + 2);
+      if (onibi_token_kind(marker) == rb_intern("class_range") &&
+          onibi_token_kind(left) == rb_intern("literal") && onibi_token_kind(right) == rb_intern("literal")) {
+        VALUE range = rb_ary_new();
+        rb_ary_push(range, LONG2NUM(onibi_token_byte(left)));
+        rb_ary_push(range, LONG2NUM(onibi_token_byte(right)));
+        rb_ary_push(ranges, range);
+      }
     }
     rb_hash_aset(ast, ID2SYM(rb_intern("ranges")), ranges);
-    rb_hash_aset(ast, ID2SYM(rb_intern("negated")), RSTRING_LEN(src) > 2 && RSTRING_PTR(src)[1] == '^' ? Qtrue : Qfalse);
+    rb_hash_aset(ast, ID2SYM(rb_intern("negated")),
+                 RARRAY_LEN(tokens) > 1 && onibi_token_kind(rb_ary_entry(tokens, 1)) == rb_intern("class_negate") ? Qtrue : Qfalse);
   }
   if (is_quant) {
-    rb_hash_aset(ast, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
-    rb_hash_aset(ast, ID2SYM(rb_intern("quantifier")), rb_str_substr(src, 1, RSTRING_LEN(src) - 1));
-    rb_hash_aset(ast, ID2SYM(rb_intern("greedy")), RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '?' ? Qfalse : Qtrue);
-    rb_hash_aset(ast, ID2SYM(rb_intern("possessive")), RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' ? Qtrue : Qfalse);
-    if (RSTRING_PTR(src)[1] == '{') {
-      long min = 0, max = 0; char tail;
-      if (sscanf(RSTRING_PTR(src) + 2, "%ld,%ld%c", &min, &max, &tail) >= 2 ||
-          sscanf(RSTRING_PTR(src) + 2, "%ld%c", &min, &tail) == 1) {
-        if (max == 0) max = min;
-        rb_hash_aset(ast, ID2SYM(rb_intern("min")), LONG2NUM(min));
-        rb_hash_aset(ast, ID2SYM(rb_intern("max")), LONG2NUM(max));
+    VALUE quantifier = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1);
+    VALUE atom = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 2);
+    VALUE quantifier_source = onibi_pipeline_token_slice(src, quantifier);
+    rb_hash_aset(ast, ID2SYM(rb_intern("atom")), onibi_pipeline_token_slice(src, atom));
+    rb_hash_aset(ast, ID2SYM(rb_intern("quantifier")), quantifier_source);
+    long qlen = RSTRING_LEN(quantifier_source);
+    unsigned char tail = qlen > 0 ? (unsigned char)RSTRING_PTR(quantifier_source)[qlen - 1] : 0;
+    rb_hash_aset(ast, ID2SYM(rb_intern("greedy")), tail == '?' ? Qfalse : Qtrue);
+    rb_hash_aset(ast, ID2SYM(rb_intern("possessive")), tail == '+' ? Qtrue : Qfalse);
+    if (!NIL_P(parsed)) {
+      VALUE parsed_ast = onibi_hash_value(parsed, "ast");
+      VALUE parsed_children = onibi_hash_value(parsed_ast, "children");
+      if (!NIL_P(parsed_children) && RARRAY_LEN(parsed_children) == 1)
+        parsed_ast = rb_ary_entry(parsed_children, 0);
+      if (onibi_symbol_value(parsed_ast, "type") == ID2SYM(rb_intern("quantifier"))) {
+        VALUE min = onibi_hash_value(parsed_ast, "min");
+        VALUE max = onibi_hash_value(parsed_ast, "max");
+        if (!NIL_P(min)) rb_hash_aset(ast, ID2SYM(rb_intern("min")), min);
+        if (!NIL_P(max)) rb_hash_aset(ast, ID2SYM(rb_intern("max")), max);
       }
     }
   }
