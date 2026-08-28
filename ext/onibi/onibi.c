@@ -129,6 +129,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE group_name = Qnil;
     VALUE posix_name = Qnil;
     VALUE literal_bytes = Qnil;
+    VALUE escape_name = Qnil;
     int option_negative = 0;
     int option_scope_x = -1;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
@@ -243,6 +244,15 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
       else if (strchr("dDsSwWhHRXpPu", escaped) != NULL) kind = "escape";
       i++;
+      if ((escaped == 'p' || escaped == 'P') && i + 1 < RSTRING_LEN(src) &&
+          RSTRING_PTR(src)[i + 1] == '{') {
+        long close = i + 2;
+        while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '}') close++;
+        if (close < RSTRING_LEN(src)) {
+          escape_name = rb_str_substr(src, i + 2, close - (i + 2));
+          i = close;
+        }
+      }
     } else if (byte == '[' && !in_class) {
       kind = "class_start";
       in_class = 1;
@@ -287,6 +297,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name); }
     if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name); }
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
+    if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), escape_name); }
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(rb_intern("bytes")), literal_bytes); }
     if (strcmp(kind, "option_scope_start") == 0)
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
@@ -524,8 +535,11 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
       "anchor_end" : "anchor");
     rb_hash_aset(node, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(anchor)));
   }
-  if (kind == rb_intern("escape"))
-    rb_hash_aset(node, ID2SYM(rb_intern("name")), rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1));
+  if (kind == rb_intern("escape")) {
+    VALUE token_name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
+    rb_hash_aset(node, ID2SYM(rb_intern("name")), NIL_P(token_name) ?
+                rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1) : token_name);
+  }
   if (kind == rb_intern("backref")) {
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
     if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")), LONG2NUM(onibi_token_byte(token) - '0'));
@@ -1084,6 +1098,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
+      if (!NIL_P(name) && RSTRING_LEN(name) > 1)
+        rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
       if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
         rb_raise(eRegexpError, "escape is not supported in RSeq");
