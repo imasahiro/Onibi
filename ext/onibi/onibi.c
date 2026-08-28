@@ -2002,8 +2002,13 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   return rb_funcall(obj->regexp, id_match_p, 1, str);
 }
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
-  if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  StringValue(str);
+  int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq) &&
+    rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL;
+  if (!graph_ok) {
+    if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
+  }
   if (NIL_P(obj->rseq)) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     if (NIL_P(match)) return Qnil;
@@ -2012,7 +2017,6 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
     return result;
   }
-  int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq);
   if (graph_ok) {
     onibi_set_deadline(obj->timeout_seconds);
     VALUE rseq = obj->rseq;
