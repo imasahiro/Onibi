@@ -990,10 +990,15 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   VALUE branches = rb_ary_new();
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
-    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("absence_start") || kind == rb_intern("conditional_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start") || kind == rb_intern("class_start")) depth++;
-    else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
-    else if (kind == rb_intern("alternation") && depth == 0) {
+    VALUE token = rb_ary_entry(tokens, i);
+    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+    if (kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
+        kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_ABSENCE_START ||
+        kind == ONIBI_TOKEN_CONDITIONAL_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
+        kind == ONIBI_TOKEN_LOOKBEHIND_START || kind == ONIBI_TOKEN_OPTION_SCOPE_START ||
+        kind == ONIBI_TOKEN_CLASS_START) depth++;
+    else if (kind == ONIBI_TOKEN_GROUP_END || kind == ONIBI_TOKEN_CLASS_END) depth--;
+    else if (kind == ONIBI_TOKEN_ALTERNATION && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(tokens, part, i));
       part = i + 1;
     }
