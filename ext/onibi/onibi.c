@@ -13,6 +13,8 @@
 #define ONIBI_AST_ANALYSIS_HAS_CAPTURE (1U << 0)
 #define ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE (1U << 1)
 #define ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE (1U << 2)
+#define ONIBI_AST_ANALYSIS_HAS_ANCHOR (1U << 3)
+#define ONIBI_AST_ANALYSIS_ANCHOR_REPEAT (1U << 4)
 #define ONIBI_FEATURE_DYNAMIC (1U << 0)
 #define ONIBI_FEATURE_TAGGED (1U << 1)
 #define ONIBI_FEATURE_ATOMIC (1U << 2)
@@ -1300,7 +1302,6 @@ static inline OnibiParsed *onibi_parsed_get(VALUE value) {
 }
 
 static int onibi_ast_safe_multibyte_class(VALUE ast);
-static int onibi_ast_anchor_repeat(VALUE ast);
 static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis);
 
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
@@ -1318,9 +1319,9 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
      never exposed through the Regexp API and freezing would rescan the tree. */
   parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
   if (onibi_ast_safe_multibyte_class(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
-  if (onibi_ast_anchor_repeat(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
   OnibiAstAnalysis analysis = {0};
   (void)onibi_ast_nullable_scan(parsed->ast, &analysis);
+  if (analysis.flags & ONIBI_AST_ANALYSIS_ANCHOR_REPEAT) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
   if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
   if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
   return result;
@@ -3715,35 +3716,6 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
   return 0;
 }
 
-/* Return bit 1 when the subtree contains an anchor and bit 2 when a
- * quantifier repeats a subtree that contains an anchor. */
-static int onibi_ast_anchor_scan(VALUE ast) {
-  if (NIL_P(ast)) return 0;
-  if (RB_TYPE_P(ast, T_ARRAY)) {
-    int result = 0;
-    for (long i = 0; i < RARRAY_LEN(ast); i++) {
-      result |= onibi_ast_anchor_scan(rb_ary_entry(ast, i));
-      if ((result & 2) != 0) break;
-    }
-    return result;
-  }
-  if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  OnibiAstKind type = onibi_ast_kind(ast);
-  int result = type == ONIBI_AST_ANCHOR ? 1 : 0;
-  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-    int child = onibi_ast_anchor_scan(onibi_hash_value_id(ast, keys[i]));
-    if (type == ONIBI_AST_QUANTIFIER && keys[i] == id_key_atom && (child & 1)) result |= 2;
-    result |= child;
-    if ((result & 2) != 0) break;
-  }
-  return result;
-}
-
-static int onibi_ast_anchor_repeat(VALUE ast) {
-  return (onibi_ast_anchor_scan(ast) & 2) != 0;
-}
-
 static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
   if (NIL_P(ast)) return 1;
   if (RB_TYPE_P(ast, T_ARRAY)) {
@@ -3754,6 +3726,7 @@ static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 1;
   OnibiAstKind type = onibi_ast_kind(ast);
+  if (type == ONIBI_AST_ANCHOR) analysis->flags |= ONIBI_AST_ANALYSIS_HAS_ANCHOR;
   if (type == ONIBI_AST_CAPTURE) analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
   if (type == ONIBI_AST_CAPTURE) {
     int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), analysis);
@@ -3764,6 +3737,10 @@ static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
     VALUE atom = onibi_hash_value_id(ast, id_key_atom);
     OnibiAstAnalysis atom_analysis = {0};
     int atom_nullable = onibi_ast_nullable_scan(atom, &atom_analysis);
+    analysis->flags |= atom_analysis.flags &
+      (ONIBI_AST_ANALYSIS_HAS_ANCHOR | ONIBI_AST_ANALYSIS_ANCHOR_REPEAT);
+    if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_ANCHOR)
+      analysis->flags |= ONIBI_AST_ANALYSIS_ANCHOR_REPEAT;
     if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_CAPTURE)
       analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
     VALUE min = onibi_hash_value_id(ast, id_key_min);
@@ -3777,6 +3754,8 @@ static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
   if (type == ONIBI_AST_ABSENCE) {
     OnibiAstAnalysis body_analysis = {0};
     int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), &body_analysis);
+    analysis->flags |= body_analysis.flags &
+      (ONIBI_AST_ANALYSIS_HAS_ANCHOR | ONIBI_AST_ANALYSIS_ANCHOR_REPEAT);
     if (body_nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE;
     return 0;
   }
