@@ -1479,24 +1479,30 @@ static onibi_fragment_t onibi_fragment_empty(void) {
 }
 
 static void onibi_connect(onibi_gir_builder_t *builder, VALUE exits, VALUE starts) {
-  for (long i = 0; i < RARRAY_LEN(exits); i++)
-    for (long j = 0; j < RARRAY_LEN(starts); j++)
-      onibi_gir_edge(builder, NUM2LONG(rb_ary_entry(exits, i)), NUM2LONG(rb_ary_entry(starts, j)));
+  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
+  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
+  for (long i = 0; i < exit_count; i++)
+    for (long j = 0; j < start_count; j++)
+      onibi_gir_edge(builder, NUM2LONG(exit_values[i]), NUM2LONG(start_values[j]));
 }
 
 static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
-  for (long i = 0; i < RARRAY_LEN(exits); i++)
-    for (long j = 0; j < RARRAY_LEN(starts); j++)
-      onibi_gir_edge_actions(builder, NUM2LONG(rb_ary_entry(exits, i)), NUM2LONG(rb_ary_entry(starts, j)), actions);
+  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
+  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
+  for (long i = 0; i < exit_count; i++)
+    for (long j = 0; j < start_count; j++)
+      onibi_gir_edge_actions(builder, NUM2LONG(exit_values[i]), NUM2LONG(start_values[j]), actions);
 }
 
 static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
-  for (long i = 0; i < RARRAY_LEN(exits); i++) {
-    long from = NUM2LONG(rb_ary_entry(exits, i));
-    for (long j = 0; j < RARRAY_LEN(starts); j++) {
+  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
+  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
+  for (long i = 0; i < exit_count; i++) {
+    long from = NUM2LONG(exit_values[i]);
+    for (long j = 0; j < start_count; j++) {
       VALUE edge = rb_hash_new();
       rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
-      rb_hash_aset(edge, ID2SYM(rb_intern("to")), rb_ary_entry(starts, j));
+      rb_hash_aset(edge, ID2SYM(rb_intern("to")), start_values[j]);
       rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
       long insert_at = RARRAY_LEN(builder->edges);
       for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
