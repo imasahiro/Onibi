@@ -777,15 +777,15 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       VALUE open = rb_hash_dup(rb_ary_entry(tokens, part_begin));
       VALUE finish = rb_hash_dup(rb_ary_entry(tokens, part_end - 1));
       rb_hash_aset(open, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_START));
-      rb_hash_aset(open, ID2SYM(rb_intern("byte")), INT2NUM('['));
+      rb_hash_aset(open, ID2SYM(id_key_byte), INT2NUM('['));
       rb_hash_aset(finish, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_END));
-      rb_hash_aset(finish, ID2SYM(rb_intern("byte")), INT2NUM(']'));
+      rb_hash_aset(finish, ID2SYM(id_key_byte), INT2NUM(']'));
       rb_ary_push(slice, open);
       for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
       rb_ary_push(slice, finish);
       rb_ary_push(operands, onibi_parse_class(slice, 0, RARRAY_LEN(slice) - 1));
     }
-    rb_hash_aset(result, ID2SYM(rb_intern("operands")), operands);
+    rb_hash_aset(result, ID2SYM(id_key_operands), operands);
     rb_obj_freeze(operands);
     return result;
   }
@@ -796,7 +796,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       long nested_close = onibi_find_close(tokens, i, close, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
       if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
       VALUE nested = onibi_parse_class(tokens, i, nested_close);
-      rb_hash_aset(nested, ID2SYM(rb_intern("end")),
+      rb_hash_aset(nested, ID2SYM(id_key_end),
                    rb_hash_aref(rb_ary_entry(tokens, nested_close), ID2SYM(id_key_end)));
       rb_obj_freeze(nested);
       rb_ary_push(children, nested);
@@ -878,7 +878,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
     VALUE node = onibi_ast_node("option_global", token);
     rb_hash_aset(node, ID2SYM(id_key_options), rb_hash_aref(token, ID2SYM(id_key_name)));
-    VALUE negative_options = rb_hash_aref(token, ID2SYM(rb_intern("negative_name")));
+    VALUE negative_options = rb_hash_aref(token, ID2SYM(id_key_negative_name));
     if (!NIL_P(negative_options))
       rb_hash_aset(node, ID2SYM(id_key_negative_options), negative_options);
     rb_hash_aset(node, ID2SYM(id_key_negative), rb_hash_aref(token, ID2SYM(id_key_negative)));
@@ -950,7 +950,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
       for (long n = 1; n < RSTRING_LEN(name); n++)
         if (!isalnum((unsigned char)RSTRING_PTR(name)[n]) && RSTRING_PTR(name)[n] != '_')
           rb_raise(eRegexpError, "invalid capture name");
-      rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
+      rb_hash_aset(node, ID2SYM(id_key_name), name);
     }
     rb_hash_aset(node, ID2SYM(id_key_end),
                  rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
@@ -993,7 +993,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
       "anchor_start" : ((marker == '$' || marker == 'z' || marker == 'Z') ?
       "anchor_end" : "anchor");
-    rb_hash_aset(node, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(anchor)));
+    rb_hash_aset(node, ID2SYM(id_key_kind), ID2SYM(rb_intern(anchor)));
   }
   if (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE) {
     VALUE token_name = rb_hash_aref(token, ID2SYM(id_key_name));
@@ -1032,7 +1032,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   if (RARRAY_LEN(branches) > 0) {
     rb_ary_push(branches, onibi_parse_range(tokens, part, end));
     VALUE node = onibi_ast_node("alternative", Qnil);
-    rb_hash_aset(node, ID2SYM(rb_intern("branches")), branches);
+    rb_hash_aset(node, ID2SYM(id_key_branches), branches);
     rb_obj_freeze(branches); rb_obj_freeze(node);
     return node;
   }
@@ -1095,7 +1095,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
           for (long literal_i = i; literal_i <= close; literal_i++) {
             VALUE literal_token = rb_ary_entry(tokens, literal_i);
             VALUE literal = onibi_ast_node("literal", literal_token);
-            rb_hash_aset(literal, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(literal_token)));
+            rb_hash_aset(literal, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(literal_token)));
             rb_obj_freeze(literal);
             rb_ary_push(children, literal);
           }
@@ -1125,9 +1125,9 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         if (min < 0 || (has_max && max_value < 0)) rb_raise(eRegexpError, "invalid quantifier");
         if (has_max && max_value < min) rb_raise(eRegexpError, "invalid quantifier range");
         VALUE quantifier = onibi_ast_node("quantifier", modifier);
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("min")), LONG2NUM(min));
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("max")), has_max ? LONG2NUM(max_value) : Qnil);
+        rb_hash_aset(quantifier, ID2SYM(id_key_atom), node);
+        rb_hash_aset(quantifier, ID2SYM(id_key_min), LONG2NUM(min));
+        rb_hash_aset(quantifier, ID2SYM(id_key_max), has_max ? LONG2NUM(max_value) : Qnil);
         i = close + 1;
         int greedy = 1, possessive = 0;
         if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
@@ -1135,15 +1135,15 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
           if (suffix == '?') { greedy = 0; i++; }
           else if (suffix == '+') { possessive = 1; i++; }
         }
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("greedy")), greedy ? Qtrue : Qfalse);
-        rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), possessive ? Qtrue : Qfalse);
+        rb_hash_aset(quantifier, ID2SYM(id_key_greedy), greedy ? Qtrue : Qfalse);
+        rb_hash_aset(quantifier, ID2SYM(id_key_possessive), possessive ? Qtrue : Qfalse);
         rb_obj_freeze(quantifier); node = quantifier;
       }
     }
     rb_ary_push(children, node);
   }
   VALUE sequence = onibi_ast_node("sequence", Qnil);
-  rb_hash_aset(sequence, ID2SYM(rb_intern("children")), children);
+  rb_hash_aset(sequence, ID2SYM(id_key_children), children);
   rb_obj_freeze(children); rb_obj_freeze(sequence);
   return sequence;
 }
