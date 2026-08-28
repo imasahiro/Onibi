@@ -5043,7 +5043,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE limit = onibi_hash_value(semantic_action, "limit");
     VALUE value = onibi_hash_value(semantic_action, "value");
     VALUE width = onibi_hash_value(semantic_action, "width");
-    if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
+    if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       VALUE predicates = onibi_hash_value(semantic_action, "predicates");
       if (!RB_TYPE_P(predicates, T_ARRAY) || !RTEST(rb_obj_frozen_p(predicates)) ||
           NIL_P(width) || NUM2LONG(width) != RARRAY_LEN(predicates))
@@ -5105,14 +5105,14 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE state = rb_ary_entry(semantic_states, i);
     ID op = SYM2ID(onibi_hash_value(state, "op"));
     VALUE payload = onibi_hash_value(state, "payload");
-    if (op == rb_intern("G_CLASS")) {
+    if (op == id_g_class) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
       VALUE bitmap = onibi_hash_value(payload, "bitmap");
       if (id >= header.class_count || memcmp(RSTRING_PTR(bitmap),
           RSTRING_PTR(blob) + classes[id].data_offset, 32) != 0 ||
           ((classes[id].flags & 1U) != (RTEST(onibi_hash_value(payload, "negated")) ? 1U : 0U)))
         rb_raise(rb_eArgError, "RSeq class descriptor disagrees with semantic payload");
-    } else if (op == rb_intern("G_CHAR")) {
+    } else if (op == id_g_char) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
       VALUE byte = onibi_hash_value(payload, "byte");
       if (id >= NUM2UINT(onibi_hash_value(semantic, "literal_count")) ||
