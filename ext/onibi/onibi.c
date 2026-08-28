@@ -1641,6 +1641,23 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   }
 }
 
+static int onibi_option_mask(VALUE options) {
+  if (NIL_P(options)) return 0;
+  if (RB_TYPE_P(options, T_ARRAY)) {
+    int mask = 0;
+    for (long i = 0; i < RARRAY_LEN(options); i++) {
+      VALUE item = rb_ary_entry(options, i);
+      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
+      if (rb_str_cmp(name, rb_str_new_cstr("ignorecase")) == 0) mask |= 1;
+      else if (rb_str_cmp(name, rb_str_new_cstr("multiline")) == 0) mask |= 4;
+      else if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) mask |= 2;
+      else rb_raise(rb_eArgError, "unknown regexp option");
+    }
+    return mask;
+  }
+  return NUM2INT(options);
+}
+
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE pattern, options = Qnil;
   rb_scan_args(argc, argv, "11", &pattern, &options);
@@ -1663,10 +1680,14 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     options = rb_hash_aref(options, ID2SYM(rb_intern("options")));
   }
   if (NIL_P(timeout)) timeout = inherited_timeout;
-  int opts = NIL_P(options) ? 0 : NUM2INT(options);
-  obj->options = opts;
+  int opts = onibi_option_mask(options);
   obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
+  if ((opts & 32) && rb_enc_get_index(source) != rb_ascii8bit_encindex() &&
+      !rb_enc_str_asciionly_p(source))
+    rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
+  if (!(opts & 32) && !rb_enc_str_asciionly_p(source) && !(opts & 16)) opts |= 16;
+  obj->options = opts;
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
   VALUE regexp_args = rb_ary_new_from_args(2, source, INT2NUM(opts));
@@ -1746,6 +1767,14 @@ static VALUE onibi_source(VALUE self) {
 static VALUE onibi_options(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return INT2NUM(obj->options);
+}
+static VALUE onibi_fixed_encoding_p(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return (obj->options & 16) ? Qtrue : Qfalse;
+}
+static VALUE onibi_no_encoding_p(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return (obj->options & 32) ? Qtrue : Qfalse;
 }
 static VALUE onibi_inspect(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -2854,6 +2883,8 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "match?", onibi_match_p, -1);
   rb_define_method(cRegexp, "source", onibi_source, 0);
   rb_define_method(cRegexp, "options", onibi_options, 0);
+  rb_define_method(cRegexp, "fixed_encoding?", onibi_fixed_encoding_p, 0);
+  rb_define_method(cRegexp, "no_encoding?", onibi_no_encoding_p, 0);
   rb_define_method(cRegexp, "inspect", onibi_inspect, 0);
   rb_define_method(cRegexp, "to_s", onibi_to_s, 0);
   rb_define_method(cRegexp, "execution_class", onibi_execution_class, 0);
