@@ -1903,7 +1903,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       }
       int has_multibyte = 0;
       for (long i = 0; literal_only && i < RARRAY_LEN(children); i++) {
-        VALUE bytes = onibi_hash_value(rb_ary_entry(children, i), "bytes");
+        VALUE bytes = onibi_hash_value_id(rb_ary_entry(children, i), id_key_bytes);
         if (!NIL_P(bytes) && RSTRING_LEN(bytes) > 1) has_multibyte = 1;
       }
       if (literal_only && has_multibyte) {
@@ -1925,7 +1925,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
       int literal_children = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++)
-        if (NUM2UINT(onibi_hash_value(rb_ary_entry(children, i), "kind_code")) != ONIBI_TOKEN_LITERAL) literal_children = 0;
+        if (NUM2UINT(onibi_hash_value_id(rb_ary_entry(children, i), id_key_kind_code)) != ONIBI_TOKEN_LITERAL) literal_children = 0;
       if (!literal_children) goto skip_utf8_range_expansion;
       onibi_fragment_t result = onibi_fragment_empty();
       result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -2471,10 +2471,10 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE start_edges = rb_ary_new();
   if (fragment.nullable && fragment.lazy) {
     VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(accept));
+    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
     VALUE actions = rb_ary_dup(fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
   }
   OnibiIdVector start_ids;
@@ -2488,39 +2488,39 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     VALUE guard = rb_hash_aref(builder.capture_guards, destination);
     onibi_append_values(actions, fragment.start_actions);
     if (!NIL_P(guard)) onibi_append_values(actions, guard);
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), destination);
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+    rb_hash_aset(edge, ID2SYM(id_key_to), destination);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
   }
   onibi_id_vector_free(&start_ids);
   if (fragment.nullable && !fragment.lazy) {
     VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(accept));
+    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
     VALUE actions = rb_ary_dup(fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
   }
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
     VALUE edge = rb_ary_entry(start_edges, i);
-    rb_obj_freeze(onibi_hash_value(edge, "actions"));
+    rb_obj_freeze(onibi_hash_value_id(edge, id_key_actions));
     rb_obj_freeze(edge);
   }
   rb_obj_freeze(start_edges);
   onibi_freeze_gir_arrays(&builder);
   VALUE graph = rb_hash_new();
-  rb_hash_aset(graph, ID2SYM(rb_intern("states")), builder.states);
-  rb_hash_aset(graph, ID2SYM(rb_intern("edges")), builder.edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(graph, ID2SYM(id_key_states), builder.states);
+  rb_hash_aset(graph, ID2SYM(id_key_edges), builder.edges);
+  rb_hash_aset(graph, ID2SYM(id_key_start_edges), start_edges);
+  rb_hash_aset(graph, ID2SYM(id_key_accept), LONG2NUM(accept));
   /* Program zero is the root callable program.  Keep an explicit descriptor
      even before nested dynamic constructs add their own entries. */
   VALUE root_descriptor = rb_hash_new();
   long root_entry = RARRAY_LEN(fragment.starts) > 0 ?
     NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
-  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(root_entry));
-  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
-  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
+  rb_hash_aset(root_descriptor, ID2SYM(id_key_entry), LONG2NUM(root_entry));
+  rb_hash_aset(root_descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
+  rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));
   rb_obj_freeze(root_descriptor);
   rb_ary_store(builder.subprograms, 0, root_descriptor);
   subprograms = builder.subprograms;
@@ -2529,7 +2529,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
   long counter_count = builder.counter_count;
   for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
-    VALUE actions = onibi_hash_value(rb_ary_entry(builder.edges, i), "actions");
+    VALUE actions = onibi_hash_value_id(rb_ary_entry(builder.edges, i), id_key_actions);
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       VALUE action = rb_ary_entry(actions, j);
       OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
@@ -2541,7 +2541,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     }
   }
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
-    VALUE actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
+    VALUE actions = onibi_hash_value_id(rb_ary_entry(start_edges, i), id_key_actions);
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       VALUE action = rb_ary_entry(actions, j);
       OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
@@ -2552,8 +2552,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
       }
     }
   }
-  rb_hash_aset(graph, ID2SYM(rb_intern("counter_count")), LONG2NUM(counter_count));
-  rb_hash_aset(graph, ID2SYM(rb_intern("subprogram_count")), LONG2NUM(RARRAY_LEN(subprograms)));
+  rb_hash_aset(graph, ID2SYM(id_key_counter_count), LONG2NUM(counter_count));
+  rb_hash_aset(graph, ID2SYM(id_key_subprogram_count), LONG2NUM(RARRAY_LEN(subprograms)));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
   OnibiCompiled *compiled_result;
