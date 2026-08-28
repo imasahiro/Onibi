@@ -139,7 +139,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -256,7 +256,6 @@ static void onibi_mark(void *ptr) {
   rb_gc_mark(obj->regexp);
   rb_gc_mark(obj->source);
   rb_gc_mark(obj->tokens);
-  rb_gc_mark(obj->execution_class);
   rb_gc_mark(obj->execution_kind);
   rb_gc_mark(obj->parsed);
   rb_gc_mark(obj->compiled);
@@ -3387,14 +3386,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->has_dynamic = 1;
     obj->tokens = tokens;
   }
-  obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
-    RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
-  obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
-  rb_obj_freeze(obj->execution_class);
-  if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
-  else if (obj->has_tagged) obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
-  rb_obj_freeze(obj->execution_class);
   obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
     (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
   /* Pipeline display data is not part of the Regexp API.  Keep the field
