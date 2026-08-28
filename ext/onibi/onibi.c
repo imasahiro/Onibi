@@ -1690,6 +1690,22 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->options = opts;
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
+  obj->parsed = obj->compiled = obj->rseq = Qnil;
+  obj->tokens = Qnil;
+  VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
+  if ((opts & 32) && rb_enc_get_index(source) == rb_usascii_encindex()) {
+    for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+      VALUE token = rb_ary_entry(tokens, i);
+      ID kind = onibi_token_kind(token);
+      long byte = onibi_token_byte(token);
+      if ((kind == rb_intern("literal") && byte > 127) ||
+          (kind == rb_intern("escape") && (byte == 'p' || byte == 'P'))) {
+        opts |= 16;
+        break;
+      }
+    }
+  }
+  obj->options = opts;
   VALUE regexp_args = rb_ary_new_from_args(2, source, INT2NUM(opts));
   int regexp_state = 0;
   obj->regexp = rb_protect(onibi_make_mri_regexp, regexp_args, &regexp_state);
@@ -1699,9 +1715,6 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     rb_set_errinfo(Qnil);
     rb_raise(eRegexpError, "%s", StringValueCStr(message));
   }
-  obj->parsed = obj->compiled = obj->rseq = Qnil;
-  obj->tokens = Qnil;
-  VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   onibi_token_features(tokens, obj);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
