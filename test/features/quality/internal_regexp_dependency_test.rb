@@ -362,6 +362,19 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/physical_edges\[i\].*onibi_hash_value\(edge/, lowerer)
   end
 
+  def test_rseq_groups_physical_edges_by_source_with_stable_scatter
+    source = File.read(EXTENSION_SOURCE)
+    grouper = source[/static void onibi_gir_edge_vector_group_by_from\(.*?\n}\n/m]
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil grouper
+    refute_nil lowerer
+    assert_includes grouper, "ordered[next[from]++] = vector->entries[i]"
+    assert_includes lowerer, "onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count)"
+    assert_includes lowerer, "size_t edge_count = physical_edge_index - edge_base"
+    refute_includes lowerer, "for (size_t e = 0; e < r_edge_records.count; e++)"
+  end
+
   def test_rseq_physical_actions_use_c_vector
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]

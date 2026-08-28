@@ -1696,6 +1696,36 @@ static void onibi_gir_edge_vector_insert(OnibiGirEdgeVector *vector, size_t inde
   rb_ary_push(roots, entry.actions);
 }
 
+static void onibi_gir_edge_vector_group_by_from(OnibiGirEdgeVector *vector, size_t state_count) {
+  if (vector->count < 2) return;
+  for (size_t i = 0; i < vector->count; i++) {
+    if (vector->entries[i].from < 0 || (size_t)vector->entries[i].from >= state_count)
+      rb_raise(rb_eArgError, "RSeq edge source is out of range");
+  }
+  if (state_count > SIZE_MAX / sizeof(size_t) ||
+      vector->count > SIZE_MAX / sizeof(*vector->entries))
+    rb_raise(rb_eNoMemError, "RSeq edge index is too large");
+  size_t *counts = ALLOC_N(size_t, state_count);
+  size_t *next = ALLOC_N(size_t, state_count);
+  OnibiGirEdgeEntry *ordered = ALLOC_N(OnibiGirEdgeEntry, vector->count);
+  memset(counts, 0, sizeof(*counts) * state_count);
+  for (size_t i = 0; i < vector->count; i++) counts[vector->entries[i].from]++;
+  size_t offset = 0;
+  for (size_t i = 0; i < state_count; i++) {
+    next[i] = offset;
+    offset += counts[i];
+  }
+  for (size_t i = 0; i < vector->count; i++) {
+    size_t from = (size_t)vector->entries[i].from;
+    ordered[next[from]++] = vector->entries[i];
+  }
+  xfree(counts);
+  xfree(next);
+  xfree(vector->entries);
+  vector->entries = ordered;
+  vector->capacity = vector->count;
+}
+
 static void onibi_gir_state_vector_free(OnibiGirStateVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
@@ -3391,6 +3421,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_obj_freeze(copied_actions);
     onibi_gir_edge_vector_push(&r_edge_records, (OnibiGirEdgeEntry){from, to, action_offset, (uint32_t)RARRAY_LEN(copied_actions), copied_actions}, action_roots);
   }
+  onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count);
   OnibiGirEdgeVector r_start_edge_records;
   onibi_gir_edge_vector_init(&r_start_edge_records);
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
@@ -3593,6 +3624,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
   OnibiRState *physical_states = (OnibiRState *)(RSTRING_PTR(blob) + physical.states_offset);
   uint32_t class_index = 0, literal_index = 0;
+  size_t physical_edge_index = 0;
   for (size_t i = 0; i < state_records.count; i++) {
     OnibiGirStateEntry *state = &state_records.entries[i];
     unsigned int opcode = state->opcode;
@@ -3601,18 +3633,19 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       opcode == ONIBI_G_GRAPHEME ? ONIBI_RS_GRAPHEME : opcode == ONIBI_G_BACKREF ? ONIBI_RS_BACKREF :
       opcode == ONIBI_G_CALL ? ONIBI_RS_CALL : opcode == ONIBI_G_ATOMIC ? ONIBI_RS_ATOMIC :
       opcode == ONIBI_G_ABSENT ? ONIBI_RS_ABSENT : opcode == ONIBI_G_ACCEPT ? 0 : 0xff);
-    uint32_t edge_base = 0;
-    uint16_t edge_count = 0;
-    for (size_t e = 0; e < r_edge_records.count; e++) {
-      if (r_edge_records.entries[e].from != (long)i) continue;
-      if (edge_count == 0) edge_base = (uint32_t)e;
-      edge_count++;
-    }
-    physical_states[i].edge_base = edge_base;
-    physical_states[i].edge_count = edge_count;
+    size_t edge_base = physical_edge_index;
+    while (physical_edge_index < r_edge_records.count &&
+           r_edge_records.entries[physical_edge_index].from == (long)i)
+      physical_edge_index++;
+    size_t edge_count = physical_edge_index - edge_base;
+    if (edge_count > UINT16_MAX) rb_raise(eRegexpError, "RSeq state has too many outgoing edges");
+    physical_states[i].edge_base = (uint32_t)edge_base;
+    physical_states[i].edge_count = (uint16_t)edge_count;
     if (opcode == ONIBI_G_CLASS || opcode == ONIBI_G_CHAR)
       physical_states[i].payload = state->payload_index;
   }
+  if (physical_edge_index != r_edge_records.count)
+    rb_raise(eRegexpError, "RSeq edge index is not grouped by source state");
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
   for (size_t i = 0; i < r_edge_records.count; i++) {
     OnibiGirEdgeEntry *record = &r_edge_records.entries[i];
