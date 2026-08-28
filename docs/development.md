@@ -182,3 +182,8 @@ states, non-literal lookaround subprograms, and complete tag-history sharing.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
+
+The complete legacy suite currently reaches 857 tests and 4555 assertions.
+It still reports failures for legacy Ruby AST APIs, ClassPredicates, full
+encoding compatibility, and unsupported dynamic features. These failures are
+tracked separately from the focused C pipeline contract.
