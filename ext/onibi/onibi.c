@@ -5024,9 +5024,9 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
   if (RTEST(onibi_hash_value_id(semantic_header, id_key_ignorecase)) ||
       RTEST(onibi_hash_value_id(semantic_header, id_key_multiline))) return -1;
   for (long i = 0; i < RARRAY_LEN(semantic_states); i++) {
-    VALUE payload = onibi_hash_value(rb_ary_entry(semantic_states, i), "payload");
+    VALUE payload = onibi_hash_value_id(rb_ary_entry(semantic_states, i), id_key_payload);
     if (RB_TYPE_P(payload, T_HASH) &&
-        (RTEST(onibi_hash_value(payload, "ignorecase")) || RTEST(onibi_hash_value(payload, "multiline")))) return -1;
+        (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) || RTEST(onibi_hash_value_id(payload, id_key_multiline)))) return -1;
   }
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   const OnibiREdge *edges = (const OnibiREdge *)(RSTRING_PTR(blob) + header.edges_offset);
