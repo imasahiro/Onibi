@@ -521,11 +521,16 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
         long close = i + 1;
         while (close < end && onibi_token_byte(rb_ary_entry(tokens, close)) != '}') close++;
         if (close >= end) rb_raise(eRegexpError, "unterminated quantifier");
-        long spec_start = NUM2LONG(rb_hash_aref(rb_ary_entry(tokens, i), ID2SYM(rb_intern("start"))));
-        long spec_end = NUM2LONG(rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("start"))));
-        VALUE spec = rb_str_substr(src, spec_start, spec_end - spec_start);
+        char spec_buf[128];
+        size_t spec_len = 0;
+        for (long spec_i = i + 1; spec_i < close; spec_i++) {
+          VALUE spec_token = rb_ary_entry(tokens, spec_i);
+          if (spec_len + 1 >= sizeof(spec_buf)) rb_raise(eRegexpError, "quantifier is too large");
+          spec_buf[spec_len++] = (char)onibi_token_byte(spec_token);
+        }
+        spec_buf[spec_len] = '\0';
         long min = 0, max_value = 0;
-        const char *body = RSTRING_PTR(spec) + 1;
+        const char *body = spec_buf;
         char *comma = strchr(body, ',');
         int has_max = 1;
         if (comma != NULL) {
