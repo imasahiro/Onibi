@@ -13,6 +13,7 @@
 #include <math.h>
 #include <float.h>
 #include <errno.h>
+#include <alloca.h>
 
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
 
@@ -4659,15 +4660,18 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
     }
   }
   size_t span = (size_t)RSTRING_LEN(str) + 1U;
-  if ((size_t)header.state_count > SIZE_MAX / span) return 0;
+  if ((size_t)header.state_count > SIZE_MAX / span) return -1;
   size_t visited_size = (size_t)header.state_count * span;
-  unsigned char *visited = ALLOC_N(unsigned char, visited_size);
+  if (visited_size > (size_t)1 << 20) return -1;
+  if (visited_size > SIZE_MAX / sizeof(onibi_simple_frame_t)) return -1;
+  unsigned char *visited = (unsigned char *)alloca(visited_size);
+  memset(visited, 0, visited_size);
   size_t stack_capacity = visited_size;
-  onibi_simple_frame_t *stack = ALLOC_N(onibi_simple_frame_t, stack_capacity);
+  onibi_simple_frame_t *stack = (onibi_simple_frame_t *)alloca(stack_capacity * sizeof(*stack));
   size_t stack_size = 0;
   for (uint32_t i = 0; i < header.start_edge_count; i++) {
     const OnibiREdge *edge = &edges[header.start_edge_base + i];
-    if (edge->destination == ONIBI_ACCEPT_STATE) { *matched_end = start; xfree(stack); xfree(visited); return 1; }
+    if (edge->destination == ONIBI_ACCEPT_STATE) { *matched_end = start; return 1; }
     if (edge->destination < header.state_count)
       stack[stack_size++] = (onibi_simple_frame_t){edge->destination, start};
   }
@@ -4680,7 +4684,7 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
     const OnibiRState *state = &states[frame.state];
     long next_pos = frame.pos;
     int hit = 1;
-    if (state->op == 0) { *matched_end = frame.pos; xfree(stack); xfree(visited); return 1; }
+    if (state->op == 0) { *matched_end = frame.pos; return 1; }
     if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS || state->op == ONIBI_RS_ANY) {
       if (frame.pos >= RSTRING_LEN(str)) hit = 0;
       else if (state->op == ONIBI_RS_CHAR) {
@@ -4699,12 +4703,11 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
     uint32_t begin = state->edge_base;
     for (uint32_t e = 0; e < state->edge_count; e++) {
       uint32_t destination = edges[begin + e].destination;
-      if (destination == ONIBI_ACCEPT_STATE) { *matched_end = next_pos; xfree(stack); xfree(visited); return 1; }
+      if (destination == ONIBI_ACCEPT_STATE) { *matched_end = next_pos; return 1; }
       if (destination < header.state_count && stack_size < stack_capacity)
         stack[stack_size++] = (onibi_simple_frame_t){destination, next_pos};
     }
   }
-  xfree(stack); xfree(visited);
   return 0;
 }
 
