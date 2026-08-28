@@ -527,6 +527,10 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %w[ignorecase multiline], Onibi::Parser.parse("a", "iim")[:options]
   end
 
+  def test_parser_rejects_overflowing_quantifier_counts
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{999999999999999999999}") }
+  end
+
   def test_compiler_lowers_capture_boundaries_to_actions
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }

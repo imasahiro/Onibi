@@ -8,6 +8,7 @@
 #include <time.h>
 #include <math.h>
 #include <float.h>
+#include <errno.h>
 
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
@@ -27,6 +28,13 @@ static int onibi_ascii_pattern(VALUE source) {
 
 static int onibi_hex_digit(unsigned char c) {
   return c >= '0' && c <= '9' ? c - '0' : (c >= 'a' && c <= 'f' ? c - 'a' + 10 : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1));
+}
+
+static long onibi_parse_count(const char *text, char **end) {
+  errno = 0;
+  long value = strtol(text, end, 10);
+  if (errno == ERANGE) rb_raise(eRegexpError, "quantifier is too large");
+  return value;
 }
 
 static uint64_t onibi_now_ns(void) {
@@ -474,17 +482,17 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
         int has_max = 1;
         if (comma != NULL) {
           char *endptr = NULL;
-          min = strtol(body, &endptr, 10);
+          min = onibi_parse_count(body, &endptr);
           if (endptr != comma) rb_raise(eRegexpError, "invalid quantifier");
           if (comma[1] == '\0') has_max = 0;
           else {
             char *max_end = NULL;
-            max_value = strtol(comma + 1, &max_end, 10);
+            max_value = onibi_parse_count(comma + 1, &max_end);
             if (*max_end != '\0') rb_raise(eRegexpError, "invalid quantifier");
           }
         } else {
           char *endptr = NULL;
-          min = strtol(body, &endptr, 10);
+          min = onibi_parse_count(body, &endptr);
           if (*endptr != '\0') rb_raise(eRegexpError, "invalid quantifier");
           max_value = min;
         }
