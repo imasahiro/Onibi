@@ -2269,7 +2269,9 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
           result.starts = reordered;
         } else onibi_id_vector_append(&result.starts, &part.starts);
       }
-      VALUE transition_actions = rb_ary_dup(result.pending_actions);
+      VALUE transition_actions = rb_ary_new_capa(RARRAY_LEN(result.pending_actions) +
+                                                  RARRAY_LEN(part.start_actions));
+      onibi_append_values(transition_actions, result.pending_actions);
       onibi_append_values(transition_actions, part.start_actions);
       onibi_connect_fragment_actions(builder, &old_exits, &part.starts, transition_actions, result.lazy);
       onibi_id_vector_move(&result.exits, &part.exits);
@@ -2836,7 +2838,9 @@ skip_utf8_range_expansion:
         if (repeat.nullable) {
           onibi_connect_fragment(builder, &result.exits, &repeat.starts);
         } else {
-          VALUE next_actions = rb_ary_dup(repeat.pending_actions);
+          VALUE next_actions = rb_ary_new_capa(RARRAY_LEN(repeat.pending_actions) +
+                                               RARRAY_LEN(repeat.start_actions));
+          onibi_append_values(next_actions, repeat.pending_actions);
           onibi_append_values(next_actions, repeat.start_actions);
           onibi_connect_fragment_actions(builder, &result.exits, &repeat.starts, next_actions, 0);
         }
@@ -2844,7 +2848,9 @@ skip_utf8_range_expansion:
       if (repeat.nullable) {
         onibi_connect_fragment(builder, &repeat.exits, &repeat.starts);
       } else {
-        VALUE loop_actions = rb_ary_dup(repeat.pending_actions);
+        VALUE loop_actions = rb_ary_new_capa(RARRAY_LEN(repeat.pending_actions) +
+                                             RARRAY_LEN(repeat.start_actions));
+        onibi_append_values(loop_actions, repeat.pending_actions);
         onibi_append_values(loop_actions, repeat.start_actions);
         onibi_connect_fragment_actions(builder, &repeat.exits, &repeat.starts, loop_actions, 0);
       }
