@@ -2597,6 +2597,19 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("begin"), 1, INT2NUM(0)));
     rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
+    VALUE captures = rb_hash_new();
+    long capture_count = NUM2LONG(rb_funcall(match, rb_intern("length"), 0)) - 1;
+    if (capture_count > 8) capture_count = 8;
+    for (long group_id = 1; group_id <= capture_count; group_id++) {
+      VALUE begin = rb_funcall(match, rb_intern("begin"), 1, LONG2NUM(group_id));
+      VALUE finish = rb_funcall(match, rb_intern("end"), 1, LONG2NUM(group_id));
+      if (NIL_P(begin) || NIL_P(finish) || NUM2LONG(begin) < 0 || NUM2LONG(finish) < 0) continue;
+      VALUE group = rb_hash_new();
+      rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
+      rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
+      rb_hash_aset(captures, LONG2NUM(group_id), group);
+    }
+    if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
     return result;
   }
   if (graph_ok) {

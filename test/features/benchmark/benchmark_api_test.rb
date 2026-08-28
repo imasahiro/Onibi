@@ -693,6 +693,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(a*)")
     refute regexp.program_cached?
     assert_equal Regexp.new("(a*)").match("aa").to_a, regexp.match("aa").to_a
+    assert_equal({ 1 => { start: 0, end: 2 } }, regexp.vm_match_result("aa")[:captures])
   end
 
   def test_compiler_assigns_distinct_capture_slots
