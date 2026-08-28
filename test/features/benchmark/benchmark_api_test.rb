@@ -175,6 +175,9 @@ class BenchmarkApiTest < Minitest::Test
   def test_simple_character_class_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[ab]")
     assert_equal :RSEQ, regexp.pipeline[:vm]
+    bitmap = regexp.pipeline[:canonical][:gir][:states].first[:payload][:bitmap]
+    assert_equal 32, bitmap.bytesize
+    assert_predicate bitmap, :frozen?
     assert regexp.match?("xxbxx")
     refute regexp.match?("xxcxx")
   end

@@ -417,6 +417,59 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
 typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; int ignorecase; int multiline; } onibi_gir_builder_t;
+static VALUE onibi_hash_value(VALUE hash, const char *name);
+
+static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
+  bits[value >> 3] |= (unsigned char)(1U << (value & 7));
+  if (fold) {
+    unsigned char lower = (unsigned char)tolower(value);
+    unsigned char upper = (unsigned char)toupper(value);
+    bits[lower >> 3] |= (unsigned char)(1U << (lower & 7));
+    bits[upper >> 3] |= (unsigned char)(1U << (upper & 7));
+  }
+}
+
+static VALUE onibi_class_bitmap(VALUE payload, int fold) {
+  unsigned char bits[32];
+  memset(bits, 0, sizeof(bits));
+  VALUE ranges = onibi_hash_value(payload, "ranges");
+  for (long i = 0; i < RARRAY_LEN(ranges); i++) {
+    VALUE range = rb_ary_entry(ranges, i);
+    if (RARRAY_LEN(range) != 2) continue;
+    int first = NUM2INT(rb_ary_entry(range, 0));
+    int last = NUM2INT(rb_ary_entry(range, 1));
+    if (first < 0) first = 0; if (last > 255) last = 255;
+    for (int c = first; c <= last; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
+  }
+  VALUE children = onibi_hash_value(payload, "children");
+  for (long i = 0; i < RARRAY_LEN(children); i++) {
+    VALUE child = rb_ary_entry(children, i);
+    ID kind = SYM2ID(onibi_hash_value(child, "kind"));
+    if (kind == rb_intern("literal")) {
+      onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
+    } else if (kind == rb_intern("posix_class")) {
+      VALUE name = onibi_hash_value(child, "name");
+      const char *n = StringValueCStr(name);
+      for (int c = 0; c < 256; c++) {
+        int hit = (strcmp(n, "alpha") == 0) ? isalpha(c) :
+          (strcmp(n, "digit") == 0) ? isdigit(c) :
+          (strcmp(n, "alnum") == 0) ? isalnum(c) :
+          (strcmp(n, "space") == 0) ? isspace(c) :
+          (strcmp(n, "blank") == 0) ? (c == ' ' || c == '\t') :
+          (strcmp(n, "lower") == 0) ? islower(c) :
+          (strcmp(n, "upper") == 0) ? isupper(c) :
+          (strcmp(n, "word") == 0) ? (isalnum(c) || c == '_') :
+          (strcmp(n, "xdigit") == 0) ? isxdigit(c) : 0;
+        if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
+      }
+    }
+  }
+  if (RTEST(onibi_hash_value(payload, "negated")))
+    for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
+  VALUE bitmap = rb_str_new((const char *)bits, sizeof(bits));
+  rb_obj_freeze(bitmap);
+  return bitmap;
+}
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
@@ -570,6 +623,12 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (builder->ignorecase && type == ID2SYM(rb_intern("character_class"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_obj_freeze(payload);
+    }
+    if (type == ID2SYM(rb_intern("character_class"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
+                   onibi_class_bitmap(payload, builder->ignorecase));
       rb_obj_freeze(payload);
     }
     if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
@@ -1358,6 +1417,10 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
 static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
   if (fold) byte = (unsigned char)tolower(byte);
+  VALUE bitmap = onibi_hash_value(payload, "bitmap");
+  if (!NIL_P(bitmap)) {
+    return (RSTRING_PTR(bitmap)[byte >> 3] & (1U << (byte & 7))) != 0;
+  }
   VALUE type = onibi_hash_value(payload, "type");
   if (type == ID2SYM(rb_intern("escape"))) {
     VALUE name = onibi_hash_value(payload, "name");
