@@ -2,6 +2,7 @@
 #define ONIBI_IR_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* These types contain semantic data only.  They do not contain Ruby values,
    subject pointers, or process-local addresses. */
@@ -33,6 +34,12 @@ typedef struct {
   long *values;
   uint32_t count;
 } OnibiCounterState;
+
+typedef struct {
+  OnibiStateId *items;
+  size_t count;
+  size_t capacity;
+} OnibiIdVector;
 
 typedef enum {
   ONIBI_EXEC_REGULAR = 0,

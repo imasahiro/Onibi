@@ -1181,6 +1181,24 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
 typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+
+static void onibi_id_vector_init(OnibiIdVector *vector) {
+  vector->items = NULL; vector->count = 0; vector->capacity = 0;
+}
+
+static void onibi_id_vector_push(OnibiIdVector *vector, OnibiStateId value) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "GIR state vector is too large");
+    vector->items = REALLOC_N(vector->items, OnibiStateId, next);
+    vector->capacity = next;
+  }
+  vector->items[vector->count++] = value;
+}
+
+static void onibi_id_vector_free(OnibiIdVector *vector) {
+  xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
+}
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -2401,9 +2419,13 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
     rb_ary_push(start_edges, edge);
   }
-  for (long i = 0; i < RARRAY_LEN(fragment.starts); i++) {
+  OnibiIdVector start_ids;
+  onibi_id_vector_init(&start_ids);
+  for (long i = 0; i < RARRAY_LEN(fragment.starts); i++)
+    onibi_id_vector_push(&start_ids, (OnibiStateId)NUM2ULONG(rb_ary_entry(fragment.starts, i)));
+  for (size_t i = 0; i < start_ids.count; i++) {
     VALUE edge = rb_hash_new();
-    VALUE destination = rb_ary_entry(fragment.starts, i);
+    VALUE destination = UINT2NUM(start_ids.items[i]);
     VALUE actions = rb_ary_new();
     VALUE guard = rb_hash_aref(builder.capture_guards, destination);
     onibi_append_values(actions, fragment.start_actions);
@@ -2412,6 +2434,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
     rb_ary_push(start_edges, edge);
   }
+  onibi_id_vector_free(&start_ids);
   if (fragment.nullable && !fragment.lazy) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(accept));
