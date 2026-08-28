@@ -419,7 +419,6 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   long extended_depth = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     long start = i;
-    VALUE token = rb_hash_new();
     OnibiTokenKind kind = ONIBI_TOKEN_LITERAL;
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
     if (extended && !in_class && byte == '#') {
@@ -427,6 +426,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       continue;
     }
     if (extended && !in_class && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')) continue;
+    VALUE token = rb_hash_new();
     VALUE backref_name = Qnil;
     VALUE backref_number = Qnil;
     VALUE group_name = Qnil;

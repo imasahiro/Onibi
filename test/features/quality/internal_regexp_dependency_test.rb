@@ -350,6 +350,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil tokenizer
     assert_includes tokenizer, "rb_ary_new_capa(RSTRING_LEN(src))"
     refute_includes tokenizer, "VALUE tokens = rb_ary_new();"
+    assert_operator tokenizer.index("VALUE token = rb_hash_new();"), :>,
+      tokenizer.index("if (extended && !in_class && (byte == ' ' ||")
   end
 
   def test_compiler_subprograms_use_c_vector_until_publication
