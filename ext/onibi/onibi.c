@@ -1205,13 +1205,17 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   return sequence;
 }
 
+typedef enum {
+  ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS = 1U << 0,
+  ONIBI_AST_FLAG_ANCHOR_REPEAT = 1U << 1,
+  ONIBI_AST_FLAG_NULLABLE_ABSENCE = 1U << 2,
+  ONIBI_AST_FLAG_NULLABLE_CAPTURE = 1U << 3
+} OnibiAstAnalysisFlag;
+
 typedef struct {
   VALUE ast;
   int options;
-  int safe_multibyte_class;
-  int anchor_repeat;
-  int nullable_absence;
-  int nullable_capture;
+  unsigned int ast_flags;
 } OnibiParsed;
 
 static void onibi_parsed_mark(void *ptr) {
@@ -1247,11 +1251,13 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   /* The AST is an internal compiler value.  Do not deep-freeze it here: it is
      never exposed through the Regexp API and freezing would rescan the tree. */
   parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
-  parsed->safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed->ast);
-  parsed->anchor_repeat = onibi_ast_anchor_repeat(parsed->ast);
-  parsed->nullable_absence = onibi_ast_nullable_absence(parsed->ast);
-  parsed->nullable_capture = 0;
-  (void)onibi_ast_nullable(parsed->ast, &parsed->nullable_capture);
+  parsed->ast_flags = 0;
+  if (onibi_ast_safe_multibyte_class(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
+  if (onibi_ast_anchor_repeat(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
+  if (onibi_ast_nullable_absence(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
+  int nullable_capture = 0;
+  (void)onibi_ast_nullable(parsed->ast, &nullable_capture);
+  if (nullable_capture) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
   return result;
 }
 
@@ -3730,10 +3736,10 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
                  obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
       OnibiParsed *parsed_data = onibi_parsed_get(parsed);
-      obj->has_safe_multibyte_class = parsed_data->safe_multibyte_class;
-      obj->has_anchor_repeat = parsed_data->anchor_repeat;
-      obj->has_nullable_absence = parsed_data->nullable_absence;
-      obj->has_nullable_capture = parsed_data->nullable_capture;
+      obj->has_safe_multibyte_class = (parsed_data->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0;
+      obj->has_anchor_repeat = (parsed_data->ast_flags & ONIBI_AST_FLAG_ANCHOR_REPEAT) != 0;
+      obj->has_nullable_absence = (parsed_data->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0;
+      obj->has_nullable_capture = (parsed_data->ast_flags & ONIBI_AST_FLAG_NULLABLE_CAPTURE) != 0;
       /* The AST is an initialization artifact.  The published RSeq/GIR
          objects carry all runtime data, so release the Ruby adapter now. */
       parsed_data->ast = Qnil;

@@ -232,11 +232,10 @@ class InternalRegexpDependencyTest < Minitest::Test
     parsed = source[/typedef struct \{\n  VALUE ast;\n  int options;.*?\n\} OnibiParsed;/m]
 
     refute_nil parsed
-    assert_includes parsed, "safe_multibyte_class"
-    assert_includes parsed, "anchor_repeat"
-    assert_includes parsed, "nullable_absence"
-    assert_includes parsed, "nullable_capture"
-    assert_includes source, "parsed_data->safe_multibyte_class"
+    assert_includes parsed, "unsigned int ast_flags"
+    assert_includes source, "ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS"
+    assert_includes source, "ONIBI_AST_FLAG_NULLABLE_CAPTURE"
+    assert_includes source, "parsed_data->ast_flags"
   end
 
   def test_ast_adapter_is_released_after_initialization
