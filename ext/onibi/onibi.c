@@ -1521,6 +1521,8 @@ static void onibi_rseq_validate(VALUE rseq) {
   if (header.magic != ONIBI_RSEQ_MAGIC || header.version != ONIBI_RSEQ_VERSION ||
       header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
       header.states_offset < sizeof(OnibiRSeqHeader) ||
+      (header.states_offset & 3U) != 0 || (header.edges_offset & 3U) != 0 ||
+      (header.actions_offset & 3U) != 0 || (header.blob_size & 3U) != 0 ||
       header.edges_offset < header.states_offset ||
       header.states_offset + header.state_count * sizeof(OnibiRState) > header.edges_offset ||
       header.edges_offset + header.edge_count * sizeof(OnibiREdge) > header.actions_offset ||
