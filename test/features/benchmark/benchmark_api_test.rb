@@ -494,6 +494,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %i[literal literal literal], regexp.pipeline[:canonical][:ast][:children].map { |node| node[:type] }
   end
 
+  def test_parser_accepts_open_repeat_bounds
+    lower_open = Onibi::Regexp.new("\\Aa{,2}\\z")
+    upper_open = Onibi::Regexp.new("\\Aa{2,}\\z")
+    assert lower_open.vm_match?("")
+    refute lower_open.vm_match?("aaa")
+    assert upper_open.vm_match?("aa")
+  end
+
   def test_compiler_resolves_local_case_and_line_options
     case_scope = Onibi::Regexp.new("(?i:a)")
     assert case_scope.vm_match?("A")
