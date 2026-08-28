@@ -562,5 +562,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "static inline long onibi_token_end(VALUE token)"
     assert_includes source, "vector.items[i].start = onibi_token_start(token)"
     assert_includes source, "vector.items[i].end = onibi_token_end(token)"
+    assert_includes source, "vector.items[i].name_id = onibi_token_name_id(token)"
   end
 end
