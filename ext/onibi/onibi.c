@@ -3097,9 +3097,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_gir_edge_vector_init(&start_edge_records);
   long root_entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   if (fragment.nullable && fragment.lazy) {
-    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
-    onibi_append_values(actions, fragment.start_actions);
-    onibi_append_values(actions, fragment.pending_actions);
+    VALUE actions = onibi_concat_action_values(fragment.start_actions, fragment.pending_actions);
     onibi_gir_edge_vector_push(&start_edge_records,
                                (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions), actions},
                                builder.map_roots);
@@ -3110,9 +3108,13 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     long destination = (long)start_ids.items[i];
     const OnibiGuardEntry *capture_guard =
       onibi_guard_vector_find_entry(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
-    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
-    onibi_append_values(actions, fragment.start_actions);
-    if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
+    VALUE actions = fragment.start_actions;
+    if (capture_guard) {
+      VALUE with_guard = rb_ary_new_capa(RARRAY_LEN(actions) + (long)capture_guard->actions.count);
+      onibi_append_values(with_guard, actions);
+      onibi_append_vector_values(with_guard, &capture_guard->actions);
+      actions = with_guard;
+    }
     onibi_gir_edge_vector_push(&start_edge_records,
                                (OnibiGirEdgeEntry){-1, destination, 0, (uint32_t)RARRAY_LEN(actions), actions},
                                builder.map_roots);
@@ -3120,9 +3122,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_id_vector_free(&start_ids);
   onibi_id_vector_free(&exit_ids);
   if (fragment.nullable && !fragment.lazy) {
-    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
-    onibi_append_values(actions, fragment.start_actions);
-    onibi_append_values(actions, fragment.pending_actions);
+    VALUE actions = onibi_concat_action_values(fragment.start_actions, fragment.pending_actions);
     onibi_gir_edge_vector_push(&start_edge_records,
                                (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions), actions},
                                builder.map_roots);

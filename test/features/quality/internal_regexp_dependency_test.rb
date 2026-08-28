@@ -443,7 +443,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_start_edges_preallocate_fragment_actions
     source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions))"
+    assert_includes source, "onibi_concat_action_values(fragment.start_actions, fragment.pending_actions)"
   end
 
   def test_rseq_subprograms_use_typed_records
@@ -682,6 +682,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static VALUE onibi_concat_action_values(VALUE first, VALUE second)"
     assert_includes source, "onibi_concat_action_values(repeat.pending_actions"
+  end
+
+  def test_start_edges_reuse_fragment_action_arrays
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+
+    refute_nil compiler
+    assert_includes compiler, "onibi_concat_action_values(fragment.start_actions, fragment.pending_actions)"
+    assert_includes compiler, "VALUE with_guard = rb_ary_new_capa"
   end
 
   def test_parser_uses_cached_id_accessor_for_token_fields
