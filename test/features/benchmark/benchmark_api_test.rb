@@ -886,6 +886,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal ::Regexp.new("a{2}+").match?("aa"), regexp.match?("aa")
   end
 
+  def test_fixed_possessive_repeat_accepts_class_atoms
+    class_regexp = Onibi::Regexp.new("[ab]{2}+")
+    capture_regexp = Onibi::Regexp.new("(ab){2}+")
+    assert class_regexp.program_cached?
+    refute capture_regexp.program_cached?
+    assert class_regexp.vm_match?("ab")
+    assert_equal({ start: 4, end: 6 }, capture_regexp.match("xxabab").offset(1).then { |start_pos, end_pos| { start: start_pos, end: end_pos } })
+  end
+
   def test_backreference_has_explicit_dynamic_pipeline_nodes
     tokens = Onibi::Lexer.new("(a)\\1").tokens
     assert_equal :backref, tokens.last[:kind]

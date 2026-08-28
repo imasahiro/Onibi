@@ -1317,9 +1317,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   if (type == ID2SYM(rb_intern("quantifier"))) {
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
+    VALUE atom = onibi_hash_value(ast, "atom");
     if (RTEST(onibi_hash_value(ast, "possessive")) &&
         (NIL_P(max_value) || NUM2LONG(max_value) != min))
       rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
+    if (RTEST(onibi_hash_value(ast, "possessive")) &&
+        onibi_symbol_value(atom, "type") == ID2SYM(rb_intern("capture")))
+      rb_raise(eRegexpError, "possessive capture repeat is not supported in RSeq");
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
       return onibi_fragment_empty();
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
@@ -1330,7 +1334,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     }
     if (!RTEST(onibi_hash_value(ast, "greedy")))
       rb_raise(eRegexpError, "lazy repeat requires ordered repeat lowering");
-    VALUE atom = onibi_hash_value(ast, "atom");
     long counter_slot = -1;
     if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
       counter_slot = builder->counter_count++;
