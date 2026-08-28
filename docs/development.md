@@ -168,6 +168,23 @@ The remaining compiler containers have three separate roles:
 | capture and exit guards | State-ID lookup during edge creation | Third; C map with explicit ownership |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | Last; convert at the RSeq boundary only |
 
+Detailed ownership review:
+
+| Container | Ruby API required | C-struct decision | Reason |
+| --- | --- | --- | --- |
+| token stream (`Array<Hash>`) | No | Convert to a token vector | Each item has a fixed kind, byte span, and optional payload. The parser is the only consumer. |
+| AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
+| parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
+| GIR builder state and edge arrays | No | Convert after fragment migration | The builder mutates them during compilation. The RSeq boundary needs a stable snapshot only. |
+| fragment start/exit IDs | No | Convert to `OnibiIdVector` | IDs are numeric and ordered. Ruby Array gives no semantic value. |
+| fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. |
+| RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
+| captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
+
+The first conversion is complete for parser and compiler result adapters. The
+remaining token, AST, fragment, GIR, and RSeq conversions stay separate so
+each change can preserve ordering and GC tests.
+
 The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
 conversion path and focused ordering tests.
