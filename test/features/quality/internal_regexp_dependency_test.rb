@@ -266,6 +266,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "onibi_guard_vector_find_entry"
   end
 
+  def test_gir_guard_edge_merge_uses_single_destination_array
+    source = File.read(EXTENSION_SOURCE)
+    gir_edge = source[/static void onibi_gir_edge\(.*?\n}\n/m]
+    refute_nil gir_edge
+    assert_includes gir_edge, "rb_ary_new_capa"
+    refute_includes gir_edge, "rb_ary_dup"
+  end
+
   def test_rseq_subprograms_use_typed_records
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]

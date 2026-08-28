@@ -1797,11 +1797,9 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
   uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
   VALUE actions = rb_ary_new_capa((long)capture_count + (long)exit_count + (long)capture_count);
-  VALUE guard = capture_guard ? capture_guard->actions : Qnil;
-  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
-  VALUE exit_actions = exit_guard ? exit_guard->actions : Qnil;
-  if (!NIL_P(exit_actions)) { VALUE merged = rb_ary_dup(exit_actions); onibi_append_values(merged, actions); actions = merged; }
-  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
+  if (exit_guard) onibi_append_values(actions, exit_guard->actions);
+  if (capture_guard) onibi_append_values(actions, capture_guard->actions);
+  if (capture_guard) onibi_append_values(actions, capture_guard->actions);
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
 
@@ -1822,13 +1820,15 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(&builder->exit_guards, (OnibiStateId)from);
   uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
   uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
-  VALUE guard = capture_guard ? capture_guard->actions : Qnil;
   if (RARRAY_LEN(actions) + (long)capture_count + (long)exit_count > LONG_MAX)
     rb_raise(rb_eArgError, "GIR action list is too large");
-  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
-  VALUE exit_actions = exit_guard ? exit_guard->actions : Qnil;
-  if (!NIL_P(exit_actions)) { VALUE merged = rb_ary_dup(exit_actions); onibi_append_values(merged, actions); actions = merged; }
-  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
+  VALUE merged = rb_ary_new_capa((long)capture_count + (long)exit_count +
+                                 RARRAY_LEN(actions) + (long)capture_count);
+  if (exit_guard) onibi_append_values(merged, exit_guard->actions);
+  if (capture_guard) onibi_append_values(merged, capture_guard->actions);
+  onibi_append_values(merged, actions);
+  if (capture_guard) onibi_append_values(merged, capture_guard->actions);
+  actions = merged;
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
 
