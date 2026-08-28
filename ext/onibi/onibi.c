@@ -4105,15 +4105,12 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;
     long common_width = 0;
     int hit = 1;
-    int fold = RTEST(onibi_hash_value_id(payload, id_key_ignorecase));
     for (long i = 0; i < RARRAY_LEN(operands); i++) {
       long operand_width = 0;
       VALUE operand = rb_ary_entry(operands, i);
-      if (fold && RB_TYPE_P(operand, T_HASH) &&
-          !RTEST(onibi_hash_value_id(operand, id_key_ignorecase))) {
-        operand = rb_hash_dup(operand);
-        rb_hash_aset(operand, ID2SYM(id_key_ignorecase), Qtrue);
-      }
+      /* Ignorecase is propagated to every operand by
+       * onibi_class_payload_with_ctypes during compilation.  Do not copy
+       * semantic payloads in this per-character VM path. */
       int operand_hit = onibi_vm_class_match(operand, str, pos, byte, &operand_width);
       if (i == 0) common_width = operand_width;
       else if (operand_width != common_width) operand_hit = 0;
