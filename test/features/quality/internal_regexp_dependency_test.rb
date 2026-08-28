@@ -222,6 +222,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "action_records.entries[i].positive"
     assert_includes source, "uint8_t has_arg32"
     assert_includes lowerer, "action_records.entries[i].arg32"
+    assert_includes source, "uint8_t has_assert_kind"
+    assert_includes lowerer, "action_records.entries[i].assert_kind"
   end
 
   def test_rseq_literal_payloads_cache_numeric_fields

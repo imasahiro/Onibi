@@ -1271,7 +1271,7 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t p
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; uint32_t action_count; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
-typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; uint8_t has_slot; uint16_t slot; uint8_t has_arg32; uint32_t arg32; } OnibiRSeqActionEntry;
+typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; uint8_t has_slot; uint16_t slot; uint8_t has_assert_kind; uint16_t assert_kind; uint8_t has_arg32; uint32_t arg32; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
@@ -1463,6 +1463,7 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
   VALUE width = onibi_hash_value_id(value, id_key_width);
   VALUE limit = onibi_hash_value_id(value, id_key_limit);
   VALUE arg_value = onibi_hash_value_id(value, id_key_value);
+  VALUE assert_kind = onibi_hash_value_id(value, id_key_assert_kind);
   VALUE arg32 = !NIL_P(width) ? width : (!NIL_P(limit) ? limit : arg_value);
   vector->entries[vector->count++] = (OnibiRSeqActionEntry){
     value, (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code)),
@@ -1471,6 +1472,8 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
     RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0,
     NIL_P(slot) ? 0 : 1,
     NIL_P(slot) ? 0 : (uint16_t)NUM2ULONG(slot),
+    NIL_P(assert_kind) ? 0 : 1,
+    NIL_P(assert_kind) ? 0 : (uint16_t)NUM2ULONG(assert_kind),
     NIL_P(arg32) ? 0 : 1,
     NIL_P(arg32) ? 0 : (uint32_t)NUM2ULONG(arg32)
   };
@@ -3310,7 +3313,6 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
   for (size_t i = 0; i < action_records.count; i++) {
-    VALUE action = action_records.entries[i].value;
     ID op = action_records.entries[i].op;
     OnibiGActionOp action_code = action_records.entries[i].code;
     physical_actions[i].op = (uint8_t)(action_code == ONIBI_GA_CAPTURE_OPEN || action_code == ONIBI_GA_CAPTURE_CLOSE ? ONIBI_RA_CAPTURE :
@@ -3323,9 +3325,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     physical_actions[i].flags = onibi_rseq_action_flags(op);
     if (op == id_a_test_capture && !action_records.entries[i].set)
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
-    VALUE assert_kind = onibi_hash_value_id(action, id_key_assert_kind);
-    physical_actions[i].arg16 = NIL_P(assert_kind) ? onibi_rseq_assert_kind(op) :
-      (uint16_t)NUM2ULONG(assert_kind);
+    physical_actions[i].arg16 = action_records.entries[i].has_assert_kind ?
+      action_records.entries[i].assert_kind : onibi_rseq_assert_kind(op);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = action_records.entries[i].positive;
       physical_actions[i].flags = op == id_a_assert_lookahead ?
