@@ -2438,10 +2438,17 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
           result.starts = reordered;
         } else onibi_id_vector_append(&result.starts, &part.starts);
       }
-      VALUE transition_actions = rb_ary_new_capa(RARRAY_LEN(result.pending_actions) +
-                                                  RARRAY_LEN(part.start_actions));
-      onibi_append_values(transition_actions, result.pending_actions);
-      onibi_append_values(transition_actions, part.start_actions);
+      VALUE transition_actions;
+      if (RARRAY_LEN(result.pending_actions) == 0) {
+        transition_actions = part.start_actions;
+      } else if (RARRAY_LEN(part.start_actions) == 0) {
+        transition_actions = result.pending_actions;
+      } else {
+        transition_actions = rb_ary_new_capa(RARRAY_LEN(result.pending_actions) +
+                                              RARRAY_LEN(part.start_actions));
+        onibi_append_values(transition_actions, result.pending_actions);
+        onibi_append_values(transition_actions, part.start_actions);
+      }
       onibi_connect_fragment_actions(builder, &old_exits, &part.starts, transition_actions, result.lazy);
       onibi_id_vector_move(&result.exits, &part.exits);
       /* A prior exit can bypass this part only when this part is nullable. */

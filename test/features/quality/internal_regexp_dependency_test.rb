@@ -668,6 +668,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes parser_class, "VALUE operands = rb_ary_new_capa((long)operand_records.count)"
   end
 
+  def test_sequence_transition_actions_reuse_empty_side
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static onibi_fragment_t onibi_compile_sequence\(.*?\n}\n/m]
+
+    refute_nil compiler
+    assert_includes compiler, "if (RARRAY_LEN(result.pending_actions) == 0)"
+    assert_includes compiler, "transition_actions = part.start_actions"
+    assert_includes compiler, "transition_actions = result.pending_actions"
+  end
+
   def test_parser_uses_cached_id_accessor_for_token_fields
     source = File.read(EXTENSION_SOURCE)
     parser = source[/static long onibi_find_close\(.*?static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
