@@ -820,7 +820,8 @@ static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind 
 
 static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   VALUE node = onibi_ast_node(ONIBI_AST_CHARACTER_CLASS, rb_ary_entry(tokens, begin));
-  VALUE children = rb_ary_new(), ranges = rb_ary_new();
+  long class_capacity = close > begin ? close - begin : 0;
+  VALUE children = rb_ary_new_capa(class_capacity), ranges = rb_ary_new_capa(class_capacity);
   int negated = 0;
   long intersection = -1;
   long depth = 0;
@@ -834,11 +835,11 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   if (intersection >= 0) {
     VALUE result = onibi_ast_node(ONIBI_AST_CLASS_INTERSECTION, rb_ary_entry(tokens, begin));
-    VALUE operands = rb_ary_new();
+    VALUE operands = rb_ary_new_capa(2);
     for (int side = 0; side < 2; side++) {
       long part_begin = side == 0 ? begin + 1 : intersection + 2;
       long part_end = side == 0 ? intersection : close;
-      VALUE slice = rb_ary_new();
+      VALUE slice = rb_ary_new_capa(part_end - part_begin + 2);
       VALUE open = rb_hash_dup(rb_ary_entry(tokens, part_begin));
       VALUE finish = rb_hash_dup(rb_ary_entry(tokens, part_end - 1));
       rb_hash_aset(open, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_START));
@@ -1081,7 +1082,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
 }
 
 static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
-  VALUE branches = rb_ary_new();
+  VALUE branches = rb_ary_new_capa(end > begin ? end - begin : 0);
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     VALUE token = rb_ary_entry(tokens, i);
@@ -1105,7 +1106,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
     return node;
   }
 
-  VALUE children = rb_ary_new();
+  VALUE children = rb_ary_new_capa(end > begin ? end - begin : 0);
   for (long i = begin; i < end;) {
     VALUE node = onibi_parse_atom(tokens, &i, end);
     if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {

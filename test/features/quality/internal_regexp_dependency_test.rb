@@ -396,6 +396,18 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
   end
 
+  def test_parser_class_and_range_adapters_preallocate_known_sizes
+    source = File.read(EXTENSION_SOURCE)
+    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
+    parser_range = source[/static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
+
+    refute_nil parser_class
+    refute_nil parser_range
+    assert_includes parser_class, "rb_ary_new_capa(class_capacity)"
+    assert_includes parser_class, "rb_ary_new_capa(part_end - part_begin + 2)"
+    assert_includes parser_range, "rb_ary_new_capa(end > begin ? end - begin : 0)"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
