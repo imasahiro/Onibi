@@ -1375,6 +1375,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("state_count")), LONG2NUM(RARRAY_LEN(states)));
   rb_hash_aset(header, ID2SYM(rb_intern("edge_count")), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(rb_intern("action_count")), LONG2NUM(RARRAY_LEN(actions)));
+  rb_hash_aset(header, ID2SYM(rb_intern("start_edge_base")), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(rb_intern("start_edge_count")), LONG2NUM(RARRAY_LEN(start_edges)));
   OnibiRSeqHeader physical;
   memset(&physical, 0, sizeof(physical));
@@ -1386,6 +1387,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.capture_count = capture_count;
   physical.semantic_capture_count = capture_count;
   physical.counter_count = counter_count;
+  physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
     if (op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
@@ -2293,6 +2295,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       NUM2UINT(onibi_hash_value(semantic, "capture_count")) != header.capture_count ||
       NUM2UINT(onibi_hash_value(semantic, "counter_count")) != header.counter_count ||
       NUM2UINT(onibi_hash_value(semantic, "subprogram_count")) != header.subprogram_count ||
+      NUM2UINT(onibi_hash_value(semantic, "start_edge_base")) != header.start_edge_base ||
       NUM2UINT(onibi_hash_value(semantic, "start_edge_count")) != header.start_edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "blob_size")) != header.blob_size)
     rb_raise(rb_eArgError, "RSeq semantic and physical headers disagree");
@@ -2308,6 +2311,8 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.states_offset + header.state_count * sizeof(OnibiRState) > header.edges_offset ||
       header.edges_offset + header.edge_count * sizeof(OnibiREdge) > header.actions_offset ||
       header.start_edge_count > header.edge_count ||
+      header.start_edge_base + header.start_edge_count > header.edge_count ||
+      header.start_edge_base != header.edge_count - header.start_edge_count ||
       header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size ||
       (header.classes_offset & 3U) != 0 || (header.literals_offset & 3U) != 0 ||
       (header.descriptors_offset & 3U) != 0 ||

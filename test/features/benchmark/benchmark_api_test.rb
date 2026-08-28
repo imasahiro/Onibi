@@ -519,6 +519,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal compiled[:graph][:states].length, rseq[:header][:state_count]
     assert_equal compiled[:graph][:edges].length, rseq[:header][:edge_count]
     assert_equal rseq[:header][:edge_count], rseq[:edges].length
+    assert_equal rseq[:header][:edge_count], rseq[:header][:start_edge_base]
     assert_equal :COUNTER_INIT, rseq[:start_edges].first[:actions].first[:op]
     assert_equal :COUNTER_INCREMENT, rseq[:actions].first[:op]
     assert_predicate rseq, :frozen?
@@ -564,6 +565,14 @@ class BenchmarkApiTest < Minitest::Test
     invalid_header = rseq[:header].dup
     invalid_header[:ignorecase] = true
     invalid[:header] = invalid_header
+    assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "abc", :REGULAR_FAST) }
+  end
+
+  def test_vm_rejects_rseq_start_edge_base_mismatch
+    rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+    invalid_header = rseq[:header].merge(start_edge_base: 0).freeze
+    invalid = rseq.merge(header: invalid_header)
+    invalid.freeze
     assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "abc", :REGULAR_FAST) }
   end
 
