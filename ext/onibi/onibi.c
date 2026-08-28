@@ -3021,25 +3021,26 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
-    if (kind == rb_intern("literal") && onibi_token_byte(token) > 127) {
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && onibi_token_byte(token) > 127) {
       obj->has_non_ascii_literal = 1;
       if (in_class) obj->has_non_ascii_class = 1;
     }
-    if (kind == rb_intern("wildcard")) obj->has_wildcard = 1;
-    if (kind == rb_intern("anchor")) obj->has_anchor = 1;
-    if ((kind == rb_intern("option_scope_start") || kind == rb_intern("option_global"))) {
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_WILDCARD)) obj->has_wildcard = 1;
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_ANCHOR)) obj->has_anchor = 1;
+    if ((kind == onibi_token_kind_id(ONIBI_TOKEN_OPTION_SCOPE_START) ||
+         kind == onibi_token_kind_id(ONIBI_TOKEN_OPTION_GLOBAL))) {
       VALUE option_name = onibi_hash_value(token, "name");
       if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
         obj->has_inline_ignorecase = 1;
     }
-    if (kind == rb_intern("class_start")) {
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_CLASS_START)) {
       if (in_class) obj->has_nested_class = 1;
       in_class = 1;
       class_depth++;
       previous = Qnil;
       continue;
     }
-    if (kind == rb_intern("class_end")) {
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_CLASS_END)) {
       if (class_depth > 0) class_depth--;
       in_class = class_depth > 0;
       previous = Qnil;
@@ -3047,13 +3048,13 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     }
     if (repeat_active) {
       long value = onibi_token_byte(token);
-      if (kind == rb_intern("quantifier") && value == '}') {
+      if (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && value == '}') {
         if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
         repeat_active = 0;
-      } else if (kind == rb_intern("quantifier") && value == ',') {
+      } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && value == ',') {
         if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
         repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
-      } else if (kind == rb_intern("literal") && value >= '0' && value <= '9') {
+      } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && value >= '0' && value <= '9') {
         repeat_have_digit = 1;
         if (repeat_value > (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
             (repeat_value == (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && (uint64_t)(value - '0') > 0U))
@@ -3064,29 +3065,30 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         repeat_active = 0;
       }
     }
-    if (in_class && kind == rb_intern("literal") && onibi_token_byte(token) == '[')
+    if (in_class && kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && onibi_token_byte(token) == '[')
       obj->has_nested_class = 1;
-    if (!in_class && kind == rb_intern("quantifier") && onibi_token_byte(token) == '{') {
+    if (!in_class && kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && onibi_token_byte(token) == '{') {
       repeat_active = 1;
       repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
     }
-    if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
-        kind == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
+    if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) &&
+        kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && onibi_token_byte(previous) == '&' &&
         onibi_token_byte(token) == '&') obj->has_class_intersection = 1;
-    if (kind == rb_intern("subroutine")) {
+    if (kind == onibi_token_kind_id(ONIBI_TOKEN_SUBROUTINE)) {
       obj->has_subroutine = 1;
       obj->has_dynamic = 1;
-    } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start") ||
-               kind == rb_intern("absence_start")) {
+    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_BACKREF) ||
+               kind == onibi_token_kind_id(ONIBI_TOKEN_ATOMIC_START) ||
+               kind == onibi_token_kind_id(ONIBI_TOKEN_ABSENCE_START)) {
       obj->has_dynamic = 1;
-      if (kind == rb_intern("backref")) obj->has_backref = 1;
-      if (kind == rb_intern("atomic_start")) obj->has_atomic = 1;
-      if (kind == rb_intern("absence_start")) obj->has_absence = 1;
-    } else if (kind == rb_intern("conditional_start")) {
+      if (kind == onibi_token_kind_id(ONIBI_TOKEN_BACKREF)) obj->has_backref = 1;
+      if (kind == onibi_token_kind_id(ONIBI_TOKEN_ATOMIC_START)) obj->has_atomic = 1;
+      if (kind == onibi_token_kind_id(ONIBI_TOKEN_ABSENCE_START)) obj->has_absence = 1;
+    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_CONDITIONAL_START)) {
       /* Simple capture conditionals lower to guarded GIR edges.  Mark the
          construct only for diagnostics; compile failure selects MRI. */
       obj->has_conditional = 1;
-    } else if (kind == rb_intern("escape")) {
+    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_ESCAPE)) {
       if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
       if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
         if (onibi_ascii_property_token_p(token)) {
@@ -3100,11 +3102,11 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
       }
       if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
-    } else if (kind == rb_intern("meta_escape")) {
+    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_META_ESCAPE)) {
       obj->has_meta_escape = 1;
       obj->has_dynamic = 1;
-    } else if (kind == rb_intern("group_start") ||
-               (kind == rb_intern("quantifier") && onibi_token_byte(token) == '{')) {
+    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_GROUP_START) ||
+               (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && onibi_token_byte(token) == '{')) {
       obj->has_tagged = 1;
     }
     previous = token;
