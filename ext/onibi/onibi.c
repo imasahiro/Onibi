@@ -1695,6 +1695,9 @@ static VALUE onibi_pipeline_build(VALUE self) {
   int pipeline_options = obj->options;
   if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
       !(pipeline_options == 1 && literal_only)) simple = 0;
+  /* The canonical compiler result is authoritative.  Legacy display
+     heuristics above are retained only for old fields, never for dispatch. */
+  simple = !NIL_P(obj->rseq);
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   VALUE klass = obj->execution_class;
   rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?

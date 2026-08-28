@@ -134,7 +134,7 @@ class BenchmarkApiTest < Minitest::Test
 
   def test_rseq_class_sequence_public_match
     regexp = Onibi::Regexp.new("[a]b")
-    assert_equal :MRI, regexp.pipeline[:vm]
+    assert_equal :RSEQ, regexp.pipeline[:vm]
     assert regexp.match?("xxabxx")
     refute regexp.match?("xxacxx")
   end
