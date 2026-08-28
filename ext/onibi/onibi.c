@@ -2665,8 +2665,7 @@ skip_utf8_range_expansion:
     if (type_code == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(ast, id_key_name);
       VALUE name_id = onibi_hash_value_id(ast, id_key_name_id);
-      int is_property = !NIL_P(name_id) ?
-        (onibi_ascii_property_kind_id(NUM2ULONG(name_id)) != ONIBI_ASCII_PROP_UNKNOWN) :
+      int is_property = !NIL_P(name_id) &&
         onibi_ascii_property_name_p((ID)NUM2ULONG(name_id));
       if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !is_property)
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");

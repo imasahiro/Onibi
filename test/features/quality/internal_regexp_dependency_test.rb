@@ -585,6 +585,17 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes walker, "if (op == ONIBI_RS_ABSENT) { frame->waiting_call = 0; continue; }"
   end
 
+  def test_escape_property_check_does_not_convert_nil_name_id
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static onibi_fragment_t onibi_compile_node\(VALUE ast, onibi_gir_builder_t \*builder\) \{.*?\n}\n/m]
+    property_check = compiler[/VALUE name_id = onibi_hash_value_id\(ast, id_key_name_id\);\n\s+int is_property = [^\n]+\n\s+[^\n]+;\n/]
+
+    refute_nil compiler
+    refute_nil property_check
+    assert_includes property_check, "int is_property = !NIL_P(name_id) &&"
+    refute_includes property_check, "?"
+  end
+
   def test_protected_compile_callbacks_use_stack_arguments
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "typedef struct {\n  VALUE source;\n  VALUE options;\n  VALUE tokens;\n} OnibiProgramArgs;"
