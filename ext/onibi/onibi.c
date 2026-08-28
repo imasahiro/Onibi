@@ -2032,7 +2032,7 @@ static void onibi_gir_validate(VALUE graph) {
     rb_raise(eRegexpError, "GIR accept state is out of range");
   for (long i = 0; i < state_count; i++) {
     VALUE state = rb_ary_entry(states, i);
-    if (NUM2LONG(onibi_hash_value_id(state, id_key_id)) != i)
+    if (NUM2LONG(onibi_hash_value_id(state, id_key_id)) != (long)i)
       rb_raise(eRegexpError, "GIR state ids are not contiguous");
     VALUE opcode_value = onibi_hash_value_id(state, id_key_opcode);
     if (NIL_P(opcode_value)) rb_raise(eRegexpError, "GIR state opcode is missing");
