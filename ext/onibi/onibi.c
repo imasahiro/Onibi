@@ -48,6 +48,7 @@
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
 
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
+static VALUE onibi_empty_actions = Qnil;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 /* The call metadata is explicit VM state.  The graph walker still uses its
@@ -1885,7 +1886,8 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(&builder->exit_guards, (OnibiStateId)from);
   uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
   uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
-  VALUE actions = rb_ary_new_capa((long)capture_count + (long)exit_count + (long)capture_count);
+  long action_capacity = (long)capture_count + (long)exit_count + (long)capture_count;
+  VALUE actions = action_capacity == 0 ? onibi_empty_actions : rb_ary_new_capa(action_capacity);
   if (exit_guard) onibi_append_vector_values(actions, &exit_guard->actions);
   if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
   if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
@@ -6121,6 +6123,9 @@ void Init_onibi(void) {
   id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
+  onibi_empty_actions = rb_ary_new();
+  rb_obj_freeze(onibi_empty_actions);
+  rb_global_variable(&onibi_empty_actions);
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   /* Lexer, parser, compiler, RSeq, and VM are implementation objects.
    * Keep their methods available to the C pipeline, but do not publish
