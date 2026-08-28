@@ -1681,16 +1681,13 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
 }
 
 static int onibi_gir_action_valid(ID action) {
-  return action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
-    action == rb_intern("MATCH_RESET") || action == rb_intern("ASSERT_BEGIN_BUFFER") ||
-    action == rb_intern("ASSERT_END_BUFFER") || action == rb_intern("ASSERT_BEGIN_LINE") ||
-    action == rb_intern("ASSERT_END_LINE") || action == rb_intern("ASSERT_SEMI_END_BUFFER") ||
-    action == rb_intern("ASSERT_SEARCH_ORIGIN") || action == rb_intern("ASSERT_WORD_BOUNDARY") ||
-    action == rb_intern("ASSERT_NONWORD_BOUNDARY") || action == rb_intern("ASSERT_LOOKAHEAD") ||
-    action == rb_intern("ASSERT_LOOKBEHIND") || action == rb_intern("COUNTER_INIT") ||
-    action == rb_intern("TEST_CAPTURE") ||
-    action == rb_intern("COUNTER_INCREMENT") || action == rb_intern("TEST_COUNTER_LT") ||
-    action == rb_intern("TEST_COUNTER_GE");
+  return action == id_capture_open || action == id_capture_close || action == id_match_reset ||
+    action == id_a_assert_begin_buffer || action == id_a_assert_end_buffer ||
+    action == id_a_assert_begin_line || action == id_a_assert_end_line || action == id_a_assert_semi_end_buffer ||
+    action == id_a_assert_search_origin || action == id_a_assert_word_boundary ||
+    action == id_a_assert_nonword_boundary || action == id_a_assert_lookahead ||
+    action == id_a_assert_lookbehind || action == id_a_counter_init || action == id_a_test_capture ||
+    action == id_a_counter_increment || action == id_a_test_counter_lt || action == id_a_test_counter_ge;
 }
 
 static void onibi_gir_validate_action_operands(VALUE action) {
@@ -2145,7 +2142,7 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_MATCH_RESET) {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("MATCH_RESET")));
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(id_match_reset));
     rb_ary_push(result.pending_actions, action);
     return result;
   }
@@ -2608,7 +2605,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
-      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("END")));
+      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(id_a_end));
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
       rb_ary_push(actions, terminator);
@@ -2637,7 +2634,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
-      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("END")));
+      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(id_a_end));
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
       rb_ary_push(actions, terminator);
