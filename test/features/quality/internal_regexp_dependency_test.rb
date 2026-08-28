@@ -36,6 +36,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/\bstrcmp\s*\(/, source)
   end
 
+  def test_c_pipeline_uses_cached_ids_for_hash_fields
+    source = File.read(EXTENSION_SOURCE).gsub(/#if 0.*?#endif/m, "")
+
+    refute_match(/rb_hash_(?:aref|aset)\([^\n]*rb_intern\s*\(/, source)
+  end
+
   def test_feature_token_record_has_no_ruby_value_fields
     source = File.read(EXTENSION_SOURCE)
     record = source[/typedef struct \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
