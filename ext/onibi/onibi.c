@@ -2109,7 +2109,12 @@ static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
   VALUE semantic = onibi_hash_value(rseq, "header");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
-  if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader))
+  VALUE semantic_edges = onibi_hash_value(rseq, "edges");
+  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
+  if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
+      !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
+      !RTEST(rb_obj_frozen_p(semantic_states)) || !RTEST(rb_obj_frozen_p(semantic_edges)) ||
+      !RTEST(rb_obj_frozen_p(semantic_actions)))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
