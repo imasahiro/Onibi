@@ -2413,6 +2413,13 @@ static void onibi_rseq_validate(VALUE rseq) {
       semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : 0xff;
     if (expected_op == 0xff || states[i].op != expected_op)
       rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
+    if (!NIL_P(physical_graph)) {
+      VALUE cached_state = rb_ary_entry(onibi_hash_value(physical_graph, "states"), i);
+      if (!RB_TYPE_P(cached_state, T_HASH) ||
+          SYM2ID(onibi_hash_value(cached_state, "op")) != semantic_op ||
+          !rb_equal(onibi_hash_value(cached_state, "payload"), onibi_hash_value(semantic_state, "payload")))
+        rb_raise(rb_eArgError, "cached RSeq state disagrees with semantic state");
+    }
     if (semantic_op == rb_intern("G_CLASS")) {
       VALUE bitmap = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "bitmap");
       if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
@@ -2462,6 +2469,12 @@ static void onibi_rseq_validate(VALUE rseq) {
       (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
     if (edges[i].destination != destination || edges[i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic edge");
+    if (!NIL_P(physical_graph)) {
+      VALUE cached_edge = rb_ary_entry(onibi_hash_value(physical_graph, "edges"), i);
+      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value(cached_edge, "to")) : UINT32_MAX;
+      if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != (destination == ONIBI_ACCEPT_STATE ? header.state_count - 1 : destination))
+        rb_raise(rb_eArgError, "cached RSeq edge disagrees with physical edge");
+    }
   }
   if (NIL_P(semantic_start_edges) || !RB_TYPE_P(semantic_start_edges, T_ARRAY) ||
       RARRAY_LEN(semantic_start_edges) != header.start_edge_count)
