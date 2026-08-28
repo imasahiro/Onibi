@@ -220,6 +220,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
   end
 
+  def test_rseq_subprograms_use_typed_records
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "OnibiRSeqSubprogramVector subprogram_records"
+    assert_includes lowerer, "physical_subprograms[i].entry = record->entry"
+    assert_includes lowerer, "onibi_rseq_subprogram_vector_free(&subprogram_records)"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"

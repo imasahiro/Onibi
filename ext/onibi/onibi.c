@@ -1277,6 +1277,8 @@ typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPaylo
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
 typedef struct { VALUE payload; int byte; int ignorecase; } OnibiRSeqLiteralPayloadEntry;
 typedef struct { OnibiRSeqLiteralPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqLiteralPayloadVector;
+typedef struct { VALUE descriptor; OnibiStateId entry; OnibiStateId accept; uint32_t flags; } OnibiRSeqSubprogramEntry;
+typedef struct { OnibiRSeqSubprogramEntry *entries; size_t count; size_t capacity; } OnibiRSeqSubprogramVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1495,6 +1497,25 @@ static void onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector
   };
 }
 static void onibi_rseq_literal_payload_vector_free(OnibiRSeqLiteralPayloadVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_subprogram_vector_init(OnibiRSeqSubprogramVector *vector) {
+  vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_subprogram_vector_push(OnibiRSeqSubprogramVector *vector, VALUE descriptor) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 4 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "RSeq subprogram vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiRSeqSubprogramEntry, next); vector->capacity = next;
+  }
+  vector->entries[vector->count++] = (OnibiRSeqSubprogramEntry){
+    descriptor,
+    (OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_entry)),
+    (OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_accept)),
+    (uint32_t)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_flags))
+  };
+}
+static void onibi_rseq_subprogram_vector_free(OnibiRSeqSubprogramVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -2967,6 +2988,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     };
     onibi_gir_state_vector_push(&state_records, record, state_roots);
   }
+  OnibiRSeqSubprogramVector subprogram_records;
+  onibi_rseq_subprogram_vector_init(&subprogram_records);
+  for (long i = 0; i < RARRAY_LEN(subprograms); i++)
+    onibi_rseq_subprogram_vector_push(&subprogram_records, rb_ary_entry(subprograms, i));
   long accept_state = NUM2LONG(onibi_hash_value_id(graph, id_key_accept));
   if (accept_state < 0 || accept_state >= state_count)
     rb_raise(rb_eArgError, "RSeq lowering received an invalid accept state");
@@ -3105,7 +3130,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
   uint64_t literal_desc_size = (uint64_t)literal_count * sizeof(OnibiLiteralDesc);
   uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
-  uint64_t subprogram_section_size = (uint64_t)RARRAY_LEN(subprograms) * sizeof(OnibiSubprogramDesc);
+  uint64_t subprogram_section_size = (uint64_t)subprogram_records.count * sizeof(OnibiSubprogramDesc);
   uint64_t physical_size = sizeof(OnibiRSeqHeader) +
     (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count +
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
@@ -3143,7 +3168,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(id_key_class_count), UINT2NUM(class_count));
   rb_hash_aset(header, ID2SYM(id_key_capture_count), UINT2NUM(capture_count));
   rb_hash_aset(header, ID2SYM(id_key_semantic_capture_count), UINT2NUM(capture_count));
-  rb_hash_aset(header, ID2SYM(id_key_subprogram_count), UINT2NUM((uint32_t)RARRAY_LEN(subprograms)));
+  rb_hash_aset(header, ID2SYM(id_key_subprogram_count), UINT2NUM((uint32_t)subprogram_records.count));
   rb_hash_aset(header, ID2SYM(id_key_counter_count), UINT2NUM(counter_count));
   rb_hash_aset(header, ID2SYM(id_key_literal_count), UINT2NUM(literal_count));
   rb_hash_aset(header, ID2SYM(id_key_version), INT2NUM(1));
@@ -3161,7 +3186,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
   physical.features = features;
   physical.class_count = class_count;
-  physical.subprogram_count = (uint32_t)RARRAY_LEN(subprograms);
+  physical.subprogram_count = (uint32_t)subprogram_records.count;
   physical.capture_count = capture_count;
   physical.semantic_capture_count = capture_count;
   physical.counter_count = counter_count;
@@ -3343,11 +3368,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   OnibiSubprogramDesc *physical_subprograms =
     (OnibiSubprogramDesc *)(RSTRING_PTR(blob) + physical.subprograms_offset);
-  for (long i = 0; i < RARRAY_LEN(subprograms); i++) {
-    VALUE descriptor = rb_ary_entry(subprograms, i);
-    physical_subprograms[i].entry = (OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_entry));
-    physical_subprograms[i].accept = (OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_accept));
-    physical_subprograms[i].flags = (uint32_t)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_flags));
+  for (size_t i = 0; i < subprogram_records.count; i++) {
+    OnibiRSeqSubprogramEntry *record = &subprogram_records.entries[i];
+    physical_subprograms[i].entry = record->entry;
+    physical_subprograms[i].accept = record->accept;
+    physical_subprograms[i].flags = record->flags;
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
@@ -3371,6 +3396,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   onibi_gir_edge_vector_free(&r_edge_records);
   onibi_gir_edge_vector_free(&r_start_edge_records);
   onibi_gir_state_vector_free(&state_records);
+  onibi_rseq_subprogram_vector_free(&subprogram_records);
   return result;
 }
 
