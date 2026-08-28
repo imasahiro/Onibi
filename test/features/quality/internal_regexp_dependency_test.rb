@@ -406,6 +406,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes parser_class, "rb_ary_new_capa(class_capacity)"
     assert_includes parser_class, "rb_ary_new_capa(part_end - part_begin + 2)"
     assert_includes parser_range, "rb_ary_new_capa(end > begin ? end - begin : 0)"
+    assert_includes parser_range, "OnibiTokenKind kind = onibi_token_kind_code(token);"
   end
 
   def test_parser_uses_cached_id_accessor_for_token_fields

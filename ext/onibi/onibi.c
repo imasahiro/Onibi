@@ -1086,7 +1086,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     VALUE token = rb_ary_entry(tokens, i);
-    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
+    OnibiTokenKind kind = onibi_token_kind_code(token);
     if (kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
         kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_ABSENCE_START ||
         kind == ONIBI_TOKEN_CONDITIONAL_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
