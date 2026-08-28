@@ -393,6 +393,7 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::VM.execute(tagged, "xxabcxx", :TAGGED_ORDERED)
     assert Onibi::VM.execute(dynamic, "xxaaxx", :DYNAMIC)
     assert_raises(ArgumentError) { Onibi::VM.execute(regular, "abc", :UNKNOWN) }
+    assert_raises(ArgumentError) { Onibi::VM.execute(regular.merge(blob: "bad"), "abc", :REGULAR_FAST) }
   end
 
   def test_regexp_compiles_pipeline_once_at_initialize

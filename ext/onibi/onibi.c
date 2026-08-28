@@ -1421,8 +1421,24 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
   return 0;
 }
 
+static void onibi_rseq_validate(VALUE rseq) {
+  VALUE blob = onibi_hash_value(rseq, "blob");
+  if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader))
+    rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
+  OnibiRSeqHeader header;
+  memcpy(&header, RSTRING_PTR(blob), sizeof(header));
+  if (header.magic != ONIBI_RSEQ_MAGIC || header.version != ONIBI_RSEQ_VERSION ||
+      header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
+      header.states_offset < sizeof(OnibiRSeqHeader) ||
+      header.edges_offset < header.states_offset ||
+      header.actions_offset < header.edges_offset ||
+      header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size)
+    rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
+}
+
 static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
   StringValue(str);
+  onibi_rseq_validate(rseq);
   if (execution_class != ID2SYM(rb_intern("REGULAR_FAST")) &&
       execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
