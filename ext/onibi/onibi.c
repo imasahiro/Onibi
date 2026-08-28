@@ -1901,10 +1901,21 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE semantic = onibi_hash_value(rseq, "header");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
+  if (NIL_P(semantic) ||
+      NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
+      NUM2UINT(onibi_hash_value(semantic, "edge_count")) != header.edge_count - header.start_edge_count ||
+      NUM2UINT(onibi_hash_value(semantic, "action_count")) != header.action_count ||
+      NUM2UINT(onibi_hash_value(semantic, "class_count")) != header.class_count ||
+      NUM2UINT(onibi_hash_value(semantic, "capture_count")) != header.capture_count ||
+      NUM2UINT(onibi_hash_value(semantic, "counter_count")) != header.counter_count ||
+      NUM2UINT(onibi_hash_value(semantic, "start_edge_count")) != header.start_edge_count ||
+      NUM2UINT(onibi_hash_value(semantic, "blob_size")) != header.blob_size)
+    rb_raise(rb_eArgError, "RSeq semantic and physical headers disagree");
   if (header.magic != ONIBI_RSEQ_MAGIC || header.version != ONIBI_RSEQ_VERSION ||
       header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
       header.states_offset < sizeof(OnibiRSeqHeader) ||
