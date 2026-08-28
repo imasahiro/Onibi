@@ -449,8 +449,10 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes initialize, "int source_encoding_index = rb_enc_get_index(source);"
     assert_equal 1, initialize.scan("rb_enc_get_index(source)").length
     assert_includes match, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
+    assert_includes match, "int str_ascii_only = RB_TYPE_P(str, T_STRING) && rb_enc_str_asciionly_p(str);"
     assert_equal 1, match.scan("rb_enc_get_index(str)").length
     assert_includes match_p, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
+    assert_includes match_p, "int str_ascii_only = RB_TYPE_P(str, T_STRING) && rb_enc_str_asciionly_p(str);"
     assert_equal 1, match_p.scan("rb_enc_get_index(str)").length
     assert_includes vm_match_p, "int str_encoding_index = rb_enc_get_index(str);"
     assert_equal 1, vm_match_p.scan("rb_enc_get_index(str)").length
