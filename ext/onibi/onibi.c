@@ -1932,7 +1932,9 @@ static void onibi_rseq_validate(VALUE rseq) {
       (header.literals_offset && header.literals_offset < header.classes_offset) ||
       (header.descriptors_offset && header.descriptors_offset < header.literals_offset) ||
       header.classes_offset > header.blob_size || header.literals_offset > header.blob_size ||
-      header.descriptors_offset > header.blob_size)
+      header.descriptors_offset > header.blob_size ||
+      header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
+      header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
 }
 
