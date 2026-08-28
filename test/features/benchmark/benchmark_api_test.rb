@@ -458,6 +458,17 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :REGULAR_FAST, Onibi::Regexp.new("(?=a)b").execution_class.to_sym
   end
 
+  def test_class_lookaround_uses_a_compiled_bitmap_assertion
+    ahead = Onibi::Regexp.new("(?=[ab])a")
+    behind = Onibi::Regexp.new("(?<=[ab])a")
+
+    assert ahead.program_cached?
+    assert behind.program_cached?
+    assert ahead.vm_match?("ca")
+    assert behind.vm_match?("ba")
+    refute behind.vm_match?("ca")
+  end
+
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
     lazy = Onibi::Regexp.new("a+?")
     possessive = Onibi::Regexp.new("a++")

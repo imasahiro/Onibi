@@ -1485,9 +1485,17 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (!RB_TYPE_P(children, T_ARRAY))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE bytes = rb_str_new(NULL, 0);
+    VALUE bitmap = Qnil;
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
-      if (onibi_symbol_value(child, "type") != ID2SYM(rb_intern("literal")))
+      VALUE child_type = onibi_symbol_value(child, "type");
+      if (child_type == ID2SYM(rb_intern("character_class")) ||
+          child_type == ID2SYM(rb_intern("class_intersection"))) {
+        if (RARRAY_LEN(children) != 1) rb_raise(eRegexpError, "class lookaround must have fixed literal width");
+        bitmap = onibi_class_bitmap(child, builder->ignorecase);
+        continue;
+      }
+      if (child_type != ID2SYM(rb_intern("literal")))
         rb_raise(eRegexpError, "lookahead body is not a literal sequence");
       rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
     }
@@ -1498,6 +1506,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(assertion_op)));
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
+    if (!NIL_P(bitmap)) rb_hash_aset(action, ID2SYM(rb_intern("bitmap")), bitmap);
     onibi_fragment_t result = onibi_fragment_empty();
     result.nullable = 1;
     rb_ary_push(result.start_actions, action);
@@ -2815,12 +2824,28 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
     if (op == rb_intern("ASSERT_LOOKAHEAD")) {
+      VALUE bitmap = onibi_hash_value(action, "bitmap");
+      if (!NIL_P(bitmap)) {
+        int hit = pos < length && RSTRING_LEN(bitmap) == 32 &&
+          (((unsigned char *)RSTRING_PTR(bitmap))[(unsigned char)RSTRING_PTR(subject)[pos] >> 3] &
+           (1U << ((unsigned char)RSTRING_PTR(subject)[pos] & 7))) != 0;
+        if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        continue;
+      }
       VALUE bytes = onibi_hash_value(action, "bytes");
       long width = RSTRING_LEN(bytes);
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
     }
     if (op == rb_intern("ASSERT_LOOKBEHIND")) {
+      VALUE bitmap = onibi_hash_value(action, "bitmap");
+      if (!NIL_P(bitmap)) {
+        int hit = pos > 0 && RSTRING_LEN(bitmap) == 32 &&
+          (((unsigned char *)RSTRING_PTR(bitmap))[(unsigned char)RSTRING_PTR(subject)[pos - 1] >> 3] &
+           (1U << ((unsigned char)RSTRING_PTR(subject)[pos - 1] & 7))) != 0;
+        if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        continue;
+      }
       VALUE bytes = onibi_hash_value(action, "bytes");
       long width = RSTRING_LEN(bytes);
       int hit = pos >= width && memcmp(RSTRING_PTR(subject) + pos - width, RSTRING_PTR(bytes), (size_t)width) == 0;
