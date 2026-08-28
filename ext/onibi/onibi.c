@@ -1578,7 +1578,12 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE class_tokens = obj->tokens;
   for (long i = 0; i < RARRAY_LEN(class_tokens); i++) {
     ID kind = onibi_token_kind(rb_ary_entry(class_tokens, i));
-    if (kind == rb_intern("backref")) {
+    if (kind == rb_intern("backref") || kind == rb_intern("subroutine")) {
+      obj->execution_class = rb_str_new_cstr("DYNAMIC");
+      rb_obj_freeze(obj->execution_class);
+      break;
+    }
+    if (kind == rb_intern("atomic_start")) {
       obj->execution_class = rb_str_new_cstr("DYNAMIC");
       rb_obj_freeze(obj->execution_class);
       break;

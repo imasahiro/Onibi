@@ -362,6 +362,11 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?>a)")
     refute regexp.program_cached?
     assert regexp.match?("a")
+    assert_equal :DYNAMIC, regexp.execution_class.to_sym
+  end
+
+  def test_literal_lookaround_stays_regular_when_no_tag_state_is_needed
+    assert_equal :REGULAR_FAST, Onibi::Regexp.new("(?=a)b").execution_class.to_sym
   end
 
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
