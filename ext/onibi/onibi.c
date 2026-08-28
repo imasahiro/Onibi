@@ -1258,7 +1258,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   if (class_pair) simple = 1;
   long pipes = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
   if (pipes > 1) simple = 0;
-  int pipeline_options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
+  int pipeline_options = obj->options;
   if (pipeline_options != 0 && !(pipeline_options == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
       !(pipeline_options == 1 && literal_only)) simple = 0;
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
