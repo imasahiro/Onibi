@@ -447,7 +447,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes matcher, "rb_intern_str"
     assert_includes matcher, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
     assert_operator matcher.index("VALUE name = onibi_hash_value_id(payload, id_key_name);"), :>,
-      matcher.index("if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex())")
+      matcher.index("if (ctype >= 0 && encoding_index == rb_utf8_encindex())")
+    assert_includes matcher, "int encoding_index = rb_enc_get_index(str);"
   end
 
   def test_class_bitmap_caches_child_escape_byte

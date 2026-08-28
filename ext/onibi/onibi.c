@@ -4732,8 +4732,9 @@ static int onibi_ctype_casefold_hit(VALUE str, long pos, OnigCodePoint code, int
 
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
   VALUE class_mode = onibi_hash_value_id(payload, id_key_class_mode);
+  int encoding_index = rb_enc_get_index(str);
   if (!NIL_P(class_mode) && NUM2INT(class_mode) == ONIBI_CLASS_MODE_INTERSECTION &&
-      rb_enc_get_index(str) == rb_utf8_encindex()) {
+      encoding_index == rb_utf8_encindex()) {
     VALUE operands = onibi_hash_value_id(payload, id_key_operands);
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;
     long common_width = 0;
@@ -4754,7 +4755,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
   }
   VALUE ctype_value = onibi_hash_value_id(payload, id_key_ctype);
   int ctype = NIL_P(ctype_value) ? -1 : NUM2INT(ctype_value);
-  if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex()) {
+  if (ctype >= 0 && encoding_index == rb_utf8_encindex()) {
     if (pos > 0 && ((unsigned char)RSTRING_PTR(str)[pos] & 0xc0) == 0x80 &&
         (((unsigned char)RSTRING_PTR(str)[pos - 1] & 0xc0) == 0x80 || (unsigned char)RSTRING_PTR(str)[pos - 1] >= 0xc0)) return 0;
     OnigCodePoint code; long length = 0;
@@ -4767,7 +4768,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     return hit;
   }
   VALUE name = onibi_hash_value_id(payload, id_key_name);
-  if (NIL_P(name) && !rb_enc_str_asciionly_p(str) && rb_enc_get_index(str) != rb_ascii8bit_encindex()) {
+  if (NIL_P(name) && !rb_enc_str_asciionly_p(str) && encoding_index != rb_ascii8bit_encindex()) {
     VALUE children = onibi_hash_value_id(payload, id_key_children);
     VALUE ranges = onibi_hash_value_id(payload, id_key_ranges);
     if (RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY)) {
