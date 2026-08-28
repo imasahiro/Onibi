@@ -181,7 +181,7 @@ The remaining compiler containers have three separate roles:
 | --- | --- | --- |
 | fragment `starts`/`exits` | Ordered state-ID sets | Owned `OnibiIdVector` values with explicit move and append operations |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
-| capture and exit guards | State-ID lookup during edge creation | C guard vectors with cached action counts; edge composition appends into one pre-sized Ruby adapter, while action lists remain Ruby-backed |
+| capture and exit guards | State-ID lookup during edge creation | C guard vectors with C-owned action values and cached counts; Ruby action arrays are materialized only at edge publication |
 | capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | C vectors during construction; materialize frozen Ruby adapters once at the GIR boundary |
 
@@ -215,7 +215,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | RSeq subprogram descriptors | No | `OnibiRSeqSubprogramVector` during lowering | Entry, accept, and flags are numeric execution fields. The Ruby descriptor array remains only as the semantic adapter. |
 | RSeq physical execution view | No | Pending: `OnibiRSeqView`-backed VM entry | `onibi_rseq_physical_graph` still creates a Ruby Hash adapter for tagged and dynamic walkers, but it now copies action ranges from cached edge lengths. Regular fast paths already read the blob directly; capture walkers still require a C view migration. |
 | fragment start/exit IDs | No | `OnibiIdVector` | IDs are numeric and ordered. Fragment composition, guard insertion, and GIR connections use C vectors. Ruby arrays are not used for fragment state IDs. |
-| fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard lookup now uses an owned C vector of state IDs and Ruby action arrays. |
+| fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard action lists now use C-owned VALUE vectors; fragment lists remain the next migration boundary. |
 | RSeq semantic program | No public API | Partial C lowering records; immutable Ruby adapter at publication | VM reads the physical blob. Payload indexes and temporary edge records use C vectors; semantic arrays remain only for validation and diagnostics. |
 | regular VM visited set | No | C bitset with owned large-set storage | Numeric state/position pairs use a C bitset. Sets up to 64 MiB use owned C memory when stack storage is too large; counter-bearing paths retain a safe Ruby fallback. |
 | tagged VM counter maps | No | Pending: C counter snapshots | Counter slots are numeric and private. Current Ruby Hash use occurs in call frames and ordered edge branches; one migration must cover both paths and the visited-key identity. |

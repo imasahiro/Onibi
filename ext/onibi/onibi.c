@@ -1262,9 +1262,9 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 }
 
 typedef struct { OnibiIdVector starts; OnibiIdVector exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { OnibiStateId state; VALUE actions; uint32_t action_count; } OnibiGuardEntry;
-typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
+typedef struct { OnibiStateId state; OnibiValueVector actions; uint32_t action_count; } OnibiGuardEntry;
+typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
 typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t payload_index; } OnibiGirStateEntry;
@@ -1340,6 +1340,15 @@ static void onibi_value_vector_free(OnibiValueVector *vector) {
   xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
 
+static void onibi_value_vector_append_array(OnibiValueVector *destination, VALUE source, VALUE roots) {
+  for (long i = 0; i < RARRAY_LEN(source); i++)
+    onibi_value_vector_push(destination, rb_ary_entry(source, i), roots);
+}
+
+static void onibi_append_vector_values(VALUE destination, const OnibiValueVector *source) {
+  for (size_t i = 0; i < source->count; i++) rb_ary_push(destination, source->items[i]);
+}
+
 static void onibi_guard_vector_init(OnibiGuardVector *vector) {
   vector->entries = NULL; vector->count = 0; vector->capacity = 0;
 }
@@ -1353,12 +1362,8 @@ static const OnibiGuardEntry *onibi_guard_vector_find_entry(const OnibiGuardVect
 static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
-      VALUE merged = rb_ary_new_capa((long)vector->entries[i].action_count + RARRAY_LEN(actions));
-      onibi_append_values(merged, vector->entries[i].actions);
-      onibi_append_values(merged, actions);
-      vector->entries[i].actions = merged;
-      vector->entries[i].action_count = (uint32_t)RARRAY_LEN(merged);
-      rb_ary_push(roots, merged);
+      onibi_value_vector_append_array(&vector->entries[i].actions, actions, roots);
+      vector->entries[i].action_count = (uint32_t)vector->entries[i].actions.count;
       return;
     }
   }
@@ -1369,13 +1374,14 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
     vector->capacity = next;
   }
   vector->entries[vector->count].state = state;
-  vector->entries[vector->count].actions = rb_ary_dup(actions);
-  vector->entries[vector->count].action_count = (uint32_t)RARRAY_LEN(actions);
-  rb_ary_push(roots, vector->entries[vector->count].actions);
+  onibi_value_vector_init(&vector->entries[vector->count].actions);
+  onibi_value_vector_append_array(&vector->entries[vector->count].actions, actions, roots);
+  vector->entries[vector->count].action_count = (uint32_t)vector->entries[vector->count].actions.count;
   vector->count++;
 }
 
 static void onibi_guard_vector_free(OnibiGuardVector *vector) {
+  for (size_t i = 0; i < vector->count; i++) onibi_value_vector_free(&vector->entries[i].actions);
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 
@@ -1798,9 +1804,9 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
   uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
   VALUE actions = rb_ary_new_capa((long)capture_count + (long)exit_count + (long)capture_count);
-  if (exit_guard) onibi_append_values(actions, exit_guard->actions);
-  if (capture_guard) onibi_append_values(actions, capture_guard->actions);
-  if (capture_guard) onibi_append_values(actions, capture_guard->actions);
+  if (exit_guard) onibi_append_vector_values(actions, &exit_guard->actions);
+  if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
+  if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
 
@@ -1826,10 +1832,10 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
     rb_raise(rb_eArgError, "GIR action list is too large");
   VALUE merged = rb_ary_new_capa((long)capture_count + (long)exit_count +
                                  RARRAY_LEN(actions) + (long)capture_count);
-  if (exit_guard) onibi_append_values(merged, exit_guard->actions);
-  if (capture_guard) onibi_append_values(merged, capture_guard->actions);
+  if (exit_guard) onibi_append_vector_values(merged, &exit_guard->actions);
+  if (capture_guard) onibi_append_vector_values(merged, &capture_guard->actions);
   onibi_append_values(merged, actions);
-  if (capture_guard) onibi_append_values(merged, capture_guard->actions);
+  if (capture_guard) onibi_append_vector_values(merged, &capture_guard->actions);
   actions = merged;
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
@@ -2922,9 +2928,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
       onibi_guard_vector_find_entry(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
     VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) +
                                     (capture_guard ? (long)capture_guard->action_count : 0));
-    VALUE guard = capture_guard ? capture_guard->actions : Qnil;
     onibi_append_values(actions, fragment.start_actions);
-    if (!NIL_P(guard)) onibi_append_values(actions, guard);
+    if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
     rb_hash_aset(edge, ID2SYM(id_key_to), destination);
     rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
