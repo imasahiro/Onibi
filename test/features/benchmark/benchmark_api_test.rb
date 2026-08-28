@@ -702,6 +702,11 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("aaaa")
   end
 
+  def test_vm_rejects_invalid_subject_encoding
+    invalid = [0xff].pack("C").force_encoding(Encoding::UTF_8)
+    assert_raises(ArgumentError) { Onibi::Regexp.new(".").vm_match?(invalid) }
+  end
+
   def test_vm_keeps_required_suffix_after_nullable_prefix
     optional = Onibi::Regexp.new("a?b")
     repeated = Onibi::Regexp.new("a*b")
