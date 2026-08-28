@@ -220,6 +220,13 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
   end
 
+  def test_ast_audit_defines_typed_node_migration_boundary
+    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
+    assert_includes document, "Pending: typed C node arena"
+    assert_includes document, "The first AST migration unit is the node arena"
+    assert_includes document, "OnibiAstKind"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]

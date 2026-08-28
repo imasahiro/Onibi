@@ -193,7 +193,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | Container | Ruby API required | C-struct decision | Reason |
 | --- | --- | --- | --- |
 | token stream (`Array<Hash>`) | No | Convert to a token vector | Each item has a fixed kind, byte span, and optional payload. The parser is the only consumer. |
-| AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
+| AST (`Hash`/`Array`) | No | Pending: typed C node arena | Node kinds and links are fixed. Required fields are `type_code`, `start`, `end`, `children`, `branches`, `body`, `atom`, `yes`, `no`, and typed scalar payloads. Ruby Hash lookup is not needed after parsing. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
 | RSeq class and literal payload indexes | No | C `OnibiValueVector` during lowering | Payload identity is used only for deduplication and blob indexing. Ruby arrays are not needed for this temporary index. |
@@ -208,6 +208,23 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | tagged VM counter maps | No | Pending C counter snapshots | Frame branching duplicates numeric counter values in Ruby Hash objects. The conversion must cover call frames and ordered edge branches together. |
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
+
+### AST field audit
+
+The AST is not part of the `Regexp` public API. The compiler uses these fields:
+
+| Field | Type needed by compiler | C-node decision |
+| --- | --- | --- |
+| `type_code` | fixed enum | `OnibiAstKind` member |
+| `start`, `end` | byte offsets | `long` members |
+| `children`, `branches` | ordered node lists | C vectors of node IDs |
+| `body`, `atom`, `yes`, `no` | optional node links | node IDs, with `-1` for absent |
+| `byte`, `min`, `max`, `slot`, `capture`, `subprogram` | integer scalars | fixed integer members |
+| `name`, `name_id`, `bytes`, `ranges`, `predicates` | Ruby or encoded payloads | owned VALUE payload fields until GIR publication |
+
+The first AST migration unit is the node arena and its ordered child vectors.
+Payload VALUE fields stay GC-rooted in the arena. A frozen Ruby AST adapter is
+created only when a diagnostic or compatibility caller requests it.
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
 The first conversion is complete for parser and compiler result adapters. The
