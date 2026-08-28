@@ -31,6 +31,13 @@ static VALUE onibi_hash_value(VALUE hash, const char *name);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype(VALUE name);
+typedef enum {
+  ONIBI_POSIX_UNKNOWN = 0,
+  ONIBI_POSIX_ALPHA, ONIBI_POSIX_DIGIT, ONIBI_POSIX_ALNUM,
+  ONIBI_POSIX_SPACE, ONIBI_POSIX_BLANK, ONIBI_POSIX_LOWER,
+  ONIBI_POSIX_UPPER, ONIBI_POSIX_WORD, ONIBI_POSIX_XDIGIT
+} OnibiPosixKind;
+static OnibiPosixKind onibi_posix_kind(VALUE name);
 
 static VALUE onibi_rseq_trusted_marker(VALUE self) {
   (void)self;
@@ -627,10 +634,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     if (kind == rb_intern("class_negate")) { negated = 1; continue; }
     if (kind == rb_intern("posix_class")) {
       VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
-      const char *posix = StringValueCStr(name);
-      if (strcmp(posix, "alpha") != 0 && strcmp(posix, "digit") != 0 && strcmp(posix, "alnum") != 0 &&
-          strcmp(posix, "space") != 0 && strcmp(posix, "blank") != 0 && strcmp(posix, "lower") != 0 &&
-          strcmp(posix, "upper") != 0 && strcmp(posix, "word") != 0 && strcmp(posix, "xdigit") != 0)
+      if (onibi_posix_kind(name) == ONIBI_POSIX_UNKNOWN)
         rb_raise(eRegexpError, "unknown POSIX character class");
       rb_ary_push(children, token);
       continue;
@@ -1096,14 +1100,6 @@ static int onibi_ascii_property_name_p(VALUE name) {
   if (NIL_P(name)) return 0;
   return onibi_ascii_property_kind(name) != ONIBI_ASCII_PROP_UNKNOWN;
 }
-
-typedef enum {
-  ONIBI_POSIX_UNKNOWN = 0,
-  ONIBI_POSIX_ALPHA, ONIBI_POSIX_DIGIT, ONIBI_POSIX_ALNUM,
-  ONIBI_POSIX_SPACE, ONIBI_POSIX_BLANK, ONIBI_POSIX_LOWER,
-  ONIBI_POSIX_UPPER, ONIBI_POSIX_WORD, ONIBI_POSIX_XDIGIT
-} OnibiPosixKind;
-static OnibiPosixKind onibi_posix_kind(VALUE name);
 
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
@@ -1831,7 +1827,7 @@ skip_utf8_range_expansion:
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
     if (RTEST(rb_hash_aref(builder->active_subroutines, name)))
-      rb_raise(eRegexpError, "recursive subroutine requires a call frame");
+      rb_raise(eRegexpError, "recursive subroutine requires capture-aware call frame");
     VALUE existing = rb_hash_aref(builder->subprogram_ids, name);
     long subprogram_id;
     if (!NIL_P(existing)) subprogram_id = NUM2LONG(existing);
@@ -3663,20 +3659,30 @@ static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
 }
 
 static int onibi_unicode_ctype(VALUE name) {
-  const char *property = StringValueCStr(name);
-  if (strcmp(property, "Alpha") == 0 || strcmp(property, "alpha") == 0 || strcmp(property, "Letter") == 0) return ONIGENC_CTYPE_ALPHA;
-  if (strcmp(property, "Digit") == 0 || strcmp(property, "digit") == 0) return ONIGENC_CTYPE_DIGIT;
-  if (strcmp(property, "Alnum") == 0 || strcmp(property, "alnum") == 0) return ONIGENC_CTYPE_ALNUM;
-  if (strcmp(property, "Lower") == 0 || strcmp(property, "lower") == 0) return ONIGENC_CTYPE_LOWER;
-  if (strcmp(property, "Upper") == 0 || strcmp(property, "upper") == 0) return ONIGENC_CTYPE_UPPER;
-  if (strcmp(property, "Space") == 0 || strcmp(property, "space") == 0) return ONIGENC_CTYPE_SPACE;
-  if (strcmp(property, "Blank") == 0 || strcmp(property, "blank") == 0) return ONIGENC_CTYPE_BLANK;
-  if (strcmp(property, "Word") == 0 || strcmp(property, "word") == 0) return ONIGENC_CTYPE_WORD;
-  if (strcmp(property, "XDigit") == 0 || strcmp(property, "xdigit") == 0) return ONIGENC_CTYPE_XDIGIT;
-  if (strcmp(property, "Cntrl") == 0) return ONIGENC_CTYPE_CNTRL;
-  if (strcmp(property, "Print") == 0) return ONIGENC_CTYPE_PRINT;
-  if (strcmp(property, "Graph") == 0) return ONIGENC_CTYPE_GRAPH;
-  if (strcmp(property, "Punct") == 0) return ONIGENC_CTYPE_PUNCT;
+  if (NIL_P(name)) return -1;
+  static ID ids[26];
+  static int ready = 0;
+  if (!ready) {
+    const char *names[] = {"Alpha", "alpha", "Letter", "Digit", "digit", "Alnum", "alnum",
+                           "Lower", "lower", "Upper", "upper", "Space", "space", "Blank", "blank",
+                           "Word", "word", "XDigit", "xdigit", "Cntrl", "Print", "Graph", "Punct"};
+    for (size_t i = 0; i < 23; i++) ids[i] = rb_intern(names[i]);
+    ready = 1;
+  }
+  ID property = rb_intern_str(name);
+  if (property == ids[0] || property == ids[1] || property == ids[2]) return ONIGENC_CTYPE_ALPHA;
+  if (property == ids[3] || property == ids[4]) return ONIGENC_CTYPE_DIGIT;
+  if (property == ids[5] || property == ids[6]) return ONIGENC_CTYPE_ALNUM;
+  if (property == ids[7] || property == ids[8]) return ONIGENC_CTYPE_LOWER;
+  if (property == ids[9] || property == ids[10]) return ONIGENC_CTYPE_UPPER;
+  if (property == ids[11] || property == ids[12]) return ONIGENC_CTYPE_SPACE;
+  if (property == ids[13] || property == ids[14]) return ONIGENC_CTYPE_BLANK;
+  if (property == ids[15] || property == ids[16]) return ONIGENC_CTYPE_WORD;
+  if (property == ids[17] || property == ids[18]) return ONIGENC_CTYPE_XDIGIT;
+  if (property == ids[19]) return ONIGENC_CTYPE_CNTRL;
+  if (property == ids[20]) return ONIGENC_CTYPE_PRINT;
+  if (property == ids[21]) return ONIGENC_CTYPE_GRAPH;
+  if (property == ids[22]) return ONIGENC_CTYPE_PUNCT;
   return -1;
 }
 
@@ -3799,6 +3805,10 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
 
 static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end,
                                     long *matched_start, VALUE *matched_captures);
+static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
+                                         VALUE initial_captures, VALUE initial_tags,
+                                         long *matched_end, long *matched_start,
+                                         VALUE *matched_captures);
 static int onibi_hash_copy_i(VALUE key, VALUE value, VALUE arg) {
   rb_hash_aset(arg, key, value);
   return ST_CONTINUE;
@@ -3888,7 +3898,8 @@ static long onibi_grapheme_width(VALUE str, long pos) {
    called graph shares immutable states and outgoing edges with its caller. */
 static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprograms,
                                     VALUE str, long subprogram_id,
-                                    long start, long *matched_end, VALUE *matched_captures) {
+                                    long start, VALUE initial_captures, VALUE initial_tags,
+                                    long *matched_end, VALUE *matched_captures) {
   if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
       subprogram_id >= RARRAY_LEN(subprograms)) return 0;
   if (onibi_call_depth >= 256U) rb_raise(eRegexpError, "subroutine call depth exceeded");
@@ -3910,7 +3921,8 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
   long nested_start = 0;
   VALUE captures = Qnil;
   long nested_end = 0;
-  int matched = onibi_gir_match_captures(nested, str, start, &nested_end, &nested_start, &captures);
+  int matched = onibi_gir_match_captures_seed(nested, str, start, initial_captures,
+                                              initial_tags, &nested_end, &nested_start, &captures);
   onibi_call_depth--;
   if (!matched) return 0;
   *matched_end = nested_end;
@@ -4047,13 +4059,13 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     long probe_end = pos;
     VALUE ignored = Qnil;
     if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
-                                 &probe_end, &ignored)) return 0;
+                                 captures, tags, &probe_end, &ignored)) return 0;
   } else if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC")) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
     VALUE called_captures = Qnil;
-    if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos, &pos,
-                                  &called_captures)) return 0;
+    if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
+                                  captures, tags, &pos, &called_captures)) return 0;
     if (RB_TYPE_P(called_captures, T_HASH)) {
       VALUE merged = rb_hash_dup(captures);
       rb_hash_foreach(called_captures, onibi_hash_copy_i, merged);
@@ -4112,15 +4124,17 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   return 0;
 }
 
-static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end,
-                                    long *matched_start, VALUE *matched_captures) {
+static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
+                                         VALUE initial_captures, VALUE initial_tags,
+                                         long *matched_end, long *matched_start,
+                                         VALUE *matched_captures) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE outgoing = onibi_hash_value(graph, "outgoing");
   VALUE starts = onibi_hash_value(graph, "start_edges");
   VALUE visited = rb_hash_new();
-  VALUE captures = rb_hash_new();
+  VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
   VALUE counters = rb_hash_new();
-  VALUE tags = Qnil;
+  VALUE tags = initial_tags;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
@@ -4135,6 +4149,12 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
                                matched_end, matched_start, matched_captures)) return 1;
   }
   return 0;
+}
+
+static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end,
+                                    long *matched_start, VALUE *matched_captures) {
+  return onibi_gir_match_captures_seed(graph, str, start, Qnil, Qnil,
+                                       matched_end, matched_start, matched_captures);
 }
 
 static void onibi_rseq_validate(VALUE rseq) {
