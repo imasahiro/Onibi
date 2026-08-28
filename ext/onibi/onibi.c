@@ -1381,9 +1381,9 @@ static int onibi_ast_has_capture(VALUE ast) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_CAPTURE) return 1;
-  const char *keys[] = { "body", "children", "branches", "atom" };
+  const ID keys[] = { id_key_body, id_key_children, id_key_branches, id_key_atom };
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_has_capture(onibi_hash_value(ast, keys[i]))) return 1;
+    if (onibi_ast_has_capture(onibi_hash_value_id(ast, keys[i]))) return 1;
   return 0;
 }
 
@@ -1397,9 +1397,9 @@ static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_SUBROUTINE &&
       rb_equal(onibi_hash_value(ast, "name"), name)) return 1;
-  const char *keys[] = {"body", "children", "branches", "atom"};
+  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_has_subroutine_name(onibi_hash_value(ast, keys[i]), name)) return 1;
+    if (onibi_ast_has_subroutine_name(onibi_hash_value_id(ast, keys[i]), name)) return 1;
   return 0;
 }
 
@@ -1638,9 +1638,9 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
     onibi_collect_captures(onibi_hash_value_id(ast, id_key_body), builder, next_capture);
     return;
   }
-  const char *keys[] = { "body", "children", "branches", "atom", "yes", "no" };
+  const ID keys[] = { id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no };
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-    VALUE child = onibi_hash_value(ast, keys[i]);
+    VALUE child = onibi_hash_value_id(ast, keys[i]);
     if (RB_TYPE_P(child, T_ARRAY))
       for (long j = 0; j < RARRAY_LEN(child); j++) onibi_collect_captures(rb_ary_entry(child, j), builder, next_capture);
     else onibi_collect_captures(child, builder, next_capture);
@@ -3184,9 +3184,9 @@ static int onibi_ast_contains_anchor(VALUE ast) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_ANCHOR) return 1;
-  const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
+  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_contains_anchor(onibi_hash_value(ast, keys[i]))) return 1;
+    if (onibi_ast_contains_anchor(onibi_hash_value_id(ast, keys[i]))) return 1;
   return 0;
 }
 
@@ -3200,9 +3200,9 @@ static int onibi_ast_anchor_repeat(VALUE ast) {
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_QUANTIFIER &&
       onibi_ast_contains_anchor(onibi_hash_value(ast, "atom"))) return 1;
-  const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
+  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_anchor_repeat(onibi_hash_value(ast, keys[i]))) return 1;
+    if (onibi_ast_anchor_repeat(onibi_hash_value_id(ast, keys[i]))) return 1;
   return 0;
 }
 
@@ -3256,9 +3256,9 @@ static int onibi_ast_nullable_absence(VALUE ast) {
     int ignored = 0;
     if (onibi_ast_nullable(onibi_hash_value(ast, "body"), &ignored)) return 1;
   }
-  const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
+  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_nullable_absence(onibi_hash_value(ast, keys[i]))) return 1;
+    if (onibi_ast_nullable_absence(onibi_hash_value_id(ast, keys[i]))) return 1;
   return 0;
 }
 
