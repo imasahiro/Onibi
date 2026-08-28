@@ -196,8 +196,8 @@ each change can preserve ordering and GC tests.
 
 Feature classification now copies the fixed token fields into a short-lived
 `OnibiFeatureTokenVector`. The scanner compares enum kinds, numeric bytes, and
-precomputed property IDs from this C view. Optional Ruby names remain `VALUE`s
-only for later metadata use and stay rooted by the source token array.
+precomputed property IDs and flags from this C view. The vector has no Ruby
+`VALUE` fields; source token Hashes remain the sole temporary Ruby objects.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
