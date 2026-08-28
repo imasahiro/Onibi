@@ -723,6 +723,24 @@ static int onibi_gir_action_valid(ID action) {
     action == rb_intern("TEST_COUNTER_GE");
 }
 
+static void onibi_gir_validate_action_operands(VALUE action) {
+  ID op = SYM2ID(onibi_hash_value(action, "op"));
+  VALUE slot = onibi_hash_value(action, "slot");
+  if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) {
+    if (NIL_P(slot) || NUM2LONG(slot) < 0)
+      rb_raise(eRegexpError, "invalid GIR capture slot");
+  } else if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
+             op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+    if (NIL_P(slot) || NUM2LONG(slot) < 0)
+      rb_raise(eRegexpError, "invalid GIR counter slot");
+  }
+  if (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+    VALUE limit = onibi_hash_value(action, "limit");
+    if (NIL_P(limit) || NUM2LONG(limit) < 0)
+      rb_raise(eRegexpError, "invalid GIR counter limit");
+  }
+}
+
 static void onibi_gir_validate(VALUE graph) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
@@ -759,6 +777,7 @@ static void onibi_gir_validate(VALUE graph) {
       ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
       if (!onibi_gir_action_valid(action))
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
+      onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
     }
   }
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
@@ -772,6 +791,7 @@ static void onibi_gir_validate(VALUE graph) {
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
       if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
+      onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
     }
   }
 }
