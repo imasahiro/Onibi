@@ -165,6 +165,10 @@ The active tokenizer and compiler use `rb_intern_str` only while they build
 numeric name and property IDs. No string ID lookup occurs in the match loop;
 runtime dispatch uses cached enum or ID fields.
 
+The RSeq lowerer now reads C records for state, edge, action, payload, and
+subprogram physicalization. Remaining Ruby array reads in that function are
+limited to immutable semantic adapter validation and initial record import.
+
 Public `Regexp` methods return Ruby values only at the API boundary. Match
 results, named-capture maps, and converted source/options values remain Ruby
 objects because callers can inspect them. Lexer tokens, AST nodes, GIR
