@@ -154,7 +154,7 @@ The Ruby data decision is:
 | tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
 | execution class | C enum | Internal dispatcher choice |
 
-The parser result adapter contains only source metadata, options, and AST.
+The parser result adapter contains only options and AST.
 The tokenizer array is passed directly to the parser and is not retained in
 that result. This avoids a second Ruby reference to the compile-time token
 stream.
