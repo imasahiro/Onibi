@@ -429,6 +429,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 0, end: 4 }, Onibi::Regexp.new("a+?b").vm_match_result("aaab"))
   end
 
+  def test_bounded_lazy_repeat_preserves_exit_priority
+    regexp = Onibi::Regexp.new("a{1,3}?b")
+    assert regexp.program_cached?
+    assert_equal({ start: 0, end: 4 }, regexp.vm_match_result("aaab"))
+    assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("ab"))
+  end
+
   def test_encoding_flags_are_parsed_but_not_sent_to_ascii_rseq
     assert_equal ["fixedencoding"], Onibi::Parser.parse("a", 16)[:options]
     assert_equal ["noencoding"], Onibi::Parser.parse("a", 32)[:options]
