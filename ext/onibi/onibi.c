@@ -1535,14 +1535,6 @@ static onibi_fragment_t onibi_fragment_empty(void) {
   return fragment;
 }
 
-static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
-  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
-  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
-  for (long i = 0; i < exit_count; i++)
-    for (long j = 0; j < start_count; j++)
-      onibi_gir_edge_actions(builder, NUM2LONG(exit_values[i]), NUM2LONG(start_values[j]), actions);
-}
-
 static void onibi_connect_vector_actions(onibi_gir_builder_t *builder,
                                          const OnibiIdVector *exits,
                                          VALUE starts, VALUE actions) {
@@ -1660,7 +1652,6 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload);
-static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions);
 static VALUE onibi_class_payload_with_ctypes(VALUE payload);
 static int onibi_unicode_ctype(VALUE name);
 
@@ -1686,7 +1677,7 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, id_g_accept, Qnil);
   VALUE accept_starts = rb_ary_new_from_args(1, LONG2NUM(accept));
-  onibi_connect_actions(builder, fragment.exits, accept_starts, fragment.pending_actions);
+  onibi_connect_fragment_actions(builder, fragment.exits, accept_starts, fragment.pending_actions, 0);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
   VALUE descriptor = rb_hash_new();
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
@@ -1764,8 +1755,8 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
   }
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, id_g_accept, Qnil);
-  onibi_connect_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
-                        fragment.pending_actions);
+  onibi_connect_fragment_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
+                                 fragment.pending_actions, 0);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
   VALUE descriptor = rb_hash_new();
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
