@@ -366,6 +366,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     }
     if (extended && !in_class && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')) continue;
     VALUE backref_name = Qnil;
+    VALUE backref_number = Qnil;
     VALUE group_name = Qnil;
     VALUE posix_name = Qnil;
     VALUE literal_bytes = Qnil;
@@ -525,7 +526,16 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
           }
         }
       }
-      if (escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
+      if (escaped >= '1' && escaped <= '9' && i + 1 < RSTRING_LEN(src) &&
+          RSTRING_PTR(src)[i + 1] >= '0' && RSTRING_PTR(src)[i + 1] <= '9') {
+        long number = escaped - '0';
+        while (i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' && RSTRING_PTR(src)[i + 1] <= '9') {
+          number = number * 10 + (RSTRING_PTR(src)[++i] - '0');
+        }
+        kind = ONIBI_TOKEN_BACKREF;
+        backref_number = LONG2NUM(number);
+      }
+      if (NIL_P(backref_number) && escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
           RSTRING_PTR(src)[i + 2] >= '0' && RSTRING_PTR(src)[i + 2] <= '7') {
         VALUE decoded = rb_str_new(NULL, 0);
         int value = 0;
@@ -645,16 +655,17 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     }
     if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
-    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(onibi_token_kind_id(kind)));
-    rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
-    rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
-    rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
-    if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name); }
-    if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name); }
+    rb_hash_aset(token, ID2SYM(id_key_kind), ID2SYM(onibi_token_kind_id(kind)));
+    rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(byte));
+    rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(start));
+    rb_hash_aset(token, ID2SYM(id_key_end), LONG2NUM(i + 1));
+    if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(id_key_name), backref_name); }
+    if (!NIL_P(backref_number)) rb_hash_aset(token, ID2SYM(id_key_capture), backref_number);
+    if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(id_key_name), group_name); }
     if (!NIL_P(option_negative_name)) { rb_obj_freeze(option_negative_name); rb_hash_aset(token, ID2SYM(rb_intern("negative_name")), option_negative_name); }
-    if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
-    if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), escape_name); }
-    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(rb_intern("bytes")), literal_bytes); }
+    if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(id_key_name), posix_name); }
+    if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(id_key_name), escape_name); }
+    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(id_key_bytes), literal_bytes); }
     if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
@@ -1007,7 +1018,9 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   }
   if (kind == rb_intern("backref")) {
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
-    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")), LONG2NUM(onibi_token_byte(token) - '0'));
+    VALUE capture_number = rb_hash_aref(token, ID2SYM(id_key_capture));
+    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")),
+                                  NIL_P(capture_number) ? LONG2NUM(onibi_token_byte(token) - '0') : capture_number);
     else rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
   }
   rb_obj_freeze(node);
