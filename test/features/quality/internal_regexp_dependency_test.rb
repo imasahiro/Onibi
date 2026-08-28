@@ -53,6 +53,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/id_a_assert_(?:begin_buffer|end_buffer|begin_line|end_line|lookahead|lookbehind)/, vm)
   end
 
+  def test_compiled_token_view_has_explicit_c_owner
+    source = File.read(EXTENSION_SOURCE)
+
+    assert_includes source, "feature_tokens;"
+    assert_includes source, "feature_token_count;"
+    assert_includes source, "xfree(obj->feature_tokens);"
+    assert_includes source, "onibi_feature_token_bytes(obj->feature_token_count)"
+  end
+
   def test_feature_token_record_has_no_ruby_value_fields
     source = File.read(EXTENSION_SOURCE)
     record = source[/typedef struct(?: OnibiFeatureToken)? \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
