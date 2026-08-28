@@ -67,7 +67,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1896,6 +1896,13 @@ static VALUE onibi_build_program(VALUE argument) {
   return rb_ary_new_from_args(3, parsed, compiled, rseq);
 }
 
+static VALUE onibi_parse_program(VALUE argument) {
+  VALUE source = rb_ary_entry(argument, 0);
+  VALUE options = rb_ary_entry(argument, 1);
+  VALUE tokens = rb_ary_entry(argument, 2);
+  return onibi_parser_parse_internal(source, options, tokens);
+}
+
 static VALUE onibi_make_mri_regexp(VALUE argument) {
   VALUE source = rb_ary_entry(argument, 0);
   VALUE options = rb_ary_entry(argument, 1);
@@ -1909,6 +1916,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   VALUE previous = Qnil;
   obj->has_class_intersection = 0;
   obj->has_nested_class = 0;
+  obj->has_large_repeat = 0;
   obj->has_subroutine = 0;
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
@@ -1919,6 +1927,26 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     if (kind == rb_intern("class_end")) { in_class = 0; previous = Qnil; continue; }
     if (in_class && kind == rb_intern("literal") && onibi_token_byte(token) == '[')
       obj->has_nested_class = 1;
+    if (!in_class && kind == rb_intern("quantifier") && onibi_token_byte(token) == '{') {
+      uint64_t value = 0;
+      int have_digit = 0;
+      int over_limit = 0;
+      for (long j = i + 1; j < RARRAY_LEN(tokens); j++) {
+        long digit = onibi_token_byte(rb_ary_entry(tokens, j));
+        if (digit == '}') break;
+        if (digit == ',') {
+          value = 0;
+          have_digit = 0;
+          over_limit = 0;
+          continue;
+        }
+        if (digit < '0' || digit > '9') { have_digit = 0; over_limit = 0; break; }
+        have_digit = 1;
+        if (value > 4096U || (value == 4096U && (uint64_t)(digit - '0') > 0U)) over_limit = 1;
+        else value = value * 10U + (uint64_t)(digit - '0');
+      }
+      if (have_digit && over_limit) obj->has_large_repeat = 1;
+    }
     if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
         kind == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
         onibi_token_byte(token) == '&') obj->has_class_intersection = 1;
@@ -2054,11 +2082,13 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   onibi_token_features(tokens, obj);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
+  VALUE program = obj->has_large_repeat ?
+    rb_protect(onibi_parse_program, program_args, &program_state) :
+    rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = rb_ary_entry(program, 0);
-    obj->compiled = rb_ary_entry(program, 1);
-    obj->rseq = rb_ary_entry(program, 2);
+    obj->parsed = obj->has_large_repeat ? program : rb_ary_entry(program, 0);
+    obj->compiled = obj->has_large_repeat ? Qnil : rb_ary_entry(program, 1);
+    obj->rseq = obj->has_large_repeat ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */

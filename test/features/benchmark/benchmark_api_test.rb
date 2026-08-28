@@ -192,6 +192,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :COUNTER_INCREMENT, edges[1][:actions].first[:op]
   end
 
+  def test_large_fixed_repeat_stays_compact_and_uses_mri_boundary
+    regexp = Onibi::Regexp.new("a{100000}")
+    refute regexp.program_cached?
+    assert regexp.match?("a" * 100000)
+  end
+
   def test_simple_character_class_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[ab]")
     assert_equal :RSEQ, regexp.pipeline[:vm]
