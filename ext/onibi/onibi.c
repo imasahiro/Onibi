@@ -3559,6 +3559,8 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
   if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; return 1; }
+  /* Dynamic subprogram states are not valid in the flat graph walker. */
+  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
@@ -3661,6 +3663,9 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
     *matched_captures = onibi_materialize_tags(tags, captures);
     return 1;
   }
+  /* Dynamic subprogram states require a call frame and must not fall through
+     as epsilon transitions in the ordinary graph walker. */
+  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     if (op == rb_intern("G_BACKREF")) {
