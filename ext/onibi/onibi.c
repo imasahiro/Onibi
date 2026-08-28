@@ -1620,7 +1620,10 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
     rb_hash_aset(builder->capture_bodies, key, onibi_hash_value(ast, "body"));
     VALUE name = onibi_hash_value(ast, "name");
     if (!NIL_P(name)) {
-      rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
+      /* MRI resolves a duplicate named backreference to the first matching
+         group definition.  Keep the earliest slot in the compile index. */
+      if (NIL_P(rb_hash_aref(builder->capture_names, name)))
+        rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
       rb_hash_aset(builder->capture_bodies, name, onibi_hash_value(ast, "body"));
     }
     onibi_collect_captures(onibi_hash_value(ast, "body"), builder, next_capture);
@@ -2297,7 +2300,8 @@ skip_utf8_range_expansion:
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
     rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value(ast, "body"));
     if (!NIL_P(capture_name)) {
-      rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
+      if (NIL_P(rb_hash_aref(builder->capture_names, capture_name)))
+        rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
       rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value(ast, "body"));
     }
     rb_ary_push(result.start_actions, open);
