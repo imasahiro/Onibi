@@ -416,6 +416,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/rb_hash_aref\([^\n]*ID2SYM\(id_key_(kind_code|start|end|name|capture|bytes)/, parser)
   end
 
+  def test_parser_range_adapter_uses_fixed_pair_capacity
+    source = File.read(EXTENSION_SOURCE)
+    parser = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
+
+    refute_nil parser
+    assert_includes parser, "VALUE range = rb_ary_new_capa(2);"
+  end
+
   def test_runtime_id_lookups_use_shared_accessor
     source = File.read(EXTENSION_SOURCE)
     runtime = source[/static VALUE onibi_initialize\(.*?\n}\n/m]

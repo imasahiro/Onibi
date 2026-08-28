@@ -895,7 +895,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
           (NIL_P(first_bytes) && NIL_P(last_bytes) &&
            onibi_token_byte(first_token) > onibi_token_byte(last_token)))
         rb_raise(eRegexpError, "empty range in character class");
-      VALUE range = rb_ary_new();
+      VALUE range = rb_ary_new_capa(2);
       rb_ary_push(range, NIL_P(first_bytes) ? LONG2NUM(onibi_token_byte(first_token)) : first_bytes);
       rb_ary_push(range, NIL_P(last_bytes) ? LONG2NUM(onibi_token_byte(last_token)) : last_bytes);
       rb_obj_freeze(range);
