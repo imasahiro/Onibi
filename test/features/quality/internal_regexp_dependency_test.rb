@@ -38,6 +38,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     end
   end
 
+  def test_ast_anchor_analysis_uses_one_recursive_scan
+    source = File.read(EXTENSION_SOURCE)
+    scan = source[/static int onibi_ast_anchor_scan\(VALUE ast\) \{.*?\n}\n/m]
+
+    refute_nil scan
+    assert_includes scan, "if (type == ONIBI_AST_QUANTIFIER && keys[i] == id_key_atom"
+    refute_includes source, "onibi_ast_contains_anchor"
+  end
+
   def test_c_pipeline_does_not_use_repeated_string_comparisons
     source = File.read(EXTENSION_SOURCE)
 

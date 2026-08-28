@@ -3702,35 +3702,29 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
   return 0;
 }
 
-static int onibi_ast_contains_anchor(VALUE ast) {
+/* Return bit 1 when the subtree contains an anchor and bit 2 when a
+ * quantifier repeats a subtree that contains an anchor. */
+static int onibi_ast_anchor_scan(VALUE ast) {
   if (NIL_P(ast)) return 0;
   if (RB_TYPE_P(ast, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(ast); i++)
-      if (onibi_ast_contains_anchor(rb_ary_entry(ast, i))) return 1;
-    return 0;
+    int result = 0;
+    for (long i = 0; i < RARRAY_LEN(ast); i++) result |= onibi_ast_anchor_scan(rb_ary_entry(ast, i));
+    return result;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_ast_kind(ast) == ONIBI_AST_ANCHOR) return 1;
+  OnibiAstKind type = onibi_ast_kind(ast);
+  int result = type == ONIBI_AST_ANCHOR ? 1 : 0;
   const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_contains_anchor(onibi_hash_value_id(ast, keys[i]))) return 1;
-  return 0;
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    int child = onibi_ast_anchor_scan(onibi_hash_value_id(ast, keys[i]));
+    if (type == ONIBI_AST_QUANTIFIER && keys[i] == id_key_atom && (child & 1)) result |= 2;
+    result |= child;
+  }
+  return result;
 }
 
 static int onibi_ast_anchor_repeat(VALUE ast) {
-  if (NIL_P(ast)) return 0;
-  if (RB_TYPE_P(ast, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(ast); i++)
-      if (onibi_ast_anchor_repeat(rb_ary_entry(ast, i))) return 1;
-    return 0;
-  }
-  if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_ast_kind(ast) == ONIBI_AST_QUANTIFIER &&
-      onibi_ast_contains_anchor(onibi_hash_value_id(ast, id_key_atom))) return 1;
-  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_anchor_repeat(onibi_hash_value_id(ast, keys[i]))) return 1;
-  return 0;
+  return (onibi_ast_anchor_scan(ast) & 2) != 0;
 }
 
 static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
