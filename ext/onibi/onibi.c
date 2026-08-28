@@ -2035,11 +2035,13 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size ||
       (header.classes_offset & 3U) != 0 || (header.literals_offset & 3U) != 0 ||
       (header.descriptors_offset & 3U) != 0 ||
+      (header.subprograms_offset & 3U) != 0 ||
       (header.classes_offset && header.classes_offset < header.actions_offset) ||
       (header.literals_offset && header.literals_offset < header.classes_offset) ||
       (header.descriptors_offset && header.descriptors_offset < header.literals_offset) ||
+      (header.subprograms_offset && header.subprograms_offset < header.descriptors_offset) ||
       header.classes_offset > header.blob_size || header.literals_offset > header.blob_size ||
-      header.descriptors_offset > header.blob_size ||
+      header.descriptors_offset > header.blob_size || header.subprograms_offset > header.blob_size ||
       header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
       header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
