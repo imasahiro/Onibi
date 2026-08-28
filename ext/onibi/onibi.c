@@ -1319,17 +1319,6 @@ static void onibi_value_vector_init(OnibiValueVector *vector) {
   vector->items = NULL; vector->count = 0; vector->capacity = 0;
 }
 
-static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots) {
-  if (vector->count == vector->capacity) {
-    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
-    if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "value vector is too large");
-    vector->items = REALLOC_N(vector->items, VALUE, next);
-    vector->capacity = next;
-  }
-  vector->items[vector->count++] = value;
-  rb_ary_push(roots, value);
-}
-
 static void onibi_value_vector_reserve(OnibiValueVector *vector, size_t additional) {
   if (additional > SIZE_MAX - vector->count) rb_raise(rb_eNoMemError, "value vector is too large");
   size_t required = vector->count + additional;
@@ -1342,6 +1331,12 @@ static void onibi_value_vector_reserve(OnibiValueVector *vector, size_t addition
   if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "value vector is too large");
   vector->items = REALLOC_N(vector->items, VALUE, next);
   vector->capacity = next;
+}
+
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots) {
+  onibi_value_vector_reserve(vector, 1);
+  vector->items[vector->count++] = value;
+  rb_ary_push(roots, value);
 }
 
 static void onibi_value_vector_store(OnibiValueVector *vector, size_t index, VALUE value, VALUE roots) {
