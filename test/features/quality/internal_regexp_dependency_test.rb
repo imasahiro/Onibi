@@ -19,4 +19,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert Onibi::Regexp.new("\\w+").match?("word_2026")
     refute Onibi::Regexp.new("\\w").match?("é")
   end
+
+  def test_compiler_pipeline_objects_are_not_public_constants
+    refute_includes Onibi.constants(false), :Lexer
+    refute_includes Onibi.constants(false), :Parser
+    refute_includes Onibi.constants(false), :Compiler
+    refute_includes Onibi.constants(false), :VM
+    assert_includes Onibi.constants(false), :Regexp
+  end
 end
