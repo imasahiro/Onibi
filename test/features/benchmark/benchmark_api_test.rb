@@ -1069,6 +1069,19 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 8, end: 9 }, result[:captures][9])
   end
 
+  def test_vm_encoding_validation_does_not_dispatch_to_string_method
+    input_class = Class.new(String) do
+      def valid_encoding?
+        raise "must use MRI coderange API"
+      end
+    end
+    input = input_class.new("a")
+    regexp = Onibi::Regexp.new("a")
+
+    assert regexp.match?(input)
+    assert regexp.vm_match?(input)
+  end
+
   def test_tagged_vm_materializes_nullable_captures
     ["(a*)", "(a?)", "()"].each do |source|
       regexp = Onibi::Regexp.new(source)

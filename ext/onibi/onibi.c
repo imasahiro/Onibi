@@ -28,6 +28,10 @@ static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
 }
 
+static int onibi_valid_encoding(VALUE str) {
+  return rb_enc_str_coderange(str) != RUBY_ENC_CODERANGE_BROKEN;
+}
+
 static int onibi_hex_digit(unsigned char c) {
   return c >= '0' && c <= '9' ? c - '0' : (c >= 'a' && c <= 'f' ? c - 'a' + 10 : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1));
 }
@@ -2408,7 +2412,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
-      (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0))))
+      (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -3582,7 +3586,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if ((obj->options & (16 | 32)) == 0 &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
-      (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0))))
+      (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
       /* The immutable RSeq was validated and its physical execution view was
          built during initialize.  Do not rescan the program on each match. */
@@ -3601,7 +3605,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   StringValue(str);
   int graph_ok = ((obj->options & (16 | 32)) == 0) && !NIL_P(obj->rseq) &&
     rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, obj->source) != NULL &&
-    (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)));
+    (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str));
   if (!graph_ok) {
     if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   }
