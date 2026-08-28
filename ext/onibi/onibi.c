@@ -115,7 +115,9 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
   int in_class = 0;
+  long class_depth = 0;
   long class_body_start = -1;
+  long class_body_starts[256];
   int extended_stack[256];
   long extended_depth = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) {
@@ -296,10 +298,23 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     } else if (byte == '[' && !in_class) {
       kind = "class_start";
       in_class = 1;
+      class_depth = 1;
       class_body_start = i + 1;
+    } else if (strcmp(kind, "literal") == 0 && byte == '[' && in_class) {
+      kind = "class_start";
+      if (class_depth >= (long)(sizeof(class_body_starts) / sizeof(class_body_starts[0])))
+        rb_raise(eRegexpError, "regexp character class nesting is too deep");
+      class_body_starts[class_depth - 1] = class_body_start;
+      class_depth++;
+      class_body_start = i + 1;
+    } else if (byte == ']' && in_class && class_depth > 1) {
+      kind = "class_end";
+      class_depth--;
+      class_body_start = class_body_starts[class_depth - 1];
     } else if (byte == ']' && in_class) {
       kind = "class_end";
       in_class = 0;
+      class_depth = 0;
     } else if (in_class) {
       if (byte == '-' && i > class_body_start) kind = "class_range";
       else if (byte == '^' && i == class_body_start) kind = "class_negate";
@@ -452,6 +467,17 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   for (long i = begin + 1; i < close; i++) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
+    if (kind == rb_intern("class_start")) {
+      long nested_close = onibi_find_close(tokens, i, close, rb_intern("class_start"), rb_intern("class_end"));
+      if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
+      VALUE nested = onibi_parse_class(tokens, i, nested_close);
+      rb_hash_aset(nested, ID2SYM(rb_intern("end")),
+                   rb_hash_aref(rb_ary_entry(tokens, nested_close), ID2SYM(rb_intern("end"))));
+      rb_obj_freeze(nested);
+      rb_ary_push(children, nested);
+      i = nested_close;
+      continue;
+    }
     if (kind == rb_intern("class_negate")) { negated = 1; continue; }
     if (kind == rb_intern("posix_class")) {
       VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
@@ -893,7 +919,9 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   VALUE children = onibi_hash_value(payload, "children");
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
-    ID kind = SYM2ID(onibi_hash_value(child, "kind"));
+    VALUE kind_value = onibi_hash_value(child, "kind");
+    if (NIL_P(kind_value)) kind_value = onibi_hash_value(child, "type");
+    ID kind = NIL_P(kind_value) ? 0 : SYM2ID(kind_value);
     if (kind == rb_intern("literal")) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
     } else if (kind == rb_intern("escape")) {
@@ -925,6 +953,10 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
           (strcmp(n, "xdigit") == 0) ? isxdigit(c) : 0;
         if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
+    } else if (kind == rb_intern("character_class")) {
+      VALUE nested = onibi_class_bitmap(child, fold);
+      for (long byte = 0; byte < 32; byte++)
+        bits[byte] |= (unsigned char)RSTRING_PTR(nested)[byte];
     }
   }
   if (RTEST(onibi_hash_value(payload, "negated")))
@@ -2005,6 +2037,7 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
    token stream.  Runtime entry points use these bits and never rescan source. */
 static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   int in_class = 0;
+  long class_depth = 0;
   VALUE previous = Qnil;
   obj->has_class_intersection = 0;
   obj->has_nested_class = 0;
@@ -2025,8 +2058,19 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     ID kind = onibi_token_kind(token);
     if (kind == rb_intern("literal") && onibi_token_byte(token) > 127)
       obj->has_non_ascii_literal = 1;
-    if (kind == rb_intern("class_start")) { in_class = 1; previous = Qnil; continue; }
-    if (kind == rb_intern("class_end")) { in_class = 0; previous = Qnil; continue; }
+    if (kind == rb_intern("class_start")) {
+      if (in_class) obj->has_nested_class = 1;
+      in_class = 1;
+      class_depth++;
+      previous = Qnil;
+      continue;
+    }
+    if (kind == rb_intern("class_end")) {
+      if (class_depth > 0) class_depth--;
+      in_class = class_depth > 0;
+      previous = Qnil;
+      continue;
+    }
     if (in_class && kind == rb_intern("literal") && onibi_token_byte(token) == '[')
       obj->has_nested_class = 1;
     if (!in_class && kind == rb_intern("quantifier") && onibi_token_byte(token) == '{') {

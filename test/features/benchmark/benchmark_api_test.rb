@@ -500,6 +500,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal Onibi::Regexp.new("[a&&b]").match?("a"), regexp.match?("a")
   end
 
+  def test_nested_character_class_is_preserved_in_parser_ast
+    ast = Onibi::Parser.parse("[a-z&&[^aeiou]]")[:ast]
+    nested = ast[:children].first[:children].find { |child| child[:type] == :character_class }
+
+    refute_nil nested
+    assert_equal true, nested[:negated]
+  end
+
   def test_shorthand_escapes_inside_classes_use_bitmap_predicates
     digit = Onibi::Regexp.new("[\\d]")
     assert digit.program_cached?
