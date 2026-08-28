@@ -240,6 +240,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "physical_states[i].payload = state->payload_index"
   end
 
+  def test_gir_edge_records_cache_action_count
+    source = File.read(EXTENSION_SOURCE)
+    record = source[/typedef struct \{ long from; long to;.*?\} OnibiGirEdgeEntry;/m]
+
+    refute_nil record
+    assert_includes record, "uint32_t action_count"
+    assert_includes source, "record->action_count == 0"
+  end
+
   def test_rseq_subprograms_use_typed_records
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]

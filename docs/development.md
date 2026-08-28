@@ -206,6 +206,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | RSeq state records | No | C `OnibiGirStateVector` during lowering | Opcode and payload lookup uses fixed C fields. The frozen GIR state array remains as the semantic adapter. |
 | RSeq state payload indexes | No | Cached `payload_index` in the C state record | Deduplication computes the class/literal index once. Physical state encoding does not repeat payload comparisons. |
 | RSeq physical edges | No | C edge records during blob construction | Destination and action offsets are already available in the lowering records. Physicalization does not need another Ruby Hash scan. |
+| GIR edge action counts | No | Cached `action_count` in `OnibiGirEdgeEntry` | Physical edge encoding needs only the count. It no longer queries the Ruby action array length for each edge. |
 | RSeq physical actions | No | Read the C action vector during blob construction | Feature detection and opcode encoding use the flattened C order directly. The Ruby action array is only the published semantic adapter. |
 | RSeq subprogram descriptors | No | `OnibiRSeqSubprogramVector` during lowering | Entry, accept, and flags are numeric execution fields. The Ruby descriptor array remains only as the semantic adapter. |
 | RSeq physical execution view | No | Pending: `OnibiRSeqView`-backed VM entry | `onibi_rseq_physical_graph` currently creates a Ruby Hash adapter for tagged and dynamic walkers. Regular fast paths already read the blob directly; capture walkers still require a C view migration. |
