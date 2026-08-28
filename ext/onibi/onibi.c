@@ -3,6 +3,8 @@
 #include "ruby/thread.h"
 #include "ruby/onigmo.h"
 #include "onibi_ir.h"
+
+#define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -1171,22 +1173,6 @@ static int onibi_ast_has_capture(VALUE ast) {
   return 0;
 }
 
-static int onibi_ast_atomic_simple(VALUE ast) {
-  VALUE type = onibi_symbol_value(ast, "type");
-  if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
-      type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("class_intersection")) ||
-      type == ID2SYM(rb_intern("any"))) return 1;
-  if (type == ID2SYM(rb_intern("group")) || type == ID2SYM(rb_intern("option_scope")))
-    return onibi_ast_atomic_simple(onibi_hash_value(ast, "body"));
-  if (type == ID2SYM(rb_intern("sequence"))) {
-    VALUE children = onibi_hash_value(ast, "children");
-    for (long i = 0; i < RARRAY_LEN(children); i++)
-      if (!onibi_ast_atomic_simple(rb_ary_entry(children, i))) return 0;
-    return 1;
-  }
-  return 0;
-}
-
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
   VALUE state = rb_hash_new();
   rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
@@ -1329,7 +1315,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload);
 static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions);
 
-static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder) {
+static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, uint32_t flags) {
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -1339,7 +1325,7 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder) {
   VALUE descriptor = rb_hash_new();
   rb_hash_aset(descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(entry));
   rb_hash_aset(descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), UINT2NUM(flags));
   rb_hash_aset(descriptor, ID2SYM(rb_intern("entry_actions")), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
   rb_ary_push(builder->subprograms, descriptor);
@@ -1710,7 +1696,7 @@ skip_utf8_range_expansion:
     if (RTEST(rb_hash_aref(builder->active_subroutines, name)))
       rb_raise(eRegexpError, "recursive subroutine requires dynamic call state");
     rb_hash_aset(builder->active_subroutines, name, Qtrue);
-    long subprogram_id = onibi_compile_subprogram(body, builder);
+    long subprogram_id = onibi_compile_subprogram(body, builder, 0);
     rb_hash_delete(builder->active_subroutines, name);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
@@ -1837,9 +1823,17 @@ skip_utf8_range_expansion:
   }
   if (type == ID2SYM(rb_intern("atomic"))) {
     VALUE body = onibi_hash_value(ast, "body");
-    if (!onibi_ast_atomic_simple(body))
-      rb_raise(eRegexpError, "atomic subprogram requires dynamic call state");
-    return onibi_compile_node(body, builder);
+    long subprogram_id = onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
+    VALUE payload = rb_hash_new();
+    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_obj_freeze(payload);
+    long id = builder->next_id++;
+    onibi_gir_state(builder, id, rb_intern("G_ATOMIC"), payload);
+    onibi_fragment_t result = onibi_fragment_empty();
+    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.nullable = 0;
+    return result;
   }
   if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
     VALUE body = onibi_hash_value(ast, "body");
@@ -2911,10 +2905,6 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
-  if (obj->has_atomic && !obj->has_backref && !obj->has_subroutine &&
-      !obj->has_absence && !obj->has_conditional && !obj->has_grapheme &&
-      !obj->has_property_escape && !obj->has_meta_escape && !NIL_P(obj->rseq))
-    obj->has_dynamic = 0;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
   if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
@@ -3776,8 +3766,8 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
-  if (op == rb_intern("G_CALL")) {
+  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ABSENT")) return 0;
+  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC")) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
     VALUE called_captures = Qnil;

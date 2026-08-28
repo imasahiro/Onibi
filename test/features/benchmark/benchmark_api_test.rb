@@ -456,7 +456,9 @@ class BenchmarkApiTest < Minitest::Test
     parsed = Onibi::Parser.parse("(?>a|ab)b")
     assert_equal :atomic, parsed[:ast][:children].first[:type]
     assert_equal :DYNAMIC, regexp.pipeline[:interpreter]
-    refute regexp.program_cached?
+    assert regexp.program_cached?
+    refute regexp.vm_match?("ac")
+    assert regexp.vm_match?("ab")
   end
 
   def test_character_class_repeat_dispatches_to_rseq
@@ -656,7 +658,8 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?>a)")
     assert regexp.program_cached?
     assert regexp.vm_match?("a")
-    assert_equal :REGULAR_FAST, regexp.execution_class.to_sym
+    assert_equal :DYNAMIC, regexp.execution_class.to_sym
+    assert regexp.pipeline[:rseq_program][:physical_graph][:states].any? { |state| state[:op] == :G_ATOMIC }
   end
 
   def test_literal_lookaround_stays_regular_when_no_tag_state_is_needed
