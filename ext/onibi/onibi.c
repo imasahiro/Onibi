@@ -74,7 +74,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -2182,6 +2182,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_conditional = 0;
   obj->has_atomic = 0;
   obj->has_backref = 0;
+  obj->has_ascii_property = 0;
   obj->has_grapheme = 0;
   obj->has_property_escape = 0;
   obj->has_unicode_escape = 0;
@@ -2248,8 +2249,10 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       if (kind == rb_intern("conditional_start")) obj->has_conditional = 1;
     } else if (kind == rb_intern("escape")) {
       if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
-      if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P') &&
-          !onibi_ascii_property_token_p(token)) { obj->has_property_escape = 1; obj->has_dynamic = 1; }
+      if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
+        if (onibi_ascii_property_token_p(token)) obj->has_ascii_property = 1;
+        else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
+      }
       if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
     } else if (kind == rb_intern("meta_escape")) {
       obj->has_meta_escape = 1;
@@ -2412,6 +2415,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
+      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
@@ -3586,6 +3590,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if ((obj->options & (16 | 32)) == 0 &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
+      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
       /* The immutable RSeq was validated and its physical execution view was
@@ -3605,6 +3610,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   StringValue(str);
   int graph_ok = ((obj->options & (16 | 32)) == 0) && !NIL_P(obj->rseq) &&
     rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, obj->source) != NULL &&
+    (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
     (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str));
   if (!graph_ok) {
     if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
@@ -3613,13 +3619,13 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     if (NIL_P(match)) return Qnil;
     VALUE result = rb_hash_new();
-    rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("begin"), 1, INT2NUM(0)));
-    rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
+    rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("bytebegin"), 1, INT2NUM(0)));
+    rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("byteend"), 1, INT2NUM(0)));
     VALUE captures = rb_hash_new();
     long capture_count = NUM2LONG(rb_funcall(match, rb_intern("length"), 0)) - 1;
     for (long group_id = 1; group_id <= capture_count; group_id++) {
-      VALUE begin = rb_funcall(match, rb_intern("begin"), 1, LONG2NUM(group_id));
-      VALUE finish = rb_funcall(match, rb_intern("end"), 1, LONG2NUM(group_id));
+      VALUE begin = rb_funcall(match, rb_intern("bytebegin"), 1, LONG2NUM(group_id));
+      VALUE finish = rb_funcall(match, rb_intern("byteend"), 1, LONG2NUM(group_id));
       if (NIL_P(begin) || NIL_P(finish) || NUM2LONG(begin) < 0 || NUM2LONG(finish) < 0) continue;
       VALUE group = rb_hash_new();
       rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
@@ -3663,8 +3669,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
   if (NIL_P(match)) return Qnil;
   VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("begin"), 1, INT2NUM(0)));
-  rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("bytebegin"), 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("byteend"), 1, INT2NUM(0)));
   return result;
 }
 

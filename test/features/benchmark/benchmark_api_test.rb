@@ -1082,6 +1082,13 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?(input)
   end
 
+  def test_vm_match_result_fallback_keeps_byte_offsets
+    result = Onibi::Regexp.new("\\P{ASCII}").vm_match_result("é")
+
+    assert_equal 0, result[:start]
+    assert_equal 2, result[:end]
+  end
+
   def test_tagged_vm_materializes_nullable_captures
     ["(a*)", "(a?)", "()"].each do |source|
       regexp = Onibi::Regexp.new(source)
