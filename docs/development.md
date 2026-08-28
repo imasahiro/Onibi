@@ -151,9 +151,11 @@ Compiled `Onibi::Regexp` objects use the validated immutable view directly.
 
 The C executor supports literals, alternation, classes, POSIX classes, common
 escapes, anchors, bounded repeats, captures, word boundaries, search-origin
-assertions, match reset, and numeric or named backreferences. The dispatcher
-has separate C entry points for all three execution classes. They share graph
-walkers while their dispatch contracts and RSeq validation are explicit.
+assertions, fixed-width lookarounds, match reset, and numeric or named
+backreferences. Fixed-width lookarounds use immutable literal, class, escape,
+and wildcard predicates. The dispatcher has separate C entry points for all
+three execution classes. They share graph walkers while their dispatch
+contracts and RSeq validation are explicit.
 
 ## Stage acceptance gates
 
@@ -179,7 +181,7 @@ build. Character-class range and GIR resource validation are parser/compiler
 gates.
 
 Remaining gates are complete option and encoding semantics, atomic backtracking
-states, non-literal lookaround subprograms, and complete tag-history sharing.
+states, variable-width lookaround subprograms, and complete tag-history sharing.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
