@@ -3822,8 +3822,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   VALUE timeout = Qnil;
   if (RB_TYPE_P(options, T_HASH)) {
-    timeout = rb_hash_aref(options, ID2SYM(id_timeout));
-    options = rb_hash_aref(options, ID2SYM(id_options));
+    timeout = onibi_hash_value_id(options, id_timeout);
+    options = onibi_hash_value_id(options, id_options);
   }
   if (NIL_P(timeout)) timeout = inherited_timeout;
   int opts = onibi_option_mask(options);
@@ -5069,7 +5069,7 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
     if (code != ONIBI_GA_CAPTURE_OPEN && code != ONIBI_GA_CAPTURE_CLOSE) continue;
     VALUE slot = onibi_hash_value_id(action, id_key_slot);
     if (code == ONIBI_GA_CAPTURE_CLOSE && RTEST(onibi_hash_value_id(action, id_key_preserve_if_set)) &&
-        RTEST(rb_hash_aref(captures, ID2SYM(id_recursive_marker)))) continue;
+        RTEST(onibi_hash_value_id(captures, id_recursive_marker))) continue;
     rb_hash_aset(captures, slot, LONG2NUM(pos));
     VALUE event = rb_ary_new_from_args(3, tags, slot, LONG2NUM(pos));
     rb_obj_freeze(event);

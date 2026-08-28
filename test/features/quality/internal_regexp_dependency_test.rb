@@ -416,6 +416,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/rb_hash_aref\([^\n]*ID2SYM\(id_key_(kind_code|start|end|name|capture|bytes)/, parser)
   end
 
+  def test_runtime_id_lookups_use_shared_accessor
+    source = File.read(EXTENSION_SOURCE)
+    runtime = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
+
+    refute_nil runtime
+    refute_includes runtime, "rb_hash_aref(options, ID2SYM(id_timeout))"
+    refute_includes source, "rb_hash_aref(captures, ID2SYM(id_recursive_marker))"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
