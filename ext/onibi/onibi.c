@@ -1044,30 +1044,58 @@ static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
   }
 }
 
-static int onibi_ascii_property_hit(VALUE name, int c) {
+typedef enum {
+  ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
+  ONIBI_ASCII_PROP_HEX, ONIBI_ASCII_PROP_DIGIT, ONIBI_ASCII_PROP_ALPHA,
+  ONIBI_ASCII_PROP_ALNUM, ONIBI_ASCII_PROP_LOWER, ONIBI_ASCII_PROP_UPPER,
+  ONIBI_ASCII_PROP_SPACE, ONIBI_ASCII_PROP_BLANK, ONIBI_ASCII_PROP_WORD,
+  ONIBI_ASCII_PROP_XDIGIT, ONIBI_ASCII_PROP_CNTRL, ONIBI_ASCII_PROP_PRINT,
+  ONIBI_ASCII_PROP_GRAPH, ONIBI_ASCII_PROP_PUNCT
+} OnibiAsciiProperty;
+
+static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
   const char *property = StringValueCStr(name);
-  if (strcmp(property, "ASCII") == 0) return c < 128;
-  if (strcmp(property, "ASCII_Hex_Digit") == 0) return isxdigit(c);
-  if (strcmp(property, "Digit") == 0) return isdigit(c);
-  if (strcmp(property, "Alpha") == 0) return isalpha(c);
-  if (strcmp(property, "Alnum") == 0) return isalnum(c);
-  if (strcmp(property, "Lower") == 0) return islower(c);
-  if (strcmp(property, "Upper") == 0) return isupper(c);
-  if (strcmp(property, "Space") == 0) return isspace(c);
-  if (strcmp(property, "Blank") == 0) return c == ' ' || c == '\t';
-  if (strcmp(property, "Word") == 0) return isalnum(c) || c == '_';
-  if (strcmp(property, "XDigit") == 0) return isxdigit(c);
-  if (strcmp(property, "Cntrl") == 0) return iscntrl(c);
-  if (strcmp(property, "Print") == 0) return isprint(c);
-  if (strcmp(property, "Graph") == 0) return isgraph(c);
-  if (strcmp(property, "Punct") == 0) return ispunct(c);
-  return -1;
+  if (strcmp(property, "ASCII") == 0) return ONIBI_ASCII_PROP_ASCII;
+  if (strcmp(property, "ASCII_Hex_Digit") == 0) return ONIBI_ASCII_PROP_HEX;
+  if (strcmp(property, "Digit") == 0) return ONIBI_ASCII_PROP_DIGIT;
+  if (strcmp(property, "Alpha") == 0) return ONIBI_ASCII_PROP_ALPHA;
+  if (strcmp(property, "Alnum") == 0) return ONIBI_ASCII_PROP_ALNUM;
+  if (strcmp(property, "Lower") == 0) return ONIBI_ASCII_PROP_LOWER;
+  if (strcmp(property, "Upper") == 0) return ONIBI_ASCII_PROP_UPPER;
+  if (strcmp(property, "Space") == 0) return ONIBI_ASCII_PROP_SPACE;
+  if (strcmp(property, "Blank") == 0) return ONIBI_ASCII_PROP_BLANK;
+  if (strcmp(property, "Word") == 0) return ONIBI_ASCII_PROP_WORD;
+  if (strcmp(property, "XDigit") == 0) return ONIBI_ASCII_PROP_XDIGIT;
+  if (strcmp(property, "Cntrl") == 0) return ONIBI_ASCII_PROP_CNTRL;
+  if (strcmp(property, "Print") == 0) return ONIBI_ASCII_PROP_PRINT;
+  if (strcmp(property, "Graph") == 0) return ONIBI_ASCII_PROP_GRAPH;
+  if (strcmp(property, "Punct") == 0) return ONIBI_ASCII_PROP_PUNCT;
+  return ONIBI_ASCII_PROP_UNKNOWN;
+}
+
+static int onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c) {
+  switch (kind) {
+    case ONIBI_ASCII_PROP_ASCII: return c < 128;
+    case ONIBI_ASCII_PROP_HEX: case ONIBI_ASCII_PROP_XDIGIT: return isxdigit(c);
+    case ONIBI_ASCII_PROP_DIGIT: return isdigit(c);
+    case ONIBI_ASCII_PROP_ALPHA: return isalpha(c);
+    case ONIBI_ASCII_PROP_ALNUM: return isalnum(c);
+    case ONIBI_ASCII_PROP_LOWER: return islower(c);
+    case ONIBI_ASCII_PROP_UPPER: return isupper(c);
+    case ONIBI_ASCII_PROP_SPACE: return isspace(c);
+    case ONIBI_ASCII_PROP_BLANK: return c == ' ' || c == '\t';
+    case ONIBI_ASCII_PROP_WORD: return isalnum(c) || c == '_';
+    case ONIBI_ASCII_PROP_CNTRL: return iscntrl(c);
+    case ONIBI_ASCII_PROP_PRINT: return isprint(c);
+    case ONIBI_ASCII_PROP_GRAPH: return isgraph(c);
+    case ONIBI_ASCII_PROP_PUNCT: return ispunct(c);
+    default: return -1;
+  }
 }
 
 static int onibi_ascii_property_name_p(VALUE name) {
   if (NIL_P(name)) return 0;
-  const char *property = StringValueCStr(name);
-  return onibi_ascii_property_hit(name, 0) >= 0 || strcmp(property, "ASCII") == 0;
+  return onibi_ascii_property_kind(name) != ONIBI_ASCII_PROP_UNKNOWN;
 }
 
 typedef enum {
@@ -1107,8 +1135,9 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
   } else if (onibi_ascii_property_name_p(escape_name)) {
+    OnibiAsciiProperty property_kind = onibi_ascii_property_kind(escape_name);
     for (int c = 0; c < 256; c++) {
-      int hit = onibi_ascii_property_hit(escape_name, c);
+      int hit = onibi_ascii_property_hit_kind(property_kind, c);
       if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
     if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P')
@@ -1134,8 +1163,9 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     } else if (kind == rb_intern("escape")) {
       VALUE name = onibi_hash_value(child, "name");
       if (onibi_ascii_property_name_p(name)) {
+        OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
         for (int c = 0; c < 256; c++) {
-          int hit = onibi_ascii_property_hit(name, c);
+          int hit = onibi_ascii_property_hit_kind(property_kind, c);
           if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
         }
         if (NUM2INT(onibi_hash_value(child, "byte")) == 'P')
