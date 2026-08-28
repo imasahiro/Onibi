@@ -1502,6 +1502,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       VALUE predicate = rb_hash_new();
       rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
       rb_hash_aset(predicate, ID2SYM(rb_intern("byte")), onibi_hash_value(child, "byte"));
+      rb_hash_aset(predicate, ID2SYM(rb_intern("ignorecase")), builder->ignorecase ? Qtrue : Qfalse);
       rb_ary_push(predicates, predicate);
       rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
     }
@@ -2841,7 +2842,11 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           if (at >= length) { matched = 0; break; }
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[at];
           ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
-          if (kind == rb_intern("byte")) matched = matched && byte == NUM2INT(onibi_hash_value(predicate, "byte"));
+          if (kind == rb_intern("byte")) {
+            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
+            matched = matched && (RTEST(onibi_hash_value(predicate, "ignorecase")) ?
+              tolower(byte) == tolower(expected) : byte == expected);
+          }
           else {
             VALUE bits = onibi_hash_value(predicate, "bitmap");
             matched = matched && RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
@@ -2874,7 +2879,11 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           VALUE predicate = rb_ary_entry(predicates, i);
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[pos - width + i];
           ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
-          if (kind == rb_intern("byte")) matched = byte == NUM2INT(onibi_hash_value(predicate, "byte"));
+          if (kind == rb_intern("byte")) {
+            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
+            matched = RTEST(onibi_hash_value(predicate, "ignorecase")) ?
+              tolower(byte) == tolower(expected) : byte == expected;
+          }
           else {
             VALUE bits = onibi_hash_value(predicate, "bitmap");
             matched = RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
