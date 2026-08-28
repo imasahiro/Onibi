@@ -62,6 +62,9 @@ static ID id_key_from, id_key_accept, id_key_action_offset;
 static ID id_key_flags;
 static ID id_key_capture_count;
 static ID id_key_counter_count;
+static ID id_key_state_count, id_key_features, id_key_edge_count, id_key_action_count;
+static ID id_key_class_count, id_key_subprogram_count, id_key_start_edge_base, id_key_start_edge_count;
+static ID id_key_blob_size, id_key_literal_count;
 static ID id_key_negative_name, id_key_negative;
 static ID id_kind_literal;
 static ID id_recursive_marker;
@@ -4850,23 +4853,23 @@ static void onibi_rseq_validate(VALUE rseq) {
       RARRAY_LEN(semantic_edges) != header.edge_count - header.start_edge_count ||
       RARRAY_LEN(semantic_actions) != header.action_count ||
       header.start_edge_count > header.edge_count ||
-      NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
-      NUM2UINT(onibi_hash_value(semantic, "features")) != header.features ||
-      NUM2UINT(onibi_hash_value(semantic, "edge_count")) != header.edge_count - header.start_edge_count ||
-      NUM2UINT(onibi_hash_value(semantic, "action_count")) != header.action_count ||
-      NUM2UINT(onibi_hash_value(semantic, "class_count")) != header.class_count ||
-      NUM2UINT(onibi_hash_value(semantic, "capture_count")) != header.capture_count ||
-      NUM2UINT(onibi_hash_value(semantic, "counter_count")) != header.counter_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_state_count)) != header.state_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_features)) != header.features ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_edge_count)) != header.edge_count - header.start_edge_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_action_count)) != header.action_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_class_count)) != header.class_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_capture_count)) != header.capture_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_counter_count)) != header.counter_count ||
       RARRAY_LEN(semantic_subprograms) != header.subprogram_count ||
-      NUM2UINT(onibi_hash_value(semantic, "subprogram_count")) != header.subprogram_count ||
-      NUM2UINT(onibi_hash_value(semantic, "start_edge_base")) != header.start_edge_base ||
-      NUM2UINT(onibi_hash_value(semantic, "start_edge_count")) != header.start_edge_count ||
-      NUM2UINT(onibi_hash_value(semantic, "blob_size")) != header.blob_size)
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_subprogram_count)) != header.subprogram_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_start_edge_base)) != header.start_edge_base ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_start_edge_count)) != header.start_edge_count ||
+      NUM2UINT(onibi_hash_value_id(semantic, id_key_blob_size)) != header.blob_size)
     rb_raise(rb_eArgError, "RSeq semantic and physical headers disagree");
   if (header.magic != ONIBI_RSEQ_MAGIC || header.version != ONIBI_RSEQ_VERSION ||
       header.exec_kind > 2 ||
-      ((header.flags & 1U) != (RTEST(onibi_hash_value(semantic, "ignorecase")) ? 1U : 0U)) ||
-      ((header.flags & 2U) != (RTEST(onibi_hash_value(semantic, "multiline")) ? 2U : 0U)) ||
+      ((header.flags & 1U) != (RTEST(onibi_hash_value_id(semantic, id_key_ignorecase)) ? 1U : 0U)) ||
+      ((header.flags & 2U) != (RTEST(onibi_hash_value_id(semantic, id_key_multiline)) ? 2U : 0U)) ||
       header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
       header.states_offset < sizeof(OnibiRSeqHeader) ||
       (header.states_offset & 3U) != 0 || (header.edges_offset & 3U) != 0 ||
@@ -4888,14 +4891,14 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.classes_offset > header.blob_size || header.literals_offset > header.blob_size ||
       header.descriptors_offset > header.blob_size || header.subprograms_offset > header.blob_size ||
       header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
-      header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.subprograms_offset ||
+      header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value_id(semantic, id_key_literal_count)) * sizeof(OnibiLiteralDesc) > header.subprograms_offset ||
       header.subprograms_offset + (uint64_t)header.subprogram_count * sizeof(OnibiSubprogramDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   for (long i = 0; i < RARRAY_LEN(semantic_subprograms); i++) {
     VALUE descriptor = rb_ary_entry(semantic_subprograms, i);
-    VALUE entry_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "entry") : Qnil;
-    VALUE accept_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "accept") : Qnil;
-    VALUE flags = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "flags") : Qnil;
+    VALUE entry_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value_id(descriptor, id_key_entry) : Qnil;
+    VALUE accept_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value_id(descriptor, id_key_accept) : Qnil;
+    VALUE flags = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value_id(descriptor, id_key_flags) : Qnil;
     if (NIL_P(entry_state) || NIL_P(accept_state) || NIL_P(flags) ||
         NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= (long)header.state_count ||
         NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= (long)header.state_count ||
@@ -4912,9 +4915,9 @@ static void onibi_rseq_validate(VALUE rseq) {
   for (uint32_t i = 0; i < header.state_count; i++) {
     VALUE semantic_state = rb_ary_entry(semantic_states, i);
     if (!RB_TYPE_P(semantic_state, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_state)) ||
-        !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_state, "payload"))))
+        !RTEST(rb_obj_frozen_p(onibi_hash_value_id(semantic_state, id_key_payload))))
       rb_raise(rb_eArgError, "invalid semantic RSeq state");
-    ID semantic_op = SYM2ID(onibi_hash_value(semantic_state, "op"));
+    ID semantic_op = SYM2ID(onibi_hash_value_id(semantic_state, id_key_op));
     uint8_t expected_op = semantic_op == id_g_accept ? 0 :
       semantic_op == id_g_char ? ONIBI_RS_CHAR : semantic_op == id_g_class ? ONIBI_RS_CLASS :
       semantic_op == id_g_any ? ONIBI_RS_ANY : semantic_op == id_g_grapheme ? ONIBI_RS_GRAPHEME :
@@ -4923,19 +4926,19 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (expected_op == 0xff || states[i].op != expected_op)
       rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
     if (!NIL_P(physical_graph)) {
-      VALUE cached_state = rb_ary_entry(onibi_hash_value(physical_graph, "states"), i);
+      VALUE cached_state = rb_ary_entry(onibi_hash_value_id(physical_graph, id_key_states), i);
       if (!RB_TYPE_P(cached_state, T_HASH) ||
-          SYM2ID(onibi_hash_value(cached_state, "op")) != semantic_op ||
-          !rb_equal(onibi_hash_value(cached_state, "payload"), onibi_hash_value(semantic_state, "payload")))
+          SYM2ID(onibi_hash_value_id(cached_state, id_key_op)) != semantic_op ||
+          !rb_equal(onibi_hash_value_id(cached_state, id_key_payload), onibi_hash_value_id(semantic_state, id_key_payload)))
         rb_raise(rb_eArgError, "cached RSeq state disagrees with semantic state");
     }
     if (semantic_op == id_g_class) {
-      VALUE bitmap = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "bitmap");
+      VALUE bitmap = onibi_hash_value_id(onibi_hash_value_id(semantic_state, id_key_payload), id_key_bitmap);
       if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
         rb_raise(rb_eArgError, "RSeq class state has no compiled bitmap");
     }
     if (semantic_op == id_g_char) {
-      VALUE byte = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "byte");
+      VALUE byte = onibi_hash_value_id(onibi_hash_value_id(semantic_state, id_key_payload), id_key_byte);
       if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
         rb_raise(rb_eArgError, "RSeq character state has an invalid byte");
     }
@@ -4945,7 +4948,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       rb_raise(rb_eArgError, "invalid Onibi RSeq state edge range");
     if (states[i].op == ONIBI_RS_CLASS && states[i].payload >= header.class_count)
       rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor id");
-    if (states[i].op == ONIBI_RS_CHAR && states[i].payload >= NUM2UINT(onibi_hash_value(semantic, "literal_count")))
+    if (states[i].op == ONIBI_RS_CHAR && states[i].payload >= NUM2UINT(onibi_hash_value_id(semantic, id_key_literal_count)))
       rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor id");
   }
   const OnibiREdge *edges = (const OnibiREdge *)(RSTRING_PTR(blob) + header.edges_offset);
@@ -4962,26 +4965,26 @@ static void onibi_rseq_validate(VALUE rseq) {
   for (uint32_t i = 0; i < header.edge_count - header.start_edge_count; i++) {
     VALUE semantic_edge = rb_ary_entry(semantic_edges, i);
     if (!RB_TYPE_P(semantic_edge, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_edge)) ||
-        !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_edge, "actions"))))
+        !RTEST(rb_obj_frozen_p(onibi_hash_value_id(semantic_edge, id_key_actions))))
       rb_raise(rb_eArgError, "invalid semantic RSeq edge");
-    VALUE semantic_edge_actions = onibi_hash_value(semantic_edge, "actions");
+    VALUE semantic_edge_actions = onibi_hash_value_id(semantic_edge, id_key_actions);
     if (RARRAY_LEN(semantic_edge_actions) > 0) {
       VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
-      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
+      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value_id(terminator, id_key_op) : Qnil;
       if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != id_a_end)
         rb_raise(rb_eArgError, "RSeq edge action program is not terminated");
     }
-    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
+    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value_id(semantic_edge, id_key_to));
     if (destination == header.state_count - 1) destination = ONIBI_ACCEPT_STATE;
-    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
-    uint32_t expected_offset = action_index == 0 && RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :
+    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value_id(semantic_edge, id_key_action_offset));
+    uint32_t expected_offset = action_index == 0 && RARRAY_LEN(semantic_edge_actions) == 0 ? 0 :
       (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
     if (edges[i].destination != destination || edges[i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic edge");
     if (!NIL_P(physical_graph)) {
-      VALUE cached_edge = rb_ary_entry(onibi_hash_value(physical_graph, "edges"), i);
-      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value(cached_edge, "to")) : UINT32_MAX;
-      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value(cached_edge, "actions") : Qnil;
+      VALUE cached_edge = rb_ary_entry(onibi_hash_value_id(physical_graph, id_key_edges), i);
+      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value_id(cached_edge, id_key_to)) : UINT32_MAX;
+      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value_id(cached_edge, id_key_actions) : Qnil;
       if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != (destination == ONIBI_ACCEPT_STATE ? header.state_count - 1 : destination) ||
           !RB_TYPE_P(cached_actions, T_ARRAY) || RARRAY_LEN(cached_actions) != RARRAY_LEN(semantic_edge_actions))
         rb_raise(rb_eArgError, "cached RSeq edge disagrees with physical edge");
@@ -4997,26 +5000,26 @@ static void onibi_rseq_validate(VALUE rseq) {
   for (uint32_t i = 0; i < header.start_edge_count; i++) {
     VALUE semantic_edge = rb_ary_entry(semantic_start_edges, i);
     if (!RB_TYPE_P(semantic_edge, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_edge)) ||
-        !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_edge, "actions"))))
+        !RTEST(rb_obj_frozen_p(onibi_hash_value_id(semantic_edge, id_key_actions))))
       rb_raise(rb_eArgError, "invalid semantic RSeq start edge");
-    VALUE semantic_edge_actions = onibi_hash_value(semantic_edge, "actions");
+    VALUE semantic_edge_actions = onibi_hash_value_id(semantic_edge, id_key_actions);
     if (RARRAY_LEN(semantic_edge_actions) > 0) {
       VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
-      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
+      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value_id(terminator, id_key_op) : Qnil;
       if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != id_a_end)
         rb_raise(rb_eArgError, "RSeq start-edge action program is not terminated");
     }
-    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
-    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
-    uint32_t expected_offset = RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :
+    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value_id(semantic_edge, id_key_to));
+    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value_id(semantic_edge, id_key_action_offset));
+    uint32_t expected_offset = RARRAY_LEN(semantic_edge_actions) == 0 ? 0 :
       (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
     if (edges[header.edge_count - header.start_edge_count + i].destination != destination ||
         edges[header.edge_count - header.start_edge_count + i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic start edge");
     if (!NIL_P(physical_graph)) {
-      VALUE cached_edge = rb_ary_entry(onibi_hash_value(physical_graph, "start_edges"), i);
-      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value(cached_edge, "actions") : Qnil;
-      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value(cached_edge, "to")) : UINT32_MAX;
+      VALUE cached_edge = rb_ary_entry(onibi_hash_value_id(physical_graph, id_key_start_edges), i);
+      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value_id(cached_edge, id_key_actions) : Qnil;
+      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value_id(cached_edge, id_key_to)) : UINT32_MAX;
       if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != destination || !RB_TYPE_P(cached_actions, T_ARRAY) ||
           RARRAY_LEN(cached_actions) != RARRAY_LEN(semantic_edge_actions))
         rb_raise(rb_eArgError, "cached RSeq start edge disagrees with physical edge");
@@ -5031,7 +5034,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE semantic_action = rb_ary_entry(semantic_actions, i);
     if (!RB_TYPE_P(semantic_action, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_action)))
       rb_raise(rb_eArgError, "invalid semantic RSeq action");
-    ID op = SYM2ID(onibi_hash_value(semantic_action, "op"));
+    ID op = SYM2ID(onibi_hash_value_id(semantic_action, id_key_op));
     uint8_t expected_op = (op == id_capture_open || op == id_capture_close) ? ONIBI_RA_CAPTURE :
       op == id_match_reset ? ONIBI_RA_MATCH_RESET :
       (op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer || op == id_a_assert_begin_line ||
@@ -5096,7 +5099,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor range");
   }
   const OnibiLiteralDesc *literals = (const OnibiLiteralDesc *)(RSTRING_PTR(blob) + header.descriptors_offset);
-  for (uint32_t i = 0; i < NUM2UINT(onibi_hash_value(semantic, "literal_count")); i++) {
+  for (uint32_t i = 0; i < NUM2UINT(onibi_hash_value_id(semantic, id_key_literal_count)); i++) {
     if (literals[i].data_length != 1 || (literals[i].flags & ~1U) != 0)
       rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor");
     if (literals[i].data_offset < header.literals_offset ||
@@ -5105,8 +5108,8 @@ static void onibi_rseq_validate(VALUE rseq) {
   }
   for (uint32_t i = 0; i < header.state_count; i++) {
     VALUE state = rb_ary_entry(semantic_states, i);
-    ID op = SYM2ID(onibi_hash_value(state, "op"));
-    VALUE payload = onibi_hash_value(state, "payload");
+    ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
+    VALUE payload = onibi_hash_value_id(state, id_key_payload);
     if (op == id_g_class) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
       VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
@@ -5117,7 +5120,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     } else if (op == id_g_char) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
       VALUE byte = onibi_hash_value_id(payload, id_key_byte);
-      if (id >= NUM2UINT(onibi_hash_value(semantic, "literal_count")) ||
+      if (id >= NUM2UINT(onibi_hash_value_id(semantic, id_key_literal_count)) ||
           (unsigned char)RSTRING_PTR(blob)[literals[id].data_offset] != (unsigned char)NUM2INT(byte) ||
           ((literals[id].flags & 1U) != (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ? 1U : 0U)))
         rb_raise(rb_eArgError, "RSeq literal descriptor disagrees with semantic payload");
@@ -5498,6 +5501,11 @@ void Init_onibi(void) {
   id_key_flags = rb_intern("flags");
   id_key_capture_count = rb_intern("capture_count");
   id_key_counter_count = rb_intern("counter_count");
+  id_key_state_count = rb_intern("state_count"); id_key_features = rb_intern("features");
+  id_key_edge_count = rb_intern("edge_count"); id_key_action_count = rb_intern("action_count");
+  id_key_class_count = rb_intern("class_count"); id_key_subprogram_count = rb_intern("subprogram_count");
+  id_key_start_edge_base = rb_intern("start_edge_base"); id_key_start_edge_count = rb_intern("start_edge_count");
+  id_key_blob_size = rb_intern("blob_size"); id_key_literal_count = rb_intern("literal_count");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
   id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
