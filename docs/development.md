@@ -180,6 +180,11 @@ benchmark contract suite has 170 cases and 775 assertions after an explicit C
 build. Character-class range and GIR resource validation are parser/compiler
 gates.
 
+Deterministic capture conditionals lower to ordered `TEST_CAPTURE` guarded
+edges. Branch capture actions use the same tag history. Conditions that depend
+on nullable captures remain an explicit MRI boundary until dynamic state is
+complete.
+
 Remaining gates are complete option and encoding semantics, atomic backtracking
 states, variable-width lookaround subprograms, and complete tag-history sharing.
 
