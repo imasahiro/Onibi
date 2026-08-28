@@ -676,11 +676,6 @@ static ID onibi_token_kind(VALUE token) {
   return SYM2ID(rb_hash_aref(token, ID2SYM(id_key_kind)));
 }
 
-static OnibiTokenKind onibi_token_kind_code(VALUE token) {
-  VALUE code = rb_hash_aref(token, ID2SYM(id_key_kind_code));
-  return NIL_P(code) ? ONIBI_TOKEN_LITERAL : (OnibiTokenKind)NUM2UINT(code);
-}
-
 static long onibi_token_byte(VALUE token) {
   return NUM2LONG(rb_hash_aref(token, ID2SYM(id_key_byte)));
 }
