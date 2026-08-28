@@ -3529,10 +3529,17 @@ static VALUE onibi_alloc(VALUE klass) {
   return result;
 }
 
+typedef struct {
+  VALUE source;
+  VALUE options;
+  VALUE tokens;
+} OnibiProgramArgs;
+
 static VALUE onibi_build_program(VALUE argument) {
-  VALUE source = rb_ary_entry(argument, 0);
-  VALUE options = rb_ary_entry(argument, 1);
-  VALUE tokens = rb_ary_entry(argument, 2);
+  OnibiProgramArgs *args = (OnibiProgramArgs *)(uintptr_t)argument;
+  VALUE source = args->source;
+  VALUE options = args->options;
+  VALUE tokens = args->tokens;
   VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
   VALUE compiled = onibi_compiler_compile(Qnil, parsed);
   VALUE rseq = onibi_rseq_lower(Qnil, compiled);
@@ -3541,15 +3548,17 @@ static VALUE onibi_build_program(VALUE argument) {
 }
 
 static VALUE onibi_parse_program(VALUE argument) {
-  VALUE source = rb_ary_entry(argument, 0);
-  VALUE options = rb_ary_entry(argument, 1);
-  VALUE tokens = rb_ary_entry(argument, 2);
+  OnibiProgramArgs *args = (OnibiProgramArgs *)(uintptr_t)argument;
+  VALUE source = args->source;
+  VALUE options = args->options;
+  VALUE tokens = args->tokens;
   return onibi_parser_parse_internal(source, options, tokens);
 }
 
 static VALUE onibi_make_mri_regexp(VALUE argument) {
-  VALUE source = rb_ary_entry(argument, 0);
-  VALUE options = rb_ary_entry(argument, 1);
+  OnibiProgramArgs *args = (OnibiProgramArgs *)(uintptr_t)argument;
+  VALUE source = args->source;
+  VALUE options = args->options;
   return rb_funcall(rb_cRegexp, id_new, 2, source, options);
 }
 
@@ -3892,9 +3901,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     opts |= 16;
     obj->options = opts;
   }
-  VALUE regexp_args = rb_ary_new_from_args(2, regexp_source, INT2NUM(opts));
+  OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), Qnil};
   int regexp_state = 0;
-  obj->regexp = rb_protect(onibi_make_mri_regexp, regexp_args, &regexp_state);
+  obj->regexp = rb_protect(onibi_make_mri_regexp, (VALUE)(uintptr_t)&regexp_args, &regexp_state);
   if (regexp_state) {
     VALUE error = rb_errinfo();
     VALUE message = rb_funcall(error, id_message, 0);
@@ -3905,13 +3914,13 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
   rb_obj_freeze(obj->names);
   rb_obj_freeze(obj->named_captures);
-  VALUE program_args = rb_ary_new_from_args(3, source, INT2NUM(opts), tokens);
+  OnibiProgramArgs program_args = {source, INT2NUM(opts), tokens};
   int program_state = 0;
   VALUE parsed = Qnil;
   VALUE program = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
                    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE) || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ?
-    rb_protect(onibi_parse_program, program_args, &program_state) :
-    rb_protect(onibi_build_program, program_args, &program_state);
+    rb_protect(onibi_parse_program, (VALUE)(uintptr_t)&program_args, &program_state) :
+    rb_protect(onibi_build_program, (VALUE)(uintptr_t)&program_args, &program_state);
   if (!program_state) {
     parsed = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
                    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE) || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ? program : rb_ary_entry(program, 0);
