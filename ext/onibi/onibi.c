@@ -1422,7 +1422,7 @@ static VALUE onibi_source(VALUE self) {
 }
 static VALUE onibi_options(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return rb_funcall(obj->regexp, id_options, 0);
+  return INT2NUM(obj->options);
 }
 static VALUE onibi_inspect(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -2033,6 +2033,15 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
       header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
+  const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
+  for (uint32_t i = 0; i < header.state_count; i++) {
+    if ((uint64_t)states[i].edge_base + states[i].edge_count > header.edge_count - header.start_edge_count)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq state edge range");
+    if (states[i].op == ONIBI_RS_CLASS && states[i].payload >= header.class_count)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor id");
+    if (states[i].op == ONIBI_RS_CHAR && states[i].payload >= NUM2UINT(onibi_hash_value(semantic, "literal_count")))
+      rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor id");
+  }
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
@@ -2088,7 +2097,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_set_deadline(obj->timeout_seconds);
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
-      rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
+      rb_enc_compatible(str, obj->source) != NULL)
     {
       VALUE result = onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
       onibi_deadline_ns = 0;
