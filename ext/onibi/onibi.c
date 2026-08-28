@@ -932,7 +932,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   } else {
     rb_set_errinfo(Qnil);
   }
-  obj->program_size = RSTRING_LEN(source) + 1;
+  obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
+    RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
   VALUE class_tokens = NIL_P(obj->parsed) ? onibi_tokenize(source) : onibi_hash_value(obj->parsed, "tokens");

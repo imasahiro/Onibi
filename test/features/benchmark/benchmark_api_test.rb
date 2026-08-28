@@ -404,6 +404,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("abc")
     assert regexp.program_cached?
     assert regexp.program_frozen?
+    assert_operator regexp.program_size, :>, regexp.source.bytesize
     assert_same regexp.pipeline, regexp.pipeline
     canonical = regexp.pipeline[:canonical]
     assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
