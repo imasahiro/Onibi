@@ -113,6 +113,11 @@ static VALUE onibi_tokenize(VALUE src) {
       kind = "noncapture_start";
       byte = ':';
       i += 2;
+    } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
+               RSTRING_PTR(src)[i + 2] == '>') {
+      kind = "atomic_start";
+      byte = '>';
+      i += 2;
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -290,6 +295,16 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
+  if (kind == rb_intern("atomic_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("atomic_start"), rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated atomic group");
+    VALUE node = onibi_ast_node("atomic", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
+    rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
   if (kind == rb_intern("group_start")) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("group_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
@@ -354,7 +369,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
+    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
     else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
     else if (kind == rb_intern("alternation") && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(src, tokens, part, i));

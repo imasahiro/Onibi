@@ -342,6 +342,14 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("zab")
   end
 
+  def test_atomic_group_is_semantic_and_rejected_before_partial_lowering
+    node = Onibi::Parser.parse("(?>a)")[:ast][:children].first
+    assert_equal :atomic, node[:type]
+    regexp = Onibi::Regexp.new("(?>a)")
+    refute regexp.program_cached?
+    assert regexp.match?("a")
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
