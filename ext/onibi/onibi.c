@@ -62,7 +62,6 @@ static ID id_type_class_intersection;
 static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
-static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
@@ -3512,6 +3511,7 @@ static VALUE onibi_regexp_linear_time_p(VALUE klass, VALUE pattern) {
           !obj->has_absence && !obj->has_conditional && !obj->has_atomic) ? Qtrue : Qfalse;
 }
 
+#if 0 /* Private diagnostic pipeline; kept only as historical reference. */
 static VALUE onibi_pipeline_token_slice(VALUE source, VALUE token) {
   long start = NUM2LONG(onibi_hash_value(token, "start"));
   long finish = NUM2LONG(onibi_hash_value(token, "end"));
@@ -3859,6 +3859,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   }
   return out;
 }
+#endif
 
 static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters) {
   if (!counters || !counters->values) return 1;
