@@ -1836,7 +1836,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
                                   long *matched_end, long *matched_start, VALUE *matched_captures) {
   rb_thread_check_ints();
   onibi_check_deadline();
-  VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
+  VALUE key = rb_ary_new_from_args(4, LONG2NUM(state_id), LONG2NUM(pos), captures, LONG2NUM(reported_start));
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);

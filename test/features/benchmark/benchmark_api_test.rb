@@ -366,6 +366,13 @@ class BenchmarkApiTest < Minitest::Test
     refute Onibi::Regexp.new("a", 32).program_cached?
   end
 
+  def test_tagged_capture_walk_keeps_distinct_capture_histories
+    regexp = Onibi::Regexp.new("(a|aa)\\1")
+    assert regexp.vm_match?("aaaa")
+    result = regexp.vm_match_result("aaaa")
+    assert_equal({ start: 0, end: 2, captures: { 1 => { start: 0, end: 1 } } }, result)
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }

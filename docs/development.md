@@ -164,12 +164,12 @@ cross an explicit dynamic boundary. They must not enter a partial fast path.
 ## Current C pipeline status
 
 Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
-benchmark contract suite has 61 cases and 359 assertions after an explicit C
+benchmark contract suite has 62 cases and 361 assertions after an explicit C
 build.
 
 Remaining gates are removal of legacy source heuristics from the compatibility
 pipeline view, complete option and encoding semantics, atomic backtracking
-states, full tag-history sharing, and non-literal lookaround subprograms.
+states, non-literal lookaround subprograms, and complete tag-history sharing.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
