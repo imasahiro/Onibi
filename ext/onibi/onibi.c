@@ -58,7 +58,7 @@ static ID id_key_capture_count;
 static ID id_key_counter_count;
 static ID id_key_negative_name, id_key_negative;
 static ID id_type_class_intersection;
-static ID id_kind_literal, id_kind_escape;
+static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static void onibi_rseq_validate(VALUE rseq);
@@ -308,23 +308,6 @@ static inline OnibiAstKind onibi_ast_kind(VALUE node) {
   if (!NIL_P(code)) return (OnibiAstKind)NUM2UINT(code);
   VALUE type = rb_hash_aref(node, ID2SYM(id_key_type));
   return SYMBOL_P(type) ? onibi_ast_kind_from_type(rb_id2name(SYM2ID(type))) : ONIBI_AST_UNKNOWN;
-}
-
-static ID onibi_token_kind_id(OnibiTokenKind kind) {
-  static const char *const names[] = {
-    "literal", "lookahead_start", "lookbehind_start", "option_global",
-    "option_scope_start", "noncapture_start", "atomic_start", "absence_start",
-    "conditional_start", "group_start", "posix_class", "backref", "subroutine",
-    "meta_escape", "anchor", "match_reset", "escape", "class_start", "class_end",
-    "class_range", "class_negate", "alternation", "group_end", "quantifier", "wildcard"
-  };
-  static ID ids[sizeof(names) / sizeof(names[0])];
-  static int initialized = 0;
-  if (!initialized) {
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) ids[i] = rb_intern(names[i]);
-    initialized = 1;
-  }
-  return ids[kind];
 }
 
 /* These sets are lexer grammar, not user data.  Keep them as direct
@@ -669,7 +652,6 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     }
     if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
-    rb_hash_aset(token, ID2SYM(id_key_kind), ID2SYM(onibi_token_kind_id(kind)));
     rb_hash_aset(token, ID2SYM(id_key_kind_code), UINT2NUM((unsigned int)kind));
     rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(start));
@@ -1883,7 +1865,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int literal_only = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
-        if (onibi_hash_value(child, "kind") != ID2SYM(rb_intern("literal"))) {
+        if (NUM2UINT(onibi_hash_value(child, "kind_code")) != ONIBI_TOKEN_LITERAL) {
           literal_only = 0;
           break;
         }
@@ -1913,7 +1895,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
       int literal_children = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++)
-        if (onibi_hash_value(rb_ary_entry(children, i), "kind") != ID2SYM(rb_intern("literal"))) literal_children = 0;
+        if (NUM2UINT(onibi_hash_value(rb_ary_entry(children, i), "kind_code")) != ONIBI_TOKEN_LITERAL) literal_children = 0;
       if (!literal_children) goto skip_utf8_range_expansion;
       onibi_fragment_t result = onibi_fragment_empty();
       result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -4221,10 +4203,10 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
       int hit = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
-        VALUE kind_value = onibi_hash_value_id(child, id_key_kind);
-        if (!SYMBOL_P(kind_value)) continue;
-        ID kind = SYM2ID(kind_value);
-        if (kind == id_kind_literal) {
+        VALUE kind_value = onibi_hash_value_id(child, id_key_kind_code);
+        if (NIL_P(kind_value)) continue;
+        OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(kind_value);
+        if (kind == ONIBI_TOKEN_LITERAL) {
           VALUE bytes = onibi_hash_value_id(child, id_key_bytes);
           if (NIL_P(bytes)) bytes = rb_str_new((const char[]){(char)NUM2INT(onibi_hash_value_id(child, id_key_byte))}, 1);
           const char *child_ptr = RSTRING_PTR(bytes);
@@ -4233,7 +4215,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
           if (child_len > 0 && child_ptr + child_len <= child_end &&
               ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
                                    (const OnigUChar *)child_end) == code) hit = 1;
-        } else if (kind == id_kind_escape) {
+        } else if (kind == ONIBI_TOKEN_ESCAPE || kind == ONIBI_TOKEN_META_ESCAPE) {
           VALUE child_ctype_value = onibi_hash_value_id(child, id_key_ctype);
           int child_ctype = NIL_P(child_ctype_value) ? -1 : NUM2INT(child_ctype_value);
           if (child_ctype >= 0) {
@@ -5456,7 +5438,7 @@ void Init_onibi(void) {
   id_key_capture_count = rb_intern("capture_count");
   id_key_counter_count = rb_intern("counter_count");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
-  id_kind_literal = rb_intern("literal"); id_kind_escape = rb_intern("escape");
+  id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
