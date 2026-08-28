@@ -200,8 +200,9 @@ the required classification for each data family.
 
 At function level, the remaining Ruby container constructors are classified as
 follows. `onibi_tokenize_internal` creates the parser adapter. The parser
-creates AST child and range adapters because the current compiler still reads
-their variable payloads. `onibi_fragment_empty` creates mutable action lists;
+creates AST child adapters because the current compiler still reads their
+variable payloads. Character-class ranges use C records during parsing and are
+materialized only in the AST adapter. `onibi_fragment_empty` creates mutable action lists;
 these are the next C-vector unit. `onibi_compiler_compile` and
 `onibi_rseq_lower` materialize frozen GIR/RSeq adapters. VM capture maps and
 visited keys remain runtime values where their identity includes capture or tag
