@@ -1964,8 +1964,9 @@ skip_utf8_range_expansion:
   if (type == ID2SYM(rb_intern("conditional"))) {
     VALUE condition = onibi_hash_value(ast, "condition");
     char *endptr = NULL;
-    long capture_id = strtol(StringValueCStr(condition), &endptr, 10) - 1;
-    if (endptr == StringValueCStr(condition) || *endptr != '\0') {
+    const char *condition_text = StringValueCStr(condition);
+    long capture_id = strtol(condition_text, &endptr, 10) - 1;
+    if (endptr == condition_text || *endptr != '\0') {
       VALUE named_condition = condition;
       if (RSTRING_LEN(condition) >= 2 && RSTRING_PTR(condition)[0] == '<' &&
           RSTRING_PTR(condition)[RSTRING_LEN(condition) - 1] == '>')
