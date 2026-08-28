@@ -3905,6 +3905,47 @@ static VALUE onibi_pipeline_build(VALUE self) {
   return out;
 }
 
+typedef struct {
+  long *values;
+  uint32_t count;
+} OnibiCounterState;
+
+static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters) {
+  if (!counters || !counters->values) return 1;
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    VALUE action = rb_ary_entry(actions, i);
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    if (op != id_a_test_counter_lt && op != id_a_test_counter_ge) continue;
+    VALUE slot_value = onibi_hash_value_id(action, id_key_slot);
+    if (NIL_P(slot_value)) continue;
+    long slot = NUM2LONG(slot_value);
+    long count = (slot >= 0 && (uint32_t)slot < counters->count) ? counters->values[slot] : 0;
+    VALUE limit_value = onibi_hash_value_id(action, id_key_limit);
+    if (NIL_P(limit_value)) return 0;
+    long limit = NUM2LONG(limit_value);
+    if ((op == id_a_test_counter_lt && !(count < limit)) ||
+        (op == id_a_test_counter_ge && !(count >= limit))) return 0;
+  }
+  return 1;
+}
+
+static void onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *counters) {
+  if (!counters || !counters->values) return;
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    VALUE action = rb_ary_entry(actions, i);
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    VALUE slot_value = onibi_hash_value_id(action, id_key_slot);
+    if (NIL_P(slot_value)) continue;
+    long slot = NUM2LONG(slot_value);
+    if (slot < 0 || (uint32_t)slot >= counters->count) continue;
+    if (op == id_a_counter_init) {
+      VALUE value = onibi_hash_value(action, "value");
+      counters->values[slot] = NIL_P(value) ? 0 : NUM2LONG(value);
+    }
+    else if (op == id_a_counter_increment) counters->values[slot]++;
+  }
+}
+
 static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
@@ -3925,6 +3966,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       continue;
     }
     if (op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
+      if (NIL_P(counters)) continue;
       VALUE value = rb_hash_aref(counters, onibi_hash_value_id(action, id_key_slot));
       long count = NIL_P(value) ? 0 : NUM2LONG(value);
       long limit = NUM2LONG(onibi_hash_value_id(action, id_key_limit));
@@ -4338,23 +4380,27 @@ static long onibi_grapheme_width(VALUE str, long pos) {
   return end - pos;
 }
 
-static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, int use_counters, long *matched_end) {
-  typedef struct { long state_id, pos, next_edge; VALUE counters; } OnibiWalkFrame;
+static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, long *initial_counters, uint32_t counter_count, int use_counters, long *matched_end) {
+  typedef struct { long state_id, pos, next_edge; long *counters; } OnibiWalkFrame;
   /* Counter-bearing repeat paths can visit one state at many counter values.
    * Reserve a bounded workspace independent of graph state count. */
   long capacity = RARRAY_LEN(states) * 64 + 64;
   if (capacity > 65536) capacity = 65536;
   OnibiWalkFrame *stack = ALLOCA_N(OnibiWalkFrame, capacity);
+  long *counter_pool = use_counters ? ALLOCA_N(long, (size_t)capacity * counter_count) : NULL;
   long depth = 0;
-  stack[depth++] = (OnibiWalkFrame){state_id, pos, 0, counters};
+  if (use_counters && initial_counters) memcpy(counter_pool, initial_counters, sizeof(long) * counter_count);
+  else if (use_counters) memset(counter_pool, 0, sizeof(long) * counter_count);
+  stack[depth++] = (OnibiWalkFrame){state_id, pos, 0, use_counters ? counter_pool : NULL};
   while (depth > 0) {
     rb_thread_check_ints();
     onibi_check_deadline();
     OnibiWalkFrame *frame = &stack[depth - 1];
     if (frame->next_edge == 0) {
-      VALUE key = NIL_P(frame->counters) ?
+      VALUE key = !use_counters ?
         rb_ary_new_from_args(2, LONG2NUM(frame->state_id), LONG2NUM(frame->pos)) :
-        rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos), frame->counters);
+        rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos),
+                             rb_str_new((const char *)frame->counters, (long)(sizeof(long) * counter_count)));
       if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
       rb_hash_aset(visited, key, Qtrue);
       VALUE state = rb_ary_entry(states, frame->state_id);
@@ -4381,15 +4427,18 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     }
     VALUE state_edges = rb_ary_entry(outgoing, frame->state_id);
     if (frame->next_edge >= RARRAY_LEN(state_edges)) { depth--; continue; }
+    if (depth >= capacity) onibi_vm_stack_overflow();
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE next_counters = frame->counters;
+    long *next_counters = frame->counters;
     if (use_counters) {
-      next_counters = NIL_P(frame->counters) ? rb_hash_new() : rb_hash_dup(frame->counters);
+      next_counters = counter_pool + (size_t)depth * counter_count;
+      memcpy(next_counters, frame->counters, sizeof(long) * counter_count);
+      OnibiCounterState counter_state = {next_counters, counter_count};
+      if (!onibi_vm_counter_actions_ok(edge_actions, &counter_state)) continue;
+      onibi_vm_apply_counter_actions_c(edge_actions, &counter_state);
     }
-    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
-    if (!NIL_P(next_counters)) onibi_vm_apply_counter_actions(edge_actions, next_counters);
-    if (depth >= capacity) onibi_vm_stack_overflow();
+    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), Qnil, Qnil)) continue;
     stack[depth++] = (OnibiWalkFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0, next_counters};
   }
   return 0;
@@ -4402,13 +4451,19 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE visited = rb_hash_new();
   VALUE counter_count = onibi_hash_value_id(graph, id_key_counter_count);
   int use_counters = !NIL_P(counter_count) && NUM2UINT(counter_count) != 0;
+  uint32_t counter_slots = use_counters ? NUM2UINT(counter_count) : 0;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;
-    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, Qnil)) continue;
-    if (!NIL_P(branch_counters)) onibi_vm_apply_counter_actions(edge_actions, branch_counters);
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, use_counters, matched_end)) return 1;
+    long *branch_counters = use_counters ? ALLOCA_N(long, counter_slots) : NULL;
+    if (use_counters) {
+      memset(branch_counters, 0, sizeof(long) * counter_slots);
+      OnibiCounterState counter_state = {branch_counters, counter_slots};
+      if (!onibi_vm_counter_actions_ok(edge_actions, &counter_state)) continue;
+      onibi_vm_apply_counter_actions_c(edge_actions, &counter_state);
+    }
+    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), Qnil, Qnil)) continue;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, counter_slots, use_counters, matched_end)) return 1;
   }
   return 0;
 }
