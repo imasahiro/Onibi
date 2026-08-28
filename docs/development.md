@@ -222,6 +222,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
 | empty GIR action lists | No | Shared immutable Ruby Array singleton | Empty lists have no payload and are never mutated; one GC-rooted adapter is reused by all edges. |
+| empty fragment action lists | No | Shared immutable Ruby Array with copy-on-write | Empty fragments do not allocate two private arrays. A mutable array is created only when an action is first appended. |
 | RSeq class and literal payload indexes | No | Typed C payload vectors during lowering | Payload identity is used only for deduplication and blob indexing. Class records cache bitmap and negation; literal records cache byte and ignorecase. Ruby arrays are not needed for these temporary indexes. |
 | RSeq flattened actions | No | C `OnibiRSeqActionVector` until publication | Each record caches the Ruby payload, GIR opcode, physical opcode, operation ID, common boolean flags, assertion subtype, and numeric arguments. The frozen Ruby action array is materialized once for validation and diagnostics. |
 | RSeq state records | No | C `OnibiGirStateVector` during lowering | Opcode and payload lookup uses fixed C fields. The frozen GIR state array remains as the semantic adapter. |
