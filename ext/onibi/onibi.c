@@ -65,7 +65,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1527,28 +1527,34 @@ static VALUE onibi_build_program(VALUE argument) {
   return rb_ary_new_from_args(3, parsed, compiled, rseq);
 }
 
-static int onibi_tokens_have_class_intersection(VALUE tokens) {
+/* Compute all dispatch/compiler feature bits in one pass over the immutable
+   token stream.  Runtime entry points use these bits and never rescan source. */
+static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   int in_class = 0;
   VALUE previous = Qnil;
+  obj->has_class_intersection = 0;
+  obj->has_subroutine = 0;
+  obj->has_dynamic = 0;
+  obj->has_tagged = 0;
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
     if (kind == rb_intern("class_start")) { in_class = 1; previous = Qnil; continue; }
     if (kind == rb_intern("class_end")) { in_class = 0; previous = Qnil; continue; }
     if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
-        onibi_token_kind(token) == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
-        onibi_token_byte(token) == '&') return 1;
+        kind == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
+        onibi_token_byte(token) == '&') obj->has_class_intersection = 1;
+    if (kind == rb_intern("subroutine")) {
+      obj->has_subroutine = 1;
+      obj->has_dynamic = 1;
+    } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start")) {
+      obj->has_dynamic = 1;
+    } else if (kind == rb_intern("group_start") ||
+               (kind == rb_intern("quantifier") && onibi_token_byte(token) == '{')) {
+      obj->has_tagged = 1;
+    }
     previous = token;
   }
-  return 0;
-}
-
-static int onibi_tokens_have_subroutine(VALUE tokens) {
-  ID kind = rb_intern("subroutine");
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    if (onibi_token_kind(rb_ary_entry(tokens, i)) == kind) return 1;
-  }
-  return 0;
 }
 
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
@@ -1583,6 +1589,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
+  onibi_token_features(tokens, obj);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
@@ -1594,7 +1601,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
-        onibi_tokens_have_class_intersection(obj->tokens) || onibi_tokens_have_subroutine(obj->tokens)) {
+        obj->has_class_intersection || obj->has_subroutine) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
@@ -1605,28 +1612,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
-  VALUE class_tokens = obj->tokens;
-  for (long i = 0; i < RARRAY_LEN(class_tokens); i++) {
-    ID kind = onibi_token_kind(rb_ary_entry(class_tokens, i));
-    if (kind == rb_intern("backref") || kind == rb_intern("subroutine")) {
-      obj->execution_class = rb_str_new_cstr("DYNAMIC");
-      rb_obj_freeze(obj->execution_class);
-      break;
-    }
-    if (kind == rb_intern("atomic_start")) {
-      obj->execution_class = rb_str_new_cstr("DYNAMIC");
-      rb_obj_freeze(obj->execution_class);
-      break;
-    }
-    if (kind == rb_intern("group_start")) {
-      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
-      rb_obj_freeze(obj->execution_class);
-    }
-    if (kind == rb_intern("quantifier") && onibi_token_byte(rb_ary_entry(class_tokens, i)) == '{') {
-      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
-      rb_obj_freeze(obj->execution_class);
-    }
-  }
+  if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
+  else if (obj->has_tagged) obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
+  rb_obj_freeze(obj->execution_class);
   obj->execution_kind = rb_str_cmp(obj->execution_class, rb_str_new_cstr("DYNAMIC")) == 0 ? ID2SYM(rb_intern("DYNAMIC")) :
     (rb_str_cmp(obj->execution_class, rb_str_new_cstr("TAGGED_ORDERED")) == 0 ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
   obj->pipeline = onibi_pipeline_build(self);
