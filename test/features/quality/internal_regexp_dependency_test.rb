@@ -154,6 +154,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/obj->has_(?:class_intersection|nested_class|large_repeat|absence|conditional|backref|subroutine|grapheme|wildcard|anchor|meta_escape|unicode_escape)/, source)
   end
 
+  def test_regexp_state_keeps_only_public_values_as_ruby_references
+    source = File.read(EXTENSION_SOURCE)
+    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
+
+    assert_equal 5, regexp_struct.scan(/\bVALUE\s+[a-z_]+;/).length
+    refute_match(/VALUE\s+(?:tokens|ast|graph|states|edges|actions);/, regexp_struct)
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
