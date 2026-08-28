@@ -116,6 +116,14 @@ static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
     (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal);
 }
+
+/* Onigmo applies Unicode case folding to negated class intersections with
+ * rules that are not representable by the byte bitmap payload.  The MRI
+ * regexp is compiled once during initialize, so this compatibility path does
+ * not rescan source text during a match. */
+static int onibi_mri_intersection_path_p(const onibi_regexp_t *obj) {
+  return obj->has_class_intersection && (obj->options & 1);
+}
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
@@ -3255,7 +3263,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
-      !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
+      !onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
@@ -4955,7 +4963,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   onibi_set_deadline(obj->timeout_seconds);
-  if (!(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
+  if (!onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
@@ -5003,7 +5011,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
   }
-  int graph_ok = !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
+  int graph_ok = !onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
     onibi_vm_input_eligible(obj, str) &&
     (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
      (obj->has_unicode_property &&
