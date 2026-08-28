@@ -34,6 +34,12 @@ Each class has one C interpreter.
 All interpreters execute RSeq and return one common raw match result.
 The public API converts that result to `Onibi` objects.
 
+Compilation is an initialization-time operation. The tokenizer reads the
+source once. The parser, GIR compiler, and RSeq lowerer consume that token
+stream. Match entry points consume the published immutable RSeq only. They
+MUST NOT inspect or rescan the regexp source. Compatibility pipeline views
+are diagnostic adapters and are not execution inputs.
+
 ## Milestones
 
 ### 1. C extension foundation
