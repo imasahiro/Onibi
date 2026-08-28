@@ -2702,7 +2702,9 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
       !(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
-       (obj->has_unicode_property && rb_enc_get_index(str) == rb_utf8_encindex())) &&
+       (obj->has_unicode_property &&
+        (rb_enc_get_index(str) == rb_utf8_encindex() ||
+         rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
@@ -4002,7 +4004,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       !NIL_P(obj->rseq) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
-       (obj->has_unicode_property && rb_enc_get_index(str) == rb_utf8_encindex())) &&
+       (obj->has_unicode_property &&
+        (rb_enc_get_index(str) == rb_utf8_encindex() ||
+         rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
       /* The immutable RSeq was validated and its physical execution view was
@@ -4022,7 +4026,10 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   StringValue(str);
   int graph_ok = !(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
     onibi_vm_input_eligible(obj, str) &&
-    (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
+    (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
+     (obj->has_unicode_property &&
+      (rb_enc_get_index(str) == rb_utf8_encindex() ||
+       rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
     (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str));
   if (!graph_ok) {
     if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
