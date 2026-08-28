@@ -103,6 +103,11 @@ static VALUE onibi_tokenize(VALUE src) {
       kind = "lookahead_start";
       byte = (unsigned char)RSTRING_PTR(src)[i + 2];
       i += 2;
+    } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
+               RSTRING_PTR(src)[i + 2] == '<' && (RSTRING_PTR(src)[i + 3] == '=' || RSTRING_PTR(src)[i + 3] == '!')) {
+      kind = "lookbehind_start";
+      byte = (unsigned char)RSTRING_PTR(src)[i + 3];
+      i += 3;
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -257,10 +262,11 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
 static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
   VALUE token = rb_ary_entry(tokens, *index);
   ID kind = onibi_token_kind(token);
-  if (kind == rb_intern("lookahead_start")) {
-    long close = onibi_find_close(tokens, *index, end, rb_intern("lookahead_start"), rb_intern("group_end"));
-    if (close < 0) rb_raise(eRegexpError, "unterminated lookahead");
-    VALUE node = onibi_ast_node("lookahead", token);
+  if (kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start")) {
+    long close = onibi_find_close(tokens, *index, end, kind, rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
+    int behind = kind == rb_intern("lookbehind_start");
+    VALUE node = onibi_ast_node(behind ? "lookbehind" : "lookahead", token);
     rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(rb_intern("positive")), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
     rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
@@ -332,7 +338,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("class_start")) depth++;
+    if (kind == rb_intern("group_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
     else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
     else if (kind == rb_intern("alternation") && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(src, tokens, part, i));
@@ -722,7 +728,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_ary_push(result.pending_actions, action);
     return result;
   }
-  if (type == ID2SYM(rb_intern("lookahead"))) {
+  if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
     VALUE body = onibi_hash_value(ast, "body");
     VALUE children = onibi_hash_value(body, "children");
     VALUE bytes = rb_str_new(NULL, 0);
@@ -734,7 +740,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     }
     rb_obj_freeze(bytes);
     VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_LOOKAHEAD")));
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(type == ID2SYM(rb_intern("lookbehind")) ? "ASSERT_LOOKBEHIND" : "ASSERT_LOOKAHEAD")));
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
     onibi_fragment_t result = onibi_fragment_empty();
@@ -980,7 +986,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
         op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
         op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
-        op == rb_intern("ASSERT_NONWORD_BOUNDARY") || op == rb_intern("ASSERT_LOOKAHEAD")) features |= 16U;
+        op == rb_intern("ASSERT_NONWORD_BOUNDARY") || op == rb_intern("ASSERT_LOOKAHEAD") ||
+        op == rb_intern("ASSERT_LOOKBEHIND")) features |= 16U;
   }
   rb_hash_aset(header, ID2SYM(rb_intern("features")), UINT2NUM(features));
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
@@ -1118,7 +1125,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
-      op == rb_intern("ASSERT_LOOKAHEAD") ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND") ? ONIBI_RA_ASSERT_POSITION :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
@@ -1652,6 +1659,12 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       VALUE bytes = onibi_hash_value(action, "bytes");
       long width = RSTRING_LEN(bytes);
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
+      if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+    }
+    if (op == rb_intern("ASSERT_LOOKBEHIND")) {
+      VALUE bytes = onibi_hash_value(action, "bytes");
+      long width = RSTRING_LEN(bytes);
+      int hit = pos >= width && memcmp(RSTRING_PTR(subject) + pos - width, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
     }
   }

@@ -320,6 +320,18 @@ class BenchmarkApiTest < Minitest::Test
                  positive.pipeline[:compiled][:graph][:start_edges].first[:actions].first[:op]
   end
 
+  def test_literal_lookbehind_executes_with_fixed_width_assertion
+    positive = Onibi::Regexp.new("(?<=a)a")
+    negative = Onibi::Regexp.new("(?<!a)b")
+    assert positive.program_cached?
+    assert positive.vm_match?("aa")
+    refute positive.vm_match?("ba")
+    refute negative.vm_match?("ab")
+    assert negative.vm_match?("cb")
+    assert_equal :ASSERT_LOOKBEHIND,
+                 positive.pipeline[:compiled][:graph][:start_edges].first[:actions].first[:op]
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
