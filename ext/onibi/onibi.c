@@ -2159,6 +2159,9 @@ static void onibi_rseq_validate(VALUE rseq) {
       NUM2UINT(onibi_hash_value(semantic, "blob_size")) != header.blob_size)
     rb_raise(rb_eArgError, "RSeq semantic and physical headers disagree");
   if (header.magic != ONIBI_RSEQ_MAGIC || header.version != ONIBI_RSEQ_VERSION ||
+      header.exec_kind > 2 ||
+      ((header.flags & 1U) != (RTEST(onibi_hash_value(semantic, "ignorecase")) ? 1U : 0U)) ||
+      ((header.flags & 2U) != (RTEST(onibi_hash_value(semantic, "multiline")) ? 2U : 0U)) ||
       header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
       header.states_offset < sizeof(OnibiRSeqHeader) ||
       (header.states_offset & 3U) != 0 || (header.edges_offset & 3U) != 0 ||
