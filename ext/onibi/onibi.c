@@ -1062,8 +1062,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
       VALUE modifier = rb_ary_entry(tokens, i);
       long marker = onibi_token_byte(modifier);
       if (marker == '*' || marker == '+' || marker == '?') {
-        VALUE node_type = rb_hash_aref(node, ID2SYM(rb_intern("type")));
-        if (node_type == ID2SYM(rb_intern("quantifier")))
+        if (onibi_ast_kind(node) == ONIBI_AST_QUANTIFIER)
           rb_raise(eRegexpError, "nested quantifier");
         long min = marker == '+' ? 1 : 0;
         VALUE max = marker == '?' ? LONG2NUM(1) : Qnil;
@@ -1082,8 +1081,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         rb_hash_aset(quantifier, ID2SYM(rb_intern("possessive")), possessive ? Qtrue : Qfalse);
         rb_obj_freeze(quantifier); node = quantifier;
       } else if (marker == '{') {
-        VALUE node_type = rb_hash_aref(node, ID2SYM(rb_intern("type")));
-        if (node_type == ID2SYM(rb_intern("quantifier")))
+        if (onibi_ast_kind(node) == ONIBI_AST_QUANTIFIER)
           rb_raise(eRegexpError, "nested quantifier");
         long close = i + 1;
         while (close < end && onibi_token_byte(rb_ary_entry(tokens, close)) != '}') close++;
@@ -1442,7 +1440,7 @@ static int onibi_ast_has_capture(VALUE ast) {
     return 0;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_symbol_value(ast, "type") == ID2SYM(rb_intern("capture"))) return 1;
+  if (onibi_ast_kind(ast) == ONIBI_AST_CAPTURE) return 1;
   const char *keys[] = { "body", "children", "branches", "atom" };
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
     if (onibi_ast_has_capture(onibi_hash_value(ast, keys[i]))) return 1;
@@ -1457,7 +1455,7 @@ static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
     return 0;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("subroutine")) &&
+  if (onibi_ast_kind(ast) == ONIBI_AST_SUBROUTINE &&
       rb_equal(onibi_hash_value(ast, "name"), name)) return 1;
   const char *keys[] = {"body", "children", "branches", "atom"};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
