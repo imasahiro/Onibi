@@ -5178,7 +5178,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   return Qfalse;
 }
 
-static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
+static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str, int need_captures) {
   onibi_call_stack_reset();
   VALUE graph = onibi_rseq_physical_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
@@ -5186,9 +5186,13 @@ static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
-    long reported_start = start;
-    VALUE captures = rb_hash_new();
-    if (onibi_gir_match_captures(graph, str, start, &end, &reported_start, &captures)) return Qtrue;
+    if (need_captures) {
+      long reported_start = start;
+      VALUE captures = rb_hash_new();
+      if (onibi_gir_match_captures(graph, str, start, &end, &reported_start, &captures)) return Qtrue;
+    } else if (onibi_gir_match(graph, str, start, &end)) {
+      return Qtrue;
+    }
   }
   return Qfalse;
 }
@@ -5227,7 +5231,7 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
   if (physical_header.exec_kind != expected_kind)
     rb_raise(rb_eArgError, "RSeq execution class does not match blob");
   if (execution_class == ID2SYM(id_exec_regular)) return onibi_vm_regular_fast(rseq, str);
-  if (execution_class == ID2SYM(id_exec_tagged)) return onibi_vm_tagged_ordered(rseq, str);
+  if (execution_class == ID2SYM(id_exec_tagged)) return onibi_vm_tagged_ordered(rseq, str, 1);
   return onibi_vm_dynamic(rseq, str);
 }
 
@@ -5250,7 +5254,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       VALUE result = obj->execution_kind == ID2SYM(id_exec_regular) ?
         onibi_vm_regular_fast(obj->rseq, str) :
         (obj->execution_kind == ID2SYM(id_exec_tagged) ?
-          onibi_vm_tagged_ordered(obj->rseq, str) : onibi_vm_dynamic(obj->rseq, str));
+          onibi_vm_tagged_ordered(obj->rseq, str,
+            obj->has_conditional || obj->has_backref || obj->has_subroutine) :
+          onibi_vm_dynamic(obj->rseq, str));
       onibi_deadline_ns = 0;
       return result;
     }
