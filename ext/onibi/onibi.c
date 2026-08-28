@@ -735,6 +735,20 @@ static void onibi_gir_validate(VALUE graph) {
       rb_raise(eRegexpError, "GIR edge is out of range");
     if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
       rb_raise(eRegexpError, "GIR edge actions are not an array");
+    VALUE actions = onibi_hash_value(edge, "actions");
+    for (long j = 0; j < RARRAY_LEN(actions); j++) {
+      ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
+      if (action != rb_intern("CAPTURE_OPEN") && action != rb_intern("CAPTURE_CLOSE") &&
+          action != rb_intern("MATCH_RESET") && action != rb_intern("ASSERT_BEGIN_BUFFER") &&
+          action != rb_intern("ASSERT_END_BUFFER") && action != rb_intern("ASSERT_BEGIN_LINE") &&
+          action != rb_intern("ASSERT_END_LINE") && action != rb_intern("ASSERT_SEMI_END_BUFFER") &&
+          action != rb_intern("ASSERT_SEARCH_ORIGIN") && action != rb_intern("ASSERT_WORD_BOUNDARY") &&
+          action != rb_intern("ASSERT_NONWORD_BOUNDARY") && action != rb_intern("ASSERT_LOOKAHEAD") &&
+          action != rb_intern("ASSERT_LOOKBEHIND") && action != rb_intern("COUNTER_INIT") &&
+          action != rb_intern("COUNTER_INCREMENT") && action != rb_intern("TEST_COUNTER_LT") &&
+          action != rb_intern("TEST_COUNTER_GE"))
+        rb_raise(eRegexpError, "unknown GIR edge action opcode");
+    }
   }
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
@@ -743,6 +757,20 @@ static void onibi_gir_validate(VALUE graph) {
       rb_raise(eRegexpError, "GIR start edge is out of range");
     if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
       rb_raise(eRegexpError, "GIR start actions are not an array");
+    VALUE actions = onibi_hash_value(edge, "actions");
+    for (long j = 0; j < RARRAY_LEN(actions); j++) {
+      ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
+      if (action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
+          action == rb_intern("MATCH_RESET") || action == rb_intern("ASSERT_BEGIN_BUFFER") ||
+          action == rb_intern("ASSERT_END_BUFFER") || action == rb_intern("ASSERT_BEGIN_LINE") ||
+          action == rb_intern("ASSERT_END_LINE") || action == rb_intern("ASSERT_SEMI_END_BUFFER") ||
+          action == rb_intern("ASSERT_SEARCH_ORIGIN") || action == rb_intern("ASSERT_WORD_BOUNDARY") ||
+          action == rb_intern("ASSERT_NONWORD_BOUNDARY") || action == rb_intern("ASSERT_LOOKAHEAD") ||
+          action == rb_intern("ASSERT_LOOKBEHIND") || action == rb_intern("COUNTER_INIT") ||
+          action == rb_intern("COUNTER_INCREMENT") || action == rb_intern("TEST_COUNTER_LT") ||
+          action == rb_intern("TEST_COUNTER_GE")) continue;
+      rb_raise(eRegexpError, "unknown GIR start action opcode");
+    }
   }
 }
 
