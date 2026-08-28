@@ -1239,7 +1239,9 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
 typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
+typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
@@ -1298,6 +1300,51 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
 
 static void onibi_guard_vector_free(OnibiGuardVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+
+static void onibi_value_map_init(OnibiValueMap *map) {
+  map->entries = NULL; map->count = 0; map->capacity = 0;
+}
+
+static int onibi_value_map_key_equal(VALUE left, VALUE right) {
+  return left == right || RTEST(rb_equal(left, right));
+}
+
+static VALUE onibi_value_map_find(const OnibiValueMap *map, VALUE key) {
+  for (size_t i = 0; i < map->count; i++)
+    if (onibi_value_map_key_equal(map->entries[i].key, key)) return map->entries[i].value;
+  return Qnil;
+}
+
+static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value) {
+  for (size_t i = 0; i < map->count; i++) {
+    if (onibi_value_map_key_equal(map->entries[i].key, key)) {
+      map->entries[i].value = value;
+      return;
+    }
+  }
+  if (map->count == map->capacity) {
+    size_t next = map->capacity == 0 ? 8 : map->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*map->entries)) rb_raise(rb_eNoMemError, "GIR value map is too large");
+    map->entries = REALLOC_N(map->entries, OnibiValueEntry, next);
+    map->capacity = next;
+  }
+  map->entries[map->count].key = key;
+  map->entries[map->count].value = value;
+  map->count++;
+}
+
+static void onibi_value_map_delete(OnibiValueMap *map, VALUE key) {
+  for (size_t i = 0; i < map->count; i++) {
+    if (onibi_value_map_key_equal(map->entries[i].key, key)) {
+      map->entries[i] = map->entries[--map->count];
+      return;
+    }
+  }
+}
+
+static void onibi_value_map_free(OnibiValueMap *map) {
+  xfree(map->entries); map->entries = NULL; map->count = map->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
@@ -1730,25 +1777,25 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
   OnibiAstKind type = onibi_ast_kind(ast);
   if (type == ONIBI_AST_CAPTURE) {
     VALUE start = onibi_hash_value_id(ast, id_key_start);
-    VALUE id_value = rb_hash_aref(builder->capture_ids, start);
+    VALUE id_value = onibi_value_map_find(&builder->capture_ids, start);
     long id;
     if (NIL_P(id_value)) {
       id = (*next_capture)++;
-      rb_hash_aset(builder->capture_ids, start, LONG2NUM(id));
+      onibi_value_map_set(&builder->capture_ids, start, LONG2NUM(id));
     } else id = NUM2LONG(id_value);
     VALUE key = rb_str_new_cstr("");
     char number[32];
     snprintf(number, sizeof(number), "%ld", id + 1);
     key = rb_str_new_cstr(number);
-    rb_hash_aset(builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body));
+    onibi_value_map_set(&builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body));
     VALUE name = onibi_hash_value_id(ast, id_key_name);
     if (!NIL_P(name)) {
-      if (!NIL_P(rb_hash_aref(builder->capture_names, name)))
+      if (!NIL_P(onibi_value_map_find(&builder->capture_names, name)))
         rb_raise(eRegexpError, "duplicate named capture requires compatibility execution");
       /* MRI resolves a duplicate named backreference to the first matching
          group definition.  Keep the earliest slot in the compile index. */
-      rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
-      rb_hash_aset(builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body));
+      onibi_value_map_set(&builder->capture_names, name, LONG2NUM(id));
+      onibi_value_map_set(&builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body));
     }
     onibi_collect_captures(onibi_hash_value_id(ast, id_key_body), builder, next_capture);
     return;
@@ -1766,11 +1813,11 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
                                            onibi_gir_builder_t *builder) {
   long id = RARRAY_LEN(builder->subprograms);
   rb_ary_push(builder->subprograms, Qnil); /* reserve the recursive target */
-  rb_hash_aset(builder->subprogram_ids, name, LONG2NUM(id));
-  rb_hash_aset(builder->active_subroutines, name, Qtrue);
+  onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id));
+  onibi_value_map_set(&builder->active_subroutines, name, Qtrue);
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
-  rb_hash_delete(builder->active_subroutines, name);
-  VALUE capture_id_value = rb_hash_aref(builder->capture_names, name);
+  onibi_value_map_delete(&builder->active_subroutines, name);
+  VALUE capture_id_value = onibi_value_map_find(&builder->capture_names, name);
   if (!NIL_P(capture_id_value)) {
     long capture_id = NUM2LONG(capture_id_value);
     VALUE open = rb_hash_new(), close = rb_hash_new();
@@ -2143,7 +2190,7 @@ skip_utf8_range_expansion:
     }
     VALUE payload = ast;
     if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_hash_value_id(ast, id_key_name))) {
-      VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value_id(ast, id_key_name));
+      VALUE id_value = onibi_value_map_find(&builder->capture_names, onibi_hash_value_id(ast, id_key_name));
       if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
       payload = rb_hash_dup(ast);
       rb_hash_aset(payload, ID2SYM(id_key_capture), LONG2NUM(NUM2LONG(id_value) + 1));
@@ -2211,9 +2258,9 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_SUBROUTINE)
   {
     VALUE name = onibi_hash_value_id(ast, id_key_name);
-    VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
+    VALUE body = NIL_P(name) ? Qnil : onibi_value_map_find(&builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
-    VALUE existing = rb_hash_aref(builder->subprogram_ids, name);
+    VALUE existing = onibi_value_map_find(&builder->subprogram_ids, name);
     long subprogram_id;
     if (!NIL_P(existing)) subprogram_id = NUM2LONG(existing);
     else subprogram_id = onibi_compile_named_subprogram(name, body, builder);
@@ -2317,7 +2364,7 @@ skip_utf8_range_expansion:
       if (RSTRING_LEN(condition) >= 2 && RSTRING_PTR(condition)[0] == '<' &&
           RSTRING_PTR(condition)[RSTRING_LEN(condition) - 1] == '>')
         named_condition = rb_str_substr(condition, 1, RSTRING_LEN(condition) - 2);
-      VALUE named = rb_hash_aref(builder->capture_names, named_condition);
+      VALUE named = onibi_value_map_find(&builder->capture_names, named_condition);
       if (NIL_P(named)) rb_raise(eRegexpError, "conditional capture is undefined");
       capture_id = NUM2LONG(named);
     }
@@ -2445,11 +2492,11 @@ skip_utf8_range_expansion:
   }
   if (type_code == ONIBI_AST_CAPTURE) {
     VALUE capture_ast_key = onibi_hash_value_id(ast, id_key_start);
-    VALUE capture_id_value = rb_hash_aref(builder->capture_ids, capture_ast_key);
+    VALUE capture_id_value = onibi_value_map_find(&builder->capture_ids, capture_ast_key);
     long capture_id;
     if (NIL_P(capture_id_value)) {
       capture_id = builder->capture_count++;
-      rb_hash_aset(builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
+      onibi_value_map_set(&builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
     } else capture_id = NUM2LONG(capture_id_value);
     VALUE capture_body = onibi_hash_value_id(ast, id_key_body);
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
@@ -2465,11 +2512,11 @@ skip_utf8_range_expansion:
       rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
-    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body));
+    onibi_value_map_set(&builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body));
     if (!NIL_P(capture_name)) {
-      if (NIL_P(rb_hash_aref(builder->capture_names, capture_name)))
-        rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
-      rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body));
+      if (NIL_P(onibi_value_map_find(&builder->capture_names, capture_name)))
+        onibi_value_map_set(&builder->capture_names, capture_name, LONG2NUM(capture_id));
+      onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body));
     }
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
@@ -2583,12 +2630,12 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   memset(&builder, 0, sizeof(builder));
   builder.states = rb_ary_new();
   builder.edges = rb_ary_new();
-  builder.capture_names = rb_hash_new();
-  builder.capture_bodies = rb_hash_new();
-  builder.capture_ids = rb_hash_new();
-  builder.active_subroutines = rb_hash_new();
+  onibi_value_map_init(&builder.capture_names);
+  onibi_value_map_init(&builder.capture_bodies);
+  onibi_value_map_init(&builder.capture_ids);
+  onibi_value_map_init(&builder.active_subroutines);
   builder.subprograms = subprograms;
-  builder.subprogram_ids = rb_hash_new();
+  onibi_value_map_init(&builder.subprogram_ids);
   onibi_guard_vector_init(&builder.capture_guards);
   onibi_guard_vector_init(&builder.exit_guards);
   builder.ignorecase = ignorecase;
@@ -2698,6 +2745,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   compiled_result->options = parsed_options;
   onibi_guard_vector_free(&builder.capture_guards);
   onibi_guard_vector_free(&builder.exit_guards);
+  onibi_value_map_free(&builder.capture_names);
+  onibi_value_map_free(&builder.capture_bodies);
+  onibi_value_map_free(&builder.capture_ids);
+  onibi_value_map_free(&builder.active_subroutines);
+  onibi_value_map_free(&builder.subprogram_ids);
   rb_obj_freeze(result);
   return result;
 }

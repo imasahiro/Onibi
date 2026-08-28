@@ -109,6 +109,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/rb_hash_aref\(builder->(?:capture|exit)_guards/, source)
   end
 
+  def test_gir_compile_indexes_use_c_value_maps
+    source = File.read(EXTENSION_SOURCE)
+    builder = source[/typedef struct \{ VALUE states; VALUE edges;.*?onibi_gir_builder_t;/m]
+
+    refute_nil builder
+    assert_includes builder, "OnibiValueMap capture_names"
+    assert_includes builder, "OnibiValueMap subprogram_ids"
+    refute_match(/rb_hash_(?:aref|aset|delete)\(builder->(?:capture_names|capture_bodies|capture_ids|active_subroutines|subprogram_ids)/, source)
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
