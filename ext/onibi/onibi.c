@@ -3143,7 +3143,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
     (uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count +
     class_section_size + literal_desc_size + literal_data_size + subprogram_section_size;
-  if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
+  if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
       action_records.count > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
   uint32_t features = 0, capture_count = 0, counter_count = 0;
