@@ -14,7 +14,7 @@ static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
-static VALUE onibi_rseq_physical_regular_graph(VALUE rseq);
+static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
@@ -1581,7 +1581,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
   rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
   rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
-               onibi_deep_freeze(onibi_rseq_physical_regular_graph(result)));
+               onibi_deep_freeze(onibi_rseq_physical_graph(result)));
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
   return result;
 }
@@ -2589,7 +2589,7 @@ static void onibi_rseq_validate(VALUE rseq) {
 /* Build the regular execution view from the published RSeq blob.  Semantic
    payloads remain Ruby values, but state operations and edge destinations
    come from the physical layout.  This keeps the VM on the RSeq contract. */
-static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
+static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   VALUE cached = rb_hash_aref(rseq, ID2SYM(rb_intern("physical_graph")));
   if (!NIL_P(cached)) return cached;
   VALUE blob = onibi_hash_value(rseq, "blob");
@@ -2655,7 +2655,7 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
-  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
+  VALUE graph = onibi_rseq_physical_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
@@ -2666,7 +2666,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
-  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
+  VALUE graph = onibi_rseq_physical_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
@@ -2682,7 +2682,7 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
   /* Dynamic execution owns its dispatch loop.  The capture walker resolves
      backreferences and counters; this loop adds the dynamic deadline and
      interrupt boundary without routing through TAGGED_ORDERED. */
-  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
+  VALUE graph = onibi_rseq_physical_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
