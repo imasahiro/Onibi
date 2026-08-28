@@ -877,11 +877,19 @@ static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind 
   return -1;
 }
 
+typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
+static void onibi_value_vector_init(OnibiValueVector *vector);
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
+static void onibi_value_vector_free(OnibiValueVector *vector);
+
 static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   typedef struct { VALUE first; VALUE last; } OnibiRangeRecord;
   VALUE node = onibi_ast_node(ONIBI_AST_CHARACTER_CLASS, rb_ary_entry(tokens, begin));
   long class_capacity = close > begin ? close - begin : 0;
-  VALUE children = rb_ary_new_capa(class_capacity), ranges = rb_ary_new_capa(class_capacity);
+  OnibiValueVector child_records;
+  onibi_value_vector_init(&child_records);
+  VALUE child_roots = rb_ary_new_capa(class_capacity);
+  VALUE ranges = rb_ary_new_capa(class_capacity);
   VALUE range_roots = rb_ary_new_capa(class_capacity * 2);
   OnibiRangeRecord *range_records = class_capacity > 0 ? ALLOC_N(OnibiRangeRecord, class_capacity) : NULL;
   long range_count = 0;
@@ -916,6 +924,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     }
     rb_hash_aset(result, ID2SYM(id_key_operands), operands);
     rb_obj_freeze(operands);
+    onibi_value_vector_free(&child_records);
+    rb_ary_clear(child_roots);
     xfree(range_records);
     return result;
   }
@@ -929,7 +939,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       rb_hash_aset(nested, ID2SYM(id_key_end),
                    onibi_hash_value_id(rb_ary_entry(tokens, nested_close), id_key_end));
       rb_obj_freeze(nested);
-      rb_ary_push(children, nested);
+      onibi_value_vector_push(&child_records, nested, child_roots);
       i = nested_close;
       continue;
     }
@@ -939,7 +949,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
       if (onibi_posix_kind_id(property) == ONIBI_POSIX_UNKNOWN)
         rb_raise(eRegexpError, "unknown POSIX character class");
-      rb_ary_push(children, token);
+      onibi_value_vector_push(&child_records, token, child_roots);
       continue;
     }
     if (kind == ONIBI_TOKEN_CLASS_RANGE && i > begin + 1 && i + 1 < close) {
@@ -968,7 +978,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       i++;
       continue;
     }
-    rb_ary_push(children, token);
+    onibi_value_vector_push(&child_records, token, child_roots);
   }
   for (long i = 0; i < range_count; i++) {
     VALUE range = rb_ary_new_capa(2);
@@ -979,6 +989,10 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   xfree(range_records);
   rb_ary_clear(range_roots);
+  VALUE children = rb_ary_new_capa((long)child_records.count);
+  for (size_t i = 0; i < child_records.count; i++) rb_ary_push(children, child_records.items[i]);
+  onibi_value_vector_free(&child_records);
+  rb_ary_clear(child_roots);
   rb_hash_aset(node, ID2SYM(id_key_children), children);
   rb_hash_aset(node, ID2SYM(id_key_ranges), ranges);
   rb_hash_aset(node, ID2SYM(id_key_negated), negated ? Qtrue : Qfalse);
@@ -1154,11 +1168,6 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   *index = *index + 1;
   return node;
 }
-
-typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
-static void onibi_value_vector_init(OnibiValueVector *vector);
-static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
-static void onibi_value_vector_free(OnibiValueVector *vector);
 
 static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   OnibiValueVector branch_records;
