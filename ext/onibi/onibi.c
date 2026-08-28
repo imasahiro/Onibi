@@ -1162,16 +1162,34 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   return sequence;
 }
 
+typedef struct { VALUE ast; int options; } OnibiParsed;
+
+static void onibi_parsed_mark(void *ptr) {
+  OnibiParsed *parsed = (OnibiParsed *)ptr;
+  if (parsed) rb_gc_mark(parsed->ast);
+}
+static void onibi_parsed_free(void *ptr) { xfree(ptr); }
+static size_t onibi_parsed_memsize(const void *ptr) { return ptr ? sizeof(OnibiParsed) : 0; }
+static const rb_data_type_t onibi_parsed_type = {
+  "Onibi::Parsed", { onibi_parsed_mark, onibi_parsed_free, onibi_parsed_memsize, NULL, { NULL } },
+  0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+};
+static inline OnibiParsed *onibi_parsed_get(VALUE value) {
+  OnibiParsed *parsed;
+  TypedData_Get_Struct(value, OnibiParsed, &onibi_parsed_type, parsed);
+  return parsed;
+}
+
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
   source = StringValue(source);
   VALUE tokens = supplied_tokens;
   if (NIL_P(tokens)) {
     tokens = onibi_tokenize_internal(source, onibi_extended_option_p(options));
   }
-  VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("options")), INT2NUM(onibi_option_mask(options)));
-  rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens))));
-  rb_obj_freeze(result);
+  OnibiParsed *parsed;
+  VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed, &onibi_parsed_type, parsed);
+  parsed->options = onibi_option_mask(options);
+  parsed->ast = onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens)));
   return result;
 }
 
@@ -2395,9 +2413,10 @@ skip_utf8_range_expansion:
 
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   (void)self;
-  VALUE ast = onibi_hash_value(parsed, "ast");
+  OnibiParsed *parsed_data = onibi_parsed_get(parsed);
+  VALUE ast = parsed_data->ast;
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
-  int parsed_options = NUM2INT(onibi_hash_value(parsed, "options"));
+  int parsed_options = parsed_data->options;
   int ignorecase = (parsed_options & 1) != 0;
   int multiline = (parsed_options & 4) != 0;
   VALUE subprograms = rb_ary_new();
@@ -2497,12 +2516,12 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("counter_count")), LONG2NUM(counter_count));
   rb_hash_aset(graph, ID2SYM(rb_intern("subprogram_count")), LONG2NUM(RARRAY_LEN(subprograms)));
-  rb_hash_aset(graph, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
+  rb_hash_aset(graph, ID2SYM(rb_intern("options")), INT2NUM(parsed_options));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), ast);
-  rb_hash_aset(result, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
+  rb_hash_aset(result, ID2SYM(rb_intern("options")), INT2NUM(parsed_options));
   rb_hash_aset(result, ID2SYM(rb_intern("graph")), graph);
   rb_obj_freeze(result);
   return result;
@@ -3328,7 +3347,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = (obj->has_large_repeat ||
                  obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
-      VALUE parsed_ast = onibi_hash_value(parsed, "ast");
+      VALUE parsed_ast = onibi_parsed_get(parsed)->ast;
       obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
       obj->has_anchor_repeat = onibi_ast_anchor_repeat(parsed_ast);
       obj->has_nullable_absence = onibi_ast_nullable_absence(parsed_ast);
