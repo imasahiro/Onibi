@@ -27,6 +27,7 @@ static _Thread_local uint64_t onibi_deadline_ns = 0;
 static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
 static _Thread_local unsigned int onibi_call_stack_size = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
+static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
@@ -46,6 +47,7 @@ static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
 static ID id_key_kind;
+static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set;
 static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
@@ -5183,20 +5185,20 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
 
 static VALUE onibi_mri_match_result(VALUE match) {
   VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("bytebegin"), 1, INT2NUM(0)));
-  rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("byteend"), 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(id_key_start), rb_funcall(match, id_bytebegin, 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(id_key_end), rb_funcall(match, id_byteend, 1, INT2NUM(0)));
   VALUE captures = rb_hash_new();
-  long capture_count = NUM2LONG(rb_funcall(match, rb_intern("length"), 0)) - 1;
+  long capture_count = NUM2LONG(rb_funcall(match, id_length, 0)) - 1;
   for (long group_id = 1; group_id <= capture_count; group_id++) {
-    VALUE begin = rb_funcall(match, rb_intern("bytebegin"), 1, LONG2NUM(group_id));
-    VALUE finish = rb_funcall(match, rb_intern("byteend"), 1, LONG2NUM(group_id));
+    VALUE begin = rb_funcall(match, id_bytebegin, 1, LONG2NUM(group_id));
+    VALUE finish = rb_funcall(match, id_byteend, 1, LONG2NUM(group_id));
     if (NIL_P(begin) || NIL_P(finish) || NUM2LONG(begin) < 0 || NUM2LONG(finish) < 0) continue;
     VALUE group = rb_hash_new();
-    rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
-    rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
+    rb_hash_aset(group, ID2SYM(id_key_start), begin);
+    rb_hash_aset(group, ID2SYM(id_key_end), finish);
     rb_hash_aset(captures, LONG2NUM(group_id), group);
   }
-  if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+  if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(id_key_captures), captures);
   return result;
 }
 
@@ -5233,8 +5235,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
       VALUE capture_state = rb_hash_new();
       if (!onibi_gir_match_captures(graph, str, pos, &end, &reported_start, &capture_state)) continue;
       VALUE result = rb_hash_new();
-      rb_hash_aset(result, ID2SYM(rb_intern("start")), LONG2NUM(reported_start));
-      rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(end));
+      rb_hash_aset(result, ID2SYM(id_key_start), LONG2NUM(reported_start));
+      rb_hash_aset(result, ID2SYM(id_key_end), LONG2NUM(end));
       VALUE captures = rb_hash_new();
       VALUE header = onibi_hash_value(rseq, "header");
       long capture_count = NUM2LONG(onibi_hash_value(header, "capture_count"));
@@ -5243,12 +5245,12 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
         VALUE finish = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1) + 1));
         if (!NIL_P(begin) && !NIL_P(finish)) {
           VALUE group = rb_hash_new();
-          rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
-          rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
+          rb_hash_aset(group, ID2SYM(id_key_start), begin);
+          rb_hash_aset(group, ID2SYM(id_key_end), finish);
           rb_hash_aset(captures, LONG2NUM(group_id), group);
         }
       }
-      if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+      if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(id_key_captures), captures);
       onibi_deadline_ns = 0;
       return result;
     }
@@ -5295,6 +5297,7 @@ static VALUE onibi_gsub(int argc, VALUE *argv, VALUE self) {
 void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
   id_new = rb_intern("new");
+  id_bytebegin = rb_intern("bytebegin"); id_byteend = rb_intern("byteend"); id_length = rb_intern("length");
   id_case_equal = rb_intern("==="); id_last_match = rb_intern("last_match"); id_tilde = rb_intern("~");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect"); id_to_s = rb_intern("to_s");
@@ -5330,6 +5333,7 @@ void Init_onibi(void) {
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
   id_key_kind = rb_intern("kind"); id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
+  id_key_start = rb_intern("start"); id_key_end = rb_intern("end"); id_key_captures = rb_intern("captures");
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set");
