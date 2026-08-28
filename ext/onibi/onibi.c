@@ -62,7 +62,6 @@ static ID id_type_class_intersection;
 static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
-static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
@@ -5362,66 +5361,6 @@ static VALUE onibi_mri_match_result(VALUE match) {
   }
   if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(id_key_captures), captures);
   return result;
-}
-
-static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  StringValue(str);
-  if (obj->has_nullable_capture) {
-    VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
-    return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
-  }
-  int graph_ok = !onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
-    onibi_vm_input_eligible(obj, str) &&
-    (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
-     (obj->has_unicode_property &&
-      (rb_enc_get_index(str) == rb_utf8_encindex() ||
-       rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
-    (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str));
-  if (!graph_ok) {
-    if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
-  }
-  if (NIL_P(obj->rseq)) {
-    VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
-    return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
-  }
-  if (graph_ok) {
-    onibi_call_stack_reset();
-    onibi_set_deadline(obj->timeout_seconds);
-    VALUE rseq = obj->rseq;
-    VALUE graph = onibi_rseq_physical_graph(rseq);
-    for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
-      if (!onibi_character_boundary(str, pos)) continue;
-      long end = 0;
-      long reported_start = pos;
-      VALUE capture_state = rb_hash_new();
-      if (!onibi_gir_match_captures(graph, str, pos, &end, &reported_start, &capture_state)) continue;
-      VALUE result = rb_hash_new();
-      rb_hash_aset(result, ID2SYM(id_key_start), LONG2NUM(reported_start));
-      rb_hash_aset(result, ID2SYM(id_key_end), LONG2NUM(end));
-      VALUE captures = rb_hash_new();
-      VALUE header = onibi_hash_value_id(rseq, id_key_header);
-      long capture_count = NUM2LONG(onibi_hash_value_id(header, id_key_capture_count));
-      for (long group_id = 1; group_id <= capture_count; group_id++) {
-        VALUE begin = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1)));
-        VALUE finish = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1) + 1));
-        if (!NIL_P(begin) && !NIL_P(finish)) {
-          VALUE group = rb_hash_new();
-          rb_hash_aset(group, ID2SYM(id_key_start), begin);
-          rb_hash_aset(group, ID2SYM(id_key_end), finish);
-          rb_hash_aset(captures, LONG2NUM(group_id), group);
-        }
-      }
-      if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(id_key_captures), captures);
-      onibi_deadline_ns = 0;
-      return result;
-    }
-    onibi_deadline_ns = 0;
-    return Qnil;
-  }
-  VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
-  if (NIL_P(match)) return Qnil;
-  return onibi_mri_match_result(match);
 }
 
 static VALUE onibi_scan(VALUE self, VALUE str) {
