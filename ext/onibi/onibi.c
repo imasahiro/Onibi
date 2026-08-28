@@ -1463,8 +1463,11 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
 
 static void onibi_guard_vector_add_values(OnibiGuardVector *vector, OnibiStateId state,
                                           const OnibiValueVector *actions) {
+  if (actions->count > UINT32_MAX) rb_raise(rb_eArgError, "GIR guard action list is too large");
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
+      if (vector->entries[i].action_count > UINT32_MAX - (uint32_t)actions->count)
+        rb_raise(rb_eArgError, "GIR guard action list is too large");
       onibi_value_vector_reserve(&vector->entries[i].actions, actions->count);
       memcpy(vector->entries[i].actions.items + vector->entries[i].actions.count,
              actions->items, sizeof(VALUE) * actions->count);
