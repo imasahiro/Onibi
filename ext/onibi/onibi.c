@@ -1033,7 +1033,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
     VALUE body = onibi_hash_value(ast, "body");
+    if (!RB_TYPE_P(body, T_HASH))
+      rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE children = onibi_hash_value(body, "children");
+    if (!RB_TYPE_P(children, T_ARRAY))
+      rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE bytes = rb_str_new(NULL, 0);
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
@@ -1601,6 +1605,12 @@ static VALUE onibi_build_program(VALUE argument) {
   return rb_ary_new_from_args(3, parsed, compiled, rseq);
 }
 
+static VALUE onibi_make_mri_regexp(VALUE argument) {
+  VALUE source = rb_ary_entry(argument, 0);
+  VALUE options = rb_ary_entry(argument, 1);
+  return rb_funcall(rb_cRegexp, id_new, 2, source, options);
+}
+
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
    token stream.  Runtime entry points use these bits and never rescan source. */
 static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
@@ -1659,7 +1669,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE source = StringValue(pattern);
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
-  obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
+  VALUE regexp_args = rb_ary_new_from_args(2, source, INT2NUM(opts));
+  int regexp_state = 0;
+  obj->regexp = rb_protect(onibi_make_mri_regexp, regexp_args, &regexp_state);
+  if (regexp_state) {
+    VALUE error = rb_errinfo();
+    VALUE message = rb_funcall(error, rb_intern("message"), 0);
+    rb_set_errinfo(Qnil);
+    rb_raise(eRegexpError, "%s", StringValueCStr(message));
+  }
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);

@@ -2,8 +2,17 @@
 
 require "bundler/gem_tasks"
 require "minitest/test_task"
+require "rbconfig"
+
+task :build_extension do
+  Dir.chdir("ext/onibi") do
+    sh RbConfig.ruby, "extconf.rb"
+    sh "make"
+  end
+end
 
 Minitest::TestTask.create
+task test: :build_extension
 
 require "rubocop/rake_task"
 
