@@ -215,6 +215,8 @@ view. The vector has no Ruby `VALUE` fields; source token Hashes remain only
 the parser adapter.
 The tokenizer records each optional name as `name_id` once, so later feature
 classification does not intern the same name again.
+AST nodes retain this numeric `name_id` for escape properties, so compiler
+validation can reuse the token ID without another string-to-ID conversion.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Position assertions also carry a numeric `assert_kind` subtype.
