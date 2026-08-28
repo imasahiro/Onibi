@@ -469,6 +469,10 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("a\\#b", 2).vm_match?("a#b")
   end
 
+  def test_constructor_accepts_string_options
+    assert Onibi::Regexp.new("a", "i").vm_match?("A")
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")

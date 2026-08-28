@@ -1680,6 +1680,18 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
 
 static int onibi_option_mask(VALUE options) {
   if (NIL_P(options)) return 0;
+  if (RB_TYPE_P(options, T_STRING)) {
+    int mask = 0;
+    const char *text = RSTRING_PTR(options);
+    for (long i = 0; i < RSTRING_LEN(options); i++) {
+      if (text[i] == 'i') mask |= 1;
+      else if (text[i] == 'x') mask |= 2;
+      else if (text[i] == 'm') mask |= 4;
+      else if (text[i] == 'n') mask |= 32;
+      else rb_raise(rb_eArgError, "unknown regexp option");
+    }
+    return mask;
+  }
   if (RB_TYPE_P(options, T_ARRAY)) {
     int mask = 0;
     for (long i = 0; i < RARRAY_LEN(options); i++) {
