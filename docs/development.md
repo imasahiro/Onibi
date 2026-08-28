@@ -195,9 +195,9 @@ remaining token, AST, fragment, GIR, and RSeq conversions stay separate so
 each change can preserve ordering and GC tests.
 
 Feature classification now copies the fixed token fields into a short-lived
-`OnibiFeatureTokenVector`. The scanner compares enum kinds and numeric bytes
-from this C view. Optional Ruby names remain `VALUE`s only for property-name
-classification and stay rooted by the source token array.
+`OnibiFeatureTokenVector`. The scanner compares enum kinds, numeric bytes, and
+precomputed property IDs from this C view. Optional Ruby names remain `VALUE`s
+only for later metadata use and stay rooted by the source token array.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
