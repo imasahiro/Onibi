@@ -95,6 +95,7 @@ static VALUE onibi_tokenize(VALUE src) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       byte = escaped;
     if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = "anchor";
+      else if (!in_class && escaped == 'K') kind = "match_reset";
       else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
       else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
       i++;
@@ -250,9 +251,10 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
   VALUE node = NIL_P(token) ? Qnil :
     (kind == rb_intern("wildcard") ? onibi_ast_node("any", token) :
      (kind == rb_intern("anchor") ? onibi_ast_node("anchor", token) :
-       (kind == rb_intern("escape") ? onibi_ast_node("escape", token) :
+     (kind == rb_intern("escape") ? onibi_ast_node("escape", token) :
+       (kind == rb_intern("match_reset") ? onibi_ast_node("match_reset", token) :
        (kind == rb_intern("backref") ? onibi_ast_node("backref", token) :
-       (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil)))));
+       (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil))))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
   if (kind == rb_intern("anchor")) {
@@ -598,6 +600,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_ary_push(result.pending_actions, action);
     return result;
   }
+  if (type == ID2SYM(rb_intern("match_reset"))) {
+    onibi_fragment_t result = onibi_fragment_empty();
+    VALUE action = rb_hash_new();
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("MATCH_RESET")));
+    rb_ary_push(result.pending_actions, action);
+    return result;
+  }
   if (type == ID2SYM(rb_intern("capture"))) {
     long capture_id = builder->capture_count++;
     onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
@@ -869,6 +878,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
     physical_actions[i].op = (uint8_t)(op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ? ONIBI_RA_CAPTURE :
+      op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :
       op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ? ONIBI_RA_ASSERT_POSITION :

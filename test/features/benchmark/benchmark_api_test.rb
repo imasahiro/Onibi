@@ -456,6 +456,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_includes actions.map { |action| action[:op] }, :ASSERT_WORD_BOUNDARY
   end
 
+  def test_match_reset_is_a_semantic_parser_node
+    ast = Onibi::Parser.parse("prefix\\Ksuffix")[:ast]
+
+    assert_equal :match_reset, ast[:children][6][:type]
+    refute Onibi::Regexp.new("prefix\\Ksuffix").program_cached?
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
