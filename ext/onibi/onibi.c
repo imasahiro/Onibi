@@ -1205,7 +1205,14 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   return sequence;
 }
 
-typedef struct { VALUE ast; int options; } OnibiParsed;
+typedef struct {
+  VALUE ast;
+  int options;
+  int safe_multibyte_class;
+  int anchor_repeat;
+  int nullable_absence;
+  int nullable_capture;
+} OnibiParsed;
 
 static void onibi_parsed_mark(void *ptr) {
   OnibiParsed *parsed = (OnibiParsed *)ptr;
@@ -1223,6 +1230,11 @@ static inline OnibiParsed *onibi_parsed_get(VALUE value) {
   return parsed;
 }
 
+static int onibi_ast_safe_multibyte_class(VALUE ast);
+static int onibi_ast_anchor_repeat(VALUE ast);
+static int onibi_ast_nullable_absence(VALUE ast);
+static int onibi_ast_nullable(VALUE ast, int *nullable_capture);
+
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
   source = StringValue(source);
   VALUE tokens = supplied_tokens;
@@ -1233,6 +1245,11 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed, &onibi_parsed_type, parsed);
   parsed->options = onibi_option_mask(options);
   parsed->ast = onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens)));
+  parsed->safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed->ast);
+  parsed->anchor_repeat = onibi_ast_anchor_repeat(parsed->ast);
+  parsed->nullable_absence = onibi_ast_nullable_absence(parsed->ast);
+  parsed->nullable_capture = 0;
+  (void)onibi_ast_nullable(parsed->ast, &parsed->nullable_capture);
   return result;
 }
 
@@ -3710,11 +3727,11 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = (obj->has_large_repeat ||
                  obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
-      VALUE parsed_ast = onibi_parsed_get(parsed)->ast;
-      obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
-      obj->has_anchor_repeat = onibi_ast_anchor_repeat(parsed_ast);
-      obj->has_nullable_absence = onibi_ast_nullable_absence(parsed_ast);
-      (void)onibi_ast_nullable(parsed_ast, &obj->has_nullable_capture);
+      OnibiParsed *parsed_data = onibi_parsed_get(parsed);
+      obj->has_safe_multibyte_class = parsed_data->safe_multibyte_class;
+      obj->has_anchor_repeat = parsed_data->anchor_repeat;
+      obj->has_nullable_absence = parsed_data->nullable_absence;
+      obj->has_nullable_capture = parsed_data->nullable_capture;
     }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */

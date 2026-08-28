@@ -227,6 +227,18 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes document, "OnibiAstKind"
   end
 
+  def test_parsed_ast_analysis_is_cached_in_c_fields
+    source = File.read(EXTENSION_SOURCE)
+    parsed = source[/typedef struct \{\n  VALUE ast;\n  int options;.*?\n\} OnibiParsed;/m]
+
+    refute_nil parsed
+    assert_includes parsed, "safe_multibyte_class"
+    assert_includes parsed, "anchor_repeat"
+    assert_includes parsed, "nullable_absence"
+    assert_includes parsed, "nullable_capture"
+    assert_includes source, "parsed_data->safe_multibyte_class"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]

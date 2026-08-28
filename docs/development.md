@@ -193,7 +193,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | Container | Ruby API required | C-struct decision | Reason |
 | --- | --- | --- | --- |
 | token stream (`Array<Hash>`) | No | Convert to a token vector | Each item has a fixed kind, byte span, and optional payload. The parser is the only consumer. |
-| AST (`Hash`/`Array`) | No | Pending: typed C node arena | Node kinds and links are fixed. Required fields are `type_code`, `start`, `end`, `children`, `branches`, `body`, `atom`, `yes`, `no`, and typed scalar payloads. Ruby Hash lookup is not needed after parsing. |
+| AST (`Hash`/`Array`) | No | Pending: typed C node arena; analysis flags are cached in `OnibiParsed` | Node kinds and links are fixed. Required fields are `type_code`, `start`, `end`, `children`, `branches`, `body`, `atom`, `yes`, `no`, and typed scalar payloads. Initialization now computes AST safety flags once. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
 | RSeq class and literal payload indexes | No | C `OnibiValueVector` during lowering | Payload identity is used only for deduplication and blob indexing. Ruby arrays are not needed for this temporary index. |
