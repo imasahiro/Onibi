@@ -15,9 +15,10 @@ ZJIT work starts after the PoC.
 The PoC must not depend on ZJIT or MRI source-tree changes.
 
 The current C pipeline includes tokenization, parsing, ordered G-IR states and
-edges, RSeq lowering, and a regular VM for a tested ASCII subset. The VM covers
-literals, alternation, character classes, wildcard sequences, wildcard repeats,
-and bounded literal repeats. Other syntax remains outside this subset.
+edges, RSeq lowering, and three VM entry points for a tested ASCII subset. The
+VM covers literals, alternation, character classes, wildcard sequences, wildcard
+repeats, bounded repeats, captures, boundary assertions, and match reset.
+Other syntax remains outside this subset.
 
 ## Execution engines
 
@@ -133,15 +134,16 @@ The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
 
-RSeq lowering preserves state, edge, start-edge, and action order. The current
-RSeq value is an immutable Ruby representation. It is not yet the final
-one-blob relocatable allocation required by `gir.md`.
+RSeq lowering preserves state, edge, start-edge, and action order. It publishes
+an immutable semantic view and a validated, aligned, relocatable v1 blob. The
+blob currently contains the header, state, edge, and action sections. Literal
+and class descriptor sections will be added before the RSeq contract is final.
 
 The C executor supports literals, alternation, classes, POSIX classes, common
-escapes, anchors, bounded repeats, captures, and numeric or named
-backreferences. The dispatcher exposes all three execution class names, but
-the implementations still share the executor. This is an incremental gate,
-not final VM completion.
+escapes, anchors, bounded repeats, captures, word boundaries, search-origin
+assertions, match reset, and numeric or named backreferences. The dispatcher
+has separate C entry points for all three execution classes. They share graph
+walkers while their dispatch contracts and RSeq validation are explicit.
 
 ## Stage acceptance gates
 
@@ -162,11 +164,13 @@ cross an explicit dynamic boundary. They must not enter a partial fast path.
 ## Current C pipeline status
 
 Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
-current suite has 44 cases and 225 assertions after an explicit C build.
+benchmark contract suite has 51 cases and 283 assertions after an explicit C
+build.
 
-Remaining gates are the relocatable RSeq blob, independent interpreter
-implementations, option and encoding semantics, lookaround and atomic states,
-full tag-history sharing, interrupt polling, and timeout handling.
+Remaining gates are complete RSeq literal/class descriptor sections, removal of
+legacy source heuristics from the compatibility pipeline view, complete option
+and encoding semantics, lookaround and atomic states, full tag-history sharing,
+interrupt polling, and timeout handling.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
