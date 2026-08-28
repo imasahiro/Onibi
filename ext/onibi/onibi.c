@@ -1724,17 +1724,20 @@ static void onibi_set_gir_action_opcode(VALUE action, ID op) {
 }
 
 static void onibi_gir_validate_action_operands(VALUE action) {
-  ID op = SYM2ID(onibi_hash_value(action, "op"));
+  VALUE code_value = onibi_hash_value_id(action, id_key_action_code);
+  if (NIL_P(code_value)) rb_raise(eRegexpError, "GIR action opcode is missing");
+  OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
   VALUE slot = onibi_hash_value(action, "slot");
-  if (op == id_capture_open || op == id_capture_close) {
+  if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR capture slot");
-  } else if (op == id_a_test_capture || op == id_a_counter_init || op == id_a_counter_increment ||
-             op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
+  } else if (code == ONIBI_GA_TEST_CAPTURE || code == ONIBI_GA_COUNTER_INIT ||
+             code == ONIBI_GA_COUNTER_INCREMENT || code == ONIBI_GA_TEST_COUNTER_LT ||
+             code == ONIBI_GA_TEST_COUNTER_GE) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR counter slot");
   }
-  if (op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
+  if (code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
     VALUE limit = onibi_hash_value(action, "limit");
     if (NIL_P(limit) || NUM2LONG(limit) < 0)
       rb_raise(eRegexpError, "invalid GIR counter limit");
@@ -1800,11 +1803,12 @@ static void onibi_gir_validate(VALUE graph) {
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
       VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      if ((action == id_capture_open || action == id_capture_close) &&
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, j), id_key_action_code));
+      if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
-      if ((action == id_a_counter_init || action == id_a_counter_increment ||
-           action == id_a_test_counter_lt || action == id_a_test_counter_ge) &&
+      if ((code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+           code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) &&
           NUM2LONG(slot) >= counter_count)
         rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
@@ -1822,11 +1826,12 @@ static void onibi_gir_validate(VALUE graph) {
       if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
       VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      if ((action == id_capture_open || action == id_capture_close) &&
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, j), id_key_action_code));
+      if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
-      if ((action == id_a_counter_init || action == id_a_counter_increment ||
-           action == id_a_test_counter_lt || action == id_a_test_counter_ge) &&
+      if ((code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+           code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) &&
           NUM2LONG(slot) >= counter_count)
         rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
