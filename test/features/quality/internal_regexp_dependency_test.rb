@@ -274,6 +274,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes document, "The current source has #{hash_count} `rb_hash_new` calls and #{array_count} `rb_ary_new` calls."
   end
 
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
