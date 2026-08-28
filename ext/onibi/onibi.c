@@ -1396,7 +1396,7 @@ static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_SUBROUTINE &&
-      rb_equal(onibi_hash_value(ast, "name"), name)) return 1;
+      rb_equal(onibi_hash_value_id(ast, id_key_name), name)) return 1;
   const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
     if (onibi_ast_has_subroutine_name(onibi_hash_value_id(ast, keys[i]), name)) return 1;
@@ -2615,8 +2615,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     int found = 0;
     for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
       VALUE prior = rb_ary_entry(class_payloads, j);
-      if (rb_equal(onibi_hash_value(prior, "bitmap"), onibi_hash_value(payload, "bitmap")) &&
-          rb_equal(onibi_hash_value(prior, "negated"), onibi_hash_value(payload, "negated"))) {
+      if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
+          rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) {
         found = 1;
         break;
       }
@@ -2699,8 +2699,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     int found = 0;
     for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
       VALUE prior = rb_ary_entry(literal_payloads, j);
-      if (rb_equal(onibi_hash_value(prior, "byte"), onibi_hash_value(payload, "byte")) &&
-          rb_equal(onibi_hash_value(prior, "ignorecase"), onibi_hash_value(payload, "ignorecase"))) {
+      if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
+          rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) {
         found = 1;
         break;
       }
@@ -2859,8 +2859,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       class_index = 0;
       for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
         VALUE prior = rb_ary_entry(class_payloads, j);
-        if (rb_equal(onibi_hash_value(prior, "bitmap"), onibi_hash_value(payload, "bitmap")) &&
-            rb_equal(onibi_hash_value(prior, "negated"), onibi_hash_value(payload, "negated"))) break;
+        if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
+            rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) break;
         class_index++;
       }
       physical_states[i].payload = class_index;
@@ -2870,8 +2870,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       literal_index = 0;
       for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
         VALUE prior = rb_ary_entry(literal_payloads, j);
-        if (rb_equal(onibi_hash_value(prior, "byte"), onibi_hash_value(payload, "byte")) &&
-            rb_equal(onibi_hash_value(prior, "ignorecase"), onibi_hash_value(payload, "ignorecase"))) break;
+        if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
+            rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) break;
         literal_index++;
       }
       physical_states[i].payload = literal_index;
@@ -2929,11 +2929,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   class_index = 0;
   for (long i = 0; i < RARRAY_LEN(class_payloads); i++) {
     VALUE payload = rb_ary_entry(class_payloads, i);
-    VALUE bitmap = onibi_hash_value(payload, "bitmap");
+    VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
     class_descs[class_index].data_offset = (uint32_t)(physical.classes_offset + class_count * sizeof(OnibiClassDesc) + class_index * 32U);
     class_descs[class_index].data_length = 32;
     class_descs[class_index].kind = 0;
-    class_descs[class_index].flags = RTEST(onibi_hash_value(payload, "negated")) ? 1 : 0;
+    class_descs[class_index].flags = RTEST(onibi_hash_value_id(payload, id_key_negated)) ? 1 : 0;
     if (!NIL_P(bitmap) && RSTRING_LEN(bitmap) == 32) memcpy(class_data + class_index * 32U, RSTRING_PTR(bitmap), 32);
     class_index++;
   }
@@ -2944,8 +2944,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     VALUE payload = rb_ary_entry(literal_payloads, i);
     literal_descs[literal_index].data_offset = physical.literals_offset + literal_index;
     literal_descs[literal_index].data_length = 1;
-    literal_descs[literal_index].flags = RTEST(onibi_hash_value(payload, "ignorecase")) ? 1 : 0;
-    literal_data[literal_index] = (unsigned char)NUM2INT(onibi_hash_value(payload, "byte"));
+    literal_descs[literal_index].flags = RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ? 1 : 0;
+    literal_data[literal_index] = (unsigned char)NUM2INT(onibi_hash_value_id(payload, id_key_byte));
     literal_index++;
   }
   OnibiSubprogramDesc *physical_subprograms =
@@ -5106,17 +5106,17 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE payload = onibi_hash_value(state, "payload");
     if (op == id_g_class) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
-      VALUE bitmap = onibi_hash_value(payload, "bitmap");
+      VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
       if (id >= header.class_count || memcmp(RSTRING_PTR(bitmap),
           RSTRING_PTR(blob) + classes[id].data_offset, 32) != 0 ||
-          ((classes[id].flags & 1U) != (RTEST(onibi_hash_value(payload, "negated")) ? 1U : 0U)))
+          ((classes[id].flags & 1U) != (RTEST(onibi_hash_value_id(payload, id_key_negated)) ? 1U : 0U)))
         rb_raise(rb_eArgError, "RSeq class descriptor disagrees with semantic payload");
     } else if (op == id_g_char) {
       uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
-      VALUE byte = onibi_hash_value(payload, "byte");
+      VALUE byte = onibi_hash_value_id(payload, id_key_byte);
       if (id >= NUM2UINT(onibi_hash_value(semantic, "literal_count")) ||
           (unsigned char)RSTRING_PTR(blob)[literals[id].data_offset] != (unsigned char)NUM2INT(byte) ||
-          ((literals[id].flags & 1U) != (RTEST(onibi_hash_value(payload, "ignorecase")) ? 1U : 0U)))
+          ((literals[id].flags & 1U) != (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ? 1U : 0U)))
         rb_raise(rb_eArgError, "RSeq literal descriptor disagrees with semantic payload");
     }
   }
