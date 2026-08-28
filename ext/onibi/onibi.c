@@ -1956,8 +1956,12 @@ skip_utf8_range_expansion:
       onibi_fragment_t branch = onibi_compile_node(rb_ary_entry(branches, i), builder);
       for (long j = 0; j < RARRAY_LEN(branch.starts); j++) rb_ary_push(result.starts, rb_ary_entry(branch.starts, j));
       for (long j = 0; j < RARRAY_LEN(branch.exits); j++) rb_ary_push(result.exits, rb_ary_entry(branch.exits, j));
-      if (RARRAY_LEN(branch.start_actions) > 0 || RARRAY_LEN(branch.pending_actions) > 0)
-        rb_raise(eRegexpError, "branch-specific anchor actions are not implemented");
+      /* Preserve actions on each alternative edge.  A branch action cannot
+         be lifted to the fragment because that would apply it to siblings. */
+      if (RARRAY_LEN(branch.start_actions) > 0)
+        onibi_add_capture_guard(builder, branch.starts, branch.start_actions);
+      if (RARRAY_LEN(branch.pending_actions) > 0)
+        onibi_add_exit_guard(builder, branch.exits, branch.pending_actions);
       result.nullable = result.nullable || branch.nullable;
     }
     return result;
