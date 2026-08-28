@@ -377,6 +377,15 @@ class BenchmarkApiTest < Minitest::Test
     refute non_digit.vm_match?("7")
   end
 
+  def test_nullable_program_keeps_immediate_accept_start_edge
+    empty = Onibi::Regexp.new("")
+    optional = Onibi::Regexp.new("a?")
+    assert empty.program_cached?
+    assert_equal({ start: 0, end: 0 }, empty.vm_match_result("xyz"))
+    assert optional.vm_match?("xyz")
+    assert_equal 0, optional.vm_match_result("xyz")[:start]
+  end
+
   def test_extended_option_stays_on_mri_until_whitespace_lowering_exists
     regexp = Onibi::Regexp.new("a b", 2)
     refute regexp.program_cached?
