@@ -42,6 +42,7 @@ static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
 static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
 static ID id_a_end, id_key_physical_graph;
+static ID id_insert;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
@@ -1436,40 +1437,40 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
 static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE actions = rb_ary_new();
   VALUE edge = rb_hash_new();
-  rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
-  rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
+  rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
+  rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+  rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
   rb_ary_push(builder->edges, edge);
 }
 
 static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
   for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
     VALUE prior = rb_ary_entry(builder->edges, i);
-    if (NUM2LONG(onibi_hash_value(prior, "from")) == from &&
-      NUM2LONG(onibi_hash_value(prior, "to")) == to) {
-      VALUE prior_actions = onibi_hash_value(prior, "actions");
+    if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from &&
+      NUM2LONG(onibi_hash_value_id(prior, id_key_to)) == to) {
+      VALUE prior_actions = onibi_hash_value_id(prior, id_key_actions);
       VALUE merged_actions = rb_ary_dup(actions);
       onibi_append_values(merged_actions, prior_actions);
-      rb_hash_aset(prior, ID2SYM(rb_intern("actions")), merged_actions);
+      rb_hash_aset(prior, ID2SYM(id_key_actions), merged_actions);
       return;
     }
   }
   VALUE edge = rb_hash_new();
-  rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
-  rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
+  rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
+  rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+  rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
   rb_ary_push(builder->edges, edge);
 }
 
@@ -1503,15 +1504,15 @@ static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE ex
     long from = NUM2LONG(exit_values[i]);
     for (long j = 0; j < start_count; j++) {
       VALUE edge = rb_hash_new();
-      rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
-      rb_hash_aset(edge, ID2SYM(rb_intern("to")), start_values[j]);
-      rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+      rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
+      rb_hash_aset(edge, ID2SYM(id_key_to), start_values[j]);
+      rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
       long insert_at = RARRAY_LEN(builder->edges);
       for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
         VALUE prior = rb_ary_entry(builder->edges, k);
-        if (NUM2LONG(onibi_hash_value(prior, "from")) == from) { insert_at = k; break; }
+        if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from) { insert_at = k; break; }
       }
-      rb_funcall(builder->edges, rb_intern("insert"), 2, LONG2NUM(insert_at), edge);
+      rb_funcall(builder->edges, id_insert, 2, LONG2NUM(insert_at), edge);
     }
   }
 }
@@ -1550,8 +1551,8 @@ static VALUE onibi_capture_test_action(long slot, int set) {
   VALUE action = rb_hash_new();
   rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_a_test_capture));
   onibi_set_gir_action_opcode(action, id_a_test_capture);
-  rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
-  rb_hash_aset(action, ID2SYM(rb_intern("set")), set ? Qtrue : Qfalse);
+  rb_hash_aset(action, ID2SYM(id_key_slot), LONG2NUM(slot));
+  rb_hash_aset(action, ID2SYM(id_key_set), set ? Qtrue : Qfalse);
   return action;
 }
 
@@ -1559,10 +1560,10 @@ static VALUE onibi_counter_action(ID op, long slot, VALUE limit) {
   VALUE action = rb_hash_new();
   rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
   onibi_set_gir_action_opcode(action, op);
-  rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
-  if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(rb_intern("limit")), limit);
+  rb_hash_aset(action, ID2SYM(id_key_slot), LONG2NUM(slot));
+  if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(id_key_limit), limit);
   if (op == id_a_counter_init)
-    rb_hash_aset(action, ID2SYM(rb_intern("value")), INT2NUM(1));
+    rb_hash_aset(action, ID2SYM(id_key_value), INT2NUM(1));
   return action;
 }
 
@@ -1570,7 +1571,7 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
   for (long i = 0; i < RARRAY_LEN(builder->states); i++) rb_obj_freeze(rb_ary_entry(builder->states, i));
   for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
     VALUE edge = rb_ary_entry(builder->edges, i);
-    rb_obj_freeze(onibi_hash_value(edge, "actions"));
+    rb_obj_freeze(onibi_hash_value_id(edge, id_key_actions));
     rb_obj_freeze(edge);
   }
   rb_obj_freeze(builder->states);
@@ -5509,6 +5510,7 @@ void Init_onibi(void) {
   id_key_start_edge_base = rb_intern("start_edge_base"); id_key_start_edge_count = rb_intern("start_edge_count");
   id_key_blob_size = rb_intern("blob_size"); id_key_literal_count = rb_intern("literal_count");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
+  id_insert = rb_intern("insert");
   id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
