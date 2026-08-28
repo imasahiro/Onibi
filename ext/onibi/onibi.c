@@ -151,7 +151,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; struct OnibiFeatureToken *feature_tokens; size_t feature_token_count; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -259,7 +259,11 @@ static VALUE onibi_utf8_encode(uint32_t codepoint) {
   return rb_str_new(out, length);
 }
 
-static void onibi_free(void *ptr) { xfree(ptr); }
+static void onibi_free(void *ptr) {
+  onibi_regexp_t *obj = (onibi_regexp_t *)ptr;
+  if (obj) xfree(obj->feature_tokens);
+  xfree(ptr);
+}
 static void onibi_mark(void *ptr) {
   onibi_regexp_t *obj = (onibi_regexp_t *)ptr;
   if (!obj) return;
@@ -269,7 +273,10 @@ static void onibi_mark(void *ptr) {
   rb_gc_mark(obj->names);
   rb_gc_mark(obj->named_captures);
 }
-static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
+static size_t onibi_memsize(const void *ptr) {
+  const onibi_regexp_t *obj = (const onibi_regexp_t *)ptr;
+  return obj ? sizeof(*obj) : 0;
+}
 static const rb_data_type_t onibi_type = {
   "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize, NULL, { NULL } }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
@@ -289,7 +296,7 @@ typedef enum {
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
 static long onibi_token_byte(VALUE token);
 
-typedef struct {
+typedef struct OnibiFeatureToken {
   OnibiTokenKind kind;
   long byte;
   ID name_id;
@@ -322,12 +329,6 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
     }
   }
   return vector;
-}
-
-static void onibi_feature_tokens_free(OnibiFeatureTokenVector *vector) {
-  xfree(vector->items);
-  vector->items = NULL;
-  vector->count = 0;
 }
 
 typedef enum {
@@ -3066,7 +3067,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
 
 static VALUE onibi_alloc(VALUE klass) {
   onibi_regexp_t *obj;
-  return TypedData_Make_Struct(klass, onibi_regexp_t, &onibi_type, obj);
+  VALUE result = TypedData_Make_Struct(klass, onibi_regexp_t, &onibi_type, obj);
+  MEMZERO(obj, onibi_regexp_t, 1);
+  return result;
 }
 
 static VALUE onibi_build_program(VALUE argument) {
@@ -3094,8 +3097,7 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
 
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
    token stream.  Runtime entry points use these bits and never rescan source. */
-static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
-  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens);
+static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, onibi_regexp_t *obj) {
   int in_class = 0;
   long class_depth = 0;
   int repeat_active = 0;
@@ -3126,8 +3128,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
   obj->has_inline_ignorecase = 0;
-  for (size_t i = 0; i < feature_tokens.count; i++) {
-    OnibiFeatureToken *token = &feature_tokens.items[i];
+  for (size_t i = 0; i < feature_tokens->count; i++) {
+    OnibiFeatureToken *token = &feature_tokens->items[i];
     OnibiTokenKind kind_code = token->kind;
     if (kind_code == ONIBI_TOKEN_LITERAL && token->byte > 127) {
       obj->has_non_ascii_literal = 1;
@@ -3216,7 +3218,6 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     }
     previous = token;
   }
-  onibi_feature_tokens_free(&feature_tokens);
 }
 
 static int onibi_ast_safe_multibyte_class(VALUE ast) {
@@ -3416,9 +3417,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->names = Qnil;
   obj->named_captures = Qnil;
   obj->rseq = Qnil;
+  obj->feature_tokens = NULL;
+  obj->feature_token_count = 0;
   obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
-  onibi_token_features(tokens, obj);
+  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens);
+  obj->feature_tokens = feature_tokens.items;
+  obj->feature_token_count = feature_tokens.count;
+  OnibiFeatureTokenVector feature_view = { obj->feature_tokens, obj->feature_token_count };
+  onibi_token_features(&feature_view, obj);
   if (!(opts & 32) && rb_enc_get_index(source) == rb_utf8_encindex() &&
       obj->has_property_escape) opts |= 16;
   if (((opts & 32) && rb_enc_str_asciionly_p(source) &&
