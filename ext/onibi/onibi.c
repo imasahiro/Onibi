@@ -25,6 +25,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
 static ID id_capture_open, id_capture_close, id_match_reset;
+static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
 static ID id_key_slot, id_key_set;
@@ -3067,8 +3068,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
   else if (obj->has_tagged) obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
   rb_obj_freeze(obj->execution_class);
-  obj->execution_kind = rb_str_cmp(obj->execution_class, rb_str_new_cstr("DYNAMIC")) == 0 ? ID2SYM(rb_intern("DYNAMIC")) :
-    (rb_str_cmp(obj->execution_class, rb_str_new_cstr("TAGGED_ORDERED")) == 0 ? ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST")));
+  obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
+    (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
   obj->pipeline = onibi_pipeline_build(self);
   rb_obj_freeze(obj->pipeline);
   rb_obj_freeze(self);
@@ -3501,10 +3502,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   /* Dispatch follows the canonical compiler result. */
   int simple = !NIL_P(obj->rseq);
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
-  VALUE klass = obj->execution_class;
-  rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
-    ID2SYM(rb_intern("DYNAMIC")) : (rb_equal(klass, rb_str_new_cstr("TAGGED_ORDERED")) ?
-      ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST"))));
+  rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), obj->execution_kind);
   /* Expose the immutable canonical stages built at initialize time.  The
      legacy display fields above remain for compatibility with old callers. */
   if (!NIL_P(obj->parsed) && !NIL_P(obj->compiled) && !NIL_P(obj->rseq)) {
@@ -4719,19 +4717,19 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
   (void)self;
   StringValue(str);
   if (!rb_respond_to(rseq, id_trusted_rseq)) onibi_rseq_validate(rseq);
-  if (execution_class != ID2SYM(rb_intern("REGULAR_FAST")) &&
-      execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
-      execution_class != ID2SYM(rb_intern("DYNAMIC")))
+  if (execution_class != ID2SYM(id_exec_regular) &&
+      execution_class != ID2SYM(id_exec_tagged) &&
+      execution_class != ID2SYM(id_exec_dynamic))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
   VALUE physical_blob = onibi_hash_value(rseq, "blob");
   OnibiRSeqHeader physical_header;
   memcpy(&physical_header, RSTRING_PTR(physical_blob), sizeof(physical_header));
-  uint8_t expected_kind = execution_class == ID2SYM(rb_intern("DYNAMIC")) ? 2 :
-    (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED")) ? 1 : 0);
+  uint8_t expected_kind = execution_class == ID2SYM(id_exec_dynamic) ? 2 :
+    (execution_class == ID2SYM(id_exec_tagged) ? 1 : 0);
   if (physical_header.exec_kind != expected_kind)
     rb_raise(rb_eArgError, "RSeq execution class does not match blob");
-  if (execution_class == ID2SYM(rb_intern("REGULAR_FAST"))) return onibi_vm_regular_fast(rseq, str);
-  if (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED"))) return onibi_vm_tagged_ordered(rseq, str);
+  if (execution_class == ID2SYM(id_exec_regular)) return onibi_vm_regular_fast(rseq, str);
+  if (execution_class == ID2SYM(id_exec_tagged)) return onibi_vm_tagged_ordered(rseq, str);
   return onibi_vm_dynamic(rseq, str);
 }
 
@@ -4750,9 +4748,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     {
       /* The immutable RSeq was validated and its physical execution view was
          built during initialize.  Do not rescan the program on each match. */
-      VALUE result = obj->execution_kind == ID2SYM(rb_intern("REGULAR_FAST")) ?
+      VALUE result = obj->execution_kind == ID2SYM(id_exec_regular) ?
         onibi_vm_regular_fast(obj->rseq, str) :
-        (obj->execution_kind == ID2SYM(rb_intern("TAGGED_ORDERED")) ?
+        (obj->execution_kind == ID2SYM(id_exec_tagged) ?
           onibi_vm_tagged_ordered(obj->rseq, str) : onibi_vm_dynamic(obj->rseq, str));
       onibi_deadline_ns = 0;
       return result;
@@ -4864,6 +4862,8 @@ void Init_onibi(void) {
   id_g_backref = rb_intern("G_BACKREF");
   id_capture_open = rb_intern("CAPTURE_OPEN"); id_capture_close = rb_intern("CAPTURE_CLOSE");
   id_match_reset = rb_intern("MATCH_RESET");
+  id_exec_regular = rb_intern("REGULAR_FAST"); id_exec_tagged = rb_intern("TAGGED_ORDERED");
+  id_exec_dynamic = rb_intern("DYNAMIC");
   id_key_op = rb_intern("op"); id_key_payload = rb_intern("payload");
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
