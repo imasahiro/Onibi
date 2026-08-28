@@ -238,6 +238,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, property.pipeline[:interpreter]
   end
 
+  def test_meta_and_control_escapes_cross_rseq_boundary
+    meta = Onibi::Regexp.new("\\M-a".b)
+    control = Onibi::Regexp.new("\\M-\\C-A".b)
+    refute meta.program_cached?
+    refute control.program_cached?
+  end
+
   def test_atomic_group_has_explicit_ast_and_dynamic_boundary
     regexp = Onibi::Regexp.new("(?>a|ab)b")
     parsed = Onibi::Parser.parse("(?>a|ab)b")
