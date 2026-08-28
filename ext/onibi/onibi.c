@@ -886,6 +886,21 @@ static VALUE onibi_symbol_value(VALUE hash, const char *name) {
   return onibi_hash_value(hash, name);
 }
 
+static int onibi_ast_has_capture(VALUE ast) {
+  if (NIL_P(ast)) return 0;
+  if (RB_TYPE_P(ast, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(ast); i++)
+      if (onibi_ast_has_capture(rb_ary_entry(ast, i))) return 1;
+    return 0;
+  }
+  if (!RB_TYPE_P(ast, T_HASH)) return 0;
+  if (onibi_symbol_value(ast, "type") == ID2SYM(rb_intern("capture"))) return 1;
+  const char *keys[] = { "body", "children", "branches", "atom" };
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+    if (onibi_ast_has_capture(onibi_hash_value(ast, keys[i]))) return 1;
+  return 0;
+}
+
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
   VALUE state = rb_hash_new();
   rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
@@ -1321,8 +1336,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (RTEST(onibi_hash_value(ast, "possessive")) &&
         (NIL_P(max_value) || NUM2LONG(max_value) != min))
       rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
-    if (RTEST(onibi_hash_value(ast, "possessive")) &&
-        onibi_symbol_value(atom, "type") == ID2SYM(rb_intern("capture")))
+    if (RTEST(onibi_hash_value(ast, "possessive")) && onibi_ast_has_capture(atom))
       rb_raise(eRegexpError, "possessive capture repeat is not supported in RSeq");
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
       return onibi_fragment_empty();

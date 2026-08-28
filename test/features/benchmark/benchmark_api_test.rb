@@ -893,6 +893,7 @@ class BenchmarkApiTest < Minitest::Test
     refute capture_regexp.program_cached?
     assert class_regexp.vm_match?("ab")
     assert_equal({ start: 4, end: 6 }, capture_regexp.match("xxabab").offset(1).then { |start_pos, end_pos| { start: start_pos, end: end_pos } })
+    refute Onibi::Regexp.new("(?:(a)){2}+").program_cached?
   end
 
   def test_backreference_has_explicit_dynamic_pipeline_nodes
