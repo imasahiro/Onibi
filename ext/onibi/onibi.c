@@ -817,8 +817,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
         rb_raise(eRegexpError, "invalid range endpoint in character class");
       VALUE first_token = rb_ary_entry(tokens, i - 1);
       VALUE last_token = rb_ary_entry(tokens, i + 1);
-      VALUE first_bytes = onibi_hash_value(first_token, "bytes");
-      VALUE last_bytes = onibi_hash_value(last_token, "bytes");
+      VALUE first_bytes = onibi_hash_value_id(first_token, id_key_bytes);
+      VALUE last_bytes = onibi_hash_value_id(last_token, id_key_bytes);
       if (NIL_P(first_bytes) != NIL_P(last_bytes)) {
         if (NIL_P(first_bytes)) first_bytes = rb_str_new((const char[]){(char)onibi_token_byte(first_token)}, 1);
         if (NIL_P(last_bytes)) last_bytes = rb_str_new((const char[]){(char)onibi_token_byte(last_token)}, 1);
@@ -3124,7 +3124,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
         if (onibi_ascii_property_token_p(token)) {
           obj->has_ascii_property = 1;
-          VALUE property_name = onibi_hash_value(token, "name");
+          VALUE property_name = onibi_hash_value_id(token, id_key_name);
           ID property_id = NIL_P(property_name) ? 0 : rb_intern_str(property_name);
           if (!NIL_P(property_name) && property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
@@ -5165,7 +5165,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     VALUE edge = rb_hash_dup(rb_ary_entry(semantic_edges, i));
     uint32_t destination = physical_edges[i].destination;
     if (destination == ONIBI_ACCEPT_STATE) destination = (uint32_t)(RARRAY_LEN(states) - 1);
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), UINT2NUM(destination));
+    rb_hash_aset(edge, ID2SYM(id_key_to), UINT2NUM(destination));
     VALUE physical_program = rb_ary_new();
     uint32_t action_offset = physical_edges[i].action_offset;
     if (action_offset != 0) {
@@ -5176,15 +5176,15 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
         if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), physical_program);
     rb_ary_push(edges, edge);
-    long from = NUM2LONG(onibi_hash_value(edge, "from"));
+    long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
     if (from >= 0 && from < RARRAY_LEN(outgoing)) rb_ary_push(rb_ary_entry(outgoing, from), edge);
   }
   for (long i = 0; i < RARRAY_LEN(semantic_start_edges); i++) {
     VALUE edge = rb_hash_dup(rb_ary_entry(semantic_start_edges, i));
     const OnibiREdge *physical_edge = &physical_edges[header.start_edge_base + i];
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), UINT2NUM(physical_edge->destination));
+    rb_hash_aset(edge, ID2SYM(id_key_to), UINT2NUM(physical_edge->destination));
     VALUE physical_program = rb_ary_new();
     if (physical_edge->action_offset != 0) {
       uint32_t action_index = physical_edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
@@ -5194,14 +5194,14 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
         if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), physical_program);
     rb_ary_push(start_edges, edge);
   }
-  rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
-  rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("outgoing")), outgoing);
-  rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), onibi_hash_value(rseq, "subprograms"));
+  rb_hash_aset(graph, ID2SYM(id_key_states), states);
+  rb_hash_aset(graph, ID2SYM(id_key_edges), edges);
+  rb_hash_aset(graph, ID2SYM(id_key_start_edges), start_edges);
+  rb_hash_aset(graph, ID2SYM(id_key_outgoing), outgoing);
+  rb_hash_aset(graph, ID2SYM(id_key_subprograms), onibi_hash_value_id(rseq, id_key_subprograms));
   rb_hash_aset(graph, ID2SYM(id_key_counter_count), UINT2NUM(header.counter_count));
   return graph;
 }
