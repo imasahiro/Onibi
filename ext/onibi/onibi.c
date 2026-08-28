@@ -32,6 +32,13 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
 static ID id_capture_open, id_capture_close, id_match_reset;
+static ID id_a_test_capture, id_a_test_counter_lt, id_a_test_counter_ge;
+static ID id_a_counter_init, id_a_counter_increment;
+static ID id_a_assert_begin_buffer, id_a_assert_search_origin, id_a_assert_end_buffer;
+static ID id_a_assert_begin_line, id_a_assert_end_line, id_a_assert_word_boundary;
+static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
+static ID id_a_assert_lookahead, id_a_assert_lookbehind;
+static ID id_pred_byte, id_pred_any;
 static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
@@ -3783,14 +3790,14 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (op == rb_intern("TEST_CAPTURE")) {
+    if (op == id_a_test_capture) {
       long capture = NUM2LONG(onibi_hash_value(action, "slot"));
       int set = !NIL_P(captures) && !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture))) &&
         !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture + 1)));
       if (!set && !NIL_P(captures)) {
         for (long event = 0; event < RARRAY_LEN(actions); event++) {
           VALUE event_action = rb_ary_entry(actions, event);
-          if (SYM2ID(onibi_hash_value(event_action, "op")) == rb_intern("CAPTURE_CLOSE") &&
+          if (SYM2ID(onibi_hash_value(event_action, "op")) == id_capture_close &&
               NUM2LONG(onibi_hash_value(event_action, "slot")) == 2 * capture + 1 &&
               !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture)))) { set = 1; break; }
         }
@@ -3798,28 +3805,28 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       if (set != RTEST(onibi_hash_value(action, "set"))) return 0;
       continue;
     }
-    if (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+    if (op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
       VALUE value = rb_hash_aref(counters, onibi_hash_value(action, "slot"));
       long count = NIL_P(value) ? 0 : NUM2LONG(value);
       long limit = NUM2LONG(onibi_hash_value(action, "limit"));
-      if ((op == rb_intern("TEST_COUNTER_LT") && !(count < limit)) ||
-          (op == rb_intern("TEST_COUNTER_GE") && !(count >= limit))) return 0;
+      if ((op == id_a_test_counter_lt && !(count < limit)) ||
+          (op == id_a_test_counter_ge && !(count >= limit))) return 0;
     }
-    if (op == rb_intern("ASSERT_BEGIN_BUFFER") && pos != 0) return 0;
-    if (op == rb_intern("ASSERT_SEARCH_ORIGIN") && pos != 0) return 0;
-    if (op == rb_intern("ASSERT_END_BUFFER") && pos != length) return 0;
-    if (op == rb_intern("ASSERT_BEGIN_LINE") && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
-    if (op == rb_intern("ASSERT_END_LINE") && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;
-    if (op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY")) {
+    if (op == id_a_assert_begin_buffer && pos != 0) return 0;
+    if (op == id_a_assert_search_origin && pos != 0) return 0;
+    if (op == id_a_assert_end_buffer && pos != length) return 0;
+    if (op == id_a_assert_begin_line && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
+    if (op == id_a_assert_end_line && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;
+    if (op == id_a_assert_word_boundary || op == id_a_assert_nonword_boundary) {
       int before = pos > 0 && (isalnum((unsigned char)RSTRING_PTR(subject)[pos - 1]) || RSTRING_PTR(subject)[pos - 1] == '_');
       int after = pos < length && (isalnum((unsigned char)RSTRING_PTR(subject)[pos]) || RSTRING_PTR(subject)[pos] == '_');
       int boundary = before != after;
-      if ((op == rb_intern("ASSERT_WORD_BOUNDARY") && !boundary) ||
-          (op == rb_intern("ASSERT_NONWORD_BOUNDARY") && boundary)) return 0;
+      if ((op == id_a_assert_word_boundary && !boundary) ||
+          (op == id_a_assert_nonword_boundary && boundary)) return 0;
     }
-    if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
+    if (op == id_a_assert_semi_end_buffer && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
-    if (op == rb_intern("ASSERT_LOOKAHEAD")) {
+    if (op == id_a_assert_lookahead) {
       VALUE predicates = onibi_hash_value(action, "predicates");
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         int matched = 1;
@@ -3829,11 +3836,11 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           if (at >= length) { matched = 0; break; }
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[at];
           ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
-          if (kind == rb_intern("byte")) {
+          if (kind == id_pred_byte) {
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
             matched = matched && (RTEST(onibi_hash_value(predicate, "ignorecase")) ?
               tolower(byte) == tolower(expected) : byte == expected);
-          } else if (kind == rb_intern("any")) {
+          } else if (kind == id_pred_any) {
             matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
           }
           else {
@@ -3859,7 +3866,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
     }
-    if (op == rb_intern("ASSERT_LOOKBEHIND")) {
+    if (op == id_a_assert_lookbehind) {
       VALUE predicates = onibi_hash_value(action, "predicates");
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         long width = RARRAY_LEN(predicates);
@@ -3868,11 +3875,11 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           VALUE predicate = rb_ary_entry(predicates, i);
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[pos - width + i];
           ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
-          if (kind == rb_intern("byte")) {
+          if (kind == id_pred_byte) {
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
             matched = RTEST(onibi_hash_value(predicate, "ignorecase")) ?
               tolower(byte) == tolower(expected) : byte == expected;
-          } else if (kind == rb_intern("any")) {
+          } else if (kind == id_pred_any) {
             matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
           }
           else {
@@ -3906,9 +3913,9 @@ static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     VALUE slot = onibi_hash_value_id(action, id_key_slot);
-    if (op == rb_intern("COUNTER_INIT"))
+    if (op == id_a_counter_init)
       rb_hash_aset(counters, slot, onibi_hash_value(action, "value"));
-    else if (op == rb_intern("COUNTER_INCREMENT")) {
+    else if (op == id_a_counter_increment) {
       VALUE prior = rb_hash_aref(counters, slot);
       rb_hash_aset(counters, slot, LONG2NUM((NIL_P(prior) ? 0 : NUM2LONG(prior)) + 1));
     }
@@ -5310,6 +5317,16 @@ void Init_onibi(void) {
   id_g_backref = rb_intern("G_BACKREF");
   id_capture_open = rb_intern("CAPTURE_OPEN"); id_capture_close = rb_intern("CAPTURE_CLOSE");
   id_match_reset = rb_intern("MATCH_RESET");
+  id_a_test_capture = rb_intern("TEST_CAPTURE");
+  id_a_test_counter_lt = rb_intern("TEST_COUNTER_LT"); id_a_test_counter_ge = rb_intern("TEST_COUNTER_GE");
+  id_a_counter_init = rb_intern("COUNTER_INIT"); id_a_counter_increment = rb_intern("COUNTER_INCREMENT");
+  id_a_assert_begin_buffer = rb_intern("ASSERT_BEGIN_BUFFER");
+  id_a_assert_search_origin = rb_intern("ASSERT_SEARCH_ORIGIN"); id_a_assert_end_buffer = rb_intern("ASSERT_END_BUFFER");
+  id_a_assert_begin_line = rb_intern("ASSERT_BEGIN_LINE"); id_a_assert_end_line = rb_intern("ASSERT_END_LINE");
+  id_a_assert_word_boundary = rb_intern("ASSERT_WORD_BOUNDARY"); id_a_assert_nonword_boundary = rb_intern("ASSERT_NONWORD_BOUNDARY");
+  id_a_assert_semi_end_buffer = rb_intern("ASSERT_SEMI_END_BUFFER");
+  id_a_assert_lookahead = rb_intern("ASSERT_LOOKAHEAD"); id_a_assert_lookbehind = rb_intern("ASSERT_LOOKBEHIND");
+  id_pred_byte = rb_intern("byte"); id_pred_any = rb_intern("any");
   id_exec_regular = rb_intern("REGULAR_FAST"); id_exec_tagged = rb_intern("TAGGED_ORDERED");
   id_exec_dynamic = rb_intern("DYNAMIC");
   id_opt_ignorecase = rb_intern("ignorecase"); id_opt_multiline = rb_intern("multiline");
