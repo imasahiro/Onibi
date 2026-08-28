@@ -548,6 +548,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_includes rseq[:actions].map { |action| action[:op] }, :END
   end
 
+  def test_rseq_empty_action_edges_use_zero_offset
+    rseq = Onibi::Regexp.new("\\bcat\\b").pipeline[:rseq_program]
+    empty_edges = rseq[:edges].select { |edge| edge[:actions].empty? }
+    refute_empty empty_edges
+    assert empty_edges.all? { |edge| edge[:action_offset].zero? }
+  end
+
   def test_vm_rejects_an_unterminated_rseq_action_program
     rseq = Onibi::Regexp.new("(a)").pipeline[:rseq_program]
     starts = rseq[:start_edges].map.with_index do |edge, index|
