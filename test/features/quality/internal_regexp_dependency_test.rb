@@ -415,6 +415,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil parser
     refute_match(/rb_hash_aref\([^\n]*ID2SYM\(id_key_(kind_code|start|end|name|capture|bytes)/, parser)
+    refute_includes parser, "NUM2UINT(onibi_hash_value_id(token, id_key_kind_code))"
   end
 
   def test_parser_range_adapter_uses_fixed_pair_capacity

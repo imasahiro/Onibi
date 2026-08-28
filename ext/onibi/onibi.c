@@ -857,7 +857,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   for (long i = begin + 1; i < close; i++) {
     VALUE token = rb_ary_entry(tokens, i);
-      OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
+      OnibiTokenKind kind = onibi_token_kind_code(token);
     if (kind == ONIBI_TOKEN_CLASS_START) {
       long nested_close = onibi_find_close(tokens, i, close, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
       if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
@@ -879,8 +879,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       continue;
     }
     if (kind == ONIBI_TOKEN_CLASS_RANGE && i > begin + 1 && i + 1 < close) {
-      OnibiTokenKind first_kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(rb_ary_entry(tokens, i - 1), id_key_kind_code));
-      OnibiTokenKind last_kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(rb_ary_entry(tokens, i + 1), id_key_kind_code));
+      OnibiTokenKind first_kind = onibi_token_kind_code(rb_ary_entry(tokens, i - 1));
+      OnibiTokenKind last_kind = onibi_token_kind_code(rb_ary_entry(tokens, i + 1));
       if (first_kind != ONIBI_TOKEN_LITERAL || last_kind != ONIBI_TOKEN_LITERAL)
         rb_raise(eRegexpError, "invalid range endpoint in character class");
       VALUE first_token = rb_ary_entry(tokens, i - 1);
@@ -914,7 +914,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
 
 static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   VALUE token = rb_ary_entry(tokens, *index);
-  OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
+  OnibiTokenKind kind_code = onibi_token_kind_code(token);
   if (kind_code == ONIBI_TOKEN_LOOKAHEAD_START || kind_code == ONIBI_TOKEN_LOOKBEHIND_START) {
     long close = onibi_find_close(tokens, *index, end, kind_code, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
@@ -2334,7 +2334,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int literal_only = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
-        if (NUM2UINT(onibi_hash_value_id(child, id_key_kind_code)) != ONIBI_TOKEN_LITERAL) {
+        if (onibi_token_kind_code(child) != ONIBI_TOKEN_LITERAL) {
           literal_only = 0;
           break;
         }
@@ -2364,7 +2364,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
       int literal_children = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++)
-        if (NUM2UINT(onibi_hash_value_id(rb_ary_entry(children, i), id_key_kind_code)) != ONIBI_TOKEN_LITERAL) literal_children = 0;
+        if (onibi_token_kind_code(rb_ary_entry(children, i)) != ONIBI_TOKEN_LITERAL) literal_children = 0;
       if (!literal_children) goto skip_utf8_range_expansion;
       onibi_fragment_t result = onibi_fragment_empty();
       result.nullable = 0;
