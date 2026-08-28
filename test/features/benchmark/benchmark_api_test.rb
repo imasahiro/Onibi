@@ -714,6 +714,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_vm_rejects_invalid_subject_encoding
     invalid = [0xff].pack("C").force_encoding(Encoding::UTF_8)
     assert_raises(ArgumentError) { Onibi::Regexp.new(".").vm_match?(invalid) }
+    assert_raises(ArgumentError) { Onibi::Regexp.new(".").vm_match_result(invalid) }
   end
 
   def test_vm_keeps_required_suffix_after_nullable_prefix
