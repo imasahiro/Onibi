@@ -766,6 +766,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 2, end: 4, captures: { 1 => { start: 2, end: 3 } } }, regexp.vm_match_result("xxaaxx"))
   end
 
+  def test_dynamic_vm_casefolds_ascii_backreference
+    regexp = Onibi::Regexp.new("(a)\\1", 1)
+    assert regexp.vm_match?("aA")
+    refute regexp.vm_match?("ab")
+  end
+
   def test_named_backreference_is_one_lexer_token
     token = Onibi::Lexer.new("(a)\\k<x>").tokens.last
     assert_equal :backref, token[:kind]

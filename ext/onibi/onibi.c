@@ -985,6 +985,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_hash_aset(payload, ID2SYM(rb_intern("capture")), LONG2NUM(NUM2LONG(id_value) + 1));
       rb_obj_freeze(payload);
     }
+    if (builder->ignorecase && type == ID2SYM(rb_intern("backref"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_obj_freeze(payload);
+    }
     long id = builder->next_id++;
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
       ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
@@ -2393,7 +2398,17 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
       VALUE finish = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1) + 1));
       if (NIL_P(begin) || NIL_P(finish)) return 0;
       long length = NUM2LONG(finish) - NUM2LONG(begin);
-      if (pos + length > RSTRING_LEN(str) || memcmp(RSTRING_PTR(str) + pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) return 0;
+      if (pos + length > RSTRING_LEN(str)) return 0;
+      int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
+      if (!fold) {
+        if (memcmp(RSTRING_PTR(str) + pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) return 0;
+      } else {
+        for (long i = 0; i < length; i++) {
+          unsigned char left = (unsigned char)RSTRING_PTR(str)[pos + i];
+          unsigned char right = (unsigned char)RSTRING_PTR(str)[NUM2LONG(begin) + i];
+          if (tolower(left) != tolower(right)) return 0;
+        }
+      }
       pos += length;
     } else {
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
