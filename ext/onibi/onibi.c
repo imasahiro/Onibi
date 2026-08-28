@@ -586,11 +586,14 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
     long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
-    const char *op = marker == '^' ? (builder->multiline ? "ASSERT_BEGIN_LINE" : "ASSERT_BEGIN_BUFFER") :
-      (marker == '$' ? (builder->multiline ? "ASSERT_END_LINE" : "ASSERT_END_BUFFER") :
-       ((marker == 'b' || marker == 'B') ? (marker == 'b' ? "ASSERT_WORD_BOUNDARY" : "ASSERT_NONWORD_BOUNDARY") :
-       ((marker == 'A' || marker == 'G') ? "ASSERT_BEGIN_BUFFER" :
-        ((marker == 'Z') ? "ASSERT_SEMI_END_BUFFER" : "ASSERT_END_BUFFER"))));
+    const char *op = "ASSERT_END_BUFFER";
+    if (marker == '^') op = builder->multiline ? "ASSERT_BEGIN_LINE" : "ASSERT_BEGIN_BUFFER";
+    else if (marker == '$') op = builder->multiline ? "ASSERT_END_LINE" : "ASSERT_END_BUFFER";
+    else if (marker == 'b') op = "ASSERT_WORD_BOUNDARY";
+    else if (marker == 'B') op = "ASSERT_NONWORD_BOUNDARY";
+    else if (marker == 'A') op = "ASSERT_BEGIN_BUFFER";
+    else if (marker == 'G') op = "ASSERT_SEARCH_ORIGIN";
+    else if (marker == 'Z') op = "ASSERT_SEMI_END_BUFFER";
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
     rb_ary_push(result.pending_actions, action);
     return result;
@@ -868,7 +871,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     physical_actions[i].op = (uint8_t)(op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ? ONIBI_RA_CAPTURE :
       op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-      op == rb_intern("ASSERT_SEMI_END_BUFFER") ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ? ONIBI_RA_ASSERT_POSITION :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
@@ -1325,6 +1328,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value(action, "op"));
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") && pos != 0) return 0;
+    if (op == rb_intern("ASSERT_SEARCH_ORIGIN") && pos != 0) return 0;
     if (op == rb_intern("ASSERT_END_BUFFER") && pos != length) return 0;
     if (op == rb_intern("ASSERT_BEGIN_LINE") && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
     if (op == rb_intern("ASSERT_END_LINE") && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;

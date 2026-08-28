@@ -211,6 +211,8 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("\\Aabc\\z")
     assert regexp.match?("abc")
     refute regexp.match?("xabc")
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("\\Ga"))[:graph]
+    assert_equal :ASSERT_SEARCH_ORIGIN, graph[:start_edges].first[:actions].first[:op]
   end
 
   def test_pipeline_tokenizes_escapes_as_single_semantic_units
