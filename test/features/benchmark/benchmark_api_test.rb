@@ -441,6 +441,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[[:bogus:]]") }
   end
 
+  def test_word_boundary_assertions_are_compiled
+    regexp = Onibi::Regexp.new("\\bcat\\b")
+
+    assert regexp.program_cached?
+    assert regexp.vm_match?("a cat naps")
+    refute regexp.vm_match?("scatter")
+    actions = regexp.pipeline[:compiled][:graph][:edges].flat_map { |edge| edge[:actions] }
+    assert_includes actions.map { |action| action[:op] }, :ASSERT_WORD_BOUNDARY
+  end
+
   def test_capture_tokens_and_execution_class
     regexp = Onibi::Regexp.new("(abc)")
     assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
