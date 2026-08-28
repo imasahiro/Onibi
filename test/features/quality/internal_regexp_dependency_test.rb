@@ -546,6 +546,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_equal 1, matcher.scan("onibi_rseq_view_init(blob, &view)").length
   end
 
+  def test_tagged_vm_reuses_one_rseq_view_for_simple_starts
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
+
+    refute_nil matcher
+    assert_includes matcher, "const OnibiRSeqView *cached_view"
+    assert_includes matcher, "onibi_rseq_simple_match(rseq, cached_view"
+  end
+
   def test_capture_seed_does_not_duplicate_empty_counter_state
     source = File.read(EXTENSION_SOURCE)
     refute_includes source, "rb_hash_dup(counters)"

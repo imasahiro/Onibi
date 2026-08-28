@@ -5939,13 +5939,17 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str, int need_captures) {
   onibi_call_stack_reset();
   VALUE graph = onibi_rseq_physical_graph(rseq);
+  OnibiRSeqView view;
+  const OnibiRSeqView *cached_view = NULL;
+  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
+  if (onibi_rseq_view_init(blob, &view)) cached_view = &view;
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     if (!onibi_character_boundary(str, start)) continue;
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
     if (!need_captures) {
-      int simple = onibi_rseq_simple_match(rseq, NULL, str, start, &end);
+      int simple = onibi_rseq_simple_match(rseq, cached_view, str, start, &end);
       if (simple > 0) return Qtrue;
       if (simple == 0) continue;
     }
