@@ -5080,7 +5080,16 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
   VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
-  if (header.action_count != 0 || header.counter_count != 0 || header.subprogram_count != 1) return -1;
+  if (header.counter_count != 0 || header.subprogram_count != 1) return -1;
+  if (header.action_count != 0) {
+    const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
+    for (uint32_t i = 0; i < header.action_count; i++) {
+      /* Capture boundaries and MATCH_RESET do not change match? acceptance.
+       * Position assertions and all dynamic actions still require GIR. */
+      if (actions[i].op != ONIBI_RA_END && actions[i].op != ONIBI_RA_CAPTURE &&
+          actions[i].op != ONIBI_RA_MATCH_RESET) return -1;
+    }
+  }
   if (header.state_count == 0 || header.start_edge_count == 0) return -1;
   VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
   VALUE semantic_header = onibi_hash_value_id(rseq, id_key_header);
@@ -5191,6 +5200,11 @@ static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str, int need_captures) {
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
+    if (!need_captures) {
+      int simple = onibi_rseq_simple_match(rseq, str, start, &end);
+      if (simple > 0) return Qtrue;
+      if (simple == 0) continue;
+    }
     if (need_captures) {
       long reported_start = start;
       VALUE captures = rb_hash_new();
