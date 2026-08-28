@@ -1873,47 +1873,8 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_ary_push(compact, open); rb_ary_push(compact, string); rb_ary_push(compact, close);
   } else compact = gir;
   rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
-  int simple = 1;
-  int buffer_literal = RSTRING_LEN(src) >= 4 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A' &&
-                       RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z';
-  for (long i = 2; buffer_literal && i < RSTRING_LEN(src) - 2; i++)
-    if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) buffer_literal = 0;
-  int capture_literal = RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
-                        RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')';
-  for (long i = 1; capture_literal && i < RSTRING_LEN(src) - 1; i++)
-    if (strchr("?~:<>=!", RSTRING_PTR(src)[i])) capture_literal = 0;
-  int class_pair = 0;
-  if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
-    const char *close = strchr(RSTRING_PTR(src) + 1, ']');
-    class_pair = close && close[1] == '+' && close[2] == '[';
-  }
-  const char *meta = "\\^$|()[]{}*+?";
-  for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr(meta, RSTRING_PTR(src)[i])) { simple = 0; break; }
-  if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '|') simple = 1;
-  if (RSTRING_LEN(src) == 4 && RSTRING_PTR(src)[1] == '.' && RSTRING_PTR(src)[2] == '*') simple = 1;
-  if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') simple = 1;
-  if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') simple = 1;
-  if (capture_literal) simple = 1;
-  if (buffer_literal) simple = 1;
-  if (strchr(RSTRING_PTR(src), '-') && !(RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
-      RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+')) simple = 0;
-  if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' &&
-      !strchr(RSTRING_PTR(src) + 1, ':') && strchr(RSTRING_PTR(src) + 1, ']') == strrchr(RSTRING_PTR(src), ']')) simple = 1;
-  if (class_pair) simple = 1;
-  long pipes = 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++)
-    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) pipes++;
-  if (pipes > 1) simple = 0;
-  int pipeline_options = obj->options;
-  int has_wildcard = 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++)
-    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("wildcard")) has_wildcard = 1;
-  if (pipeline_options != 0 && !(pipeline_options == 4 && has_wildcard) &&
-      !(pipeline_options == 1 && literal_only)) simple = 0;
-  /* The canonical compiler result is authoritative.  Legacy display
-     heuristics above are retained only for old fields, never for dispatch. */
-  simple = !NIL_P(obj->rseq);
+  /* Dispatch follows the canonical compiler result. */
+  int simple = !NIL_P(obj->rseq);
   rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
   VALUE klass = obj->execution_class;
   rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
