@@ -16,6 +16,11 @@
 #define ONIBI_FEATURE_DYNAMIC (1U << 0)
 #define ONIBI_FEATURE_TAGGED (1U << 1)
 #define ONIBI_FEATURE_ATOMIC (1U << 2)
+#define ONIBI_FEATURE_GRAPHEME (1U << 3)
+#define ONIBI_FEATURE_WILDCARD (1U << 4)
+#define ONIBI_FEATURE_ANCHOR (1U << 5)
+#define ONIBI_FEATURE_META_ESCAPE (1U << 6)
+#define ONIBI_FEATURE_UNICODE_ESCAPE (1U << 7)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -163,7 +168,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_inline_ignorecase; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; unsigned int feature_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_property_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_subroutine; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -206,7 +211,8 @@ static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) && !(obj->options & (1 | 32)) &&
     obj->source_encoding_index != rb_ascii8bit_encindex() &&
     !obj->source_ascii_only &&
-    obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
+    obj->has_non_ascii_literal && !(obj->feature_flags & ONIBI_FEATURE_WILDCARD) &&
+    !(obj->feature_flags & ONIBI_FEATURE_ANCHOR) &&
     (!obj->has_non_ascii_class || (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
 }
 
@@ -3549,15 +3555,11 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->has_ascii_property = 0;
   obj->has_unicode_property = 0;
   obj->has_unicode_property_in_class = 0;
-  obj->has_grapheme = 0;
   obj->has_property_escape = 0;
-  obj->has_unicode_escape = 0;
   obj->has_non_ascii_literal = 0;
   obj->has_non_ascii_class = 0;
   obj->ast_flags = 0;
-  obj->has_wildcard = 0;
-  obj->has_anchor = 0;
-  obj->has_meta_escape = 0;
+  obj->feature_flags = 0;
   obj->has_subroutine = 0;
   obj->execution_flags = 0;
   obj->has_inline_ignorecase = 0;
@@ -3568,8 +3570,8 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
       obj->has_non_ascii_literal = 1;
       if (in_class) obj->has_non_ascii_class = 1;
     }
-    if (kind_code == ONIBI_TOKEN_WILDCARD) obj->has_wildcard = 1;
-    if (kind_code == ONIBI_TOKEN_ANCHOR) obj->has_anchor = 1;
+    if (kind_code == ONIBI_TOKEN_WILDCARD) obj->feature_flags |= ONIBI_FEATURE_WILDCARD;
+    if (kind_code == ONIBI_TOKEN_ANCHOR) obj->feature_flags |= ONIBI_FEATURE_ANCHOR;
     if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START || kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
       if (token->inline_ignorecase)
         obj->has_inline_ignorecase = 1;
@@ -3630,7 +3632,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
          construct only for diagnostics; compile failure selects MRI. */
       obj->has_conditional = 1;
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
-      if (token->byte == 'X') { obj->has_grapheme = 1; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
+      if (token->byte == 'X') { obj->feature_flags |= ONIBI_FEATURE_GRAPHEME; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
       if (token->byte == 'p' || token->byte == 'P') {
         if (token->property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
           obj->has_ascii_property = 1;
@@ -3641,9 +3643,9 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
         }
         else { obj->has_property_escape = 1; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
       }
-      if (token->byte == 'u') obj->has_unicode_escape = 1;
+      if (token->byte == 'u') obj->feature_flags |= ONIBI_FEATURE_UNICODE_ESCAPE;
     } else if (kind_code == ONIBI_TOKEN_META_ESCAPE) {
-      obj->has_meta_escape = 1;
+      obj->feature_flags |= ONIBI_FEATURE_META_ESCAPE;
       obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
     } else if (kind_code == ONIBI_TOKEN_GROUP_START ||
                (kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{')) {
@@ -3874,7 +3876,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
        (obj->has_non_ascii_literal || obj->has_property_escape))) opts |= 16;
   obj->options = opts;
   VALUE regexp_source = source;
-  if (source_encoding_index != rb_utf8_encindex() && obj->has_unicode_escape) {
+  if (source_encoding_index != rb_utf8_encindex() && (obj->feature_flags & ONIBI_FEATURE_UNICODE_ESCAPE)) {
     regexp_source = rb_funcall(source, id_encode, 1, rb_enc_from_encoding(rb_utf8_encoding()));
     opts |= 16;
     obj->options = opts;
@@ -3896,14 +3898,14 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   int program_state = 0;
   VALUE parsed = Qnil;
   VALUE program = (obj->has_large_repeat ||
-                   obj->has_property_escape || obj->has_meta_escape) ?
+                   obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
     parsed = (obj->has_large_repeat ||
-                   obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
+                   obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ? program : rb_ary_entry(program, 0);
     obj->rseq = (obj->has_large_repeat ||
-                 obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
+                 obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
       OnibiParsed *parsed_data = onibi_parsed_get(parsed);
       obj->ast_flags = parsed_data->ast_flags;
@@ -3916,7 +3918,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     int encoded_literal_program = (opts & 16) && !(opts & (1 | 32)) &&
       source_encoding_index != rb_ascii8bit_encindex() &&
       !source_ascii_only &&
-      obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
+      obj->has_non_ascii_literal && !(obj->feature_flags & ONIBI_FEATURE_WILDCARD) &&
+      !(obj->feature_flags & ONIBI_FEATURE_ANCHOR) &&
       (!obj->has_non_ascii_class || (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
     if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
         ((opts & 16) && !encoded_literal_program) || (opts & 32)) {

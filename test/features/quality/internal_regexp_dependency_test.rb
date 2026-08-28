@@ -123,6 +123,18 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes regexp_struct, "has_atomic"
   end
 
+  def test_syntax_features_use_numeric_bitset
+    source = File.read(EXTENSION_SOURCE)
+    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+
+    assert_includes regexp_struct, "unsigned int feature_flags;"
+    refute_includes regexp_struct, "has_grapheme"
+    refute_includes regexp_struct, "has_wildcard"
+    refute_includes regexp_struct, "has_anchor"
+    refute_includes regexp_struct, "has_meta_escape"
+    refute_includes regexp_struct, "has_unicode_escape"
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
