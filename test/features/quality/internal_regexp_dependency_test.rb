@@ -166,9 +166,9 @@ class InternalRegexpDependencyTest < Minitest::Test
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
-    assert_includes lowerer, "OnibiValueVector class_payloads"
+    assert_includes lowerer, "OnibiRSeqClassPayloadVector class_payloads"
     assert_includes lowerer, "OnibiValueVector literal_payloads"
-    assert_includes lowerer, "onibi_value_vector_free(&class_payloads)"
+    assert_includes lowerer, "onibi_rseq_class_payload_vector_free(&class_payloads)"
   end
 
   def test_rseq_edge_adapters_materialize_from_c_records

@@ -201,7 +201,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | AST lifetime after initialization | No | Release the Ruby adapter; skip deep-freeze | Runtime matching uses published GIR/RSeq data. The parsed AST is no longer retained after compiler and safety analysis complete. Internal AST generation does not deep-freeze or rescan the tree. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
-| RSeq class and literal payload indexes | No | C `OnibiValueVector` during lowering | Payload identity is used only for deduplication and blob indexing. Ruby arrays are not needed for this temporary index. |
+| RSeq class and literal payload indexes | No | Typed C payload vectors during lowering | Payload identity is used only for deduplication and blob indexing. Class records cache bitmap and negation fields; Ruby arrays are not needed for these temporary indexes. |
 | RSeq flattened actions | No | C `OnibiRSeqActionVector` until publication | Each record caches the Ruby payload plus numeric opcode and operation ID. The frozen Ruby action array is materialized once for validation and diagnostics. |
 | RSeq state records | No | C `OnibiGirStateVector` during lowering | Opcode and payload lookup uses fixed C fields. The frozen GIR state array remains as the semantic adapter. |
 | RSeq physical edges | No | C edge records during blob construction | Destination and action offsets are already available in the lowering records. Physicalization does not need another Ruby Hash scan. |

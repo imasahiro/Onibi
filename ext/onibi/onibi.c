@@ -1274,6 +1274,8 @@ typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } On
 typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { VALUE value; OnibiGActionOp code; ID op; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
+typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
+typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1474,6 +1476,22 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
   };
 }
 static void onibi_rseq_action_vector_free(OnibiRSeqActionVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_class_payload_vector_init(OnibiRSeqClassPayloadVector *vector) {
+  vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *vector, VALUE payload) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "RSeq class payload vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiRSeqClassPayloadEntry, next); vector->capacity = next;
+  }
+  vector->entries[vector->count++] = (OnibiRSeqClassPayloadEntry){
+    payload, onibi_hash_value_id(payload, id_key_bitmap), RTEST(onibi_hash_value_id(payload, id_key_negated))
+  };
+}
+static void onibi_rseq_class_payload_vector_free(OnibiRSeqClassPayloadVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -2961,22 +2979,22 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (to < 0 || to >= state_count)
       rb_raise(rb_eArgError, "RSeq lowering received an invalid start edge");
   }
-  OnibiValueVector class_payloads;
-  onibi_value_vector_init(&class_payloads);
+  OnibiRSeqClassPayloadVector class_payloads;
+  onibi_rseq_class_payload_vector_init(&class_payloads);
   for (size_t i = 0; i < state_records.count; i++) {
     OnibiGirStateEntry *state = &state_records.entries[i];
     if (state->opcode != ONIBI_G_CLASS) continue;
     VALUE payload = state->payload;
     int found = 0;
     for (size_t j = 0; j < class_payloads.count; j++) {
-      VALUE prior = class_payloads.items[j];
-      if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
-          rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) {
+      OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
+      if (rb_equal(prior->bitmap, onibi_hash_value_id(payload, id_key_bitmap)) &&
+          prior->negated == RTEST(onibi_hash_value_id(payload, id_key_negated))) {
         found = 1;
         break;
       }
     }
-    if (!found) onibi_value_vector_push(&class_payloads, payload);
+    if (!found) onibi_rseq_class_payload_vector_push(&class_payloads, payload);
   }
   uint32_t class_count = (uint32_t)class_payloads.count;
   OnibiRSeqActionVector action_records;
@@ -3229,9 +3247,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE payload = state->payload;
       class_index = 0;
       for (size_t j = 0; j < class_payloads.count; j++) {
-        VALUE prior = class_payloads.items[j];
-        if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
-            rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) break;
+        OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
+        if (rb_equal(prior->bitmap, onibi_hash_value_id(payload, id_key_bitmap)) &&
+            prior->negated == RTEST(onibi_hash_value_id(payload, id_key_negated))) break;
         class_index++;
       }
       physical_states[i].payload = class_index;
@@ -3300,12 +3318,12 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   unsigned char *class_data = (unsigned char *)(class_descs + class_count);
   class_index = 0;
   for (size_t i = 0; i < class_payloads.count; i++) {
-    VALUE payload = class_payloads.items[i];
-    VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
+    OnibiRSeqClassPayloadEntry *entry = &class_payloads.entries[i];
+    VALUE bitmap = entry->bitmap;
     class_descs[class_index].data_offset = (uint32_t)(physical.classes_offset + class_count * sizeof(OnibiClassDesc) + class_index * 32U);
     class_descs[class_index].data_length = 32;
     class_descs[class_index].kind = 0;
-    class_descs[class_index].flags = RTEST(onibi_hash_value_id(payload, id_key_negated)) ? 1 : 0;
+    class_descs[class_index].flags = entry->negated ? 1 : 0;
     if (!NIL_P(bitmap) && RSTRING_LEN(bitmap) == 32) memcpy(class_data + class_index * 32U, RSTRING_PTR(bitmap), 32);
     class_index++;
   }
@@ -3344,7 +3362,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   /* Validate once, before publication.  Match calls use this immutable
      validated representation without repeating structural scans. */
   onibi_rseq_validate(result);
-  onibi_value_vector_free(&class_payloads);
+  onibi_rseq_class_payload_vector_free(&class_payloads);
   onibi_value_vector_free(&literal_payloads);
   onibi_rseq_action_vector_free(&action_records);
   onibi_gir_edge_vector_free(&r_edge_records);
