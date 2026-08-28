@@ -1257,6 +1257,16 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_repeated_capture_keeps_the_last_iteration
+    regexp = Onibi::Regexp.new("(a|b)*")
+    expected = ::Regexp.new("(a|b)*").match("aaab")
+    result = regexp.vm_match_result("aaab")
+
+    assert regexp.program_cached?
+    assert_equal expected.offset(0), [result[:start], result[:end]]
+    assert_equal expected.offset(1), [result[:captures][1][:start], result[:captures][1][:end]]
+  end
+
   def test_fixed_possessive_repeat_lowers_to_rseq
     regexp = Onibi::Regexp.new("a{2}+")
     assert regexp.program_cached?

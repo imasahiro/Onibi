@@ -1860,8 +1860,16 @@ skip_utf8_range_expansion:
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
+      if (!repeat.nullable) onibi_append_values(result.start_actions, repeat.start_actions);
       if (RARRAY_LEN(result.exits) > 0) onibi_connect(builder, result.exits, repeat.starts);
-      onibi_connect(builder, repeat.exits, repeat.starts);
+      if (repeat.nullable) {
+        onibi_connect(builder, repeat.exits, repeat.starts);
+      } else {
+        VALUE loop_actions = rb_ary_dup(repeat.pending_actions);
+        onibi_append_values(loop_actions, repeat.start_actions);
+        onibi_connect_actions(builder, repeat.exits, repeat.starts, loop_actions);
+      }
+      onibi_append_values(result.pending_actions, repeat.pending_actions);
       for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
     }
     result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
