@@ -4029,6 +4029,11 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
                                          VALUE initial_captures, VALUE initial_tags,
                                          long *matched_end, long *matched_start,
                                          VALUE *matched_captures);
+static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE subprograms,
+                                          VALUE str, long start, VALUE entry,
+                                          VALUE entry_actions, VALUE initial_captures,
+                                          VALUE initial_tags, long *matched_end,
+                                          long *matched_start, VALUE *matched_captures);
 static int onibi_hash_copy_i(VALUE key, VALUE value, VALUE arg) {
   rb_hash_aset(arg, key, value);
   return ST_CONTINUE;
@@ -4127,22 +4132,14 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
   VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
   VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
   if (NIL_P(entry)) return 0;
-  VALUE starts = rb_ary_new();
-  VALUE edge = rb_hash_new();
-  rb_hash_aset(edge, ID2SYM(id_key_to), entry);
   VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
-  rb_hash_aset(edge, ID2SYM(id_key_actions),
-               RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new());
-  rb_ary_push(starts, edge);
-  VALUE nested = rb_hash_new();
-  rb_hash_aset(nested, ID2SYM(id_key_states), states);
-  rb_hash_aset(nested, ID2SYM(id_key_outgoing), outgoing);
-  rb_hash_aset(nested, ID2SYM(id_key_start_edges), starts);
-  long nested_start = 0;
   VALUE captures = Qnil;
   long nested_end = 0;
-  int matched = onibi_gir_match_captures_seed(nested, str, start, initial_captures,
-                                              initial_tags, &nested_end, &nested_start, &captures);
+  long nested_start = 0;
+  int matched = onibi_gir_match_captures_entry(states, outgoing, subprograms, str, start,
+                                                entry, entry_actions, initial_captures,
+                                                initial_tags, &nested_end, &nested_start,
+                                                &captures);
   onibi_call_depth--;
   if (!matched) return 0;
   *matched_end = nested_end;
@@ -4351,6 +4348,28 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   return 0;
 }
 
+static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE subprograms,
+                                          VALUE str, long start, VALUE entry,
+                                          VALUE entry_actions, VALUE initial_captures,
+                                          VALUE initial_tags, long *matched_end,
+                                          long *matched_start, VALUE *matched_captures) {
+  VALUE visited = rb_hash_new();
+  VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
+  rb_hash_delete(captures, ID2SYM(id_recursive_marker));
+  VALUE counters = rb_hash_new();
+  VALUE tags = initial_tags;
+  VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
+  VALUE branch_counters = rb_hash_dup(counters);
+  if (!onibi_vm_actions_ok(actions, str, start, RSTRING_LEN(str), branch_counters, captures)) return 0;
+  VALUE branch_captures = onibi_has_capture_action(actions) ? onibi_capture_copy(captures) : captures;
+  long reported_start = start;
+  onibi_vm_apply_counter_actions(actions, branch_counters);
+  VALUE branch_tags = onibi_apply_capture_actions(actions, start, branch_captures, tags, &reported_start);
+  return onibi_vm_walk_captures(states, outgoing, subprograms, str, NUM2LONG(entry), start,
+                                visited, branch_captures, branch_counters, branch_tags,
+                                reported_start, matched_end, matched_start, matched_captures);
+}
+
 static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
                                          VALUE initial_captures, VALUE initial_tags,
                                          long *matched_end, long *matched_start,
@@ -4358,23 +4377,14 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
   VALUE states = onibi_hash_value_id(graph, id_key_states);
   VALUE outgoing = onibi_hash_value_id(graph, id_key_outgoing);
   VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
-  VALUE visited = rb_hash_new();
-  VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
-  rb_hash_delete(captures, ID2SYM(id_recursive_marker));
-  VALUE counters = rb_hash_new();
-  VALUE tags = initial_tags;
+  VALUE subprograms = onibi_hash_value_id(graph, id_key_subprograms);
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE branch_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, captures)) continue;
-    VALUE branch_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
-    long reported_start = start;
-    onibi_vm_apply_counter_actions(edge_actions, branch_counters);
-    VALUE branch_tags = onibi_apply_capture_actions(edge_actions, start, branch_captures, tags, &reported_start);
-    if (onibi_vm_walk_captures(states, outgoing, onibi_hash_value_id(graph, id_key_subprograms), str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start,
-                               visited, branch_captures, branch_counters, branch_tags, reported_start,
-                               matched_end, matched_start, matched_captures)) return 1;
+    if (onibi_gir_match_captures_entry(states, outgoing, subprograms, str, start,
+                                       onibi_hash_value_id(edge, id_key_to),
+                                       onibi_hash_value_id(edge, id_key_actions),
+                                       initial_captures, initial_tags, matched_end,
+                                       matched_start, matched_captures)) return 1;
   }
   return 0;
 }
