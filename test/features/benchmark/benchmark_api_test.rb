@@ -250,6 +250,16 @@ class BenchmarkApiTest < Minitest::Test
     assert inverse.vm_match?("é")
   end
 
+  def test_ascii_property_inside_class_uses_the_same_bitmap_contract
+    positive = Onibi::Regexp.new("[\\p{ASCII}]")
+    negative = Onibi::Regexp.new("[\\P{ASCII}]")
+
+    assert positive.program_cached?
+    assert negative.program_cached?
+    assert positive.vm_match?("A")
+    refute negative.vm_match?("A")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)

@@ -975,6 +975,12 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
     } else if (kind == rb_intern("escape")) {
       VALUE name = onibi_hash_value(child, "name");
+      if (!NIL_P(name) && rb_str_equal(name, rb_str_new_cstr("ASCII"))) {
+        for (int c = 0; c < 128; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
+        if (NUM2INT(onibi_hash_value(child, "byte")) == 'P')
+          for (long byte = 0; byte < 32; byte++) bits[byte] = (unsigned char)~bits[byte];
+        continue;
+      }
       int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
         (RSTRING_LEN(name) == 1 ? tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
       if (escape_code == 'r' || escape_code == 'p' || escape_code == 'x' || escape_code == 'u')
