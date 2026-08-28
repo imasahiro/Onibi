@@ -1155,6 +1155,11 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   return node;
 }
 
+typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
+static void onibi_value_vector_init(OnibiValueVector *vector);
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
+static void onibi_value_vector_free(OnibiValueVector *vector);
+
 static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   VALUE branches = rb_ary_new_capa(end > begin ? end - begin : 0);
   long part = begin, depth = 0;
@@ -1180,7 +1185,9 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
     return node;
   }
 
-  VALUE children = rb_ary_new_capa(end > begin ? end - begin : 0);
+  OnibiValueVector child_records;
+  onibi_value_vector_init(&child_records);
+  VALUE child_roots = rb_ary_new_capa(end > begin ? end - begin : 0);
   for (long i = begin; i < end;) {
     VALUE node = onibi_parse_atom(tokens, &i, end);
     if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
@@ -1234,13 +1241,13 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         if (!valid_spec) {
           if (memchr(spec_buf, '-', spec_len) != NULL)
             rb_raise(eRegexpError, "invalid quantifier");
-          rb_ary_push(children, node);
+          onibi_value_vector_push(&child_records, node, child_roots);
           for (long literal_i = i; literal_i <= close; literal_i++) {
             VALUE literal_token = rb_ary_entry(tokens, literal_i);
             VALUE literal = onibi_ast_node(ONIBI_AST_LITERAL, literal_token);
             rb_hash_aset(literal, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(literal_token)));
             rb_obj_freeze(literal);
-            rb_ary_push(children, literal);
+            onibi_value_vector_push(&child_records, literal, child_roots);
           }
           i = close + 1;
           continue;
@@ -1283,8 +1290,12 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         rb_obj_freeze(quantifier); node = quantifier;
       }
     }
-    rb_ary_push(children, node);
+    onibi_value_vector_push(&child_records, node, child_roots);
   }
+  VALUE children = rb_ary_new_capa((long)child_records.count);
+  for (size_t i = 0; i < child_records.count; i++) rb_ary_push(children, child_records.items[i]);
+  onibi_value_vector_free(&child_records);
+  rb_ary_clear(child_roots);
   VALUE sequence = onibi_ast_node(ONIBI_AST_SEQUENCE, Qnil);
   rb_hash_aset(sequence, ID2SYM(id_key_children), children);
   rb_obj_freeze(children); rb_obj_freeze(sequence);
@@ -1343,7 +1354,6 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 }
 
 typedef struct { OnibiIdVector starts; OnibiIdVector exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { OnibiStateId state; OnibiValueVector actions; uint32_t action_count; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
