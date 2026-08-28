@@ -5,6 +5,7 @@
 #include "onibi_ir.h"
 
 #define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
+#define ONIBI_SUBPROGRAM_ABSENT UINT32_C(2)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -1835,6 +1836,20 @@ skip_utf8_range_expansion:
     result.nullable = 0;
     return result;
   }
+  if (type == ID2SYM(rb_intern("absence"))) {
+    long subprogram_id = onibi_compile_subprogram(onibi_hash_value(ast, "body"), builder,
+                                                   ONIBI_SUBPROGRAM_ABSENT);
+    VALUE payload = rb_hash_new();
+    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_obj_freeze(payload);
+    long id = builder->next_id++;
+    onibi_gir_state(builder, id, rb_intern("G_ABSENT"), payload);
+    onibi_fragment_t result = onibi_fragment_empty();
+    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.nullable = 1;
+    return result;
+  }
   if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
     VALUE body = onibi_hash_value(ast, "body");
     if (!RB_TYPE_P(body, T_HASH))
@@ -2868,16 +2883,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = (obj->has_large_repeat || obj->has_absence ||
+  VALUE program = (obj->has_large_repeat ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = (obj->has_large_repeat || obj->has_absence ||
+    obj->parsed = (obj->has_large_repeat ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
-    obj->compiled = (obj->has_large_repeat || obj->has_absence ||
+    obj->compiled = (obj->has_large_repeat ||
                      obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
-    obj->rseq = (obj->has_large_repeat || obj->has_absence ||
+    obj->rseq = (obj->has_large_repeat ||
                  obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     if (!NIL_P(obj->parsed)) {
@@ -3766,8 +3781,15 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ABSENT")) return 0;
-  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC")) {
+  if (op == rb_intern("G_GRAPHEME")) return 0;
+  if (op == rb_intern("G_ABSENT")) {
+    VALUE payload = onibi_hash_value(state, "payload");
+    long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
+    long probe_end = pos;
+    VALUE ignored = Qnil;
+    if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
+                                 &probe_end, &ignored)) return 0;
+  } else if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC")) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
     VALUE called_captures = Qnil;

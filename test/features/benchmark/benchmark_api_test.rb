@@ -225,8 +225,11 @@ class BenchmarkApiTest < Minitest::Test
   def test_absence_operator_has_explicit_ast_and_dynamic_boundary
     parsed = Onibi::Parser.parse("(?~real)")
     assert_equal :absence, parsed[:ast][:children].first[:type]
-    assert_equal :DYNAMIC, Onibi::Regexp.new("(?~real)").pipeline[:interpreter]
-    refute Onibi::Regexp.new("(?~real)").program_cached?
+    regexp = Onibi::Regexp.new("(?~real)")
+    assert_equal :DYNAMIC, regexp.pipeline[:interpreter]
+    assert regexp.program_cached?
+    assert regexp.pipeline[:rseq_program][:physical_graph][:states].any? { |state| state[:op] == :G_ABSENT }
+    assert regexp.vm_match?("realistic")
   end
 
   def test_conditional_group_has_explicit_ast_and_guarded_tagged_execution
