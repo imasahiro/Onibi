@@ -102,6 +102,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes helper, "rb_ary_new"
   end
 
+  def test_fragment_connections_keep_state_ids_in_c_vectors
+    source = File.read(EXTENSION_SOURCE)
+    connector = source[/static void onibi_connect_fragment_actions\(.*?\n}\n/m]
+
+    refute_nil connector
+    refute_includes connector, "start_values"
+    assert_includes connector, "starts->items[j]"
+    assert_includes connector, "onibi_gir_edge_actions(builder, from, to, actions)"
+  end
+
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]

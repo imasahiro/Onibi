@@ -1965,10 +1965,23 @@ static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
 static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
                                            const OnibiIdVector *exits, const OnibiIdVector *starts, VALUE actions,
                                            int prepend) {
-  VALUE start_values = rb_ary_new_capa((long)starts->count);
-  for (size_t i = 0; i < starts->count; i++) rb_ary_push(start_values, ULONG2NUM(starts->items[i]));
-  if (prepend) onibi_connect_vector_prepend_actions(builder, exits, start_values, actions);
-  else onibi_connect_vector_actions(builder, exits, start_values, actions);
+  for (size_t i = 0; i < exits->count; i++) {
+    long from = (long)exits->items[i];
+    for (size_t j = 0; j < starts->count; j++) {
+      long to = (long)starts->items[j];
+      if (prepend) {
+        size_t insert_at = builder->edges.count;
+        for (size_t k = 0; k < builder->edges.count; k++) {
+          if (builder->edges.entries[k].from == from) { insert_at = k; break; }
+        }
+        onibi_gir_edge_vector_insert(&builder->edges, insert_at,
+                                     (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions},
+                                     builder->map_roots);
+      } else {
+        onibi_gir_edge_actions(builder, from, to, actions);
+      }
+    }
+  }
 }
 
 static void onibi_connect_fragment(onibi_gir_builder_t *builder, const OnibiIdVector *exits, const OnibiIdVector *starts) {
