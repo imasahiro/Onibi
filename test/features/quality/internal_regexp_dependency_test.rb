@@ -596,6 +596,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes property_check, "?"
   end
 
+  def test_rseq_uses_gir_capture_resource_count_not_action_occurrences
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "VALUE capture_count_value = onibi_hash_value_id(graph, id_key_capture_count)"
+    assert_includes lowerer, "uint32_t capture_count = (uint32_t)gir_capture_count"
+    refute_includes lowerer, "capture_count++"
+  end
+
   def test_protected_compile_callbacks_use_stack_arguments
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "typedef struct {\n  VALUE source;\n  VALUE options;\n  VALUE tokens;\n} OnibiProgramArgs;"

@@ -3293,11 +3293,18 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE edges = onibi_hash_value_id(graph, id_key_edges);
   VALUE start_edges = onibi_hash_value_id(graph, id_key_start_edges);
   VALUE subprograms = onibi_hash_value_id(graph, id_key_subprograms);
+  VALUE capture_count_value = onibi_hash_value_id(graph, id_key_capture_count);
   if (!RTEST(rb_obj_frozen_p(compiled)) || !RTEST(rb_obj_frozen_p(graph)) ||
       !RTEST(rb_obj_frozen_p(states)) || !RTEST(rb_obj_frozen_p(edges)) ||
       !RTEST(rb_obj_frozen_p(start_edges)) || !RB_TYPE_P(subprograms, T_ARRAY) ||
       !RTEST(rb_obj_frozen_p(subprograms)))
     rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR");
+  if (!RB_INTEGER_TYPE_P(capture_count_value))
+    rb_raise(rb_eArgError, "RSeq lowering requires a GIR capture count");
+  long gir_capture_count = NUM2LONG(capture_count_value);
+  if (gir_capture_count < 0 || (uint64_t)gir_capture_count > UINT32_MAX)
+    rb_raise(rb_eArgError, "RSeq capture count is out of range");
+  uint32_t capture_count = (uint32_t)gir_capture_count;
   long state_count = RARRAY_LEN(states);
   OnibiGirStateVector state_records;
   onibi_gir_state_vector_init(&state_records);
@@ -3470,7 +3477,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
       action_records.count > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
-  uint32_t features = 0, capture_count = 0, counter_count = 0;
+  uint32_t features = capture_count > 0 ? 2U : 0U;
+  uint32_t counter_count = 0;
   for (size_t i = 0; i < state_records.count; i++) {
     if (state_records.entries[i].opcode == ONIBI_G_BACKREF) features |= 1U;
   }
@@ -3478,7 +3486,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     VALUE action = action_records.entries[i].value;
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (code == ONIBI_GA_CAPTURE_OPEN) { capture_count++; features |= 2U; }
+    if (code == ONIBI_GA_CAPTURE_OPEN) features |= 2U;
     if (code == ONIBI_GA_COUNTER_INIT) features |= 4U;
     if (code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
         code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
