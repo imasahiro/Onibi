@@ -330,17 +330,31 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   return tokens;
 }
 
-static VALUE onibi_tokenize(VALUE src) {
-  return onibi_tokenize_internal(src, 0);
+static int onibi_extended_option_p(VALUE options) {
+  if (NIL_P(options) || options == Qfalse) return 0;
+  if (options == Qtrue) return 0;
+  if (RB_TYPE_P(options, T_STRING))
+    return memchr(RSTRING_PTR(options), 'x', (size_t)RSTRING_LEN(options)) != NULL;
+  if (RB_TYPE_P(options, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(options); i++) {
+      VALUE item = rb_ary_entry(options, i);
+      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
+      if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) return 1;
+    }
+    return 0;
+  }
+  return (NUM2INT(options) & 2) != 0;
 }
 
-static VALUE onibi_lexer_initialize(VALUE self, VALUE source) {
+static VALUE onibi_lexer_initialize(int argc, VALUE *argv, VALUE self) {
   onibi_lexer_t *obj;
   TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
+  VALUE source, options = Qnil;
+  rb_scan_args(argc, argv, "11", &source, &options);
   source = StringValue(source);
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
-  obj->tokens = onibi_tokenize(obj->source);
+  obj->tokens = onibi_tokenize_internal(obj->source, onibi_extended_option_p(options));
   rb_obj_freeze(self);
   return self;
 }
@@ -3217,7 +3231,7 @@ void Init_onibi(void) {
   rb_define_const(mOnibi, "Error", rb_eStandardError);
   cLexer = rb_define_class_under(mOnibi, "Lexer", rb_cObject);
   rb_define_alloc_func(cLexer, onibi_lexer_alloc);
-  rb_define_method(cLexer, "initialize", onibi_lexer_initialize, 1);
+  rb_define_method(cLexer, "initialize", onibi_lexer_initialize, -1);
   rb_define_method(cLexer, "tokens", onibi_lexer_tokens, 0);
   VALUE parser = rb_define_module_under(mOnibi, "Parser");
   rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);

@@ -497,6 +497,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %i[option_scope_start literal literal literal group_end], disabled.map { |token| token[:kind] }
   end
 
+  def test_lexer_accepts_extended_option
+    enabled = Onibi::Lexer.new("a b # comment\n c", "x").tokens
+    assert_equal "abc", enabled.select { |token| token[:kind] == :literal }.map { |token| token[:byte].chr }.join
+    disabled = Onibi::Lexer.new("a b", 0).tokens
+    assert_equal "a b", disabled.map { |token| token[:byte].chr }.join
+  end
+
   def test_compiler_uses_tokenized_scoped_extended_body
     enabled = Onibi::Regexp.new("(?x:a b)")
     disabled = Onibi::Regexp.new("(?-x:a b)")
