@@ -20,7 +20,12 @@
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-static _Thread_local unsigned int onibi_call_depth = 0;
+/* The call metadata is explicit VM state.  The graph walker still uses its
+ * existing depth-first control flow, but subprogram recursion no longer
+ * stores its semantic depth only in a C integer. */
+#define ONIBI_CALL_STACK_LIMIT 256U
+static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
+static _Thread_local unsigned int onibi_call_stack_size = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
@@ -123,6 +128,27 @@ static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
  * not rescan source text during a match. */
 static int onibi_mri_intersection_path_p(const onibi_regexp_t *obj) {
   return obj->has_class_intersection && (obj->options & 1);
+}
+
+static void onibi_call_stack_reset(void) {
+  onibi_call_stack_size = 0;
+}
+
+static OnibiCallFrame *onibi_call_frame_push(OnibiSubprogramId subprogram_id) {
+  if (onibi_call_stack_size >= ONIBI_CALL_STACK_LIMIT)
+    rb_raise(eRegexpError, "subroutine call depth exceeded");
+  unsigned int index = onibi_call_stack_size++;
+  OnibiCallFrame *frame = &onibi_call_frames[index];
+  frame->subprogram_id = subprogram_id;
+  frame->continuation = ONIBI_ACCEPT_STATE;
+  frame->tag_history = 0;
+  frame->recursion_depth = index;
+  frame->parent = index == 0 ? ONIBI_CALL_STACK_LIMIT : index - 1;
+  return frame;
+}
+
+static void onibi_call_frame_pop(void) {
+  if (onibi_call_stack_size > 0) onibi_call_stack_size--;
 }
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
@@ -4127,11 +4153,10 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
                                     long *matched_end, VALUE *matched_captures) {
   if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
       subprogram_id >= RARRAY_LEN(subprograms)) return 0;
-  if (onibi_call_depth >= 256U) rb_raise(eRegexpError, "subroutine call depth exceeded");
-  onibi_call_depth++;
+  onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
   VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
   VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
-  if (NIL_P(entry)) return 0;
+  if (NIL_P(entry)) { onibi_call_frame_pop(); return 0; }
   VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
   VALUE captures = Qnil;
   long nested_end = 0;
@@ -4140,7 +4165,7 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
                                                 entry, entry_actions, initial_captures,
                                                 initial_tags, &nested_end, &nested_start,
                                                 &captures);
-  onibi_call_depth--;
+  onibi_call_frame_pop();
   if (!matched) return 0;
   *matched_end = nested_end;
   *matched_captures = captures;
@@ -4900,6 +4925,7 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
+  onibi_call_stack_reset();
   VALUE blob = onibi_hash_value(rseq, "blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
@@ -4919,6 +4945,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
+  onibi_call_stack_reset();
   VALUE graph = onibi_rseq_physical_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     if (!onibi_character_boundary(str, start)) continue;
@@ -4933,6 +4960,7 @@ static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
+  onibi_call_stack_reset();
   /* Dynamic execution owns its dispatch loop.  The capture walker resolves
      backreferences and counters; this loop adds the dynamic deadline and
      interrupt boundary without routing through TAGGED_ORDERED. */
@@ -4972,6 +5000,7 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
+  onibi_call_stack_reset();
   onibi_set_deadline(obj->timeout_seconds);
   if (!onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
@@ -5036,6 +5065,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
   }
   if (graph_ok) {
+    onibi_call_stack_reset();
     onibi_set_deadline(obj->timeout_seconds);
     VALUE rseq = obj->rseq;
     VALUE graph = onibi_rseq_physical_graph(rseq);
