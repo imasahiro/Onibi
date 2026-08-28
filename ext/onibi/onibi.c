@@ -1015,6 +1015,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
       rb_raise(eRegexpError, "invalid quantifier range");
     long max = NIL_P(max_value) ? -1 : NUM2LONG(max_value);
+    if (max > 1000000)
+      rb_raise(eRegexpError, "quantifier exceeds RSeq representation limit");
     if (max >= 0 && max != min) {
       /* Counted repeats use one counter slot.  The first start edge
          initializes it.  Optional bodies use ordered test edges. */
