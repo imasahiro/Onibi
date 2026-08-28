@@ -143,7 +143,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       kind = "lookbehind_start";
       byte = (unsigned char)RSTRING_PTR(src)[i + 3];
       i += 3;
-    } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) &&
+    } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) &&
                RSTRING_PTR(src)[i + 1] == '?' &&
                (RSTRING_PTR(src)[i + 2] == '-' ||
                 strchr("imx", RSTRING_PTR(src)[i + 2]) != NULL)) {
@@ -161,11 +161,13 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
                strchr("imx", RSTRING_PTR(src)[option_end]) != NULL) option_end++;
         if (option_end == negative_start) valid = 0;
       }
-      if (option_end == option_count || option_end >= RSTRING_LEN(src) ||
-          RSTRING_PTR(src)[option_end] != ':') valid = 0;
+      int global_modifier = 0;
+      if (option_end == option_count || option_end >= RSTRING_LEN(src)) valid = 0;
+      else if (RSTRING_PTR(src)[option_end] == ')') global_modifier = 1;
+      else if (RSTRING_PTR(src)[option_end] != ':') valid = 0;
       if (valid) {
-        kind = "option_scope_start";
-        byte = ':';
+        kind = global_modifier ? "option_global" : "option_scope_start";
+        byte = global_modifier ? ')' : ':';
         i = option_end;
         long name_end = negative_start >= 0 ? positive_end : option_end;
         group_name = rb_str_substr(src, option_count, name_end - option_count);
@@ -278,10 +280,10 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       else if (byte == '^' && i == class_body_start) kind = "class_negate";
     } else if (byte == '|') kind = "alternation";
     else if (byte == '(') kind = "group_start";
-    else if (byte == ')') kind = "group_end";
-    else if (strchr("*+?{}", byte) != NULL) kind = "quantifier";
-    else if (byte == '.') kind = "wildcard";
-    else if (byte == '^' || byte == '$') kind = "anchor";
+    else if (strcmp(kind, "literal") == 0 && byte == ')') kind = "group_end";
+    else if (strcmp(kind, "literal") == 0 && strchr("*+?{}", byte) != NULL) kind = "quantifier";
+    else if (strcmp(kind, "literal") == 0 && byte == '.') kind = "wildcard";
+    else if (strcmp(kind, "literal") == 0 && (byte == '^' || byte == '$')) kind = "anchor";
     if (strcmp(kind, "literal") == 0 && byte >= 0x80) {
       int char_len = rb_enc_mbclen(RSTRING_PTR(src) + start,
                                    RSTRING_PTR(src) + RSTRING_LEN(src),
@@ -303,6 +305,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         if (option_scope_x >= 0) extended = option_negative ? 0 : 1;
       }
     }
+    if (strcmp(kind, "option_global") == 0 && option_scope_x >= 0)
+      extended = option_scope_x;
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
@@ -313,7 +317,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
     if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), escape_name); }
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(rb_intern("bytes")), literal_bytes); }
-    if (strcmp(kind, "option_scope_start") == 0)
+    if (strcmp(kind, "option_scope_start") == 0 || strcmp(kind, "option_global") == 0)
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
@@ -471,6 +475,17 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
     rb_obj_freeze(node);
     *index = close + 1;
+    return node;
+  }
+  if (kind == rb_intern("option_global")) {
+    VALUE node = onibi_ast_node("option_global", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("options")), rb_hash_aref(token, ID2SYM(rb_intern("name"))));
+    VALUE negative_options = rb_hash_aref(token, ID2SYM(rb_intern("negative_name")));
+    if (!NIL_P(negative_options))
+      rb_hash_aset(node, ID2SYM(rb_intern("negative_options")), negative_options);
+    rb_hash_aset(node, ID2SYM(rb_intern("negative")), rb_hash_aref(token, ID2SYM(rb_intern("negative"))));
+    rb_obj_freeze(node);
+    *index = *index + 1;
     return node;
   }
   if (kind == rb_intern("noncapture_start")) {
@@ -1181,6 +1196,29 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("subroutine")))
     rb_raise(eRegexpError, "subroutine calls require the dynamic interpreter");
+  if (type == ID2SYM(rb_intern("option_global"))) {
+    VALUE option_names = onibi_hash_value(ast, "options");
+    int negative = RTEST(onibi_hash_value(ast, "negative"));
+    if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
+      rb_raise(eRegexpError, "global option modifier has no flags");
+    for (long i = 0; i < RSTRING_LEN(option_names); i++) {
+      int enabled = negative ? 0 : 1;
+      if (RSTRING_PTR(option_names)[i] == 'i') builder->ignorecase = enabled;
+      else if (RSTRING_PTR(option_names)[i] == 'm') builder->multiline = enabled;
+      else if (RSTRING_PTR(option_names)[i] == 'x') continue;
+      else rb_raise(eRegexpError, "unknown global option flag");
+    }
+    VALUE negative_options = onibi_hash_value(ast, "negative_options");
+    if (!NIL_P(negative_options)) {
+      for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
+        if (RSTRING_PTR(negative_options)[i] == 'i') builder->ignorecase = 0;
+        else if (RSTRING_PTR(negative_options)[i] == 'm') builder->multiline = 0;
+        else if (RSTRING_PTR(negative_options)[i] == 'x') continue;
+        else rb_raise(eRegexpError, "unknown global option flag");
+      }
+    }
+    return onibi_fragment_empty();
+  }
   if (type == ID2SYM(rb_intern("option_scope"))) {
     VALUE option_names = onibi_hash_value(ast, "options");
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))

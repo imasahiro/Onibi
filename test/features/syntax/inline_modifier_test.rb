@@ -17,6 +17,16 @@ class InlineModifierTest < Minitest::Test
     assert Onibi::Regexp.new("(?i)cat").match?("CAT")
   end
 
+  def test_global_modifier_is_compiled_for_the_remaining_pattern
+    regexp = Onibi::Regexp.new("(?i)cat")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("CAT")
+    token = Onibi::Lexer.new("(?im-x)cat").tokens.first
+    assert_equal :option_global, token[:kind]
+    assert_equal "im", token[:name]
+    assert_equal "x", token[:negative_name]
+  end
+
   def test_inline_ignorecase_disable_modifier_turns_casefolding_off
     refute Onibi::Regexp.new("(?-i)cat", ["ignorecase"]).match?("CAT")
   end
