@@ -148,7 +148,7 @@ The Ruby data decision is:
 | Data | Owner | Reason |
 | --- | --- | --- |
 | source, options, names, named captures | Ruby `VALUE` | Regexp public API and MRI encoding rules |
-| tokens, AST, GIR | C compiler scope | Compile-time only; tokens also have a retained fixed-field C view for dispatch metadata |
+| tokens, AST, GIR | C compiler scope | Compile-time only; token fixed fields use a temporary C view for feature classification |
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
