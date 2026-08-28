@@ -378,15 +378,25 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' && i + 2 < RSTRING_LEN(src) &&
         (RSTRING_PTR(src)[i + 1] == 'M' || RSTRING_PTR(src)[i + 1] == 'C') &&
         RSTRING_PTR(src)[i + 2] == '-') {
-      kind = ONIBI_TOKEN_META_ESCAPE;
-      byte = (unsigned char)RSTRING_PTR(src)[i + 1];
-      i += 2;
+      if (RSTRING_PTR(src)[i + 1] == 'C' && i + 3 < RSTRING_LEN(src)) {
+        kind = ONIBI_TOKEN_LITERAL;
+        byte = (unsigned char)RSTRING_PTR(src)[i + 3] & 0x1f;
+        i += 3;
+      } else {
+        kind = ONIBI_TOKEN_META_ESCAPE;
+        byte = (unsigned char)RSTRING_PTR(src)[i + 1];
+        i += 2;
+      }
     }
     if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       int hex_literal = 0;
       int octal_literal = 0;
       byte = escaped;
+      if (escaped == 'c' && i + 2 < RSTRING_LEN(src)) {
+        byte = (unsigned char)RSTRING_PTR(src)[i + 2] & 0x1f;
+        i += 2;
+      }
       if (escaped == 'x' && i + 3 < RSTRING_LEN(src)) {
         int hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 2]);
         int lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);

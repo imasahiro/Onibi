@@ -817,6 +817,9 @@ class BenchmarkApiTest < Minitest::Test
       assert regexp.program_cached?
       assert regexp.vm_match?(input)
     end
+    ["\\cA", "\\C-A"].each do |pattern|
+      assert Onibi::Regexp.new(pattern).vm_match?("\x01")
+    end
   end
 
   def test_hex_escape_is_one_literal_token
