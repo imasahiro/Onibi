@@ -1373,9 +1373,11 @@ static void onibi_gir_validate(VALUE graph) {
     if (!RB_TYPE_P(entry, T_HASH)) rb_raise(eRegexpError, "GIR subprogram descriptor is not a hash");
     VALUE entry_state = onibi_hash_value(entry, "entry");
     VALUE accept_state = onibi_hash_value(entry, "accept");
-    if (NIL_P(entry_state) || NIL_P(accept_state) ||
+    VALUE flags = onibi_hash_value(entry, "flags");
+    if (NIL_P(entry_state) || NIL_P(accept_state) || NIL_P(flags) ||
         NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= state_count ||
-        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= state_count)
+        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= state_count ||
+        NUM2LONG(flags) < 0)
       rb_raise(eRegexpError, "GIR subprogram entry is out of range");
   }
   VALUE accept_value = onibi_hash_value(graph, "accept");
@@ -3862,9 +3864,11 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE descriptor = rb_ary_entry(semantic_subprograms, i);
     VALUE entry_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "entry") : Qnil;
     VALUE accept_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "accept") : Qnil;
-    if (NIL_P(entry_state) || NIL_P(accept_state) ||
+    VALUE flags = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "flags") : Qnil;
+    if (NIL_P(entry_state) || NIL_P(accept_state) || NIL_P(flags) ||
         NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= (long)header.state_count ||
-        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= (long)header.state_count)
+        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= (long)header.state_count ||
+        NUM2LONG(flags) < 0)
       rb_raise(rb_eArgError, "invalid RSeq subprogram descriptor");
   }
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
