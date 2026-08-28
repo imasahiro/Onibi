@@ -303,6 +303,8 @@ typedef struct {
 static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
   OnibiFeatureTokenVector vector = { NULL, (size_t)RARRAY_LEN(tokens) };
   if (vector.count > 0) {
+    if (vector.count > SIZE_MAX / sizeof(*vector.items))
+      rb_raise(rb_eNoMemError, "token feature vector is too large");
     vector.items = ALLOC_N(OnibiFeatureToken, vector.count);
     for (size_t i = 0; i < vector.count; i++) {
       VALUE token = rb_ary_entry(tokens, (long)i);
