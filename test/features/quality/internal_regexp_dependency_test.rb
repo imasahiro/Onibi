@@ -408,6 +408,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes parser_range, "rb_ary_new_capa(end > begin ? end - begin : 0)"
   end
 
+  def test_parser_uses_cached_id_accessor_for_token_fields
+    source = File.read(EXTENSION_SOURCE)
+    parser = source[/static long onibi_find_close\(.*?static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
+
+    refute_nil parser
+    refute_match(/rb_hash_aref\([^\n]*ID2SYM\(id_key_(kind_code|start|end|name|capture|bytes)/, parser)
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"

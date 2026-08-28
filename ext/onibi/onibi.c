@@ -857,13 +857,13 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   for (long i = begin + 1; i < close; i++) {
     VALUE token = rb_ary_entry(tokens, i);
-    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+      OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
     if (kind == ONIBI_TOKEN_CLASS_START) {
       long nested_close = onibi_find_close(tokens, i, close, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
       if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
       VALUE nested = onibi_parse_class(tokens, i, nested_close);
       rb_hash_aset(nested, ID2SYM(id_key_end),
-                   rb_hash_aref(rb_ary_entry(tokens, nested_close), ID2SYM(id_key_end)));
+                   onibi_hash_value_id(rb_ary_entry(tokens, nested_close), id_key_end));
       rb_obj_freeze(nested);
       rb_ary_push(children, nested);
       i = nested_close;
@@ -879,8 +879,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       continue;
     }
     if (kind == ONIBI_TOKEN_CLASS_RANGE && i > begin + 1 && i + 1 < close) {
-      OnibiTokenKind first_kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(rb_ary_entry(tokens, i - 1), ID2SYM(id_key_kind_code)));
-      OnibiTokenKind last_kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(rb_ary_entry(tokens, i + 1), ID2SYM(id_key_kind_code)));
+      OnibiTokenKind first_kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(rb_ary_entry(tokens, i - 1), id_key_kind_code));
+      OnibiTokenKind last_kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(rb_ary_entry(tokens, i + 1), id_key_kind_code));
       if (first_kind != ONIBI_TOKEN_LITERAL || last_kind != ONIBI_TOKEN_LITERAL)
         rb_raise(eRegexpError, "invalid range endpoint in character class");
       VALUE first_token = rb_ary_entry(tokens, i - 1);
@@ -914,7 +914,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
 
 static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   VALUE token = rb_ary_entry(tokens, *index);
-  OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+  OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
   if (kind_code == ONIBI_TOKEN_LOOKAHEAD_START || kind_code == ONIBI_TOKEN_LOOKBEHIND_START) {
     long close = onibi_find_close(tokens, *index, end, kind_code, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
@@ -922,7 +922,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     VALUE node = onibi_ast_node(behind ? ONIBI_AST_LOOKBEHIND : ONIBI_AST_LOOKAHEAD, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_positive), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -932,23 +932,23 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     if (close < 0) rb_raise(eRegexpError, "unterminated option scope");
     VALUE node = onibi_ast_node(ONIBI_AST_OPTION_SCOPE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_options), rb_hash_aref(token, ID2SYM(id_key_name)));
-    VALUE negative_options = rb_hash_aref(token, ID2SYM(id_key_negative_name));
+    rb_hash_aset(node, ID2SYM(id_key_options), onibi_hash_value_id(token, id_key_name));
+    VALUE negative_options = onibi_hash_value_id(token, id_key_negative_name);
     if (!NIL_P(negative_options))
       rb_hash_aset(node, ID2SYM(id_key_negative_options), negative_options);
-    rb_hash_aset(node, ID2SYM(id_key_negative), rb_hash_aref(token, ID2SYM(id_key_negative)));
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_negative), onibi_hash_value_id(token, id_key_negative));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
   }
   if (kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
     VALUE node = onibi_ast_node(ONIBI_AST_OPTION_GLOBAL, token);
-    rb_hash_aset(node, ID2SYM(id_key_options), rb_hash_aref(token, ID2SYM(id_key_name)));
-    VALUE negative_options = rb_hash_aref(token, ID2SYM(id_key_negative_name));
+    rb_hash_aset(node, ID2SYM(id_key_options), onibi_hash_value_id(token, id_key_name));
+    VALUE negative_options = onibi_hash_value_id(token, id_key_negative_name);
     if (!NIL_P(negative_options))
       rb_hash_aset(node, ID2SYM(id_key_negative_options), negative_options);
-    rb_hash_aset(node, ID2SYM(id_key_negative), rb_hash_aref(token, ID2SYM(id_key_negative)));
+    rb_hash_aset(node, ID2SYM(id_key_negative), onibi_hash_value_id(token, id_key_negative));
     rb_obj_freeze(node);
     *index = *index + 1;
     return node;
@@ -959,7 +959,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     VALUE node = onibi_ast_node(ONIBI_AST_GROUP, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_capturing), Qfalse);
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -969,7 +969,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     if (close < 0) rb_raise(eRegexpError, "unterminated atomic group");
     VALUE node = onibi_ast_node(ONIBI_AST_ATOMIC, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -979,7 +979,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     if (close < 0) rb_raise(eRegexpError, "unterminated absence operator");
     VALUE node = onibi_ast_node(ONIBI_AST_ABSENCE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -988,10 +988,10 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_CONDITIONAL_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated conditional group");
     VALUE node = onibi_ast_node(ONIBI_AST_CONDITIONAL, token);
-    VALUE condition = rb_hash_aref(token, ID2SYM(id_key_name));
+    VALUE condition = onibi_hash_value_id(token, id_key_name);
     if (!NIL_P(condition)) rb_hash_aset(node, ID2SYM(id_key_condition), condition);
     VALUE body = onibi_parse_range(tokens, *index + 1, close);
-    VALUE branches = rb_hash_aref(body, ID2SYM(id_key_branches));
+    VALUE branches = onibi_hash_value_id(body, id_key_branches);
     if (RB_TYPE_P(branches, T_ARRAY) && RARRAY_LEN(branches) == 2) {
       rb_hash_aset(node, ID2SYM(id_key_yes), rb_ary_entry(branches, 0));
       rb_hash_aset(node, ID2SYM(id_key_no), rb_ary_entry(branches, 1));
@@ -999,7 +999,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
       rb_hash_aset(node, ID2SYM(id_key_yes), body);
       rb_hash_aset(node, ID2SYM(id_key_no), onibi_parse_range(tokens, close, close));
     }
-    rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -1010,7 +1010,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     VALUE node = onibi_ast_node(ONIBI_AST_CAPTURE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_capturing), Qtrue);
-    VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
+    VALUE name = onibi_hash_value_id(token, id_key_name);
     if (!NIL_P(name)) {
       if (RSTRING_LEN(name) == 0 || !isalpha((unsigned char)RSTRING_PTR(name)[0]))
         rb_raise(eRegexpError, "invalid capture name");
@@ -1020,7 +1020,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
       rb_hash_aset(node, ID2SYM(id_key_name), name);
     }
     rb_hash_aset(node, ID2SYM(id_key_end),
-                 rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+                 onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
@@ -1030,14 +1030,14 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     if (close < 0) rb_raise(eRegexpError, "unterminated character class");
     VALUE node = onibi_parse_class(tokens, *index, close);
     rb_hash_aset(node, ID2SYM(id_key_end),
-                 rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
+                 onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
     rb_obj_freeze(node);
     *index = close + 1;
     return node;
   }
   if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
     VALUE node = onibi_ast_node(ONIBI_AST_SUBROUTINE, token);
-    VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
+    VALUE name = onibi_hash_value_id(token, id_key_name);
     if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(id_key_name), name);
     rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
     rb_obj_freeze(node);
@@ -1053,7 +1053,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
        (kind_code == ONIBI_TOKEN_LITERAL ? onibi_ast_node(ONIBI_AST_LITERAL, token) : Qnil))))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
-  VALUE token_bytes = rb_hash_aref(token, ID2SYM(id_key_bytes));
+  VALUE token_bytes = onibi_hash_value_id(token, id_key_bytes);
   if (!NIL_P(token_bytes)) rb_hash_aset(node, ID2SYM(id_key_bytes), token_bytes);
   if (kind_code == ONIBI_TOKEN_ANCHOR) {
     long marker = onibi_token_byte(token);
@@ -1065,13 +1065,13 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     rb_hash_aset(node, ID2SYM(id_key_kind), ID2SYM(anchor_id));
   }
   if (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE) {
-    VALUE token_name = rb_hash_aref(token, ID2SYM(id_key_name));
+    VALUE token_name = onibi_hash_value_id(token, id_key_name);
     rb_hash_aset(node, ID2SYM(id_key_name), NIL_P(token_name) ?
                 rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1) : token_name);
   }
   if (kind_code == ONIBI_TOKEN_BACKREF) {
-    VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
-    VALUE capture_number = rb_hash_aref(token, ID2SYM(id_key_capture));
+    VALUE name = onibi_hash_value_id(token, id_key_name);
+    VALUE capture_number = onibi_hash_value_id(token, id_key_capture);
     if (NIL_P(name)) rb_hash_aset(node, ID2SYM(id_key_capture),
                                   NIL_P(capture_number) ? LONG2NUM(onibi_token_byte(token) - '0') : capture_number);
     else rb_hash_aset(node, ID2SYM(id_key_name), name);
@@ -1086,7 +1086,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     VALUE token = rb_ary_entry(tokens, i);
-    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
     if (kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
         kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_ABSENCE_START ||
         kind == ONIBI_TOKEN_CONDITIONAL_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
@@ -5328,7 +5328,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
-  VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
+  VALUE physical_graph = onibi_hash_value_id(rseq, id_key_physical_graph);
   VALUE semantic = onibi_hash_value_id(rseq, id_key_header);
   VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
   VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
@@ -5660,7 +5660,7 @@ static void onibi_rseq_validate(VALUE rseq) {
    payloads remain Ruby values, but state operations and edge destinations
    come from the physical layout.  This keeps the VM on the RSeq contract. */
 static VALUE onibi_rseq_physical_graph(VALUE rseq) {
-  VALUE cached = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
+  VALUE cached = onibi_hash_value_id(rseq, id_key_physical_graph);
   if (!NIL_P(cached)) return cached;
   VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
