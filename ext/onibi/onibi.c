@@ -1689,16 +1689,6 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
   return id;
 }
 
-static int onibi_gir_action_valid(ID action) {
-  return action == id_capture_open || action == id_capture_close || action == id_match_reset ||
-    action == id_a_assert_begin_buffer || action == id_a_assert_end_buffer ||
-    action == id_a_assert_begin_line || action == id_a_assert_end_line || action == id_a_assert_semi_end_buffer ||
-    action == id_a_assert_search_origin || action == id_a_assert_word_boundary ||
-    action == id_a_assert_nonword_boundary || action == id_a_assert_lookahead ||
-    action == id_a_assert_lookbehind || action == id_a_counter_init || action == id_a_test_capture ||
-    action == id_a_counter_increment || action == id_a_test_counter_lt || action == id_a_test_counter_ge;
-}
-
 static OnibiGActionOp onibi_gir_action_opcode(ID op) {
   if (op == id_a_end) return ONIBI_GA_END;
   if (op == id_capture_open) return ONIBI_GA_CAPTURE_OPEN;
@@ -1715,7 +1705,7 @@ static OnibiGActionOp onibi_gir_action_opcode(ID op) {
   if (op == id_a_counter_increment) return ONIBI_GA_COUNTER_INCREMENT;
   if (op == id_a_test_counter_lt) return ONIBI_GA_TEST_COUNTER_LT;
   if (op == id_a_test_counter_ge) return ONIBI_GA_TEST_COUNTER_GE;
-  return ONIBI_GA_END;
+  return (OnibiGActionOp)UINT8_MAX;
 }
 
 static void onibi_set_gir_action_opcode(VALUE action, ID op) {
@@ -1798,12 +1788,13 @@ static void onibi_gir_validate(VALUE graph) {
       rb_raise(eRegexpError, "GIR edge actions are not an array");
     VALUE actions = onibi_hash_value(edge, "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
-      ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (!onibi_gir_action_valid(action))
+      VALUE action_value = rb_ary_entry(actions, j);
+      VALUE code_value = onibi_hash_value_id(action_value, id_key_action_code);
+      if (NIL_P(code_value) || NUM2UINT(code_value) > ONIBI_GA_TEST_COUNTER_GE)
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
-      onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
-      VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, j), id_key_action_code));
+      onibi_gir_validate_action_operands(action_value);
+      VALUE slot = onibi_hash_value(action_value, "slot");
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
@@ -1822,11 +1813,13 @@ static void onibi_gir_validate(VALUE graph) {
       rb_raise(eRegexpError, "GIR start actions are not an array");
     VALUE actions = onibi_hash_value(edge, "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
-      ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
-      onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
-      VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, j), id_key_action_code));
+      VALUE action_value = rb_ary_entry(actions, j);
+      VALUE code_value = onibi_hash_value_id(action_value, id_key_action_code);
+      if (NIL_P(code_value) || NUM2UINT(code_value) > ONIBI_GA_TEST_COUNTER_GE)
+        rb_raise(eRegexpError, "unknown GIR start action opcode");
+      onibi_gir_validate_action_operands(action_value);
+      VALUE slot = onibi_hash_value(action_value, "slot");
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
