@@ -152,6 +152,7 @@ The Ruby data decision is:
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
+| lookaround predicate kind | C enum adapter | Byte/bitmap/any dispatch has no Ruby-visible identity |
 | tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
 | execution class | C enum | Internal dispatcher choice |
 
@@ -186,6 +187,7 @@ the required classification for each data family.
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
 | regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
+| lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
 The first conversion is complete for parser and compiler result adapters. The
