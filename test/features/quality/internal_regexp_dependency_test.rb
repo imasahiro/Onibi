@@ -534,6 +534,17 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
   end
 
+  def test_tagged_vm_keeps_counter_state_out_of_ruby_hashes
+    source = File.read(EXTENSION_SOURCE)
+    walker = source[/static int onibi_vm_walk_captures\(.*?\n}\n/m]
+
+    refute_nil walker
+    assert_includes walker, "long *counter_pool"
+    assert_includes walker, "OnibiCounterState call_counter_state"
+    refute_includes walker, "rb_hash_new() : Qnil"
+    refute_includes walker, "rb_hash_dup(frame->counters)"
+  end
+
   def test_parser_class_and_range_adapters_preallocate_known_sizes
     source = File.read(EXTENSION_SOURCE)
     parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
@@ -677,11 +688,11 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/parsed->ast = onibi_deep_freeze/, parser)
   end
 
-  def test_tagged_counter_maps_are_marked_for_c_snapshot_migration
+  def test_tagged_counter_state_uses_c_snapshots
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
-    assert_includes document, "Pending: C counter snapshots"
-    assert_includes document, "fixed C array per frame"
-    assert_includes document, "Capture maps"
+    assert_includes document, "C counter snapshots per frame"
+    assert_includes document, "Every tagged frame now uses fixed C counter storage"
+    assert_includes document, "Capture and tag history remain independent Ruby values"
   end
 
   def test_rseq_physical_graph_adapter_is_marked_for_c_view_migration
