@@ -3367,6 +3367,29 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE limit = onibi_hash_value(semantic_action, "limit");
     VALUE value = onibi_hash_value(semantic_action, "value");
     VALUE width = onibi_hash_value(semantic_action, "width");
+    if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
+      VALUE predicates = onibi_hash_value(semantic_action, "predicates");
+      if (!RB_TYPE_P(predicates, T_ARRAY) || !RTEST(rb_obj_frozen_p(predicates)) ||
+          NIL_P(width) || NUM2LONG(width) != RARRAY_LEN(predicates))
+        rb_raise(rb_eArgError, "RSeq lookaround predicates are invalid");
+      for (long p = 0; p < RARRAY_LEN(predicates); p++) {
+        VALUE predicate = rb_ary_entry(predicates, p);
+        VALUE kind = onibi_hash_value(predicate, "kind");
+        if (!RB_TYPE_P(predicate, T_HASH) || !RTEST(rb_obj_frozen_p(predicate)) ||
+            (kind != ID2SYM(rb_intern("byte")) && kind != ID2SYM(rb_intern("bitmap")) &&
+             kind != ID2SYM(rb_intern("any"))))
+          rb_raise(rb_eArgError, "RSeq lookaround predicate has an invalid kind");
+        if (kind == ID2SYM(rb_intern("byte"))) {
+          VALUE byte = onibi_hash_value(predicate, "byte");
+          if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
+            rb_raise(rb_eArgError, "RSeq lookaround byte predicate is invalid");
+        } else if (kind == ID2SYM(rb_intern("bitmap"))) {
+          VALUE bitmap = onibi_hash_value(predicate, "bitmap");
+          if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32 || !RTEST(rb_obj_frozen_p(bitmap)))
+            rb_raise(rb_eArgError, "RSeq lookaround bitmap predicate is invalid");
+        }
+      }
+    }
     uint32_t expected_arg32 = !NIL_P(width) ? (uint32_t)NUM2ULONG(width) :
       (!NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
        (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0));

@@ -922,6 +922,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(physical_graph: invalid_view), "abc", :REGULAR_FAST) }
   end
 
+  def test_vm_rejects_malformed_lookaround_predicates
+    rseq = Onibi::Regexp.new("(?=[ab]c)[a-z]c").pipeline[:rseq_program]
+    index = rseq[:actions].index { |action| action[:op] == :ASSERT_LOOKAHEAD }
+    actions = rseq[:actions].dup
+    actions[index] = actions[index].merge(predicates: [].freeze).freeze
+
+    assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(actions: actions.freeze), "ac", :REGULAR_FAST) }
+  end
+
   def test_vm_rejects_unknown_rseq_action_opcode
     rseq = Onibi::Regexp.new("(a)").pipeline[:rseq_program]
     actions = rseq[:actions].dup
