@@ -1254,6 +1254,13 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(out, ID2SYM(rb_intern("parsed")), obj->parsed);
     rb_hash_aset(out, ID2SYM(rb_intern("compiled")), obj->compiled);
     rb_hash_aset(out, ID2SYM(rb_intern("rseq_program")), obj->rseq);
+    VALUE canonical = rb_hash_new();
+    rb_hash_aset(canonical, ID2SYM(rb_intern("ast")), onibi_hash_value(obj->parsed, "ast"));
+    rb_hash_aset(canonical, ID2SYM(rb_intern("gir")), onibi_hash_value(obj->compiled, "graph"));
+    rb_hash_aset(canonical, ID2SYM(rb_intern("rseq")), obj->rseq);
+    rb_hash_aset(canonical, ID2SYM(rb_intern("options")), onibi_hash_value(obj->compiled, "options"));
+    rb_obj_freeze(canonical);
+    rb_hash_aset(out, ID2SYM(rb_intern("canonical")), canonical);
   }
   return out;
 }

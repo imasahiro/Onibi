@@ -400,6 +400,10 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("abc")
     assert regexp.program_cached?
     assert_same regexp.pipeline, regexp.pipeline
+    canonical = regexp.pipeline[:canonical]
+    assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
+    assert_same regexp.pipeline[:compiled][:graph], canonical[:gir]
+    assert_same regexp.pipeline[:rseq_program], canonical[:rseq]
     refute Onibi::Regexp.new("(?=a)b").program_cached?
   end
 
