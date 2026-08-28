@@ -2693,8 +2693,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
   VALUE literal_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
-    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op != id_g_char) continue;
+    unsigned int opcode = NUM2UINT(onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode));
+    if (opcode != ONIBI_G_CHAR) continue;
     VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
     int found = 0;
     for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
@@ -2774,20 +2774,20 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.counter_count = counter_count;
   physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
-    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == id_g_grapheme || op == id_g_backref || op == id_g_call ||
-        op == id_g_atomic || op == id_g_absent) {
+    unsigned int opcode = NUM2UINT(onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode));
+    if (opcode == ONIBI_G_GRAPHEME || opcode == ONIBI_G_BACKREF || opcode == ONIBI_G_CALL ||
+        opcode == ONIBI_G_ATOMIC || opcode == ONIBI_G_ABSENT) {
       physical.exec_kind = 2;
       break;
     }
-    if (op == id_g_accept) continue;
+    if (opcode == ONIBI_G_ACCEPT) continue;
   }
   if (physical.exec_kind == 0) {
     for (long i = 0; i < RARRAY_LEN(actions); i++) {
-      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
-      if (op == id_capture_open || op == id_capture_close ||
-          op == id_a_counter_init || op == id_a_counter_increment ||
-          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_action_code));
+      if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE ||
+          code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+          code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
         physical.exec_kind = 1;
         break;
       }
@@ -2795,8 +2795,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     for (long i = 0; i < RARRAY_LEN(start_edges) && physical.exec_kind == 0; i++) {
       VALUE edge_actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
       for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
-        ID op = SYM2ID(onibi_hash_value(rb_ary_entry(edge_actions, j), "op"));
-        if (op == id_capture_open || op == id_a_counter_init) {
+        OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(edge_actions, j), id_key_action_code));
+        if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_COUNTER_INIT) {
           physical.exec_kind = 1;
           break;
         }
@@ -2838,12 +2838,12 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint32_t class_index = 0, literal_index = 0;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     VALUE state = rb_ary_entry(states, i);
-    ID op = SYM2ID(onibi_hash_value(state, "op"));
-    physical_states[i].op = (uint8_t)(op == id_g_char ? ONIBI_RS_CHAR :
-      op == id_g_class ? ONIBI_RS_CLASS : op == id_g_any ? ONIBI_RS_ANY :
-      op == id_g_grapheme ? ONIBI_RS_GRAPHEME : op == id_g_backref ? ONIBI_RS_BACKREF :
-      op == id_g_call ? ONIBI_RS_CALL : op == id_g_atomic ? ONIBI_RS_ATOMIC :
-      op == id_g_absent ? ONIBI_RS_ABSENT : op == id_g_accept ? 0 : 0xff);
+    unsigned int opcode = NUM2UINT(onibi_hash_value_id(state, id_key_opcode));
+    physical_states[i].op = (uint8_t)(opcode == ONIBI_G_CHAR ? ONIBI_RS_CHAR :
+      opcode == ONIBI_G_CLASS ? ONIBI_RS_CLASS : opcode == ONIBI_G_ANY ? ONIBI_RS_ANY :
+      opcode == ONIBI_G_GRAPHEME ? ONIBI_RS_GRAPHEME : opcode == ONIBI_G_BACKREF ? ONIBI_RS_BACKREF :
+      opcode == ONIBI_G_CALL ? ONIBI_RS_CALL : opcode == ONIBI_G_ATOMIC ? ONIBI_RS_ATOMIC :
+      opcode == ONIBI_G_ABSENT ? ONIBI_RS_ABSENT : opcode == ONIBI_G_ACCEPT ? 0 : 0xff);
     uint32_t edge_base = 0;
     uint16_t edge_count = 0;
     for (long e = 0; e < RARRAY_LEN(r_edges); e++) {
@@ -2854,7 +2854,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
-    if (op == id_g_class) {
+    if (opcode == ONIBI_G_CLASS) {
       VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
       class_index = 0;
       for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
@@ -2865,7 +2865,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       }
       physical_states[i].payload = class_index;
     }
-    else if (op == id_g_char) {
+    else if (opcode == ONIBI_G_CHAR) {
       VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
       literal_index = 0;
       for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
