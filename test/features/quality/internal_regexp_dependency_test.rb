@@ -74,5 +74,6 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil record
     refute_match(/\bVALUE\b/, record)
+    assert_includes record, "OnibiAsciiProperty property_kind"
   end
 end
