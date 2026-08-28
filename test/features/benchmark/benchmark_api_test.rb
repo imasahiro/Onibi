@@ -290,6 +290,11 @@ class BenchmarkApiTest < Minitest::Test
     assert possessive[:possessive]
   end
 
+  def test_parser_rejects_invalid_character_class_range_endpoints
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[a-\\d]") }
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[z-a]") }
+  end
+
   def test_parser_records_anchor_and_escape_semantics
     ast = Onibi::Parser.parse("\\A\\d\\z")[:ast]
     children = ast[:children]

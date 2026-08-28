@@ -293,6 +293,12 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       continue;
     }
     if (kind == rb_intern("class_range") && i > begin + 1 && i + 1 < close) {
+      ID first_kind = onibi_token_kind(rb_ary_entry(tokens, i - 1));
+      ID last_kind = onibi_token_kind(rb_ary_entry(tokens, i + 1));
+      if (first_kind != rb_intern("literal") || last_kind != rb_intern("literal"))
+        rb_raise(eRegexpError, "invalid range endpoint in character class");
+      if (onibi_token_byte(rb_ary_entry(tokens, i - 1)) > onibi_token_byte(rb_ary_entry(tokens, i + 1)))
+        rb_raise(eRegexpError, "empty range in character class");
       VALUE range = rb_ary_new();
       rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
       rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
