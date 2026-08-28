@@ -2917,7 +2917,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!found) onibi_value_vector_push(&class_payloads, payload);
   }
   uint32_t class_count = (uint32_t)class_payloads.count;
-  VALUE actions = rb_ary_new();
+  OnibiValueVector action_records;
+  onibi_value_vector_init(&action_records);
+  VALUE action_roots = rb_ary_new();
   OnibiGirEdgeVector r_edge_records;
   onibi_gir_edge_vector_init(&r_edge_records);
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
@@ -2927,13 +2929,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR edges");
     long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
     long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
-    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : RARRAY_LEN(actions);
+    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : (long)action_records.count;
     VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
       VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
       rb_ary_push(copied_actions, copy);
-      rb_ary_push(actions, copy);
+      onibi_value_vector_push(&action_records, copy);
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
@@ -2941,10 +2943,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
-      rb_ary_push(actions, terminator);
+      onibi_value_vector_push(&action_records, terminator);
     }
     rb_obj_freeze(copied_actions);
-    onibi_gir_edge_vector_push(&r_edge_records, (OnibiGirEdgeEntry){from, to, action_offset, copied_actions}, actions);
+    onibi_gir_edge_vector_push(&r_edge_records, (OnibiGirEdgeEntry){from, to, action_offset, copied_actions}, action_roots);
   }
   OnibiGirEdgeVector r_start_edge_records;
   onibi_gir_edge_vector_init(&r_start_edge_records);
@@ -2954,13 +2956,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!RTEST(rb_obj_frozen_p(edge)) || !RTEST(rb_obj_frozen_p(edge_actions)))
       rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR start edges");
     long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
-    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : RARRAY_LEN(actions);
+    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : (long)action_records.count;
     VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
       VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
       rb_ary_push(copied_actions, copy);
-      rb_ary_push(actions, copy);
+      onibi_value_vector_push(&action_records, copy);
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
@@ -2968,11 +2970,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
-      rb_ary_push(actions, terminator);
+      onibi_value_vector_push(&action_records, terminator);
     }
     rb_obj_freeze(copied_actions);
-    onibi_gir_edge_vector_push(&r_start_edge_records, (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions}, actions);
+    onibi_gir_edge_vector_push(&r_start_edge_records, (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions}, action_roots);
   }
+  VALUE actions = rb_ary_new_capa((long)action_records.count);
+  for (size_t i = 0; i < action_records.count; i++) rb_ary_push(actions, action_records.items[i]);
+  rb_obj_freeze(actions);
   VALUE r_edges = rb_ary_new_capa((long)r_edge_records.count);
   for (size_t i = 0; i < r_edge_records.count; i++) {
     OnibiGirEdgeEntry *record = &r_edge_records.entries[i];
@@ -3282,6 +3287,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   onibi_rseq_validate(result);
   onibi_value_vector_free(&class_payloads);
   onibi_value_vector_free(&literal_payloads);
+  onibi_value_vector_free(&action_records);
   onibi_gir_edge_vector_free(&r_edge_records);
   onibi_gir_edge_vector_free(&r_start_edge_records);
   return result;
