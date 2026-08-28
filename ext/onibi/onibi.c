@@ -10,6 +10,8 @@
 #include <float.h>
 #include <errno.h>
 
+#define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
+
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
@@ -1357,7 +1359,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
       rb_raise(eRegexpError, "invalid quantifier range");
     long max = NIL_P(max_value) ? -1 : NUM2LONG(max_value);
-    if (max > 1000000)
+    if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
       rb_raise(eRegexpError, "quantifier exceeds RSeq representation limit");
     if (max >= 0 && max != min) {
       /* Counted repeats use one counter slot.  The first start edge
@@ -1942,7 +1944,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         }
         if (digit < '0' || digit > '9') { have_digit = 0; over_limit = 0; break; }
         have_digit = 1;
-        if (value > 4096U || (value == 4096U && (uint64_t)(digit - '0') > 0U)) over_limit = 1;
+        if (value > (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
+            (value == (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && (uint64_t)(digit - '0') > 0U)) over_limit = 1;
         else value = value * 10U + (uint64_t)(digit - '0');
       }
       if (have_digit && over_limit) obj->has_large_repeat = 1;
