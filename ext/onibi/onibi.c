@@ -1561,26 +1561,6 @@ static void onibi_connect_vector_actions(onibi_gir_builder_t *builder,
       onibi_gir_edge_actions(builder, (long)exits->items[i], NUM2LONG(start_values[j]), actions);
 }
 
-static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
-  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
-  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
-  for (long i = 0; i < exit_count; i++) {
-    long from = NUM2LONG(exit_values[i]);
-    for (long j = 0; j < start_count; j++) {
-      VALUE edge = rb_hash_new();
-      rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
-      rb_hash_aset(edge, ID2SYM(id_key_to), start_values[j]);
-      rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-      long insert_at = RARRAY_LEN(builder->edges);
-      for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
-        VALUE prior = rb_ary_entry(builder->edges, k);
-        if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from) { insert_at = k; break; }
-      }
-      rb_funcall(builder->edges, id_insert, 2, LONG2NUM(insert_at), edge);
-    }
-  }
-}
-
 static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
                                                  const OnibiIdVector *exits,
                                                  VALUE starts, VALUE actions) {
@@ -1601,6 +1581,18 @@ static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
       rb_funcall(builder->edges, id_insert, 2, LONG2NUM(insert_at), edge);
     }
   }
+}
+
+/* Fragment composition still stores Ruby arrays, but all numeric exit
+ * traversal goes through the C vector boundary. */
+static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
+                                           VALUE exits, VALUE starts, VALUE actions,
+                                           int prepend) {
+  OnibiIdVector exit_ids;
+  onibi_id_vector_from_array(&exit_ids, exits);
+  if (prepend) onibi_connect_vector_prepend_actions(builder, &exit_ids, starts, actions);
+  else onibi_connect_vector_actions(builder, &exit_ids, starts, actions);
+  onibi_id_vector_free(&exit_ids);
 }
 
 static void onibi_append_values(VALUE destination, VALUE values) {
@@ -1958,8 +1950,7 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
       }
       VALUE transition_actions = rb_ary_dup(result.pending_actions);
       onibi_append_values(transition_actions, part.start_actions);
-      if (result.lazy) onibi_connect_prepend_actions(builder, old_exits, part.starts, transition_actions);
-      else onibi_connect_actions(builder, old_exits, part.starts, transition_actions);
+      onibi_connect_fragment_actions(builder, old_exits, part.starts, transition_actions, result.lazy);
       result.exits = rb_ary_dup(part.exits);
       /* A prior exit can bypass this part only when this part is nullable. */
       if (part.nullable) onibi_append_values(result.exits, old_exits);
