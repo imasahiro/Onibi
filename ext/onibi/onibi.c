@@ -1616,13 +1616,17 @@ static VALUE onibi_pipeline_build(VALUE self) {
   VALUE tokens = obj->tokens;
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
-  int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
-                                           (RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src)-1] == '}'));
-  int is_alt = 0; for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') is_alt = 1;
-  int is_class = RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']';
-  int is_anchor = RSTRING_LEN(src) > 0 && (RSTRING_PTR(src)[0] == '^' || RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$' ||
-      (RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A') ||
-      (RSTRING_LEN(src) >= 2 && RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z'));
+  int is_quant = RARRAY_LEN(tokens) >= 2 &&
+    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("quantifier");
+  int is_alt = 0, is_anchor = 0;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
+    if (kind == rb_intern("alternation")) is_alt = 1;
+    if (kind == rb_intern("anchor")) is_anchor = 1;
+  }
+  int is_class = RARRAY_LEN(tokens) >= 2 &&
+    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("class_start") &&
+    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("class_end");
   rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : (is_alt ? "alternation" : (is_class ? "character_class" : (is_anchor ? "anchor" : "sequence"))))));
   VALUE children = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
