@@ -498,6 +498,13 @@ class BenchmarkApiTest < Minitest::Test
     assert disabled.vm_match?("a b")
   end
 
+  def test_nested_option_scope_restores_outer_flags
+    regexp = Onibi::Regexp.new("(?i:(?-i:a)B)")
+    refute regexp.vm_match?("AB")
+    assert regexp.vm_match?("aB")
+    assert regexp.vm_match?("ab")
+  end
+
   def test_tokenizer_keeps_comma_and_space_as_literals
     assert_equal :literal, Onibi::Lexer.new(",").tokens.first[:kind]
     assert Onibi::Regexp.new("a b").vm_match?("a b")
