@@ -5545,17 +5545,20 @@ void Init_onibi(void) {
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
-  cLexer = rb_define_class_under(mOnibi, "Lexer", rb_cObject);
+  /* Lexer, parser, compiler, RSeq, and VM are implementation objects.
+   * Keep their methods available to the C pipeline, but do not publish
+  * Ruby constants for them.  Only Onibi::Regexp is public. */
+  cLexer = rb_class_new(rb_cObject);
   rb_define_alloc_func(cLexer, onibi_lexer_alloc);
   rb_define_method(cLexer, "initialize", onibi_lexer_initialize, -1);
   rb_define_method(cLexer, "tokens", onibi_lexer_tokens, 0);
-  VALUE parser = rb_define_module_under(mOnibi, "Parser");
+  VALUE parser = rb_module_new();
   rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);
-  VALUE compiler = rb_define_module_under(mOnibi, "Compiler");
+  VALUE compiler = rb_module_new();
   rb_define_singleton_method(compiler, "compile", onibi_compiler_compile, 1);
-  VALUE rseq = rb_define_module_under(mOnibi, "RSeq");
+  VALUE rseq = rb_module_new();
   rb_define_singleton_method(rseq, "lower", onibi_rseq_lower, 1);
-  VALUE vm = rb_define_module_under(mOnibi, "VM");
+  VALUE vm = rb_module_new();
   rb_define_singleton_method(vm, "execute", onibi_vm_execute, 3);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
   eTimeoutError = rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
