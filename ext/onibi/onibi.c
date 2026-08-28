@@ -1902,6 +1902,20 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       }
     }
   }
+  if (!(opts & 32) && rb_enc_get_index(source) != rb_utf8_encindex() &&
+      rb_enc_get_index(source) != rb_usascii_encindex()) {
+    for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+      VALUE token = rb_ary_entry(tokens, i);
+      ID kind = onibi_token_kind(token);
+      long byte = onibi_token_byte(token);
+      if ((kind == rb_intern("literal") && byte > 127) ||
+          (kind == rb_intern("escape") && (byte == 'p' || byte == 'P'))) {
+        opts |= 16;
+        break;
+      }
+    }
+  }
+  obj->options = opts;
   obj->options = opts;
   VALUE regexp_source = source;
   if (rb_enc_get_index(source) != rb_utf8_encindex()) {
