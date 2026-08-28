@@ -46,7 +46,7 @@ static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedenco
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
-static ID id_key_kind, id_key_opcode;
+static ID id_key_kind, id_key_kind_code, id_key_opcode;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set;
 static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
@@ -632,6 +632,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
     rb_hash_aset(token, ID2SYM(id_key_kind), ID2SYM(onibi_token_kind_id(kind)));
+    rb_hash_aset(token, ID2SYM(id_key_kind_code), UINT2NUM((unsigned int)kind));
     rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(start));
     rb_hash_aset(token, ID2SYM(id_key_end), LONG2NUM(i + 1));
@@ -673,6 +674,11 @@ static int onibi_extended_option_p(VALUE options) {
 
 static ID onibi_token_kind(VALUE token) {
   return SYM2ID(rb_hash_aref(token, ID2SYM(id_key_kind)));
+}
+
+static OnibiTokenKind onibi_token_kind_code(VALUE token) {
+  VALUE code = rb_hash_aref(token, ID2SYM(id_key_kind_code));
+  return NIL_P(code) ? ONIBI_TOKEN_LITERAL : (OnibiTokenKind)NUM2UINT(code);
 }
 
 static long onibi_token_byte(VALUE token) {
@@ -5415,7 +5421,7 @@ void Init_onibi(void) {
   id_key_op = rb_intern("op"); id_key_payload = rb_intern("payload");
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
-  id_key_kind = rb_intern("kind"); id_key_opcode = rb_intern("opcode");
+  id_key_kind = rb_intern("kind"); id_key_kind_code = rb_intern("kind_code"); id_key_opcode = rb_intern("opcode");
   id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
   id_key_start = rb_intern("start"); id_key_end = rb_intern("end"); id_key_captures = rb_intern("captures");
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
