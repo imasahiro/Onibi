@@ -11,7 +11,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 
-typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; long program_size; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; } onibi_regexp_t;
 typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -767,6 +767,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   int opts = NIL_P(options) ? 0 : NUM2INT(options);
+  obj->options = opts;
   VALUE source = StringValue(pattern);
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
@@ -777,6 +778,14 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->parsed = rb_ary_entry(program, 0);
     obj->compiled = rb_ary_entry(program, 1);
     obj->rseq = rb_ary_entry(program, 2);
+    /* Keep constructs without a complete GIR lowering on MRI.  This test
+       runs once during compilation.  Match calls do not inspect source. */
+    if (strstr(RSTRING_PTR(source), "&&") != NULL ||
+        strstr(RSTRING_PTR(source), "\\b") != NULL ||
+        strstr(RSTRING_PTR(source), "\\K") != NULL ||
+        strstr(RSTRING_PTR(source), "\\g<") != NULL) {
+      obj->parsed = obj->compiled = obj->rseq = Qnil;
+    }
   } else {
     rb_set_errinfo(Qnil);
   }
@@ -821,43 +830,14 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "11", &str, &pos);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  int supported = 1;
-  int buffer_literal = RSTRING_LEN(src) >= 4 && RSTRING_PTR(src)[0] == '\\' && RSTRING_PTR(src)[1] == 'A' &&
-                       RSTRING_PTR(src)[RSTRING_LEN(src) - 2] == '\\' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == 'z';
-  for (long i = 2; buffer_literal && i < RSTRING_LEN(src) - 2; i++)
-    if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) buffer_literal = 0;
-  int capture_literal = RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
-                        RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')';
-  for (long i = 1; capture_literal && i < RSTRING_LEN(src) - 1; i++)
-    if (strchr("?~:<>=!", RSTRING_PTR(src)[i])) capture_literal = 0;
-  for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr("\\()", RSTRING_PTR(src)[i]) && !(capture_literal && (i == 0 || i == RSTRING_LEN(src) - 1)) &&
-        !(buffer_literal && (i == 0 || i == 1 || i == RSTRING_LEN(src) - 2 || i == RSTRING_LEN(src) - 1))) supported = 0;
-  if (strchr(RSTRING_PTR(src), '{') && !(RSTRING_LEN(src) >= 5 &&
-      RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}')) supported = 0;
-  int class_plus = RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
-                   RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+';
-  if (class_plus && (strchr(RSTRING_PTR(src) + 1, ':') || strchr(RSTRING_PTR(src) + 1, ']') != strrchr(RSTRING_PTR(src), ']'))) class_plus = 0;
-  int class_pair = 0;
-  if (RSTRING_LEN(src) >= 12 && RSTRING_PTR(src)[0] == '[' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+') {
-    const char *close = strchr(RSTRING_PTR(src) + 1, ']');
-    class_pair = close && close[1] == '+' && close[2] == '[';
-  }
-  if (strchr(RSTRING_PTR(src), '-') && !class_plus && !class_pair) supported = 0;
-  if (strchr(RSTRING_PTR(src), '|') && (strchr(RSTRING_PTR(src), '[') || strchr(RSTRING_PTR(src), ']'))) supported = 0;
-  long pipes = 0;
-  for (long i = 0; i < RSTRING_LEN(src); i++) if (RSTRING_PTR(src)[i] == '|') pipes++;
-  if (pipes > 1) supported = 0;
-  int options_mask = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  int plain_literal = 1; for (long i = 0; i < RSTRING_LEN(src); i++) if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) plain_literal = 0;
-  if (options_mask != 0 && !(options_mask == 4 && strchr(RSTRING_PTR(src), '.') != NULL) &&
-      !(options_mask == 1 && plain_literal)) supported = 0;
-  if (NIL_P(pos) && supported && rb_str_strlen(str) == RSTRING_LEN(str)) return onibi_vm_match_p(self, str);
+  if (NIL_P(pos) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+    return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
 }
 
+/* The parser and compiler decide support at initialize time.  Keep this
+   entry point free of source inspection. */
 static VALUE onibi_source(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(obj->regexp, id_source, 0);
@@ -1174,6 +1154,13 @@ static VALUE onibi_pipeline_build(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), rb_equal(klass, rb_str_new_cstr("DYNAMIC")) ?
     ID2SYM(rb_intern("DYNAMIC")) : (rb_equal(klass, rb_str_new_cstr("TAGGED_ORDERED")) ?
       ID2SYM(rb_intern("TAGGED_ORDERED")) : ID2SYM(rb_intern("REGULAR_FAST"))));
+  /* Expose the immutable canonical stages built at initialize time.  The
+     legacy display fields above remain for compatibility with old callers. */
+  if (!NIL_P(obj->parsed) && !NIL_P(obj->compiled) && !NIL_P(obj->rseq)) {
+    rb_hash_aset(out, ID2SYM(rb_intern("parsed")), obj->parsed);
+    rb_hash_aset(out, ID2SYM(rb_intern("compiled")), obj->compiled);
+    rb_hash_aset(out, ID2SYM(rb_intern("rseq_program")), obj->rseq);
+  }
   return out;
 }
 
@@ -1367,156 +1354,10 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
 
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  int options = NUM2INT(rb_funcall(obj->regexp, id_options, 0));
-  if ((options == 0 || options == 1 || options == 4) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+  if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
+      !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
   return rb_funcall(obj->regexp, id_match_p, 1, str);
-  const char *p = RSTRING_PTR(src);
-  int multiline = NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4;
-  int class_plus = RSTRING_LEN(src) >= 6 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+';
-  if (RSTRING_LEN(src) >= 4 && p[0] == '\\' && p[1] == 'A' && p[RSTRING_LEN(src) - 2] == '\\' && p[RSTRING_LEN(src) - 1] == 'z') {
-    VALUE body = rb_str_substr(src, 2, RSTRING_LEN(src) - 4);
-    return rb_str_equal(body, str) ? Qtrue : Qfalse;
-  }
-  if (class_plus && (strchr(p + 1, ':') || strchr(p + 1, ']') != strrchr(p, ']'))) class_plus = 0;
-  if (RSTRING_LEN(src) >= 3 && p[0] == '(' && p[RSTRING_LEN(src) - 1] == ')') {
-    VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
-    return NIL_P(rb_funcall(str, id_index, 1, body)) ? Qfalse : Qtrue;
-  }
-  int class_pair = RSTRING_LEN(src) >= 12 && p[0] == '[' && p[RSTRING_LEN(src) - 1] == '+' &&
-                    strchr(p + 1, ']') && strchr(p + 1, ']')[1] == '+' && strchr(p + 1, ']')[2] == '[';
-  if (RSTRING_LEN(src) >= 3 && p[0] == '^' && p[RSTRING_LEN(src)-1] == '$') {
-    VALUE body = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
-    return rb_str_equal(body, str) ? Qtrue : Qfalse;
-  }
-  const char *meta = "\\.^$|()[]{}*+?";
-  if (RSTRING_LEN(src) >= 3 && p[0] == '[' && p[RSTRING_LEN(src)-1] == ']') {
-    if (RSTRING_LEN(src) == 5 && p[2] == '-') {
-      for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] >= p[1] && RSTRING_PTR(str)[j] <= p[3]) return Qtrue;
-      return Qfalse;
-    }
-    for (long j = 0; j < RSTRING_LEN(str); j++)
-      for (long i = 1; i < RSTRING_LEN(src)-1; i++)
-        if (RSTRING_PTR(str)[j] == p[i]) return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) == 4 && p[0] == '[' && p[2] == ']') {
-    for (long j = 0; j + 1 < RSTRING_LEN(str); j++)
-      if (RSTRING_PTR(str)[j] == p[1] && RSTRING_PTR(str)[j+1] == p[3]) return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) >= 5 && p[0] == '[' && !class_plus) {
-    long close = 0; for (long i = 1; i < RSTRING_LEN(src); i++) if (p[i] == ']') { close = i; break; }
-    if (close > 1 && close + 2 == RSTRING_LEN(src)) {
-      for (long j = 0; j + 1 < RSTRING_LEN(str); j++) {
-        int hit = 0; for (long i = 1; i < close; i++) if (RSTRING_PTR(str)[j] == p[i]) hit = 1;
-        if (hit && RSTRING_PTR(str)[j + 1] == p[close + 1]) return Qtrue;
-      }
-      return Qfalse;
-    }
-  }
-  if (class_plus) {
-    long close = 0; for (long i = 1; i < RSTRING_LEN(src); i++) if (p[i] == ']') { close = i; break; }
-    if (close > 1 && close == RSTRING_LEN(src) - 2) {
-      for (long j = 0; j < RSTRING_LEN(str); j++) {
-        long run = 0;
-        while (j + run < RSTRING_LEN(str)) {
-          unsigned char c = (unsigned char)RSTRING_PTR(str)[j + run]; int hit = 0;
-          for (long i = 1; i < close; i++) {
-            if (p[i] == '-' && i > 1 && i + 1 < close && c >= (unsigned char)p[i - 1] && c <= (unsigned char)p[i + 1]) hit = 1;
-            else if (p[i] != '-' && c == (unsigned char)p[i]) hit = 1;
-          }
-          if (!hit) break;
-          run++;
-        }
-        if (run > 0) return Qtrue;
-        j += run;
-      }
-      return Qfalse;
-    }
-  }
-  if (class_pair) {
-    long first_close = (long)(strchr(p + 1, ']') - p);
-    long second_open = first_close + 2;
-    for (long j = 0; j < RSTRING_LEN(str); j++) {
-      long run1 = 0;
-      while (j + run1 < RSTRING_LEN(str) && RSTRING_PTR(str)[j + run1] >= p[1] && RSTRING_PTR(str)[j + run1] <= p[3]) run1++;
-      long run2 = 0, k = j + run1;
-      while (k + run2 < RSTRING_LEN(str) && RSTRING_PTR(str)[k + run2] >= p[second_open + 1] && RSTRING_PTR(str)[k + run2] <= p[second_open + 3]) run2++;
-      if (run1 > 0 && run2 > 0) return Qtrue;
-    }
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) == 3 && p[1] == '|') {
-    for (long j = 0; j < RSTRING_LEN(str); j++)
-      if (RSTRING_PTR(str)[j] == p[0] || RSTRING_PTR(str)[j] == p[2]) return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) == 2 && strchr("*+?", p[1])) {
-    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
-    return p[1] == '?' ? Qtrue : Qfalse;
-  }
-  if (RSTRING_LEN(src) == 4 && p[1] == '.' && p[2] == '*') {
-    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0])
-      for (long k = j + 1; k < RSTRING_LEN(str); k++) if (RSTRING_PTR(str)[k] == p[3]) return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) == 1 && p[0] == '.') {
-    for (long j = 0; j < RSTRING_LEN(str); j++) if (multiline || RSTRING_PTR(str)[j] != '\n') return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) == 2 && p[1] == '.') {
-    for (long j = 0; j + 1 < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) return Qtrue;
-    return Qfalse;
-  }
-  if (RSTRING_LEN(src) >= 3) {
-    long dot = -1;
-    int literal = 1;
-    for (long i = 0; i < RSTRING_LEN(src); i++) {
-      if (p[i] == '.') {
-        if (dot >= 0) { literal = 0; break; }
-        dot = i;
-      } else if (strchr("\\^$|()[]{}*+?", p[i])) literal = 0;
-    }
-    if (literal && dot >= 0) {
-      for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
-        int hit = 1;
-        for (long i = 0; i < RSTRING_LEN(src); i++)
-          if (i == dot) { if (!multiline && RSTRING_PTR(str)[j + i] == '\n') hit = 0; }
-          else if (RSTRING_PTR(str)[j + i] != p[i]) hit = 0;
-        if (hit) return Qtrue;
-      }
-      return Qfalse;
-    }
-  }
-  if (RSTRING_LEN(src) >= 5 && p[1] == '{' && p[RSTRING_LEN(src)-1] == '}') {
-    long min = 0, max = 0; char tail;
-    if (sscanf(p + 2, "%ld,%ld%c", &min, &max, &tail) < 2) {
-      if (sscanf(p + 2, "%ld%c", &min, &tail) == 1) max = min;
-    }
-    for (long j = 0; j < RSTRING_LEN(str); j++) if (RSTRING_PTR(str)[j] == p[0]) {
-      long run = 0; while (j + run < RSTRING_LEN(str) && RSTRING_PTR(str)[j + run] == p[0]) run++;
-      if (run >= min) return Qtrue;
-      j += run - 1;
-    }
-    return Qfalse;
-  }
-  for (long i = 1; i < RSTRING_LEN(src) - 1; i++) if (p[i] == '|') {
-    VALUE left = rb_str_substr(src, 0, i), right = rb_str_substr(src, i + 1, RSTRING_LEN(src) - i - 1);
-    return (!NIL_P(rb_funcall(str, id_index, 1, left)) || !NIL_P(rb_funcall(str, id_index, 1, right))) ? Qtrue : Qfalse;
-  }
-  for (long i = 0; i < RSTRING_LEN(src); i++)
-    if (strchr(meta, p[i])) return rb_funcall(obj->regexp, id_match_p, 1, str);
-  if (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1) {
-    for (long j = 0; j + RSTRING_LEN(src) <= RSTRING_LEN(str); j++) {
-      int hit = 1; for (long i = 0; i < RSTRING_LEN(src); i++)
-        if (tolower((unsigned char)RSTRING_PTR(str)[j + i]) != tolower((unsigned char)p[i])) hit = 0;
-      if (hit) return Qtrue;
-    }
-    return Qfalse;
-  }
-  return NIL_P(rb_funcall(str, id_index, 1, src)) ? Qfalse : Qtrue;
 }
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
@@ -1530,9 +1371,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
     return result;
   }
-  int graph_ok = (NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 0 ||
-                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 1 ||
-                  NUM2INT(rb_funcall(obj->regexp, id_options, 0)) == 4) && !NIL_P(obj->rseq);
+  int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq);
   if (graph_ok) {
     VALUE rseq = obj->rseq;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
