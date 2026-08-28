@@ -4509,8 +4509,8 @@ static VALUE onibi_materialize_tags(VALUE tags, VALUE fallback) {
 
 static int onibi_has_capture_action(VALUE actions) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
-    if (op == id_capture_open || op == id_capture_close) return 1;
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_action_code));
+    if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) return 1;
   }
   return 0;
 }
@@ -4521,11 +4521,11 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
                                          VALUE tags, long *reported_start) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (op == id_match_reset) { *reported_start = pos; continue; }
-    if (op != id_capture_open && op != id_capture_close) continue;
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+    if (code == ONIBI_GA_MATCH_RESET) { *reported_start = pos; continue; }
+    if (code != ONIBI_GA_CAPTURE_OPEN && code != ONIBI_GA_CAPTURE_CLOSE) continue;
     VALUE slot = onibi_hash_value_id(action, id_key_slot);
-    if (op == id_capture_close && RTEST(onibi_hash_value_id(action, id_key_preserve_if_set)) &&
+    if (code == ONIBI_GA_CAPTURE_CLOSE && RTEST(onibi_hash_value_id(action, id_key_preserve_if_set)) &&
         RTEST(rb_hash_aref(captures, ID2SYM(id_recursive_marker)))) continue;
     rb_hash_aset(captures, slot, LONG2NUM(pos));
     VALUE event = rb_ary_new_from_args(3, tags, slot, LONG2NUM(pos));
