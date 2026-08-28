@@ -177,6 +177,12 @@ These counts include public result objects, semantic payloads, and temporary
 compiler adapters. They are not all migration targets. The table below gives
 the required classification for each data family.
 
+The migration boundary is incremental. C vectors are used first where the
+consumer needs only ordered numeric IDs or fixed token fields. Ruby adapters
+remain where the parser must retain variable payloads such as names, ranges,
+and nested children. The next boundary is the parser input view; it will carry
+fixed token fields in C and keep only payload references at the adapter edge.
+
 | Container | Ruby API required | C-struct decision | Reason |
 | --- | --- | --- | --- |
 | token stream (`Array<Hash>`) | No | Convert to a token vector | Each item has a fixed kind, byte span, and optional payload. The parser is the only consumer. |
