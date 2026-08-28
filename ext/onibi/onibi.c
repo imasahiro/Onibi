@@ -2216,6 +2216,26 @@ static void onibi_rseq_validate(VALUE rseq) {
         (uint64_t)literals[i].data_offset + literals[i].data_length > header.descriptors_offset)
       rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor range");
   }
+  for (uint32_t i = 0; i < header.state_count; i++) {
+    VALUE state = rb_ary_entry(semantic_states, i);
+    ID op = SYM2ID(onibi_hash_value(state, "op"));
+    VALUE payload = onibi_hash_value(state, "payload");
+    if (op == rb_intern("G_CLASS")) {
+      uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
+      VALUE bitmap = onibi_hash_value(payload, "bitmap");
+      if (id >= header.class_count || memcmp(RSTRING_PTR(bitmap),
+          RSTRING_PTR(blob) + classes[id].data_offset, 32) != 0 ||
+          ((classes[id].flags & 1U) != (RTEST(onibi_hash_value(payload, "negated")) ? 1U : 0U)))
+        rb_raise(rb_eArgError, "RSeq class descriptor disagrees with semantic payload");
+    } else if (op == rb_intern("G_CHAR")) {
+      uint32_t id = ((const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset))[i].payload;
+      VALUE byte = onibi_hash_value(payload, "byte");
+      if (id >= NUM2UINT(onibi_hash_value(semantic, "literal_count")) ||
+          (unsigned char)RSTRING_PTR(blob)[literals[id].data_offset] != (unsigned char)NUM2INT(byte) ||
+          ((literals[id].flags & 1U) != (RTEST(onibi_hash_value(payload, "ignorecase")) ? 1U : 0U)))
+        rb_raise(rb_eArgError, "RSeq literal descriptor disagrees with semantic payload");
+    }
+  }
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
