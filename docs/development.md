@@ -162,6 +162,11 @@ The tokenizer array is passed directly to the parser and is not retained in
 that result. This avoids a second Ruby reference to the compile-time token
 stream.
 
+Protected parser, compiler, and MRI-regexp callbacks receive a stack-owned
+`OnibiProgramArgs` structure. They do not allocate Ruby arrays to carry fixed
+argument positions. The VALUE fields remain rooted by the caller for the
+duration of each synchronous callback.
+
 The active tokenizer and compiler use `rb_intern_str` only while they build
 numeric name and property IDs. No string ID lookup occurs in the match loop;
 runtime dispatch uses cached enum or ID fields.
