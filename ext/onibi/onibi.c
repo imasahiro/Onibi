@@ -722,11 +722,11 @@ static int onibi_extended_option_p(VALUE options) {
 }
 
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
-  return (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+  return (OnibiTokenKind)NUM2UINT(onibi_hash_value_id(token, id_key_kind_code));
 }
 
 static long onibi_token_byte(VALUE token) {
-  return NUM2LONG(rb_hash_aref(token, ID2SYM(id_key_byte)));
+  return NUM2LONG(onibi_hash_value_id(token, id_key_byte));
 }
 
 static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
