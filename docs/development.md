@@ -222,6 +222,25 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 
+Function-level inventory of Ruby container creation (the `#if 0` diagnostic
+pipeline is excluded from this review) is:
+
+| Function | Hash/Array role | Decision |
+| --- | --- | --- |
+| `onibi_tokenize_internal` | Token adapter items | Keep until the parser input view uses C token records; release after compilation |
+| `onibi_ast_node` | One node adapter | Replace with the planned C AST arena |
+| `onibi_compile_node` / `onibi_compile_sequence` | Temporary payload and action adapters | Next structural migration; payload `VALUE`s still need GC roots |
+| `onibi_compiler_compile` | Frozen GIR semantic snapshot | Keep one publication adapter; builder records are C vectors |
+| `onibi_rseq_lower` | Semantic validation adapters | Keep at the RSeq publication boundary; physical records are C vectors |
+| `onibi_rseq_physical_graph` | Cached tagged/dynamic VM graph | Keep one immutable adapter until the C `OnibiRSeqView` walker is complete |
+| `onibi_vm_walk_captures` / `onibi_gir_match_captures_entry` | Capture maps and tag events | Keep Ruby values for GC and MatchData; counters migrate with this walker |
+| `onibi_gir_match` | Visited fallback map | Keep only when the C bitset cannot represent counter-bearing identity |
+
+This inventory separates temporary construction from runtime state. A Ruby
+container is a migration target only when its keys, order, and lifetime can be
+represented by a C owner without losing payload rooting or public MatchData
+behavior.
+
 The runtime Ruby containers have a separate rule. Capture maps and tag chains
 carry user-visible offsets or GC-managed payloads, so a C replacement is not
 simpler until MatchData materialization is isolated. The tagged counter map is
