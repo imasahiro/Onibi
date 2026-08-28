@@ -170,7 +170,7 @@ The remaining compiler containers have three separate roles:
 
 Detailed ownership review:
 
-The current source has 77 `rb_hash_new` calls and 69 `rb_ary_new` calls.
+The current source has 90 `rb_hash_new` calls and 80 `rb_ary_new` calls.
 These counts include public result objects, semantic payloads, and temporary
 compiler adapters. They are not all migration targets. The table below gives
 the required classification for each data family.
