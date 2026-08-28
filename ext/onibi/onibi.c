@@ -1815,7 +1815,15 @@ static VALUE onibi_pipeline_build(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   VALUE compact = rb_ary_new();
   int literal_only = RSTRING_LEN(src) > 0;
-  for (long i = 0; i < RSTRING_LEN(src); i++) if (strchr("\\^$|()[]{}*+?.", RSTRING_PTR(src)[i])) literal_only = 0;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    VALUE token = rb_ary_entry(tokens, i);
+    if (onibi_token_kind(token) != rb_intern("literal") ||
+        NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("end")))) -
+        NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("start")))) != 1) {
+      literal_only = 0;
+      break;
+    }
+  }
   if (literal_only) {
     VALUE op = rb_hash_new();
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
