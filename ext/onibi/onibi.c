@@ -1515,12 +1515,16 @@ static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE ex
 }
 
 static void onibi_append_values(VALUE destination, VALUE values) {
-  for (long i = 0; i < RARRAY_LEN(values); i++) rb_ary_push(destination, rb_ary_entry(values, i));
+  VALUE *items = RARRAY_PTR(values);
+  long count = RARRAY_LEN(values);
+  for (long i = 0; i < count; i++) rb_ary_push(destination, items[i]);
 }
 
 static void onibi_add_capture_guard(onibi_gir_builder_t *builder, VALUE starts, VALUE guard) {
-  for (long i = 0; i < RARRAY_LEN(starts); i++) {
-    VALUE key = rb_ary_entry(starts, i);
+  VALUE *items = RARRAY_PTR(starts);
+  long count = RARRAY_LEN(starts);
+  for (long i = 0; i < count; i++) {
+    VALUE key = items[i];
     VALUE prior = rb_hash_aref(builder->capture_guards, key);
     VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
     onibi_append_values(merged, guard);
@@ -1529,8 +1533,10 @@ static void onibi_add_capture_guard(onibi_gir_builder_t *builder, VALUE starts, 
 }
 
 static void onibi_add_exit_guard(onibi_gir_builder_t *builder, VALUE exits, VALUE actions) {
-  for (long i = 0; i < RARRAY_LEN(exits); i++) {
-    VALUE key = rb_ary_entry(exits, i);
+  VALUE *items = RARRAY_PTR(exits);
+  long count = RARRAY_LEN(exits);
+  for (long i = 0; i < count; i++) {
+    VALUE key = items[i];
     VALUE prior = rb_hash_aref(builder->exit_guards, key);
     VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
     onibi_append_values(merged, actions);
