@@ -4380,7 +4380,9 @@ static long onibi_grapheme_width(VALUE str, long pos) {
   return end - pos;
 }
 
-static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, long *initial_counters, uint32_t counter_count, int use_counters, long *matched_end) {
+static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited,
+                         unsigned char *visited_bits, size_t visited_span,
+                         long *initial_counters, uint32_t counter_count, int use_counters, long *matched_end) {
   typedef struct { long state_id, pos, next_edge; long *counters; } OnibiWalkFrame;
   /* Counter-bearing repeat paths can visit one state at many counter values.
    * Reserve a bounded workspace independent of graph state count. */
@@ -4397,12 +4399,17 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     onibi_check_deadline();
     OnibiWalkFrame *frame = &stack[depth - 1];
     if (frame->next_edge == 0) {
-      VALUE key = !use_counters ?
-        rb_ary_new_from_args(2, LONG2NUM(frame->state_id), LONG2NUM(frame->pos)) :
-        rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos),
-                             rb_str_new((const char *)frame->counters, (long)(sizeof(long) * counter_count)));
-      if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
-      rb_hash_aset(visited, key, Qtrue);
+      if (!use_counters && visited_bits && frame->state_id >= 0 && frame->pos >= 0 &&
+          (size_t)frame->state_id < (size_t)RARRAY_LEN(states) && (size_t)frame->pos < visited_span) {
+        size_t mark = (size_t)frame->state_id * visited_span + (size_t)frame->pos;
+        if (visited_bits[mark]) { depth--; continue; }
+        visited_bits[mark] = 1;
+      } else {
+        VALUE key = rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos),
+                                         rb_str_new((const char *)frame->counters, (long)(sizeof(long) * counter_count)));
+        if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
+        rb_hash_aset(visited, key, Qtrue);
+      }
       VALUE state = rb_ary_entry(states, frame->state_id);
       unsigned int op = NUM2UINT(onibi_hash_value_id(state, id_key_opcode));
       if (op == 0) { *matched_end = frame->pos; return 1; }
@@ -4449,6 +4456,13 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE outgoing = onibi_hash_value_id(graph, id_key_outgoing);
   VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
   VALUE visited = rb_hash_new();
+  unsigned char *visited_bits = NULL;
+  size_t visited_span = (size_t)RSTRING_LEN(str) + 1U;
+  size_t visited_size = (size_t)RARRAY_LEN(states) * visited_span;
+  if (visited_size <= (size_t)1 << 20) {
+    visited_bits = ALLOCA_N(unsigned char, visited_size);
+    memset(visited_bits, 0, visited_size);
+  }
   VALUE counter_count = onibi_hash_value_id(graph, id_key_counter_count);
   int use_counters = !NIL_P(counter_count) && NUM2UINT(counter_count) != 0;
   uint32_t counter_slots = use_counters ? NUM2UINT(counter_count) : 0;
@@ -4463,7 +4477,8 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
       onibi_vm_apply_counter_actions_c(edge_actions, &counter_state);
     }
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), Qnil, Qnil)) continue;
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, counter_slots, use_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited,
+                      visited_bits, visited_span, branch_counters, counter_slots, use_counters, matched_end)) return 1;
   }
   return 0;
 }
