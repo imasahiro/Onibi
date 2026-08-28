@@ -459,6 +459,8 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("ab")
     refute regexp.vm_match?("a b")
     assert Onibi::Regexp.new("a# comment\nb", 2).vm_match?("ab")
+    assert Onibi::Regexp.new("a\\ b", 2).vm_match?("a b")
+    assert Onibi::Regexp.new("a\\#b", 2).vm_match?("a#b")
   end
 
   def test_tagged_capture_walk_keeps_distinct_capture_histories
