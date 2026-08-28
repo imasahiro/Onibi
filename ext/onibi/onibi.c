@@ -464,6 +464,20 @@ typedef struct {
   unsigned char negative;
 } OnibiTokenRecord;
 
+static void onibi_token_record_root_values(const OnibiTokenRecord *record, VALUE roots) {
+  const VALUE values[] = {
+    record->name,
+    record->capture,
+    record->negative_name,
+    record->name_id,
+    record->inline_ignorecase,
+    record->bytes
+  };
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+    if (!NIL_P(values[i])) rb_ary_push(roots, values[i]);
+  }
+}
+
 static void onibi_token_record_push(OnibiTokenRecord **records, size_t *count,
                                     size_t *capacity, OnibiTokenRecord record) {
   if (*count == *capacity) {
@@ -792,12 +806,13 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE name_id = NIL_P(token_name) ? Qnil : ULONG2NUM(rb_intern_str(token_name));
     VALUE inline_ignorecase = NIL_P(token_name) ? Qnil :
       (memchr(RSTRING_PTR(token_name), 'i', (size_t)RSTRING_LEN(token_name)) ? Qtrue : Qfalse);
-    if (!NIL_P(token_name)) { rb_obj_freeze(token_name); rb_ary_push(token_roots, token_name); }
-    if (!NIL_P(backref_number)) rb_ary_push(token_roots, backref_number);
-    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_ary_push(token_roots, literal_bytes); }
+    if (!NIL_P(token_name)) rb_obj_freeze(token_name);
+    if (!NIL_P(option_negative_name)) rb_obj_freeze(option_negative_name);
+    if (!NIL_P(literal_bytes)) rb_obj_freeze(literal_bytes);
     OnibiTokenRecord record = { kind, byte, start, i + 1, token_name, backref_number,
                                 option_negative_name, name_id, inline_ignorecase, literal_bytes,
                                 (unsigned char)(option_negative ? 1 : 0) };
+    onibi_token_record_root_values(&record, token_roots);
     onibi_token_record_push(&token_records, &token_count, &token_capacity, record);
     if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
       int prior_extended = extended_stack[--extended_depth];
@@ -1997,46 +2012,55 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
   onibi_gir_state_vector_push(&builder->states, (OnibiGirStateEntry){id, op, opcode, payload, 0}, builder->map_roots);
 }
 
-static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
+static VALUE onibi_gir_compose_edge_actions(onibi_gir_builder_t *builder, long from, long to,
+                                            VALUE explicit_actions) {
   const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(&builder->capture_guards, (OnibiStateId)to);
   const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(&builder->exit_guards, (OnibiStateId)from);
   uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
   uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
-  long action_capacity = (long)capture_count + (long)exit_count + (long)capture_count;
-  VALUE actions = action_capacity == 0 ? onibi_empty_actions : rb_ary_new_capa(action_capacity);
+  uint64_t action_count = (uint64_t)exit_count + (uint64_t)RARRAY_LEN(explicit_actions) +
+                          (uint64_t)capture_count;
+  if (action_count > LONG_MAX) rb_raise(rb_eArgError, "GIR edge action list is too large");
+  if (action_count == 0) return onibi_empty_actions;
+  VALUE actions = rb_ary_new_capa((long)action_count);
   if (exit_guard) onibi_append_vector_values(actions, &exit_guard->actions);
+  onibi_append_values(actions, explicit_actions);
   if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
-  if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
+  return actions;
+}
+
+static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
+  VALUE actions = onibi_gir_compose_edge_actions(builder, from, to, onibi_empty_actions);
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
 
 static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
+  const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(&builder->capture_guards, (OnibiStateId)to);
+  const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(&builder->exit_guards, (OnibiStateId)from);
+  uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
+  uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
   for (size_t i = 0; i < builder->edges.count; i++) {
     OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
     if (prior->from == from && prior->to == to) {
       VALUE prior_actions = prior->actions;
-      VALUE merged_actions = rb_ary_new_capa(RARRAY_LEN(actions) + (long)prior->action_count);
-      onibi_append_values(merged_actions, actions);
-      onibi_append_values(merged_actions, prior_actions);
+      uint64_t guard_count = (uint64_t)exit_count + (uint64_t)capture_count;
+      if ((uint64_t)prior->action_count < guard_count)
+        rb_raise(rb_eArgError, "GIR edge guard layout is invalid");
+      long prior_explicit_count = (long)((uint64_t)prior->action_count - guard_count);
+      uint64_t explicit_count = (uint64_t)RARRAY_LEN(actions) + (uint64_t)prior_explicit_count;
+      if (explicit_count > LONG_MAX) rb_raise(rb_eArgError, "GIR edge action list is too large");
+      VALUE explicit_actions = explicit_count == 0 ? onibi_empty_actions : rb_ary_new_capa((long)explicit_count);
+      onibi_append_values(explicit_actions, actions);
+      for (long j = 0; j < prior_explicit_count; j++)
+        rb_ary_push(explicit_actions, rb_ary_entry(prior_actions, (long)exit_count + j));
+      VALUE merged_actions = onibi_gir_compose_edge_actions(builder, from, to, explicit_actions);
       prior->actions = merged_actions;
       prior->action_count = (uint32_t)RARRAY_LEN(merged_actions);
       rb_ary_push(builder->map_roots, merged_actions);
       return;
     }
   }
-  const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(&builder->capture_guards, (OnibiStateId)to);
-  const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(&builder->exit_guards, (OnibiStateId)from);
-  uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
-  uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
-  if (RARRAY_LEN(actions) + (long)capture_count + (long)exit_count > LONG_MAX)
-    rb_raise(rb_eArgError, "GIR action list is too large");
-  VALUE merged = rb_ary_new_capa((long)capture_count + (long)exit_count +
-                                 RARRAY_LEN(actions) + (long)capture_count);
-  if (exit_guard) onibi_append_vector_values(merged, &exit_guard->actions);
-  if (capture_guard) onibi_append_vector_values(merged, &capture_guard->actions);
-  onibi_append_values(merged, actions);
-  if (capture_guard) onibi_append_vector_values(merged, &capture_guard->actions);
-  actions = merged;
+  actions = onibi_gir_compose_edge_actions(builder, from, to, actions);
   onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions}, builder->map_roots);
 }
 
@@ -2073,8 +2097,9 @@ static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
         for (size_t k = 0; k < builder->edges.count; k++) {
           if (builder->edges.entries[k].from == from) { insert_at = k; break; }
         }
+        VALUE edge_actions = onibi_gir_compose_edge_actions(builder, from, to, actions);
         onibi_gir_edge_vector_insert(&builder->edges, insert_at,
-                                     (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions), actions},
+                                     (OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(edge_actions), edge_actions},
                                      builder->map_roots);
       } else {
         onibi_gir_edge_actions(builder, from, to, actions);

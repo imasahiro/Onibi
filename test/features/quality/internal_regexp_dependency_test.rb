@@ -407,7 +407,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes record, "uint32_t action_count"
     assert_includes source, "record->action_count == 0"
     assert_includes source, "prior->action_count = (uint32_t)RARRAY_LEN(merged_actions)"
-    assert_includes source, "rb_ary_new_capa(RARRAY_LEN(actions) + (long)prior->action_count)"
+    assert_includes source, "prior_explicit_count"
+    assert_includes source, "onibi_gir_compose_edge_actions(builder, from, to, explicit_actions)"
   end
 
   def test_gir_guard_records_cache_action_count
@@ -421,16 +422,49 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "onibi_value_vector_reserve(destination, (size_t)count)"
     assert_includes source, "long count = RARRAY_LEN(source)"
     assert_includes source, "UINT32_MAX - (uint32_t)incoming"
-    assert_includes source, "rb_ary_new_capa((long)capture_count"
+    assert_includes source, "onibi_gir_compose_edge_actions"
     assert_includes source, "onibi_guard_vector_find_entry"
   end
 
-  def test_gir_guard_edge_merge_uses_single_destination_array
+  def test_gir_guard_edge_actions_have_one_defined_order
     source = File.read(EXTENSION_SOURCE)
-    gir_edge = source[/static void onibi_gir_edge\(.*?\n}\n/m]
-    refute_nil gir_edge
-    assert_includes gir_edge, "rb_ary_new_capa"
-    refute_includes gir_edge, "rb_ary_dup"
+    composer = source[/static VALUE onibi_gir_compose_edge_actions\(.*?\n}\n/m]
+
+    refute_nil composer
+    exit_guard = "onibi_append_vector_values(actions, &exit_guard->actions)"
+    explicit = "onibi_append_values(actions, explicit_actions)"
+    capture_guard = "onibi_append_vector_values(actions, &capture_guard->actions)"
+    assert_equal 1, composer.scan(exit_guard).length
+    assert_equal 1, composer.scan(explicit).length
+    assert_equal 1, composer.scan(capture_guard).length
+    assert_operator composer.index(exit_guard), :<, composer.index(explicit)
+    assert_operator composer.index(explicit), :<, composer.index(capture_guard)
+  end
+
+  def test_token_record_roots_each_ruby_value_before_storage
+    source = File.read(EXTENSION_SOURCE)
+    rooter = source[/static void onibi_token_record_root_values\(.*?\n}\n/m]
+    tokenizer = source[/static VALUE onibi_tokenize_internal\(.*?\n}\n/m]
+
+    refute_nil rooter
+    %w[name capture negative_name name_id inline_ignorecase bytes].each do |field|
+      assert_includes rooter, "record->#{field}"
+    end
+    root_index = tokenizer.index("onibi_token_record_root_values(&record, token_roots)")
+    push_index = tokenizer.index("onibi_token_record_push(&token_records")
+    assert_operator root_index, :<, push_index
+  end
+
+  def test_negative_option_payload_survives_gc_stress_during_token_materialization
+    previous_stress = GC.stress
+    GC.stress = true
+    source = Array.new(16, "(?im-mx:a)").join
+
+    regexp = Onibi::Regexp.new(source)
+
+    assert regexp.match?("A" * 16)
+  ensure
+    GC.stress = previous_stress
   end
 
   def test_fragment_transition_actions_are_preallocated
