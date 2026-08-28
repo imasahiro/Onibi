@@ -26,6 +26,8 @@ static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
 static ID id_capture_open, id_capture_close, id_match_reset;
 static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
+static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
+static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
 static ID id_key_slot, id_key_set;
@@ -508,7 +510,7 @@ static int onibi_extended_option_p(VALUE options) {
     for (long i = 0; i < RARRAY_LEN(options); i++) {
       VALUE item = rb_ary_entry(options, i);
       VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) return 1;
+      if (rb_intern_str(name) == id_opt_extended) return 1;
     }
     return 0;
   }
@@ -987,11 +989,10 @@ static VALUE onibi_parser_options(VALUE options) {
     for (long i = 0; i < RARRAY_LEN(options); i++) {
       VALUE item = rb_ary_entry(options, i);
       VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      if (rb_str_cmp(name, rb_str_new_cstr("ignorecase")) == 0 ||
-          rb_str_cmp(name, rb_str_new_cstr("multiline")) == 0 ||
-          rb_str_cmp(name, rb_str_new_cstr("extended")) == 0 ||
-          rb_str_cmp(name, rb_str_new_cstr("fixedencoding")) == 0 ||
-          rb_str_cmp(name, rb_str_new_cstr("noencoding")) == 0) {
+      ID option_id = rb_intern_str(name);
+      if (option_id == id_opt_ignorecase || option_id == id_opt_multiline ||
+          option_id == id_opt_extended || option_id == id_opt_fixedencoding ||
+          option_id == id_opt_noencoding) {
         VALUE copy = rb_str_dup(name); rb_obj_freeze(copy); rb_ary_push(result, copy);
       } else rb_raise(rb_eArgError, "unknown regexp option");
     }
@@ -2873,8 +2874,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
           obj->has_ascii_property = 1;
           VALUE property_name = onibi_hash_value(token, "name");
           if (!NIL_P(property_name) &&
-              rb_str_cmp(property_name, rb_str_new_cstr("ASCII")) != 0 &&
-              rb_str_cmp(property_name, rb_str_new_cstr("ASCII_Hex_Digit")) != 0)
+              rb_intern_str(property_name) != id_prop_ascii &&
+              rb_intern_str(property_name) != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
           if (in_class) obj->has_unicode_property_in_class = 1;
         }
@@ -2989,11 +2990,12 @@ static int onibi_option_mask(VALUE options) {
     for (long i = 0; i < RARRAY_LEN(options); i++) {
       VALUE item = rb_ary_entry(options, i);
       VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-      if (rb_str_cmp(name, rb_str_new_cstr("ignorecase")) == 0) mask |= 1;
-      else if (rb_str_cmp(name, rb_str_new_cstr("multiline")) == 0) mask |= 4;
-      else if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) mask |= 2;
-      else if (rb_str_cmp(name, rb_str_new_cstr("fixedencoding")) == 0) mask |= 16;
-      else if (rb_str_cmp(name, rb_str_new_cstr("noencoding")) == 0) mask |= 32;
+      ID option_id = rb_intern_str(name);
+      if (option_id == id_opt_ignorecase) mask |= 1;
+      else if (option_id == id_opt_multiline) mask |= 4;
+      else if (option_id == id_opt_extended) mask |= 2;
+      else if (option_id == id_opt_fixedencoding) mask |= 16;
+      else if (option_id == id_opt_noencoding) mask |= 32;
       else rb_raise(rb_eArgError, "unknown regexp option");
     }
     return mask;
@@ -4907,6 +4909,10 @@ void Init_onibi(void) {
   id_match_reset = rb_intern("MATCH_RESET");
   id_exec_regular = rb_intern("REGULAR_FAST"); id_exec_tagged = rb_intern("TAGGED_ORDERED");
   id_exec_dynamic = rb_intern("DYNAMIC");
+  id_opt_ignorecase = rb_intern("ignorecase"); id_opt_multiline = rb_intern("multiline");
+  id_opt_extended = rb_intern("extended"); id_opt_fixedencoding = rb_intern("fixedencoding");
+  id_opt_noencoding = rb_intern("noencoding");
+  id_prop_ascii = rb_intern("ASCII"); id_prop_ascii_hex = rb_intern("ASCII_Hex_Digit");
   id_key_op = rb_intern("op"); id_key_payload = rb_intern("payload");
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
