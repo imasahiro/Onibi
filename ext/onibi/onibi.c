@@ -533,8 +533,13 @@ static VALUE onibi_parser_options(VALUE options) {
       if (mask & 16) { VALUE name = rb_str_new_cstr("fixedencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
       if (mask & 32) { VALUE name = rb_str_new_cstr("noencoding"); rb_obj_freeze(name); rb_ary_push(result, name); }
   }
-  rb_obj_freeze(result);
-  return result;
+  VALUE unique = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(result); i++) {
+    VALUE name = rb_ary_entry(result, i);
+    if (!RTEST(rb_ary_includes(unique, name))) rb_ary_push(unique, name);
+  }
+  rb_obj_freeze(unique);
+  return unique;
 }
 
 static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {

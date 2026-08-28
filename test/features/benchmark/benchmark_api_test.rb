@@ -523,6 +523,10 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal 1, repeat_graph[:counter_count]
   end
 
+  def test_parser_normalizes_duplicate_lexical_options
+    assert_equal %w[ignorecase multiline], Onibi::Parser.parse("a", "iim")[:options]
+  end
+
   def test_compiler_lowers_capture_boundaries_to_actions
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
