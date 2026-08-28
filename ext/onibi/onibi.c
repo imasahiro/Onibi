@@ -92,7 +92,7 @@ typedef enum {
   ONIBI_POSIX_SPACE, ONIBI_POSIX_BLANK, ONIBI_POSIX_LOWER,
   ONIBI_POSIX_UPPER, ONIBI_POSIX_WORD, ONIBI_POSIX_XDIGIT
 } OnibiPosixKind;
-static OnibiPosixKind onibi_posix_kind(VALUE name);
+static OnibiPosixKind onibi_posix_kind_id(ID property);
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -859,7 +859,9 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     if (kind == ONIBI_TOKEN_CLASS_NEGATE) { negated = 1; continue; }
     if (kind == ONIBI_TOKEN_POSIX_CLASS) {
       VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
-      if (onibi_posix_kind(name) == ONIBI_POSIX_UNKNOWN)
+      VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
+      ID property = NIL_P(name_id) ? rb_intern_str(name) : (ID)NUM2ULONG(name_id);
+      if (onibi_posix_kind_id(property) == ONIBI_POSIX_UNKNOWN)
         rb_raise(eRegexpError, "unknown POSIX character class");
       rb_ary_push(children, token);
       continue;
@@ -1410,7 +1412,9 @@ class_children:
       }
     } else if (token_kind == ONIBI_TOKEN_POSIX_CLASS) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
-      OnibiPosixKind posix = onibi_posix_kind(name);
+      VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
+      ID property = NIL_P(name_id) ? rb_intern_str(name) : (ID)NUM2ULONG(name_id);
+      OnibiPosixKind posix = onibi_posix_kind_id(property);
       for (int c = 0; c < 256; c++) {
         int hit = posix == ONIBI_POSIX_ALPHA ? isalpha(c) :
           posix == ONIBI_POSIX_DIGIT ? isdigit(c) :
@@ -1467,10 +1471,9 @@ static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
   return 0;
 }
 
-static OnibiPosixKind onibi_posix_kind(VALUE name) {
+static OnibiPosixKind onibi_posix_kind_id(ID property) {
   static ID ids[9]; static int ready = 0;
   if (!ready) { const char *names[] = {"alpha", "digit", "alnum", "space", "blank", "lower", "upper", "word", "xdigit"}; for (size_t i = 0; i < 9; i++) ids[i] = rb_intern(names[i]); ready = 1; }
-  ID property = rb_intern_str(name);
   for (int i = 0; i < 9; i++) if (property == ids[i]) return (OnibiPosixKind)(i + 1);
   return ONIBI_POSIX_UNKNOWN;
 }
