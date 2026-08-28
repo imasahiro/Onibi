@@ -4834,8 +4834,8 @@ static void onibi_rseq_validate(VALUE rseq) {
         rb_raise(rb_eArgError, "invalid cached RSeq outgoing edge index");
       for (long edge_id = 0; edge_id < RARRAY_LEN(state_edges); edge_id++) {
         VALUE edge = rb_ary_entry(state_edges, edge_id);
-        if (!RB_TYPE_P(edge, T_HASH) || NUM2LONG(onibi_hash_value(edge, "from")) != state_id ||
-            !RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+        if (!RB_TYPE_P(edge, T_HASH) || NUM2LONG(onibi_hash_value_id(edge, id_key_from)) != state_id ||
+            !RB_TYPE_P(onibi_hash_value_id(edge, id_key_actions), T_ARRAY))
           rb_raise(rb_eArgError, "invalid cached RSeq outgoing edge");
       }
     }
