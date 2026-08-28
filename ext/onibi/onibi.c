@@ -1614,7 +1614,7 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
   if (!RB_TYPE_P(ast, T_HASH)) return;
   OnibiAstKind type = onibi_ast_kind(ast);
   if (type == ONIBI_AST_CAPTURE) {
-    VALUE start = onibi_hash_value(ast, "start");
+    VALUE start = onibi_hash_value_id(ast, id_key_start);
     VALUE id_value = rb_hash_aref(builder->capture_ids, start);
     long id;
     if (NIL_P(id_value)) {
@@ -1625,17 +1625,17 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
     char number[32];
     snprintf(number, sizeof(number), "%ld", id + 1);
     key = rb_str_new_cstr(number);
-    rb_hash_aset(builder->capture_bodies, key, onibi_hash_value(ast, "body"));
-    VALUE name = onibi_hash_value(ast, "name");
+    rb_hash_aset(builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body));
+    VALUE name = onibi_hash_value_id(ast, id_key_name);
     if (!NIL_P(name)) {
       if (!NIL_P(rb_hash_aref(builder->capture_names, name)))
         rb_raise(eRegexpError, "duplicate named capture requires compatibility execution");
       /* MRI resolves a duplicate named backreference to the first matching
          group definition.  Keep the earliest slot in the compile index. */
       rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
-      rb_hash_aset(builder->capture_bodies, name, onibi_hash_value(ast, "body"));
+      rb_hash_aset(builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body));
     }
-    onibi_collect_captures(onibi_hash_value(ast, "body"), builder, next_capture);
+    onibi_collect_captures(onibi_hash_value_id(ast, id_key_body), builder, next_capture);
     return;
   }
   const char *keys[] = { "body", "children", "branches", "atom", "yes", "no" };
@@ -1881,9 +1881,9 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder) {
   OnibiAstKind type_code = onibi_ast_kind(ast);
   if (type_code == ONIBI_AST_CHARACTER_CLASS) {
-    VALUE children = onibi_hash_value(ast, "children");
-    VALUE ranges = onibi_hash_value(ast, "ranges");
-    if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
+    VALUE children = onibi_hash_value_id(ast, id_key_children);
+    VALUE ranges = onibi_hash_value_id(ast, id_key_ranges);
+    if (!RTEST(onibi_hash_value_id(ast, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
         RARRAY_LEN(ranges) == 0 && RARRAY_LEN(children) > 0) {
       int literal_only = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
@@ -1913,7 +1913,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         return result;
       }
     }
-    if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
+    if (!RTEST(onibi_hash_value_id(ast, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
       int literal_children = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++)
@@ -1978,7 +1978,7 @@ skip_utf8_range_expansion:
     }
   }
   if (type_code == ONIBI_AST_SEQUENCE)
-    return onibi_compile_sequence(onibi_hash_value(ast, "children"), builder);
+    return onibi_compile_sequence(onibi_hash_value_id(ast, id_key_children), builder);
   if (type_code == ONIBI_AST_ALTERNATIVE) {
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
@@ -2004,7 +2004,7 @@ skip_utf8_range_expansion:
     if (type_code == ONIBI_AST_LITERAL && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type_code == ONIBI_AST_ESCAPE) {
-      VALUE name = onibi_hash_value(ast, "name");
+      VALUE name = onibi_hash_value_id(ast, id_key_name);
       if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !onibi_ascii_property_name_p(name))
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : (RSTRING_LEN(name) == 1 ?
@@ -2014,8 +2014,8 @@ skip_utf8_range_expansion:
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
     VALUE payload = ast;
-    if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_hash_value(ast, "name"))) {
-      VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value(ast, "name"));
+    if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_hash_value_id(ast, id_key_name))) {
+      VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value_id(ast, id_key_name));
       if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
       payload = rb_hash_dup(ast);
       rb_hash_aset(payload, ID2SYM(rb_intern("capture")), LONG2NUM(NUM2LONG(id_value) + 1));
@@ -2026,9 +2026,9 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
-    VALUE escape_name_for_op = onibi_hash_value(ast, "name");
+    VALUE escape_name_for_op = onibi_hash_value_id(ast, id_key_name);
     int grapheme_escape = type_code == ONIBI_AST_ESCAPE &&
-      ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_hash_value(ast, "byte"))) == 'x') ||
+      ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_hash_value_id(ast, id_key_byte))) == 'x') ||
        (!NIL_P(escape_name_for_op) && RSTRING_LEN(escape_name_for_op) == 1 &&
         tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
     long id = builder->next_id++;
@@ -2080,7 +2080,7 @@ skip_utf8_range_expansion:
   }
   if (type_code == ONIBI_AST_SUBROUTINE)
   {
-    VALUE name = onibi_hash_value(ast, "name");
+    VALUE name = onibi_hash_value_id(ast, id_key_name);
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
     VALUE existing = rb_hash_aref(builder->subprogram_ids, name);
@@ -2099,7 +2099,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_OPTION_GLOBAL) {
-    VALUE option_names = onibi_hash_value(ast, "options");
+    VALUE option_names = onibi_hash_value_id(ast, id_key_options);
     int negative = RTEST(onibi_hash_value(ast, "negative"));
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "global option modifier has no flags");
@@ -2110,7 +2110,7 @@ skip_utf8_range_expansion:
       else if (RSTRING_PTR(option_names)[i] == 'x') continue;
       else rb_raise(eRegexpError, "unknown global option flag");
     }
-    VALUE negative_options = onibi_hash_value(ast, "negative_options");
+    VALUE negative_options = onibi_hash_value_id(ast, id_key_negative_options);
     if (!NIL_P(negative_options)) {
       for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
         if (RSTRING_PTR(negative_options)[i] == 'i') builder->ignorecase = 0;
@@ -2122,7 +2122,7 @@ skip_utf8_range_expansion:
     return onibi_fragment_empty();
   }
   if (type_code == ONIBI_AST_OPTION_SCOPE) {
-    VALUE option_names = onibi_hash_value(ast, "options");
+    VALUE option_names = onibi_hash_value_id(ast, id_key_options);
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "option scope has no flags");
     int saved_ignorecase = builder->ignorecase;
@@ -2135,7 +2135,7 @@ skip_utf8_range_expansion:
       else if (RSTRING_PTR(option_names)[i] == 'x') continue;
       else rb_raise(eRegexpError, "unknown option scope flag");
     }
-    VALUE negative_options = onibi_hash_value(ast, "negative_options");
+    VALUE negative_options = onibi_hash_value_id(ast, id_key_negative_options);
     if (!NIL_P(negative_options)) {
       for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
         if (RSTRING_PTR(negative_options)[i] == 'i') builder->ignorecase = 0;
@@ -2144,7 +2144,7 @@ skip_utf8_range_expansion:
         else rb_raise(eRegexpError, "unknown option scope flag");
       }
     }
-    onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
+  onibi_fragment_t result = onibi_compile_node(onibi_hash_value_id(ast, id_key_body), builder);
     builder->ignorecase = saved_ignorecase;
     builder->multiline = saved_multiline;
     return result;
@@ -2153,7 +2153,7 @@ skip_utf8_range_expansion:
   {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
-    long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
+    long marker = NUM2LONG(onibi_hash_value_id(ast, id_key_byte));
     ID op = id_a_assert_end_buffer;
     /* Ruby keeps ^ and $ line anchors independent of the m option.  The
        option changes dot-newline matching only. */
@@ -2178,7 +2178,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_CONDITIONAL) {
-    VALUE condition = onibi_hash_value(ast, "condition");
+    VALUE condition = onibi_hash_value_id(ast, id_key_condition);
     char *endptr = NULL;
     const char *condition_text = StringValueCStr(condition);
     long capture_id = strtol(condition_text, &endptr, 10) - 1;
@@ -2192,8 +2192,8 @@ skip_utf8_range_expansion:
       capture_id = NUM2LONG(named);
     }
     if (capture_id < 0) rb_raise(eRegexpError, "conditional capture is invalid");
-    onibi_fragment_t yes = onibi_compile_node(onibi_hash_value(ast, "yes"), builder);
-    onibi_fragment_t no = onibi_compile_node(onibi_hash_value(ast, "no"), builder);
+    onibi_fragment_t yes = onibi_compile_node(onibi_hash_value_id(ast, id_key_yes), builder);
+    onibi_fragment_t no = onibi_compile_node(onibi_hash_value_id(ast, id_key_no), builder);
     VALUE yes_guard = rb_ary_new();
     rb_ary_push(yes_guard, onibi_capture_test_action(capture_id, 1));
     onibi_append_values(yes_guard, yes.start_actions);
@@ -2214,7 +2214,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_ATOMIC) {
-    VALUE body = onibi_hash_value(ast, "body");
+    VALUE body = onibi_hash_value_id(ast, id_key_body);
     long subprogram_id = onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
@@ -2228,7 +2228,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_ABSENCE) {
-    long subprogram_id = onibi_compile_subprogram(onibi_hash_value(ast, "body"), builder,
+    long subprogram_id = onibi_compile_subprogram(onibi_hash_value_id(ast, id_key_body), builder,
                                                    ONIBI_SUBPROGRAM_ABSENT);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
@@ -2242,7 +2242,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_LOOKAHEAD || type_code == ONIBI_AST_LOOKBEHIND) {
-    VALUE body = onibi_hash_value(ast, "body");
+    VALUE body = onibi_hash_value_id(ast, id_key_body);
     if (!RB_TYPE_P(body, T_HASH))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE children = onibi_hash_value(body, "children");
@@ -2300,7 +2300,7 @@ skip_utf8_range_expansion:
       id_a_assert_lookbehind : id_a_assert_lookahead;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
-    rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
+    rb_hash_aset(action, ID2SYM(id_key_positive), onibi_hash_value_id(ast, id_key_positive));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
     if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(rb_intern("predicates")), predicates);
     rb_hash_aset(action, ID2SYM(rb_intern("width")), LONG2NUM(RARRAY_LEN(predicates)));
@@ -2310,14 +2310,14 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_CAPTURE) {
-    VALUE capture_ast_key = onibi_hash_value(ast, "start");
+    VALUE capture_ast_key = onibi_hash_value_id(ast, id_key_start);
     VALUE capture_id_value = rb_hash_aref(builder->capture_ids, capture_ast_key);
     long capture_id;
     if (NIL_P(capture_id_value)) {
       capture_id = builder->capture_count++;
       rb_hash_aset(builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
     } else capture_id = NUM2LONG(capture_id_value);
-    VALUE capture_body = onibi_hash_value(ast, "body");
+    VALUE capture_body = onibi_hash_value_id(ast, id_key_body);
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
@@ -2326,7 +2326,7 @@ skip_utf8_range_expansion:
     rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
-    VALUE capture_name = onibi_hash_value(ast, "name");
+    VALUE capture_name = onibi_hash_value_id(ast, id_key_name);
     if (!NIL_P(capture_name) && onibi_ast_has_subroutine_name(capture_body, capture_name))
       rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
     char capture_name_key[32];
@@ -2343,23 +2343,23 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_GROUP)
-    return onibi_compile_node(onibi_hash_value(ast, "body"), builder);
+    return onibi_compile_node(onibi_hash_value_id(ast, id_key_body), builder);
   if (type_code == ONIBI_AST_QUANTIFIER) {
-    VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
+    VALUE min_value = onibi_hash_value_id(ast, id_key_min), max_value = onibi_hash_value_id(ast, id_key_max);
     long min = NUM2LONG(min_value);
-    VALUE atom = onibi_hash_value(ast, "atom");
+    VALUE atom = onibi_hash_value_id(ast, id_key_atom);
     if (min == 0) builder->optional_seen = 1;
-    if (RTEST(onibi_hash_value(ast, "possessive")) &&
+    if (RTEST(onibi_hash_value_id(ast, id_key_possessive)) &&
         (NIL_P(max_value) || NUM2LONG(max_value) != min))
       rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
-    if (RTEST(onibi_hash_value(ast, "possessive")) && onibi_ast_has_capture(atom))
+    if (RTEST(onibi_hash_value_id(ast, id_key_possessive)) && onibi_ast_has_capture(atom))
       rb_raise(eRegexpError, "possessive capture repeat is not supported in RSeq");
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
       return onibi_fragment_empty();
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
-      onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "atom"), builder);
+      onibi_fragment_t result = onibi_compile_node(onibi_hash_value_id(ast, id_key_atom), builder);
       result.nullable = 1;
-      result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
+      result.lazy = !RTEST(onibi_hash_value_id(ast, id_key_greedy));
       return result;
     }
     long counter_slot = -1;
