@@ -208,6 +208,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | --- | --- | --- | --- |
 | token stream (`Array<Hash>`) | No | Convert to a token vector | Each item has a fixed kind, byte span, and optional payload. The parser is the only consumer. Feature classification uses caller-owned storage: short streams use stack memory, long streams use heap memory, and neither survives initialization. |
 | AST (`Hash`/`Array`) | No | Pending: typed C node arena; analysis flags are cached as an enum bitset in `OnibiParsed` | Node kinds and links are fixed. Required fields are `type_code`, `start`, `end`, `children`, `branches`, `body`, `atom`, `yes`, `no`, and typed scalar payloads. Initialization now computes AST safety flags once. |
+| AST anchor/nullability analysis | No | One typed analysis walk | Anchor-repeat, capture-nullability, and absence-nullability flags are collected together. This avoids a second recursive AST scan. |
 | AST lifetime after initialization | No | Release the Ruby adapter; skip deep-freeze | Runtime matching uses published GIR/RSeq data. `onibi_build_program` releases the AST immediately after compiler and RSeq publication; the parsed AST is no longer retained. Internal AST generation does not deep-freeze or rescan the tree. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
