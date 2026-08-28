@@ -920,7 +920,8 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
       onibi_append_values(transition_actions, part.start_actions);
       onibi_connect_actions(builder, old_exits, part.starts, transition_actions);
       result.exits = rb_ary_dup(part.exits);
-      if (result.nullable) onibi_append_values(result.exits, old_exits);
+      /* A prior exit can bypass this part only when this part is nullable. */
+      if (part.nullable) onibi_append_values(result.exits, old_exits);
       result.pending_actions = rb_ary_new();
     }
     onibi_append_values(result.pending_actions, part.pending_actions);

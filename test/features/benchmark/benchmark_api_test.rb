@@ -514,7 +514,7 @@ class BenchmarkApiTest < Minitest::Test
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("a?b"))[:graph]
 
     assert_equal([0, 1], graph[:start_edges].map { |edge| edge[:to] })
-    assert_equal([[0, 1], [1, 2], [0, 2]], graph[:edges].map { |edge| [edge[:from], edge[:to]] })
+    assert_equal([[0, 1], [1, 2]], graph[:edges].map { |edge| [edge[:from], edge[:to]] })
   end
 
   def test_rseq_lowering_preserves_immutable_program_order
@@ -678,6 +678,15 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("aa")
     assert regexp.vm_match?("aaa")
     refute regexp.vm_match?("aaaa")
+  end
+
+  def test_vm_keeps_required_suffix_after_nullable_prefix
+    optional = Onibi::Regexp.new("a?b")
+    repeated = Onibi::Regexp.new("a*b")
+    refute optional.vm_match?("a")
+    refute repeated.vm_match?("aa")
+    assert optional.vm_match?("b")
+    assert repeated.vm_match?("aab")
   end
 
   def test_compiler_assigns_distinct_capture_slots
