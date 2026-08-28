@@ -3094,18 +3094,19 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
 
 static int onibi_ast_safe_multibyte_class(VALUE ast) {
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  ID type = onibi_symbol_value(ast, "type");
-  if (type == ID2SYM(rb_intern("character_class"))) {
+  OnibiAstKind type = onibi_ast_kind(ast);
+  if (type == ONIBI_AST_CHARACTER_CLASS) {
     VALUE children = onibi_hash_value(ast, "children");
     VALUE ranges = onibi_hash_value(ast, "ranges");
     if (RTEST(onibi_hash_value(ast, "negated")) || !RB_TYPE_P(children, T_ARRAY) ||
         !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(children) == 0) return 0;
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
-      VALUE kind = onibi_hash_value(child, "kind");
-      if (kind == ID2SYM(rb_intern("literal"))) continue;
+      VALUE kind_code = onibi_hash_value(child, "kind_code");
+      OnibiAstKind child_type = onibi_ast_kind(child);
+      if ((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_LITERAL) || child_type == ONIBI_AST_LITERAL) continue;
       VALUE child_name = onibi_hash_value(child, "name");
-      if (kind == ID2SYM(rb_intern("escape")) && !NIL_P(child_name) &&
+      if (((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_ESCAPE) || child_type == ONIBI_AST_ESCAPE) && !NIL_P(child_name) &&
           onibi_unicode_ctype(child_name) >= 0) continue;
       return 0;
     }
@@ -3118,14 +3119,14 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
     }
     return 1;
   }
-  if (type == ID2SYM(rb_intern("sequence"))) {
+  if (type == ONIBI_AST_SEQUENCE) {
     VALUE children = onibi_hash_value(ast, "children");
     if (!RB_TYPE_P(children, T_ARRAY)) return 0;
     for (long i = 0; i < RARRAY_LEN(children); i++)
       if (!onibi_ast_safe_multibyte_class(rb_ary_entry(children, i))) return 0;
     return 1;
   }
-  if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("anchor"))) return 1;
+  if (type == ONIBI_AST_LITERAL || type == ONIBI_AST_ANCHOR) return 1;
   return 0;
 }
 
@@ -3137,7 +3138,7 @@ static int onibi_ast_contains_anchor(VALUE ast) {
     return 0;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("anchor"))) return 1;
+  if (onibi_ast_kind(ast) == ONIBI_AST_ANCHOR) return 1;
   const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
     if (onibi_ast_contains_anchor(onibi_hash_value(ast, keys[i]))) return 1;
@@ -3152,7 +3153,7 @@ static int onibi_ast_anchor_repeat(VALUE ast) {
     return 0;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("quantifier")) &&
+  if (onibi_ast_kind(ast) == ONIBI_AST_QUANTIFIER &&
       onibi_ast_contains_anchor(onibi_hash_value(ast, "atom"))) return 1;
   const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
@@ -3162,13 +3163,13 @@ static int onibi_ast_anchor_repeat(VALUE ast) {
 
 static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
   if (!RB_TYPE_P(ast, T_HASH)) return 1;
-  ID type = onibi_symbol_value(ast, "type");
-  if (type == ID2SYM(rb_intern("capture"))) {
+  OnibiAstKind type = onibi_ast_kind(ast);
+  if (type == ONIBI_AST_CAPTURE) {
     int body_nullable = onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
     if (body_nullable) *nullable_capture = 1;
     return body_nullable;
   }
-  if (type == ID2SYM(rb_intern("quantifier"))) {
+  if (type == ONIBI_AST_QUANTIFIER) {
     VALUE min = onibi_hash_value(ast, "min");
     if (!NIL_P(min) && NUM2LONG(min) == 0) {
       if (onibi_ast_has_capture(onibi_hash_value(ast, "atom"))) *nullable_capture = 1;
@@ -3177,25 +3178,24 @@ static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
     }
     return onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
   }
-  if (type == ID2SYM(rb_intern("sequence"))) {
+  if (type == ONIBI_AST_SEQUENCE) {
     int result = 1;
     VALUE children = onibi_hash_value(ast, "children");
     for (long i = 0; i < RARRAY_LEN(children); i++)
       if (!onibi_ast_nullable(rb_ary_entry(children, i), nullable_capture)) result = 0;
     return result;
   }
-  if (type == ID2SYM(rb_intern("alternative"))) {
+  if (type == ONIBI_AST_ALTERNATIVE) {
     int result = 0;
     VALUE branches = onibi_hash_value(ast, "branches");
     for (long i = 0; i < RARRAY_LEN(branches); i++)
       if (onibi_ast_nullable(rb_ary_entry(branches, i), nullable_capture)) result = 1;
     return result;
   }
-  if (type == ID2SYM(rb_intern("group")) || type == ID2SYM(rb_intern("option_scope")) ||
-      type == ID2SYM(rb_intern("atomic")))
+  if (type == ONIBI_AST_GROUP || type == ONIBI_AST_OPTION_SCOPE || type == ONIBI_AST_ATOMIC)
     return onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
-  if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind")) ||
-      type == ID2SYM(rb_intern("anchor")) || type == ID2SYM(rb_intern("match_reset"))) return 1;
+  if (type == ONIBI_AST_LOOKAHEAD || type == ONIBI_AST_LOOKBEHIND ||
+      type == ONIBI_AST_ANCHOR || type == ONIBI_AST_MATCH_RESET) return 1;
   return 0;
 }
 
@@ -3207,7 +3207,7 @@ static int onibi_ast_nullable_absence(VALUE ast) {
     return 0;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("absence"))) {
+  if (onibi_ast_kind(ast) == ONIBI_AST_ABSENCE) {
     int ignored = 0;
     if (onibi_ast_nullable(onibi_hash_value(ast, "body"), &ignored)) return 1;
   }
