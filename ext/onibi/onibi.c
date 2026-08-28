@@ -4799,12 +4799,12 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
-  VALUE semantic = onibi_hash_value(rseq, "header");
+  VALUE semantic = onibi_hash_value_id(rseq, id_key_header);
   VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
   VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
   VALUE semantic_start_edges = onibi_hash_value_id(rseq, id_key_start_edges);
   VALUE semantic_actions = onibi_hash_value_id(rseq, id_key_actions);
-  VALUE semantic_subprograms = onibi_hash_value(rseq, "subprograms");
+  VALUE semantic_subprograms = onibi_hash_value_id(rseq, id_key_subprograms);
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
       !RTEST(rb_obj_frozen_p(semantic)) || !RTEST(rb_obj_frozen_p(semantic_states)) ||
@@ -4814,10 +4814,10 @@ static void onibi_rseq_validate(VALUE rseq) {
       (!NIL_P(physical_graph) && !RTEST(rb_obj_frozen_p(physical_graph))))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   if (!NIL_P(physical_graph)) {
-    VALUE cached_states = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "states") : Qnil;
-    VALUE cached_edges = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "edges") : Qnil;
-    VALUE cached_starts = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "start_edges") : Qnil;
-    VALUE cached_outgoing = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "outgoing") : Qnil;
+    VALUE cached_states = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value_id(physical_graph, id_key_states) : Qnil;
+    VALUE cached_edges = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value_id(physical_graph, id_key_edges) : Qnil;
+    VALUE cached_starts = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value_id(physical_graph, id_key_start_edges) : Qnil;
+    VALUE cached_outgoing = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value_id(physical_graph, id_key_outgoing) : Qnil;
     if (!RB_TYPE_P(physical_graph, T_HASH) || !RB_TYPE_P(cached_states, T_ARRAY) ||
         !RB_TYPE_P(cached_edges, T_ARRAY) || !RB_TYPE_P(cached_starts, T_ARRAY) ||
         !RB_TYPE_P(cached_outgoing, T_ARRAY) ||
