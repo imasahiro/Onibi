@@ -287,6 +287,8 @@ typedef struct {
   OnibiTokenKind kind;
   long byte;
   VALUE name;
+  ID name_id;
+  unsigned char ascii_property;
 } OnibiFeatureToken;
 
 typedef struct {
@@ -303,6 +305,9 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
       vector.items[i].name = onibi_hash_value_id(token, id_key_name);
+      vector.items[i].name_id = NIL_P(vector.items[i].name) ? 0 : rb_intern_str(vector.items[i].name);
+      vector.items[i].ascii_property = (!NIL_P(vector.items[i].name) &&
+        onibi_ascii_property_name_p(vector.items[i].name)) ? 1 : 0;
     }
   }
   return vector;
@@ -3132,10 +3137,10 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
       if (token->byte == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
       if (token->byte == 'p' || token->byte == 'P') {
-        if (onibi_ascii_property_name_p(token->name)) {
+        if (token->ascii_property) {
           obj->has_ascii_property = 1;
           VALUE property_name = token->name;
-          ID property_id = NIL_P(property_name) ? 0 : rb_intern_str(property_name);
+          ID property_id = token->name_id;
           if (!NIL_P(property_name) && property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
           if (in_class) obj->has_unicode_property_in_class = 1;
