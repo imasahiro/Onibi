@@ -3010,27 +3010,27 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_inline_ignorecase = 0;
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
+    OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
     ID kind = onibi_token_kind(token);
-    if (kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && onibi_token_byte(token) > 127) {
+    if (kind_code == ONIBI_TOKEN_LITERAL && onibi_token_byte(token) > 127) {
       obj->has_non_ascii_literal = 1;
       if (in_class) obj->has_non_ascii_class = 1;
     }
-    if (kind == onibi_token_kind_id(ONIBI_TOKEN_WILDCARD)) obj->has_wildcard = 1;
-    if (kind == onibi_token_kind_id(ONIBI_TOKEN_ANCHOR)) obj->has_anchor = 1;
-    if ((kind == onibi_token_kind_id(ONIBI_TOKEN_OPTION_SCOPE_START) ||
-         kind == onibi_token_kind_id(ONIBI_TOKEN_OPTION_GLOBAL))) {
+    if (kind_code == ONIBI_TOKEN_WILDCARD) obj->has_wildcard = 1;
+    if (kind_code == ONIBI_TOKEN_ANCHOR) obj->has_anchor = 1;
+    if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START || kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
       VALUE option_name = onibi_hash_value(token, "name");
       if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
         obj->has_inline_ignorecase = 1;
     }
-    if (kind == onibi_token_kind_id(ONIBI_TOKEN_CLASS_START)) {
+    if (kind_code == ONIBI_TOKEN_CLASS_START) {
       if (in_class) obj->has_nested_class = 1;
       in_class = 1;
       class_depth++;
       previous = Qnil;
       continue;
     }
-    if (kind == onibi_token_kind_id(ONIBI_TOKEN_CLASS_END)) {
+    if (kind_code == ONIBI_TOKEN_CLASS_END) {
       if (class_depth > 0) class_depth--;
       in_class = class_depth > 0;
       previous = Qnil;
@@ -3038,13 +3038,13 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     }
     if (repeat_active) {
       long value = onibi_token_byte(token);
-      if (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && value == '}') {
+      if (kind_code == ONIBI_TOKEN_QUANTIFIER && value == '}') {
         if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
         repeat_active = 0;
-      } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && value == ',') {
+      } else if (kind_code == ONIBI_TOKEN_QUANTIFIER && value == ',') {
         if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
         repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
-      } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_LITERAL) && value >= '0' && value <= '9') {
+      } else if (kind_code == ONIBI_TOKEN_LITERAL && value >= '0' && value <= '9') {
         repeat_have_digit = 1;
         if (repeat_value > (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
             (repeat_value == (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && (uint64_t)(value - '0') > 0U))
