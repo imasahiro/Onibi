@@ -1908,6 +1908,7 @@ static void onibi_rseq_validate(VALUE rseq) {
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   if (NIL_P(semantic) ||
       NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
+      NUM2UINT(onibi_hash_value(semantic, "features")) != header.features ||
       NUM2UINT(onibi_hash_value(semantic, "edge_count")) != header.edge_count - header.start_edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "action_count")) != header.action_count ||
       NUM2UINT(onibi_hash_value(semantic, "class_count")) != header.class_count ||
