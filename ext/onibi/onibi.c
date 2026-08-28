@@ -1146,21 +1146,24 @@ static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
 }
 
 static int onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c) {
+  int ascii_alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+  int ascii_digit = c >= '0' && c <= '9';
   switch (kind) {
     case ONIBI_ASCII_PROP_ASCII: return c < 128;
-    case ONIBI_ASCII_PROP_HEX: case ONIBI_ASCII_PROP_XDIGIT: return isxdigit(c);
-    case ONIBI_ASCII_PROP_DIGIT: return isdigit(c);
-    case ONIBI_ASCII_PROP_ALPHA: return isalpha(c);
-    case ONIBI_ASCII_PROP_ALNUM: return isalnum(c);
-    case ONIBI_ASCII_PROP_LOWER: return islower(c);
-    case ONIBI_ASCII_PROP_UPPER: return isupper(c);
-    case ONIBI_ASCII_PROP_SPACE: return isspace(c);
+    case ONIBI_ASCII_PROP_HEX: case ONIBI_ASCII_PROP_XDIGIT:
+      return ascii_digit || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+    case ONIBI_ASCII_PROP_DIGIT: return ascii_digit;
+    case ONIBI_ASCII_PROP_ALPHA: return ascii_alpha;
+    case ONIBI_ASCII_PROP_ALNUM: return ascii_alpha || ascii_digit;
+    case ONIBI_ASCII_PROP_LOWER: return c >= 'a' && c <= 'z';
+    case ONIBI_ASCII_PROP_UPPER: return c >= 'A' && c <= 'Z';
+    case ONIBI_ASCII_PROP_SPACE: return c == ' ' || (c >= '\t' && c <= '\r');
     case ONIBI_ASCII_PROP_BLANK: return c == ' ' || c == '\t';
-    case ONIBI_ASCII_PROP_WORD: return isalnum(c) || c == '_';
-    case ONIBI_ASCII_PROP_CNTRL: return iscntrl(c);
-    case ONIBI_ASCII_PROP_PRINT: return isprint(c);
-    case ONIBI_ASCII_PROP_GRAPH: return isgraph(c);
-    case ONIBI_ASCII_PROP_PUNCT: return ispunct(c);
+    case ONIBI_ASCII_PROP_WORD: return ascii_alpha || ascii_digit || c == '_';
+    case ONIBI_ASCII_PROP_CNTRL: return c < 32 || c == 127;
+    case ONIBI_ASCII_PROP_PRINT: return c >= 32 && c < 127;
+    case ONIBI_ASCII_PROP_GRAPH: return c > 32 && c < 127;
+    case ONIBI_ASCII_PROP_PUNCT: return c >= 33 && c <= 126 && !ascii_alpha && !ascii_digit && c != '_';
     default: return -1;
   }
 }
@@ -1177,12 +1180,21 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     VALUE operands = onibi_hash_value(payload, "operands");
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) < 2)
       rb_raise(eRegexpError, "class intersection has no operands");
-    VALUE first = onibi_class_bitmap(rb_ary_entry(operands, 0), fold);
+    /* Set intersection is defined before case folding.  Folding each
+       operand first would turn [a-z&&A-Z] into [a-z]. */
+    VALUE first = onibi_class_bitmap(rb_ary_entry(operands, 0), 0);
     memcpy(bits, RSTRING_PTR(first), sizeof(bits));
     for (long i = 1; i < RARRAY_LEN(operands); i++) {
-      VALUE next = onibi_class_bitmap(rb_ary_entry(operands, i), fold);
+      VALUE next = onibi_class_bitmap(rb_ary_entry(operands, i), 0);
       for (long byte = 0; byte < 32; byte++)
         bits[byte] &= (unsigned char)RSTRING_PTR(next)[byte];
+    }
+    if (fold) {
+      unsigned char original[32];
+      memcpy(original, bits, sizeof(original));
+      for (int c = 0; c < 256; c++) {
+        if ((original[c >> 3] & (1U << (c & 7))) != 0) onibi_bitmap_set(bits, (unsigned char)c, 1);
+      }
     }
     VALUE result = rb_str_new((const char *)bits, sizeof(bits));
     rb_obj_freeze(result);
@@ -3818,6 +3830,19 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
     }
     rb_hash_aset(copy, ID2SYM(rb_intern("children")), compiled);
   }
+  VALUE operands = onibi_hash_value(copy, "operands");
+  if (RB_TYPE_P(operands, T_ARRAY)) {
+    VALUE compiled_operands = rb_ary_new_capa(RARRAY_LEN(operands));
+    for (long i = 0; i < RARRAY_LEN(operands); i++) {
+      VALUE operand = onibi_class_payload_with_ctypes(rb_ary_entry(operands, i));
+      VALUE operand_type = onibi_hash_value(operand, "type");
+      if (operand_type == ID2SYM(rb_intern("character_class")) ||
+          operand_type == ID2SYM(rb_intern("class_intersection")))
+        rb_hash_aset(operand, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(operand, 0));
+      rb_ary_push(compiled_operands, operand);
+    }
+    rb_hash_aset(copy, ID2SYM(rb_intern("operands")), compiled_operands);
+  }
   return copy;
 }
 
@@ -3832,6 +3857,22 @@ static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, lon
 }
 
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
+  if (onibi_hash_value(payload, "type") == ID2SYM(rb_intern("class_intersection")) &&
+      rb_enc_get_index(str) == rb_utf8_encindex()) {
+    VALUE operands = onibi_hash_value(payload, "operands");
+    if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;
+    long common_width = 0;
+    int hit = 1;
+    for (long i = 0; i < RARRAY_LEN(operands); i++) {
+      long operand_width = 0;
+      int operand_hit = onibi_vm_class_match(rb_ary_entry(operands, i), str, pos, byte, &operand_width);
+      if (i == 0) common_width = operand_width;
+      else if (operand_width != common_width) operand_hit = 0;
+      hit = hit && operand_hit;
+    }
+    *width = common_width;
+    return hit;
+  }
   VALUE name = onibi_hash_value(payload, "name");
   VALUE ctype_value = onibi_hash_value(payload, "ctype");
   int ctype = NIL_P(ctype_value) ? -1 : NUM2INT(ctype_value);
