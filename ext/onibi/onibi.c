@@ -73,6 +73,7 @@ static ID id_key_version, id_key_semantic_capture_count;
 static ID id_key_states_offset, id_key_edges_offset, id_key_actions_offset;
 static ID id_key_classes_offset, id_key_literals_offset, id_key_descriptors_offset, id_key_subprograms_offset;
 static ID id_key_negative_name, id_key_negative;
+static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -1024,7 +1025,9 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
       "anchor_start" : ((marker == '$' || marker == 'z' || marker == 'Z') ?
       "anchor_end" : "anchor");
-    rb_hash_aset(node, ID2SYM(id_key_kind), ID2SYM(rb_intern(anchor)));
+    ID anchor_id = (anchor[7] == 's') ? id_anchor_start :
+      ((anchor[7] == 'e') ? id_anchor_end : id_anchor);
+    rb_hash_aset(node, ID2SYM(id_key_kind), ID2SYM(anchor_id));
   }
   if (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE) {
     VALUE token_name = rb_hash_aref(token, ID2SYM(id_key_name));
@@ -2452,7 +2455,7 @@ skip_utf8_range_expansion:
       /* Counted repeats use one counter slot.  The first start edge
          initializes it.  Optional bodies use ordered test edges. */
       VALUE init = onibi_counter_action(id_a_counter_init, counter_slot, Qnil);
-      rb_hash_aset(init, ID2SYM(rb_intern("value")), INT2NUM(min > 0 ? 1 : 0));
+      rb_hash_aset(init, ID2SYM(id_key_value), INT2NUM(min > 0 ? 1 : 0));
       rb_ary_push(result.start_actions, init);
     }
     for (long i = 0; i < min; i++) {
@@ -2590,8 +2593,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_ary_store(builder.subprograms, 0, root_descriptor);
   subprograms = builder.subprograms;
   rb_obj_freeze(subprograms);
-  rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), subprograms);
-  rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
+  rb_hash_aset(graph, ID2SYM(id_key_subprograms), subprograms);
+  rb_hash_aset(graph, ID2SYM(id_key_capture_count), LONG2NUM(builder.capture_count));
   long counter_count = builder.counter_count;
   for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
     VALUE actions = onibi_hash_value_id(rb_ary_entry(builder.edges, i), id_key_actions);
@@ -2725,7 +2728,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_ary_push(actions, terminator);
     }
     rb_obj_freeze(copied_actions);
-    rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
+    rb_hash_aset(out, ID2SYM(id_key_actions), copied_actions);
     rb_obj_freeze(out);
     rb_ary_push(r_edges, out);
   }
@@ -2737,7 +2740,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR start edges");
     VALUE out = rb_hash_new();
     rb_hash_aset(out, ID2SYM(id_key_to), onibi_hash_value_id(edge, id_key_to));
-    rb_hash_aset(out, ID2SYM(rb_intern("action_offset")),
+    rb_hash_aset(out, ID2SYM(id_key_action_offset),
                  RARRAY_LEN(edge_actions) == 0 ? INT2NUM(0) : LONG2NUM(RARRAY_LEN(actions)));
     VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
@@ -2755,7 +2758,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_ary_push(actions, terminator);
     }
     rb_obj_freeze(copied_actions);
-    rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
+    rb_hash_aset(out, ID2SYM(id_key_actions), copied_actions);
     rb_obj_freeze(out);
     rb_ary_push(r_start_edges, out);
   }
@@ -2988,13 +2991,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       physical_actions[i].flags = op == id_a_assert_lookahead ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
     }
-    VALUE slot = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("slot")));
+    VALUE slot = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_slot);
     if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
-    VALUE limit = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("limit")));
+    VALUE limit = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_limit);
     if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
-    VALUE value = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("value")));
+    VALUE value = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_value);
     if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
-    VALUE width = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("width")));
+    VALUE width = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_width);
     if (!NIL_P(width)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(width);
   }
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
@@ -3031,14 +3034,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("header")), header);
-  rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
-  rb_hash_aset(result, ID2SYM(rb_intern("edges")), r_edges);
-  rb_hash_aset(result, ID2SYM(rb_intern("start_edges")), r_start_edges);
-  rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
-  rb_hash_aset(result, ID2SYM(rb_intern("subprograms")), subprograms);
-  rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
-  rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
+  rb_hash_aset(result, ID2SYM(id_key_header), header);
+  rb_hash_aset(result, ID2SYM(id_key_states), states);
+  rb_hash_aset(result, ID2SYM(id_key_edges), r_edges);
+  rb_hash_aset(result, ID2SYM(id_key_start_edges), r_start_edges);
+  rb_hash_aset(result, ID2SYM(id_key_actions), actions);
+  rb_hash_aset(result, ID2SYM(id_key_subprograms), subprograms);
+  rb_hash_aset(result, ID2SYM(id_key_blob), blob);
+  rb_hash_aset(result, ID2SYM(id_key_physical_graph),
                onibi_deep_freeze(onibi_rseq_physical_graph(result)));
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions);
   rb_obj_freeze(result);
@@ -5572,6 +5575,8 @@ void Init_onibi(void) {
   id_key_literals_offset = rb_intern("literals_offset"); id_key_descriptors_offset = rb_intern("descriptors_offset");
   id_key_subprograms_offset = rb_intern("subprograms_offset");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
+  id_anchor = rb_intern("anchor"); id_anchor_start = rb_intern("anchor_start");
+  id_anchor_end = rb_intern("anchor_end");
   id_insert = rb_intern("insert");
   id_timeout = rb_intern("timeout");
   id_encode = rb_intern("encode"); id_message = rb_intern("message");
