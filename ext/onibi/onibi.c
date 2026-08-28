@@ -1353,7 +1353,8 @@ static const OnibiGuardEntry *onibi_guard_vector_find_entry(const OnibiGuardVect
 static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
-      VALUE merged = rb_ary_dup(vector->entries[i].actions);
+      VALUE merged = rb_ary_new_capa((long)vector->entries[i].action_count + RARRAY_LEN(actions));
+      onibi_append_values(merged, vector->entries[i].actions);
       onibi_append_values(merged, actions);
       vector->entries[i].actions = merged;
       vector->entries[i].action_count = (uint32_t)RARRAY_LEN(merged);
