@@ -1536,7 +1536,7 @@ static void onibi_add_exit_guard(onibi_gir_builder_t *builder, VALUE exits, VALU
 
 static VALUE onibi_capture_test_action(long slot, int set) {
   VALUE action = rb_hash_new();
-  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("TEST_CAPTURE")));
+  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(id_a_test_capture));
   rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
   rb_hash_aset(action, ID2SYM(rb_intern("set")), set ? Qtrue : Qfalse);
   return action;
@@ -1547,7 +1547,7 @@ static VALUE onibi_counter_action(ID op, long slot, VALUE limit) {
   rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(op));
   rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
   if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(rb_intern("limit")), limit);
-  if (op == rb_intern("COUNTER_INIT"))
+  if (op == id_a_counter_init)
     rb_hash_aset(action, ID2SYM(rb_intern("value")), INT2NUM(1));
   return action;
 }
@@ -1693,15 +1693,15 @@ static int onibi_gir_action_valid(ID action) {
 static void onibi_gir_validate_action_operands(VALUE action) {
   ID op = SYM2ID(onibi_hash_value(action, "op"));
   VALUE slot = onibi_hash_value(action, "slot");
-  if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) {
+  if (op == id_capture_open || op == id_capture_close) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR capture slot");
-  } else if (op == rb_intern("TEST_CAPTURE") || op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
-             op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+  } else if (op == id_a_test_capture || op == id_a_counter_init || op == id_a_counter_increment ||
+             op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR counter slot");
   }
-  if (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+  if (op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
     VALUE limit = onibi_hash_value(action, "limit");
     if (NIL_P(limit) || NUM2LONG(limit) < 0)
       rb_raise(eRegexpError, "invalid GIR counter limit");
@@ -1740,15 +1740,13 @@ static void onibi_gir_validate(VALUE graph) {
     if (NUM2LONG(onibi_hash_value(state, "id")) != i)
       rb_raise(eRegexpError, "GIR state ids are not contiguous");
     ID op = SYM2ID(onibi_hash_value(state, "op"));
-    if (op != rb_intern("G_ACCEPT") && op != rb_intern("G_CHAR") &&
-        op != rb_intern("G_CLASS") && op != rb_intern("G_ANY") &&
-        op != rb_intern("G_GRAPHEME") &&
-        op != rb_intern("G_BACKREF") && op != rb_intern("G_CALL") &&
-        op != rb_intern("G_ATOMIC") && op != rb_intern("G_ABSENT"))
+    if (op != id_g_accept && op != id_g_char && op != id_g_class && op != id_g_any &&
+        op != id_g_grapheme && op != id_g_backref && op != id_g_call &&
+        op != id_g_atomic && op != id_g_absent)
       rb_raise(eRegexpError, "unknown GIR state opcode");
-    if (i == accept && op != rb_intern("G_ACCEPT"))
+    if (i == accept && op != id_g_accept)
       rb_raise(eRegexpError, "GIR accept state has a non-accept opcode");
-    if (op == rb_intern("G_BACKREF")) {
+    if (op == id_g_backref) {
       VALUE capture = onibi_hash_value(onibi_hash_value(state, "payload"), "capture");
       if (NIL_P(capture) || NUM2LONG(capture) < 1 || NUM2LONG(capture) > capture_count)
         rb_raise(eRegexpError, "GIR backreference capture is out of range");
@@ -1769,11 +1767,11 @@ static void onibi_gir_validate(VALUE graph) {
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
       VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      if ((action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE")) &&
+      if ((action == id_capture_open || action == id_capture_close) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
-      if ((action == rb_intern("COUNTER_INIT") || action == rb_intern("COUNTER_INCREMENT") ||
-           action == rb_intern("TEST_COUNTER_LT") || action == rb_intern("TEST_COUNTER_GE")) &&
+      if ((action == id_a_counter_init || action == id_a_counter_increment ||
+           action == id_a_test_counter_lt || action == id_a_test_counter_ge) &&
           NUM2LONG(slot) >= counter_count)
         rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
@@ -1791,11 +1789,11 @@ static void onibi_gir_validate(VALUE graph) {
       if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
       VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
-      if ((action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE")) &&
+      if ((action == id_capture_open || action == id_capture_close) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
-      if ((action == rb_intern("COUNTER_INIT") || action == rb_intern("COUNTER_INCREMENT") ||
-           action == rb_intern("TEST_COUNTER_LT") || action == rb_intern("TEST_COUNTER_GE")) &&
+      if ((action == id_a_counter_init || action == id_a_counter_increment ||
+           action == id_a_test_counter_lt || action == id_a_test_counter_ge) &&
           NUM2LONG(slot) >= counter_count)
         rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
@@ -2486,8 +2484,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     VALUE actions = onibi_hash_value(rb_ary_entry(builder.edges, i), "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
-          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+      if (op == id_a_counter_init || op == id_a_counter_increment ||
+          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
         long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
         if (slot + 1 > counter_count) counter_count = slot + 1;
       }
@@ -2497,8 +2495,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     VALUE actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
-          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+      if (op == id_a_counter_init || op == id_a_counter_increment ||
+          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
         long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
         if (slot + 1 > counter_count) counter_count = slot + 1;
       }
@@ -2517,23 +2515,23 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
 }
 
 static uint8_t onibi_rseq_action_flags(ID op) {
-  if (op == rb_intern("CAPTURE_CLOSE")) return ONIBI_RA_CAPTURE_CLOSE;
-  if (op == rb_intern("TEST_CAPTURE")) return ONIBI_RA_TEST_CAPTURE_SET;
-  if (op == rb_intern("TEST_COUNTER_GE")) return ONIBI_RA_COUNTER_GE;
+  if (op == id_capture_close) return ONIBI_RA_CAPTURE_CLOSE;
+  if (op == id_a_test_capture) return ONIBI_RA_TEST_CAPTURE_SET;
+  if (op == id_a_test_counter_ge) return ONIBI_RA_COUNTER_GE;
   return 0;
 }
 
 static uint16_t onibi_rseq_assert_kind(ID op) {
-  if (op == rb_intern("ASSERT_BEGIN_BUFFER")) return ONIBI_RAP_BEGIN_BUFFER;
-  if (op == rb_intern("ASSERT_END_BUFFER")) return ONIBI_RAP_END_BUFFER;
-  if (op == rb_intern("ASSERT_BEGIN_LINE")) return ONIBI_RAP_BEGIN_LINE;
-  if (op == rb_intern("ASSERT_END_LINE")) return ONIBI_RAP_END_LINE;
-  if (op == rb_intern("ASSERT_SEMI_END_BUFFER")) return ONIBI_RAP_SEMI_END_BUFFER;
-  if (op == rb_intern("ASSERT_SEARCH_ORIGIN")) return ONIBI_RAP_SEARCH_ORIGIN;
-  if (op == rb_intern("ASSERT_WORD_BOUNDARY")) return ONIBI_RAP_WORD_BOUNDARY;
-  if (op == rb_intern("ASSERT_NONWORD_BOUNDARY")) return ONIBI_RAP_NONWORD_BOUNDARY;
-  if (op == rb_intern("ASSERT_LOOKAHEAD")) return ONIBI_RAP_LOOKAHEAD;
-  if (op == rb_intern("ASSERT_LOOKBEHIND")) return ONIBI_RAP_LOOKBEHIND;
+  if (op == id_a_assert_begin_buffer) return ONIBI_RAP_BEGIN_BUFFER;
+  if (op == id_a_assert_end_buffer) return ONIBI_RAP_END_BUFFER;
+  if (op == id_a_assert_begin_line) return ONIBI_RAP_BEGIN_LINE;
+  if (op == id_a_assert_end_line) return ONIBI_RAP_END_LINE;
+  if (op == id_a_assert_semi_end_buffer) return ONIBI_RAP_SEMI_END_BUFFER;
+  if (op == id_a_assert_search_origin) return ONIBI_RAP_SEARCH_ORIGIN;
+  if (op == id_a_assert_word_boundary) return ONIBI_RAP_WORD_BOUNDARY;
+  if (op == id_a_assert_nonword_boundary) return ONIBI_RAP_NONWORD_BOUNDARY;
+  if (op == id_a_assert_lookahead) return ONIBI_RAP_LOOKAHEAD;
+  if (op == id_a_assert_lookbehind) return ONIBI_RAP_LOOKBEHIND;
   return 0;
 }
 
@@ -2652,7 +2650,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE literal_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op != rb_intern("G_CHAR")) continue;
+    if (op != id_g_char) continue;
     VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
     int found = 0;
     for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
@@ -2736,7 +2734,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       physical.exec_kind = 2;
       break;
     }
-    if (op == rb_intern("G_ACCEPT")) continue;
+    if (op == id_g_accept) continue;
   }
   if (physical.exec_kind == 0) {
     for (long i = 0; i < RARRAY_LEN(actions); i++) {
@@ -2752,7 +2750,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE edge_actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
       for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
         ID op = SYM2ID(onibi_hash_value(rb_ary_entry(edge_actions, j), "op"));
-        if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("COUNTER_INIT")) {
+        if (op == id_capture_open || op == id_a_counter_init) {
           physical.exec_kind = 1;
           break;
         }
@@ -2795,12 +2793,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     VALUE state = rb_ary_entry(states, i);
     ID op = SYM2ID(onibi_hash_value(state, "op"));
-    physical_states[i].op = (uint8_t)(op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
-      op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS : op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
-      op == rb_intern("G_GRAPHEME") ? ONIBI_RS_GRAPHEME :
-      op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
-      op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC : op == rb_intern("G_ABSENT") ? ONIBI_RS_ABSENT :
-      op == rb_intern("G_ACCEPT") ? 0 : 0xff);
+    physical_states[i].op = (uint8_t)(op == id_g_char ? ONIBI_RS_CHAR :
+      op == id_g_class ? ONIBI_RS_CLASS : op == id_g_any ? ONIBI_RS_ANY :
+      op == id_g_grapheme ? ONIBI_RS_GRAPHEME : op == id_g_backref ? ONIBI_RS_BACKREF :
+      op == id_g_call ? ONIBI_RS_CALL : op == id_g_atomic ? ONIBI_RS_ATOMIC :
+      op == id_g_absent ? ONIBI_RS_ABSENT : op == id_g_accept ? 0 : 0xff);
     uint32_t edge_base = 0;
     uint16_t edge_count = 0;
     for (long e = 0; e < RARRAY_LEN(r_edges); e++) {
@@ -2811,7 +2808,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
-    if (op == rb_intern("G_CLASS")) {
+    if (op == id_g_class) {
       VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
       class_index = 0;
       for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
@@ -2822,7 +2819,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       }
       physical_states[i].payload = class_index;
     }
-    else if (op == rb_intern("G_CHAR")) {
+    else if (op == id_g_char) {
       VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
       literal_index = 0;
       for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
@@ -2854,24 +2851,24 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
-    physical_actions[i].op = (uint8_t)(op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ? ONIBI_RA_CAPTURE :
-      op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :
-      op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
-      op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-      op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
-      op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
-      op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND") ? ONIBI_RA_ASSERT_POSITION :
-      op == rb_intern("TEST_CAPTURE") ? ONIBI_RA_TEST_CAPTURE :
-      op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
-      op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
-      op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
+    physical_actions[i].op = (uint8_t)(op == id_capture_open || op == id_capture_close ? ONIBI_RA_CAPTURE :
+      op == id_match_reset ? ONIBI_RA_MATCH_RESET :
+      op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer ||
+      op == id_a_assert_begin_line || op == id_a_assert_end_line ||
+      op == id_a_assert_semi_end_buffer || op == id_a_assert_search_origin ||
+      op == id_a_assert_word_boundary || op == id_a_assert_nonword_boundary ||
+      op == id_a_assert_lookahead || op == id_a_assert_lookbehind ? ONIBI_RA_ASSERT_POSITION :
+      op == id_a_test_capture ? ONIBI_RA_TEST_CAPTURE :
+      op == id_a_counter_init ? ONIBI_RA_COUNTER_SET :
+      op == id_a_counter_increment ? ONIBI_RA_COUNTER_ADD :
+      op == id_a_test_counter_lt || op == id_a_test_counter_ge ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
     physical_actions[i].flags = onibi_rseq_action_flags(op);
-    if (op == rb_intern("TEST_CAPTURE") && !RTEST(onibi_hash_value(rb_ary_entry(actions, i), "set")))
+    if (op == id_a_test_capture && !RTEST(onibi_hash_value(rb_ary_entry(actions, i), "set")))
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     physical_actions[i].arg16 = onibi_rseq_assert_kind(op);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = RTEST(onibi_hash_value(rb_ary_entry(actions, i), "positive"));
-      physical_actions[i].flags = op == rb_intern("ASSERT_LOOKAHEAD") ?
+      physical_actions[i].flags = op == id_a_assert_lookahead ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
     }
     VALUE slot = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("slot")));
