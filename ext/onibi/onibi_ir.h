@@ -35,6 +35,12 @@ typedef struct {
 } OnibiCounterState;
 
 typedef enum {
+  ONIBI_EXEC_REGULAR = 0,
+  ONIBI_EXEC_TAGGED = 1,
+  ONIBI_EXEC_DYNAMIC = 2
+} OnibiExecutionKind;
+
+typedef enum {
   ONIBI_G_ACCEPT = 0,
   ONIBI_G_CHAR,
   ONIBI_G_CLASS,

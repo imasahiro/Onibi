@@ -42,7 +42,6 @@ static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
 static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
 static ID id_a_end, id_key_physical_graph;
-static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
@@ -138,7 +137,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -252,7 +251,6 @@ static void onibi_mark(void *ptr) {
   if (!obj) return;
   rb_gc_mark(obj->regexp);
   rb_gc_mark(obj->source);
-  rb_gc_mark(obj->execution_kind);
   rb_gc_mark(obj->rseq);
   rb_gc_mark(obj->names);
   rb_gc_mark(obj->named_captures);
@@ -3334,8 +3332,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->has_dynamic = 1;
   }
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
-  obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
-    (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
+  obj->execution_kind = obj->has_dynamic ? ONIBI_EXEC_DYNAMIC :
+    (obj->has_tagged ? ONIBI_EXEC_TAGGED : ONIBI_EXEC_REGULAR);
   rb_obj_freeze(self);
   return self;
 }
@@ -5300,9 +5298,9 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
     {
       /* The immutable RSeq was validated and its physical execution view was
          built during initialize.  Do not rescan the program on each match. */
-      VALUE result = obj->execution_kind == ID2SYM(id_exec_regular) ?
+      VALUE result = obj->execution_kind == ONIBI_EXEC_REGULAR ?
         onibi_vm_regular_fast(obj->rseq, str) :
-        (obj->execution_kind == ID2SYM(id_exec_tagged) ?
+        (obj->execution_kind == ONIBI_EXEC_TAGGED ?
           onibi_vm_tagged_ordered(obj->rseq, str,
             obj->has_conditional || obj->has_backref || obj->has_subroutine) :
           onibi_vm_dynamic(obj->rseq, str));
@@ -5375,8 +5373,6 @@ void Init_onibi(void) {
   id_a_assert_lookahead = rb_intern("ASSERT_LOOKAHEAD"); id_a_assert_lookbehind = rb_intern("ASSERT_LOOKBEHIND");
   id_pred_byte = rb_intern("byte"); id_pred_bitmap = rb_intern("bitmap"); id_pred_any = rb_intern("any");
   id_a_end = rb_intern("END"); id_key_physical_graph = rb_intern("physical_graph");
-  id_exec_regular = rb_intern("REGULAR_FAST"); id_exec_tagged = rb_intern("TAGGED_ORDERED");
-  id_exec_dynamic = rb_intern("DYNAMIC");
   id_opt_ignorecase = rb_intern("ignorecase"); id_opt_multiline = rb_intern("multiline");
   id_opt_extended = rb_intern("extended"); id_opt_fixedencoding = rb_intern("fixedencoding");
   id_opt_noencoding = rb_intern("noencoding");
