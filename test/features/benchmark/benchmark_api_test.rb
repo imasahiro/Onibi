@@ -214,6 +214,13 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("5")
   end
 
+  def test_absence_operator_has_explicit_ast_and_dynamic_boundary
+    parsed = Onibi::Parser.parse("(?~real)")
+    assert_equal :absence, parsed[:ast][:children].first[:type]
+    assert_equal :DYNAMIC, Onibi::Regexp.new("(?~real)").pipeline[:interpreter]
+    refute Onibi::Regexp.new("(?~real)").program_cached?
+  end
+
   def test_character_class_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[a-z]+")
     assert_equal :RSEQ, regexp.pipeline[:vm]

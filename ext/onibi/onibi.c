@@ -69,7 +69,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -190,6 +190,11 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       kind = "atomic_start";
       byte = '>';
       i += 2;
+    } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
+               RSTRING_PTR(src)[i + 2] == '~') {
+      kind = "absence_start";
+      byte = '~';
+      i += 2;
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -297,7 +302,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       }
     }
     if (strcmp(kind, "group_start") == 0 || strcmp(kind, "noncapture_start") == 0 ||
-        strcmp(kind, "atomic_start") == 0 || strcmp(kind, "lookahead_start") == 0 ||
+        strcmp(kind, "atomic_start") == 0 || strcmp(kind, "absence_start") == 0 || strcmp(kind, "lookahead_start") == 0 ||
         strcmp(kind, "lookbehind_start") == 0 || strcmp(kind, "option_scope_start") == 0) {
       if (extended_depth >= (long)(sizeof(extended_stack) / sizeof(extended_stack[0])))
         rb_raise(eRegexpError, "regexp nesting is too deep");
@@ -415,7 +420,8 @@ static long onibi_find_close(VALUE tokens, long begin, long end, ID open, ID clo
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
     if (kind == open || kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") ||
         kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") ||
-        kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start")) depth++;
+        kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start") ||
+        kind == rb_intern("absence_start")) depth++;
     else if (kind == close && --depth == 0) return i;
   }
   return -1;
@@ -525,6 +531,16 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
+  if (kind == rb_intern("absence_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("absence_start"), rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated absence operator");
+    VALUE node = onibi_ast_node("absence", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(tokens, *index + 1, close));
+    rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
   if (kind == rb_intern("group_start")) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("group_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
@@ -603,7 +619,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start") || kind == rb_intern("class_start")) depth++;
+    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("absence_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start") || kind == rb_intern("class_start")) depth++;
     else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
     else if (kind == rb_intern("alternation") && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(tokens, part, i));
@@ -1919,6 +1935,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_class_intersection = 0;
   obj->has_nested_class = 0;
   obj->has_large_repeat = 0;
+  obj->has_absence = 0;
   obj->has_subroutine = 0;
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
@@ -1956,8 +1973,10 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     if (kind == rb_intern("subroutine")) {
       obj->has_subroutine = 1;
       obj->has_dynamic = 1;
-    } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start")) {
+    } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start") ||
+               kind == rb_intern("absence_start")) {
       obj->has_dynamic = 1;
+      if (kind == rb_intern("absence_start")) obj->has_absence = 1;
     } else if (kind == rb_intern("group_start") ||
                (kind == rb_intern("quantifier") && onibi_token_byte(token) == '{')) {
       obj->has_tagged = 1;
@@ -2085,13 +2104,13 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   onibi_token_features(tokens, obj);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = obj->has_large_repeat ?
+  VALUE program = (obj->has_large_repeat || obj->has_absence) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = obj->has_large_repeat ? program : rb_ary_entry(program, 0);
-    obj->compiled = obj->has_large_repeat ? Qnil : rb_ary_entry(program, 1);
-    obj->rseq = obj->has_large_repeat ? Qnil : rb_ary_entry(program, 2);
+    obj->parsed = (obj->has_large_repeat || obj->has_absence) ? program : rb_ary_entry(program, 0);
+    obj->compiled = (obj->has_large_repeat || obj->has_absence) ? Qnil : rb_ary_entry(program, 1);
+    obj->rseq = (obj->has_large_repeat || obj->has_absence) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
@@ -2331,7 +2350,8 @@ static VALUE onibi_pipeline_build(VALUE self) {
     }
     rb_hash_aset(ast, ID2SYM(rb_intern("branches")), branches);
   }
-  rb_hash_aset(out, ID2SYM(rb_intern("ast")), ast);
+  rb_hash_aset(out, ID2SYM(rb_intern("ast")), NIL_P(obj->compiled) && !NIL_P(parsed) ?
+               onibi_hash_value(parsed, "ast") : ast);
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE op = rb_hash_new();
