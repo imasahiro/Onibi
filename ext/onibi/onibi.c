@@ -1580,9 +1580,8 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
-  VALUE guards = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
-  if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
+  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
@@ -1605,9 +1604,8 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
-  VALUE guards = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
-  if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
+  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
