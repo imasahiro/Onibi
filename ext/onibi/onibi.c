@@ -2724,12 +2724,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!NIL_P(opcode) && NUM2UINT(opcode) == ONIBI_G_BACKREF) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
-    if (op == id_capture_open) { capture_count++; features |= 2U; }
-    if (op == id_a_counter_init) features |= 4U;
-    if (op == id_a_counter_init || op == id_a_counter_increment ||
-        op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
-      VALUE slot = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_slot);
+    VALUE action = rb_ary_entry(actions, i);
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    if (code == ONIBI_GA_CAPTURE_OPEN) { capture_count++; features |= 2U; }
+    if (code == ONIBI_GA_COUNTER_INIT) features |= 4U;
+    if (code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+        code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
+      VALUE slot = onibi_hash_value_id(action, id_key_slot);
       if (!NIL_P(slot) && RB_INTEGER_TYPE_P(slot)) {
         uint32_t required = (uint32_t)NUM2ULONG(slot) + 1U;
         if (required > counter_count) counter_count = required;
@@ -4076,11 +4078,11 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
 static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     VALUE slot = onibi_hash_value_id(action, id_key_slot);
-    if (op == id_a_counter_init)
-      rb_hash_aset(counters, slot, onibi_hash_value(action, "value"));
-    else if (op == id_a_counter_increment) {
+    if (code == ONIBI_GA_COUNTER_INIT)
+      rb_hash_aset(counters, slot, onibi_hash_value_id(action, id_key_value));
+    else if (code == ONIBI_GA_COUNTER_INCREMENT) {
       VALUE prior = rb_hash_aref(counters, slot);
       rb_hash_aset(counters, slot, LONG2NUM((NIL_P(prior) ? 0 : NUM2LONG(prior)) + 1));
     }
