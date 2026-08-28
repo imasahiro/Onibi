@@ -771,6 +771,11 @@ static void onibi_gir_validate(VALUE graph) {
       rb_raise(eRegexpError, "unknown GIR state opcode");
     if (i == accept && op != rb_intern("G_ACCEPT"))
       rb_raise(eRegexpError, "GIR accept state has a non-accept opcode");
+    if (op == rb_intern("G_BACKREF")) {
+      VALUE capture = onibi_hash_value(onibi_hash_value(state, "payload"), "capture");
+      if (NIL_P(capture) || NUM2LONG(capture) < 1 || NUM2LONG(capture) > capture_count)
+        rb_raise(eRegexpError, "GIR backreference capture is out of range");
+    }
   }
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
