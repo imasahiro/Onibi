@@ -290,9 +290,9 @@ static long onibi_token_byte(VALUE token);
 typedef struct {
   OnibiTokenKind kind;
   long byte;
-  VALUE name;
   ID name_id;
   unsigned char ascii_property;
+  unsigned char inline_ignorecase;
 } OnibiFeatureToken;
 
 typedef struct {
@@ -310,10 +310,11 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       VALUE token = rb_ary_entry(tokens, (long)i);
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
-      vector.items[i].name = onibi_hash_value_id(token, id_key_name);
-      vector.items[i].name_id = NIL_P(vector.items[i].name) ? 0 : rb_intern_str(vector.items[i].name);
-      vector.items[i].ascii_property = (!NIL_P(vector.items[i].name) &&
-        onibi_ascii_property_name_p(vector.items[i].name)) ? 1 : 0;
+      VALUE name = onibi_hash_value_id(token, id_key_name);
+      vector.items[i].name_id = NIL_P(name) ? 0 : rb_intern_str(name);
+      vector.items[i].ascii_property = (!NIL_P(name) && onibi_ascii_property_name_p(name)) ? 1 : 0;
+      vector.items[i].inline_ignorecase = (!NIL_P(name) &&
+        memchr(RSTRING_PTR(name), 'i', (size_t)RSTRING_LEN(name)) != NULL) ? 1 : 0;
     }
   }
   return vector;
@@ -3076,8 +3077,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     if (kind_code == ONIBI_TOKEN_WILDCARD) obj->has_wildcard = 1;
     if (kind_code == ONIBI_TOKEN_ANCHOR) obj->has_anchor = 1;
     if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START || kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
-      VALUE option_name = token->name;
-      if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
+      if (token->inline_ignorecase)
         obj->has_inline_ignorecase = 1;
     }
     if (kind_code == ONIBI_TOKEN_CLASS_START) {
@@ -3140,9 +3140,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       if (token->byte == 'p' || token->byte == 'P') {
         if (token->ascii_property) {
           obj->has_ascii_property = 1;
-          VALUE property_name = token->name;
           ID property_id = token->name_id;
-          if (!NIL_P(property_name) && property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
+          if (property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
           if (in_class) obj->has_unicode_property_in_class = 1;
         }
