@@ -86,7 +86,7 @@ static void onibi_mark(void *ptr) {
 }
 static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
 static const rb_data_type_t onibi_type = {
-  "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+  "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize, NULL, { NULL } }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
 static void onibi_lexer_free(void *ptr) { xfree(ptr); }
@@ -98,7 +98,7 @@ static void onibi_lexer_mark(void *ptr) {
 }
 static size_t onibi_lexer_memsize(const void *ptr) { return ptr ? sizeof(onibi_lexer_t) : 0; }
 static const rb_data_type_t onibi_lexer_type = {
-  "Onibi::Lexer", { onibi_lexer_mark, onibi_lexer_free, onibi_lexer_memsize }, 0, 0,
+  "Onibi::Lexer", { onibi_lexer_mark, onibi_lexer_free, onibi_lexer_memsize, NULL, { NULL } }, 0, 0,
   RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -1288,7 +1288,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     }
     rb_obj_freeze(bytes);
     VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(type == ID2SYM(rb_intern("lookbehind")) ? "ASSERT_LOOKBEHIND" : "ASSERT_LOOKAHEAD")));
+    const char *assertion_op = type == ID2SYM(rb_intern("lookbehind")) ?
+      "ASSERT_LOOKBEHIND" : "ASSERT_LOOKAHEAD";
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(assertion_op)));
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
     onibi_fragment_t result = onibi_fragment_empty();
@@ -1732,8 +1734,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("descriptors_offset")), UINT2NUM(physical.descriptors_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("subprograms_offset")), UINT2NUM(physical.subprograms_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("blob_size")), UINT2NUM(physical.blob_size));
-  VALUE blob = rb_str_new(NULL, offset);
-  memset(RSTRING_PTR(blob), 0, offset);
+  VALUE blob = rb_str_new(NULL, (long)offset);
+  memset(RSTRING_PTR(blob), 0, (size_t)offset);
   memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
   OnibiRState *physical_states = (OnibiRState *)(RSTRING_PTR(blob) + physical.states_offset);
   uint32_t class_index = 0, literal_index = 0;
@@ -2367,7 +2369,8 @@ static VALUE onibi_pipeline_build(VALUE self) {
     ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
     if (kind == rb_intern("group_start") || kind == rb_intern("group_end")) {
       VALUE action = rb_hash_new();
-      rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(kind == rb_intern("group_start") ? "CAPTURE_OPEN" : "CAPTURE_CLOSE")));
+      const char *capture_op = kind == rb_intern("group_start") ? "CAPTURE_OPEN" : "CAPTURE_CLOSE";
+      rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(capture_op)));
       rb_hash_aset(action, ID2SYM(rb_intern("slot")), INT2NUM(kind == rb_intern("group_start") ? 2 : 3));
       rb_ary_push(rb_hash_aref(rb_ary_entry(edges, i), ID2SYM(rb_intern("actions"))), action);
     }
@@ -2559,7 +2562,7 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   VALUE bitmap = onibi_hash_value(payload, "bitmap");
   if (NIL_P(bitmap) || !RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
     rb_raise(eRegexpError, "class payload has no compiled bitmap");
-  return (RSTRING_PTR(bitmap)[byte >> 3] & (1U << (byte & 7))) != 0;
+  return (((unsigned char *)RSTRING_PTR(bitmap))[byte >> 3] & (1U << (byte & 7))) != 0;
 }
 
 static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
