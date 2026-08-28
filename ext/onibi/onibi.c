@@ -26,7 +26,7 @@ static _Thread_local uint64_t onibi_deadline_ns = 0;
 #define ONIBI_CALL_STACK_LIMIT 256U
 static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
 static _Thread_local unsigned int onibi_call_stack_size = 0;
-static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
+static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
@@ -75,11 +75,6 @@ typedef enum {
   ONIBI_POSIX_UPPER, ONIBI_POSIX_WORD, ONIBI_POSIX_XDIGIT
 } OnibiPosixKind;
 static OnibiPosixKind onibi_posix_kind(VALUE name);
-
-static VALUE onibi_rseq_trusted_marker(VALUE self) {
-  (void)self;
-  return Qtrue;
-}
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -2936,7 +2931,6 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
                onibi_deep_freeze(onibi_rseq_physical_graph(result)));
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions);
-  rb_define_singleton_method(result, "__onibi_trusted_rseq__", onibi_rseq_trusted_marker, 0);
   rb_obj_freeze(result);
   /* Validate once, before publication.  Match calls use this immutable
      validated representation without repeating structural scans. */
@@ -5389,7 +5383,6 @@ void Init_onibi(void) {
   id_case_equal = rb_intern("==="); id_last_match = rb_intern("last_match"); id_tilde = rb_intern("~");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect"); id_to_s = rb_intern("to_s");
-  id_trusted_rseq = rb_intern("__onibi_trusted_rseq__");
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   id_encoding = rb_intern("encoding");
   id_index = rb_intern("index");
