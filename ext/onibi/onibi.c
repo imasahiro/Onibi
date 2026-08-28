@@ -2708,26 +2708,26 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint32_t features = 0, capture_count = 0, counter_count = 0;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == rb_intern("G_BACKREF")) features |= 1U;
+    if (op == id_g_backref) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
-    if (op == rb_intern("CAPTURE_OPEN")) { capture_count++; features |= 2U; }
-    if (op == rb_intern("COUNTER_INIT")) features |= 4U;
-    if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
-        op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+    if (op == id_capture_open) { capture_count++; features |= 2U; }
+    if (op == id_a_counter_init) features |= 4U;
+    if (op == id_a_counter_init || op == id_a_counter_increment ||
+        op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
       VALUE slot = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_slot);
       if (!NIL_P(slot) && RB_INTEGER_TYPE_P(slot)) {
         uint32_t required = (uint32_t)NUM2ULONG(slot) + 1U;
         if (required > counter_count) counter_count = required;
       }
     }
-    if (op == rb_intern("MATCH_RESET")) features |= 8U;
-    if (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
-        op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-        op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
-        op == rb_intern("ASSERT_NONWORD_BOUNDARY") || op == rb_intern("ASSERT_LOOKAHEAD") ||
-        op == rb_intern("ASSERT_LOOKBEHIND")) features |= 16U;
+    if (op == id_match_reset) features |= 8U;
+    if (op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer ||
+        op == id_a_assert_begin_line || op == id_a_assert_end_line ||
+        op == id_a_assert_semi_end_buffer || op == id_a_assert_search_origin || op == id_a_assert_word_boundary ||
+        op == id_a_assert_nonword_boundary || op == id_a_assert_lookahead ||
+        op == id_a_assert_lookbehind) features |= 16U;
   }
   rb_hash_aset(header, ID2SYM(rb_intern("features")), UINT2NUM(features));
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
@@ -2758,8 +2758,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
-        op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) {
+    if (op == id_g_grapheme || op == id_g_backref || op == id_g_call ||
+        op == id_g_atomic || op == id_g_absent) {
       physical.exec_kind = 2;
       break;
     }
@@ -2768,9 +2768,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   if (physical.exec_kind == 0) {
     for (long i = 0; i < RARRAY_LEN(actions); i++) {
       ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
-      if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ||
-          op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
-          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+      if (op == id_capture_open || op == id_capture_close ||
+          op == id_a_counter_init || op == id_a_counter_increment ||
+          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
         physical.exec_kind = 1;
         break;
       }
