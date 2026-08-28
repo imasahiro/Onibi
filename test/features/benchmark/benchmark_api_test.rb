@@ -504,6 +504,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::RSeq.lower(invalid) }
   end
 
+  def test_vm_rejects_rseq_semantic_flag_mismatch
+    regexp = Onibi::Regexp.new("abc")
+    rseq = regexp.pipeline[:rseq_program]
+    invalid = rseq.dup
+    invalid_header = rseq[:header].dup
+    invalid_header[:ignorecase] = true
+    invalid[:header] = invalid_header
+    assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "abc", :REGULAR_FAST) }
+  end
+
   def test_gir_declares_capture_and_counter_resources
     capture_graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a)"))[:graph]
     repeat_graph = Onibi::Compiler.compile(Onibi::Parser.parse("a{2,3}"))[:graph]
