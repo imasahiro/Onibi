@@ -2163,6 +2163,16 @@ static void onibi_rseq_validate(VALUE rseq) {
       semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : 0xff;
     if (expected_op == 0xff || states[i].op != expected_op)
       rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
+    if (semantic_op == rb_intern("G_CLASS")) {
+      VALUE bitmap = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "bitmap");
+      if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
+        rb_raise(rb_eArgError, "RSeq class state has no compiled bitmap");
+    }
+    if (semantic_op == rb_intern("G_CHAR")) {
+      VALUE byte = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "byte");
+      if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
+        rb_raise(rb_eArgError, "RSeq character state has an invalid byte");
+    }
     if (states[i].op > ONIBI_RS_RUN_ANY)
       rb_raise(rb_eArgError, "invalid Onibi RSeq state opcode");
     if ((uint64_t)states[i].edge_base + states[i].edge_count > header.edge_count - header.start_edge_count)
