@@ -4679,8 +4679,13 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   size_t visited_size = 0;
   if (visited_span != 0 && (size_t)RARRAY_LEN(states) <= SIZE_MAX / visited_span)
     visited_size = (size_t)RARRAY_LEN(states) * visited_span;
-  if (visited_size != 0 && visited_size <= (size_t)1 << 20) {
-    visited_bits = ALLOCA_N(unsigned char, visited_size);
+  int visited_bits_owned = 0;
+  if (visited_size != 0 && visited_size <= (size_t)64 << 20) {
+    if (visited_size <= (size_t)1 << 20) visited_bits = ALLOCA_N(unsigned char, visited_size);
+    else {
+      visited_bits = ALLOC_N(unsigned char, visited_size);
+      visited_bits_owned = 1;
+    }
     memset(visited_bits, 0, visited_size);
   }
   VALUE counter_count = onibi_hash_value_id(graph, id_key_counter_count);
@@ -4698,8 +4703,12 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
     }
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), Qnil, Qnil)) continue;
     if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited,
-                      visited_bits, visited_span, branch_counters, counter_slots, use_counters, matched_end)) return 1;
+                      visited_bits, visited_span, branch_counters, counter_slots, use_counters, matched_end)) {
+      if (visited_bits_owned) xfree(visited_bits);
+      return 1;
+    }
   }
+  if (visited_bits_owned) xfree(visited_bits);
   return 0;
 }
 

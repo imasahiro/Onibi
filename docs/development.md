@@ -199,7 +199,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | fragment start/exit IDs | No | Partial `OnibiIdVector` conversion | IDs are numeric and ordered. Final GIR exit connections, including lazy ordering, now consume a C vector. Fragment composition still uses Ruby arrays and is a remaining migration target. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard lookup now uses an owned C vector of state IDs and Ruby action arrays. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
-| regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
+| regular VM visited set | No | C bitset with owned large-set storage | Numeric state/position pairs use a C bitset. Sets up to 64 MiB use owned C memory when stack storage is too large; counter-bearing paths retain a safe Ruby fallback. |
 | tagged VM counter maps | No | Pending C counter snapshots | Frame branching duplicates numeric counter values in Ruby Hash objects. The conversion must cover call frames and ordered edge branches together. |
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |

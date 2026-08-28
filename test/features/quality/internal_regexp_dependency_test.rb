@@ -129,6 +129,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "rb_ary_push(roots, value)"
   end
 
+  def test_large_regular_visited_sets_use_owned_c_storage
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static int onibi_gir_match\(.*?\n}\n/m]
+
+    refute_nil matcher
+    assert_includes matcher, "visited_bits_owned"
+    assert_includes matcher, "ALLOC_N(unsigned char, visited_size)"
+    assert_includes matcher, "xfree(visited_bits)"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
