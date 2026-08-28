@@ -2019,7 +2019,7 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
     rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
     rb_hash_aset(descriptor, ID2SYM(id_key_flags), UINT2NUM(flags));
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(fragment.start_actions));
   rb_obj_freeze(descriptor);
   onibi_value_vector_push(&builder->subprograms, descriptor, builder->map_roots);
   onibi_id_vector_free(&fragment.starts);
@@ -2103,7 +2103,7 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
     rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
     rb_hash_aset(descriptor, ID2SYM(id_key_flags), INT2NUM(0));
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(fragment.start_actions));
   rb_obj_freeze(descriptor);
   onibi_value_vector_store(&builder->subprograms, (size_t)id, descriptor, builder->map_roots);
   onibi_id_vector_free(&fragment.starts);

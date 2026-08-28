@@ -349,6 +349,19 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "VALUE subprograms = rb_ary_new_capa"
   end
 
+  def test_subprogram_entry_actions_share_frozen_fragment_storage
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static long onibi_compile_subprogram\(.*?\n}\n/m]
+    named = source[/static long onibi_compile_named_subprogram\(.*?\n}\n/m]
+
+    refute_nil compiler
+    refute_nil named
+    assert_includes compiler, "onibi_deep_freeze(fragment.start_actions)"
+    assert_includes named, "onibi_deep_freeze(fragment.start_actions)"
+    refute_includes compiler, "rb_ary_dup(fragment.start_actions)"
+    refute_includes named, "rb_ary_dup(fragment.start_actions)"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
