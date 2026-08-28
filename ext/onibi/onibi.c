@@ -27,6 +27,7 @@ static _Thread_local uint64_t onibi_deadline_ns = 0;
 static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
 static _Thread_local unsigned int onibi_call_stack_size = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
+static ID id_case_equal, id_last_match, id_tilde;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
@@ -3296,10 +3297,14 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
 static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
   VALUE str, pos = Qnil;
   rb_scan_args(argc, argv, "11", &str, &pos);
+  if (argc == 2 && NIL_P(pos)) rb_raise(rb_eTypeError, "no implicit conversion from nil to integer");
+  if (argc == 2 && RB_TYPE_P(pos, T_STRING)) rb_raise(rb_eTypeError, "no implicit conversion of String into Integer");
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
-                    : rb_funcall(obj->regexp, id_match, 2, str, pos);
+  VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
+                           : rb_funcall(obj->regexp, id_match, 2, str, pos);
+  if (NIL_P(match)) return Qnil;
+  return rb_block_given_p() ? rb_yield(match) : match;
 }
 
 static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
@@ -5240,14 +5245,38 @@ static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
 }
-static VALUE onibi_gsub(VALUE self, VALUE str, VALUE replacement) {
+static VALUE onibi_case_equal(VALUE self, VALUE other) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return rb_funcall(obj->regexp, id_case_equal, 1, other);
+}
+static VALUE onibi_last_match(int argc, VALUE *argv, VALUE klass) {
+  return rb_funcallv(rb_cRegexp, id_last_match, argc, argv);
+}
+static VALUE onibi_tilde(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return rb_funcall(obj->regexp, id_tilde, 0);
+}
+static VALUE onibi_gsub_yield(VALUE value, VALUE data, int argc, const VALUE *argv, VALUE blockarg) {
+  (void)data;
+  (void)blockarg;
+  return argc == 0 ? rb_yield(value) : rb_yield_values2(argc, argv);
+}
+static VALUE onibi_gsub(int argc, VALUE *argv, VALUE self) {
+  VALUE str, replacement = Qnil;
+  rb_scan_args(argc, argv, "11", &str, &replacement);
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  StringValue(str);
+  if (rb_block_given_p()) {
+    VALUE regexp = obj->regexp;
+    return rb_block_call(str, id_gsub, 1, &regexp, onibi_gsub_yield, Qnil);
+  }
   return rb_funcall(str, id_gsub, 2, obj->regexp, replacement);
 }
 
 void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
   id_new = rb_intern("new");
+  id_case_equal = rb_intern("==="); id_last_match = rb_intern("last_match"); id_tilde = rb_intern("~");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect"); id_to_s = rb_intern("to_s");
   id_trusted_rseq = rb_intern("__onibi_trusted_rseq__");
@@ -5305,9 +5334,12 @@ void Init_onibi(void) {
   rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
   rb_define_singleton_method(cRegexp, "escape", onibi_regexp_escape, 1);
   rb_define_singleton_method(cRegexp, "union", onibi_regexp_union, -1);
+  rb_define_singleton_method(cRegexp, "last_match", onibi_last_match, -1);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
   rb_define_method(cRegexp, "match", onibi_match, -1);
+  rb_define_method(cRegexp, "===", onibi_case_equal, 1);
+  rb_define_method(cRegexp, "~", onibi_tilde, 0);
   rb_define_method(cRegexp, "match?", onibi_match_p, -1);
   rb_define_method(cRegexp, "source", onibi_source, 0);
   rb_define_method(cRegexp, "names", onibi_names, 0);
@@ -5331,7 +5363,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
   rb_define_method(cRegexp, "vm_match_result", onibi_vm_match_result, 1);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
-  rb_define_method(cRegexp, "gsub", onibi_gsub, 2);
+  rb_define_method(cRegexp, "gsub", onibi_gsub, -1);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
   rb_define_const(cRegexp, "EXTENDED", INT2NUM(2));
   rb_define_const(cRegexp, "MULTILINE", INT2NUM(4));
