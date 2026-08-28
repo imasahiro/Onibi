@@ -711,6 +711,41 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
 
+static void onibi_gir_validate(VALUE graph) {
+  VALUE states = onibi_hash_value(graph, "states");
+  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE starts = onibi_hash_value(graph, "start_edges");
+  long state_count = RARRAY_LEN(states);
+  for (long i = 0; i < state_count; i++) {
+    VALUE state = rb_ary_entry(states, i);
+    if (NUM2LONG(onibi_hash_value(state, "id")) != i)
+      rb_raise(eRegexpError, "GIR state ids are not contiguous");
+    ID op = SYM2ID(onibi_hash_value(state, "op"));
+    if (op != rb_intern("G_ACCEPT") && op != rb_intern("G_CHAR") &&
+        op != rb_intern("G_CLASS") && op != rb_intern("G_ANY") &&
+        op != rb_intern("G_BACKREF") && op != rb_intern("G_CALL") &&
+        op != rb_intern("G_ATOMIC") && op != rb_intern("G_ABSENT"))
+      rb_raise(eRegexpError, "unknown GIR state opcode");
+  }
+  for (long i = 0; i < RARRAY_LEN(edges); i++) {
+    VALUE edge = rb_ary_entry(edges, i);
+    long from = NUM2LONG(onibi_hash_value(edge, "from"));
+    long to = NUM2LONG(onibi_hash_value(edge, "to"));
+    if (from < 0 || from >= state_count || to < 0 || to >= state_count)
+      rb_raise(eRegexpError, "GIR edge is out of range");
+    if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+      rb_raise(eRegexpError, "GIR edge actions are not an array");
+  }
+  for (long i = 0; i < RARRAY_LEN(starts); i++) {
+    VALUE edge = rb_ary_entry(starts, i);
+    long to = NUM2LONG(onibi_hash_value(edge, "to"));
+    if (to < 0 || to >= state_count)
+      rb_raise(eRegexpError, "GIR start edge is out of range");
+    if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+      rb_raise(eRegexpError, "GIR start actions are not an array");
+  }
+}
+
 static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder_t *builder) {
   onibi_fragment_t result = onibi_fragment_empty();
   int have_consuming = 0;
@@ -981,6 +1016,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
   rb_hash_aset(graph, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
+  onibi_gir_validate(graph);
   rb_obj_freeze(graph);
   VALUE result = rb_hash_new();
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), ast);
