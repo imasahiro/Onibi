@@ -4752,7 +4752,6 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     *width = common_width;
     return hit;
   }
-  VALUE name = onibi_hash_value_id(payload, id_key_name);
   VALUE ctype_value = onibi_hash_value_id(payload, id_key_ctype);
   int ctype = NIL_P(ctype_value) ? -1 : NUM2INT(ctype_value);
   if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex()) {
@@ -4767,6 +4766,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     *width = length;
     return hit;
   }
+  VALUE name = onibi_hash_value_id(payload, id_key_name);
   if (NIL_P(name) && !rb_enc_str_asciionly_p(str) && rb_enc_get_index(str) != rb_ascii8bit_encindex()) {
     VALUE children = onibi_hash_value_id(payload, id_key_children);
     VALUE ranges = onibi_hash_value_id(payload, id_key_ranges);
