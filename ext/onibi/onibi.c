@@ -3709,7 +3709,10 @@ static int onibi_ast_anchor_scan(VALUE ast) {
   if (NIL_P(ast)) return 0;
   if (RB_TYPE_P(ast, T_ARRAY)) {
     int result = 0;
-    for (long i = 0; i < RARRAY_LEN(ast); i++) result |= onibi_ast_anchor_scan(rb_ary_entry(ast, i));
+    for (long i = 0; i < RARRAY_LEN(ast); i++) {
+      result |= onibi_ast_anchor_scan(rb_ary_entry(ast, i));
+      if ((result & 2) != 0) break;
+    }
     return result;
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
@@ -3720,6 +3723,7 @@ static int onibi_ast_anchor_scan(VALUE ast) {
     int child = onibi_ast_anchor_scan(onibi_hash_value_id(ast, keys[i]));
     if (type == ONIBI_AST_QUANTIFIER && keys[i] == id_key_atom && (child & 1)) result |= 2;
     result |= child;
+    if ((result & 2) != 0) break;
   }
   return result;
 }
