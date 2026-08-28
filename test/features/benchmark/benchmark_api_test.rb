@@ -154,6 +154,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_bounded_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("a{2,3}")
     assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert_equal :TAGGED_ORDERED, regexp.pipeline[:interpreter]
     assert regexp.match?("baaaac")
     refute regexp.match?("bc")
   end

@@ -783,7 +783,27 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     if (op == rb_intern("G_ACCEPT")) continue;
   }
-  if (physical.exec_kind == 0 && RARRAY_LEN(actions) > 0) physical.exec_kind = 1;
+  if (physical.exec_kind == 0) {
+    for (long i = 0; i < RARRAY_LEN(actions); i++) {
+      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
+      if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ||
+          op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
+          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+        physical.exec_kind = 1;
+        break;
+      }
+    }
+    for (long i = 0; i < RARRAY_LEN(start_edges) && physical.exec_kind == 0; i++) {
+      VALUE edge_actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
+      for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
+        ID op = SYM2ID(onibi_hash_value(rb_ary_entry(edge_actions, j), "op"));
+        if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("COUNTER_INIT")) {
+          physical.exec_kind = 1;
+          break;
+        }
+      }
+    }
+  }
   physical.state_count = (uint32_t)RARRAY_LEN(states);
   physical.edge_count = (uint32_t)(RARRAY_LEN(r_edges) + RARRAY_LEN(start_edges));
   physical.action_count = (uint32_t)RARRAY_LEN(actions);
@@ -914,6 +934,10 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       break;
     }
     if (kind == rb_intern("group_start")) {
+      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
+      rb_obj_freeze(obj->execution_class);
+    }
+    if (kind == rb_intern("quantifier") && onibi_token_byte(rb_ary_entry(class_tokens, i)) == '{') {
       obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
       rb_obj_freeze(obj->execution_class);
     }
@@ -1516,6 +1540,13 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
       execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
+  VALUE physical_blob = onibi_hash_value(rseq, "blob");
+  OnibiRSeqHeader physical_header;
+  memcpy(&physical_header, RSTRING_PTR(physical_blob), sizeof(physical_header));
+  uint8_t expected_kind = execution_class == ID2SYM(rb_intern("DYNAMIC")) ? 2 :
+    (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED")) ? 1 : 0);
+  if (physical_header.exec_kind != expected_kind)
+    rb_raise(rb_eArgError, "RSeq execution class does not match blob");
   if (execution_class == ID2SYM(rb_intern("REGULAR_FAST"))) return onibi_vm_regular_fast(rseq, str);
   if (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED"))) return onibi_vm_tagged_ordered(rseq, str);
   return onibi_vm_dynamic(rseq, str);
