@@ -247,6 +247,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal(%i[CHAR ESCAPE ASSERT], pipeline[:gir].map { |op| op[:op] })
   end
 
+  def test_rseq_header_marks_semi_end_assertion_feature
+    rseq = Onibi::Regexp.new("a\\Z").pipeline[:rseq_program]
+    assert_equal true, (rseq[:header][:features] & 16) != 0
+    assert_includes rseq[:actions].map { |action| action[:op] }, :ASSERT_SEMI_END_BUFFER
+  end
+
   def test_lexer_publishes_an_immutable_token_stream
     lexer = Onibi::Lexer.new("a\\d")
     tokens = lexer.tokens

@@ -1360,7 +1360,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (op == rb_intern("MATCH_RESET")) features |= 8U;
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
         op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-        op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
+        op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
         op == rb_intern("ASSERT_NONWORD_BOUNDARY") || op == rb_intern("ASSERT_LOOKAHEAD") ||
         op == rb_intern("ASSERT_LOOKBEHIND")) features |= 16U;
   }
