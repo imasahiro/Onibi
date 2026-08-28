@@ -73,6 +73,12 @@ typedef enum {
   ONIBI_GA_TEST_COUNTER_GE
 } OnibiGActionOp;
 
+typedef enum {
+  ONIBI_PRED_BYTE = 0,
+  ONIBI_PRED_BITMAP,
+  ONIBI_PRED_ANY
+} OnibiPredicateKind;
+
 typedef struct {
   OnibiStateId destination;
   OnibiActionProgramId actions;

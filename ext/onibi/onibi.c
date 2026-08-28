@@ -46,7 +46,7 @@ static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedenco
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
-static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code;
+static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code, id_key_predicate_code;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
@@ -2257,6 +2257,7 @@ skip_utf8_range_expansion:
           child_type == ONIBI_AST_CLASS_INTERSECTION) {
         VALUE predicate = rb_hash_new();
         rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BITMAP));
         rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(child, builder->ignorecase));
         rb_ary_push(predicates, predicate);
         continue;
@@ -2264,6 +2265,7 @@ skip_utf8_range_expansion:
       if (child_type == ONIBI_AST_ANY) {
         VALUE predicate = rb_hash_new();
         rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("any")));
+        rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_ANY));
         rb_hash_aset(predicate, ID2SYM(rb_intern("multiline")), builder->multiline ? Qtrue : Qfalse);
         rb_ary_push(predicates, predicate);
         continue;
@@ -2280,6 +2282,7 @@ skip_utf8_range_expansion:
         rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
         VALUE predicate = rb_hash_new();
         rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BITMAP));
         rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(payload, builder->ignorecase));
         rb_ary_push(predicates, predicate);
         continue;
@@ -2288,6 +2291,7 @@ skip_utf8_range_expansion:
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();
       rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
+      rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BYTE));
       rb_hash_aset(predicate, ID2SYM(id_key_byte), onibi_hash_value_id(child, id_key_byte));
       rb_hash_aset(predicate, ID2SYM(rb_intern("ignorecase")), builder->ignorecase ? Qtrue : Qfalse);
       rb_ary_push(predicates, predicate);
@@ -3996,12 +4000,12 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           long at = pos + i;
           if (at >= length) { matched = 0; break; }
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[at];
-          ID kind = SYM2ID(onibi_hash_value_id(predicate, id_key_kind));
-          if (kind == id_pred_byte) {
+          OnibiPredicateKind kind = (OnibiPredicateKind)NUM2UINT(onibi_hash_value_id(predicate, id_key_predicate_code));
+          if (kind == ONIBI_PRED_BYTE) {
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value_id(predicate, id_key_byte));
             matched = matched && (RTEST(onibi_hash_value_id(predicate, id_key_ignorecase)) ?
               tolower(byte) == tolower(expected) : byte == expected);
-          } else if (kind == id_pred_any) {
+          } else if (kind == ONIBI_PRED_ANY) {
             matched = matched && (byte != '\n' || RTEST(onibi_hash_value_id(predicate, id_key_multiline)));
           }
           else {
@@ -4035,12 +4039,12 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
         for (long i = 0; matched && i < width; i++) {
           VALUE predicate = rb_ary_entry(predicates, i);
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[pos - width + i];
-          ID kind = SYM2ID(onibi_hash_value_id(predicate, id_key_kind));
-          if (kind == id_pred_byte) {
+          OnibiPredicateKind kind = (OnibiPredicateKind)NUM2UINT(onibi_hash_value_id(predicate, id_key_predicate_code));
+          if (kind == ONIBI_PRED_BYTE) {
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value_id(predicate, id_key_byte));
             matched = RTEST(onibi_hash_value_id(predicate, id_key_ignorecase)) ?
               tolower(byte) == tolower(expected) : byte == expected;
-          } else if (kind == id_pred_any) {
+          } else if (kind == ONIBI_PRED_ANY) {
             matched = matched && (byte != '\n' || RTEST(onibi_hash_value_id(predicate, id_key_multiline)));
           }
           else {
@@ -5041,16 +5045,15 @@ static void onibi_rseq_validate(VALUE rseq) {
         rb_raise(rb_eArgError, "RSeq lookaround predicates are invalid");
       for (long p = 0; p < RARRAY_LEN(predicates); p++) {
         VALUE predicate = rb_ary_entry(predicates, p);
-        VALUE kind = onibi_hash_value(predicate, "kind");
+        VALUE kind_code = onibi_hash_value_id(predicate, id_key_predicate_code);
         if (!RB_TYPE_P(predicate, T_HASH) || !RTEST(rb_obj_frozen_p(predicate)) ||
-            (kind != ID2SYM(id_pred_byte) && kind != ID2SYM(id_pred_bitmap) &&
-             kind != ID2SYM(id_pred_any)))
+            NIL_P(kind_code) || NUM2UINT(kind_code) > ONIBI_PRED_ANY)
           rb_raise(rb_eArgError, "RSeq lookaround predicate has an invalid kind");
-        if (kind == ID2SYM(id_pred_byte)) {
+        if (NUM2UINT(kind_code) == ONIBI_PRED_BYTE) {
           VALUE byte = onibi_hash_value(predicate, "byte");
           if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
             rb_raise(rb_eArgError, "RSeq lookaround byte predicate is invalid");
-        } else if (kind == ID2SYM(id_pred_bitmap)) {
+        } else if (NUM2UINT(kind_code) == ONIBI_PRED_BITMAP) {
           VALUE bitmap = onibi_hash_value(predicate, "bitmap");
           if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32 || !RTEST(rb_obj_frozen_p(bitmap)))
             rb_raise(rb_eArgError, "RSeq lookaround bitmap predicate is invalid");
@@ -5460,6 +5463,7 @@ void Init_onibi(void) {
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
   id_key_kind = rb_intern("kind"); id_key_kind_code = rb_intern("kind_code"); id_key_opcode = rb_intern("opcode");
   id_key_action_code = rb_intern("action_code");
+  id_key_predicate_code = rb_intern("predicate_code");
   id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
   id_key_start = rb_intern("start"); id_key_end = rb_intern("end"); id_key_captures = rb_intern("captures");
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
