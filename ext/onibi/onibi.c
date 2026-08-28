@@ -29,6 +29,7 @@ static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
 static ID id_key_slot, id_key_set;
+static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
@@ -1237,6 +1238,22 @@ static int onibi_ast_has_capture(VALUE ast) {
   return 0;
 }
 
+static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
+  if (NIL_P(ast)) return 0;
+  if (RB_TYPE_P(ast, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(ast); i++)
+      if (onibi_ast_has_subroutine_name(rb_ary_entry(ast, i), name)) return 1;
+    return 0;
+  }
+  if (!RB_TYPE_P(ast, T_HASH)) return 0;
+  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("subroutine")) &&
+      rb_equal(onibi_hash_value(ast, "name"), name)) return 1;
+  const char *keys[] = {"body", "children", "branches", "atom"};
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+    if (onibi_ast_has_subroutine_name(onibi_hash_value(ast, keys[i]), name)) return 1;
+  return 0;
+}
+
 static OnibiPosixKind onibi_posix_kind(VALUE name) {
   static ID ids[9]; static int ready = 0;
   if (!ready) { const char *names[] = {"alpha", "digit", "alnum", "space", "blank", "lower", "upper", "word", "xdigit"}; for (size_t i = 0; i < 9; i++) ids[i] = rb_intern(names[i]); ready = 1; }
@@ -1447,6 +1464,23 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
   rb_hash_aset(builder->active_subroutines, name, Qtrue);
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   rb_hash_delete(builder->active_subroutines, name);
+  VALUE capture_id_value = rb_hash_aref(builder->capture_names, name);
+  if (!NIL_P(capture_id_value)) {
+    long capture_id = NUM2LONG(capture_id_value);
+    VALUE open = rb_hash_new(), close = rb_hash_new();
+    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
+    rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
+    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
+    rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
+    if (onibi_ast_has_subroutine_name(body, name))
+      rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
+    VALUE starts = rb_ary_new_from_args(1, open);
+    onibi_append_values(starts, fragment.start_actions);
+    fragment.start_actions = starts;
+    VALUE exits = rb_ary_new_from_args(1, close);
+    onibi_append_values(exits, fragment.pending_actions);
+    fragment.pending_actions = exits;
+  }
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
   onibi_connect_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
@@ -1833,8 +1867,6 @@ skip_utf8_range_expansion:
     VALUE name = onibi_hash_value(ast, "name");
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
-    if (RTEST(rb_hash_aref(builder->active_subroutines, name)))
-      rb_raise(eRegexpError, "recursive subroutine requires capture-aware call frame");
     VALUE existing = rb_hash_aref(builder->subprogram_ids, name);
     long subprogram_id;
     if (!NIL_P(existing)) subprogram_id = NUM2LONG(existing);
@@ -2064,13 +2096,16 @@ skip_utf8_range_expansion:
       capture_id = builder->capture_count++;
       rb_hash_aset(builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
     } else capture_id = NUM2LONG(capture_id_value);
-    onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
+    VALUE capture_body = onibi_hash_value(ast, "body");
+    onibi_fragment_t result = onibi_compile_node(capture_body, builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
+    if (!NIL_P(capture_name) && onibi_ast_has_subroutine_name(capture_body, capture_name))
+      rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
     rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value(ast, "body"));
@@ -4001,6 +4036,10 @@ static VALUE onibi_materialize_tags(VALUE tags, VALUE fallback) {
   VALUE cursor = tags;
   while (!NIL_P(cursor)) {
     VALUE slot = rb_ary_entry(cursor, 1);
+    if (SYMBOL_P(slot) && SYM2ID(slot) == id_recursive_marker) {
+      cursor = rb_ary_entry(cursor, 0);
+      continue;
+    }
     if (NIL_P(rb_hash_aref(captures, slot)))
       rb_hash_aset(captures, slot, rb_ary_entry(cursor, 2));
     cursor = rb_ary_entry(cursor, 0);
@@ -4026,6 +4065,8 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
     if (op == id_match_reset) { *reported_start = pos; continue; }
     if (op != id_capture_open && op != id_capture_close) continue;
     VALUE slot = onibi_hash_value_id(action, id_key_slot);
+    if (op == id_capture_close && RTEST(onibi_hash_value(action, "preserve_if_set")) &&
+        RTEST(rb_hash_aref(captures, ID2SYM(id_recursive_marker)))) continue;
     rb_hash_aset(captures, slot, LONG2NUM(pos));
     VALUE event = rb_ary_new_from_args(3, tags, slot, LONG2NUM(pos));
     rb_obj_freeze(event);
@@ -4074,6 +4115,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       VALUE merged = rb_hash_dup(captures);
       rb_hash_foreach(called_captures, onibi_hash_copy_i, merged);
       captures = merged;
+      rb_hash_aset(captures, ID2SYM(id_recursive_marker), Qtrue);
       tags = Qnil;
     }
   } else if (op == id_g_char || op == id_g_class || op == id_g_any || op == id_g_backref) {
@@ -4137,6 +4179,7 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
   VALUE starts = onibi_hash_value(graph, "start_edges");
   VALUE visited = rb_hash_new();
   VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
+  rb_hash_delete(captures, ID2SYM(id_recursive_marker));
   VALUE counters = rb_hash_new();
   VALUE tags = initial_tags;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
@@ -4871,6 +4914,7 @@ void Init_onibi(void) {
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set");
+  id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);

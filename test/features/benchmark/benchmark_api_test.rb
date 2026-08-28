@@ -512,8 +512,9 @@ class BenchmarkApiTest < Minitest::Test
   def test_recursive_subexpression_call_crosses_dynamic_boundary
     pattern = "(?<x>a(?:\\g<x>)?)\\g<x>"
     regexp = Onibi::Regexp.new(pattern)
-    refute regexp.program_cached?
+    assert regexp.program_cached?
     assert_equal Regexp.new(pattern).match("aaa").to_a, regexp.match("aaa").to_a
+    assert_equal({ start: 2, end: 3 }, regexp.vm_match_result("aaa")[:captures][1])
   end
 
   def test_anchor_assertions_are_edge_actions
