@@ -2237,6 +2237,7 @@ static void onibi_rseq_validate(VALUE rseq) {
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   for (uint32_t i = 0; i < header.state_count; i++) {
     VALUE semantic_state = rb_ary_entry(semantic_states, i);
+    if (!RB_TYPE_P(semantic_state, T_HASH)) rb_raise(rb_eArgError, "invalid semantic RSeq state");
     ID semantic_op = SYM2ID(onibi_hash_value(semantic_state, "op"));
     uint8_t expected_op = semantic_op == rb_intern("G_ACCEPT") ? 0 :
       semantic_op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
@@ -2277,6 +2278,7 @@ static void onibi_rseq_validate(VALUE rseq) {
   }
   for (uint32_t i = 0; i < header.edge_count - header.start_edge_count; i++) {
     VALUE semantic_edge = rb_ary_entry(semantic_edges, i);
+    if (!RB_TYPE_P(semantic_edge, T_HASH)) rb_raise(rb_eArgError, "invalid semantic RSeq edge");
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
     if (destination == header.state_count - 1) destination = ONIBI_ACCEPT_STATE;
     uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
@@ -2290,6 +2292,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     rb_raise(rb_eArgError, "RSeq start edges are invalid");
   for (uint32_t i = 0; i < header.start_edge_count; i++) {
     VALUE semantic_edge = rb_ary_entry(semantic_start_edges, i);
+    if (!RB_TYPE_P(semantic_edge, T_HASH)) rb_raise(rb_eArgError, "invalid semantic RSeq start edge");
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
     uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
     uint32_t expected_offset = RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :
@@ -2301,6 +2304,7 @@ static void onibi_rseq_validate(VALUE rseq) {
   const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
   for (uint32_t i = 0; i < header.action_count; i++) {
     VALUE semantic_action = rb_ary_entry(semantic_actions, i);
+    if (!RB_TYPE_P(semantic_action, T_HASH)) rb_raise(rb_eArgError, "invalid semantic RSeq action");
     ID op = SYM2ID(onibi_hash_value(semantic_action, "op"));
     uint8_t expected_op = (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) ? ONIBI_RA_CAPTURE :
       op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :

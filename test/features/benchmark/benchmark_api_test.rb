@@ -572,6 +572,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "cat", :REGULAR_FAST) }
   end
 
+  def test_vm_rejects_non_hash_semantic_entries
+    rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+    states = rseq[:states].dup
+    states[0] = nil
+    assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(states: states), "abc", :REGULAR_FAST) }
+  end
+
   def test_gir_declares_capture_and_counter_resources
     capture_graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a)"))[:graph]
     repeat_graph = Onibi::Compiler.compile(Onibi::Parser.parse("a{2,3}"))[:graph]
