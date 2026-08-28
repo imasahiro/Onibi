@@ -1414,7 +1414,7 @@ static OnibiPosixKind onibi_posix_kind(VALUE name) {
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
   VALUE state = rb_hash_new();
   rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
-  rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
+  rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(op));
   OnibiGStateOp opcode = op == id_g_accept ? ONIBI_G_ACCEPT :
     op == id_g_char ? ONIBI_G_CHAR : op == id_g_class ? ONIBI_G_CLASS :
     op == id_g_any ? ONIBI_G_ANY : op == id_g_grapheme ? ONIBI_G_GRAPHEME :
@@ -1541,7 +1541,7 @@ static void onibi_add_exit_guard(onibi_gir_builder_t *builder, VALUE exits, VALU
 
 static VALUE onibi_capture_test_action(long slot, int set) {
   VALUE action = rb_hash_new();
-  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(id_a_test_capture));
+  rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_a_test_capture));
   onibi_set_gir_action_opcode(action, id_a_test_capture);
   rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
   rb_hash_aset(action, ID2SYM(rb_intern("set")), set ? Qtrue : Qfalse);
@@ -1550,7 +1550,7 @@ static VALUE onibi_capture_test_action(long slot, int set) {
 
 static VALUE onibi_counter_action(ID op, long slot, VALUE limit) {
   VALUE action = rb_hash_new();
-  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(op));
+  rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
   onibi_set_gir_action_opcode(action, op);
   rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
   if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(rb_intern("limit")), limit);
@@ -1659,10 +1659,10 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
   if (!NIL_P(capture_id_value)) {
     long capture_id = NUM2LONG(capture_id_value);
     VALUE open = rb_hash_new(), close = rb_hash_new();
-    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(id_capture_open));
+    rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
     onibi_set_gir_action_opcode(open, id_capture_open);
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
-    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(id_capture_close));
+    rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     if (onibi_ast_has_subroutine_name(body, name))
@@ -2164,7 +2164,7 @@ skip_utf8_range_expansion:
     else if (marker == 'A') op = id_a_assert_begin_buffer;
     else if (marker == 'G') op = id_a_assert_search_origin;
     else if (marker == 'Z') op = id_a_assert_semi_end_buffer;
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(op));
+    rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
     onibi_set_gir_action_opcode(action, op);
     rb_ary_push(result.pending_actions, action);
     return result;
@@ -2172,7 +2172,7 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_MATCH_RESET) {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(id_match_reset));
+    rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_match_reset));
     onibi_set_gir_action_opcode(action, id_match_reset);
     rb_ary_push(result.pending_actions, action);
     return result;
@@ -2298,7 +2298,7 @@ skip_utf8_range_expansion:
     VALUE action = rb_hash_new();
     ID assertion_op = type_code == ONIBI_AST_LOOKBEHIND ?
       id_a_assert_lookbehind : id_a_assert_lookahead;
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(assertion_op));
+    rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
@@ -2320,10 +2320,10 @@ skip_utf8_range_expansion:
     VALUE capture_body = onibi_hash_value(ast, "body");
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
-    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(id_capture_open));
+    rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
     onibi_set_gir_action_opcode(open, id_capture_open);
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
-    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(id_capture_close));
+    rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
@@ -2639,7 +2639,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
-      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(id_a_end));
+      rb_hash_aset(terminator, ID2SYM(id_key_op), ID2SYM(id_a_end));
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
@@ -2669,7 +2669,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
-      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(id_a_end));
+      rb_hash_aset(terminator, ID2SYM(id_key_op), ID2SYM(id_a_end));
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
@@ -5124,7 +5124,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
       physical_states[i].op == ONIBI_RS_GRAPHEME ? id_g_grapheme : physical_states[i].op == ONIBI_RS_BACKREF ? id_g_backref :
       physical_states[i].op == ONIBI_RS_CALL ? id_g_call : physical_states[i].op == ONIBI_RS_ATOMIC ? id_g_atomic :
       physical_states[i].op == ONIBI_RS_ABSENT ? id_g_absent : id_g_accept;
-    rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
+    rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(op));
     rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(physical_states[i].op));
     rb_ary_push(states, state);
   }
