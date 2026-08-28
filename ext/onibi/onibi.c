@@ -36,6 +36,16 @@ static void onibi_check_deadline(void) {
     rb_raise(eTimeoutError, "regexp match timeout");
 }
 
+static void onibi_set_deadline(double seconds) {
+  if (seconds <= 0.0 || seconds >= (double)UINT64_MAX / 1e9) {
+    onibi_deadline_ns = 0;
+    return;
+  }
+  uint64_t now = onibi_now_ns();
+  uint64_t delta = (uint64_t)(seconds * 1e9);
+  onibi_deadline_ns = UINT64_MAX - now < delta ? 0 : now + delta;
+}
+
 static double onibi_timeout_value(VALUE value) {
   if (NIL_P(value)) return 0.0;
   if (RB_TYPE_P(value, T_STRING)) rb_raise(rb_eTypeError, "no implicit conversion to float from string");
@@ -1965,7 +1975,7 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
-  onibi_deadline_ns = obj->timeout_seconds > 0.0 ? onibi_now_ns() + (uint64_t)(obj->timeout_seconds * 1e9) : 0;
+  onibi_set_deadline(obj->timeout_seconds);
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
@@ -1990,7 +2000,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   }
   int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq);
   if (graph_ok) {
-    onibi_deadline_ns = obj->timeout_seconds > 0.0 ? onibi_now_ns() + (uint64_t)(obj->timeout_seconds * 1e9) : 0;
+    onibi_set_deadline(obj->timeout_seconds);
     VALUE rseq = obj->rseq;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
