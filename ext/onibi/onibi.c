@@ -2220,9 +2220,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE parsed_options = onibi_hash_value(parsed, "options");
   int ignorecase = 0;
   int multiline = 0;
-  for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
-    if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
-    else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
+  for (long i = 0; i < RARRAY_LEN(parsed_options); i++) {
+    ID option_id = rb_intern_str(rb_ary_entry(parsed_options, i));
+    if (option_id == id_opt_ignorecase) ignorecase = 1;
+    else if (option_id == id_opt_multiline) multiline = 1;
+  }
   VALUE subprograms = rb_ary_new();
   rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
   onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, rb_hash_new(), ignorecase, multiline, 0 };
@@ -2457,9 +2459,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE options = onibi_hash_value(compiled, "options");
   int ignorecase = 0;
   int multiline = 0;
-  for (long i = 0; i < RARRAY_LEN(options); i++)
-    if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
-    else if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("multiline"))) multiline = 1;
+  for (long i = 0; i < RARRAY_LEN(options); i++) {
+    ID option_id = rb_intern_str(rb_ary_entry(options, i));
+    if (option_id == id_opt_ignorecase) ignorecase = 1;
+    else if (option_id == id_opt_multiline) multiline = 1;
+  }
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
   VALUE literal_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
