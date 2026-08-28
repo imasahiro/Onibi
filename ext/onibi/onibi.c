@@ -291,25 +291,6 @@ typedef enum {
   ONIBI_AST_MATCH_RESET
 } OnibiAstKind;
 
-static OnibiAstKind onibi_ast_kind_from_type(const char *type) {
-  static const char *const names[] = {
-    "sequence", "alternative", "literal", "escape", "any", "anchor",
-    "character_class", "class_intersection", "quantifier", "capture", "group",
-    "atomic", "absence", "conditional", "lookahead", "lookbehind",
-    "option_scope", "option_global", "backref", "subroutine", "match_reset"
-  };
-  static ID ids[sizeof(names) / sizeof(names[0])];
-  static int initialized = 0;
-  if (!initialized) {
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) ids[i] = rb_intern(names[i]);
-    initialized = 1;
-  }
-  ID type_id = rb_intern(type);
-  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
-    if (type_id == ids[i]) return (OnibiAstKind)(i + 1);
-  return ONIBI_AST_UNKNOWN;
-}
-
 static inline OnibiAstKind onibi_ast_kind(VALUE node) {
   VALUE code = rb_hash_aref(node, ID2SYM(id_key_type_code));
   return NIL_P(code) ? ONIBI_AST_UNKNOWN : (OnibiAstKind)NUM2UINT(code);
@@ -705,10 +686,10 @@ static long onibi_token_byte(VALUE token) {
   return NUM2LONG(rb_hash_aref(token, ID2SYM(id_key_byte)));
 }
 
-static VALUE onibi_ast_node(const char *type, VALUE token) {
+static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
   VALUE node = rb_hash_new();
   rb_hash_aset(node, ID2SYM(id_key_type_code),
-               UINT2NUM((unsigned int)onibi_ast_kind_from_type(type)));
+               UINT2NUM((unsigned int)kind));
   if (!NIL_P(token)) {
     rb_hash_aset(node, ID2SYM(id_key_start),
                  rb_hash_aref(token, ID2SYM(id_key_start)));
@@ -754,7 +735,7 @@ static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind 
 }
 
 static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
-  VALUE node = onibi_ast_node("character_class", rb_ary_entry(tokens, begin));
+  VALUE node = onibi_ast_node(ONIBI_AST_CHARACTER_CLASS, rb_ary_entry(tokens, begin));
   VALUE children = rb_ary_new(), ranges = rb_ary_new();
   int negated = 0;
   long intersection = -1;
@@ -768,7 +749,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
         onibi_token_byte(rb_ary_entry(tokens, i + 1)) == '&') { intersection = i; break; }
   }
   if (intersection >= 0) {
-    VALUE result = onibi_ast_node("class_intersection", rb_ary_entry(tokens, begin));
+    VALUE result = onibi_ast_node(ONIBI_AST_CLASS_INTERSECTION, rb_ary_entry(tokens, begin));
     VALUE operands = rb_ary_new();
     for (int side = 0; side < 2; side++) {
       long part_begin = side == 0 ? begin + 1 : intersection + 2;
@@ -852,7 +833,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     long close = onibi_find_close(tokens, *index, end, kind_code, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
     int behind = kind_code == ONIBI_TOKEN_LOOKBEHIND_START;
-    VALUE node = onibi_ast_node(behind ? "lookbehind" : "lookahead", token);
+    VALUE node = onibi_ast_node(behind ? ONIBI_AST_LOOKBEHIND : ONIBI_AST_LOOKAHEAD, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_positive), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
     rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
@@ -863,7 +844,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_OPTION_SCOPE_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated option scope");
-    VALUE node = onibi_ast_node("option_scope", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_OPTION_SCOPE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_options), rb_hash_aref(token, ID2SYM(id_key_name)));
     VALUE negative_options = rb_hash_aref(token, ID2SYM(id_key_negative_name));
@@ -876,7 +857,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     return node;
   }
   if (kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
-    VALUE node = onibi_ast_node("option_global", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_OPTION_GLOBAL, token);
     rb_hash_aset(node, ID2SYM(id_key_options), rb_hash_aref(token, ID2SYM(id_key_name)));
     VALUE negative_options = rb_hash_aref(token, ID2SYM(id_key_negative_name));
     if (!NIL_P(negative_options))
@@ -889,7 +870,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_NONCAPTURE_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_NONCAPTURE_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
-    VALUE node = onibi_ast_node("group", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_GROUP, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_capturing), Qfalse);
     rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
@@ -900,7 +881,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_ATOMIC_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_ATOMIC_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated atomic group");
-    VALUE node = onibi_ast_node("atomic", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_ATOMIC, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
     rb_obj_freeze(node);
@@ -910,7 +891,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_ABSENCE_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_ABSENCE_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated absence operator");
-    VALUE node = onibi_ast_node("absence", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_ABSENCE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_end), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(id_key_end)));
     rb_obj_freeze(node);
@@ -920,7 +901,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_CONDITIONAL_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_CONDITIONAL_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated conditional group");
-    VALUE node = onibi_ast_node("conditional", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_CONDITIONAL, token);
     VALUE condition = rb_hash_aref(token, ID2SYM(id_key_name));
     if (!NIL_P(condition)) rb_hash_aset(node, ID2SYM(id_key_condition), condition);
     VALUE body = onibi_parse_range(tokens, *index + 1, close);
@@ -940,7 +921,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   if (kind_code == ONIBI_TOKEN_GROUP_START) {
     long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_GROUP_START, ONIBI_TOKEN_GROUP_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
-    VALUE node = onibi_ast_node("capture", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_CAPTURE, token);
     rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(id_key_capturing), Qtrue);
     VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
@@ -969,7 +950,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     return node;
   }
   if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
-    VALUE node = onibi_ast_node("subroutine", token);
+    VALUE node = onibi_ast_node(ONIBI_AST_SUBROUTINE, token);
     VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
     if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(id_key_name), name);
     rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
@@ -978,12 +959,12 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     return node;
   }
   VALUE node = NIL_P(token) ? Qnil :
-    (kind_code == ONIBI_TOKEN_WILDCARD ? onibi_ast_node("any", token) :
-     (kind_code == ONIBI_TOKEN_ANCHOR ? onibi_ast_node("anchor", token) :
-     (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE ? onibi_ast_node("escape", token) :
-       (kind_code == ONIBI_TOKEN_MATCH_RESET ? onibi_ast_node("match_reset", token) :
-       (kind_code == ONIBI_TOKEN_BACKREF ? onibi_ast_node("backref", token) :
-       (kind_code == ONIBI_TOKEN_LITERAL ? onibi_ast_node("literal", token) : Qnil))))));
+    (kind_code == ONIBI_TOKEN_WILDCARD ? onibi_ast_node(ONIBI_AST_ANY, token) :
+     (kind_code == ONIBI_TOKEN_ANCHOR ? onibi_ast_node(ONIBI_AST_ANCHOR, token) :
+     (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE ? onibi_ast_node(ONIBI_AST_ESCAPE, token) :
+       (kind_code == ONIBI_TOKEN_MATCH_RESET ? onibi_ast_node(ONIBI_AST_MATCH_RESET, token) :
+       (kind_code == ONIBI_TOKEN_BACKREF ? onibi_ast_node(ONIBI_AST_BACKREF, token) :
+       (kind_code == ONIBI_TOKEN_LITERAL ? onibi_ast_node(ONIBI_AST_LITERAL, token) : Qnil))))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
   VALUE token_bytes = rb_hash_aref(token, ID2SYM(id_key_bytes));
@@ -1031,7 +1012,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   }
   if (RARRAY_LEN(branches) > 0) {
     rb_ary_push(branches, onibi_parse_range(tokens, part, end));
-    VALUE node = onibi_ast_node("alternative", Qnil);
+    VALUE node = onibi_ast_node(ONIBI_AST_ALTERNATIVE, Qnil);
     rb_hash_aset(node, ID2SYM(id_key_branches), branches);
     rb_obj_freeze(branches); rb_obj_freeze(node);
     return node;
@@ -1055,7 +1036,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
           if (suffix == '?') { greedy = 0; i++; }
           else if (suffix == '+') { possessive = 1; i++; }
         }
-        VALUE quantifier = onibi_ast_node("quantifier", modifier);
+        VALUE quantifier = onibi_ast_node(ONIBI_AST_QUANTIFIER, modifier);
         rb_hash_aset(quantifier, ID2SYM(id_key_atom), node);
         rb_hash_aset(quantifier, ID2SYM(id_key_min), LONG2NUM(min));
         rb_hash_aset(quantifier, ID2SYM(id_key_max), max);
@@ -1094,7 +1075,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
           rb_ary_push(children, node);
           for (long literal_i = i; literal_i <= close; literal_i++) {
             VALUE literal_token = rb_ary_entry(tokens, literal_i);
-            VALUE literal = onibi_ast_node("literal", literal_token);
+            VALUE literal = onibi_ast_node(ONIBI_AST_LITERAL, literal_token);
             rb_hash_aset(literal, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(literal_token)));
             rb_obj_freeze(literal);
             rb_ary_push(children, literal);
@@ -1124,7 +1105,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         }
         if (min < 0 || (has_max && max_value < 0)) rb_raise(eRegexpError, "invalid quantifier");
         if (has_max && max_value < min) rb_raise(eRegexpError, "invalid quantifier range");
-        VALUE quantifier = onibi_ast_node("quantifier", modifier);
+        VALUE quantifier = onibi_ast_node(ONIBI_AST_QUANTIFIER, modifier);
         rb_hash_aset(quantifier, ID2SYM(id_key_atom), node);
         rb_hash_aset(quantifier, ID2SYM(id_key_min), LONG2NUM(min));
         rb_hash_aset(quantifier, ID2SYM(id_key_max), has_max ? LONG2NUM(max_value) : Qnil);
@@ -1142,7 +1123,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
     }
     rb_ary_push(children, node);
   }
-  VALUE sequence = onibi_ast_node("sequence", Qnil);
+  VALUE sequence = onibi_ast_node(ONIBI_AST_SEQUENCE, Qnil);
   rb_hash_aset(sequence, ID2SYM(id_key_children), children);
   rb_obj_freeze(children); rb_obj_freeze(sequence);
   return sequence;
