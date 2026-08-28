@@ -2211,12 +2211,16 @@ static void onibi_rseq_validate(VALUE rseq) {
   uint64_t class_data_start = (uint64_t)header.classes_offset +
     (uint64_t)header.class_count * sizeof(OnibiClassDesc);
   for (uint32_t i = 0; i < header.class_count; i++) {
+    if (classes[i].data_length != 32 || classes[i].kind != 0 || (classes[i].flags & ~1U) != 0)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor");
     if (classes[i].data_offset < class_data_start ||
         (uint64_t)classes[i].data_offset + classes[i].data_length > header.literals_offset)
       rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor range");
   }
   const OnibiLiteralDesc *literals = (const OnibiLiteralDesc *)(RSTRING_PTR(blob) + header.descriptors_offset);
   for (uint32_t i = 0; i < NUM2UINT(onibi_hash_value(semantic, "literal_count")); i++) {
+    if (literals[i].data_length != 1 || (literals[i].flags & ~1U) != 0)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor");
     if (literals[i].data_offset < header.literals_offset ||
         (uint64_t)literals[i].data_offset + literals[i].data_length > header.descriptors_offset)
       rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor range");
