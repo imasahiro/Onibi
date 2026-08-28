@@ -619,6 +619,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes lowerer, "capture_count++"
   end
 
+  def test_gir_validator_bounds_capture_test_ids_for_all_edge_kinds
+    source = File.read(EXTENSION_SOURCE)
+    validator = source[/static void onibi_gir_validate\(.*?\n}\n/m]
+
+    refute_nil validator
+    assert_equal 2, validator.scan("code == ONIBI_GA_TEST_CAPTURE && NUM2LONG(slot) >= capture_count").length
+    assert_includes source, 'rb_raise(eRegexpError, "invalid GIR capture test id")'
+  end
+
   def test_protected_compile_callbacks_use_stack_arguments
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "typedef struct {\n  VALUE source;\n  VALUE options;\n  VALUE tokens;\n} OnibiProgramArgs;"

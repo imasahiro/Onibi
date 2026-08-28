@@ -2384,8 +2384,11 @@ static void onibi_gir_validate_action_operands(VALUE action) {
   if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR capture slot");
-  } else if (code == ONIBI_GA_TEST_CAPTURE || code == ONIBI_GA_COUNTER_INIT ||
-             code == ONIBI_GA_COUNTER_INCREMENT || code == ONIBI_GA_TEST_COUNTER_LT ||
+  } else if (code == ONIBI_GA_TEST_CAPTURE) {
+    if (NIL_P(slot) || NUM2LONG(slot) < 0)
+      rb_raise(eRegexpError, "invalid GIR capture test id");
+  } else if (code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+             code == ONIBI_GA_TEST_COUNTER_LT ||
              code == ONIBI_GA_TEST_COUNTER_GE) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR counter slot");
@@ -2467,6 +2470,8 @@ static void onibi_gir_validate(VALUE graph) {
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
+      if (code == ONIBI_GA_TEST_CAPTURE && NUM2LONG(slot) >= capture_count)
+        rb_raise(eRegexpError, "GIR capture test id is out of range");
       if ((code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
            code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) &&
           NUM2LONG(slot) >= counter_count)
@@ -2492,6 +2497,8 @@ static void onibi_gir_validate(VALUE graph) {
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
         rb_raise(eRegexpError, "GIR capture slot is out of range");
+      if (code == ONIBI_GA_TEST_CAPTURE && NUM2LONG(slot) >= capture_count)
+        rb_raise(eRegexpError, "GIR capture test id is out of range");
       if ((code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
            code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) &&
           NUM2LONG(slot) >= counter_count)
