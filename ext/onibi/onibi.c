@@ -44,6 +44,7 @@ static ID id_pred_byte, id_pred_bitmap, id_pred_any;
 static ID id_a_end, id_key_physical_graph;
 static ID id_insert;
 static ID id_timeout, id_options, id_encode, id_message, id_names, id_named_captures;
+static ID id_escape, id_union, id_to_regexp;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
@@ -3545,7 +3546,7 @@ static VALUE onibi_timeout_default(VALUE klass) {
 
 static VALUE onibi_regexp_escape(VALUE klass, VALUE string) {
   (void)klass;
-  return rb_funcall(rb_cRegexp, rb_intern("escape"), 1, string);
+  return rb_funcall(rb_cRegexp, id_escape, 1, string);
 }
 
 static VALUE onibi_native_regexp_source(VALUE regexp) {
@@ -3564,16 +3565,15 @@ static VALUE onibi_regexp_union(int argc, VALUE *argv, VALUE klass) {
     }
     rb_ary_push(normalized, item);
   }
-  VALUE mri_regexp = rb_funcallv(rb_cRegexp, rb_intern("union"), (int)RARRAY_LEN(normalized), RARRAY_PTR(normalized));
+  VALUE mri_regexp = rb_funcallv(rb_cRegexp, id_union, (int)RARRAY_LEN(normalized), RARRAY_PTR(normalized));
   return rb_funcall(klass, id_new, 1, mri_regexp);
 }
 
 static VALUE onibi_regexp_try_convert(VALUE klass, VALUE value) {
   (void)klass;
   if (rb_obj_is_kind_of(value, cRegexp) || rb_obj_is_kind_of(value, rb_cRegexp)) return value;
-  ID to_regexp = rb_intern("to_regexp");
-  if (!rb_respond_to(value, to_regexp)) return Qnil;
-  VALUE converted = rb_funcall(value, to_regexp, 0);
+  if (!rb_respond_to(value, id_to_regexp)) return Qnil;
+  VALUE converted = rb_funcall(value, id_to_regexp, 0);
   if (NIL_P(converted)) return Qnil;
   if (!rb_obj_is_kind_of(converted, cRegexp) && !rb_obj_is_kind_of(converted, rb_cRegexp))
     rb_raise(rb_eTypeError, "can't convert %s into Regexp", rb_obj_classname(value));
@@ -5532,6 +5532,7 @@ void Init_onibi(void) {
   id_timeout = rb_intern("timeout"); id_options = rb_intern("options");
   id_encode = rb_intern("encode"); id_message = rb_intern("message");
   id_names = rb_intern("names"); id_named_captures = rb_intern("named_captures");
+  id_escape = rb_intern("escape"); id_union = rb_intern("union"); id_to_regexp = rb_intern("to_regexp");
   id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
