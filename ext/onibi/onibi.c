@@ -81,7 +81,7 @@ static void onibi_rseq_validate(VALUE rseq);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
 static OnibiGActionOp onibi_gir_action_opcode(ID op);
 static void onibi_set_gir_action_opcode(VALUE action, ID op);
-static void onibi_set_assert_kind(VALUE action, ID op);
+static uint16_t onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_ascii_property_id_p(ID property);
@@ -1793,8 +1793,12 @@ static OnibiGActionOp onibi_gir_action_opcode(ID op) {
 }
 
 static void onibi_set_gir_action_opcode(VALUE action, ID op) {
-  rb_hash_aset(action, ID2SYM(id_key_action_code),
-               UINT2NUM((unsigned int)onibi_gir_action_opcode(op)));
+  OnibiGActionOp code = onibi_gir_action_opcode(op);
+  rb_hash_aset(action, ID2SYM(id_key_action_code), UINT2NUM((unsigned int)code));
+  if (code == ONIBI_GA_ASSERT_POSITION) {
+    uint16_t subtype = onibi_rseq_assert_kind(op);
+    if (subtype != 0) rb_hash_aset(action, ID2SYM(id_key_assert_kind), UINT2NUM(subtype));
+  }
 }
 
 static void onibi_gir_validate_action_operands(VALUE action) {
@@ -2255,7 +2259,6 @@ skip_utf8_range_expansion:
     else if (marker == 'Z') op = id_a_assert_semi_end_buffer;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
     onibi_set_gir_action_opcode(action, op);
-    onibi_set_assert_kind(action, op);
     rb_ary_push(result.pending_actions, action);
     return result;
   }
@@ -2394,7 +2397,6 @@ skip_utf8_range_expansion:
       id_a_assert_lookbehind : id_a_assert_lookahead;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
-    onibi_set_assert_kind(action, assertion_op);
     rb_hash_aset(action, ID2SYM(id_key_positive), onibi_hash_value_id(ast, id_key_positive));
     rb_hash_aset(action, ID2SYM(id_key_bytes), bytes);
     if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(id_key_predicates), predicates);
@@ -2667,11 +2669,6 @@ static uint16_t onibi_rseq_assert_kind(ID op) {
   if (op == id_a_assert_lookahead) return ONIBI_RAP_LOOKAHEAD;
   if (op == id_a_assert_lookbehind) return ONIBI_RAP_LOOKBEHIND;
   return 0;
-}
-
-static void onibi_set_assert_kind(VALUE action, ID op) {
-  uint16_t kind = onibi_rseq_assert_kind(op);
-  if (kind != 0) rb_hash_aset(action, ID2SYM(id_key_assert_kind), UINT2NUM(kind));
 }
 
 static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
