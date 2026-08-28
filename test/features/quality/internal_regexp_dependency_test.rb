@@ -276,6 +276,13 @@ class InternalRegexpDependencyTest < Minitest::Test
       "id_key_action_code)) == ONIBI_GA_END"
   end
 
+  def test_compiler_property_paths_use_cached_name_ids
+    source = File.read(EXTENSION_SOURCE)
+    assert_equal 0, source.scan(/NIL_P\([^)]*name_id\).*rb_intern_str/).length
+    assert_equal 0, source.scan(/NIL_P\([^)]*child_name_id\).*rb_intern_str/).length
+    assert_equal 0, source.scan(/NIL_P\([^)]*property_name_id\).*rb_intern_str/).length
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"

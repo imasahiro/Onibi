@@ -858,9 +858,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     }
     if (kind == ONIBI_TOKEN_CLASS_NEGATE) { negated = 1; continue; }
     if (kind == ONIBI_TOKEN_POSIX_CLASS) {
-      VALUE name = rb_hash_aref(token, ID2SYM(id_key_name));
       VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
-      ID property = NIL_P(name_id) ? rb_intern_str(name) : (ID)NUM2ULONG(name_id);
+      ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
       if (onibi_posix_kind_id(property) == ONIBI_POSIX_UNKNOWN)
         rb_raise(eRegexpError, "unknown POSIX character class");
       rb_ary_push(children, token);
@@ -1688,9 +1687,8 @@ class_children:
         if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
     } else if (token_kind == ONIBI_TOKEN_POSIX_CLASS) {
-      VALUE name = onibi_hash_value_id(child, id_key_name);
       VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
-      ID property = NIL_P(name_id) ? rb_intern_str(name) : (ID)NUM2ULONG(name_id);
+      ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
       OnibiPosixKind posix = onibi_posix_kind_id(property);
       for (int c = 0; c < 256; c++) {
         int hit = posix == ONIBI_POSIX_ALPHA ? isalpha(c) :
@@ -2439,9 +2437,8 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
       rb_hash_aset(payload, ID2SYM(id_key_bitmap),
                    onibi_class_bitmap(payload, builder->ignorecase));
-      VALUE property_name = onibi_hash_value_id(payload, id_key_name);
       VALUE property_name_id = onibi_hash_value_id(payload, id_key_name_id);
-      ID property = NIL_P(property_name_id) ? (NIL_P(property_name) ? 0 : rb_intern_str(property_name)) : (ID)NUM2ULONG(property_name_id);
+      ID property = NIL_P(property_name_id) ? 0 : (ID)NUM2ULONG(property_name_id);
       int property_ctype = onibi_unicode_ctype_id(property);
       if (property_ctype >= 0)
         rb_hash_aset(payload, ID2SYM(id_key_ctype), INT2NUM(property_ctype));
@@ -3569,7 +3566,7 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
       if ((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_LITERAL) || child_type == ONIBI_AST_LITERAL) continue;
       VALUE child_name = onibi_hash_value_id(child, id_key_name);
       VALUE child_name_id = onibi_hash_value_id(child, id_key_name_id);
-      ID property = NIL_P(child_name_id) ? (NIL_P(child_name) ? 0 : rb_intern_str(child_name)) : (ID)NUM2ULONG(child_name_id);
+      ID property = NIL_P(child_name_id) ? 0 : (ID)NUM2ULONG(child_name_id);
       if (((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_ESCAPE) || child_type == ONIBI_AST_ESCAPE) && !NIL_P(child_name) &&
           onibi_unicode_ctype_id(property) >= 0) continue;
       return 0;
@@ -4551,9 +4548,8 @@ static int onibi_unicode_ctype_id(ID property) {
 static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
   VALUE copy = rb_hash_dup(payload);
   int fold = RTEST(onibi_hash_value_id(copy, id_key_ignorecase));
-  VALUE name = onibi_hash_value_id(copy, id_key_name);
   VALUE name_id = onibi_hash_value_id(copy, id_key_name_id);
-  ID property = NIL_P(name_id) ? (NIL_P(name) ? 0 : rb_intern_str(name)) : (ID)NUM2ULONG(name_id);
+  ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
   int ctype = onibi_unicode_ctype_id(property);
   if (ctype >= 0) rb_hash_aset(copy, ID2SYM(id_key_ctype), INT2NUM(ctype));
   VALUE children = onibi_hash_value_id(copy, id_key_children);
@@ -4565,9 +4561,8 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
       if (RB_TYPE_P(child_copy, T_HASH) &&
           (onibi_hash_value_id(child_copy, id_key_kind_code) == UINT2NUM(ONIBI_TOKEN_ESCAPE) ||
            onibi_ast_kind(child_copy) == ONIBI_AST_ESCAPE)) {
-        VALUE child_name = onibi_hash_value_id(child_copy, id_key_name);
         VALUE child_name_id = onibi_hash_value_id(child_copy, id_key_name_id);
-        ID property = NIL_P(child_name_id) ? (NIL_P(child_name) ? 0 : rb_intern_str(child_name)) : (ID)NUM2ULONG(child_name_id);
+        ID property = NIL_P(child_name_id) ? 0 : (ID)NUM2ULONG(child_name_id);
         int child_ctype = onibi_unicode_ctype_id(property);
         if (child_ctype >= 0)
           rb_hash_aset(child_copy, ID2SYM(id_key_ctype), INT2NUM(child_ctype));
