@@ -500,6 +500,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes initialize, "int source_ascii_only = rb_enc_str_asciionly_p(source);"
     assert_equal 1, initialize.scan("rb_enc_get_index(source)").length
     assert_equal 1, initialize.scan("rb_enc_str_asciionly_p(source)").length
+    assert_includes source, "unsigned char source_ascii_only;"
+    refute_includes source, "rb_enc_str_asciionly_p(obj->source)"
     assert_includes match, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
     assert_includes match, "int str_ascii_only = RB_TYPE_P(str, T_STRING) && rb_enc_str_asciionly_p(str);"
     assert_equal 1, match.scan("rb_enc_get_index(str)").length

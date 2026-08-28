@@ -157,11 +157,11 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; double timeout_seconds; unsigned int ast_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
-    (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal);
+    (obj->source_ascii_only && obj->has_non_ascii_literal);
 }
 
 /* Some Unicode/POSIX property rules are not representable by the compact
@@ -199,7 +199,7 @@ static void onibi_call_frame_pop(void) {
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) && !(obj->options & (1 | 32)) &&
     obj->source_encoding_index != rb_ascii8bit_encindex() &&
-    !rb_enc_str_asciionly_p(obj->source) &&
+    !obj->source_ascii_only &&
     obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
     (!obj->has_non_ascii_class || (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
 }
@@ -3839,6 +3839,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   int source_encoding_index = rb_enc_get_index(source);
   int source_ascii_only = rb_enc_str_asciionly_p(source);
   obj->source_encoding_index = source_encoding_index;
+  obj->source_ascii_only = source_ascii_only;
   if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() && !source_ascii_only)
     rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
   if (!(opts & 32) && !source_ascii_only && !(opts & 16)) opts |= 16;
@@ -4015,7 +4016,7 @@ static VALUE onibi_fixed_encoding_p(VALUE self) {
   /* MRI fixes NOENCODING only when syntax forces a binary property mode. */
   return onibi_regexp_fixed_p(obj) ||
     ((obj->options & 32) && obj->has_ascii_property) ||
-    (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal) ? Qtrue : Qfalse;
+    (obj->source_ascii_only && obj->has_non_ascii_literal) ? Qtrue : Qfalse;
 }
 static VALUE onibi_no_encoding_p(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
