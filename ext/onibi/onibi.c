@@ -75,13 +75,13 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static int onibi_utf8_literal_program_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) && !(obj->options & (1 | 32)) &&
     rb_enc_get_index(obj->source) == rb_utf8_encindex() &&
-    obj->has_non_ascii_literal && !obj->has_non_ascii_class;
+    obj->has_non_ascii_literal && (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
 }
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1355,6 +1355,40 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder) {
   VALUE type = onibi_symbol_value(ast, "type");
+  if (type == ID2SYM(rb_intern("character_class"))) {
+    VALUE children = onibi_hash_value(ast, "children");
+    VALUE ranges = onibi_hash_value(ast, "ranges");
+    if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
+        RARRAY_LEN(ranges) == 0 && RARRAY_LEN(children) > 0) {
+      int literal_only = 1;
+      for (long i = 0; i < RARRAY_LEN(children); i++) {
+        VALUE child = rb_ary_entry(children, i);
+        if (onibi_hash_value(child, "kind") != ID2SYM(rb_intern("literal"))) {
+          literal_only = 0;
+          break;
+        }
+      }
+      int has_multibyte = 0;
+      for (long i = 0; literal_only && i < RARRAY_LEN(children); i++) {
+        VALUE bytes = onibi_hash_value(rb_ary_entry(children, i), "bytes");
+        if (!NIL_P(bytes) && RSTRING_LEN(bytes) > 1) has_multibyte = 1;
+      }
+      if (literal_only && has_multibyte) {
+        /* A literal-only class is an ordered union of encoded literals.
+           Each branch lowers to one or more G_CHAR states. */
+        onibi_fragment_t result = onibi_fragment_empty();
+        result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+        for (long i = 0; i < RARRAY_LEN(children); i++) {
+          VALUE child = rb_hash_dup(rb_ary_entry(children, i));
+          rb_hash_aset(child, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+          onibi_fragment_t branch = onibi_compile_node(child, builder);
+          onibi_append_values(result.starts, branch.starts);
+          onibi_append_values(result.exits, branch.exits);
+        }
+        return result;
+      }
+    }
+  }
   /* A tokenizer literal can contain one encoded UTF-8 character.  Lower its
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
      offsets, and the encoding gate below limits this path to valid UTF-8. */
@@ -2255,6 +2289,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_unicode_escape = 0;
   obj->has_non_ascii_literal = 0;
   obj->has_non_ascii_class = 0;
+  obj->has_safe_multibyte_class = 0;
   obj->has_meta_escape = 0;
   obj->has_subroutine = 0;
   obj->has_dynamic = 0;
@@ -2333,6 +2368,29 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     }
     previous = token;
   }
+}
+
+static int onibi_ast_safe_multibyte_class(VALUE ast) {
+  if (!RB_TYPE_P(ast, T_HASH)) return 0;
+  ID type = onibi_symbol_value(ast, "type");
+  if (type == ID2SYM(rb_intern("character_class"))) {
+    VALUE children = onibi_hash_value(ast, "children");
+    VALUE ranges = onibi_hash_value(ast, "ranges");
+    if (RTEST(onibi_hash_value(ast, "negated")) || !RB_TYPE_P(children, T_ARRAY) ||
+        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(ranges) != 0 || RARRAY_LEN(children) == 0) return 0;
+    for (long i = 0; i < RARRAY_LEN(children); i++)
+      if (onibi_hash_value(rb_ary_entry(children, i), "kind") != ID2SYM(rb_intern("literal"))) return 0;
+    return 1;
+  }
+  if (type == ID2SYM(rb_intern("sequence"))) {
+    VALUE children = onibi_hash_value(ast, "children");
+    if (!RB_TYPE_P(children, T_ARRAY)) return 0;
+    for (long i = 0; i < RARRAY_LEN(children); i++)
+      if (!onibi_ast_safe_multibyte_class(rb_ary_entry(children, i))) return 0;
+    return 1;
+  }
+  if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("anchor"))) return 1;
+  return 0;
 }
 
 static int onibi_option_mask(VALUE options) {
@@ -2439,11 +2497,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
                  obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
+    if (!NIL_P(obj->parsed)) {
+      VALUE parsed_ast = onibi_hash_value(obj->parsed, "ast");
+      obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
+    }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     int utf8_literal_program = (opts & 16) && !(opts & (1 | 32)) &&
       rb_enc_get_index(source) == rb_utf8_encindex() &&
-      obj->has_non_ascii_literal && !obj->has_non_ascii_class;
+      obj->has_non_ascii_literal &&
+      (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
     if ((!onibi_ascii_pattern(source) && !utf8_literal_program) ||
         ((opts & 16) && !utf8_literal_program) || (opts & 32)) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;

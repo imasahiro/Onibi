@@ -317,6 +317,18 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal 3, token[:end]
   end
 
+  def test_literal_only_utf8_class_lowers_to_ordered_char_states
+    single = Onibi::Regexp.new("[é]")
+    mixed = Onibi::Regexp.new("[aé]")
+
+    assert single.program_cached?
+    assert mixed.program_cached?
+    assert single.vm_match?("é")
+    refute single.vm_match?("a")
+    assert mixed.vm_match?("a")
+    assert mixed.vm_match?("é")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)
