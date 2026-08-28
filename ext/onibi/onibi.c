@@ -25,11 +25,15 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
 static ID id_capture_open, id_capture_close, id_match_reset;
+static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
+static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
+static ID id_key_slot, id_key_set;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
+static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype(VALUE name);
@@ -2454,7 +2458,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (op == rb_intern("G_BACKREF")) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
+    ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
     if (op == rb_intern("CAPTURE_OPEN")) { capture_count++; features |= 2U; }
     if (op == rb_intern("COUNTER_INIT")) { counter_count++; features |= 4U; }
     if (op == rb_intern("MATCH_RESET")) features |= 8U;
@@ -3527,7 +3531,7 @@ static VALUE onibi_pipeline(VALUE self) {
 static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value(action, "op"));
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     if (op == rb_intern("TEST_CAPTURE")) {
       long capture = NUM2LONG(onibi_hash_value(action, "slot"));
       int set = !NIL_P(captures) && !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture))) &&
@@ -3649,8 +3653,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
 static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value(action, "op"));
-    VALUE slot = onibi_hash_value(action, "slot");
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+    VALUE slot = onibi_hash_value_id(action, id_key_slot);
     if (op == rb_intern("COUNTER_INIT"))
       rb_hash_aset(counters, slot, onibi_hash_value(action, "value"));
     else if (op == rb_intern("COUNTER_INCREMENT")) {
@@ -3907,12 +3911,12 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
   if (onibi_call_depth >= 256U) rb_raise(eRegexpError, "subroutine call depth exceeded");
   onibi_call_depth++;
   VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
-  VALUE entry = onibi_hash_value(descriptor, "entry");
+  VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
   if (NIL_P(entry)) return 0;
   VALUE starts = rb_ary_new();
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), entry);
-  VALUE entry_actions = onibi_hash_value(descriptor, "entry_actions");
+  VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")),
                RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new());
   rb_ary_push(starts, edge);
@@ -3939,7 +3943,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);
-  ID op = SYM2ID(onibi_hash_value(state, "op"));
+  ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
   if (op == id_g_accept) { *matched_end = pos; return 1; }
   if (op == id_g_grapheme) {
     long consumed = onibi_grapheme_width(str, pos);
@@ -3949,24 +3953,24 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   else if (op == id_g_char || op == id_g_class || op == id_g_any) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
-    VALUE payload = onibi_hash_value(state, "payload");
+    VALUE payload = onibi_hash_value_id(state, id_key_payload);
     long consumed = 1;
-    int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
+    int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value_id(payload, id_key_multiline))) :
       (op == id_g_char ?
-        (RTEST(onibi_hash_value(payload, "ignorecase")) ?
-          tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
-          byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
+        (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ?
+          tolower(byte) == tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte))) :
+          byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
     if (!hit) return 0;
     pos += consumed;
   }
   VALUE state_edges = rb_ary_entry(outgoing, state_id);
   for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
     VALUE edge = rb_ary_entry(state_edges, i);
-    VALUE edge_actions = onibi_hash_value(edge, "actions");
+    VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE next_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited, next_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), pos, visited, next_counters, matched_end)) return 1;
   }
   return 0;
 }
@@ -3979,11 +3983,11 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE counters = rb_hash_new();
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    VALUE edge_actions = onibi_hash_value(edge, "actions");
+    VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE branch_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited, branch_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, matched_end)) return 1;
   }
   return 0;
 }
@@ -4023,7 +4027,7 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
     ID op = SYM2ID(onibi_hash_value(action, "op"));
     if (op == id_match_reset) { *reported_start = pos; continue; }
     if (op != id_capture_open && op != id_capture_close) continue;
-    VALUE slot = onibi_hash_value(action, "slot");
+    VALUE slot = onibi_hash_value_id(action, id_key_slot);
     rb_hash_aset(captures, slot, LONG2NUM(pos));
     VALUE event = rb_ary_new_from_args(3, tags, slot, LONG2NUM(pos));
     rb_obj_freeze(event);
@@ -4041,7 +4045,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);
-  ID op = SYM2ID(onibi_hash_value(state, "op"));
+  ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
   if (op == id_g_accept) {
     *matched_end = pos;
     *matched_start = reported_start;
@@ -4056,15 +4060,15 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     pos += consumed;
   }
   if (op == id_g_absent) {
-    VALUE payload = onibi_hash_value(state, "payload");
-    long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
+    VALUE payload = onibi_hash_value_id(state, id_key_payload);
+    long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
     long probe_end = pos;
     VALUE ignored = Qnil;
     if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
                                  captures, tags, &probe_end, &ignored)) return 0;
   } else if (op == id_g_call || op == id_g_atomic) {
-    VALUE payload = onibi_hash_value(state, "payload");
-    long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
+    VALUE payload = onibi_hash_value_id(state, id_key_payload);
+    long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
     VALUE called_captures = Qnil;
     if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
                                   captures, tags, &pos, &called_captures)) return 0;
@@ -4077,14 +4081,14 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   } else if (op == id_g_char || op == id_g_class || op == id_g_any || op == id_g_backref) {
     if (pos >= RSTRING_LEN(str)) return 0;
     if (op == id_g_backref) {
-      VALUE payload = onibi_hash_value(state, "payload");
-      long capture = NUM2LONG(onibi_hash_value(payload, "capture"));
+      VALUE payload = onibi_hash_value_id(state, id_key_payload);
+      long capture = NUM2LONG(onibi_hash_value_id(payload, id_key_capture));
       VALUE begin = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1)));
       VALUE finish = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1) + 1));
       if (NIL_P(begin) || NIL_P(finish)) return 0;
       long length = NUM2LONG(finish) - NUM2LONG(begin);
       if (pos + length > RSTRING_LEN(str)) return 0;
-      int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
+      int fold = RTEST(onibi_hash_value_id(payload, id_key_ignorecase));
       if (!fold) {
         if (memcmp(RSTRING_PTR(str) + pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) return 0;
       } else {
@@ -4097,13 +4101,13 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       pos += length;
     } else {
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
-      VALUE payload = onibi_hash_value(state, "payload");
+      VALUE payload = onibi_hash_value_id(state, id_key_payload);
       long consumed = 1;
-      int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
+      int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value_id(payload, id_key_multiline))) :
         (op == id_g_char ?
-          (RTEST(onibi_hash_value(payload, "ignorecase")) ?
-            tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
-            byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
+          (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ?
+            tolower(byte) == tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte))) :
+            byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
       if (!hit) return 0;
       pos += consumed;
     }
@@ -4111,7 +4115,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   VALUE state_edges = rb_ary_entry(outgoing, state_id);
   for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
     VALUE edge = rb_ary_entry(state_edges, i);
-    VALUE edge_actions = onibi_hash_value(edge, "actions");
+    VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE next_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters, captures)) continue;
     VALUE next_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
@@ -4119,7 +4123,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     long next_reported_start = reported_start;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
     next_tags = onibi_apply_capture_actions(edge_actions, pos, next_captures, next_tags, &next_reported_start);
-    if (onibi_vm_walk_captures(states, outgoing, subprograms, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
+    if (onibi_vm_walk_captures(states, outgoing, subprograms, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), pos,
                                visited, next_captures, next_counters, next_tags, next_reported_start,
                                matched_end, matched_start, matched_captures)) return 1;
   }
@@ -4139,7 +4143,7 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
   VALUE tags = initial_tags;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    VALUE edge_actions = onibi_hash_value(edge, "actions");
+    VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE branch_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, captures)) continue;
     VALUE branch_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
@@ -4764,6 +4768,13 @@ void Init_onibi(void) {
   id_g_backref = rb_intern("G_BACKREF");
   id_capture_open = rb_intern("CAPTURE_OPEN"); id_capture_close = rb_intern("CAPTURE_CLOSE");
   id_match_reset = rb_intern("MATCH_RESET");
+  id_key_op = rb_intern("op"); id_key_payload = rb_intern("payload");
+  id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
+  id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
+  id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
+  id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
+  id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
+  id_key_set = rb_intern("set");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
