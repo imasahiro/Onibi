@@ -1750,7 +1750,11 @@ skip_utf8_range_expansion:
     char *endptr = NULL;
     long capture_id = strtol(StringValueCStr(condition), &endptr, 10) - 1;
     if (endptr == StringValueCStr(condition) || *endptr != '\0') {
-      VALUE named = rb_hash_aref(builder->capture_names, condition);
+      VALUE named_condition = condition;
+      if (RSTRING_LEN(condition) >= 2 && RSTRING_PTR(condition)[0] == '<' &&
+          RSTRING_PTR(condition)[RSTRING_LEN(condition) - 1] == '>')
+        named_condition = rb_str_substr(condition, 1, RSTRING_LEN(condition) - 2);
+      VALUE named = rb_hash_aref(builder->capture_names, named_condition);
       if (NIL_P(named)) rb_raise(eRegexpError, "conditional capture is undefined");
       capture_id = NUM2LONG(named);
     }

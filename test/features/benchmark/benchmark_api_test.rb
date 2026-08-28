@@ -249,6 +249,14 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("ac")
   end
 
+  def test_named_deterministic_conditional_resolves_capture_name
+    regexp = Onibi::Regexp.new("(?<x>a)(?(<x>)b|c)")
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("ab")
+    refute regexp.vm_match?("ac")
+  end
+
   def test_grapheme_and_property_escapes_cross_dynamic_boundary
     grapheme = Onibi::Regexp.new("\\X")
     property = Onibi::Regexp.new("\\p{L}")
