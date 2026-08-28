@@ -216,7 +216,8 @@ validated, aligned, relocatable v1 blob. The physical view is built during
 RSeq lowering. Match calls do not rebuild it or rescan the pattern. The blob
 contains the header, state, edge, action, class, and literal descriptor
 sections. The semantic and physical headers and cached view are checked once
-before publication. Public `Onibi::VM.execute` validates supplied programs.
+before publication. VM entry points remain internal and receive only compiled
+programs created by `Onibi::Regexp`.
 Compiled `Onibi::Regexp` objects use the validated immutable view directly.
 
 The C executor supports literals, alternation, classes, POSIX classes, common
