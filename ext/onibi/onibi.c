@@ -3850,7 +3850,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   int opts = onibi_option_mask(options);
   obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
-  if ((opts & 32) && rb_enc_get_index(source) != rb_ascii8bit_encindex() &&
+  int source_encoding_index = rb_enc_get_index(source);
+  if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() &&
       !rb_enc_str_asciionly_p(source))
     rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
   if (!(opts & 32) && !rb_enc_str_asciionly_p(source) && !(opts & 16)) opts |= 16;
@@ -3869,16 +3870,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->feature_token_count = feature_tokens.count;
   OnibiFeatureTokenVector feature_view = { obj->feature_tokens, obj->feature_token_count };
   onibi_token_features(&feature_view, obj);
-  if (!(opts & 32) && rb_enc_get_index(source) == rb_utf8_encindex() &&
+  if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
       obj->has_property_escape) opts |= 16;
   if (((opts & 32) && rb_enc_str_asciionly_p(source) &&
        (obj->has_non_ascii_literal || obj->has_property_escape)) ||
-      (!(opts & 32) && rb_enc_get_index(source) != rb_utf8_encindex() &&
-       rb_enc_get_index(source) != rb_usascii_encindex() &&
+      (!(opts & 32) && source_encoding_index != rb_utf8_encindex() &&
+       source_encoding_index != rb_usascii_encindex() &&
        (obj->has_non_ascii_literal || obj->has_property_escape))) opts |= 16;
   obj->options = opts;
   VALUE regexp_source = source;
-  if (rb_enc_get_index(source) != rb_utf8_encindex() && obj->has_unicode_escape) {
+  if (source_encoding_index != rb_utf8_encindex() && obj->has_unicode_escape) {
     regexp_source = rb_funcall(source, id_encode, 1, rb_enc_from_encoding(rb_utf8_encoding()));
     opts |= 16;
     obj->options = opts;
@@ -3921,7 +3922,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     int encoded_literal_program = (opts & 16) && !(opts & (1 | 32)) &&
-      rb_enc_get_index(source) != rb_ascii8bit_encindex() &&
+      source_encoding_index != rb_ascii8bit_encindex() &&
       !rb_enc_str_asciionly_p(source) &&
       obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
       (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
@@ -3948,6 +3949,8 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
   if (argc == 2 && RB_TYPE_P(pos, T_STRING)) rb_raise(rb_eTypeError, "no implicit conversion of String into Integer");
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;
+  int source_encoding_index = rb_enc_get_index(obj->source);
   /* Run the compiled C interpreter before MatchData materialization.  The
      MRI call below remains only the final host-side MatchData constructor. */
   if (NIL_P(pos) && RB_TYPE_P(str, T_STRING) && !NIL_P(obj->rseq) &&
@@ -3956,8 +3959,8 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
-        (rb_enc_get_index(str) == rb_utf8_encindex() ||
-         rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
+        (str_encoding_index == rb_utf8_encindex() ||
+         str_encoding_index == source_encoding_index))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str))) {
     if (!RTEST(onibi_vm_match_p(self, str))) { rb_backref_set(Qnil); return Qnil; }
   }
@@ -3972,13 +3975,15 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "11", &str, &pos);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;
+  int source_encoding_index = rb_enc_get_index(obj->source);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       !onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
-        (rb_enc_get_index(str) == rb_utf8_encindex() ||
-         rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
+        (str_encoding_index == rb_utf8_encindex() ||
+         str_encoding_index == source_encoding_index))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)

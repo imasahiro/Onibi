@@ -438,6 +438,21 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "rb_hash_aref(captures, ID2SYM(id_recursive_marker))"
   end
 
+  def test_match_paths_cache_encoding_indexes
+    source = File.read(EXTENSION_SOURCE)
+    initialize = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
+    match = source[/static VALUE onibi_match\(.*?\n}\n/m]
+    match_p = source[/static VALUE onibi_match_p\(.*?\n}\n/m]
+
+    [initialize, match, match_p].each { |method| refute_nil method }
+    assert_includes initialize, "int source_encoding_index = rb_enc_get_index(source);"
+    assert_equal 1, initialize.scan("rb_enc_get_index(source)").length
+    assert_includes match, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
+    assert_equal 1, match.scan("rb_enc_get_index(str)").length
+    assert_includes match_p, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
+    assert_equal 1, match_p.scan("rb_enc_get_index(str)").length
+  end
+
   def test_vm_matchers_do_not_reintern_property_names
     source = File.read(EXTENSION_SOURCE)
     matcher = source[/static int onibi_vm_class_match\(VALUE payload,.*?\n}\n/m]
