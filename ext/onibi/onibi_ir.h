@@ -59,6 +59,20 @@ typedef enum {
   ONIBI_G_ABSENT
 } OnibiGStateOp;
 
+/* Numeric action tags used by the semantic GIR representation. */
+typedef enum {
+  ONIBI_GA_END = 0,
+  ONIBI_GA_CAPTURE_OPEN,
+  ONIBI_GA_CAPTURE_CLOSE,
+  ONIBI_GA_MATCH_RESET,
+  ONIBI_GA_ASSERT_POSITION,
+  ONIBI_GA_TEST_CAPTURE,
+  ONIBI_GA_COUNTER_INIT,
+  ONIBI_GA_COUNTER_INCREMENT,
+  ONIBI_GA_TEST_COUNTER_LT,
+  ONIBI_GA_TEST_COUNTER_GE
+} OnibiGActionOp;
+
 typedef struct {
   OnibiStateId destination;
   OnibiActionProgramId actions;
