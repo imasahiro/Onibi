@@ -52,7 +52,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     scan = source[/static int onibi_ast_nullable_scan\(VALUE ast,.*?\n}\n/m]
 
     refute_nil scan
-    assert_includes scan, "int *nullable_capture, int *nullable_absence"
+    assert_includes scan, "OnibiAstAnalysis *analysis"
     refute_includes source, "onibi_ast_nullable_absence"
     refute_includes source, "static int onibi_ast_nullable(VALUE ast"
   end
