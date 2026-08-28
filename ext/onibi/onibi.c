@@ -3043,17 +3043,17 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t physical_size = sizeof(OnibiRSeqHeader) +
     (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count +
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
-    (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions) +
+    (uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count +
     class_section_size + literal_desc_size + literal_data_size + subprogram_section_size;
   if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
-      RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
+      action_records.count > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
   uint32_t features = 0, capture_count = 0, counter_count = 0;
   for (size_t i = 0; i < state_records.count; i++) {
     if (state_records.entries[i].opcode == ONIBI_G_BACKREF) features |= 1U;
   }
-  for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    VALUE action = rb_ary_entry(actions, i);
+  for (size_t i = 0; i < action_records.count; i++) {
+    VALUE action = action_records.items[i];
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     if (code == ONIBI_GA_CAPTURE_OPEN) { capture_count++; features |= 2U; }
@@ -3085,7 +3085,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(id_key_multiline), multiline ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(id_key_state_count), LONG2NUM((long)state_records.count));
   rb_hash_aset(header, ID2SYM(id_key_edge_count), LONG2NUM((long)r_edge_records.count));
-  rb_hash_aset(header, ID2SYM(id_key_action_count), LONG2NUM(RARRAY_LEN(actions)));
+  rb_hash_aset(header, ID2SYM(id_key_action_count), LONG2NUM((long)action_records.count));
   rb_hash_aset(header, ID2SYM(id_key_start_edge_base), LONG2NUM((long)r_edge_records.count));
   rb_hash_aset(header, ID2SYM(id_key_start_edge_count), LONG2NUM((long)r_start_edge_records.count));
   OnibiRSeqHeader physical;
@@ -3110,8 +3110,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (opcode == ONIBI_G_ACCEPT) continue;
   }
   if (physical.exec_kind == 0) {
-    for (long i = 0; i < RARRAY_LEN(actions); i++) {
-      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_action_code));
+    for (size_t i = 0; i < action_records.count; i++) {
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action_records.items[i], id_key_action_code));
       if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE ||
           code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
           code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
@@ -3132,7 +3132,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   physical.state_count = (uint32_t)state_records.count;
   physical.edge_count = (uint32_t)(r_edge_records.count + r_start_edge_records.count);
-  physical.action_count = (uint32_t)RARRAY_LEN(actions);
+  physical.action_count = (uint32_t)action_records.count;
   physical.start_edge_count = (uint32_t)r_start_edge_records.count;
   uint64_t offset = sizeof(OnibiRSeqHeader);
   physical.states_offset = (uint32_t)offset;
@@ -3140,7 +3140,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.edges_offset = (uint32_t)offset;
   offset += (uint64_t)sizeof(OnibiREdge) * (uint64_t)physical.edge_count;
   physical.actions_offset = (uint32_t)offset;
-  offset += (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions);
+  offset += (uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count;
   physical.classes_offset = (uint32_t)offset;
   offset += class_section_size;
   physical.literals_offset = (uint32_t)offset;
@@ -3220,8 +3220,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       (uint32_t)(sizeof(OnibiRAction) * ((uint32_t)record->action_offset + 1));
   }
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
-  for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    VALUE action = rb_ary_entry(actions, i);
+  for (size_t i = 0; i < action_records.count; i++) {
+    VALUE action = action_records.items[i];
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     OnibiGActionOp action_code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     physical_actions[i].op = (uint8_t)(action_code == ONIBI_GA_CAPTURE_OPEN || action_code == ONIBI_GA_CAPTURE_CLOSE ? ONIBI_RA_CAPTURE :
@@ -3232,23 +3232,23 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       action_code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD :
       action_code == ONIBI_GA_TEST_COUNTER_LT || action_code == ONIBI_GA_TEST_COUNTER_GE ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
     physical_actions[i].flags = onibi_rseq_action_flags(op);
-    if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_set)))
+    if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(action, id_key_set)))
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     VALUE assert_kind = onibi_hash_value_id(action, id_key_assert_kind);
     physical_actions[i].arg16 = NIL_P(assert_kind) ? onibi_rseq_assert_kind(op) :
       (uint16_t)NUM2ULONG(assert_kind);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
-      int positive = RTEST(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_positive));
+      int positive = RTEST(onibi_hash_value_id(action, id_key_positive));
       physical_actions[i].flags = op == id_a_assert_lookahead ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
     }
-    VALUE slot = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_slot);
+    VALUE slot = onibi_hash_value_id(action, id_key_slot);
     if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
-    VALUE limit = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_limit);
+    VALUE limit = onibi_hash_value_id(action, id_key_limit);
     if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
-    VALUE value = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_value);
+    VALUE value = onibi_hash_value_id(action, id_key_value);
     if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
-    VALUE width = onibi_hash_value_id(rb_ary_entry(actions, i), id_key_width);
+    VALUE width = onibi_hash_value_id(action, id_key_width);
     if (!NIL_P(width)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(width);
   }
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);

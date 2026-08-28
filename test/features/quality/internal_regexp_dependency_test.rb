@@ -211,6 +211,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/physical_edges\[i\].*onibi_hash_value\(edge/, lowerer)
   end
 
+  def test_rseq_physical_actions_use_c_vector
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "action_records.items[i]"
+    assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
