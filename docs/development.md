@@ -201,6 +201,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
 | tagged VM counter maps | No | Pending C counter snapshots | Frame branching duplicates numeric counter values in Ruby Hash objects. The conversion must cover call frames and ordered edge branches together. |
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
+| position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
 The first conversion is complete for parser and compiler result adapters. The
@@ -216,13 +217,14 @@ The tokenizer records each optional name as `name_id` once, so later feature
 classification does not intern the same name again.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
-Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
-only as a semantic adapter until the typed action vector conversion.
+Symbol name. Position assertions also carry a numeric `assert_kind` subtype.
+Validation, VM dispatch, and RSeq lowering use these numeric fields; the
+Symbol remains only as a semantic adapter until typed action vectors exist.
 
-The action Symbol is still required for assertion subtypes and ordering flags;
-`action_code` identifies the broad operation but does not identify each
-position assertion. Remove the Symbol only after those subtype flags have a
-typed C representation.
+The action Symbol is still required for assertion-specific ordering flags and
+semantic adapters. `assert_kind` identifies each position assertion, but the
+full action record still carries Ruby payloads. Remove the Symbol only after
+those payloads have typed C ownership.
 
 The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
