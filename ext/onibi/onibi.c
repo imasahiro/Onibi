@@ -3389,6 +3389,11 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
   obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
     (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
+  /* Token, AST, and GIR Ruby containers are compile-time temporaries.  The
+   * published Regexp keeps only the immutable RSeq and scalar feature data. */
+  obj->tokens = Qnil;
+  obj->parsed = Qnil;
+  obj->compiled = Qnil;
   /* Pipeline display data is not part of the Regexp API.  Keep the field
    * empty and avoid allocating a second token/AST snapshot at initialize. */
   obj->pipeline = Qnil;
