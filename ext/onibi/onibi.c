@@ -2126,17 +2126,17 @@ skip_utf8_range_expansion:
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
     long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
-    const char *op = "ASSERT_END_BUFFER";
+    ID op = id_a_assert_end_buffer;
     /* Ruby keeps ^ and $ line anchors independent of the m option.  The
        option changes dot-newline matching only. */
-    if (marker == '^') op = "ASSERT_BEGIN_LINE";
-    else if (marker == '$') op = "ASSERT_END_LINE";
-    else if (marker == 'b') op = "ASSERT_WORD_BOUNDARY";
-    else if (marker == 'B') op = "ASSERT_NONWORD_BOUNDARY";
-    else if (marker == 'A') op = "ASSERT_BEGIN_BUFFER";
-    else if (marker == 'G') op = "ASSERT_SEARCH_ORIGIN";
-    else if (marker == 'Z') op = "ASSERT_SEMI_END_BUFFER";
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
+    if (marker == '^') op = id_a_assert_begin_line;
+    else if (marker == '$') op = id_a_assert_end_line;
+    else if (marker == 'b') op = id_a_assert_word_boundary;
+    else if (marker == 'B') op = id_a_assert_nonword_boundary;
+    else if (marker == 'A') op = id_a_assert_begin_buffer;
+    else if (marker == 'G') op = id_a_assert_search_origin;
+    else if (marker == 'Z') op = id_a_assert_semi_end_buffer;
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(op));
     rb_ary_push(result.pending_actions, action);
     return result;
   }
@@ -2289,9 +2289,9 @@ skip_utf8_range_expansion:
     VALUE capture_body = onibi_hash_value(ast, "body");
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
-    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
+    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(id_capture_open));
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
-    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
+    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(id_capture_close));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
     if (!NIL_P(capture_name) && onibi_ast_has_subroutine_name(capture_body, capture_name))
@@ -2342,7 +2342,7 @@ skip_utf8_range_expansion:
     if (max >= 0 && max != min) {
       /* Counted repeats use one counter slot.  The first start edge
          initializes it.  Optional bodies use ordered test edges. */
-      VALUE init = onibi_counter_action(rb_intern("COUNTER_INIT"), counter_slot, Qnil);
+      VALUE init = onibi_counter_action(id_a_counter_init, counter_slot, Qnil);
       rb_hash_aset(init, ID2SYM(rb_intern("value")), INT2NUM(min > 0 ? 1 : 0));
       rb_ary_push(result.start_actions, init);
     }
@@ -2352,7 +2352,7 @@ skip_utf8_range_expansion:
       else {
         VALUE actions = rb_ary_new();
         if (counter_slot >= 0)
-          rb_ary_push(actions, onibi_counter_action(rb_intern("COUNTER_INCREMENT"), counter_slot, Qnil));
+          rb_ary_push(actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
         onibi_connect_actions(builder, result.exits, part.starts, actions);
       }
       result.exits = part.exits;
@@ -2363,15 +2363,15 @@ skip_utf8_range_expansion:
         onibi_fragment_t part = onibi_compile_node(atom, builder);
         if (RARRAY_LEN(result.starts) == 0) result.starts = part.starts;
         VALUE repeat_actions = rb_ary_new();
-        rb_ary_push(repeat_actions, onibi_counter_action(rb_intern("TEST_COUNTER_LT"), counter_slot, LONG2NUM(max)));
-        rb_ary_push(repeat_actions, onibi_counter_action(rb_intern("COUNTER_INCREMENT"), counter_slot, Qnil));
+        rb_ary_push(repeat_actions, onibi_counter_action(id_a_test_counter_lt, counter_slot, LONG2NUM(max)));
+        rb_ary_push(repeat_actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
         if (RARRAY_LEN(result.exits) > 0)
           onibi_connect_actions(builder, result.exits, part.starts, repeat_actions);
         VALUE next_exits = rb_ary_dup(result.exits);
         onibi_append_values(next_exits, part.exits);
         result.exits = next_exits;
       }
-      rb_ary_push(result.pending_actions, onibi_counter_action(rb_intern("TEST_COUNTER_GE"), counter_slot, LONG2NUM(min)));
+      rb_ary_push(result.pending_actions, onibi_counter_action(id_a_test_counter_ge, counter_slot, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
