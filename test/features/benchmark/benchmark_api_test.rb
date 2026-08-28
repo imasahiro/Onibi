@@ -303,6 +303,16 @@ class BenchmarkApiTest < Minitest::Test
     refute inverse.vm_match?("é")
   end
 
+  def test_unicode_property_inside_class_uses_character_predicate_union
+    regexp = Onibi::Regexp.new("[\\p{Alpha}0-9]")
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("é")
+    assert regexp.vm_match?("7")
+    refute regexp.vm_match?("-")
+    assert_equal ::Regexp.new("[\\p{Alpha}0-9]").match?("é"), regexp.match?("é")
+  end
+
   def test_utf8_literal_lowers_to_byte_sequence_states
     regexp = Onibi::Regexp.new("é")
 

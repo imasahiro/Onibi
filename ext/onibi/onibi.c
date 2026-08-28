@@ -97,7 +97,9 @@ static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
   if (rb_enc_compatible(str, obj->source) == NULL) return 0;
   if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex()) return 1;
   if ((onibi_utf8_literal_program_p(obj) ||
-       (obj->has_unicode_property && !obj->has_unicode_property_in_class)) &&
+       (obj->has_unicode_property &&
+        (!obj->has_unicode_property_in_class ||
+         (!obj->has_nested_class && !obj->has_class_intersection)))) &&
       encoding == rb_utf8_encindex())
     return onibi_valid_encoding(str);
   return 0;
@@ -3239,15 +3241,15 @@ static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
 
 static int onibi_unicode_ctype(VALUE name) {
   const char *property = StringValueCStr(name);
-  if (strcmp(property, "Alpha") == 0 || strcmp(property, "Letter") == 0) return ONIGENC_CTYPE_ALPHA;
-  if (strcmp(property, "Digit") == 0) return ONIGENC_CTYPE_DIGIT;
-  if (strcmp(property, "Alnum") == 0) return ONIGENC_CTYPE_ALNUM;
-  if (strcmp(property, "Lower") == 0) return ONIGENC_CTYPE_LOWER;
-  if (strcmp(property, "Upper") == 0) return ONIGENC_CTYPE_UPPER;
-  if (strcmp(property, "Space") == 0) return ONIGENC_CTYPE_SPACE;
-  if (strcmp(property, "Blank") == 0) return ONIGENC_CTYPE_BLANK;
-  if (strcmp(property, "Word") == 0) return ONIGENC_CTYPE_WORD;
-  if (strcmp(property, "XDigit") == 0) return ONIGENC_CTYPE_XDIGIT;
+  if (strcmp(property, "Alpha") == 0 || strcmp(property, "alpha") == 0 || strcmp(property, "Letter") == 0) return ONIGENC_CTYPE_ALPHA;
+  if (strcmp(property, "Digit") == 0 || strcmp(property, "digit") == 0) return ONIGENC_CTYPE_DIGIT;
+  if (strcmp(property, "Alnum") == 0 || strcmp(property, "alnum") == 0) return ONIGENC_CTYPE_ALNUM;
+  if (strcmp(property, "Lower") == 0 || strcmp(property, "lower") == 0) return ONIGENC_CTYPE_LOWER;
+  if (strcmp(property, "Upper") == 0 || strcmp(property, "upper") == 0) return ONIGENC_CTYPE_UPPER;
+  if (strcmp(property, "Space") == 0 || strcmp(property, "space") == 0) return ONIGENC_CTYPE_SPACE;
+  if (strcmp(property, "Blank") == 0 || strcmp(property, "blank") == 0) return ONIGENC_CTYPE_BLANK;
+  if (strcmp(property, "Word") == 0 || strcmp(property, "word") == 0) return ONIGENC_CTYPE_WORD;
+  if (strcmp(property, "XDigit") == 0 || strcmp(property, "xdigit") == 0) return ONIGENC_CTYPE_XDIGIT;
   if (strcmp(property, "Cntrl") == 0) return ONIGENC_CTYPE_CNTRL;
   if (strcmp(property, "Print") == 0) return ONIGENC_CTYPE_PRINT;
   if (strcmp(property, "Graph") == 0) return ONIGENC_CTYPE_GRAPH;
@@ -3255,21 +3257,72 @@ static int onibi_unicode_ctype(VALUE name) {
   return -1;
 }
 
+static int onibi_utf8_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, long *width) {
+  const char *ptr = RSTRING_PTR(str) + pos;
+  const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
+  int length = rb_enc_mbclen(ptr, end, rb_enc_get(str));
+  if (length <= 0 || ptr + length > end) return 0;
+  *codepoint = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)ptr, (const OnigUChar *)end);
+  *width = length;
+  return 1;
+}
+
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
   VALUE name = onibi_hash_value(payload, "name");
   int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
   if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex()) {
-    const char *ptr = RSTRING_PTR(str) + pos;
-    const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
-    if (pos > 0 && ((unsigned char)ptr[0] & 0xc0) == 0x80 &&
-        (((unsigned char)ptr[-1] & 0xc0) == 0x80 || (unsigned char)ptr[-1] >= 0xc0)) return 0;
-    int length = rb_enc_mbclen(ptr, end, rb_enc_get(str));
-    if (length <= 0 || ptr + length > end) return 0;
-    OnigCodePoint code = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)ptr, (const OnigUChar *)end);
+    if (pos > 0 && ((unsigned char)RSTRING_PTR(str)[pos] & 0xc0) == 0x80 &&
+        (((unsigned char)RSTRING_PTR(str)[pos - 1] & 0xc0) == 0x80 || (unsigned char)RSTRING_PTR(str)[pos - 1] >= 0xc0)) return 0;
+    OnigCodePoint code; long length = 0;
+    if (!onibi_utf8_codepoint_at(str, pos, &code, &length)) return 0;
     int hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, ctype);
     if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P') hit = !hit;
     *width = length;
     return hit;
+  }
+  if (NIL_P(name) && rb_enc_get_index(str) == rb_utf8_encindex() && !rb_enc_str_asciionly_p(str)) {
+    VALUE children = onibi_hash_value(payload, "children");
+    VALUE ranges = onibi_hash_value(payload, "ranges");
+    if (RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY)) {
+      OnigCodePoint code; long decoded_width = 0;
+      if (!onibi_utf8_codepoint_at(str, pos, &code, &decoded_width)) return 0;
+      int hit = 0;
+      for (long i = 0; i < RARRAY_LEN(children); i++) {
+        VALUE child = rb_ary_entry(children, i);
+        VALUE kind_value = onibi_hash_value(child, "kind");
+        if (!SYMBOL_P(kind_value)) continue;
+        ID kind = SYM2ID(kind_value);
+        if (kind == rb_intern("literal")) {
+          VALUE bytes = onibi_hash_value(child, "bytes");
+          if (NIL_P(bytes)) bytes = rb_str_new((const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
+          uint32_t child_code = 0;
+          if (onibi_utf8_decode(bytes, &child_code) && child_code == code) hit = 1;
+        } else if (kind == rb_intern("escape")) {
+          VALUE child_name = onibi_hash_value(child, "name");
+          int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
+          if (child_ctype >= 0) {
+            int child_hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, child_ctype);
+            if (NUM2INT(onibi_hash_value(child, "byte")) == 'P') child_hit = !child_hit;
+            if (child_hit) hit = 1;
+          }
+        }
+      }
+      for (long i = 0; i < RARRAY_LEN(ranges); i++) {
+        VALUE range = rb_ary_entry(ranges, i);
+        if (RARRAY_LEN(range) != 2) continue;
+        if (RB_INTEGER_TYPE_P(rb_ary_entry(range, 0)) && RB_INTEGER_TYPE_P(rb_ary_entry(range, 1))) {
+          if (code >= (OnigCodePoint)NUM2ULONG(rb_ary_entry(range, 0)) &&
+              code <= (OnigCodePoint)NUM2ULONG(rb_ary_entry(range, 1))) hit = 1;
+          continue;
+        }
+        if (!RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) || !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING)) continue;
+        uint32_t first = 0, last = 0;
+        if (onibi_utf8_decode(rb_ary_entry(range, 0), &first) && onibi_utf8_decode(rb_ary_entry(range, 1), &last) && code >= first && code <= last) hit = 1;
+      }
+      if (RTEST(onibi_hash_value(payload, "negated"))) hit = !hit;
+      *width = decoded_width;
+      return hit;
+    }
   }
   int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
   if (fold) byte = (unsigned char)tolower(byte);
