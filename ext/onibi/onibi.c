@@ -1689,12 +1689,12 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
     onibi_set_gir_action_opcode(open, id_capture_open);
-    rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
+    rb_hash_aset(open, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id));
     rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
-    rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
+    rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
     if (onibi_ast_has_subroutine_name(body, name))
-      rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
+      rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     VALUE starts = rb_ary_new_from_args(1, open);
     onibi_append_values(starts, fragment.start_actions);
     fragment.start_actions = starts;
@@ -1708,10 +1708,10 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
                         fragment.pending_actions);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
   VALUE descriptor = rb_hash_new();
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(entry));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry_actions")), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
+    rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
+    rb_hash_aset(descriptor, ID2SYM(id_key_flags), INT2NUM(0));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
   rb_ary_store(builder->subprograms, id, descriptor);
   return id;
@@ -1970,8 +1970,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
           VALUE literal = rb_hash_new();
           VALUE bytes = onibi_utf8_encode(cp);
           rb_hash_aset(literal, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
-          rb_hash_aset(literal, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
-          rb_hash_aset(literal, ID2SYM(rb_intern("bytes")), bytes);
+          rb_hash_aset(literal, ID2SYM(id_key_byte), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
+          rb_hash_aset(literal, ID2SYM(id_key_bytes), bytes);
           onibi_fragment_t branch = onibi_compile_node(literal, builder);
           onibi_append_values(result.starts, branch.starts);
           onibi_append_values(result.exits, branch.exits);
@@ -1993,9 +1993,9 @@ skip_utf8_range_expansion:
       result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
       for (long i = 0; i < RSTRING_LEN(literal_bytes); i++) {
         VALUE byte_ast = rb_hash_dup(ast);
-        rb_hash_aset(byte_ast, ID2SYM(rb_intern("byte")),
+        rb_hash_aset(byte_ast, ID2SYM(id_key_byte),
                      INT2NUM((unsigned char)RSTRING_PTR(literal_bytes)[i]));
-        rb_hash_aset(byte_ast, ID2SYM(rb_intern("bytes")),
+        rb_hash_aset(byte_ast, ID2SYM(id_key_bytes),
                      rb_str_new(RSTRING_PTR(literal_bytes) + i, 1));
         onibi_fragment_t part = onibi_compile_node(byte_ast, builder);
         if (i == 0) result.starts = part.starts;
@@ -2046,12 +2046,12 @@ skip_utf8_range_expansion:
       VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value_id(ast, id_key_name));
       if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
       payload = rb_hash_dup(ast);
-      rb_hash_aset(payload, ID2SYM(rb_intern("capture")), LONG2NUM(NUM2LONG(id_value) + 1));
+      rb_hash_aset(payload, ID2SYM(id_key_capture), LONG2NUM(NUM2LONG(id_value) + 1));
       rb_obj_freeze(payload);
     }
     if (builder->ignorecase && type_code == ONIBI_AST_BACKREF) {
       payload = rb_hash_dup(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
       rb_obj_freeze(payload);
     }
     VALUE escape_name_for_op = onibi_hash_value_id(ast, id_key_name);
@@ -2067,37 +2067,37 @@ skip_utf8_range_expansion:
     if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(id_key_byte), INT2NUM(tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte)))));
-      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
       rb_obj_freeze(payload);
     }
     if (builder->ignorecase &&
         (type_code == ONIBI_AST_CHARACTER_CLASS ||
          type_code == ONIBI_AST_CLASS_INTERSECTION)) {
       payload = rb_hash_dup(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
       rb_obj_freeze(payload);
     }
     if (type_code == ONIBI_AST_CHARACTER_CLASS || type_code == ONIBI_AST_CLASS_INTERSECTION) {
       payload = onibi_class_payload_with_ctypes(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
+      rb_hash_aset(payload, ID2SYM(id_key_bitmap),
                    onibi_class_bitmap(payload, builder->ignorecase));
       rb_obj_freeze(payload);
     }
     if (type_code == ONIBI_AST_ESCAPE) {
       payload = rb_hash_dup(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
-      rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
-      rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
+      rb_hash_aset(payload, ID2SYM(id_key_ranges), rb_ary_new());
+      rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
+      rb_hash_aset(payload, ID2SYM(id_key_bitmap),
                    onibi_class_bitmap(payload, builder->ignorecase));
       VALUE property_name = onibi_hash_value_id(payload, id_key_name);
       int property_ctype = NIL_P(property_name) ? -1 : onibi_unicode_ctype(property_name);
       if (property_ctype >= 0)
-        rb_hash_aset(payload, ID2SYM(rb_intern("ctype")), INT2NUM(property_ctype));
+        rb_hash_aset(payload, ID2SYM(id_key_ctype), INT2NUM(property_ctype));
       rb_obj_freeze(payload);
     }
     if (builder->multiline && type_code == ONIBI_AST_ANY) {
       payload = rb_hash_dup(payload);
-      rb_hash_aset(payload, ID2SYM(rb_intern("multiline")), Qtrue);
+      rb_hash_aset(payload, ID2SYM(id_key_multiline), Qtrue);
       rb_obj_freeze(payload);
     }
     onibi_gir_state(builder, id, op, payload);
@@ -2116,7 +2116,7 @@ skip_utf8_range_expansion:
     if (!NIL_P(existing)) subprogram_id = NUM2LONG(existing);
     else subprogram_id = onibi_compile_named_subprogram(name, body, builder);
     VALUE payload = rb_hash_new();
-    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_hash_aset(payload, ID2SYM(id_key_subprogram), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_call, payload);
@@ -2245,7 +2245,7 @@ skip_utf8_range_expansion:
     VALUE body = onibi_hash_value_id(ast, id_key_body);
     long subprogram_id = onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
     VALUE payload = rb_hash_new();
-    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_hash_aset(payload, ID2SYM(id_key_subprogram), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_atomic, payload);
@@ -2259,7 +2259,7 @@ skip_utf8_range_expansion:
     long subprogram_id = onibi_compile_subprogram(onibi_hash_value_id(ast, id_key_body), builder,
                                                    ONIBI_SUBPROGRAM_ABSENT);
     VALUE payload = rb_hash_new();
-    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_hash_aset(payload, ID2SYM(id_key_subprogram), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_absent, payload);
@@ -2284,17 +2284,17 @@ skip_utf8_range_expansion:
       if (child_type == ONIBI_AST_CHARACTER_CLASS ||
           child_type == ONIBI_AST_CLASS_INTERSECTION) {
         VALUE predicate = rb_hash_new();
-        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(id_key_kind), ID2SYM(id_pred_bitmap));
         rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BITMAP));
-        rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(child, builder->ignorecase));
+        rb_hash_aset(predicate, ID2SYM(id_key_bitmap), onibi_class_bitmap(child, builder->ignorecase));
         rb_ary_push(predicates, predicate);
         continue;
       }
       if (child_type == ONIBI_AST_ANY) {
         VALUE predicate = rb_hash_new();
-        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("any")));
+        rb_hash_aset(predicate, ID2SYM(id_key_kind), ID2SYM(id_pred_any));
         rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_ANY));
-        rb_hash_aset(predicate, ID2SYM(rb_intern("multiline")), builder->multiline ? Qtrue : Qfalse);
+        rb_hash_aset(predicate, ID2SYM(id_key_multiline), builder->multiline ? Qtrue : Qfalse);
         rb_ary_push(predicates, predicate);
         continue;
       }
@@ -2306,22 +2306,22 @@ skip_utf8_range_expansion:
             onibi_simple_escape_p((unsigned char)RSTRING_PTR(name)[0])));
         if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");
         VALUE payload = rb_hash_dup(child);
-        rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
-        rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
+        rb_hash_aset(payload, ID2SYM(id_key_ranges), rb_ary_new());
+        rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
         VALUE predicate = rb_hash_new();
-        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(id_key_kind), ID2SYM(id_pred_bitmap));
         rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BITMAP));
-        rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(payload, builder->ignorecase));
+        rb_hash_aset(predicate, ID2SYM(id_key_bitmap), onibi_class_bitmap(payload, builder->ignorecase));
         rb_ary_push(predicates, predicate);
         continue;
       }
       if (child_type != ONIBI_AST_LITERAL)
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();
-      rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
+      rb_hash_aset(predicate, ID2SYM(id_key_kind), ID2SYM(id_pred_byte));
       rb_hash_aset(predicate, ID2SYM(id_key_predicate_code), UINT2NUM(ONIBI_PRED_BYTE));
       rb_hash_aset(predicate, ID2SYM(id_key_byte), onibi_hash_value_id(child, id_key_byte));
-      rb_hash_aset(predicate, ID2SYM(rb_intern("ignorecase")), builder->ignorecase ? Qtrue : Qfalse);
+      rb_hash_aset(predicate, ID2SYM(id_key_ignorecase), builder->ignorecase ? Qtrue : Qfalse);
       rb_ary_push(predicates, predicate);
       rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value_id(child, id_key_byte))}, 1);
     }
@@ -2333,9 +2333,9 @@ skip_utf8_range_expansion:
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
     rb_hash_aset(action, ID2SYM(id_key_positive), onibi_hash_value_id(ast, id_key_positive));
-    rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
-    if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(rb_intern("predicates")), predicates);
-    rb_hash_aset(action, ID2SYM(rb_intern("width")), LONG2NUM(RARRAY_LEN(predicates)));
+    rb_hash_aset(action, ID2SYM(id_key_bytes), bytes);
+    if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(id_key_predicates), predicates);
+    rb_hash_aset(action, ID2SYM(id_key_width), LONG2NUM(RARRAY_LEN(predicates)));
     onibi_fragment_t result = onibi_fragment_empty();
     result.nullable = 1;
     rb_ary_push(result.start_actions, action);
@@ -2354,13 +2354,13 @@ skip_utf8_range_expansion:
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
     onibi_set_gir_action_opcode(open, id_capture_open);
-    rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
+    rb_hash_aset(open, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id));
     rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
-    rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
+    rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value_id(ast, id_key_name);
     if (!NIL_P(capture_name) && onibi_ast_has_subroutine_name(capture_body, capture_name))
-      rb_hash_aset(close, ID2SYM(rb_intern("preserve_if_set")), Qtrue);
+      rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
     rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body));
