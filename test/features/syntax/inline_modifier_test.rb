@@ -107,6 +107,15 @@ class InlineModifierTest < Minitest::Test
     assert_equal expected.offset(0), actual.offset(0)
   end
 
+  def test_mixed_positive_and_negative_option_scope
+    regexp = Onibi::Regexp.new("(?im-mx:a .)")
+    assert regexp.match?("A ")
+    refute regexp.match?("A\n")
+    token = Onibi::Lexer.new("(?im-mx:a)").tokens.first
+    assert_equal "im", token[:name]
+    assert_equal "mx", token[:negative_name]
+  end
+
   private
 
   def option_names(options)
