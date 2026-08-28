@@ -53,7 +53,9 @@ static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
-static ID id_key_bytes, id_type_class_intersection;
+static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
+static ID id_key_capture_count;
+static ID id_type_class_intersection;
 static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -4590,13 +4592,13 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 }
 
 static void onibi_rseq_validate(VALUE rseq) {
-  VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
   VALUE semantic = onibi_hash_value(rseq, "header");
-  VALUE semantic_states = onibi_hash_value(rseq, "states");
-  VALUE semantic_edges = onibi_hash_value(rseq, "edges");
-  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
-  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
+  VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
+  VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
+  VALUE semantic_start_edges = onibi_hash_value_id(rseq, id_key_start_edges);
+  VALUE semantic_actions = onibi_hash_value_id(rseq, id_key_actions);
   VALUE semantic_subprograms = onibi_hash_value(rseq, "subprograms");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
@@ -4922,13 +4924,13 @@ static void onibi_rseq_validate(VALUE rseq) {
    payloads remain Ruby values, but state operations and edge destinations
    come from the physical layout.  This keeps the VM on the RSeq contract. */
 static VALUE onibi_rseq_physical_graph(VALUE rseq) {
-  VALUE cached = rb_hash_aref(rseq, ID2SYM(rb_intern("physical_graph")));
+  VALUE cached = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
   if (!NIL_P(cached)) return cached;
-  VALUE blob = onibi_hash_value(rseq, "blob");
-  VALUE semantic_states = onibi_hash_value(rseq, "states");
-  VALUE semantic_edges = onibi_hash_value(rseq, "edges");
-  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
-  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
+  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
+  VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
+  VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
+  VALUE semantic_start_edges = onibi_hash_value_id(rseq, id_key_start_edges);
+  VALUE semantic_actions = onibi_hash_value_id(rseq, id_key_actions);
   VALUE graph = rb_hash_new();
   VALUE states = rb_ary_new_capa(RARRAY_LEN(semantic_states));
   VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
@@ -4999,14 +5001,15 @@ typedef struct { uint32_t state; long pos; } onibi_simple_frame_t;
    blob.  This path does not materialize semantic states, edges, or visited
    Ruby objects for each candidate start. */
 static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matched_end) {
-  VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   if (header.action_count != 0 || header.counter_count != 0 || header.subprogram_count != 1) return -1;
   if (header.state_count == 0 || header.start_edge_count == 0) return -1;
-  VALUE semantic_states = onibi_hash_value(rseq, "states");
-  if (RTEST(onibi_hash_value(onibi_hash_value(rseq, "header"), "ignorecase")) ||
-      RTEST(onibi_hash_value(onibi_hash_value(rseq, "header"), "multiline"))) return -1;
+  VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
+  VALUE semantic_header = onibi_hash_value_id(rseq, id_key_header);
+  if (RTEST(onibi_hash_value_id(semantic_header, id_key_ignorecase)) ||
+      RTEST(onibi_hash_value_id(semantic_header, id_key_multiline))) return -1;
   for (long i = 0; i < RARRAY_LEN(semantic_states); i++) {
     VALUE payload = onibi_hash_value(rb_ary_entry(semantic_states, i), "payload");
     if (RB_TYPE_P(payload, T_HASH) &&
@@ -5145,7 +5148,7 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
       execution_class != ID2SYM(id_exec_tagged) &&
       execution_class != ID2SYM(id_exec_dynamic))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
-  VALUE physical_blob = onibi_hash_value(rseq, "blob");
+  VALUE physical_blob = onibi_hash_value_id(rseq, id_key_blob);
   OnibiRSeqHeader physical_header;
   memcpy(&physical_header, RSTRING_PTR(physical_blob), sizeof(physical_header));
   uint8_t expected_kind = execution_class == ID2SYM(id_exec_dynamic) ? 2 :
@@ -5239,8 +5242,8 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
       rb_hash_aset(result, ID2SYM(id_key_start), LONG2NUM(reported_start));
       rb_hash_aset(result, ID2SYM(id_key_end), LONG2NUM(end));
       VALUE captures = rb_hash_new();
-      VALUE header = onibi_hash_value(rseq, "header");
-      long capture_count = NUM2LONG(onibi_hash_value(header, "capture_count"));
+      VALUE header = onibi_hash_value_id(rseq, id_key_header);
+      long capture_count = NUM2LONG(onibi_hash_value_id(header, id_key_capture_count));
       for (long group_id = 1; group_id <= capture_count; group_id++) {
         VALUE begin = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1)));
         VALUE finish = rb_hash_aref(capture_state, LONG2NUM(2 * (group_id - 1) + 1));
@@ -5347,7 +5350,9 @@ void Init_onibi(void) {
   id_key_predicates = rb_intern("predicates");
   id_key_states = rb_intern("states"); id_key_outgoing = rb_intern("outgoing");
   id_key_start_edges = rb_intern("start_edges"); id_key_subprograms = rb_intern("subprograms");
-  id_key_bytes = rb_intern("bytes"); id_type_class_intersection = rb_intern("class_intersection");
+  id_key_bytes = rb_intern("bytes"); id_key_blob = rb_intern("blob"); id_key_header = rb_intern("header");
+  id_key_edges = rb_intern("edges"); id_type_class_intersection = rb_intern("class_intersection");
+  id_key_capture_count = rb_intern("capture_count");
   id_kind_literal = rb_intern("literal"); id_kind_escape = rb_intern("escape");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
