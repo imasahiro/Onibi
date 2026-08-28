@@ -702,6 +702,15 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("aaaa")
   end
 
+  def test_compiler_allocates_distinct_counter_slots_for_repeats
+    graph = Onibi::Compiler.compile(Onibi::Parser.parse("a{1,2}b{1,2}"))[:graph]
+    assert_equal 2, graph[:counter_count]
+    slots = graph[:edges].flat_map { |edge| edge[:actions] }
+      .select { |action| action[:op].to_s.start_with?("COUNTER", "TEST_COUNTER") }
+      .map { |action| action[:slot] }.uniq
+    assert_equal [0, 1], slots.sort
+  end
+
   def test_vm_rejects_invalid_subject_encoding
     invalid = [0xff].pack("C").force_encoding(Encoding::UTF_8)
     assert_raises(ArgumentError) { Onibi::Regexp.new(".").vm_match?(invalid) }

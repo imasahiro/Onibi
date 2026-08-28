@@ -647,7 +647,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; VALUE capture_names; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; int ignorecase; int multiline; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -1106,6 +1106,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       return result;
     }
     VALUE atom = onibi_hash_value(ast, "atom");
+    long counter_slot = builder->counter_count++;
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = min == 0;
     if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
@@ -1116,7 +1117,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (max >= 0 && max != min) {
       /* Counted repeats use one counter slot.  The first start edge
          initializes it.  Optional bodies use ordered test edges. */
-      VALUE init = onibi_counter_action("COUNTER_INIT", 0, Qnil);
+      VALUE init = onibi_counter_action("COUNTER_INIT", counter_slot, Qnil);
       rb_hash_aset(init, ID2SYM(rb_intern("value")), INT2NUM(min > 0 ? 1 : 0));
       rb_ary_push(result.start_actions, init);
     }
@@ -1125,7 +1126,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       if (i == 0) result.starts = part.starts;
       else {
         VALUE actions = rb_ary_new();
-        rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", 0, Qnil));
+        rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
         onibi_connect_actions(builder, result.exits, part.starts, actions);
       }
       result.exits = part.exits;
@@ -1136,15 +1137,15 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         onibi_fragment_t part = onibi_compile_node(atom, builder);
         if (RARRAY_LEN(result.starts) == 0) result.starts = part.starts;
         VALUE repeat_actions = rb_ary_new();
-        rb_ary_push(repeat_actions, onibi_counter_action("TEST_COUNTER_LT", 0, LONG2NUM(max)));
-        rb_ary_push(repeat_actions, onibi_counter_action("COUNTER_INCREMENT", 0, Qnil));
+        rb_ary_push(repeat_actions, onibi_counter_action("TEST_COUNTER_LT", counter_slot, LONG2NUM(max)));
+        rb_ary_push(repeat_actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
         if (RARRAY_LEN(result.exits) > 0)
           onibi_connect_actions(builder, result.exits, part.starts, repeat_actions);
         VALUE next_exits = rb_ary_dup(result.exits);
         onibi_append_values(next_exits, part.exits);
         result.exits = next_exits;
       }
-      rb_ary_push(result.pending_actions, onibi_counter_action("TEST_COUNTER_GE", 0, LONG2NUM(min)));
+      rb_ary_push(result.pending_actions, onibi_counter_action("TEST_COUNTER_GE", counter_slot, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
@@ -1167,7 +1168,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -1202,7 +1203,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
   rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
-  long counter_count = 0;
+  long counter_count = builder.counter_count;
   for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
     VALUE actions = onibi_hash_value(rb_ary_entry(builder.edges, i), "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
