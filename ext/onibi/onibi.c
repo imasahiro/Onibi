@@ -1795,16 +1795,36 @@ static VALUE onibi_pipeline_build(VALUE self) {
       }
     }
   }
+  int braced_quantifier = RARRAY_LEN(tokens) >= 5 &&
+    onibi_token_byte(rb_ary_entry(tokens, 1)) == '{' &&
+    onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '}';
+  int class_expression = RARRAY_LEN(tokens) >= 2 &&
+    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("class_start") &&
+    (onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("class_end") ||
+     (RARRAY_LEN(tokens) >= 2 && onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 2)) == rb_intern("class_end") &&
+      onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '+'));
+  int any_expression = RARRAY_LEN(tokens) == 1 && onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("wildcard");
+  int capture_expression = RARRAY_LEN(tokens) >= 2 &&
+    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("group_start") &&
+    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("group_end");
   if (is_alt) {
     VALUE branches = rb_ary_new(); long begin = 0;
-    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
+    for (long i = 0; i <= RARRAY_LEN(tokens); i++) if (i == RARRAY_LEN(tokens) ||
+        onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) {
       VALUE branch = rb_hash_new(), branch_children = rb_ary_new();
       rb_hash_aset(branch, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("sequence")));
-      rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_substr(src, begin, i - begin));
+      if (begin < i) {
+        VALUE first = rb_ary_entry(tokens, begin), last = rb_ary_entry(tokens, i - 1);
+        long start = NUM2LONG(onibi_hash_value(first, "start"));
+        long finish = NUM2LONG(onibi_hash_value(last, "end"));
+        rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_substr(src, start, finish - start));
+      } else rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_new_cstr(""));
       for (long j = begin; j < i; j++) {
+        VALUE token = rb_ary_entry(tokens, j);
+        if (onibi_token_kind(token) != rb_intern("literal")) continue;
         VALUE node = rb_hash_new();
         rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
-        rb_hash_aset(node, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(src)[j]));
+        rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
         rb_ary_push(branch_children, node);
       }
       rb_hash_aset(branch, ID2SYM(rb_intern("children")), branch_children);
@@ -1868,7 +1888,8 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(right, ID2SYM(rb_intern("to")), LONG2NUM(pipe + 1));
     rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, left); rb_ary_push(edges, right);
-  } else if (RSTRING_LEN(src) == 2 && strchr("*+?", RSTRING_PTR(src)[1])) {
+  } else if (RARRAY_LEN(tokens) == 2 && onibi_token_kind(rb_ary_entry(tokens, 1)) == rb_intern("quantifier") &&
+             strchr("*+?", (int)onibi_token_byte(rb_ary_entry(tokens, 1))) != NULL) {
     edges = rb_ary_new();
     VALUE first = rb_hash_new();
     rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
@@ -1883,7 +1904,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2));
     rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
-  } else if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') {
+  } else if (braced_quantifier) {
     edges = rb_ary_new();
     VALUE first = rb_hash_new();
     rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
@@ -1896,12 +1917,14 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(exit, ID2SYM(rb_intern("from")), LONG2NUM(1)); rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2)); rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
   }
-  if (RSTRING_LEN(src) > 0 && RSTRING_PTR(src)[0] == '^' && RARRAY_LEN(edges) > 0) {
+  if (RARRAY_LEN(tokens) > 0 && onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("anchor") &&
+      onibi_token_byte(rb_ary_entry(tokens, 0)) == '^' && RARRAY_LEN(edges) > 0) {
     VALUE action = rb_hash_new();
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_BEGIN_BUFFER")));
     rb_ary_push(rb_hash_aref(rb_ary_entry(edges, 0), ID2SYM(rb_intern("actions"))), action);
   }
-  if (RSTRING_LEN(src) > 0 && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '$' && RARRAY_LEN(edges) > 0) {
+  if (RARRAY_LEN(tokens) > 0 && onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("anchor") &&
+      onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '$' && RARRAY_LEN(edges) > 0) {
     VALUE action = rb_hash_new();
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_END_BUFFER")));
     rb_ary_push(rb_hash_aref(rb_ary_entry(edges, RARRAY_LEN(edges) - 1), ID2SYM(rb_intern("actions"))), action);
@@ -1947,7 +1970,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   rb_hash_aset(out, ID2SYM(rb_intern("captures")), captures);
   rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
   VALUE compact = rb_ary_new();
-  int literal_only = RSTRING_LEN(src) > 0;
+  int literal_only = RARRAY_LEN(tokens) > 0;
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
     if (onibi_token_kind(token) != rb_intern("literal") ||
@@ -1962,8 +1985,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
-  } else if (RSTRING_LEN(src) >= 5 && RSTRING_PTR(src)[1] == '{' &&
-             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '}') {
+  } else if (braced_quantifier) {
     VALUE op = rb_hash_new();
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("REPEAT")));
     rb_hash_aset(op, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
@@ -1974,32 +1996,40 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
-  } else if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '[' &&
-             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ']') {
+  } else if (class_expression) {
     VALUE op = rb_hash_new();
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
     rb_ary_push(compact, op);
-  } else if (RSTRING_LEN(src) == 1 && RSTRING_PTR(src)[0] == '.') {
+  } else if (any_expression) {
     VALUE op = rb_hash_new();
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_ANY")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), INT2NUM(1));
     rb_ary_push(compact, op);
   } else if (is_alt) {
     VALUE op = rb_hash_new(), branches = rb_ary_new(); long begin = 0;
-    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
-      rb_ary_push(branches, rb_str_substr(src, begin, i - begin)); begin = i + 1;
+    for (long i = 0; i <= RARRAY_LEN(tokens); i++) if (i == RARRAY_LEN(tokens) ||
+        onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) {
+      if (begin < i) {
+        VALUE first = rb_ary_entry(tokens, begin), last = rb_ary_entry(tokens, i - 1);
+        long start = NUM2LONG(onibi_hash_value(first, "start"));
+        long finish = NUM2LONG(onibi_hash_value(last, "end"));
+        rb_ary_push(branches, rb_str_substr(src, start, finish - start));
+      } else rb_ary_push(branches, rb_str_new_cstr(""));
+      begin = i + 1;
     }
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ALT")));
     rb_hash_aset(op, ID2SYM(rb_intern("branches")), branches);
     rb_ary_push(compact, op);
-  } else if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' &&
-             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')') {
+  } else if (capture_expression) {
     VALUE open = rb_hash_new(), string = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), INT2NUM(2));
     rb_hash_aset(string, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
-    rb_hash_aset(string, ID2SYM(rb_intern("arg")), rb_str_substr(src, 1, RSTRING_LEN(src) - 2));
+    VALUE first = rb_ary_entry(tokens, 0), last = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1);
+    long body_start = NUM2LONG(onibi_hash_value(first, "end"));
+    long body_end = NUM2LONG(onibi_hash_value(last, "start"));
+    rb_hash_aset(string, ID2SYM(rb_intern("arg")), rb_str_substr(src, body_start, body_end - body_start));
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), INT2NUM(3));
     rb_ary_push(compact, open); rb_ary_push(compact, string); rb_ary_push(compact, close);
