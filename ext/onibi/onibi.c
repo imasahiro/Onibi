@@ -767,9 +767,9 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       VALUE slice = rb_ary_new();
       VALUE open = rb_hash_dup(rb_ary_entry(tokens, part_begin));
       VALUE finish = rb_hash_dup(rb_ary_entry(tokens, part_end - 1));
-      rb_hash_aset(open, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_start")));
+      rb_hash_aset(open, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_START));
       rb_hash_aset(open, ID2SYM(rb_intern("byte")), INT2NUM('['));
-      rb_hash_aset(finish, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_end")));
+      rb_hash_aset(finish, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_END));
       rb_hash_aset(finish, ID2SYM(rb_intern("byte")), INT2NUM(']'));
       rb_ary_push(slice, open);
       for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
@@ -1310,10 +1310,9 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   VALUE children = onibi_hash_value(payload, "children");
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
-    VALUE kind_value = onibi_hash_value(child, "kind");
     OnibiTokenKind token_kind = NIL_P(onibi_hash_value(child, "kind_code")) ?
       (OnibiTokenKind)-1 : onibi_token_kind_code(child);
-    OnibiAstKind ast_kind = NIL_P(kind_value) ? onibi_ast_kind(child) : ONIBI_AST_UNKNOWN;
+    OnibiAstKind ast_kind = onibi_ast_kind(child);
     if (token_kind == ONIBI_TOKEN_LITERAL || ast_kind == ONIBI_AST_LITERAL) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
