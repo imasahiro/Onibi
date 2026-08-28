@@ -1315,6 +1315,8 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload);
 static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions);
+static VALUE onibi_class_payload_with_ctypes(VALUE payload);
+static int onibi_unicode_ctype(VALUE name);
 
 static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, uint32_t flags) {
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
@@ -1665,7 +1667,7 @@ skip_utf8_range_expansion:
       rb_obj_freeze(payload);
     }
     if (type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("class_intersection"))) {
-      payload = rb_hash_dup(payload);
+      payload = onibi_class_payload_with_ctypes(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
                    onibi_class_bitmap(payload, builder->ignorecase));
       rb_obj_freeze(payload);
@@ -1676,6 +1678,10 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
       rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
                    onibi_class_bitmap(payload, builder->ignorecase));
+      VALUE property_name = onibi_hash_value(payload, "name");
+      int property_ctype = NIL_P(property_name) ? -1 : onibi_unicode_ctype(property_name);
+      if (property_ctype >= 0)
+        rb_hash_aset(payload, ID2SYM(rb_intern("ctype")), INT2NUM(property_ctype));
       rb_obj_freeze(payload);
     }
     if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
@@ -3540,6 +3546,33 @@ static int onibi_unicode_ctype(VALUE name) {
   return -1;
 }
 
+/* Property names are resolved while the AST is compiled.  VM payloads carry
+   this integer, so matching never compares property strings. */
+static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
+  VALUE copy = rb_hash_dup(payload);
+  VALUE name = onibi_hash_value(copy, "name");
+  int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
+  if (ctype >= 0) rb_hash_aset(copy, ID2SYM(rb_intern("ctype")), INT2NUM(ctype));
+  VALUE children = onibi_hash_value(copy, "children");
+  if (RB_TYPE_P(children, T_ARRAY)) {
+    VALUE compiled = rb_ary_new_capa(RARRAY_LEN(children));
+    for (long i = 0; i < RARRAY_LEN(children); i++) {
+      VALUE child = rb_ary_entry(children, i);
+      VALUE child_copy = RB_TYPE_P(child, T_HASH) ? rb_hash_dup(child) : child;
+      if (RB_TYPE_P(child_copy, T_HASH) &&
+          onibi_hash_value(child_copy, "kind") == ID2SYM(rb_intern("escape"))) {
+        VALUE child_name = onibi_hash_value(child_copy, "name");
+        int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
+        if (child_ctype >= 0)
+          rb_hash_aset(child_copy, ID2SYM(rb_intern("ctype")), INT2NUM(child_ctype));
+      }
+      rb_ary_push(compiled, child_copy);
+    }
+    rb_hash_aset(copy, ID2SYM(rb_intern("children")), compiled);
+  }
+  return copy;
+}
+
 static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, long *width) {
   const char *ptr = RSTRING_PTR(str) + pos;
   const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
@@ -3552,7 +3585,8 @@ static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, lon
 
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
   VALUE name = onibi_hash_value(payload, "name");
-  int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
+  VALUE ctype_value = onibi_hash_value(payload, "ctype");
+  int ctype = NIL_P(ctype_value) ? -1 : NUM2INT(ctype_value);
   if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex()) {
     if (pos > 0 && ((unsigned char)RSTRING_PTR(str)[pos] & 0xc0) == 0x80 &&
         (((unsigned char)RSTRING_PTR(str)[pos - 1] & 0xc0) == 0x80 || (unsigned char)RSTRING_PTR(str)[pos - 1] >= 0xc0)) return 0;
@@ -3585,8 +3619,8 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
               ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
                                    (const OnigUChar *)child_end) == code) hit = 1;
         } else if (kind == rb_intern("escape")) {
-          VALUE child_name = onibi_hash_value(child, "name");
-          int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
+          VALUE child_ctype_value = onibi_hash_value(child, "ctype");
+          int child_ctype = NIL_P(child_ctype_value) ? -1 : NUM2INT(child_ctype_value);
           if (child_ctype >= 0) {
             int child_hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, child_ctype);
             if (NUM2INT(onibi_hash_value(child, "byte")) == 'P') child_hit = !child_hit;

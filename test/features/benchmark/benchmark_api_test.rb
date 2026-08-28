@@ -345,6 +345,7 @@ class BenchmarkApiTest < Minitest::Test
     refute alpha.vm_match?("1")
     assert inverse.vm_match?("1")
     refute inverse.vm_match?("é")
+    assert_equal 1, alpha.pipeline[:compiled][:graph][:states].first[:payload][:ctype]
   end
 
   def test_unicode_property_inside_class_uses_character_predicate_union
