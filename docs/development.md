@@ -222,6 +222,14 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 
+The runtime Ruby containers have a separate rule. Capture maps and tag chains
+carry user-visible offsets or GC-managed payloads, so a C replacement is not
+simpler until MatchData materialization is isolated. The tagged counter map is
+different: its keys and values are numeric, but it shares the visited-state
+identity with capture frames. Migrate that map only with the capture walker.
+The cached physical graph is also an internal adapter, built once and reused;
+it is not a public pipeline object.
+
 The two largest remaining migrations are staged at explicit ownership
 boundaries:
 
