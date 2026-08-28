@@ -52,6 +52,19 @@ typedef struct {
   uint32_t arg32;
 } OnibiRAction;
 
+/* Flags preserve semantic action variants in the compact physical form. */
+#define ONIBI_RA_CAPTURE_CLOSE UINT8_C(1)
+#define ONIBI_RA_COUNTER_GE UINT8_C(1)
+#define ONIBI_RA_ASSERT_END_BUFFER UINT8_C(1)
+#define ONIBI_RA_ASSERT_BEGIN_LINE UINT8_C(2)
+#define ONIBI_RA_ASSERT_END_LINE UINT8_C(3)
+#define ONIBI_RA_ASSERT_SEMI_END_BUFFER UINT8_C(4)
+#define ONIBI_RA_ASSERT_SEARCH_ORIGIN UINT8_C(5)
+#define ONIBI_RA_ASSERT_WORD_BOUNDARY UINT8_C(6)
+#define ONIBI_RA_ASSERT_NONWORD_BOUNDARY UINT8_C(7)
+#define ONIBI_RA_ASSERT_LOOKAHEAD UINT8_C(8)
+#define ONIBI_RA_ASSERT_LOOKBEHIND UINT8_C(9)
+
 typedef enum {
   ONIBI_RS_CHAR = 1,
   ONIBI_RS_CLASS,

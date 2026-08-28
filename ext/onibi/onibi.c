@@ -1212,6 +1212,21 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   return result;
 }
 
+static uint8_t onibi_rseq_action_flags(ID op) {
+  if (op == rb_intern("CAPTURE_CLOSE")) return ONIBI_RA_CAPTURE_CLOSE;
+  if (op == rb_intern("TEST_COUNTER_GE")) return ONIBI_RA_COUNTER_GE;
+  if (op == rb_intern("ASSERT_END_BUFFER")) return ONIBI_RA_ASSERT_END_BUFFER;
+  if (op == rb_intern("ASSERT_BEGIN_LINE")) return ONIBI_RA_ASSERT_BEGIN_LINE;
+  if (op == rb_intern("ASSERT_END_LINE")) return ONIBI_RA_ASSERT_END_LINE;
+  if (op == rb_intern("ASSERT_SEMI_END_BUFFER")) return ONIBI_RA_ASSERT_SEMI_END_BUFFER;
+  if (op == rb_intern("ASSERT_SEARCH_ORIGIN")) return ONIBI_RA_ASSERT_SEARCH_ORIGIN;
+  if (op == rb_intern("ASSERT_WORD_BOUNDARY")) return ONIBI_RA_ASSERT_WORD_BOUNDARY;
+  if (op == rb_intern("ASSERT_NONWORD_BOUNDARY")) return ONIBI_RA_ASSERT_NONWORD_BOUNDARY;
+  if (op == rb_intern("ASSERT_LOOKAHEAD")) return ONIBI_RA_ASSERT_LOOKAHEAD;
+  if (op == rb_intern("ASSERT_LOOKBEHIND")) return ONIBI_RA_ASSERT_LOOKBEHIND;
+  return 0;
+}
+
 static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE graph = onibi_hash_value(compiled, "graph");
   if (NIL_P(graph)) rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
@@ -1524,6 +1539,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
+    physical_actions[i].flags = onibi_rseq_action_flags(op);
     VALUE slot = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("slot")));
     if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
     VALUE limit = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("limit")));
@@ -2475,7 +2491,8 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE value = onibi_hash_value(semantic_action, "value");
     uint32_t expected_arg32 = !NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
       (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0);
-    if (expected_op == 0xff || actions[i].op != expected_op || (!NIL_P(slot) && actions[i].arg16 != (uint16_t)NUM2ULONG(slot)) ||
+    uint8_t expected_flags = onibi_rseq_action_flags(op);
+    if (expected_op == 0xff || actions[i].op != expected_op || actions[i].flags != expected_flags || (!NIL_P(slot) && actions[i].arg16 != (uint16_t)NUM2ULONG(slot)) ||
         ((!NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
       rb_raise(rb_eArgError, "RSeq action disagrees with semantic action");
     if (actions[i].op > ONIBI_RA_PROGRESS)
