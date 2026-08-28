@@ -168,8 +168,7 @@ benchmark contract suite has 75 cases and 419 assertions after an explicit C
 build. Character-class range and GIR resource validation are parser/compiler
 gates.
 
-Remaining gates are removal of legacy source heuristics from the compatibility
-pipeline view, complete option and encoding semantics, atomic backtracking
+Remaining gates are complete option and encoding semantics, atomic backtracking
 states, non-literal lookaround subprograms, and complete tag-history sharing.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
