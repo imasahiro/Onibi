@@ -1260,7 +1260,7 @@ static int onibi_ascii_property_name_p(VALUE name) {
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
-  if (onibi_hash_value(payload, "type") == ID2SYM(rb_intern("class_intersection"))) {
+  if (onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION) {
     VALUE operands = onibi_hash_value(payload, "operands");
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) < 2)
       rb_raise(eRegexpError, "class intersection has no operands");
@@ -1375,10 +1375,6 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
 
 static VALUE onibi_hash_value(VALUE hash, const char *name) {
   return rb_hash_aref(hash, ID2SYM(rb_intern(name)));
-}
-
-static VALUE onibi_symbol_value(VALUE hash, const char *name) {
-  return onibi_hash_value(hash, name);
 }
 
 static int onibi_ast_has_capture(VALUE ast) {
@@ -1595,8 +1591,8 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
 
 static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long *next_capture) {
   if (!RB_TYPE_P(ast, T_HASH)) return;
-  ID type = onibi_symbol_value(ast, "type");
-  if (type == ID2SYM(rb_intern("capture"))) {
+  OnibiAstKind type = onibi_ast_kind(ast);
+  if (type == ONIBI_AST_CAPTURE) {
     VALUE start = onibi_hash_value(ast, "start");
     VALUE id_value = rb_hash_aref(builder->capture_ids, start);
     long id;
@@ -2217,23 +2213,23 @@ skip_utf8_range_expansion:
     VALUE predicates = rb_ary_new();
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
-      VALUE child_type = onibi_symbol_value(child, "type");
-      if (child_type == ID2SYM(rb_intern("character_class")) ||
-          child_type == ID2SYM(rb_intern("class_intersection"))) {
+      OnibiAstKind child_type = onibi_ast_kind(child);
+      if (child_type == ONIBI_AST_CHARACTER_CLASS ||
+          child_type == ONIBI_AST_CLASS_INTERSECTION) {
         VALUE predicate = rb_hash_new();
         rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
         rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(child, builder->ignorecase));
         rb_ary_push(predicates, predicate);
         continue;
       }
-      if (child_type == ID2SYM(rb_intern("any"))) {
+      if (child_type == ONIBI_AST_ANY) {
         VALUE predicate = rb_hash_new();
         rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("any")));
         rb_hash_aset(predicate, ID2SYM(rb_intern("multiline")), builder->multiline ? Qtrue : Qfalse);
         rb_ary_push(predicates, predicate);
         continue;
       }
-      if (child_type == ID2SYM(rb_intern("escape"))) {
+      if (child_type == ONIBI_AST_ESCAPE) {
         VALUE name = onibi_hash_value(child, "name");
         int simple = !NIL_P(name) &&
            (onibi_ascii_property_name_p(name) ||
@@ -2249,7 +2245,7 @@ skip_utf8_range_expansion:
         rb_ary_push(predicates, predicate);
         continue;
       }
-      if (child_type != ID2SYM(rb_intern("literal")))
+      if (child_type != ONIBI_AST_LITERAL)
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();
       rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
@@ -4088,7 +4084,8 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
       VALUE child = rb_ary_entry(children, i);
       VALUE child_copy = RB_TYPE_P(child, T_HASH) ? rb_hash_dup(child) : child;
       if (RB_TYPE_P(child_copy, T_HASH) &&
-          onibi_hash_value(child_copy, "kind") == ID2SYM(rb_intern("escape"))) {
+          (onibi_hash_value(child_copy, "kind_code") == UINT2NUM(ONIBI_TOKEN_ESCAPE) ||
+           onibi_ast_kind(child_copy) == ONIBI_AST_ESCAPE)) {
         VALUE child_name = onibi_hash_value(child_copy, "name");
         int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
         if (child_ctype >= 0)
@@ -4106,9 +4103,9 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
     for (long i = 0; i < RARRAY_LEN(operands); i++) {
       VALUE operand = onibi_class_payload_with_ctypes(rb_ary_entry(operands, i));
       if (fold) rb_hash_aset(operand, ID2SYM(id_key_ignorecase), Qtrue);
-      VALUE operand_type = onibi_hash_value(operand, "type");
-      if (operand_type == ID2SYM(rb_intern("character_class")) ||
-          operand_type == ID2SYM(rb_intern("class_intersection")))
+      OnibiAstKind operand_type = onibi_ast_kind(operand);
+      if (operand_type == ONIBI_AST_CHARACTER_CLASS ||
+          operand_type == ONIBI_AST_CLASS_INTERSECTION)
         rb_hash_aset(operand, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(operand, 0));
       rb_ary_push(compiled_operands, operand);
     }
