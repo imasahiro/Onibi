@@ -498,16 +498,28 @@ class BenchmarkApiTest < Minitest::Test
 
   def test_class_intersection_stays_out_of_ascii_rseq
     regexp = Onibi::Regexp.new("[a&&b]")
-    refute regexp.program_cached?
-    assert_equal Onibi::Regexp.new("[a&&b]").match?("a"), regexp.match?("a")
+    assert regexp.program_cached?
+    refute regexp.vm_match?("a")
+    refute regexp.vm_match?("b")
   end
 
   def test_nested_character_class_is_preserved_in_parser_ast
     ast = Onibi::Parser.parse("[a-z&&[^aeiou]]")[:ast]
-    nested = ast[:children].first[:children].find { |child| child[:type] == :character_class }
+    intersection = ast[:children].first
+    nested = intersection[:operands].last[:children].find { |child| child[:type] == :character_class }
 
     refute_nil nested
     assert_equal true, nested[:negated]
+  end
+
+  def test_class_intersection_bitmap_matches_mri_set_intersection
+    regexp = Onibi::Regexp.new("[a-z&&[^aeiou]]")
+
+    assert regexp.program_cached?
+    assert regexp.vm_match?("b")
+    assert regexp.vm_match?("z")
+    refute regexp.vm_match?("a")
+    refute regexp.vm_match?("e")
   end
 
   def test_shorthand_escapes_inside_classes_use_bitmap_predicates

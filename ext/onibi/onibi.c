@@ -464,6 +464,36 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   VALUE node = onibi_ast_node("character_class", rb_ary_entry(tokens, begin));
   VALUE children = rb_ary_new(), ranges = rb_ary_new();
   int negated = 0;
+  long intersection = -1;
+  long depth = 0;
+  for (long i = begin + 1; i + 1 < close; i++) {
+    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
+    if (kind == rb_intern("class_start")) { depth++; continue; }
+    if (kind == rb_intern("class_end")) { if (depth > 0) depth--; continue; }
+    if (depth == 0 && kind == rb_intern("literal") && onibi_token_byte(rb_ary_entry(tokens, i)) == '&' &&
+        onibi_token_kind(rb_ary_entry(tokens, i + 1)) == rb_intern("literal") &&
+        onibi_token_byte(rb_ary_entry(tokens, i + 1)) == '&') { intersection = i; break; }
+  }
+  if (intersection >= 0) {
+    VALUE result = onibi_ast_node("class_intersection", rb_ary_entry(tokens, begin));
+    VALUE operands = rb_ary_new();
+    for (int side = 0; side < 2; side++) {
+      long part_begin = side == 0 ? begin + 1 : intersection + 2;
+      long part_end = side == 0 ? intersection : close;
+      VALUE slice = rb_ary_new();
+      VALUE open = rb_hash_dup(rb_ary_entry(tokens, begin));
+      VALUE finish = rb_hash_dup(rb_ary_entry(tokens, close));
+      rb_hash_aset(open, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_start")));
+      rb_hash_aset(finish, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("class_end")));
+      rb_ary_push(slice, open);
+      for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
+      rb_ary_push(slice, finish);
+      rb_ary_push(operands, onibi_parse_class(slice, 0, RARRAY_LEN(slice) - 1));
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("operands")), operands);
+    rb_obj_freeze(operands);
+    return result;
+  }
   for (long i = begin + 1; i < close; i++) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
@@ -897,6 +927,21 @@ static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
+  if (onibi_hash_value(payload, "type") == ID2SYM(rb_intern("class_intersection"))) {
+    VALUE operands = onibi_hash_value(payload, "operands");
+    if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) < 2)
+      rb_raise(eRegexpError, "class intersection has no operands");
+    VALUE first = onibi_class_bitmap(rb_ary_entry(operands, 0), fold);
+    memcpy(bits, RSTRING_PTR(first), sizeof(bits));
+    for (long i = 1; i < RARRAY_LEN(operands); i++) {
+      VALUE next = onibi_class_bitmap(rb_ary_entry(operands, i), fold);
+      for (long byte = 0; byte < 32; byte++)
+        bits[byte] &= (unsigned char)RSTRING_PTR(next)[byte];
+    }
+    VALUE result = rb_str_new((const char *)bits, sizeof(bits));
+    rb_obj_freeze(result);
+    return result;
+  }
   VALUE ranges = onibi_hash_value(payload, "ranges");
   VALUE escape_name = onibi_hash_value(payload, "name");
   if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
@@ -1252,7 +1297,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     return result;
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
-      type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
+      type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) ||
+      type == ID2SYM(rb_intern("class_intersection")) || type == ID2SYM(rb_intern("any"))) {
     VALUE literal_bytes = onibi_hash_value(ast, "bytes");
     if (type == ID2SYM(rb_intern("literal")) && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
@@ -1292,7 +1338,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
-    if (type == ID2SYM(rb_intern("character_class"))) {
+    if (type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("class_intersection"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
                    onibi_class_bitmap(payload, builder->ignorecase));
@@ -2228,8 +2274,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
-        obj->has_class_intersection) {
+    if (!onibi_ascii_pattern(source) || (opts & (16 | 32))) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
