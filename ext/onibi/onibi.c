@@ -573,6 +573,19 @@ static VALUE onibi_parser_options(VALUE options) {
   VALUE result = rb_ary_new();
   if (NIL_P(options) || options == Qfalse) { rb_obj_freeze(result); return result; }
   if (options == Qtrue) { VALUE name = rb_str_new_cstr("ignorecase"); rb_obj_freeze(name); rb_ary_push(result, name); }
+  else if (RB_TYPE_P(options, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(options); i++) {
+      VALUE item = rb_ary_entry(options, i);
+      VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
+      if (rb_str_cmp(name, rb_str_new_cstr("ignorecase")) == 0 ||
+          rb_str_cmp(name, rb_str_new_cstr("multiline")) == 0 ||
+          rb_str_cmp(name, rb_str_new_cstr("extended")) == 0 ||
+          rb_str_cmp(name, rb_str_new_cstr("fixedencoding")) == 0 ||
+          rb_str_cmp(name, rb_str_new_cstr("noencoding")) == 0) {
+        VALUE copy = rb_str_dup(name); rb_obj_freeze(copy); rb_ary_push(result, copy);
+      } else rb_raise(rb_eArgError, "unknown regexp option");
+    }
+  }
   else if (RB_TYPE_P(options, T_STRING)) {
     const char *p = RSTRING_PTR(options);
     for (long i = 0; i < RSTRING_LEN(options); i++) {
@@ -605,7 +618,13 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
     int extended = 0;
     if (!NIL_P(options)) {
       if (RB_TYPE_P(options, T_STRING)) extended = memchr(RSTRING_PTR(options), 'x', (size_t)RSTRING_LEN(options)) != NULL;
-      else extended = (NUM2INT(options) & 2) != 0;
+      else if (RB_TYPE_P(options, T_ARRAY)) {
+        for (long i = 0; i < RARRAY_LEN(options); i++) {
+          VALUE item = rb_ary_entry(options, i);
+          VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
+          if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) { extended = 1; break; }
+        }
+      } else extended = (NUM2INT(options) & 2) != 0;
     }
     tokens = onibi_tokenize_internal(source, extended);
   }
