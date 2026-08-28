@@ -2081,6 +2081,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
     VALUE value = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("value")));
     if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
+    VALUE width = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("width")));
+    if (!NIL_P(width)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(width);
   }
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
   unsigned char *class_data = (unsigned char *)(class_descs + class_count);
@@ -3364,8 +3366,10 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE slot = onibi_hash_value(semantic_action, "slot");
     VALUE limit = onibi_hash_value(semantic_action, "limit");
     VALUE value = onibi_hash_value(semantic_action, "value");
-    uint32_t expected_arg32 = !NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
-      (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0);
+    VALUE width = onibi_hash_value(semantic_action, "width");
+    uint32_t expected_arg32 = !NIL_P(width) ? (uint32_t)NUM2ULONG(width) :
+      (!NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
+       (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0));
     uint8_t expected_flags = onibi_rseq_action_flags(op);
     uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) : onibi_rseq_assert_kind(op);
     if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
@@ -3373,7 +3377,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       expected_flags = op == rb_intern("ASSERT_LOOKAHEAD") ? (positive ? 1 : 2) : (positive ? 5 : 6);
     }
     if (expected_op == 0xff || actions[i].op != expected_op || actions[i].flags != expected_flags || actions[i].arg16 != expected_arg16 ||
-        ((!NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
+        ((!NIL_P(width) || !NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
       rb_raise(rb_eArgError, "RSeq action disagrees with semantic action");
     if (actions[i].op > ONIBI_RA_PROGRESS)
       rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");

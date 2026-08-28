@@ -485,6 +485,8 @@ class BenchmarkApiTest < Minitest::Test
 
     assert ahead.program_cached?
     assert behind.program_cached?
+    lookahead = ahead.pipeline[:canonical][:rseq][:actions].find { |action| action[:op] == :ASSERT_LOOKAHEAD }
+    assert_equal 2, lookahead[:width]
     assert ahead.vm_match?("ac")
     assert behind.vm_match?("acc")
     refute behind.vm_match?("abc")
