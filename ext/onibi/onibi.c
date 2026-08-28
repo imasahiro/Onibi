@@ -2651,6 +2651,14 @@ static VALUE onibi_materialize_tags(VALUE tags, VALUE fallback) {
   return captures;
 }
 
+static int onibi_has_capture_action(VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
+    if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) return 1;
+  }
+  return 0;
+}
+
 /* Capture output uses an append-only event chain.  Each branch shares the
    parent chain and allocates only the events that it adds. */
 static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures,
@@ -2724,7 +2732,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE next_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters)) continue;
-    VALUE next_captures = onibi_capture_copy(captures);
+    VALUE next_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
     VALUE next_tags = tags;
     long next_reported_start = reported_start;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
@@ -2750,7 +2758,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE branch_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters)) continue;
-    VALUE branch_captures = onibi_capture_copy(captures);
+    VALUE branch_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
     long reported_start = start;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
     VALUE branch_tags = onibi_apply_capture_actions(edge_actions, start, branch_captures, tags, &reported_start);
