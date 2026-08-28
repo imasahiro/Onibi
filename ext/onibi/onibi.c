@@ -5672,7 +5672,24 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
   VALUE start_edges = rb_ary_new_capa(RARRAY_LEN(semantic_start_edges));
   VALUE outgoing = rb_ary_new_capa(RARRAY_LEN(semantic_states));
-  for (long i = 0; i < RARRAY_LEN(semantic_states); i++) rb_ary_push(outgoing, rb_ary_new());
+  long state_count = RARRAY_LEN(semantic_states);
+  size_t degree_bytes = state_count > 0 && (size_t)state_count <= SIZE_MAX / sizeof(size_t) ?
+    (size_t)state_count * sizeof(size_t) : 0;
+  size_t *outgoing_degrees = degree_bytes == 0 ? NULL : ALLOC_N(size_t, (size_t)state_count);
+  if (outgoing_degrees) memset(outgoing_degrees, 0, degree_bytes);
+  for (long i = 0; i < RARRAY_LEN(semantic_edges); i++) {
+    VALUE edge = rb_ary_entry(semantic_edges, i);
+    VALUE from = onibi_hash_value_id(edge, id_key_from);
+    if (outgoing_degrees && RB_INTEGER_TYPE_P(from)) {
+      long state = NUM2LONG(from);
+      if (state >= 0 && state < state_count) outgoing_degrees[state]++;
+    }
+  }
+  for (long i = 0; i < state_count; i++) {
+    size_t capacity = outgoing_degrees ? outgoing_degrees[i] : 0;
+    rb_ary_push(outgoing, rb_ary_new_capa(capacity > (size_t)LONG_MAX ? LONG_MAX : (long)capacity));
+  }
+  if (outgoing_degrees) xfree(outgoing_degrees);
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   const OnibiRState *physical_states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);

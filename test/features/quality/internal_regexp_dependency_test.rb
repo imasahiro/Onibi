@@ -314,6 +314,15 @@ class InternalRegexpDependencyTest < Minitest::Test
       "id_key_action_code)) == ONIBI_GA_END"
   end
 
+  def test_physical_graph_preallocates_outgoing_edge_indexes
+    source = File.read(EXTENSION_SOURCE)
+    graph = source[/static VALUE onibi_rseq_physical_graph\(VALUE rseq\) \{.*?\n}\n/m]
+
+    refute_nil graph
+    assert_includes graph, "outgoing_degrees"
+    assert_includes graph, "rb_ary_new_capa(capacity"
+  end
+
   def test_compiler_property_paths_use_cached_name_ids
     source = File.read(EXTENSION_SOURCE)
     assert_equal 0, source.scan(/NIL_P\([^)]*name_id\).*rb_intern_str/).length
