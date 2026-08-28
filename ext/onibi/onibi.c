@@ -4026,7 +4026,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
         if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
-      VALUE bytes = onibi_hash_value(action, "bytes");
+      VALUE bytes = onibi_hash_value_id(action, id_key_bytes);
       long width = RSTRING_LEN(bytes);
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
@@ -4064,7 +4064,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
         if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
-      VALUE bytes = onibi_hash_value(action, "bytes");
+      VALUE bytes = onibi_hash_value_id(action, id_key_bytes);
       long width = RSTRING_LEN(bytes);
       int hit = pos >= width && memcmp(RSTRING_PTR(subject) + pos - width, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
