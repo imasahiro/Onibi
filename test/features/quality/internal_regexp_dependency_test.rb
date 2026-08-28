@@ -186,9 +186,9 @@ class InternalRegexpDependencyTest < Minitest::Test
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
-    assert_includes lowerer, "OnibiValueVector action_records"
-    assert_includes lowerer, "onibi_value_vector_push(&action_records"
-    assert_includes lowerer, "onibi_value_vector_free(&action_records)"
+    assert_includes lowerer, "OnibiRSeqActionVector action_records"
+    assert_includes lowerer, "onibi_rseq_action_vector_push(&action_records"
+    assert_includes lowerer, "onibi_rseq_action_vector_free(&action_records)"
   end
 
   def test_rseq_states_use_c_records_during_lowering
@@ -216,7 +216,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
-    assert_includes lowerer, "action_records.items[i]"
+    assert_includes lowerer, "action_records.entries[i].value"
     assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
   end
 

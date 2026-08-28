@@ -1272,6 +1272,8 @@ typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } O
 typedef struct { long from; long to; long action_offset; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
 typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
+typedef struct { VALUE value; OnibiGActionOp code; ID op; } OnibiRSeqActionEntry;
+typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1456,6 +1458,23 @@ static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value) {
 }
 static void onibi_value_vector_free(OnibiValueVector *vector) {
   xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_action_vector_init(OnibiRSeqActionVector *vector) {
+  vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE value) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "RSeq action vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiRSeqActionEntry, next); vector->capacity = next;
+  }
+  vector->entries[vector->count++] = (OnibiRSeqActionEntry){
+    value, (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code)),
+    SYM2ID(onibi_hash_value_id(value, id_key_op))
+  };
+}
+static void onibi_rseq_action_vector_free(OnibiRSeqActionVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
@@ -2960,8 +2979,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!found) onibi_value_vector_push(&class_payloads, payload);
   }
   uint32_t class_count = (uint32_t)class_payloads.count;
-  OnibiValueVector action_records;
-  onibi_value_vector_init(&action_records);
+  OnibiRSeqActionVector action_records;
+  onibi_rseq_action_vector_init(&action_records);
   VALUE action_roots = rb_ary_new();
   OnibiGirEdgeVector r_edge_records;
   onibi_gir_edge_vector_init(&r_edge_records);
@@ -2978,7 +2997,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE action = rb_ary_entry(edge_actions, j);
       VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
       rb_ary_push(copied_actions, copy);
-      onibi_value_vector_push(&action_records, copy);
+      onibi_rseq_action_vector_push(&action_records, copy);
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
@@ -2986,7 +3005,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
-      onibi_value_vector_push(&action_records, terminator);
+      onibi_rseq_action_vector_push(&action_records, terminator);
     }
     rb_obj_freeze(copied_actions);
     onibi_gir_edge_vector_push(&r_edge_records, (OnibiGirEdgeEntry){from, to, action_offset, copied_actions}, action_roots);
@@ -3005,7 +3024,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE action = rb_ary_entry(edge_actions, j);
       VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
       rb_ary_push(copied_actions, copy);
-      onibi_value_vector_push(&action_records, copy);
+      onibi_rseq_action_vector_push(&action_records, copy);
     }
     if (RARRAY_LEN(edge_actions) > 0) {
       VALUE terminator = rb_hash_new();
@@ -3013,13 +3032,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       onibi_set_gir_action_opcode(terminator, id_a_end);
       terminator = onibi_deep_freeze(terminator);
       rb_ary_push(copied_actions, terminator);
-      onibi_value_vector_push(&action_records, terminator);
+      onibi_rseq_action_vector_push(&action_records, terminator);
     }
     rb_obj_freeze(copied_actions);
     onibi_gir_edge_vector_push(&r_start_edge_records, (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions}, action_roots);
   }
   VALUE actions = rb_ary_new_capa((long)action_records.count);
-  for (size_t i = 0; i < action_records.count; i++) rb_ary_push(actions, action_records.items[i]);
+  for (size_t i = 0; i < action_records.count; i++) rb_ary_push(actions, action_records.entries[i].value);
   rb_obj_freeze(actions);
   VALUE r_edges = rb_ary_new_capa((long)r_edge_records.count);
   for (size_t i = 0; i < r_edge_records.count; i++) {
@@ -3079,7 +3098,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (state_records.entries[i].opcode == ONIBI_G_BACKREF) features |= 1U;
   }
   for (size_t i = 0; i < action_records.count; i++) {
-    VALUE action = action_records.items[i];
+    VALUE action = action_records.entries[i].value;
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     if (code == ONIBI_GA_CAPTURE_OPEN) { capture_count++; features |= 2U; }
@@ -3137,7 +3156,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   if (physical.exec_kind == 0) {
     for (size_t i = 0; i < action_records.count; i++) {
-      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action_records.items[i], id_key_action_code));
+      OnibiGActionOp code = action_records.entries[i].code;
       if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE ||
           code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
           code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
@@ -3247,9 +3266,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
   for (size_t i = 0; i < action_records.count; i++) {
-    VALUE action = action_records.items[i];
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    OnibiGActionOp action_code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+    VALUE action = action_records.entries[i].value;
+    ID op = action_records.entries[i].op;
+    OnibiGActionOp action_code = action_records.entries[i].code;
     physical_actions[i].op = (uint8_t)(action_code == ONIBI_GA_CAPTURE_OPEN || action_code == ONIBI_GA_CAPTURE_CLOSE ? ONIBI_RA_CAPTURE :
       action_code == ONIBI_GA_MATCH_RESET ? ONIBI_RA_MATCH_RESET :
       action_code == ONIBI_GA_ASSERT_POSITION ? ONIBI_RA_ASSERT_POSITION :
@@ -3327,7 +3346,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   onibi_rseq_validate(result);
   onibi_value_vector_free(&class_payloads);
   onibi_value_vector_free(&literal_payloads);
-  onibi_value_vector_free(&action_records);
+  onibi_rseq_action_vector_free(&action_records);
   onibi_gir_edge_vector_free(&r_edge_records);
   onibi_gir_edge_vector_free(&r_start_edge_records);
   onibi_gir_state_vector_free(&state_records);
