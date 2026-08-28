@@ -164,8 +164,8 @@ cross an explicit dynamic boundary. They must not enter a partial fast path.
 ## Current C pipeline status
 
 Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
-benchmark contract suite has 71 cases and 402 assertions after an explicit C
-build.
+benchmark contract suite has 72 cases and 404 assertions after an explicit C
+build. Character-class range endpoint validation is part of the parser gate.
 
 Remaining gates are removal of legacy source heuristics from the compatibility
 pipeline view, complete option and encoding semantics, atomic backtracking
