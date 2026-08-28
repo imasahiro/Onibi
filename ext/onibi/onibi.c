@@ -2428,13 +2428,14 @@ static void onibi_rseq_validate(VALUE rseq) {
        op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) ? ONIBI_RA_ASSERT_POSITION :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
-      (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END;
+      (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) ? ONIBI_RA_COUNTER_TEST :
+      op == rb_intern("END") ? ONIBI_RA_END : 0xff;
     VALUE slot = onibi_hash_value(semantic_action, "slot");
     VALUE limit = onibi_hash_value(semantic_action, "limit");
     VALUE value = onibi_hash_value(semantic_action, "value");
     uint32_t expected_arg32 = !NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
       (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0);
-    if (actions[i].op != expected_op || (!NIL_P(slot) && actions[i].arg16 != (uint16_t)NUM2ULONG(slot)) ||
+    if (expected_op == 0xff || actions[i].op != expected_op || (!NIL_P(slot) && actions[i].arg16 != (uint16_t)NUM2ULONG(slot)) ||
         ((!NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
       rb_raise(rb_eArgError, "RSeq action disagrees with semantic action");
     if (actions[i].op > ONIBI_RA_PROGRESS)

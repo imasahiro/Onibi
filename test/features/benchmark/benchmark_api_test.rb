@@ -612,6 +612,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "cat", :REGULAR_FAST) }
   end
 
+  def test_vm_rejects_unknown_rseq_action_opcode
+    rseq = Onibi::Regexp.new("(a)").pipeline[:rseq_program]
+    actions = rseq[:actions].dup
+    actions[0] = actions[0].merge(op: :UNKNOWN).freeze
+    invalid = rseq.merge(actions: actions.freeze).freeze
+    assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "a", :TAGGED_ORDERED) }
+  end
+
   def test_vm_rejects_non_hash_semantic_entries
     rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
     states = rseq[:states].dup
