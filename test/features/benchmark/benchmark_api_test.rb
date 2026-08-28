@@ -689,6 +689,12 @@ class BenchmarkApiTest < Minitest::Test
     assert repeated.vm_match?("aab")
   end
 
+  def test_nullable_capture_uses_mri_until_tag_history_exists
+    regexp = Onibi::Regexp.new("(a*)")
+    refute regexp.program_cached?
+    assert_equal Regexp.new("(a*)").match("aa").to_a, regexp.match("aa").to_a
+  end
+
   def test_compiler_assigns_distinct_capture_slots
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a(b))"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
