@@ -69,6 +69,7 @@ class BenchmarkApiTest < Minitest::Test
     end
     assert_equal 3, literal[:header][:literal_count]
     assert_equal 1, class_program[:header][:class_count]
+    assert_equal 1, Onibi::Regexp.new("[a][a]").pipeline[:rseq_program][:header][:class_count]
   end
 
   def test_literal_pipeline_exposes_compiler_stages

@@ -816,9 +816,23 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (to < 0 || to >= state_count)
       rb_raise(rb_eArgError, "RSeq lowering received an invalid start edge");
   }
-  uint32_t class_count = 0;
-  for (long i = 0; i < RARRAY_LEN(states); i++)
-    if (SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op")) == rb_intern("G_CLASS")) class_count++;
+  VALUE class_payloads = rb_ary_new();
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    VALUE state = rb_ary_entry(states, i);
+    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CLASS")) continue;
+    VALUE payload = onibi_hash_value(state, "payload");
+    int found = 0;
+    for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
+      VALUE prior = rb_ary_entry(class_payloads, j);
+      if (rb_equal(onibi_hash_value(prior, "bitmap"), onibi_hash_value(payload, "bitmap")) &&
+          rb_equal(onibi_hash_value(prior, "negated"), onibi_hash_value(payload, "negated"))) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) rb_ary_push(class_payloads, payload);
+  }
+  uint32_t class_count = (uint32_t)RARRAY_LEN(class_payloads);
   VALUE actions = rb_ary_new();
   VALUE r_edges = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
@@ -990,7 +1004,17 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
-    if (op == rb_intern("G_CLASS")) physical_states[i].payload = class_index++;
+    if (op == rb_intern("G_CLASS")) {
+      VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
+      class_index = 0;
+      for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
+        VALUE prior = rb_ary_entry(class_payloads, j);
+        if (rb_equal(onibi_hash_value(prior, "bitmap"), onibi_hash_value(payload, "bitmap")) &&
+            rb_equal(onibi_hash_value(prior, "negated"), onibi_hash_value(payload, "negated"))) break;
+        class_index++;
+      }
+      physical_states[i].payload = class_index;
+    }
     else if (op == rb_intern("G_CHAR")) physical_states[i].payload = literal_index++;
   }
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
@@ -1031,10 +1055,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
   unsigned char *class_data = (unsigned char *)(class_descs + class_count);
   class_index = 0;
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    VALUE state = rb_ary_entry(states, i);
-    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CLASS")) continue;
-    VALUE payload = onibi_hash_value(state, "payload");
+  for (long i = 0; i < RARRAY_LEN(class_payloads); i++) {
+    VALUE payload = rb_ary_entry(class_payloads, i);
     VALUE bitmap = onibi_hash_value(payload, "bitmap");
     class_descs[class_index].data_offset = (uint32_t)(physical.classes_offset + class_count * sizeof(OnibiClassDesc) + class_index * 32U);
     class_descs[class_index].data_length = 32;
