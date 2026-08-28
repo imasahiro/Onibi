@@ -167,7 +167,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil lowerer
     assert_includes lowerer, "OnibiRSeqClassPayloadVector class_payloads"
-    assert_includes lowerer, "OnibiValueVector literal_payloads"
+    assert_includes lowerer, "OnibiRSeqLiteralPayloadVector literal_payloads"
     assert_includes lowerer, "onibi_rseq_class_payload_vector_free(&class_payloads)"
   end
 

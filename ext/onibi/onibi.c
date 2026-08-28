@@ -1271,11 +1271,12 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; } OnibiGir
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
-typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { VALUE value; OnibiGActionOp code; ID op; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
+typedef struct { VALUE payload; int byte; int ignorecase; } OnibiRSeqLiteralPayloadEntry;
+typedef struct { OnibiRSeqLiteralPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqLiteralPayloadVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1447,20 +1448,6 @@ static void onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 
-static void onibi_value_vector_init(OnibiValueVector *vector) {
-  vector->items = NULL; vector->count = vector->capacity = 0;
-}
-static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value) {
-  if (vector->count == vector->capacity) {
-    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
-    if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "RSeq value vector is too large");
-    vector->items = REALLOC_N(vector->items, VALUE, next); vector->capacity = next;
-  }
-  vector->items[vector->count++] = value;
-}
-static void onibi_value_vector_free(OnibiValueVector *vector) {
-  xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
-}
 static void onibi_rseq_action_vector_init(OnibiRSeqActionVector *vector) {
   vector->entries = NULL; vector->count = vector->capacity = 0;
 }
@@ -1492,6 +1479,22 @@ static void onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *ve
   };
 }
 static void onibi_rseq_class_payload_vector_free(OnibiRSeqClassPayloadVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_literal_payload_vector_init(OnibiRSeqLiteralPayloadVector *vector) {
+  vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector *vector, VALUE payload) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "RSeq literal payload vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiRSeqLiteralPayloadEntry, next); vector->capacity = next;
+  }
+  vector->entries[vector->count++] = (OnibiRSeqLiteralPayloadEntry){
+    payload, NUM2INT(onibi_hash_value_id(payload, id_key_byte)), RTEST(onibi_hash_value_id(payload, id_key_ignorecase))
+  };
+}
+static void onibi_rseq_literal_payload_vector_free(OnibiRSeqLiteralPayloadVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -3081,22 +3084,22 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   int ignorecase = (options & 1) != 0;
   int multiline = (options & 4) != 0;
   uint64_t physical_edge_count = (uint64_t)r_edge_records.count + (uint64_t)r_start_edge_records.count;
-  OnibiValueVector literal_payloads;
-  onibi_value_vector_init(&literal_payloads);
+  OnibiRSeqLiteralPayloadVector literal_payloads;
+  onibi_rseq_literal_payload_vector_init(&literal_payloads);
   for (size_t i = 0; i < state_records.count; i++) {
     unsigned int opcode = state_records.entries[i].opcode;
     if (opcode != ONIBI_G_CHAR) continue;
     VALUE payload = state_records.entries[i].payload;
     int found = 0;
     for (size_t j = 0; j < literal_payloads.count; j++) {
-      VALUE prior = literal_payloads.items[j];
-      if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
-          rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) {
+      OnibiRSeqLiteralPayloadEntry *prior = &literal_payloads.entries[j];
+      if (prior->byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte)) &&
+          prior->ignorecase == RTEST(onibi_hash_value_id(payload, id_key_ignorecase))) {
         found = 1;
         break;
       }
     }
-    if (!found) onibi_value_vector_push(&literal_payloads, payload);
+    if (!found) onibi_rseq_literal_payload_vector_push(&literal_payloads, payload);
   }
   uint32_t literal_count = (uint32_t)literal_payloads.count;
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
@@ -3258,9 +3261,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE payload = state->payload;
       literal_index = 0;
       for (size_t j = 0; j < literal_payloads.count; j++) {
-        VALUE prior = literal_payloads.items[j];
-        if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
-            rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) break;
+        OnibiRSeqLiteralPayloadEntry *prior = &literal_payloads.entries[j];
+        if (prior->byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte)) &&
+            prior->ignorecase == RTEST(onibi_hash_value_id(payload, id_key_ignorecase))) break;
         literal_index++;
       }
       physical_states[i].payload = literal_index;
@@ -3331,11 +3334,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   OnibiLiteralDesc *literal_descs = (OnibiLiteralDesc *)(RSTRING_PTR(blob) + physical.descriptors_offset);
   literal_index = 0;
   for (size_t i = 0; i < literal_payloads.count; i++) {
-    VALUE payload = literal_payloads.items[i];
+    OnibiRSeqLiteralPayloadEntry *entry = &literal_payloads.entries[i];
     literal_descs[literal_index].data_offset = physical.literals_offset + literal_index;
     literal_descs[literal_index].data_length = 1;
-    literal_descs[literal_index].flags = RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ? 1 : 0;
-    literal_data[literal_index] = (unsigned char)NUM2INT(onibi_hash_value_id(payload, id_key_byte));
+    literal_descs[literal_index].flags = entry->ignorecase ? 1 : 0;
+    literal_data[literal_index] = (unsigned char)entry->byte;
     literal_index++;
   }
   OnibiSubprogramDesc *physical_subprograms =
@@ -3363,7 +3366,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
      validated representation without repeating structural scans. */
   onibi_rseq_validate(result);
   onibi_rseq_class_payload_vector_free(&class_payloads);
-  onibi_value_vector_free(&literal_payloads);
+  onibi_rseq_literal_payload_vector_free(&literal_payloads);
   onibi_rseq_action_vector_free(&action_records);
   onibi_gir_edge_vector_free(&r_edge_records);
   onibi_gir_edge_vector_free(&r_start_edge_records);
