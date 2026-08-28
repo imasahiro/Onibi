@@ -530,7 +530,8 @@ class InternalRegexpDependencyTest < Minitest::Test
   def test_capture_seed_does_not_duplicate_empty_counter_state
     source = File.read(EXTENSION_SOURCE)
     refute_includes source, "rb_hash_dup(counters)"
-    assert_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
+    assert_includes source, "long *branch_counters = use_counters && counter_count > 0"
+    refute_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
   end
 
   def test_parser_class_and_range_adapters_preallocate_known_sizes

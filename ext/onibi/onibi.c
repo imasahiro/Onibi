@@ -4487,7 +4487,9 @@ static void onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *c
   }
 }
 
-static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
+static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length,
+                               VALUE counters, const OnibiCounterState *counter_state,
+                               VALUE captures) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
@@ -4507,9 +4509,16 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       continue;
     }
     if (code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
-      if (NIL_P(counters)) continue;
-      VALUE value = rb_hash_aref(counters, onibi_hash_value_id(action, id_key_slot));
-      long count = NIL_P(value) ? 0 : NUM2LONG(value);
+      long count = 0;
+      if (counter_state && counter_state->values) {
+        VALUE slot_value = onibi_hash_value_id(action, id_key_slot);
+        long slot = NIL_P(slot_value) ? -1 : NUM2LONG(slot_value);
+        count = slot >= 0 && (uint32_t)slot < counter_state->count ? counter_state->values[slot] : 0;
+      } else {
+        if (NIL_P(counters)) continue;
+        VALUE value = rb_hash_aref(counters, onibi_hash_value_id(action, id_key_slot));
+        count = NIL_P(value) ? 0 : NUM2LONG(value);
+      }
       long limit = NUM2LONG(onibi_hash_value_id(action, id_key_limit));
       if ((code == ONIBI_GA_TEST_COUNTER_LT && !(count < limit)) ||
           (code == ONIBI_GA_TEST_COUNTER_GE && !(count >= limit))) return 0;
@@ -4612,20 +4621,6 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     }
   }
   return 1;
-}
-
-static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
-  for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    VALUE action = rb_ary_entry(actions, i);
-    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
-    VALUE slot = onibi_hash_value_id(action, id_key_slot);
-    if (code == ONIBI_GA_COUNTER_INIT)
-      rb_hash_aset(counters, slot, onibi_hash_value_id(action, id_key_value));
-    else if (code == ONIBI_GA_COUNTER_INCREMENT) {
-      VALUE prior = rb_hash_aref(counters, slot);
-      rb_hash_aset(counters, slot, LONG2NUM((NIL_P(prior) ? 0 : NUM2LONG(prior)) + 1));
-    }
-  }
 }
 
 static int onibi_unicode_ctype_id(ID property) {
@@ -4848,7 +4843,7 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
 static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE subprograms,
                                           VALUE str, long start, VALUE entry,
                                           VALUE entry_actions, VALUE initial_captures,
-                                          VALUE initial_tags, int use_counters,
+                                          VALUE initial_tags, int use_counters, uint32_t counter_count,
                                           long *matched_end,
                                           long *matched_start, VALUE *matched_captures);
 static int onibi_hash_copy_i(VALUE key, VALUE value, VALUE arg) {
@@ -5001,7 +4996,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
       if (!onibi_vm_counter_actions_ok(edge_actions, &counter_state)) continue;
       onibi_vm_apply_counter_actions_c(edge_actions, &counter_state);
     }
-    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), Qnil, Qnil)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), Qnil, NULL, Qnil)) continue;
     stack[depth++] = (OnibiWalkFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0, next_counters};
   }
   return 0;
@@ -5040,7 +5035,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
       if (!onibi_vm_counter_actions_ok(edge_actions, &counter_state)) continue;
       onibi_vm_apply_counter_actions_c(edge_actions, &counter_state);
     }
-    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), Qnil, Qnil)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), Qnil, NULL, Qnil)) continue;
     if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited,
                       visited_bits, visited_span, branch_counters, counter_slots, use_counters, matched_end)) {
       if (visited_bits_owned) xfree(visited_bits);
@@ -5102,12 +5097,14 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
 }
 
 static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprograms, VALUE str, long state_id, long pos,
-                                  VALUE visited, VALUE captures, VALUE counters, VALUE tags, long reported_start,
-                                  int use_counters, long *matched_end, long *matched_start,
+                                  VALUE visited, VALUE captures, long *initial_counters, uint32_t counter_count,
+                                  VALUE tags, long reported_start, int use_counters,
+                                  long *matched_end, long *matched_start,
                                   VALUE *matched_captures) {
   typedef struct {
     long state_id, pos, next_edge, reported_start;
-    VALUE captures, counters, tags;
+    VALUE captures, tags;
+    long *counters;
     VALUE called_captures;
     long call_end, call_parent;
     int entered, waiting_call, call_status, call_kind;
@@ -5115,8 +5112,15 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   long capacity = RARRAY_LEN(states) * 64 + 64;
   if (capacity > 65536) capacity = 65536;
   OnibiCaptureFrame *stack = ALLOCA_N(OnibiCaptureFrame, capacity);
+  long *counter_pool = use_counters && counter_count > 0 ?
+    ALLOCA_N(long, (size_t)capacity * counter_count) : NULL;
   long depth = 0;
-  stack[depth++] = (OnibiCaptureFrame){state_id, pos, 0, reported_start, captures, counters, tags,
+  long *root_counters = counter_pool;
+  if (root_counters) {
+    if (initial_counters) memcpy(root_counters, initial_counters, sizeof(long) * counter_count);
+    else memset(root_counters, 0, sizeof(long) * counter_count);
+  }
+  stack[depth++] = (OnibiCaptureFrame){state_id, pos, 0, reported_start, captures, tags, root_counters,
                                       Qnil, 0, -1, 0, 0, 0, 0};
   while (depth > 0) {
     rb_thread_check_ints();
@@ -5151,8 +5155,10 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     }
     if (!frame->entered) {
       frame->entered = 1;
+      VALUE counter_key = frame->counters ? rb_str_new((const char *)frame->counters,
+                                                        (long)(sizeof(long) * counter_count)) : Qnil;
       VALUE key = rb_ary_new_from_args(6, LONG2NUM(frame->state_id), LONG2NUM(frame->pos),
-                                       frame->captures, frame->counters, frame->tags,
+                                       frame->captures, counter_key, frame->tags,
                                        LONG2NUM(frame->reported_start));
       if (RTEST(rb_hash_aref(visited, key))) { ONIBI_CAPTURE_POP_FRAME(); continue; }
       rb_hash_aset(visited, key, Qtrue);
@@ -5193,20 +5199,23 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         frame->call_status = 0;
         frame->call_parent = -1;
         VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
-        VALUE call_counters = use_counters ? rb_hash_new() : Qnil;
+        long *call_counters = use_counters && counter_count > 0 ?
+          counter_pool + (size_t)depth * counter_count : NULL;
+        if (call_counters) memset(call_counters, 0, sizeof(long) * counter_count);
+        OnibiCounterState call_counter_state = {call_counters, counter_count};
         VALUE call_captures = RB_TYPE_P(frame->captures, T_HASH) ? rb_hash_dup(frame->captures) : rb_hash_new();
         VALUE call_tags = frame->tags;
         long call_reported_start = frame->reported_start;
         VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
-        if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
+        if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), Qnil, &call_counter_state, call_captures)) {
           onibi_call_frame_pop(); ONIBI_CAPTURE_POP_FRAME(); continue;
         }
-        if (use_counters) onibi_vm_apply_counter_actions(actions, call_counters);
+        if (use_counters) onibi_vm_apply_counter_actions_c(actions, &call_counter_state);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
         if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
-                                             call_captures, call_counters, call_tags, Qnil, 0,
+                                             call_captures, call_tags, call_counters, Qnil, 0,
                                              call_parent, 0, 0, 0};
         continue;
       } else if (op == ONIBI_RS_ATOMIC || op == ONIBI_RS_ABSENT) {
@@ -5228,22 +5237,25 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         frame->call_status = 0;
         frame->call_kind = op == ONIBI_RS_ABSENT ? 3 : 2;
         VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
-        VALUE call_counters = use_counters ? rb_hash_new() : Qnil;
+        long *call_counters = use_counters && counter_count > 0 ?
+          counter_pool + (size_t)depth * counter_count : NULL;
+        if (call_counters) memset(call_counters, 0, sizeof(long) * counter_count);
+        OnibiCounterState call_counter_state = {call_counters, counter_count};
         VALUE call_captures = RB_TYPE_P(frame->captures, T_HASH) ? rb_hash_dup(frame->captures) : rb_hash_new();
         VALUE call_tags = frame->tags;
         long call_reported_start = frame->reported_start;
         VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
-        if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
+        if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), Qnil, &call_counter_state, call_captures)) {
           onibi_call_frame_pop();
           if (op == id_g_absent) { frame->waiting_call = 0; continue; }
           ONIBI_CAPTURE_POP_FRAME(); continue;
         }
-        if (use_counters) onibi_vm_apply_counter_actions(actions, call_counters);
+        if (use_counters) onibi_vm_apply_counter_actions_c(actions, &call_counter_state);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
         if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
-                                             call_captures, call_counters, call_tags, Qnil, 0,
+                                             call_captures, call_tags, call_counters, Qnil, 0,
                                              call_parent, 0, 0, 0, 0};
         continue;
       } else if (op == ONIBI_RS_CHAR || op == ONIBI_RS_CLASS || op == ONIBI_RS_ANY || op == ONIBI_RS_BACKREF) {
@@ -5285,16 +5297,22 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     if (frame->next_edge >= RARRAY_LEN(state_edges)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE next_counters = use_counters ? rb_hash_dup(frame->counters) : Qnil;
-    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, frame->captures)) continue;
+    long *next_counters = frame->counters;
+    if (use_counters && counter_count > 0) {
+      next_counters = counter_pool + (size_t)depth * counter_count;
+      memcpy(next_counters, frame->counters, sizeof(long) * counter_count);
+    }
+    OnibiCounterState next_counter_state = {next_counters, counter_count};
+    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), Qnil,
+                             &next_counter_state, frame->captures)) continue;
     VALUE next_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(frame->captures) : frame->captures;
     long next_reported_start = frame->reported_start;
-    if (use_counters) onibi_vm_apply_counter_actions(edge_actions, next_counters);
+    if (use_counters) onibi_vm_apply_counter_actions_c(edge_actions, &next_counter_state);
     VALUE next_tags = onibi_apply_capture_actions(edge_actions, frame->pos, next_captures, frame->tags, &next_reported_start);
     if (depth >= capacity) onibi_vm_stack_overflow();
     stack[depth++] = (OnibiCaptureFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0,
-                                         next_reported_start, next_captures, next_counters,
-                                         next_tags, Qnil, 0, frame->call_parent, 0, 0, 0, 0};
+                                         next_reported_start, next_captures, next_tags,
+                                         next_counters, Qnil, 0, frame->call_parent, 0, 0, 0, 0};
   }
 #undef ONIBI_CAPTURE_POP_FRAME
   return 0;
@@ -5303,7 +5321,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
 static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE subprograms,
                                           VALUE str, long start, VALUE entry,
                                           VALUE entry_actions, VALUE initial_captures,
-                                          VALUE initial_tags, int use_counters,
+                                          VALUE initial_tags, int use_counters, uint32_t counter_count,
                                           long *matched_end,
                                           long *matched_start, VALUE *matched_captures) {
   VALUE visited = rb_hash_new();
@@ -5311,14 +5329,18 @@ static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE su
   rb_hash_delete(captures, ID2SYM(id_recursive_marker));
   VALUE tags = initial_tags;
   VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
-  VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;
-  if (!onibi_vm_actions_ok(actions, str, start, RSTRING_LEN(str), branch_counters, captures)) return 0;
+  long *branch_counters = use_counters && counter_count > 0 ?
+    ALLOCA_N(long, counter_count) : NULL;
+  if (branch_counters) memset(branch_counters, 0, sizeof(long) * counter_count);
+  OnibiCounterState branch_counter_state = {branch_counters, counter_count};
+  if (!onibi_vm_actions_ok(actions, str, start, RSTRING_LEN(str), Qnil,
+                           &branch_counter_state, captures)) return 0;
   VALUE branch_captures = onibi_has_capture_action(actions) ? onibi_capture_copy(captures) : captures;
   long reported_start = start;
-  if (use_counters) onibi_vm_apply_counter_actions(actions, branch_counters);
+  if (use_counters) onibi_vm_apply_counter_actions_c(actions, &branch_counter_state);
   VALUE branch_tags = onibi_apply_capture_actions(actions, start, branch_captures, tags, &reported_start);
   return onibi_vm_walk_captures(states, outgoing, subprograms, str, NUM2LONG(entry), start,
-                                visited, branch_captures, branch_counters, branch_tags,
+                                visited, branch_captures, branch_counters, counter_count, branch_tags,
                                 reported_start, use_counters, matched_end, matched_start, matched_captures);
 }
 
@@ -5338,6 +5360,7 @@ static int onibi_gir_match_captures_seed(VALUE graph, VALUE str, long start,
                                        onibi_hash_value_id(edge, id_key_to),
                                        onibi_hash_value_id(edge, id_key_actions),
                                        initial_captures, initial_tags, use_counters,
+                                       NUM2UINT(counter_count),
                                        matched_end, matched_start, matched_captures)) return 1;
   }
   return 0;
