@@ -1595,28 +1595,32 @@ static void onibi_append_values(VALUE destination, VALUE values) {
   for (long i = 0; i < count; i++) rb_ary_push(destination, items[i]);
 }
 
-static void onibi_add_capture_guard(onibi_gir_builder_t *builder, VALUE starts, VALUE guard) {
-  VALUE *items = RARRAY_PTR(starts);
-  long count = RARRAY_LEN(starts);
-  for (long i = 0; i < count; i++) {
-    VALUE key = items[i];
+static void onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
+                                             VALUE starts, VALUE guard) {
+  OnibiIdVector ids;
+  onibi_id_vector_from_array(&ids, starts);
+  for (size_t i = 0; i < ids.count; i++) {
+    VALUE key = ULONG2NUM(ids.items[i]);
     VALUE prior = rb_hash_aref(builder->capture_guards, key);
     VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
     onibi_append_values(merged, guard);
     rb_hash_aset(builder->capture_guards, key, merged);
   }
+  onibi_id_vector_free(&ids);
 }
 
-static void onibi_add_exit_guard(onibi_gir_builder_t *builder, VALUE exits, VALUE actions) {
-  VALUE *items = RARRAY_PTR(exits);
-  long count = RARRAY_LEN(exits);
-  for (long i = 0; i < count; i++) {
-    VALUE key = items[i];
+static void onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
+                                          VALUE exits, VALUE actions) {
+  OnibiIdVector ids;
+  onibi_id_vector_from_array(&ids, exits);
+  for (size_t i = 0; i < ids.count; i++) {
+    VALUE key = ULONG2NUM(ids.items[i]);
     VALUE prior = rb_hash_aref(builder->exit_guards, key);
     VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
     onibi_append_values(merged, actions);
     rb_hash_aset(builder->exit_guards, key, merged);
   }
+  onibi_id_vector_free(&ids);
 }
 
 static VALUE onibi_capture_test_action(long slot, int set) {
@@ -2068,9 +2072,9 @@ skip_utf8_range_expansion:
       /* Preserve actions on each alternative edge.  A branch action cannot
          be lifted to the fragment because that would apply it to siblings. */
       if (RARRAY_LEN(branch.start_actions) > 0)
-        onibi_add_capture_guard(builder, branch.starts, branch.start_actions);
+        onibi_add_capture_guard_fragment(builder, branch.starts, branch.start_actions);
       if (RARRAY_LEN(branch.pending_actions) > 0)
-        onibi_add_exit_guard(builder, branch.exits, branch.pending_actions);
+        onibi_add_exit_guard_fragment(builder, branch.exits, branch.pending_actions);
       result.nullable = result.nullable || branch.nullable;
     }
     return result;
@@ -2278,10 +2282,10 @@ skip_utf8_range_expansion:
     VALUE no_guard = rb_ary_new();
     rb_ary_push(no_guard, onibi_capture_test_action(capture_id, 0));
     onibi_append_values(no_guard, no.start_actions);
-    onibi_add_capture_guard(builder, yes.starts, yes_guard);
-    onibi_add_capture_guard(builder, no.starts, no_guard);
-    onibi_add_exit_guard(builder, yes.exits, yes.pending_actions);
-    onibi_add_exit_guard(builder, no.exits, no.pending_actions);
+    onibi_add_capture_guard_fragment(builder, yes.starts, yes_guard);
+    onibi_add_capture_guard_fragment(builder, no.starts, no_guard);
+    onibi_add_exit_guard_fragment(builder, yes.exits, yes.pending_actions);
+    onibi_add_exit_guard_fragment(builder, no.exits, no.pending_actions);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_dup(yes.starts);
     onibi_append_values(result.starts, no.starts);
