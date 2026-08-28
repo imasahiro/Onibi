@@ -10,6 +10,9 @@
 #define ONIBI_AST_FLAG_ANCHOR_REPEAT (1U << 1)
 #define ONIBI_AST_FLAG_NULLABLE_ABSENCE (1U << 2)
 #define ONIBI_AST_FLAG_NULLABLE_CAPTURE (1U << 3)
+#define ONIBI_AST_ANALYSIS_HAS_CAPTURE (1U << 0)
+#define ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE (1U << 1)
+#define ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE (1U << 2)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -1236,9 +1239,7 @@ typedef struct {
   unsigned int ast_flags;
 } OnibiParsed;
 typedef struct {
-  int nullable_capture;
-  int nullable_absence;
-  int has_capture;
+  unsigned int flags;
 } OnibiAstAnalysis;
 
 static void onibi_parsed_mark(void *ptr) {
@@ -1277,10 +1278,10 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
   if (onibi_ast_safe_multibyte_class(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
   if (onibi_ast_anchor_repeat(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
-  OnibiAstAnalysis analysis = {0, 0, 0};
+  OnibiAstAnalysis analysis = {0};
   (void)onibi_ast_nullable_scan(parsed->ast, &analysis);
-  if (analysis.nullable_absence) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
-  if (analysis.nullable_capture) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
+  if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
+  if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
   return result;
 }
 
@@ -3730,28 +3731,30 @@ static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 1;
   OnibiAstKind type = onibi_ast_kind(ast);
-  if (type == ONIBI_AST_CAPTURE) analysis->has_capture = 1;
+  if (type == ONIBI_AST_CAPTURE) analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
   if (type == ONIBI_AST_CAPTURE) {
     int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), analysis);
-    if (body_nullable) analysis->nullable_capture = 1;
+    if (body_nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE;
     return body_nullable;
   }
   if (type == ONIBI_AST_QUANTIFIER) {
     VALUE atom = onibi_hash_value_id(ast, id_key_atom);
-    OnibiAstAnalysis atom_analysis = {0, 0, 0};
+    OnibiAstAnalysis atom_analysis = {0};
     int atom_nullable = onibi_ast_nullable_scan(atom, &atom_analysis);
-    if (atom_analysis.has_capture) analysis->has_capture = 1;
+    if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_CAPTURE)
+      analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
     VALUE min = onibi_hash_value_id(ast, id_key_min);
     if (!NIL_P(min) && NUM2LONG(min) == 0) {
-      if (atom_analysis.has_capture) analysis->nullable_capture = 1;
+      if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_CAPTURE)
+        analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE;
       return 1;
     }
     return atom_nullable;
   }
   if (type == ONIBI_AST_ABSENCE) {
-    OnibiAstAnalysis body_analysis = {0, 0, 0};
+    OnibiAstAnalysis body_analysis = {0};
     int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), &body_analysis);
-    if (body_nullable) analysis->nullable_absence = 1;
+    if (body_nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE;
     return 0;
   }
   if (type == ONIBI_AST_SEQUENCE) {

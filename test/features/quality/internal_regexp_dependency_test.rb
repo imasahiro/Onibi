@@ -53,6 +53,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil scan
     assert_includes scan, "OnibiAstAnalysis *analysis"
+    assert_includes source, "unsigned int flags;"
     refute_includes source, "onibi_ast_nullable_absence"
     refute_includes source, "static int onibi_ast_nullable(VALUE ast"
   end
