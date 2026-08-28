@@ -136,8 +136,8 @@ publishes a frozen G-IR graph with ordered start edges and edge actions.
 
 RSeq lowering preserves state, edge, start-edge, and action order. It publishes
 an immutable semantic view and a validated, aligned, relocatable v1 blob. The
-blob currently contains the header, state, edge, and action sections. Literal
-and class descriptor sections will be added before the RSeq contract is final.
+blob contains the header, state, edge, action, class, and literal descriptor
+sections. The semantic and physical headers are checked before VM execution.
 
 The C executor supports literals, alternation, classes, POSIX classes, common
 escapes, anchors, bounded repeats, captures, word boundaries, search-origin
@@ -167,10 +167,9 @@ Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
 benchmark contract suite has 61 cases and 359 assertions after an explicit C
 build.
 
-Remaining gates are complete RSeq literal/class descriptor sections, removal of
-legacy source heuristics from the compatibility pipeline view, complete option
-and encoding semantics, lookaround and atomic states, full tag-history sharing,
-timeout handling, and non-literal lookaround subprograms.
+Remaining gates are removal of legacy source heuristics from the compatibility
+pipeline view, complete option and encoding semantics, atomic backtracking
+states, full tag-history sharing, and non-literal lookaround subprograms.
 
 The benchmark contract tests compare both paths with MRI. The regex-redux
 benchmark output is identical for Ruby and Onibi.
