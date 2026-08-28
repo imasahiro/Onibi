@@ -800,6 +800,22 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE start_edges = onibi_hash_value(graph, "start_edges");
+  long state_count = RARRAY_LEN(states);
+  long accept_state = NUM2LONG(onibi_hash_value(graph, "accept"));
+  if (accept_state < 0 || accept_state >= state_count)
+    rb_raise(rb_eArgError, "RSeq lowering received an invalid accept state");
+  for (long i = 0; i < RARRAY_LEN(edges); i++) {
+    VALUE edge = rb_ary_entry(edges, i);
+    long from = NUM2LONG(onibi_hash_value(edge, "from"));
+    long to = NUM2LONG(onibi_hash_value(edge, "to"));
+    if (from < 0 || from >= state_count || to < 0 || to >= state_count)
+      rb_raise(rb_eArgError, "RSeq lowering received an invalid edge");
+  }
+  for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
+    long to = NUM2LONG(onibi_hash_value(rb_ary_entry(start_edges, i), "to"));
+    if (to < 0 || to >= state_count)
+      rb_raise(rb_eArgError, "RSeq lowering received an invalid start edge");
+  }
   VALUE actions = rb_ary_new();
   VALUE r_edges = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(edges); i++) {

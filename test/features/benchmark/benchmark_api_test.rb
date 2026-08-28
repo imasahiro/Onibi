@@ -337,6 +337,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_predicate rseq, :frozen?
     assert_predicate rseq[:header], :frozen?
     assert_predicate rseq[:edges].first, :frozen?
+    invalid = { graph: { states: [], edges: [], start_edges: [], accept: 0 } }
+    assert_raises(ArgumentError) { Onibi::RSeq.lower(invalid) }
   end
 
   def test_compiler_lowers_capture_boundaries_to_actions
