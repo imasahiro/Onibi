@@ -173,7 +173,7 @@ The remaining compiler containers have three separate roles:
 | --- | --- | --- |
 | fragment `starts`/`exits` | Ordered state-ID sets | Partial; final connections use a C vector, internal construction remains Ruby-backed |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
-| capture and exit guards | State-ID lookup during edge creation | Third; C map with explicit ownership |
+| capture and exit guards | State-ID lookup during edge creation | Partial; numeric guard keys use C vectors, action lists remain Ruby-backed |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | Last; convert at the RSeq boundary only |
 
 Detailed ownership review:
@@ -196,7 +196,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | Convert after fragment migration | The builder mutates them during compilation. The RSeq boundary needs a stable snapshot only. |
 | fragment start/exit IDs | No | Partial `OnibiIdVector` conversion | IDs are numeric and ordered. Final GIR exit connections, including lazy ordering, now consume a C vector. Fragment composition still uses Ruby arrays and is a remaining migration target. |
-| fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. |
+| fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard actions now receive C-vector state IDs before insertion. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
 | regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
 | tagged VM counter maps | No | Pending C counter snapshots | Frame branching duplicates numeric counter values in Ruby Hash objects. The conversion must cover call frames and ordered edge branches together. |
