@@ -139,7 +139,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -258,7 +258,6 @@ static void onibi_mark(void *ptr) {
   rb_gc_mark(obj->parsed);
   rb_gc_mark(obj->compiled);
   rb_gc_mark(obj->rseq);
-  rb_gc_mark(obj->pipeline);
   rb_gc_mark(obj->names);
   rb_gc_mark(obj->named_captures);
 }
@@ -3355,9 +3354,6 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->tokens = Qnil;
   obj->parsed = Qnil;
   obj->compiled = Qnil;
-  /* Pipeline display data is not part of the Regexp API.  Keep the field
-   * empty and avoid allocating a second token/AST snapshot at initialize. */
-  obj->pipeline = Qnil;
   rb_obj_freeze(self);
   return self;
 }
