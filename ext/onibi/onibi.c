@@ -2472,8 +2472,14 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (!NIL_P(physical_graph)) {
       VALUE cached_edge = rb_ary_entry(onibi_hash_value(physical_graph, "edges"), i);
       uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value(cached_edge, "to")) : UINT32_MAX;
-      if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != (destination == ONIBI_ACCEPT_STATE ? header.state_count - 1 : destination))
+      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value(cached_edge, "actions") : Qnil;
+      if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != (destination == ONIBI_ACCEPT_STATE ? header.state_count - 1 : destination) ||
+          !RB_TYPE_P(cached_actions, T_ARRAY) || RARRAY_LEN(cached_actions) != RARRAY_LEN(semantic_edge_actions))
         rb_raise(rb_eArgError, "cached RSeq edge disagrees with physical edge");
+      for (long a = 0; a < RARRAY_LEN(semantic_edge_actions); a++) {
+        if (!rb_equal(rb_ary_entry(cached_actions, a), rb_ary_entry(semantic_edge_actions, a)))
+          rb_raise(rb_eArgError, "cached RSeq action program disagrees with semantic edge");
+      }
     }
   }
   if (NIL_P(semantic_start_edges) || !RB_TYPE_P(semantic_start_edges, T_ARRAY) ||
@@ -2498,6 +2504,18 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (edges[header.edge_count - header.start_edge_count + i].destination != destination ||
         edges[header.edge_count - header.start_edge_count + i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic start edge");
+    if (!NIL_P(physical_graph)) {
+      VALUE cached_edge = rb_ary_entry(onibi_hash_value(physical_graph, "start_edges"), i);
+      VALUE cached_actions = RB_TYPE_P(cached_edge, T_HASH) ? onibi_hash_value(cached_edge, "actions") : Qnil;
+      uint32_t cached_to = RB_TYPE_P(cached_edge, T_HASH) ? (uint32_t)NUM2ULONG(onibi_hash_value(cached_edge, "to")) : UINT32_MAX;
+      if (!RB_TYPE_P(cached_edge, T_HASH) || cached_to != destination || !RB_TYPE_P(cached_actions, T_ARRAY) ||
+          RARRAY_LEN(cached_actions) != RARRAY_LEN(semantic_edge_actions))
+        rb_raise(rb_eArgError, "cached RSeq start edge disagrees with physical edge");
+      for (long a = 0; a < RARRAY_LEN(semantic_edge_actions); a++) {
+        if (!rb_equal(rb_ary_entry(cached_actions, a), rb_ary_entry(semantic_edge_actions, a)))
+          rb_raise(rb_eArgError, "cached RSeq start action program disagrees with semantic edge");
+      }
+    }
   }
   const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
   for (uint32_t i = 0; i < header.action_count; i++) {
