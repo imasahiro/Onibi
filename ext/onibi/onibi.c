@@ -2998,7 +2998,7 @@ static VALUE onibi_build_program(VALUE argument) {
   VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
   VALUE compiled = onibi_compiler_compile(Qnil, parsed);
   VALUE rseq = onibi_rseq_lower(Qnil, compiled);
-  return rb_ary_new_from_args(3, parsed, compiled, rseq);
+  return rb_ary_new_from_args(2, parsed, rseq);
 }
 
 static VALUE onibi_parse_program(VALUE argument) {
@@ -3377,7 +3377,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->named_captures);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE parsed = Qnil, compiled = Qnil;
+  VALUE parsed = Qnil;
   VALUE program = (obj->has_large_repeat ||
                    obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
@@ -3385,10 +3385,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   if (!program_state) {
     parsed = (obj->has_large_repeat ||
                    obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
-    compiled = (obj->has_large_repeat ||
-                     obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     obj->rseq = (obj->has_large_repeat ||
-                 obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
+                 obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
       VALUE parsed_ast = onibi_hash_value(parsed, "ast");
       obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
@@ -3405,7 +3403,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
     if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
         ((opts & 16) && !encoded_literal_program) || (opts & 32)) {
-      parsed = compiled = obj->rseq = Qnil;
+      parsed = obj->rseq = Qnil;
     }
   } else {
     rb_set_errinfo(Qnil);
