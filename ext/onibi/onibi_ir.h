@@ -7,6 +7,25 @@
    subject pointers, or process-local addresses. */
 typedef uint32_t OnibiStateId;
 typedef uint32_t OnibiActionProgramId;
+typedef uint32_t OnibiSubprogramId;
+typedef uint32_t OnibiTagEventId;
+typedef uint32_t OnibiCallFrameId;
+
+/* Immutable entry metadata for a compiled subprogram. */
+typedef struct {
+  OnibiStateId entry;
+  OnibiStateId accept;
+  uint32_t flags;
+} OnibiSubprogramDesc;
+
+/* Semantic call-frame shape.  Runtime storage is owned by the VM sidecar. */
+typedef struct {
+  OnibiSubprogramId subprogram_id;
+  OnibiStateId continuation;
+  OnibiTagEventId tag_history;
+  uint32_t recursion_depth;
+  OnibiCallFrameId parent;
+} OnibiCallFrame;
 
 typedef enum {
   ONIBI_G_ACCEPT = 0,
@@ -152,5 +171,7 @@ typedef char onibi_redge_size_must_be_8[(sizeof(OnibiREdge) == 8) ? 1 : -1];
 typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
 typedef char onibi_class_desc_size_must_be_8[(sizeof(OnibiClassDesc) == 8) ? 1 : -1];
 typedef char onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
+typedef char onibi_subprogram_desc_size_must_be_12[(sizeof(OnibiSubprogramDesc) == 12) ? 1 : -1];
+typedef char onibi_call_frame_size_must_be_20[(sizeof(OnibiCallFrame) == 20) ? 1 : -1];
 
 #endif
