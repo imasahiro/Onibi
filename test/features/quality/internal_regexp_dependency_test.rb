@@ -329,7 +329,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_equal 0, source.scan(/NIL_P\([^)]*child_name_id\).*rb_intern_str/).length
     assert_equal 0, source.scan(/NIL_P\([^)]*property_name_id\).*rb_intern_str/).length
     refute_includes source, "onibi_ascii_property_kind(VALUE name)"
-    assert_includes source, "NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN"
+    assert_includes source, "name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN"
   end
 
   def test_utf8_class_match_does_not_allocate_missing_literal_bytes
@@ -452,6 +452,8 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil bitmap
     assert_includes bitmap, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
+    assert_includes bitmap, "ID name_id = onibi_token_name_id(child);"
+    refute_includes bitmap, "NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN"
   end
 
   def test_compiler_value_maps_use_c_owned_growth

@@ -1748,10 +1748,10 @@ class_children:
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)), fold);
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
-      VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
+      ID name_id = onibi_token_name_id(child);
       VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);
-      OnibiAsciiProperty property_kind = NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN :
-        onibi_ascii_property_kind_id(NUM2ULONG(name_id));
+      OnibiAsciiProperty property_kind = name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
+        onibi_ascii_property_kind_id(name_id);
       if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
         for (int c = 0; c < 256; c++) {
           int hit = onibi_ascii_property_hit_kind(property_kind, c);
