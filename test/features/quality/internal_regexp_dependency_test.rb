@@ -267,6 +267,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes document, "capture walkers still require a C view migration"
   end
 
+  def test_container_audit_counts_match_current_source
+    source = File.read(EXTENSION_SOURCE)
+    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
+    hash_count = source.scan(/rb_hash_new\(/).length
+    array_count = source.scan(/rb_ary_new\(/).length
+    assert_includes document, "The current source has #{hash_count} `rb_hash_new` calls and #{array_count} `rb_ary_new` calls."
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
