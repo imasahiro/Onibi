@@ -340,7 +340,11 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
                                    RSTRING_PTR(src) + RSTRING_LEN(src),
                                    rb_enc_get(src));
       if (char_len > 1 && start + char_len <= RSTRING_LEN(src)) {
-        literal_bytes = rb_str_substr(src, start, char_len);
+        /* rb_str_substr uses character offsets.  `start` and `char_len`
+           are byte offsets from the encoding callback, so copy bytes
+           directly and keep the complete encoded character only. */
+        literal_bytes = rb_str_new(RSTRING_PTR(src) + start, char_len);
+        rb_enc_associate(literal_bytes, rb_enc_get(src));
         i += char_len - 1;
         byte = (unsigned char)RSTRING_PTR(src)[start];
       }

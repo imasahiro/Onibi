@@ -308,6 +308,15 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("É")
   end
 
+  def test_multibyte_literal_inside_class_keeps_its_byte_span
+    token = Onibi::Lexer.new("[é]").tokens[1]
+
+    assert_equal :literal, token[:kind]
+    assert_equal "é", token[:bytes]
+    assert_equal 1, token[:start]
+    assert_equal 3, token[:end]
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)
