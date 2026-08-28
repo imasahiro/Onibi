@@ -270,9 +270,10 @@ each change can preserve ordering and GC tests.
 
 Feature classification now copies the fixed token fields into an immutable
 `OnibiFeatureTokenVector` owned by each compiled regexp. The scanner compares
-enum kinds, numeric bytes, and precomputed property IDs, property kinds, and flags from this C
-view. The vector has no Ruby `VALUE` fields; source token Hashes remain only
-the parser adapter. POSIX class dispatch also consumes the cached token
+enum kinds, numeric bytes, source spans, and precomputed property IDs, property
+kinds, and flags from this C view. The vector has no Ruby `VALUE` fields; source
+token Hashes remain only the parser adapter. Byte, span, name ID, and
+inline-ignorecase fields use dedicated C accessors. POSIX class dispatch also consumes the cached token
 `name_id`; class bitmap construction, including child escapes, does not
 intern a class name during compilation.
 The tokenizer records each optional name as `name_id` once, so later feature
