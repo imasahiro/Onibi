@@ -1436,6 +1436,29 @@ static void onibi_rseq_validate(VALUE rseq) {
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
 }
 
+static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
+  for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    long end = 0;
+    if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
+  }
+  return Qfalse;
+}
+
+static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
+  for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    long end = 0;
+    VALUE captures = rb_hash_new();
+    if (onibi_gir_match_captures(rseq, str, start, &end, &captures)) return Qtrue;
+  }
+  return Qfalse;
+}
+
+static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
+  /* Dynamic execution uses the same ordered capture walk, with dynamic
+     states such as G_BACKREF resolved by the walk itself. */
+  return onibi_vm_tagged_ordered(rseq, str);
+}
+
 static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
   StringValue(str);
   onibi_rseq_validate(rseq);
@@ -1443,17 +1466,11 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
       execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
     rb_raise(rb_eArgError, "unknown Onibi execution class");
-  int tagged = execution_class != ID2SYM(rb_intern("REGULAR_FAST"));
   VALUE header = onibi_hash_value(rseq, "header");
   if (RTEST(onibi_hash_value(header, "ignorecase"))) str = rb_funcall(str, rb_intern("downcase"), 0);
-  for (long start = 0; start <= RSTRING_LEN(str); start++) {
-    long end = 0;
-    if (tagged) {
-      VALUE captures = rb_hash_new();
-      if (onibi_gir_match_captures(rseq, str, start, &end, &captures)) return Qtrue;
-    } else if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
-  }
-  return Qfalse;
+  if (execution_class == ID2SYM(rb_intern("REGULAR_FAST"))) return onibi_vm_regular_fast(rseq, str);
+  if (execution_class == ID2SYM(rb_intern("TAGGED_ORDERED"))) return onibi_vm_tagged_ordered(rseq, str);
+  return onibi_vm_dynamic(rseq, str);
 }
 
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
