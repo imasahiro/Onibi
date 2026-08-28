@@ -2370,6 +2370,13 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (!RB_TYPE_P(semantic_edge, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_edge)) ||
         !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_edge, "actions"))))
       rb_raise(rb_eArgError, "invalid semantic RSeq edge");
+    VALUE semantic_edge_actions = onibi_hash_value(semantic_edge, "actions");
+    if (RARRAY_LEN(semantic_edge_actions) > 0) {
+      VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
+      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
+      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != rb_intern("END"))
+        rb_raise(rb_eArgError, "RSeq edge action program is not terminated");
+    }
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
     if (destination == header.state_count - 1) destination = ONIBI_ACCEPT_STATE;
     uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
@@ -2386,6 +2393,13 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (!RB_TYPE_P(semantic_edge, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_edge)) ||
         !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_edge, "actions"))))
       rb_raise(rb_eArgError, "invalid semantic RSeq start edge");
+    VALUE semantic_edge_actions = onibi_hash_value(semantic_edge, "actions");
+    if (RARRAY_LEN(semantic_edge_actions) > 0) {
+      VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
+      VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
+      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != rb_intern("END"))
+        rb_raise(rb_eArgError, "RSeq start-edge action program is not terminated");
+    }
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
     uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
     uint32_t expected_offset = RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :

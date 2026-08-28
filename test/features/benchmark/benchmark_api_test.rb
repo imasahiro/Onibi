@@ -547,6 +547,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_includes rseq[:actions].map { |action| action[:op] }, :END
   end
 
+  def test_vm_rejects_an_unterminated_rseq_action_program
+    rseq = Onibi::Regexp.new("(a)").pipeline[:rseq_program]
+    starts = rseq[:start_edges].map.with_index do |edge, index|
+      index.zero? ? edge.merge(actions: edge[:actions][0...-1].freeze).freeze : edge
+    end.freeze
+    invalid = rseq.merge(start_edges: starts)
+    invalid.freeze
+    assert_raises(ArgumentError) { Onibi::VM.execute(invalid, "a", :TAGGED_ORDERED) }
+  end
+
   def test_vm_rejects_rseq_semantic_flag_mismatch
     regexp = Onibi::Regexp.new("abc")
     rseq = regexp.pipeline[:rseq_program]
