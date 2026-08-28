@@ -5952,6 +5952,7 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
+  int str_encoding_index = rb_enc_get_index(str);
   onibi_call_stack_reset();
   onibi_set_deadline(obj->timeout_seconds);
   if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
@@ -5959,8 +5960,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
-        (rb_enc_get_index(str) == rb_utf8_encindex() ||
-         rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
+        (str_encoding_index == rb_utf8_encindex() ||
+         str_encoding_index == obj->source_encoding_index))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
       /* The immutable RSeq was validated and its physical execution view was
