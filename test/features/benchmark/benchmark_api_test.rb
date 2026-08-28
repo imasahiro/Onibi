@@ -493,6 +493,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 
+  def test_capturing_subexpression_call_propagates_subprogram_tags
+    regexp = Onibi::Regexp.new("(?<x>(a))\\g<x>")
+    assert_equal :TAGGED_ORDERED, regexp.execution_class.to_sym
+    result = regexp.vm_match_result("aa")
+    assert_equal({ start: 0, end: 2 }, result.slice(:start, :end))
+    assert_equal({ start: 1, end: 2 }, result[:captures][2])
+  end
+
   def test_recursive_subexpression_call_crosses_dynamic_boundary
     pattern = "(?<x>a(?:\\g<x>)?)\\g<x>"
     regexp = Onibi::Regexp.new(pattern)
