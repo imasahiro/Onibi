@@ -50,6 +50,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes vm, "id_key_assert_kind"
     assert_includes vm, "ONIBI_RAP_LOOKAHEAD"
     assert_includes vm, "ONIBI_RAP_LOOKBEHIND"
+    refute_match(/id_a_assert_(?:begin_buffer|end_buffer|begin_line|end_line|lookahead|lookbehind)/, vm)
   end
 
   def test_feature_token_record_has_no_ruby_value_fields
