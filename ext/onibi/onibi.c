@@ -3732,6 +3732,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       obj->has_anchor_repeat = parsed_data->anchor_repeat;
       obj->has_nullable_absence = parsed_data->nullable_absence;
       obj->has_nullable_capture = parsed_data->nullable_capture;
+      /* The AST is an initialization artifact.  The published RSeq/GIR
+         objects carry all runtime data, so release the Ruby adapter now. */
+      parsed_data->ast = Qnil;
     }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */

@@ -239,6 +239,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "parsed_data->safe_multibyte_class"
   end
 
+  def test_ast_adapter_is_released_after_initialization
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "parsed_data->ast = Qnil"
+    assert_includes source, "The AST is an initialization artifact"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
