@@ -313,6 +313,8 @@ static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property);
 typedef struct OnibiFeatureToken {
   OnibiTokenKind kind;
   long byte;
+  long start;
+  long end;
   ID name_id;
   OnibiAsciiProperty property_kind;
   unsigned char inline_ignorecase;
@@ -337,6 +339,8 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       VALUE token = rb_ary_entry(tokens, (long)i);
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
+      vector.items[i].start = NUM2LONG(onibi_hash_value_id(token, id_key_start));
+      vector.items[i].end = NUM2LONG(onibi_hash_value_id(token, id_key_end));
       VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
       vector.items[i].name_id = NIL_P(name_id) ? 0 : NUM2ULONG(name_id);
       vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
