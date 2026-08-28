@@ -963,19 +963,19 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
   VALUE token_bytes = rb_hash_aref(token, ID2SYM(rb_intern("bytes")));
   if (!NIL_P(token_bytes)) rb_hash_aset(node, ID2SYM(rb_intern("bytes")), token_bytes);
-  if (kind == rb_intern("anchor")) {
+  if (kind_code == ONIBI_TOKEN_ANCHOR) {
     long marker = onibi_token_byte(token);
     const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
       "anchor_start" : ((marker == '$' || marker == 'z' || marker == 'Z') ?
       "anchor_end" : "anchor");
     rb_hash_aset(node, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(anchor)));
   }
-  if (kind == rb_intern("escape") || kind == rb_intern("meta_escape")) {
+  if (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE) {
     VALUE token_name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
     rb_hash_aset(node, ID2SYM(rb_intern("name")), NIL_P(token_name) ?
                 rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1) : token_name);
   }
-  if (kind == rb_intern("backref")) {
+  if (kind_code == ONIBI_TOKEN_BACKREF) {
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
     VALUE capture_number = rb_hash_aref(token, ID2SYM(id_key_capture));
     if (NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("capture")),
