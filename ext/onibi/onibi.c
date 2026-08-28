@@ -57,7 +57,6 @@ static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_capture_count;
 static ID id_key_counter_count;
 static ID id_key_negative_name, id_key_negative;
-static ID id_type_class_intersection;
 static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -4152,7 +4151,7 @@ static int onibi_ctype_casefold_hit(VALUE str, long pos, OnigCodePoint code, int
 }
 
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
-  if (onibi_hash_value_id(payload, id_key_type) == ID2SYM(id_type_class_intersection) &&
+  if (onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION &&
       rb_enc_get_index(str) == rb_utf8_encindex()) {
     VALUE operands = onibi_hash_value_id(payload, id_key_operands);
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;
@@ -5426,7 +5425,7 @@ void Init_onibi(void) {
   id_key_states = rb_intern("states"); id_key_outgoing = rb_intern("outgoing");
   id_key_start_edges = rb_intern("start_edges"); id_key_subprograms = rb_intern("subprograms");
   id_key_bytes = rb_intern("bytes"); id_key_blob = rb_intern("blob"); id_key_header = rb_intern("header");
-  id_key_edges = rb_intern("edges"); id_type_class_intersection = rb_intern("class_intersection");
+  id_key_edges = rb_intern("edges");
   id_key_capture_count = rb_intern("capture_count");
   id_key_counter_count = rb_intern("counter_count");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
