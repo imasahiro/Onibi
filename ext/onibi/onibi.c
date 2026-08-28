@@ -5344,25 +5344,6 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   return rb_funcall(obj->regexp, id_match_p, 1, str);
 }
 
-static VALUE onibi_mri_match_result(VALUE match) {
-  VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(id_key_start), rb_funcall(match, id_bytebegin, 1, INT2NUM(0)));
-  rb_hash_aset(result, ID2SYM(id_key_end), rb_funcall(match, id_byteend, 1, INT2NUM(0)));
-  VALUE captures = rb_hash_new();
-  long capture_count = NUM2LONG(rb_funcall(match, id_length, 0)) - 1;
-  for (long group_id = 1; group_id <= capture_count; group_id++) {
-    VALUE begin = rb_funcall(match, id_bytebegin, 1, LONG2NUM(group_id));
-    VALUE finish = rb_funcall(match, id_byteend, 1, LONG2NUM(group_id));
-    if (NIL_P(begin) || NIL_P(finish) || NUM2LONG(begin) < 0 || NUM2LONG(finish) < 0) continue;
-    VALUE group = rb_hash_new();
-    rb_hash_aset(group, ID2SYM(id_key_start), begin);
-    rb_hash_aset(group, ID2SYM(id_key_end), finish);
-    rb_hash_aset(captures, LONG2NUM(group_id), group);
-  }
-  if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(id_key_captures), captures);
-  return result;
-}
-
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
