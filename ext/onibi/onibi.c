@@ -273,9 +273,10 @@ static void onibi_mark(void *ptr) {
   rb_gc_mark(obj->names);
   rb_gc_mark(obj->named_captures);
 }
+static size_t onibi_feature_token_bytes(size_t count);
 static size_t onibi_memsize(const void *ptr) {
   const onibi_regexp_t *obj = (const onibi_regexp_t *)ptr;
-  return obj ? sizeof(*obj) : 0;
+  return obj ? sizeof(*obj) + onibi_feature_token_bytes(obj->feature_token_count) : 0;
 }
 static const rb_data_type_t onibi_type = {
   "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize, NULL, { NULL } }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
@@ -303,6 +304,10 @@ typedef struct OnibiFeatureToken {
   unsigned char ascii_property;
   unsigned char inline_ignorecase;
 } OnibiFeatureToken;
+
+static size_t onibi_feature_token_bytes(size_t count) {
+  return count > SIZE_MAX / sizeof(OnibiFeatureToken) ? 0 : count * sizeof(OnibiFeatureToken);
+}
 
 typedef struct {
   OnibiFeatureToken *items;
