@@ -126,6 +126,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE backref_name = Qnil;
     VALUE group_name = Qnil;
     VALUE posix_name = Qnil;
+    VALUE literal_bytes = Qnil;
     int option_negative = 0;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
         (RSTRING_PTR(src)[i + 2] == '=' || RSTRING_PTR(src)[i + 2] == '!')) {
@@ -252,6 +253,16 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     else if (strchr("*+?{}", byte) != NULL) kind = "quantifier";
     else if (byte == '.') kind = "wildcard";
     else if (byte == '^' || byte == '$') kind = "anchor";
+    if (strcmp(kind, "literal") == 0 && byte >= 0x80) {
+      int char_len = rb_enc_mbclen(RSTRING_PTR(src) + start,
+                                   RSTRING_PTR(src) + RSTRING_LEN(src),
+                                   rb_enc_get(src));
+      if (char_len > 1 && start + char_len <= RSTRING_LEN(src)) {
+        literal_bytes = rb_str_substr(src, start, char_len);
+        i += char_len - 1;
+        byte = (unsigned char)RSTRING_PTR(src)[start];
+      }
+    }
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
@@ -259,6 +270,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name); }
     if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name); }
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
+    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(rb_intern("bytes")), literal_bytes); }
     if (strcmp(kind, "option_scope_start") == 0)
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
@@ -482,6 +494,8 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
        (kind == rb_intern("literal") ? onibi_ast_node("literal", token) : Qnil))))));
   if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
   rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
+  VALUE token_bytes = rb_hash_aref(token, ID2SYM(rb_intern("bytes")));
+  if (!NIL_P(token_bytes)) rb_hash_aset(node, ID2SYM(rb_intern("bytes")), token_bytes);
   if (kind == rb_intern("anchor")) {
     long marker = onibi_token_byte(token);
     const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
@@ -1044,6 +1058,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
       type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
+    VALUE literal_bytes = onibi_hash_value(ast, "bytes");
+    if (type == ID2SYM(rb_intern("literal")) && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
+      rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
       int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);

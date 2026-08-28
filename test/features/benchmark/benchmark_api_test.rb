@@ -487,6 +487,14 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("a b").vm_match?("a b")
   end
 
+  def test_tokenizer_keeps_multibyte_literal_as_one_token
+    token = Onibi::Lexer.new("é").tokens.first
+    assert_equal :literal, token[:kind]
+    assert_equal "é", token[:bytes]
+    assert_equal({ type: :literal, start: 0, end: 2, byte: 0xc3, bytes: "é" },
+                  Onibi::Parser.parse("é")[:ast][:children].first)
+  end
+
   def test_parser_keeps_invalid_repeat_braces_literal
     regexp = Onibi::Regexp.new("a{}")
     assert regexp.vm_match?("a{}")
