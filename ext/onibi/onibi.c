@@ -561,11 +561,9 @@ static VALUE onibi_parser_options(VALUE options) {
   return unique;
 }
 
-static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
-  VALUE source, options = Qnil;
-  rb_scan_args(argc, argv, "11", &source, &options);
+static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
   source = StringValue(source);
-  VALUE tokens = onibi_tokenize(source);
+  VALUE tokens = NIL_P(supplied_tokens) ? onibi_tokenize(source) : supplied_tokens;
   VALUE result = rb_hash_new();
   VALUE source_copy = rb_str_dup(source);
   rb_obj_freeze(source_copy);
@@ -575,6 +573,12 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
   rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_parse_range(source, tokens, 0, RARRAY_LEN(tokens)));
   rb_obj_freeze(result);
   return result;
+}
+
+static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
+  VALUE source, options = Qnil;
+  rb_scan_args(argc, argv, "11", &source, &options);
+  return onibi_parser_parse_internal(source, options, Qnil);
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; } onibi_fragment_t;
@@ -1489,8 +1493,8 @@ static VALUE onibi_alloc(VALUE klass) {
 static VALUE onibi_build_program(VALUE argument) {
   VALUE source = rb_ary_entry(argument, 0);
   VALUE options = rb_ary_entry(argument, 1);
-  VALUE parser_args[2] = { source, options };
-  VALUE parsed = onibi_parser_parse(2, parser_args, Qnil);
+  VALUE tokens = rb_ary_entry(argument, 2);
+  VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
   VALUE compiled = onibi_compiler_compile(Qnil, parsed);
   VALUE rseq = onibi_rseq_lower(Qnil, compiled);
   return rb_ary_new_from_args(3, parsed, compiled, rseq);
@@ -1551,14 +1555,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
-  VALUE program_args = rb_ary_new_from_args(2, source, options);
+  VALUE tokens = onibi_tokenize(source);
+  VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
     obj->parsed = rb_ary_entry(program, 0);
     obj->compiled = rb_ary_entry(program, 1);
     obj->rseq = rb_ary_entry(program, 2);
-    obj->tokens = onibi_hash_value(obj->parsed, "tokens");
+    obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) ||
@@ -1567,7 +1572,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     }
   } else {
     rb_set_errinfo(Qnil);
-    obj->tokens = onibi_tokenize(source);
+    obj->tokens = tokens;
   }
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
