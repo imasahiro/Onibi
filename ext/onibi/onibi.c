@@ -1410,6 +1410,13 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
   VALUE state = rb_hash_new();
   rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
   rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
+  OnibiGStateOp opcode = op == id_g_accept ? ONIBI_G_ACCEPT :
+    op == id_g_char ? ONIBI_G_CHAR : op == id_g_class ? ONIBI_G_CLASS :
+    op == id_g_any ? ONIBI_G_ANY : op == id_g_grapheme ? ONIBI_G_GRAPHEME :
+    op == id_g_backref ? ONIBI_G_BACKREF : op == id_g_call ? ONIBI_G_CALL :
+    op == id_g_atomic ? ONIBI_G_ATOMIC : op == id_g_absent ? ONIBI_G_ABSENT :
+    (OnibiGStateOp)-1;
+  if (opcode >= ONIBI_G_ACCEPT) rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(opcode));
   rb_hash_aset(state, ID2SYM(rb_intern("payload")), payload);
   rb_ary_push(builder->states, state);
 }
@@ -1582,7 +1589,7 @@ static inline OnibiCompiled *onibi_compiled_get(VALUE value) {
 static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, uint32_t flags) {
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   long accept = builder->next_id++;
-  onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
+  onibi_gir_state(builder, accept, id_g_accept, Qnil);
   VALUE accept_starts = rb_ary_new_from_args(1, LONG2NUM(accept));
   onibi_connect_actions(builder, fragment.exits, accept_starts, fragment.pending_actions);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
@@ -1659,7 +1666,7 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     fragment.pending_actions = exits;
   }
   long accept = builder->next_id++;
-  onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
+  onibi_gir_state(builder, accept, id_g_accept, Qnil);
   onibi_connect_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
                         fragment.pending_actions);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
@@ -1999,10 +2006,10 @@ skip_utf8_range_expansion:
        (!NIL_P(escape_name_for_op) && RSTRING_LEN(escape_name_for_op) == 1 &&
         tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
     long id = builder->next_id++;
-    ID op = type_code == ONIBI_AST_LITERAL ? rb_intern("G_CHAR") :
-      ((type_code == ONIBI_AST_ANY) ? rb_intern("G_ANY") :
-       ((type_code == ONIBI_AST_BACKREF) ? rb_intern("G_BACKREF") :
-        (grapheme_escape ? rb_intern("G_GRAPHEME") : rb_intern("G_CLASS"))));
+    ID op = type_code == ONIBI_AST_LITERAL ? id_g_char :
+      ((type_code == ONIBI_AST_ANY) ? id_g_any :
+       ((type_code == ONIBI_AST_BACKREF) ? id_g_backref :
+        (grapheme_escape ? id_g_grapheme : id_g_class)));
     if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
@@ -2058,7 +2065,7 @@ skip_utf8_range_expansion:
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
-    onibi_gir_state(builder, id, rb_intern("G_CALL"), payload);
+    onibi_gir_state(builder, id, id_g_call, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
     result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
@@ -2185,7 +2192,7 @@ skip_utf8_range_expansion:
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
-    onibi_gir_state(builder, id, rb_intern("G_ATOMIC"), payload);
+    onibi_gir_state(builder, id, id_g_atomic, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
     result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
@@ -2199,7 +2206,7 @@ skip_utf8_range_expansion:
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
     long id = builder->next_id++;
-    onibi_gir_state(builder, id, rb_intern("G_ABSENT"), payload);
+    onibi_gir_state(builder, id, id_g_absent, payload);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
     result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
@@ -2413,7 +2420,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   builder.capture_count = prepass_capture_count;
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
-  onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
+  onibi_gir_state(&builder, accept, id_g_accept, Qnil);
   VALUE accept_starts = rb_ary_new();
   rb_ary_push(accept_starts, LONG2NUM(accept));
   if (fragment.lazy) onibi_connect_prepend_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
