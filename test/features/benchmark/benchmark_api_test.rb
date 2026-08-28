@@ -453,10 +453,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal 0, optional.vm_match_result("xyz")[:start]
   end
 
-  def test_extended_option_stays_on_mri_until_whitespace_lowering_exists
+  def test_extended_option_lowers_whitespace_before_parsing
     regexp = Onibi::Regexp.new("a b", 2)
-    refute regexp.program_cached?
-    assert regexp.match?("ab")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("ab")
+    refute regexp.vm_match?("a b")
+    assert Onibi::Regexp.new("a# comment\nb", 2).vm_match?("ab")
   end
 
   def test_tagged_capture_walk_keeps_distinct_capture_histories

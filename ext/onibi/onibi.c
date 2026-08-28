@@ -105,7 +105,7 @@ static VALUE onibi_lexer_alloc(VALUE klass) {
   return TypedData_Make_Struct(klass, onibi_lexer_t, &onibi_lexer_type, obj);
 }
 
-static VALUE onibi_tokenize(VALUE src) {
+static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   VALUE tokens = rb_ary_new();
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
@@ -116,6 +116,11 @@ static VALUE onibi_tokenize(VALUE src) {
     VALUE token = rb_hash_new();
     const char *kind = "literal";
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
+    if (extended && !in_class && byte == '#') {
+      while (i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] != '\n') i++;
+      continue;
+    }
+    if (extended && !in_class && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')) continue;
     VALUE backref_name = Qnil;
     VALUE group_name = Qnil;
     VALUE posix_name = Qnil;
@@ -238,6 +243,10 @@ static VALUE onibi_tokenize(VALUE src) {
   }
   rb_obj_freeze(tokens);
   return tokens;
+}
+
+static VALUE onibi_tokenize(VALUE src) {
+  return onibi_tokenize_internal(src, 0);
 }
 
 static VALUE onibi_lexer_initialize(VALUE self, VALUE source) {
@@ -570,7 +579,15 @@ static VALUE onibi_parser_options(VALUE options) {
 
 static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
   source = StringValue(source);
-  VALUE tokens = NIL_P(supplied_tokens) ? onibi_tokenize(source) : supplied_tokens;
+  VALUE tokens = supplied_tokens;
+  if (NIL_P(tokens)) {
+    int extended = 0;
+    if (!NIL_P(options)) {
+      if (RB_TYPE_P(options, T_STRING)) extended = memchr(RSTRING_PTR(options), 'x', (size_t)RSTRING_LEN(options)) != NULL;
+      else extended = (NUM2INT(options) & 2) != 0;
+    }
+    tokens = onibi_tokenize_internal(source, extended);
+  }
   VALUE result = rb_hash_new();
   VALUE source_copy = rb_str_dup(source);
   rb_obj_freeze(source_copy);
@@ -1564,7 +1581,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
-  VALUE tokens = onibi_tokenize(source);
+  VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = rb_protect(onibi_build_program, program_args, &program_state);
@@ -1575,7 +1592,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) ||
+    if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
         onibi_tokens_have_class_intersection(obj->tokens) || onibi_tokens_have_subroutine(obj->tokens)) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
