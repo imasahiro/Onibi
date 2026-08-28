@@ -67,6 +67,8 @@ class BenchmarkApiTest < Minitest::Test
       end
       assert_equal header[:blob_size], header[:subprograms_offset]
       assert_equal header[:blob_size], program[:blob].bytesize
+      assert program[:subprograms].frozen?
+      assert_equal header[:subprogram_count], program[:subprograms].length
     end
     assert_equal 3, literal[:header][:literal_count]
     assert_equal 1, Onibi::Regexp.new("aa").pipeline[:rseq_program][:header][:literal_count]
