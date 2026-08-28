@@ -765,8 +765,8 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   for (long i = begin + 1; i < close; i++) {
     VALUE token = rb_ary_entry(tokens, i);
-    ID kind = onibi_token_kind(token);
-    if (kind == rb_intern("class_start")) {
+    OnibiTokenKind kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+    if (kind == ONIBI_TOKEN_CLASS_START) {
       long nested_close = onibi_find_close(tokens, i, close, rb_intern("class_start"), rb_intern("class_end"));
       if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
       VALUE nested = onibi_parse_class(tokens, i, nested_close);
@@ -777,18 +777,18 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       i = nested_close;
       continue;
     }
-    if (kind == rb_intern("class_negate")) { negated = 1; continue; }
-    if (kind == rb_intern("posix_class")) {
+    if (kind == ONIBI_TOKEN_CLASS_NEGATE) { negated = 1; continue; }
+    if (kind == ONIBI_TOKEN_POSIX_CLASS) {
       VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
       if (onibi_posix_kind(name) == ONIBI_POSIX_UNKNOWN)
         rb_raise(eRegexpError, "unknown POSIX character class");
       rb_ary_push(children, token);
       continue;
     }
-    if (kind == rb_intern("class_range") && i > begin + 1 && i + 1 < close) {
-      ID first_kind = onibi_token_kind(rb_ary_entry(tokens, i - 1));
-      ID last_kind = onibi_token_kind(rb_ary_entry(tokens, i + 1));
-      if (first_kind != rb_intern("literal") || last_kind != rb_intern("literal"))
+    if (kind == ONIBI_TOKEN_CLASS_RANGE && i > begin + 1 && i + 1 < close) {
+      OnibiTokenKind first_kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(rb_ary_entry(tokens, i - 1), ID2SYM(id_key_kind_code)));
+      OnibiTokenKind last_kind = (OnibiTokenKind)NUM2UINT(rb_hash_aref(rb_ary_entry(tokens, i + 1), ID2SYM(id_key_kind_code)));
+      if (first_kind != ONIBI_TOKEN_LITERAL || last_kind != ONIBI_TOKEN_LITERAL)
         rb_raise(eRegexpError, "invalid range endpoint in character class");
       VALUE first_token = rb_ary_entry(tokens, i - 1);
       VALUE last_token = rb_ary_entry(tokens, i + 1);
