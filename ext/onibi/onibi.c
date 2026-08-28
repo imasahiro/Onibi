@@ -5089,7 +5089,7 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   onibi_call_stack_reset();
-  VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
