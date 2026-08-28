@@ -2620,6 +2620,19 @@ static VALUE onibi_capture_copy(VALUE captures) {
   return copy;
 }
 
+static VALUE onibi_materialize_tags(VALUE tags, VALUE fallback) {
+  if (NIL_P(tags)) return fallback;
+  VALUE captures = rb_hash_new();
+  VALUE cursor = tags;
+  while (!NIL_P(cursor)) {
+    VALUE slot = rb_ary_entry(cursor, 1);
+    if (NIL_P(rb_hash_aref(captures, slot)))
+      rb_hash_aset(captures, slot, rb_ary_entry(cursor, 2));
+    cursor = rb_ary_entry(cursor, 0);
+  }
+  return captures;
+}
+
 /* Capture output uses an append-only event chain.  Each branch shares the
    parent chain and allocates only the events that it adds. */
 static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures,
@@ -2648,7 +2661,12 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
-  if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; *matched_start = reported_start; *matched_captures = captures; return 1; }
+  if (op == rb_intern("G_ACCEPT")) {
+    *matched_end = pos;
+    *matched_start = reported_start;
+    *matched_captures = onibi_materialize_tags(tags, captures);
+    return 1;
+  }
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     if (op == rb_intern("G_BACKREF")) {
