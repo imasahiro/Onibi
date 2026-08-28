@@ -3867,11 +3867,6 @@ static VALUE onibi_pipeline_build(VALUE self) {
   return out;
 }
 
-typedef struct {
-  long *values;
-  uint32_t count;
-} OnibiCounterState;
-
 static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters) {
   if (!counters || !counters->values) return 1;
   for (long i = 0; i < RARRAY_LEN(actions); i++) {

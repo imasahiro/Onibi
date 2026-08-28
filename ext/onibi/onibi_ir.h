@@ -27,6 +27,13 @@ typedef struct {
   OnibiCallFrameId parent;
 } OnibiCallFrame;
 
+/* Mutable repeat-counter state owned by a VM traversal frame.  The values
+   are indexed by the immutable RSeq counter slots and contain no Ruby VALUE. */
+typedef struct {
+  long *values;
+  uint32_t count;
+} OnibiCounterState;
+
 typedef enum {
   ONIBI_G_ACCEPT = 0,
   ONIBI_G_CHAR,
