@@ -803,18 +803,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->program_size = RSTRING_LEN(source) + 1;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
-  const char *p = RSTRING_PTR(source);
-  long n = RSTRING_LEN(source);
-  for (long i = 0; i < n; i++) {
-    if (p[i] == '\\' && i + 1 < n && (p[i + 1] == 'k' || p[i + 1] == 'g' ||
-        (p[i + 1] >= '1' && p[i + 1] <= '9'))) {
-      obj->execution_class = rb_str_new_cstr("DYNAMIC"); rb_obj_freeze(obj->execution_class); break;
+  VALUE class_tokens = NIL_P(obj->parsed) ? onibi_tokenize(source) : onibi_hash_value(obj->parsed, "tokens");
+  for (long i = 0; i < RARRAY_LEN(class_tokens); i++) {
+    ID kind = onibi_token_kind(rb_ary_entry(class_tokens, i));
+    if (kind == rb_intern("backref")) {
+      obj->execution_class = rb_str_new_cstr("DYNAMIC");
+      rb_obj_freeze(obj->execution_class);
+      break;
     }
-    if (p[i] == '(') {
-      obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED"); rb_obj_freeze(obj->execution_class);
-    }
-    if (p[i] == '(' && i + 2 < n && p[i + 1] == '?' &&
-        (p[i + 2] == '=' || p[i + 2] == '!' || p[i + 2] == '<')) {
+    if (kind == rb_intern("group_start")) {
       obj->execution_class = rb_str_new_cstr("TAGGED_ORDERED");
       rb_obj_freeze(obj->execution_class);
     }
