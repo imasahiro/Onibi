@@ -1421,7 +1421,7 @@ static OnibiPosixKind onibi_posix_kind(VALUE name) {
 
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
   VALUE state = rb_hash_new();
-  rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
+  rb_hash_aset(state, ID2SYM(id_key_id), LONG2NUM(id));
   rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(op));
   OnibiGStateOp opcode = op == id_g_accept ? ONIBI_G_ACCEPT :
     op == id_g_char ? ONIBI_G_CHAR : op == id_g_class ? ONIBI_G_CLASS :
@@ -1430,7 +1430,7 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
     op == id_g_atomic ? ONIBI_G_ATOMIC : op == id_g_absent ? ONIBI_G_ABSENT :
     (OnibiGStateOp)-1;
   if (opcode >= ONIBI_G_ACCEPT) rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(opcode));
-  rb_hash_aset(state, ID2SYM(rb_intern("payload")), payload);
+  rb_hash_aset(state, ID2SYM(id_key_payload), payload);
   rb_ary_push(builder->states, state);
 }
 
@@ -1609,10 +1609,10 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
   onibi_connect_actions(builder, fragment.exits, accept_starts, fragment.pending_actions);
   long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
   VALUE descriptor = rb_hash_new();
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(entry));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), UINT2NUM(flags));
-  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry_actions")), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
+    rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
+    rb_hash_aset(descriptor, ID2SYM(id_key_flags), UINT2NUM(flags));
+    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
   rb_ary_push(builder->subprograms, descriptor);
   return RARRAY_LEN(builder->subprograms) - 1;
