@@ -1816,6 +1816,12 @@ static void onibi_gir_validate_action_operands(VALUE action) {
     if (NIL_P(limit) || NUM2LONG(limit) < 0)
       rb_raise(eRegexpError, "invalid GIR counter limit");
   }
+  if (code == ONIBI_GA_ASSERT_POSITION) {
+    VALUE assert_kind = onibi_hash_value_id(action, id_key_assert_kind);
+    if (NIL_P(assert_kind) || NUM2ULONG(assert_kind) < ONIBI_RAP_BEGIN_BUFFER ||
+        NUM2ULONG(assert_kind) > ONIBI_RAP_LOOKBEHIND)
+      rb_raise(eRegexpError, "invalid GIR assertion subtype");
+  }
 }
 
 static void onibi_gir_validate(VALUE graph) {
