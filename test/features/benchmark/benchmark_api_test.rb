@@ -281,6 +281,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal Regexp.new("\\X").match("e\u0301").byteend(0), grapheme.vm_match_result("e\u0301")[:end]
   end
 
+  def test_grapheme_vm_matches_mri_for_regional_and_hangul_clusters
+    regexp = Onibi::Regexp.new("\\X")
+    ["🇯🇵", "가"].each do |input|
+      assert_equal Regexp.new("\\X").match(input).byteend(0), regexp.vm_match_result(input)[:end]
+    end
+  end
+
   def test_ascii_property_escape_lowers_to_a_bitmap
     property = Onibi::Regexp.new("\\p{ASCII}")
     inverse = Onibi::Regexp.new("\\P{ASCII}")

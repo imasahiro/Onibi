@@ -3824,7 +3824,29 @@ static int onibi_grapheme_extend(OnigCodePoint code) {
     (code >= 0x1dc0 && code <= 0x1dff) ||
     (code >= 0x20d0 && code <= 0x20ff) ||
     (code >= 0xfe00 && code <= 0xfe0f) ||
-    (code >= 0x1f3fb && code <= 0x1f3ff);
+    (code >= 0x1f3fb && code <= 0x1f3ff) ||
+    (code >= 0x1f300 && code <= 0x1faff && code >= 0x1f7e0) ||
+    (code >= 0x0903 && code <= 0x093c) ||
+    (code >= 0x0a3e && code <= 0x0a42) ||
+    (code >= 0x0bbe && code <= 0x0bce) ||
+    (code >= 0x1d165 && code <= 0x1d169) ||
+    (code >= 0xe0020 && code <= 0xe007f);
+}
+
+static int onibi_grapheme_ri(OnigCodePoint code) {
+  return code >= 0x1f1e6 && code <= 0x1f1ff;
+}
+
+static int onibi_grapheme_hangul_l(OnigCodePoint code) {
+  return (code >= 0x1100 && code <= 0x115f) || (code >= 0xa960 && code <= 0xa97c);
+}
+
+static int onibi_grapheme_hangul_v(OnigCodePoint code) {
+  return (code >= 0x1160 && code <= 0x11a7) || (code >= 0xd7b0 && code <= 0xd7c6);
+}
+
+static int onibi_grapheme_hangul_t(OnigCodePoint code) {
+  return (code >= 0x11a8 && code <= 0x11ff) || (code >= 0xd7cb && code <= 0xd7fb);
 }
 
 static long onibi_grapheme_width(VALUE str, long pos) {
@@ -3832,6 +3854,23 @@ static long onibi_grapheme_width(VALUE str, long pos) {
   if (!onibi_codepoint_at(str, pos, &code, &width)) return 0;
   long end = pos + width;
   if (code == '\r' && end < RSTRING_LEN(str) && RSTRING_PTR(str)[end] == '\n') return width + 1;
+  if (onibi_grapheme_ri(code)) {
+    OnigCodePoint next; long next_width;
+    if (onibi_codepoint_at(str, end, &next, &next_width) && onibi_grapheme_ri(next)) end += next_width;
+    return end - pos;
+  }
+  if (onibi_grapheme_hangul_l(code)) {
+    OnigCodePoint next; long next_width;
+    while (onibi_codepoint_at(str, end, &next, &next_width) &&
+           (onibi_grapheme_hangul_l(next) || onibi_grapheme_hangul_v(next))) end += next_width;
+    return end - pos;
+  }
+  if (onibi_grapheme_hangul_v(code)) {
+    OnigCodePoint next; long next_width;
+    while (onibi_codepoint_at(str, end, &next, &next_width) &&
+           (onibi_grapheme_hangul_v(next) || onibi_grapheme_hangul_t(next))) end += next_width;
+    return end - pos;
+  }
   int join = 0;
   for (;;) {
     OnigCodePoint next; long next_width;
