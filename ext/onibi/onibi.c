@@ -1684,8 +1684,10 @@ skip_utf8_range_expansion:
     VALUE action = rb_hash_new();
     long marker = NUM2LONG(onibi_hash_value(ast, "byte"));
     const char *op = "ASSERT_END_BUFFER";
-    if (marker == '^') op = builder->multiline ? "ASSERT_BEGIN_LINE" : "ASSERT_BEGIN_BUFFER";
-    else if (marker == '$') op = builder->multiline ? "ASSERT_END_LINE" : "ASSERT_END_BUFFER";
+    /* Ruby keeps ^ and $ line anchors independent of the m option.  The
+       option changes dot-newline matching only. */
+    if (marker == '^') op = "ASSERT_BEGIN_LINE";
+    else if (marker == '$') op = "ASSERT_END_LINE";
     else if (marker == 'b') op = "ASSERT_WORD_BOUNDARY";
     else if (marker == 'B') op = "ASSERT_NONWORD_BOUNDARY";
     else if (marker == 'A') op = "ASSERT_BEGIN_BUFFER";

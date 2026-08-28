@@ -1410,6 +1410,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :ASSERT_END_LINE, graph[:edges].last[:actions].first[:op]
   end
 
+  def test_ruby_line_anchors_are_independent_of_multiline_option
+    regexp = Onibi::Regexp.new("(?-m:^a$)")
+
+    assert regexp.program_cached?
+    assert regexp.vm_match?("x\na\nx")
+    refute regexp.vm_match?("x\nba\nx")
+  end
+
   def test_posix_class_is_a_semantic_token_and_vm_predicate
     tokens = Onibi::Lexer.new("[[:alpha:]]").tokens
     assert_equal %i[class_start posix_class class_end], tokens.map { |token| token[:kind] }
