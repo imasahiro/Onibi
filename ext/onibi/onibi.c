@@ -912,7 +912,9 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   }
   if (intersection >= 0) {
     VALUE result = onibi_ast_node(ONIBI_AST_CLASS_INTERSECTION, rb_ary_entry(tokens, begin));
-    VALUE operands = rb_ary_new_capa(2);
+    OnibiValueVector operand_records;
+    onibi_value_vector_init(&operand_records);
+    VALUE operand_roots = rb_ary_new_capa(2);
     for (int side = 0; side < 2; side++) {
       long part_begin = side == 0 ? begin + 1 : intersection + 2;
       long part_end = side == 0 ? intersection : close;
@@ -926,8 +928,12 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       rb_ary_push(slice, open);
       for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
       rb_ary_push(slice, finish);
-      rb_ary_push(operands, onibi_parse_class(slice, 0, RARRAY_LEN(slice) - 1));
+      onibi_value_vector_push(&operand_records, onibi_parse_class(slice, 0, RARRAY_LEN(slice) - 1), operand_roots);
     }
+    VALUE operands = rb_ary_new_capa((long)operand_records.count);
+    for (size_t i = 0; i < operand_records.count; i++) rb_ary_push(operands, operand_records.items[i]);
+    onibi_value_vector_free(&operand_records);
+    rb_ary_clear(operand_roots);
     rb_hash_aset(result, ID2SYM(id_key_operands), operands);
     rb_obj_freeze(operands);
     onibi_value_vector_free(&child_records);
