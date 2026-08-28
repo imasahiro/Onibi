@@ -3352,7 +3352,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->named_captures = rb_funcall(obj->regexp, rb_intern("named_captures"), 0);
   rb_obj_freeze(obj->names);
   rb_obj_freeze(obj->named_captures);
-  VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
+  VALUE program_args = rb_ary_new_from_args(3, source, INT2NUM(opts), tokens);
   int program_state = 0;
   VALUE parsed = Qnil;
   VALUE program = (obj->has_large_repeat ||
