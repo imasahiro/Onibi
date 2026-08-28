@@ -152,6 +152,7 @@ The Ruby data decision is:
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
+| AST / execution / syntax feature flags | C bitsets | Immutable initialization decisions; no Ruby identity |
 | lookaround predicate kind | C enum adapter | Byte/bitmap/any dispatch has no Ruby-visible identity |
 | tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
 | execution class | C enum | Internal dispatcher choice |
