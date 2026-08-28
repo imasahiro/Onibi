@@ -1809,7 +1809,8 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       rb_str_strlen(str) == RSTRING_LEN(str) &&
-      rb_enc_compatible(str, obj->source) != NULL)
+      rb_enc_compatible(str, obj->source) != NULL &&
+      RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -2828,7 +2829,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_set_deadline(obj->timeout_seconds);
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
-      rb_enc_compatible(str, obj->source) != NULL)
+      rb_enc_compatible(str, obj->source) != NULL &&
+      RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
     {
       VALUE result = onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
       onibi_deadline_ns = 0;
