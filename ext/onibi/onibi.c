@@ -4074,7 +4074,7 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
       int hit = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
-        VALUE kind_value = onibi_hash_value(child, "kind");
+        VALUE kind_value = onibi_hash_value_id(child, id_key_kind);
         if (!SYMBOL_P(kind_value)) continue;
         ID kind = SYM2ID(kind_value);
         if (kind == id_kind_literal) {
