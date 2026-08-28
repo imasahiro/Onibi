@@ -240,6 +240,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, property.pipeline[:interpreter]
   end
 
+  def test_ascii_property_escape_lowers_to_a_bitmap
+    property = Onibi::Regexp.new("\\p{ASCII}")
+    inverse = Onibi::Regexp.new("\\P{ASCII}")
+
+    assert property.program_cached?
+    assert property.vm_match?("A")
+    refute inverse.vm_match?("A")
+    assert inverse.vm_match?("é")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)

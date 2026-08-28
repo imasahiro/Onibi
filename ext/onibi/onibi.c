@@ -952,6 +952,10 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
+  } else if (!NIL_P(escape_name) && rb_str_equal(escape_name, rb_str_new_cstr("ASCII"))) {
+    for (int c = 0; c < 128; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
+    if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P')
+      for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
   }
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
     VALUE range = rb_ary_entry(ranges, i);
@@ -1304,7 +1308,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
-      if (!NIL_P(name) && RSTRING_LEN(name) > 1)
+      if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !rb_str_equal(name, rb_str_new_cstr("ASCII")))
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
       if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
@@ -2079,6 +2083,12 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
   return rb_funcall(rb_cRegexp, id_new, 2, source, options);
 }
 
+static int onibi_ascii_property_token_p(VALUE token) {
+  if (onibi_token_byte(token) != 'p' && onibi_token_byte(token) != 'P') return 0;
+  VALUE name = onibi_hash_value(token, "name");
+  return !NIL_P(name) && rb_str_equal(name, rb_str_new_cstr("ASCII"));
+}
+
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
    token stream.  Runtime entry points use these bits and never rescan source. */
 static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
@@ -2154,8 +2164,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       if (kind == rb_intern("conditional_start")) obj->has_conditional = 1;
     } else if (kind == rb_intern("escape")) {
       if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
-      if (onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P' ||
-          onibi_token_byte(token) == 'u') { obj->has_property_escape = 1; obj->has_dynamic = 1; }
+      if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P') &&
+          !onibi_ascii_property_token_p(token)) { obj->has_property_escape = 1; obj->has_dynamic = 1; }
       if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
     } else if (kind == rb_intern("meta_escape")) {
       obj->has_meta_escape = 1;
