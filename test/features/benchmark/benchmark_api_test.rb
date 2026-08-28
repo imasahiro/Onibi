@@ -1015,6 +1015,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(physical_graph: invalid_view), "abc", :REGULAR_FAST) }
   end
 
+  def test_vm_rejects_invalid_cached_outgoing_edge_index
+    rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+    invalid_view = rseq[:physical_graph].merge(outgoing: [].freeze).freeze
+
+    assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(physical_graph: invalid_view), "abc", :REGULAR_FAST) }
+  end
+
   def test_vm_rejects_malformed_lookaround_predicates
     rseq = Onibi::Regexp.new("(?=[ab]c)[a-z]c").pipeline[:rseq_program]
     index = rseq[:actions].index { |action| action[:op] == :ASSERT_LOOKAHEAD }

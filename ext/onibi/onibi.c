@@ -3416,13 +3416,28 @@ static void onibi_rseq_validate(VALUE rseq) {
     VALUE cached_states = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "states") : Qnil;
     VALUE cached_edges = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "edges") : Qnil;
     VALUE cached_starts = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "start_edges") : Qnil;
+    VALUE cached_outgoing = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "outgoing") : Qnil;
     if (!RB_TYPE_P(physical_graph, T_HASH) || !RB_TYPE_P(cached_states, T_ARRAY) ||
         !RB_TYPE_P(cached_edges, T_ARRAY) || !RB_TYPE_P(cached_starts, T_ARRAY) ||
+        !RB_TYPE_P(cached_outgoing, T_ARRAY) ||
         !RTEST(rb_obj_frozen_p(cached_states)) || !RTEST(rb_obj_frozen_p(cached_edges)) ||
-        !RTEST(rb_obj_frozen_p(cached_starts)) || RARRAY_LEN(cached_states) != RARRAY_LEN(semantic_states) ||
+        !RTEST(rb_obj_frozen_p(cached_starts)) || !RTEST(rb_obj_frozen_p(cached_outgoing)) ||
+        RARRAY_LEN(cached_states) != RARRAY_LEN(semantic_states) ||
+        RARRAY_LEN(cached_outgoing) != RARRAY_LEN(cached_states) ||
         RARRAY_LEN(cached_edges) != RARRAY_LEN(semantic_edges) ||
         RARRAY_LEN(cached_starts) != RARRAY_LEN(semantic_start_edges))
       rb_raise(rb_eArgError, "invalid cached RSeq execution view");
+    for (long state_id = 0; state_id < RARRAY_LEN(cached_outgoing); state_id++) {
+      VALUE state_edges = rb_ary_entry(cached_outgoing, state_id);
+      if (!RB_TYPE_P(state_edges, T_ARRAY) || !RTEST(rb_obj_frozen_p(state_edges)))
+        rb_raise(rb_eArgError, "invalid cached RSeq outgoing edge index");
+      for (long edge_id = 0; edge_id < RARRAY_LEN(state_edges); edge_id++) {
+        VALUE edge = rb_ary_entry(state_edges, edge_id);
+        if (!RB_TYPE_P(edge, T_HASH) || NUM2LONG(onibi_hash_value(edge, "from")) != state_id ||
+            !RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+          rb_raise(rb_eArgError, "invalid cached RSeq outgoing edge");
+      }
+    }
   }
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
