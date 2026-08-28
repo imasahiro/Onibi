@@ -3460,6 +3460,26 @@ static VALUE onibi_regexp_union(int argc, VALUE *argv, VALUE klass) {
   return rb_funcall(klass, id_new, 1, mri_regexp);
 }
 
+static VALUE onibi_regexp_try_convert(VALUE klass, VALUE value) {
+  (void)klass;
+  if (rb_obj_is_kind_of(value, cRegexp) || rb_obj_is_kind_of(value, rb_cRegexp)) return value;
+  ID to_regexp = rb_intern("to_regexp");
+  if (!rb_respond_to(value, to_regexp)) return Qnil;
+  VALUE converted = rb_funcall(value, to_regexp, 0);
+  if (NIL_P(converted)) return Qnil;
+  if (!rb_obj_is_kind_of(converted, cRegexp) && !rb_obj_is_kind_of(converted, rb_cRegexp))
+    rb_raise(rb_eTypeError, "can't convert %s into Regexp", rb_obj_classname(value));
+  return converted;
+}
+
+static VALUE onibi_regexp_linear_time_p(VALUE klass, VALUE pattern) {
+  VALUE regexp = rb_funcall(klass, id_new, 1, pattern);
+  onibi_regexp_t *obj;
+  TypedData_Get_Struct(regexp, onibi_regexp_t, &onibi_type, obj);
+  return (!obj->has_dynamic && !obj->has_backref && !obj->has_subroutine &&
+          !obj->has_absence && !obj->has_conditional && !obj->has_atomic) ? Qtrue : Qfalse;
+}
+
 static VALUE onibi_pipeline_token_slice(VALUE source, VALUE token) {
   long start = NUM2LONG(onibi_hash_value(token, "start"));
   long finish = NUM2LONG(onibi_hash_value(token, "end"));
@@ -5397,7 +5417,10 @@ void Init_onibi(void) {
   rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
   rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
   rb_define_singleton_method(cRegexp, "escape", onibi_regexp_escape, 1);
+  rb_define_singleton_method(cRegexp, "quote", onibi_regexp_escape, 1);
   rb_define_singleton_method(cRegexp, "union", onibi_regexp_union, -1);
+  rb_define_singleton_method(cRegexp, "try_convert", onibi_regexp_try_convert, 1);
+  rb_define_singleton_method(cRegexp, "linear_time?", onibi_regexp_linear_time_p, 1);
   rb_define_singleton_method(cRegexp, "last_match", onibi_last_match, -1);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
