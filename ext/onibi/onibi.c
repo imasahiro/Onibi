@@ -1742,14 +1742,14 @@ static void onibi_gir_validate(VALUE graph) {
     VALUE state = rb_ary_entry(states, i);
     if (NUM2LONG(onibi_hash_value(state, "id")) != i)
       rb_raise(eRegexpError, "GIR state ids are not contiguous");
-    ID op = SYM2ID(onibi_hash_value(state, "op"));
-    if (op != id_g_accept && op != id_g_char && op != id_g_class && op != id_g_any &&
-        op != id_g_grapheme && op != id_g_backref && op != id_g_call &&
-        op != id_g_atomic && op != id_g_absent)
+    VALUE opcode_value = onibi_hash_value_id(state, id_key_opcode);
+    if (NIL_P(opcode_value)) rb_raise(eRegexpError, "GIR state opcode is missing");
+    unsigned int opcode = NUM2UINT(opcode_value);
+    if (opcode > ONIBI_G_ABSENT)
       rb_raise(eRegexpError, "unknown GIR state opcode");
-    if (i == accept && op != id_g_accept)
+    if (i == accept && opcode != ONIBI_G_ACCEPT)
       rb_raise(eRegexpError, "GIR accept state has a non-accept opcode");
-    if (op == id_g_backref) {
+    if (opcode == ONIBI_G_BACKREF) {
       VALUE capture = onibi_hash_value(onibi_hash_value(state, "payload"), "capture");
       if (NIL_P(capture) || NUM2LONG(capture) < 1 || NUM2LONG(capture) > capture_count)
         rb_raise(eRegexpError, "GIR backreference capture is out of range");
