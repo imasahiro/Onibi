@@ -558,6 +558,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
+    if (builder->ignorecase && type == ID2SYM(rb_intern("character_class"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
+      rb_obj_freeze(payload);
+    }
     if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("multiline")), Qtrue);
@@ -1274,6 +1279,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
 }
 
 static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
+  int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
+  if (fold) byte = (unsigned char)tolower(byte);
   VALUE type = onibi_hash_value(payload, "type");
   if (type == ID2SYM(rb_intern("escape"))) {
     VALUE name = onibi_hash_value(payload, "name");
@@ -1289,12 +1296,21 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   int hit = 0;
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
     VALUE range = rb_ary_entry(ranges, i);
-    if (RARRAY_LEN(range) == 2 && byte >= NUM2INT(rb_ary_entry(range, 0)) && byte <= NUM2INT(rb_ary_entry(range, 1))) hit = 1;
+    if (RARRAY_LEN(range) == 2) {
+      unsigned char first = (unsigned char)NUM2INT(rb_ary_entry(range, 0));
+      unsigned char last = (unsigned char)NUM2INT(rb_ary_entry(range, 1));
+      if (fold) { first = (unsigned char)tolower(first); last = (unsigned char)tolower(last); }
+      if (byte >= first && byte <= last) hit = 1;
+    }
   }
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
     ID kind = SYM2ID(onibi_hash_value(child, "kind"));
-    if (kind == rb_intern("literal") && byte == NUM2INT(onibi_hash_value(child, "byte"))) hit = 1;
+    if (kind == rb_intern("literal")) {
+      unsigned char literal = (unsigned char)NUM2INT(onibi_hash_value(child, "byte"));
+      if (fold) literal = (unsigned char)tolower(literal);
+      if (byte == literal) hit = 1;
+    }
     if (kind == rb_intern("posix_class")) {
       VALUE name = onibi_hash_value(child, "name");
       const char *n = StringValueCStr(name);
