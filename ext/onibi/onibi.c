@@ -1020,11 +1020,23 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("multiline"))) multiline = 1;
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
-  uint32_t literal_count = 0;
+  VALUE literal_payloads = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == rb_intern("G_CHAR")) literal_count++;
+    if (op != rb_intern("G_CHAR")) continue;
+    VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
+    int found = 0;
+    for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
+      VALUE prior = rb_ary_entry(literal_payloads, j);
+      if (rb_equal(onibi_hash_value(prior, "byte"), onibi_hash_value(payload, "byte")) &&
+          rb_equal(onibi_hash_value(prior, "ignorecase"), onibi_hash_value(payload, "ignorecase"))) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) rb_ary_push(literal_payloads, payload);
   }
+  uint32_t literal_count = (uint32_t)RARRAY_LEN(literal_payloads);
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
   uint64_t literal_desc_size = (uint64_t)literal_count * sizeof(OnibiLiteralDesc);
   uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
@@ -1161,7 +1173,17 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       }
       physical_states[i].payload = class_index;
     }
-    else if (op == rb_intern("G_CHAR")) physical_states[i].payload = literal_index++;
+    else if (op == rb_intern("G_CHAR")) {
+      VALUE payload = onibi_hash_value(rb_ary_entry(states, i), "payload");
+      literal_index = 0;
+      for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
+        VALUE prior = rb_ary_entry(literal_payloads, j);
+        if (rb_equal(onibi_hash_value(prior, "byte"), onibi_hash_value(payload, "byte")) &&
+            rb_equal(onibi_hash_value(prior, "ignorecase"), onibi_hash_value(payload, "ignorecase"))) break;
+        literal_index++;
+      }
+      physical_states[i].payload = literal_index;
+    }
   }
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
   for (long i = 0; i < RARRAY_LEN(r_edges); i++) {
@@ -1215,10 +1237,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   unsigned char *literal_data = (unsigned char *)(RSTRING_PTR(blob) + physical.literals_offset);
   OnibiLiteralDesc *literal_descs = (OnibiLiteralDesc *)(RSTRING_PTR(blob) + physical.descriptors_offset);
   literal_index = 0;
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    VALUE state = rb_ary_entry(states, i);
-    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CHAR")) continue;
-    VALUE payload = onibi_hash_value(state, "payload");
+  for (long i = 0; i < RARRAY_LEN(literal_payloads); i++) {
+    VALUE payload = rb_ary_entry(literal_payloads, i);
     literal_descs[literal_index].data_offset = physical.literals_offset + literal_index;
     literal_descs[literal_index].data_length = 1;
     literal_descs[literal_index].flags = RTEST(onibi_hash_value(payload, "ignorecase")) ? 1 : 0;

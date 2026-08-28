@@ -68,6 +68,7 @@ class BenchmarkApiTest < Minitest::Test
       assert_equal header[:blob_size], program[:blob].bytesize
     end
     assert_equal 3, literal[:header][:literal_count]
+    assert_equal 1, Onibi::Regexp.new("aa").pipeline[:rseq_program][:header][:literal_count]
     assert_equal 1, class_program[:header][:class_count]
     assert_equal 1, Onibi::Regexp.new("[a][a]").pipeline[:rseq_program][:header][:class_count]
   end
