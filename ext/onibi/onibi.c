@@ -1244,7 +1244,9 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   OnibiParsed *parsed;
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed, &onibi_parsed_type, parsed);
   parsed->options = onibi_option_mask(options);
-  parsed->ast = onibi_deep_freeze(onibi_parse_range(tokens, 0, RARRAY_LEN(tokens)));
+  /* The AST is an internal compiler value.  Do not deep-freeze it here: it is
+     never exposed through the Regexp API and freezing would rescan the tree. */
+  parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
   parsed->safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed->ast);
   parsed->anchor_repeat = onibi_ast_anchor_repeat(parsed->ast);
   parsed->nullable_absence = onibi_ast_nullable_absence(parsed->ast);

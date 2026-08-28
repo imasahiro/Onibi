@@ -245,6 +245,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "The AST is an initialization artifact"
   end
 
+  def test_internal_ast_is_not_deep_frozen_during_parse
+    source = File.read(EXTENSION_SOURCE)
+    parser = source[/static VALUE onibi_parser_parse_internal\(.*?\n}\n/m]
+
+    refute_nil parser
+    assert_includes parser, "parsed->ast = onibi_parse_range"
+    refute_match(/parsed->ast = onibi_deep_freeze/, parser)
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
