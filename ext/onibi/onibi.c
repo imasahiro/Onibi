@@ -43,7 +43,7 @@ static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
 static ID id_a_end, id_key_physical_graph;
 static ID id_insert;
-static ID id_timeout, id_options, id_encode, id_message, id_names, id_named_captures;
+static ID id_timeout, id_encode, id_message, id_names, id_named_captures;
 static ID id_escape, id_union, id_to_regexp;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
@@ -5529,7 +5529,7 @@ void Init_onibi(void) {
   id_key_subprograms_offset = rb_intern("subprograms_offset");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
   id_insert = rb_intern("insert");
-  id_timeout = rb_intern("timeout"); id_options = rb_intern("options");
+  id_timeout = rb_intern("timeout");
   id_encode = rb_intern("encode"); id_message = rb_intern("message");
   id_names = rb_intern("names"); id_named_captures = rb_intern("named_captures");
   id_escape = rb_intern("escape"); id_union = rb_intern("union"); id_to_regexp = rb_intern("to_regexp");
