@@ -425,6 +425,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "rb_hash_aref(captures, ID2SYM(id_recursive_marker))"
   end
 
+  def test_vm_matchers_do_not_reintern_property_names
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static int onibi_vm_class_match\(VALUE payload,.*?\n}\n/m]
+
+    refute_nil matcher
+    refute_includes matcher, "rb_intern"
+    refute_includes matcher, "rb_intern_str"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
