@@ -1377,6 +1377,7 @@ static void onibi_gir_validate(VALUE graph) {
     ID op = SYM2ID(onibi_hash_value(state, "op"));
     if (op != rb_intern("G_ACCEPT") && op != rb_intern("G_CHAR") &&
         op != rb_intern("G_CLASS") && op != rb_intern("G_ANY") &&
+        op != rb_intern("G_GRAPHEME") &&
         op != rb_intern("G_BACKREF") && op != rb_intern("G_CALL") &&
         op != rb_intern("G_ATOMIC") && op != rb_intern("G_ABSENT"))
       rb_raise(eRegexpError, "unknown GIR state opcode");
@@ -2283,7 +2284,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
+    if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
         op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) {
       physical.exec_kind = 2;
       break;
@@ -2348,6 +2349,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     ID op = SYM2ID(onibi_hash_value(state, "op"));
     physical_states[i].op = (uint8_t)(op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
       op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS : op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
+      op == rb_intern("G_GRAPHEME") ? ONIBI_RS_GRAPHEME :
       op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
       op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC : op == rb_intern("G_ABSENT") ? ONIBI_RS_ABSENT :
       op == rb_intern("G_ACCEPT") ? 0 : 0xff);
@@ -3560,7 +3562,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   ID op = SYM2ID(onibi_hash_value(state, "op"));
   if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; return 1; }
   /* Dynamic subprogram states are not valid in the flat graph walker. */
-  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
+  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
@@ -3665,7 +3667,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
+  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     if (op == rb_intern("G_BACKREF")) {
@@ -3844,6 +3846,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       semantic_op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
       semantic_op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS :
       semantic_op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
+      semantic_op == rb_intern("G_GRAPHEME") ? ONIBI_RS_GRAPHEME :
       semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF :
       semantic_op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
       semantic_op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC :
@@ -4082,6 +4085,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     ID op = physical_states[i].op == ONIBI_RS_CHAR ? rb_intern("G_CHAR") :
       physical_states[i].op == ONIBI_RS_CLASS ? rb_intern("G_CLASS") :
       physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") :
+      physical_states[i].op == ONIBI_RS_GRAPHEME ? rb_intern("G_GRAPHEME") :
       physical_states[i].op == ONIBI_RS_BACKREF ? rb_intern("G_BACKREF") :
       physical_states[i].op == ONIBI_RS_CALL ? rb_intern("G_CALL") :
       physical_states[i].op == ONIBI_RS_ATOMIC ? rb_intern("G_ATOMIC") :
