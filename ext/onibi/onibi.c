@@ -297,7 +297,7 @@ typedef enum {
 } OnibiTokenKind;
 
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
-static long onibi_token_byte(VALUE token);
+static inline long onibi_token_byte(VALUE token);
 static inline long onibi_token_start(VALUE token);
 static inline long onibi_token_end(VALUE token);
 static inline ID onibi_token_name_id(VALUE token);
@@ -767,7 +767,7 @@ static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
   return NIL_P(kind) ? (OnibiTokenKind)-1 : (OnibiTokenKind)NUM2UINT(kind);
 }
 
-static long onibi_token_byte(VALUE token) {
+static inline long onibi_token_byte(VALUE token) {
   return NUM2LONG(onibi_hash_value_id(token, id_key_byte));
 }
 
