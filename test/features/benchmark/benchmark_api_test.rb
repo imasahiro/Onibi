@@ -208,10 +208,12 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.match?("xxcxx")
   end
 
-  def test_nested_character_class_crosses_dynamic_boundary
+  def test_nested_character_class_is_lowered_to_a_union_bitmap
     regexp = Onibi::Regexp.new("[a-z[0-9]]")
-    refute regexp.program_cached?
-    assert regexp.match?("5")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("5")
+    assert regexp.vm_match?("q")
+    refute regexp.vm_match?("_")
   end
 
   def test_absence_operator_has_explicit_ast_and_dynamic_boundary

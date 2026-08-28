@@ -2229,7 +2229,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
-        obj->has_class_intersection || obj->has_nested_class) {
+        obj->has_class_intersection) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
