@@ -283,6 +283,13 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_equal 0, source.scan(/NIL_P\([^)]*property_name_id\).*rb_intern_str/).length
   end
 
+  def test_compiler_subprograms_use_c_vector_until_publication
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "OnibiValueVector subprograms"
+    assert_includes source, "onibi_value_vector_push(&builder->subprograms"
+    assert_includes source, "VALUE subprograms = rb_ary_new_capa"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"
