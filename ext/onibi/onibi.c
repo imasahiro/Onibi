@@ -1230,6 +1230,12 @@ static void onibi_id_vector_push(OnibiIdVector *vector, OnibiStateId value) {
 static void onibi_id_vector_free(OnibiIdVector *vector) {
   xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
+
+static void onibi_id_vector_from_array(OnibiIdVector *vector, VALUE values) {
+  onibi_id_vector_init(vector);
+  for (long i = 0; i < RARRAY_LEN(values); i++)
+    onibi_id_vector_push(vector, (OnibiStateId)NUM2ULONG(rb_ary_entry(values, i)));
+}
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -2504,9 +2510,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_ary_push(start_edges, edge);
   }
   OnibiIdVector start_ids;
-  onibi_id_vector_init(&start_ids);
-  for (long i = 0; i < RARRAY_LEN(fragment.starts); i++)
-    onibi_id_vector_push(&start_ids, (OnibiStateId)NUM2ULONG(rb_ary_entry(fragment.starts, i)));
+  onibi_id_vector_from_array(&start_ids, fragment.starts);
   for (size_t i = 0; i < start_ids.count; i++) {
     VALUE edge = rb_hash_new();
     VALUE destination = UINT2NUM(start_ids.items[i]);
