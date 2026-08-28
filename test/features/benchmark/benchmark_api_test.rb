@@ -274,10 +274,11 @@ class BenchmarkApiTest < Minitest::Test
   def test_grapheme_and_property_escapes_cross_dynamic_boundary
     grapheme = Onibi::Regexp.new("\\X")
     property = Onibi::Regexp.new("\\p{L}")
-    refute grapheme.program_cached?
+    assert grapheme.program_cached?
     refute property.program_cached?
     assert_equal :DYNAMIC, grapheme.pipeline[:interpreter]
     assert_equal :DYNAMIC, property.pipeline[:interpreter]
+    assert_equal Regexp.new("\\X").match("e\u0301").byteend(0), grapheme.vm_match_result("e\u0301")[:end]
   end
 
   def test_ascii_property_escape_lowers_to_a_bitmap

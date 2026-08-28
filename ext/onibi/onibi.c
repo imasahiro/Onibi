@@ -1773,7 +1773,7 @@ skip_utf8_range_expansion:
       int code = NIL_P(name) ? 0 : (RSTRING_LEN(name) == 1 ?
         tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
       if ((NIL_P(name) || RSTRING_LEN(name) <= 1) &&
-          (code == 'r' || code == 'p' || code == 'x' || code == 'u'))
+          (code == 'r' || code == 'p' || code == 'u'))
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
     VALUE payload = ast;
@@ -1789,10 +1789,16 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
+    VALUE escape_name_for_op = onibi_hash_value(ast, "name");
+    int grapheme_escape = type == ID2SYM(rb_intern("escape")) &&
+      ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_hash_value(ast, "byte"))) == 'x') ||
+       (!NIL_P(escape_name_for_op) && RSTRING_LEN(escape_name_for_op) == 1 &&
+        tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
     long id = builder->next_id++;
     ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
       ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
-       ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") : rb_intern("G_CLASS")));
+       ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") :
+        (grapheme_escape ? rb_intern("G_GRAPHEME") : rb_intern("G_CLASS"))));
     if (builder->ignorecase && type == ID2SYM(rb_intern("literal"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
@@ -3032,16 +3038,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = (obj->has_large_repeat ||
-                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ?
+                   obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
     obj->parsed = (obj->has_large_repeat ||
-                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
+                   obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
     obj->compiled = (obj->has_large_repeat ||
-                     obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
+                     obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     obj->rseq = (obj->has_large_repeat ||
-                 obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
+                 obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     if (!NIL_P(obj->parsed)) {
       VALUE parsed_ast = onibi_hash_value(obj->parsed, "ast");
@@ -3812,6 +3818,32 @@ static int onibi_hash_copy_i(VALUE key, VALUE value, VALUE arg) {
   return ST_CONTINUE;
 }
 
+static int onibi_grapheme_extend(OnigCodePoint code) {
+  return (code >= 0x0300 && code <= 0x036f) ||
+    (code >= 0x1ab0 && code <= 0x1aff) ||
+    (code >= 0x1dc0 && code <= 0x1dff) ||
+    (code >= 0x20d0 && code <= 0x20ff) ||
+    (code >= 0xfe00 && code <= 0xfe0f) ||
+    (code >= 0x1f3fb && code <= 0x1f3ff);
+}
+
+static long onibi_grapheme_width(VALUE str, long pos) {
+  OnigCodePoint code; long width;
+  if (!onibi_codepoint_at(str, pos, &code, &width)) return 0;
+  long end = pos + width;
+  if (code == '\r' && end < RSTRING_LEN(str) && RSTRING_PTR(str)[end] == '\n') return width + 1;
+  int join = 0;
+  for (;;) {
+    OnigCodePoint next; long next_width;
+    if (!onibi_codepoint_at(str, end, &next, &next_width)) break;
+    if (onibi_grapheme_extend(next)) { end += next_width; continue; }
+    if (next == 0x200d) { join = 1; end += next_width; continue; }
+    if (join) { join = 0; end += next_width; continue; }
+    break;
+  }
+  return end - pos;
+}
+
 /* Execute a non-capturing subprogram from the current input position.  The
    called graph shares immutable states and outgoing edges with its caller. */
 static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprograms,
@@ -3855,9 +3887,12 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
   if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; return 1; }
-  /* Dynamic subprogram states are not valid in the flat graph walker. */
-  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
-  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
+  if (op == rb_intern("G_GRAPHEME")) {
+    long consumed = onibi_grapheme_width(str, pos);
+    if (consumed <= 0) return 0;
+    pos += consumed;
+  } else if (op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
+  else if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
     VALUE payload = onibi_hash_value(state, "payload");
@@ -3961,7 +3996,11 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_GRAPHEME")) return 0;
+  if (op == rb_intern("G_GRAPHEME")) {
+    long consumed = onibi_grapheme_width(str, pos);
+    if (consumed <= 0) return 0;
+    pos += consumed;
+  }
   if (op == rb_intern("G_ABSENT")) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
