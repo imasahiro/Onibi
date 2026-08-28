@@ -1620,10 +1620,11 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
     rb_hash_aset(builder->capture_bodies, key, onibi_hash_value(ast, "body"));
     VALUE name = onibi_hash_value(ast, "name");
     if (!NIL_P(name)) {
+      if (!NIL_P(rb_hash_aref(builder->capture_names, name)))
+        rb_raise(eRegexpError, "duplicate named capture requires compatibility execution");
       /* MRI resolves a duplicate named backreference to the first matching
          group definition.  Keep the earliest slot in the compile index. */
-      if (NIL_P(rb_hash_aref(builder->capture_names, name)))
-        rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
+      rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
       rb_hash_aset(builder->capture_bodies, name, onibi_hash_value(ast, "body"));
     }
     onibi_collect_captures(onibi_hash_value(ast, "body"), builder, next_capture);
