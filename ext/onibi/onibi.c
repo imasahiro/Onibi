@@ -1808,7 +1808,8 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
     OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
     if (prior->from == from && prior->to == to) {
       VALUE prior_actions = prior->actions;
-      VALUE merged_actions = rb_ary_dup(actions);
+      VALUE merged_actions = rb_ary_new_capa(RARRAY_LEN(actions) + (long)prior->action_count);
+      onibi_append_values(merged_actions, actions);
       onibi_append_values(merged_actions, prior_actions);
       prior->actions = merged_actions;
       prior->action_count = (uint32_t)RARRAY_LEN(merged_actions);

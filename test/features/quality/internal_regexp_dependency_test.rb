@@ -256,6 +256,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes record, "uint32_t action_count"
     assert_includes source, "record->action_count == 0"
     assert_includes source, "prior->action_count = (uint32_t)RARRAY_LEN(merged_actions)"
+    assert_includes source, "rb_ary_new_capa(RARRAY_LEN(actions) + (long)prior->action_count)"
   end
 
   def test_gir_guard_records_cache_action_count
