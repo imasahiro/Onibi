@@ -1315,10 +1315,11 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   if (type == ID2SYM(rb_intern("group")))
     return onibi_compile_node(onibi_hash_value(ast, "body"), builder);
   if (type == ID2SYM(rb_intern("quantifier"))) {
-    if (RTEST(onibi_hash_value(ast, "possessive")))
-      rb_raise(eRegexpError, "possessive quantifier is not supported in RSeq");
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
+    if (RTEST(onibi_hash_value(ast, "possessive")) &&
+        (NIL_P(max_value) || NUM2LONG(max_value) != min))
+      rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
       return onibi_fragment_empty();
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
@@ -1352,7 +1353,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       if (i == 0) result.starts = part.starts;
       else {
         VALUE actions = rb_ary_new();
-        rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
+        if (counter_slot >= 0)
+          rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
         onibi_connect_actions(builder, result.exits, part.starts, actions);
       }
       result.exits = part.exits;

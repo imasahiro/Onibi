@@ -878,6 +878,14 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_fixed_possessive_repeat_lowers_to_rseq
+    regexp = Onibi::Regexp.new("a{2}+")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("aa")
+    refute regexp.vm_match?("a")
+    assert_equal ::Regexp.new("a{2}+").match?("aa"), regexp.match?("aa")
+  end
+
   def test_backreference_has_explicit_dynamic_pipeline_nodes
     tokens = Onibi::Lexer.new("(a)\\1").tokens
     assert_equal :backref, tokens.last[:kind]
