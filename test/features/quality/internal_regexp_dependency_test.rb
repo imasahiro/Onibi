@@ -321,6 +321,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "VALUE subprograms = rb_ary_new_capa"
   end
 
+  def test_compiler_value_maps_use_c_owned_growth
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "static void onibi_value_map_reserve"
+    assert_includes source, "onibi_value_map_reserve(map, 1)"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"

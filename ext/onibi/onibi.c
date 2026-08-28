@@ -1413,6 +1413,20 @@ static VALUE onibi_value_map_find(const OnibiValueMap *map, VALUE key) {
   return Qnil;
 }
 
+static void onibi_value_map_reserve(OnibiValueMap *map, size_t additional) {
+  if (additional > SIZE_MAX - map->count) rb_raise(rb_eNoMemError, "GIR value map is too large");
+  size_t required = map->count + additional;
+  if (required <= map->capacity) return;
+  size_t next = map->capacity == 0 ? 8 : map->capacity;
+  while (next < required) {
+    if (next > SIZE_MAX / 2) { next = required; break; }
+    next *= 2;
+  }
+  if (next > SIZE_MAX / sizeof(*map->entries)) rb_raise(rb_eNoMemError, "GIR value map is too large");
+  map->entries = REALLOC_N(map->entries, OnibiValueEntry, next);
+  map->capacity = next;
+}
+
 static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALUE roots) {
   for (size_t i = 0; i < map->count; i++) {
     if (onibi_value_map_key_equal(map->entries[i].key, key)) {
@@ -1422,12 +1436,7 @@ static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALU
       return;
     }
   }
-  if (map->count == map->capacity) {
-    size_t next = map->capacity == 0 ? 8 : map->capacity * 2;
-    if (next > SIZE_MAX / sizeof(*map->entries)) rb_raise(rb_eNoMemError, "GIR value map is too large");
-    map->entries = REALLOC_N(map->entries, OnibiValueEntry, next);
-    map->capacity = next;
-  }
+  onibi_value_map_reserve(map, 1);
   map->entries[map->count].key = key;
   map->entries[map->count].value = value;
   rb_ary_push(roots, key);
