@@ -1384,7 +1384,9 @@ class_children:
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)), fold);
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
-      OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
+      VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
+      OnibiAsciiProperty property_kind = NIL_P(name_id) ? onibi_ascii_property_kind(name) :
+        onibi_ascii_property_kind_id(NUM2ULONG(name_id));
       if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
         for (int c = 0; c < 256; c++) {
           int hit = onibi_ascii_property_hit_kind(property_kind, c);
