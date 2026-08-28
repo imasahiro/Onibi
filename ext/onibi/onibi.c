@@ -607,8 +607,13 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     onibi_fragment_t part = onibi_compile_node(rb_ary_entry(children, i), builder);
     if (RARRAY_LEN(part.starts) == 0) {
-      if (have_consuming) onibi_append_values(result.pending_actions, part.pending_actions);
-      else onibi_append_values(result.start_actions, part.pending_actions);
+      if (have_consuming) {
+        onibi_append_values(result.pending_actions, part.start_actions);
+        onibi_append_values(result.pending_actions, part.pending_actions);
+      } else {
+        onibi_append_values(result.start_actions, part.start_actions);
+        onibi_append_values(result.start_actions, part.pending_actions);
+      }
       result.nullable = result.nullable && part.nullable;
       continue;
     }
@@ -715,6 +720,26 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     VALUE action = rb_hash_new();
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("MATCH_RESET")));
     rb_ary_push(result.pending_actions, action);
+    return result;
+  }
+  if (type == ID2SYM(rb_intern("lookahead"))) {
+    VALUE body = onibi_hash_value(ast, "body");
+    VALUE children = onibi_hash_value(body, "children");
+    VALUE bytes = rb_str_new(NULL, 0);
+    for (long i = 0; i < RARRAY_LEN(children); i++) {
+      VALUE child = rb_ary_entry(children, i);
+      if (onibi_symbol_value(child, "type") != ID2SYM(rb_intern("literal")))
+        rb_raise(eRegexpError, "lookahead body is not a literal sequence");
+      rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
+    }
+    rb_obj_freeze(bytes);
+    VALUE action = rb_hash_new();
+    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_LOOKAHEAD")));
+    rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
+    rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
+    onibi_fragment_t result = onibi_fragment_empty();
+    result.nullable = 1;
+    rb_ary_push(result.start_actions, action);
     return result;
   }
   if (type == ID2SYM(rb_intern("capture"))) {
@@ -955,7 +980,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
         op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
         op == rb_intern("ASSERT_SEARCH_ORIGIN") || op == rb_intern("ASSERT_WORD_BOUNDARY") ||
-        op == rb_intern("ASSERT_NONWORD_BOUNDARY")) features |= 16U;
+        op == rb_intern("ASSERT_NONWORD_BOUNDARY") || op == rb_intern("ASSERT_LOOKAHEAD")) features |= 16U;
   }
   rb_hash_aset(header, ID2SYM(rb_intern("features")), UINT2NUM(features));
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
@@ -1092,7 +1117,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :
       op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-      op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
+      op == rb_intern("ASSERT_LOOKAHEAD") ? ONIBI_RA_ASSERT_POSITION :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
@@ -1622,6 +1648,12 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     }
     if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
+    if (op == rb_intern("ASSERT_LOOKAHEAD")) {
+      VALUE bytes = onibi_hash_value(action, "bytes");
+      long width = RSTRING_LEN(bytes);
+      int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
+      if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+    }
   }
   return 1;
 }

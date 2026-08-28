@@ -308,6 +308,18 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :lookahead_start, Onibi::Lexer.new("(?=a)b").tokens.first[:kind]
   end
 
+  def test_literal_lookahead_executes_as_zero_width_gir_action
+    positive = Onibi::Regexp.new("(?=a)a")
+    negative = Onibi::Regexp.new("(?!a)b")
+    assert positive.program_cached?
+    assert positive.vm_match?("za")
+    refute positive.vm_match?("zb")
+    refute negative.vm_match?("a")
+    assert negative.vm_match?("b")
+    assert_equal :ASSERT_LOOKAHEAD,
+                 positive.pipeline[:compiled][:graph][:start_edges].first[:actions].first[:op]
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
@@ -442,8 +454,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
     assert_same regexp.pipeline[:compiled][:graph], canonical[:gir]
     assert_same regexp.pipeline[:rseq_program], canonical[:rseq]
-    refute Onibi::Regexp.new("(?=a)b").program_cached?
-    refute Onibi::Regexp.new("(?=a)b").program_frozen?
+    refute Onibi::Regexp.new("(?=\\d)b").program_cached?
+    refute Onibi::Regexp.new("(?=\\d)b").program_frozen?
   end
 
   def test_ignorecase_is_compiled_into_rseq_header
