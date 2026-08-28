@@ -1804,6 +1804,15 @@ static VALUE onibi_pipeline_build(VALUE self) {
       break;
     }
   }
+  int class_repeat = 0;
+  for (long i = 0; i + 1 < RARRAY_LEN(tokens); i++) {
+    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("class_end") &&
+        onibi_token_kind(rb_ary_entry(tokens, i + 1)) == rb_intern("quantifier") &&
+        onibi_token_byte(rb_ary_entry(tokens, i + 1)) == '+') {
+      class_repeat = 1;
+      break;
+    }
+  }
   if (has_capture) {
     VALUE capture = rb_hash_new();
     rb_hash_aset(capture, ID2SYM(rb_intern("id")), INT2NUM(1));
@@ -1836,8 +1845,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(op, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
     rb_hash_aset(op, ID2SYM(rb_intern("bounds")), rb_str_substr(src, 2, RSTRING_LEN(src) - 3));
     rb_ary_push(compact, op);
-  } else if (RSTRING_LEN(src) >= 6 && RSTRING_PTR(src)[0] == '[' &&
-             RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == '+' && strchr(RSTRING_PTR(src) + 1, ']') != NULL) {
+  } else if (class_repeat) {
     VALUE op = rb_hash_new();
     rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
     rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
