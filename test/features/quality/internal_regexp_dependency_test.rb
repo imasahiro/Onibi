@@ -29,6 +29,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes Onibi.constants(false), :Regexp
   end
 
+  def test_internal_pipeline_state_is_not_public_api
+    internal_methods = %i[tokens ast gir rseq parsed compiled vm graph]
+
+    internal_methods.each do |name|
+      refute_includes Onibi::Regexp.instance_methods(false), name
+      refute_includes Onibi::Regexp.singleton_methods(false), name
+    end
+  end
+
   def test_c_pipeline_does_not_use_repeated_string_comparisons
     source = File.read(EXTENSION_SOURCE)
 
