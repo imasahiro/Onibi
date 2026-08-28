@@ -2834,7 +2834,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   onibi_set_deadline(obj->timeout_seconds);
-  if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
+  if ((obj->options & (16 | 32)) == 0 &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
       RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
@@ -2854,7 +2854,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
-  int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq) &&
+  int graph_ok = ((obj->options & (16 | 32)) == 0) && !NIL_P(obj->rseq) &&
     rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, obj->source) != NULL &&
     RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0));
   if (!graph_ok) {
