@@ -5911,6 +5911,7 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   onibi_call_stack_reset();
+  VALUE graph = Qnil;
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     if (!onibi_character_boundary(str, start)) continue;
     rb_thread_check_ints();
@@ -5919,7 +5920,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
     int simple = onibi_rseq_simple_match(rseq, str, start, &end);
     if (simple > 0) return Qtrue;
     if (simple < 0) {
-      VALUE graph = onibi_rseq_physical_graph(rseq);
+      if (NIL_P(graph)) graph = onibi_rseq_physical_graph(rseq);
       if (onibi_gir_match(graph, str, start, &end)) return Qtrue;
     }
   }
