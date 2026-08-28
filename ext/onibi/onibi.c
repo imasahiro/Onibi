@@ -49,7 +49,7 @@ static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_e
 static ID id_key_kind, id_key_kind_code, id_key_opcode;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set;
-static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
+static ID id_key_type, id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
@@ -271,6 +271,43 @@ typedef enum {
   ONIBI_TOKEN_ALTERNATION, ONIBI_TOKEN_GROUP_END, ONIBI_TOKEN_QUANTIFIER,
   ONIBI_TOKEN_WILDCARD
 } OnibiTokenKind;
+
+typedef enum {
+  ONIBI_AST_UNKNOWN = 0,
+  ONIBI_AST_SEQUENCE, ONIBI_AST_ALTERNATIVE, ONIBI_AST_LITERAL,
+  ONIBI_AST_ESCAPE, ONIBI_AST_ANY, ONIBI_AST_ANCHOR, ONIBI_AST_CHARACTER_CLASS,
+  ONIBI_AST_CLASS_INTERSECTION, ONIBI_AST_QUANTIFIER, ONIBI_AST_CAPTURE,
+  ONIBI_AST_GROUP, ONIBI_AST_ATOMIC, ONIBI_AST_ABSENCE, ONIBI_AST_CONDITIONAL,
+  ONIBI_AST_LOOKAHEAD, ONIBI_AST_LOOKBEHIND, ONIBI_AST_OPTION_SCOPE,
+  ONIBI_AST_OPTION_GLOBAL, ONIBI_AST_BACKREF, ONIBI_AST_SUBROUTINE,
+  ONIBI_AST_MATCH_RESET
+} OnibiAstKind;
+
+static OnibiAstKind onibi_ast_kind_from_type(const char *type) {
+  static const char *const names[] = {
+    "sequence", "alternative", "literal", "escape", "any", "anchor",
+    "character_class", "class_intersection", "quantifier", "capture", "group",
+    "atomic", "absence", "conditional", "lookahead", "lookbehind",
+    "option_scope", "option_global", "backref", "subroutine", "match_reset"
+  };
+  static ID ids[sizeof(names) / sizeof(names[0])];
+  static int initialized = 0;
+  if (!initialized) {
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) ids[i] = rb_intern(names[i]);
+    initialized = 1;
+  }
+  ID type_id = rb_intern(type);
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+    if (type_id == ids[i]) return (OnibiAstKind)(i + 1);
+  return ONIBI_AST_UNKNOWN;
+}
+
+static inline OnibiAstKind onibi_ast_kind(VALUE node) {
+  VALUE code = rb_hash_aref(node, ID2SYM(id_key_type_code));
+  if (!NIL_P(code)) return (OnibiAstKind)NUM2UINT(code);
+  VALUE type = rb_hash_aref(node, ID2SYM(id_key_type));
+  return SYMBOL_P(type) ? onibi_ast_kind_from_type(rb_id2name(SYM2ID(type))) : ONIBI_AST_UNKNOWN;
+}
 
 static ID onibi_token_kind_id(OnibiTokenKind kind) {
   static const char *const names[] = {
@@ -686,12 +723,14 @@ static long onibi_token_byte(VALUE token) {
 
 static VALUE onibi_ast_node(const char *type, VALUE token) {
   VALUE node = rb_hash_new();
-  rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(type)));
+  rb_hash_aset(node, ID2SYM(id_key_type), ID2SYM(rb_intern(type)));
+  rb_hash_aset(node, ID2SYM(id_key_type_code),
+               UINT2NUM((unsigned int)onibi_ast_kind_from_type(type)));
   if (!NIL_P(token)) {
-    rb_hash_aset(node, ID2SYM(rb_intern("start")),
-                 rb_hash_aref(token, ID2SYM(rb_intern("start"))));
-    rb_hash_aset(node, ID2SYM(rb_intern("end")),
-                 rb_hash_aref(token, ID2SYM(rb_intern("end"))));
+    rb_hash_aset(node, ID2SYM(id_key_start),
+                 rb_hash_aref(token, ID2SYM(id_key_start)));
+    rb_hash_aset(node, ID2SYM(id_key_end),
+                 rb_hash_aref(token, ID2SYM(id_key_end)));
   }
   return node;
 }
@@ -1857,8 +1896,8 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
 }
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder) {
-  VALUE type = onibi_symbol_value(ast, "type");
-  if (type == ID2SYM(rb_intern("character_class"))) {
+  OnibiAstKind type_code = onibi_ast_kind(ast);
+  if (type_code == ONIBI_AST_CHARACTER_CLASS) {
     VALUE children = onibi_hash_value(ast, "children");
     VALUE ranges = onibi_hash_value(ast, "ranges");
     if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
@@ -1883,7 +1922,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
         for (long i = 0; i < RARRAY_LEN(children); i++) {
           VALUE child = rb_hash_dup(rb_ary_entry(children, i));
-          rb_hash_aset(child, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+          rb_hash_aset(child, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
+          rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
           onibi_fragment_t branch = onibi_compile_node(child, builder);
           onibi_append_values(result.starts, branch.starts);
           onibi_append_values(result.exits, branch.exits);
@@ -1902,7 +1942,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int expandable = 1; long expanded = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_hash_dup(rb_ary_entry(children, i));
-        rb_hash_aset(child, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+        rb_hash_aset(child, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
+        rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
         onibi_fragment_t branch = onibi_compile_node(child, builder);
         onibi_append_values(result.starts, branch.starts);
         onibi_append_values(result.exits, branch.exits);
@@ -1919,7 +1960,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         for (uint32_t cp = first; cp <= last; cp++) {
           VALUE literal = rb_hash_new();
           VALUE bytes = onibi_utf8_encode(cp);
-          rb_hash_aset(literal, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+          rb_hash_aset(literal, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
+          rb_hash_aset(literal, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
           rb_hash_aset(literal, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
           rb_hash_aset(literal, ID2SYM(rb_intern("bytes")), bytes);
           onibi_fragment_t branch = onibi_compile_node(literal, builder);
@@ -1936,7 +1978,7 @@ skip_utf8_range_expansion:
   /* A tokenizer literal can contain one encoded UTF-8 character.  Lower its
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
      offsets, and the encoding gate below limits this path to valid UTF-8. */
-  if (type == ID2SYM(rb_intern("literal"))) {
+  if (type_code == ONIBI_AST_LITERAL) {
     VALUE literal_bytes = onibi_hash_value(ast, "bytes");
     if (!NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) > 1) {
       onibi_fragment_t result = onibi_fragment_empty();
@@ -1955,9 +1997,9 @@ skip_utf8_range_expansion:
       return result;
     }
   }
-  if (type == ID2SYM(rb_intern("sequence")))
+  if (type_code == ONIBI_AST_SEQUENCE)
     return onibi_compile_sequence(onibi_hash_value(ast, "children"), builder);
-  if (type == ID2SYM(rb_intern("alternative"))) {
+  if (type_code == ONIBI_AST_ALTERNATIVE) {
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
     VALUE branches = onibi_hash_value(ast, "branches");
@@ -1975,13 +2017,13 @@ skip_utf8_range_expansion:
     }
     return result;
   }
-  if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
-      type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) ||
-      type == ID2SYM(rb_intern("class_intersection")) || type == ID2SYM(rb_intern("any"))) {
+  if (type_code == ONIBI_AST_LITERAL || type_code == ONIBI_AST_ESCAPE ||
+      type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_CHARACTER_CLASS ||
+      type_code == ONIBI_AST_CLASS_INTERSECTION || type_code == ONIBI_AST_ANY) {
     VALUE literal_bytes = onibi_hash_value(ast, "bytes");
-    if (type == ID2SYM(rb_intern("literal")) && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
+    if (type_code == ONIBI_AST_LITERAL && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
-    if (type == ID2SYM(rb_intern("escape"))) {
+    if (type_code == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value(ast, "name");
       if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !onibi_ascii_property_name_p(name))
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
@@ -1992,48 +2034,48 @@ skip_utf8_range_expansion:
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
     VALUE payload = ast;
-    if (type == ID2SYM(rb_intern("backref")) && !NIL_P(onibi_hash_value(ast, "name"))) {
+    if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_hash_value(ast, "name"))) {
       VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value(ast, "name"));
       if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
       payload = rb_hash_dup(ast);
       rb_hash_aset(payload, ID2SYM(rb_intern("capture")), LONG2NUM(NUM2LONG(id_value) + 1));
       rb_obj_freeze(payload);
     }
-    if (builder->ignorecase && type == ID2SYM(rb_intern("backref"))) {
+    if (builder->ignorecase && type_code == ONIBI_AST_BACKREF) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
     VALUE escape_name_for_op = onibi_hash_value(ast, "name");
-    int grapheme_escape = type == ID2SYM(rb_intern("escape")) &&
+    int grapheme_escape = type_code == ONIBI_AST_ESCAPE &&
       ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_hash_value(ast, "byte"))) == 'x') ||
        (!NIL_P(escape_name_for_op) && RSTRING_LEN(escape_name_for_op) == 1 &&
         tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
     long id = builder->next_id++;
-    ID op = type == ID2SYM(rb_intern("literal")) ? rb_intern("G_CHAR") :
-      ((type == ID2SYM(rb_intern("any"))) ? rb_intern("G_ANY") :
-       ((type == ID2SYM(rb_intern("backref"))) ? rb_intern("G_BACKREF") :
+    ID op = type_code == ONIBI_AST_LITERAL ? rb_intern("G_CHAR") :
+      ((type_code == ONIBI_AST_ANY) ? rb_intern("G_ANY") :
+       ((type_code == ONIBI_AST_BACKREF) ? rb_intern("G_BACKREF") :
         (grapheme_escape ? rb_intern("G_GRAPHEME") : rb_intern("G_CLASS"))));
-    if (builder->ignorecase && type == ID2SYM(rb_intern("literal"))) {
+    if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("byte")), INT2NUM(tolower(NUM2INT(onibi_hash_value(payload, "byte")))));
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
     if (builder->ignorecase &&
-        (type == ID2SYM(rb_intern("character_class")) ||
-         type == ID2SYM(rb_intern("class_intersection")))) {
+        (type_code == ONIBI_AST_CHARACTER_CLASS ||
+         type_code == ONIBI_AST_CLASS_INTERSECTION)) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
-    if (type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("class_intersection"))) {
+    if (type_code == ONIBI_AST_CHARACTER_CLASS || type_code == ONIBI_AST_CLASS_INTERSECTION) {
       payload = onibi_class_payload_with_ctypes(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
                    onibi_class_bitmap(payload, builder->ignorecase));
       rb_obj_freeze(payload);
     }
-    if (type == ID2SYM(rb_intern("escape"))) {
+    if (type_code == ONIBI_AST_ESCAPE) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
       rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
@@ -2045,7 +2087,7 @@ skip_utf8_range_expansion:
         rb_hash_aset(payload, ID2SYM(rb_intern("ctype")), INT2NUM(property_ctype));
       rb_obj_freeze(payload);
     }
-    if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
+    if (builder->multiline && type_code == ONIBI_AST_ANY) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("multiline")), Qtrue);
       rb_obj_freeze(payload);
@@ -2056,7 +2098,7 @@ skip_utf8_range_expansion:
     rb_ary_push(result.starts, LONG2NUM(id)); rb_ary_push(result.exits, LONG2NUM(id));
     return result;
   }
-  if (type == ID2SYM(rb_intern("subroutine")))
+  if (type_code == ONIBI_AST_SUBROUTINE)
   {
     VALUE name = onibi_hash_value(ast, "name");
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
@@ -2076,7 +2118,7 @@ skip_utf8_range_expansion:
     result.nullable = 0;
     return result;
   }
-  if (type == ID2SYM(rb_intern("option_global"))) {
+  if (type_code == ONIBI_AST_OPTION_GLOBAL) {
     VALUE option_names = onibi_hash_value(ast, "options");
     int negative = RTEST(onibi_hash_value(ast, "negative"));
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
@@ -2099,7 +2141,7 @@ skip_utf8_range_expansion:
     }
     return onibi_fragment_empty();
   }
-  if (type == ID2SYM(rb_intern("option_scope"))) {
+  if (type_code == ONIBI_AST_OPTION_SCOPE) {
     VALUE option_names = onibi_hash_value(ast, "options");
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "option scope has no flags");
@@ -2127,7 +2169,7 @@ skip_utf8_range_expansion:
     builder->multiline = saved_multiline;
     return result;
   }
-  if (type == ID2SYM(rb_intern("anchor")))
+  if (type_code == ONIBI_AST_ANCHOR)
   {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
@@ -2146,14 +2188,14 @@ skip_utf8_range_expansion:
     rb_ary_push(result.pending_actions, action);
     return result;
   }
-  if (type == ID2SYM(rb_intern("match_reset"))) {
+  if (type_code == ONIBI_AST_MATCH_RESET) {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("MATCH_RESET")));
     rb_ary_push(result.pending_actions, action);
     return result;
   }
-  if (type == ID2SYM(rb_intern("conditional"))) {
+  if (type_code == ONIBI_AST_CONDITIONAL) {
     VALUE condition = onibi_hash_value(ast, "condition");
     char *endptr = NULL;
     const char *condition_text = StringValueCStr(condition);
@@ -2189,7 +2231,7 @@ skip_utf8_range_expansion:
     result.lazy = yes.lazy;
     return result;
   }
-  if (type == ID2SYM(rb_intern("atomic"))) {
+  if (type_code == ONIBI_AST_ATOMIC) {
     VALUE body = onibi_hash_value(ast, "body");
     long subprogram_id = onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
     VALUE payload = rb_hash_new();
@@ -2203,7 +2245,7 @@ skip_utf8_range_expansion:
     result.nullable = 0;
     return result;
   }
-  if (type == ID2SYM(rb_intern("absence"))) {
+  if (type_code == ONIBI_AST_ABSENCE) {
     long subprogram_id = onibi_compile_subprogram(onibi_hash_value(ast, "body"), builder,
                                                    ONIBI_SUBPROGRAM_ABSENT);
     VALUE payload = rb_hash_new();
@@ -2217,7 +2259,7 @@ skip_utf8_range_expansion:
     result.nullable = 1;
     return result;
   }
-  if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
+  if (type_code == ONIBI_AST_LOOKAHEAD || type_code == ONIBI_AST_LOOKBEHIND) {
     VALUE body = onibi_hash_value(ast, "body");
     if (!RB_TYPE_P(body, T_HASH))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
@@ -2272,7 +2314,7 @@ skip_utf8_range_expansion:
     rb_obj_freeze(bytes);
     rb_obj_freeze(predicates);
     VALUE action = rb_hash_new();
-    const char *assertion_op = type == ID2SYM(rb_intern("lookbehind")) ?
+    const char *assertion_op = type_code == ONIBI_AST_LOOKBEHIND ?
       "ASSERT_LOOKBEHIND" : "ASSERT_LOOKAHEAD";
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(assertion_op)));
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
@@ -2284,7 +2326,7 @@ skip_utf8_range_expansion:
     rb_ary_push(result.start_actions, action);
     return result;
   }
-  if (type == ID2SYM(rb_intern("capture"))) {
+  if (type_code == ONIBI_AST_CAPTURE) {
     VALUE capture_ast_key = onibi_hash_value(ast, "start");
     VALUE capture_id_value = rb_hash_aref(builder->capture_ids, capture_ast_key);
     long capture_id;
@@ -2315,9 +2357,9 @@ skip_utf8_range_expansion:
     if (result.nullable) onibi_append_values(result.start_actions, result.pending_actions);
     return result;
   }
-  if (type == ID2SYM(rb_intern("group")))
+  if (type_code == ONIBI_AST_GROUP)
     return onibi_compile_node(onibi_hash_value(ast, "body"), builder);
-  if (type == ID2SYM(rb_intern("quantifier"))) {
+  if (type_code == ONIBI_AST_QUANTIFIER) {
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
     VALUE atom = onibi_hash_value(ast, "atom");
@@ -5433,7 +5475,7 @@ void Init_onibi(void) {
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set");
-  id_key_type = rb_intern("type"); id_key_name = rb_intern("name");
+  id_key_type = rb_intern("type"); id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name");
   id_key_ctype = rb_intern("ctype"); id_key_ranges = rb_intern("ranges");
   id_key_children = rb_intern("children"); id_key_operands = rb_intern("operands");
   id_key_negated = rb_intern("negated"); id_key_bitmap = rb_intern("bitmap");
