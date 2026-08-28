@@ -238,7 +238,9 @@ static long onibi_find_close(VALUE tokens, long begin, long end, ID open, ID clo
   long depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == open) depth++;
+    if (kind == open || kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") ||
+        kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") ||
+        kind == rb_intern("lookbehind_start")) depth++;
     else if (kind == close && --depth == 0) return i;
   }
   return -1;

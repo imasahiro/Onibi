@@ -309,6 +309,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :lookahead_start, Onibi::Lexer.new("(?=a)b").tokens.first[:kind]
   end
 
+  def test_parser_matches_nested_group_boundaries_across_group_kinds
+    ast = Onibi::Parser.parse("(?=(?:a))a")[:ast]
+    lookahead = ast[:children].first
+    assert_equal :lookahead, lookahead[:type]
+    assert_equal :group, lookahead[:body][:children].first[:type]
+  end
+
   def test_literal_lookahead_executes_as_zero_width_gir_action
     positive = Onibi::Regexp.new("(?=a)a")
     negative = Onibi::Regexp.new("(?!a)b")
