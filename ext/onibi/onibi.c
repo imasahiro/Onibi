@@ -2523,10 +2523,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
     VALUE actions = onibi_hash_value(rb_ary_entry(builder.edges, i), "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
-      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (op == id_a_counter_init || op == id_a_counter_increment ||
-          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
-        long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
+      VALUE action = rb_ary_entry(actions, j);
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+      if (code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+          code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
+        long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
         if (slot + 1 > counter_count) counter_count = slot + 1;
       }
     }
@@ -2534,10 +2535,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
     VALUE actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
-      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (op == id_a_counter_init || op == id_a_counter_increment ||
-          op == id_a_test_counter_lt || op == id_a_test_counter_ge) {
-        long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
+      VALUE action = rb_ary_entry(actions, j);
+      OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
+      if (code == ONIBI_GA_COUNTER_INIT || code == ONIBI_GA_COUNTER_INCREMENT ||
+          code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
+        long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
         if (slot + 1 > counter_count) counter_count = slot + 1;
       }
     }
@@ -5164,7 +5166,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
       for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
         VALUE action = rb_ary_entry(semantic_actions, a);
         rb_ary_push(physical_program, action);
-        if (SYM2ID(onibi_hash_value(action, "op")) == id_a_end) break;
+        if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
@@ -5182,7 +5184,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
       for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
         VALUE action = rb_ary_entry(semantic_actions, a);
         rb_ary_push(physical_program, action);
-        if (SYM2ID(onibi_hash_value(action, "op")) == id_a_end) break;
+        if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code)) == ONIBI_GA_END) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
