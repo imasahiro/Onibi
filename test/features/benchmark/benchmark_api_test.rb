@@ -503,6 +503,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::RSeq.lower(invalid) }
   end
 
+  def test_gir_declares_capture_and_counter_resources
+    capture_graph = Onibi::Compiler.compile(Onibi::Parser.parse("(a)"))[:graph]
+    repeat_graph = Onibi::Compiler.compile(Onibi::Parser.parse("a{2,3}"))[:graph]
+    assert_equal 1, capture_graph[:capture_count]
+    assert_equal 0, capture_graph[:counter_count]
+    assert_equal 0, repeat_graph[:capture_count]
+    assert_equal 1, repeat_graph[:counter_count]
+  end
+
   def test_compiler_lowers_capture_boundaries_to_actions
     graph = Onibi::Compiler.compile(Onibi::Parser.parse("(ab)"))[:graph]
     actions = graph[:start_edges].flat_map { |edge| edge[:actions] } + graph[:edges].flat_map { |edge| edge[:actions] }
