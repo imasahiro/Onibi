@@ -343,6 +343,16 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("xxうyy".encode("EUC-JP"))
   end
 
+  def test_fixed_encoding_multibyte_class_range_uses_encoded_codepoints
+    pattern = "[あ-お]".encode("EUC-JP")
+    input = "xxえyy".encode("EUC-JP")
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?(input)
+    refute regexp.vm_match?("xxかyy".encode("EUC-JP"))
+  end
+
   def test_utf8_literal_ignorecase_waits_for_encoding_aware_lowering
     regexp = Onibi::Regexp.new("é", Onibi::Regexp::IGNORECASE)
 

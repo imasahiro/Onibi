@@ -26,6 +26,7 @@ static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_valid_encoding(VALUE str);
+static int onibi_unicode_ctype(VALUE name);
 
 static VALUE onibi_rseq_trusted_marker(VALUE self) {
   (void)self;
@@ -2510,18 +2511,22 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
     VALUE children = onibi_hash_value(ast, "children");
     VALUE ranges = onibi_hash_value(ast, "ranges");
     if (RTEST(onibi_hash_value(ast, "negated")) || !RB_TYPE_P(children, T_ARRAY) ||
-        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(ranges) > 4 || RARRAY_LEN(children) == 0) return 0;
-    for (long i = 0; i < RARRAY_LEN(children); i++)
-      if (onibi_hash_value(rb_ary_entry(children, i), "kind") != ID2SYM(rb_intern("literal"))) return 0;
-    long expanded = 0;
+        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(children) == 0) return 0;
+    for (long i = 0; i < RARRAY_LEN(children); i++) {
+      VALUE child = rb_ary_entry(children, i);
+      VALUE kind = onibi_hash_value(child, "kind");
+      if (kind == ID2SYM(rb_intern("literal"))) continue;
+      VALUE child_name = onibi_hash_value(child, "name");
+      if (kind == ID2SYM(rb_intern("escape")) && !NIL_P(child_name) &&
+          onibi_unicode_ctype(child_name) >= 0) continue;
+      return 0;
+    }
     for (long i = 0; i < RARRAY_LEN(ranges); i++) {
-      VALUE range = rb_ary_entry(ranges, i); uint32_t first = 0, last = 0;
-      if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2 ||
-          !RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) || !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING) ||
-          !onibi_utf8_decode(rb_ary_entry(range, 0), &first) || !onibi_utf8_decode(rb_ary_entry(range, 1), &last) ||
-          last < first || last - first > 256U) return 0;
-      expanded += (long)(last - first + 1U);
-      if (expanded > 256) return 0;
+      VALUE range = rb_ary_entry(ranges, i);
+      if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2) return 0;
+      VALUE first = rb_ary_entry(range, 0), last = rb_ary_entry(range, 1);
+      if ((!RB_INTEGER_TYPE_P(first) && !RB_TYPE_P(first, T_STRING)) ||
+          (!RB_INTEGER_TYPE_P(last) && !RB_TYPE_P(last, T_STRING))) return 0;
     }
     return 1;
   }
@@ -3269,7 +3274,7 @@ static int onibi_unicode_ctype(VALUE name) {
   return -1;
 }
 
-static int onibi_utf8_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, long *width) {
+static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, long *width) {
   const char *ptr = RSTRING_PTR(str) + pos;
   const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
   int length = rb_enc_mbclen(ptr, end, rb_enc_get(str));
@@ -3286,18 +3291,18 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     if (pos > 0 && ((unsigned char)RSTRING_PTR(str)[pos] & 0xc0) == 0x80 &&
         (((unsigned char)RSTRING_PTR(str)[pos - 1] & 0xc0) == 0x80 || (unsigned char)RSTRING_PTR(str)[pos - 1] >= 0xc0)) return 0;
     OnigCodePoint code; long length = 0;
-    if (!onibi_utf8_codepoint_at(str, pos, &code, &length)) return 0;
+    if (!onibi_codepoint_at(str, pos, &code, &length)) return 0;
     int hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, ctype);
     if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P') hit = !hit;
     *width = length;
     return hit;
   }
-  if (NIL_P(name) && rb_enc_get_index(str) == rb_utf8_encindex() && !rb_enc_str_asciionly_p(str)) {
+  if (NIL_P(name) && !rb_enc_str_asciionly_p(str) && rb_enc_get_index(str) != rb_ascii8bit_encindex()) {
     VALUE children = onibi_hash_value(payload, "children");
     VALUE ranges = onibi_hash_value(payload, "ranges");
     if (RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY)) {
       OnigCodePoint code; long decoded_width = 0;
-      if (!onibi_utf8_codepoint_at(str, pos, &code, &decoded_width)) return 0;
+      if (!onibi_codepoint_at(str, pos, &code, &decoded_width)) return 0;
       int hit = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_ary_entry(children, i);
@@ -3307,8 +3312,12 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
         if (kind == rb_intern("literal")) {
           VALUE bytes = onibi_hash_value(child, "bytes");
           if (NIL_P(bytes)) bytes = rb_str_new((const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
-          uint32_t child_code = 0;
-          if (onibi_utf8_decode(bytes, &child_code) && child_code == code) hit = 1;
+          const char *child_ptr = RSTRING_PTR(bytes);
+          const char *child_end = child_ptr + RSTRING_LEN(bytes);
+          int child_len = rb_enc_mbclen(child_ptr, child_end, rb_enc_get(str));
+          if (child_len > 0 && child_ptr + child_len <= child_end &&
+              ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)child_ptr,
+                                   (const OnigUChar *)child_end) == code) hit = 1;
         } else if (kind == rb_intern("escape")) {
           VALUE child_name = onibi_hash_value(child, "name");
           int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
@@ -3329,7 +3338,16 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
         }
         if (!RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) || !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING)) continue;
         uint32_t first = 0, last = 0;
-        if (onibi_utf8_decode(rb_ary_entry(range, 0), &first) && onibi_utf8_decode(rb_ary_entry(range, 1), &last) && code >= first && code <= last) hit = 1;
+        VALUE first_bytes = rb_ary_entry(range, 0), last_bytes = rb_ary_entry(range, 1);
+        const char *first_ptr = RSTRING_PTR(first_bytes), *last_ptr = RSTRING_PTR(last_bytes);
+        const char *first_end = first_ptr + RSTRING_LEN(first_bytes), *last_end = last_ptr + RSTRING_LEN(last_bytes);
+        int first_len = rb_enc_mbclen(first_ptr, first_end, rb_enc_get(str));
+        int last_len = rb_enc_mbclen(last_ptr, last_end, rb_enc_get(str));
+        if (first_len > 0 && last_len > 0 && first_ptr + first_len <= first_end && last_ptr + last_len <= last_end) {
+          first = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)first_ptr, (const OnigUChar *)first_end);
+          last = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)last_ptr, (const OnigUChar *)last_end);
+          if (code >= first && code <= last) hit = 1;
+        }
       }
       if (RTEST(onibi_hash_value(payload, "negated"))) hit = !hit;
       *width = decoded_width;
