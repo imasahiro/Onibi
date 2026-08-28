@@ -1316,6 +1316,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   offset += (uint32_t)literal_data_size;
   physical.descriptors_offset = offset;
   offset += (uint32_t)literal_desc_size;
+  physical.subprograms_offset = offset;
   physical.blob_size = offset;
   rb_hash_aset(header, ID2SYM(rb_intern("states_offset")), UINT2NUM(physical.states_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("edges_offset")), UINT2NUM(physical.edges_offset));
@@ -1323,6 +1324,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("classes_offset")), UINT2NUM(physical.classes_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("literals_offset")), UINT2NUM(physical.literals_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("descriptors_offset")), UINT2NUM(physical.descriptors_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("subprograms_offset")), UINT2NUM(physical.subprograms_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("blob_size")), UINT2NUM(physical.blob_size));
   VALUE blob = rb_str_new(NULL, offset);
   memset(RSTRING_PTR(blob), 0, offset);

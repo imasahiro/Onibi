@@ -61,10 +61,11 @@ class BenchmarkApiTest < Minitest::Test
     class_program = Onibi::Regexp.new("[a-z]").pipeline[:rseq_program]
     [literal, class_program].each do |program|
       header = program[:header]
-      %i[states_offset edges_offset actions_offset classes_offset literals_offset descriptors_offset].each do |key|
+      %i[states_offset edges_offset actions_offset classes_offset literals_offset descriptors_offset subprograms_offset].each do |key|
         assert_operator header.fetch(key), :>, 0
         assert_equal 0, header.fetch(key) % 4
       end
+      assert_equal header[:blob_size], header[:subprograms_offset]
       assert_equal header[:blob_size], program[:blob].bytesize
     end
     assert_equal 3, literal[:header][:literal_count]
