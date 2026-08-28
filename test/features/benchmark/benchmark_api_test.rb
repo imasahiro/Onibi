@@ -333,8 +333,18 @@ class BenchmarkApiTest < Minitest::Test
     ast = Onibi::Parser.parse("[é-ê]")[:ast][:children].first
 
     assert_equal [["é", "ê"]], ast[:ranges]
-    refute Onibi::Regexp.new("[é-ê]").program_cached?
-    assert Onibi::Regexp.new("[é-ê]").match?("ê")
+    regexp = Onibi::Regexp.new("[é-ê]")
+    assert regexp.program_cached?
+    assert regexp.match?("ê")
+  end
+
+  def test_small_utf8_class_range_expands_to_gir_literal_branches
+    regexp = Onibi::Regexp.new("[é-ê]")
+
+    assert regexp.program_cached?
+    assert regexp.vm_match?("é")
+    assert regexp.vm_match?("ê")
+    refute regexp.vm_match?("ë")
   end
 
   def test_meta_and_control_escapes_cross_rseq_boundary

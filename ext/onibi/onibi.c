@@ -84,6 +84,39 @@ static int onibi_utf8_literal_program_p(const onibi_regexp_t *obj) {
     obj->has_non_ascii_literal && (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
 }
 
+static int onibi_utf8_decode(VALUE bytes, uint32_t *codepoint) {
+  const unsigned char *p = (const unsigned char *)RSTRING_PTR(bytes);
+  long length = RSTRING_LEN(bytes);
+  if (length == 1 && p[0] < 0x80) { *codepoint = p[0]; return 1; }
+  if (length == 2 && (p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
+    *codepoint = ((uint32_t)(p[0] & 0x1f) << 6) | (p[1] & 0x3f); return *codepoint >= 0x80;
+  }
+  if (length == 3 && (p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+    *codepoint = ((uint32_t)(p[0] & 0x0f) << 12) | ((uint32_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+    return *codepoint >= 0x800;
+  }
+  if (length == 4 && (p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
+      (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
+    *codepoint = ((uint32_t)(p[0] & 0x07) << 18) | ((uint32_t)(p[1] & 0x3f) << 12) |
+      ((uint32_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+    return *codepoint >= 0x10000 && *codepoint <= 0x10ffff;
+  }
+  return 0;
+}
+
+static VALUE onibi_utf8_encode(uint32_t codepoint) {
+  char out[4]; long length = 0;
+  if (codepoint <= 0x7f) out[length++] = (char)codepoint;
+  else if (codepoint <= 0x7ff) {
+    out[length++] = (char)(0xc0 | (codepoint >> 6)); out[length++] = (char)(0x80 | (codepoint & 0x3f));
+  } else if (codepoint <= 0xffff && !(codepoint >= 0xd800 && codepoint <= 0xdfff)) {
+    out[length++] = (char)(0xe0 | (codepoint >> 12)); out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3f)); out[length++] = (char)(0x80 | (codepoint & 0x3f));
+  } else if (codepoint <= 0x10ffff) {
+    out[length++] = (char)(0xf0 | (codepoint >> 18)); out[length++] = (char)(0x80 | ((codepoint >> 12) & 0x3f)); out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3f)); out[length++] = (char)(0x80 | (codepoint & 0x3f));
+  }
+  return rb_str_new(out, length);
+}
+
 static void onibi_free(void *ptr) { xfree(ptr); }
 static void onibi_mark(void *ptr) {
   onibi_regexp_t *obj = (onibi_regexp_t *)ptr;
@@ -1399,6 +1432,34 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         return result;
       }
     }
+    if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
+        RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
+      onibi_fragment_t result = onibi_fragment_empty();
+      result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+      int expandable = 1; long expanded = 0;
+      for (long i = 0; i < RARRAY_LEN(ranges); i++) {
+        VALUE range = rb_ary_entry(ranges, i);
+        uint32_t first = 0, last = 0;
+        if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2 ||
+            !RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) || !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING) ||
+            !onibi_utf8_decode(rb_ary_entry(range, 0), &first) || !onibi_utf8_decode(rb_ary_entry(range, 1), &last) ||
+            last < first || last - first > 256U) { expandable = 0; break; }
+        expanded += (long)(last - first + 1U);
+        if (expanded > 256) { expandable = 0; break; }
+        for (uint32_t cp = first; cp <= last; cp++) {
+          VALUE literal = rb_hash_new();
+          VALUE bytes = onibi_utf8_encode(cp);
+          rb_hash_aset(literal, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+          rb_hash_aset(literal, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
+          rb_hash_aset(literal, ID2SYM(rb_intern("bytes")), bytes);
+          onibi_fragment_t branch = onibi_compile_node(literal, builder);
+          onibi_append_values(result.starts, branch.starts);
+          onibi_append_values(result.exits, branch.exits);
+          if (cp == last) break;
+        }
+      }
+      if (expandable) return result;
+    }
   }
   /* A tokenizer literal can contain one encoded UTF-8 character.  Lower its
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
@@ -2388,9 +2449,19 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
     VALUE children = onibi_hash_value(ast, "children");
     VALUE ranges = onibi_hash_value(ast, "ranges");
     if (RTEST(onibi_hash_value(ast, "negated")) || !RB_TYPE_P(children, T_ARRAY) ||
-        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(ranges) != 0 || RARRAY_LEN(children) == 0) return 0;
+        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(ranges) > 4 || RARRAY_LEN(children) == 0) return 0;
     for (long i = 0; i < RARRAY_LEN(children); i++)
       if (onibi_hash_value(rb_ary_entry(children, i), "kind") != ID2SYM(rb_intern("literal"))) return 0;
+    long expanded = 0;
+    for (long i = 0; i < RARRAY_LEN(ranges); i++) {
+      VALUE range = rb_ary_entry(ranges, i); uint32_t first = 0, last = 0;
+      if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2 ||
+          !RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) || !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING) ||
+          !onibi_utf8_decode(rb_ary_entry(range, 0), &first) || !onibi_utf8_decode(rb_ary_entry(range, 1), &last) ||
+          last < first || last - first > 256U) return 0;
+      expanded += (long)(last - first + 1U);
+      if (expanded > 256) return 0;
+    }
     return 1;
   }
   if (type == ID2SYM(rb_intern("sequence"))) {
