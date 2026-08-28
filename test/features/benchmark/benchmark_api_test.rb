@@ -299,6 +299,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :anchor_end, children[2][:kind]
   end
 
+  def test_parser_records_positive_and_negative_lookahead_nodes
+    positive = Onibi::Parser.parse("(?=a)b")[:ast]
+    negative = Onibi::Parser.parse("(?!a)b")[:ast]
+    assert_equal :lookahead, positive[:children].first[:type]
+    assert_equal true, positive[:children].first[:positive]
+    assert_equal false, negative[:children].first[:positive]
+    assert_equal :lookahead_start, Onibi::Lexer.new("(?=a)b").tokens.first[:kind]
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
