@@ -4145,35 +4145,6 @@ static long onibi_grapheme_width(VALUE str, long pos) {
   return end - pos;
 }
 
-/* Execute a non-capturing subprogram from the current input position.  The
-   called graph shares immutable states and outgoing edges with its caller. */
-static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprograms,
-                                    VALUE str, long subprogram_id,
-                                    long continuation,
-                                    long start, VALUE initial_captures, VALUE initial_tags,
-                                    long *matched_end, VALUE *matched_captures) {
-  if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
-      subprogram_id >= RARRAY_LEN(subprograms)) return 0;
-  OnibiCallFrame *call_frame = onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
-  call_frame->continuation = (OnibiStateId)continuation;
-  VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
-  VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
-  if (NIL_P(entry)) { onibi_call_frame_pop(); return 0; }
-  VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
-  VALUE captures = Qnil;
-  long nested_end = 0;
-  long nested_start = 0;
-  int matched = onibi_gir_match_captures_entry(states, outgoing, subprograms, str, start,
-                                                entry, entry_actions, initial_captures,
-                                                initial_tags, &nested_end, &nested_start,
-                                                &captures);
-  onibi_call_frame_pop();
-  if (!matched) return 0;
-  *matched_end = nested_end;
-  *matched_captures = captures;
-  return 1;
-}
-
 static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
   typedef struct { long state_id, pos, next_edge; VALUE counters; } OnibiWalkFrame;
   /* Counter-bearing repeat paths can visit one state at many counter values.
@@ -4301,14 +4272,14 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     VALUE captures, counters, tags;
     VALUE called_captures;
     long call_end, call_parent;
-    int entered, waiting_call, call_status;
+    int entered, waiting_call, call_status, call_kind;
   } OnibiCaptureFrame;
   long capacity = RARRAY_LEN(states) * 64 + 64;
   if (capacity > 65536) capacity = 65536;
   OnibiCaptureFrame *stack = ALLOCA_N(OnibiCaptureFrame, capacity);
   long depth = 0;
   stack[depth++] = (OnibiCaptureFrame){state_id, pos, 0, reported_start, captures, counters, tags,
-                                      Qnil, 0, -1, 0, 0, 0};
+                                      Qnil, 0, -1, 0, 0, 0, 0};
   while (depth > 0) {
     rb_thread_check_ints();
     onibi_check_deadline();
@@ -4320,10 +4291,10 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       depth--; \
       if (parent_frame >= 0 && depth == parent_frame + 1) { \
         onibi_call_frame_pop(); \
-        /* A failed call is a failed transition.  Let the caller continue
-         * with its next ordered edge instead of failing the whole caller. */ \
-        stack[parent_frame].waiting_call = 0; \
-        stack[parent_frame].call_status = 0; \
+        /* A failed call is an ordered-edge failure.  Atomic failure fails its
+         * state; absence failure succeeds its zero-width state. */ \
+        stack[parent_frame].call_status = stack[parent_frame].call_kind == 2 ? -1 : 0; \
+        stack[parent_frame].waiting_call = stack[parent_frame].call_kind == 2 ? 1 : 0; \
       } \
     } while (0)
     if (frame->waiting_call) {
@@ -4356,10 +4327,9 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
           while (depth > parent + 1) depth--;
           stack[parent].called_captures = result;
           stack[parent].call_end = frame->pos;
-          stack[parent].call_status = 1;
+          stack[parent].call_status = stack[parent].call_kind == 3 ? -1 : 1;
           stack[parent].waiting_call = 1;
           onibi_call_frame_pop();
-          depth--;
           continue;
         }
         *matched_end = frame->pos;
@@ -4372,15 +4342,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         if (consumed <= 0) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         frame->pos += consumed;
       }
-      if (op == id_g_absent) {
-        VALUE payload = onibi_hash_value_id(state, id_key_payload);
-        long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
-        long probe_end = frame->pos; VALUE ignored = Qnil;
-        if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
-                                     frame->state_id,
-                                     frame->pos, frame->captures, frame->tags,
-                                     &probe_end, &ignored)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
-      } else if (op == id_g_call) {
+      if (op == id_g_call) {
         VALUE payload = onibi_hash_value_id(state, id_key_payload);
         long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
         if (subprogram_id < 0 || subprogram_id >= RARRAY_LEN(subprograms)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
@@ -4409,19 +4371,43 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
                                              call_captures, call_counters, call_tags, Qnil, 0,
                                              call_parent, 0, 0, 0};
         continue;
-      } else if (op == id_g_atomic) {
+      } else if (op == id_g_atomic || op == id_g_absent) {
         VALUE payload = onibi_hash_value_id(state, id_key_payload);
         long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
-        VALUE called_captures = Qnil;
-        if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
-                                      frame->state_id, frame->pos, frame->captures, frame->tags,
-                                      &frame->pos, &called_captures)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
-        if (RB_TYPE_P(called_captures, T_HASH)) {
-          frame->captures = rb_hash_dup(frame->captures);
-          rb_hash_foreach(called_captures, onibi_hash_copy_i, frame->captures);
-          rb_hash_aset(frame->captures, ID2SYM(id_recursive_marker), Qtrue);
-          frame->tags = Qnil;
+        if (subprogram_id < 0 || subprogram_id >= RARRAY_LEN(subprograms)) {
+          if (op == id_g_absent) continue;
+          ONIBI_CAPTURE_POP_FRAME(); continue;
         }
+        VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
+        VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
+        if (NIL_P(entry)) {
+          if (op == id_g_absent) continue;
+          ONIBI_CAPTURE_POP_FRAME(); continue;
+        }
+        OnibiCallFrame *call_frame = onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
+        call_frame->continuation = (OnibiStateId)frame->state_id;
+        frame->waiting_call = 1;
+        frame->call_status = 0;
+        frame->call_kind = op == id_g_absent ? 3 : 2;
+        VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
+        VALUE call_counters = rb_hash_new();
+        VALUE call_captures = RB_TYPE_P(frame->captures, T_HASH) ? rb_hash_dup(frame->captures) : rb_hash_new();
+        VALUE call_tags = frame->tags;
+        long call_reported_start = frame->reported_start;
+        VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
+        if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
+          onibi_call_frame_pop();
+          if (op == id_g_absent) { frame->waiting_call = 0; continue; }
+          ONIBI_CAPTURE_POP_FRAME(); continue;
+        }
+        onibi_vm_apply_counter_actions(actions, call_counters);
+        call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
+        if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+        long call_parent = depth - 1;
+        stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
+                                             call_captures, call_counters, call_tags, Qnil, 0,
+                                             call_parent, 0, 0, 0, 0};
+        continue;
       } else if (op == id_g_char || op == id_g_class || op == id_g_any || op == id_g_backref) {
         if (frame->pos >= RSTRING_LEN(str)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         if (op == id_g_backref) {
@@ -4470,7 +4456,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
     stack[depth++] = (OnibiCaptureFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0,
                                          next_reported_start, next_captures, next_counters,
-                                         next_tags, Qnil, 0, -1, 0, 0, 0};
+                                         next_tags, Qnil, 0, frame->call_parent, 0, 0, 0, 0};
   }
 #undef ONIBI_CAPTURE_POP_FRAME
   return 0;
