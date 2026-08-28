@@ -821,11 +821,12 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
 
 static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
   VALUE token = rb_ary_entry(tokens, *index);
+  OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
   ID kind = onibi_token_kind(token);
-  if (kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start")) {
+  if (kind_code == ONIBI_TOKEN_LOOKAHEAD_START || kind_code == ONIBI_TOKEN_LOOKBEHIND_START) {
     long close = onibi_find_close(tokens, *index, end, kind, rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
-    int behind = kind == rb_intern("lookbehind_start");
+    int behind = kind_code == ONIBI_TOKEN_LOOKBEHIND_START;
     VALUE node = onibi_ast_node(behind ? "lookbehind" : "lookahead", token);
     rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(rb_intern("positive")), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
@@ -834,7 +835,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("option_scope_start")) {
+  if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("option_scope_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated option scope");
     VALUE node = onibi_ast_node("option_scope", token);
