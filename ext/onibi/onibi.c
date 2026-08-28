@@ -2330,8 +2330,8 @@ static void onibi_rseq_validate(VALUE rseq) {
   VALUE semantic = onibi_hash_value(rseq, "header");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
-  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
   VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
+  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
       !RTEST(rb_obj_frozen_p(semantic)) || !RTEST(rb_obj_frozen_p(semantic_states)) ||
@@ -2552,10 +2552,12 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
+  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
   VALUE semantic_actions = onibi_hash_value(rseq, "actions");
   VALUE graph = rb_hash_new();
   VALUE states = rb_ary_new_capa(RARRAY_LEN(semantic_states));
   VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
+  VALUE start_edges = rb_ary_new_capa(RARRAY_LEN(semantic_start_edges));
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   const OnibiRState *physical_states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
@@ -2587,9 +2589,25 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
     rb_ary_push(edges, edge);
   }
+  for (long i = 0; i < RARRAY_LEN(semantic_start_edges); i++) {
+    VALUE edge = rb_hash_dup(rb_ary_entry(semantic_start_edges, i));
+    const OnibiREdge *physical_edge = &physical_edges[header.start_edge_base + i];
+    rb_hash_aset(edge, ID2SYM(rb_intern("to")), UINT2NUM(physical_edge->destination));
+    VALUE physical_program = rb_ary_new();
+    if (physical_edge->action_offset != 0) {
+      uint32_t action_index = physical_edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+      for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
+        VALUE action = rb_ary_entry(semantic_actions, a);
+        rb_ary_push(physical_program, action);
+        if (SYM2ID(onibi_hash_value(action, "op")) == rb_intern("END")) break;
+      }
+    }
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
+    rb_ary_push(start_edges, edge);
+  }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), onibi_hash_value(rseq, "start_edges"));
+  rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   return graph;
 }
 
