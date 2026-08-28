@@ -518,6 +518,12 @@ class BenchmarkApiTest < Minitest::Test
                   Onibi::Parser.parse("é")[:ast][:children].first)
   end
 
+  def test_ascii_pattern_in_non_utf8_encoding_is_not_implicitly_fixed
+    regexp = Onibi::Regexp.new("[a-z]".encode(Encoding::EUC_JP))
+    refute regexp.fixed_encoding?
+    refute regexp.match?("あ")
+  end
+
   def test_parser_keeps_invalid_repeat_braces_literal
     regexp = Onibi::Regexp.new("a{}")
     assert regexp.vm_match?("a{}")

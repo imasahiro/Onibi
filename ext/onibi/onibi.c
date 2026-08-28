@@ -1884,8 +1884,6 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       !rb_enc_str_asciionly_p(source))
     rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
   if (!(opts & 32) && !rb_enc_str_asciionly_p(source) && !(opts & 16)) opts |= 16;
-  if (!(opts & 32) && rb_enc_get_index(source) != rb_utf8_encindex() &&
-      rb_enc_get_index(source) != rb_usascii_encindex()) opts |= 16;
   obj->options = opts;
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
