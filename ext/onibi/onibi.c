@@ -400,7 +400,23 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       if (escaped == 'x' && i + 3 < RSTRING_LEN(src)) {
         int hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 2]);
         int lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
-        if (hi >= 0 && lo >= 0) { byte = (unsigned char)((hi << 4) | lo); i += 3; hex_literal = 1; }
+        if (hi >= 0 && lo >= 0) {
+          VALUE decoded = rb_str_new((const char[]){(char)((hi << 4) | lo)}, 1);
+          byte = (unsigned char)RSTRING_PTR(decoded)[0]; i += 3; hex_literal = 1;
+          while (i + 4 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '\\' &&
+                 RSTRING_PTR(src)[i + 2] == 'x') {
+            int next_hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
+            int next_lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 4]);
+            if (next_hi < 0 || next_lo < 0) break;
+            char next_byte = (char)((next_hi << 4) | next_lo);
+            rb_str_cat(decoded, &next_byte, 1);
+            i += 4;
+          }
+          if (RSTRING_LEN(decoded) > 1) {
+            rb_enc_associate(decoded, rb_enc_get(src));
+            literal_bytes = decoded;
+          }
+        }
       }
       if (escaped == '0') {
         int value = 0, digits = 0;

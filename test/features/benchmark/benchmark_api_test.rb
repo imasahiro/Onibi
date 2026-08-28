@@ -829,6 +829,13 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("\\x4").vm_match?("x4")
   end
 
+  def test_contiguous_hex_escapes_form_one_encoded_literal
+    regexp = Onibi::Regexp.new("\\xE3\\x81\\x82")
+    assert_equal 1, regexp.pipeline[:tokens].length
+    assert regexp.vm_match?("あ")
+    refute regexp.vm_match?("い")
+  end
+
   def test_octal_zero_escape_is_a_literal_byte
     regexp = Onibi::Regexp.new("\\007")
     assert_equal 7, regexp.pipeline[:tokens].first[:byte]
