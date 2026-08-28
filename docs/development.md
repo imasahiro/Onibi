@@ -148,7 +148,7 @@ The Ruby data decision is:
 | Data | Owner | Reason |
 | --- | --- | --- |
 | source, options, names, named captures | Ruby `VALUE` | Regexp public API and MRI encoding rules |
-| tokens, AST, GIR | C compiler scope | Compile-time only; feature scanning uses a typed C token view; never retained by Regexp |
+| tokens, AST, GIR | C compiler scope | Compile-time only; tokens also have a retained fixed-field C view for dispatch metadata |
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
@@ -160,6 +160,12 @@ The parser result adapter contains only options and AST.
 The tokenizer array is passed directly to the parser and is not retained in
 that result. This avoids a second Ruby reference to the compile-time token
 stream.
+
+Public `Regexp` methods return Ruby values only at the API boundary. Match
+results, named-capture maps, and converted source/options values remain Ruby
+objects because callers can inspect them. Lexer tokens, AST nodes, GIR
+states, compiler fragments, and RSeq semantic records have no public method;
+their Ruby containers are adapters scheduled for C ownership.
 
 The remaining compiler containers have three separate roles:
 
