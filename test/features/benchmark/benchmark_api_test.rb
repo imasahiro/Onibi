@@ -445,12 +445,12 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("zab")
   end
 
-  def test_atomic_group_is_semantic_and_rejected_before_partial_lowering
+  def test_simple_atomic_group_is_lowered_without_partial_semantics
     node = Onibi::Parser.parse("(?>a)")[:ast][:children].first
     assert_equal :atomic, node[:type]
     regexp = Onibi::Regexp.new("(?>a)")
-    refute regexp.program_cached?
-    assert regexp.match?("a")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("a")
     assert_equal :DYNAMIC, regexp.execution_class.to_sym
   end
 

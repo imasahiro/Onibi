@@ -1038,6 +1038,22 @@ static int onibi_ast_has_capture(VALUE ast) {
   return 0;
 }
 
+static int onibi_ast_atomic_simple(VALUE ast) {
+  VALUE type = onibi_symbol_value(ast, "type");
+  if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
+      type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("class_intersection")) ||
+      type == ID2SYM(rb_intern("any"))) return 1;
+  if (type == ID2SYM(rb_intern("group")) || type == ID2SYM(rb_intern("option_scope")))
+    return onibi_ast_atomic_simple(onibi_hash_value(ast, "body"));
+  if (type == ID2SYM(rb_intern("sequence"))) {
+    VALUE children = onibi_hash_value(ast, "children");
+    for (long i = 0; i < RARRAY_LEN(children); i++)
+      if (!onibi_ast_atomic_simple(rb_ary_entry(children, i))) return 0;
+    return 1;
+  }
+  return 0;
+}
+
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
   VALUE state = rb_hash_new();
   rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(id));
@@ -1454,6 +1470,12 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("MATCH_RESET")));
     rb_ary_push(result.pending_actions, action);
     return result;
+  }
+  if (type == ID2SYM(rb_intern("atomic"))) {
+    VALUE body = onibi_hash_value(ast, "body");
+    if (!onibi_ast_atomic_simple(body))
+      rb_raise(eRegexpError, "atomic subprogram requires dynamic call state");
+    return onibi_compile_node(body, builder);
   }
   if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind"))) {
     VALUE body = onibi_hash_value(ast, "body");
@@ -2276,16 +2298,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
+  VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
+    obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
-    obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
+    obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
                      obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
-    obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
+    obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
                  obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
