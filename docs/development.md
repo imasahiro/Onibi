@@ -217,6 +217,11 @@ AST field keys in parser construction also use cached IDs. This removes
 repeated string-to-symbol work while the token and AST vector migrations are
 implemented in separate steps.
 
+The string-scan audit is now explicit. The active matcher has no `strcmp` or
+`strncmp` calls. Its remaining `rb_intern_str` calls are limited to option
+normalization and compile-time property-name resolution. Feature scanning uses
+the precomputed token IDs, so matching does not repeat those conversions.
+
 RSeq lowering preserves state, edge, start-edge, and action order. It publishes
 an immutable semantic view, an immutable physical execution view, and a
 validated, aligned, relocatable v1 blob. The physical view is built during
