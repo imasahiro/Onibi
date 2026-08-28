@@ -1271,7 +1271,7 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t p
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; uint32_t action_count; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
-typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; uint8_t has_slot; uint16_t slot; uint8_t has_assert_kind; uint16_t assert_kind; uint8_t has_arg32; uint32_t arg32; } OnibiRSeqActionEntry;
+typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t physical_op; uint8_t set; uint8_t positive; uint8_t has_slot; uint16_t slot; uint8_t has_assert_kind; uint16_t assert_kind; uint8_t has_arg32; uint32_t arg32; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
@@ -1453,6 +1453,15 @@ static void onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector) {
 static void onibi_rseq_action_vector_init(OnibiRSeqActionVector *vector) {
   vector->entries = NULL; vector->count = vector->capacity = 0;
 }
+static uint8_t onibi_rseq_physical_action_op(OnibiGActionOp code) {
+  return (uint8_t)(code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE ? ONIBI_RA_CAPTURE :
+    code == ONIBI_GA_MATCH_RESET ? ONIBI_RA_MATCH_RESET :
+    code == ONIBI_GA_ASSERT_POSITION ? ONIBI_RA_ASSERT_POSITION :
+    code == ONIBI_GA_TEST_CAPTURE ? ONIBI_RA_TEST_CAPTURE :
+    code == ONIBI_GA_COUNTER_INIT ? ONIBI_RA_COUNTER_SET :
+    code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD :
+    code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
+}
 static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE value) {
   if (vector->count == vector->capacity) {
     size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
@@ -1465,9 +1474,9 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
   VALUE arg_value = onibi_hash_value_id(value, id_key_value);
   VALUE assert_kind = onibi_hash_value_id(value, id_key_assert_kind);
   VALUE arg32 = !NIL_P(width) ? width : (!NIL_P(limit) ? limit : arg_value);
+  OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code));
   vector->entries[vector->count++] = (OnibiRSeqActionEntry){
-    value, (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code)),
-    SYM2ID(onibi_hash_value_id(value, id_key_op)),
+    value, code, SYM2ID(onibi_hash_value_id(value, id_key_op)), onibi_rseq_physical_action_op(code),
     RTEST(onibi_hash_value_id(value, id_key_set)) ? 1 : 0,
     RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0,
     NIL_P(slot) ? 0 : 1,
@@ -3314,14 +3323,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
   for (size_t i = 0; i < action_records.count; i++) {
     ID op = action_records.entries[i].op;
-    OnibiGActionOp action_code = action_records.entries[i].code;
-    physical_actions[i].op = (uint8_t)(action_code == ONIBI_GA_CAPTURE_OPEN || action_code == ONIBI_GA_CAPTURE_CLOSE ? ONIBI_RA_CAPTURE :
-      action_code == ONIBI_GA_MATCH_RESET ? ONIBI_RA_MATCH_RESET :
-      action_code == ONIBI_GA_ASSERT_POSITION ? ONIBI_RA_ASSERT_POSITION :
-      action_code == ONIBI_GA_TEST_CAPTURE ? ONIBI_RA_TEST_CAPTURE :
-      action_code == ONIBI_GA_COUNTER_INIT ? ONIBI_RA_COUNTER_SET :
-      action_code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD :
-      action_code == ONIBI_GA_TEST_COUNTER_LT || action_code == ONIBI_GA_TEST_COUNTER_GE ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
+    physical_actions[i].op = action_records.entries[i].physical_op;
     physical_actions[i].flags = onibi_rseq_action_flags(op);
     if (op == id_a_test_capture && !action_records.entries[i].set)
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
