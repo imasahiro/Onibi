@@ -796,6 +796,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   if (type == ID2SYM(rb_intern("group")))
     return onibi_compile_node(onibi_hash_value(ast, "body"), builder);
   if (type == ID2SYM(rb_intern("quantifier"))) {
+    if (!RTEST(onibi_hash_value(ast, "greedy")) || RTEST(onibi_hash_value(ast, "possessive")))
+      rb_raise(eRegexpError, "quantifier ordering modifier is not supported in RSeq");
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)

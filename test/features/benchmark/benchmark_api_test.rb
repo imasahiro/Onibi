@@ -350,6 +350,15 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("a")
   end
 
+  def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
+    lazy = Onibi::Regexp.new("a+?")
+    possessive = Onibi::Regexp.new("a++")
+    refute lazy.program_cached?
+    refute possessive.program_cached?
+    assert_equal "a", lazy.match("aaa")[0]
+    assert_equal "aaa", possessive.match("aaa")[0]
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
