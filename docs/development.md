@@ -223,6 +223,11 @@ The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
 conversion path and focused ordering tests.
 
+The tagged counter map is a deliberate later boundary. A C replacement must
+copy counters when a frame branches, preserve values across subroutine calls,
+and keep capture/tag history independent. Converting only the entry map would
+leave edge branches on Ruby Hash and would not remove the repeated copy cost.
+
 The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
