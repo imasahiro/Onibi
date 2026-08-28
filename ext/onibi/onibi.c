@@ -1241,7 +1241,11 @@ typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; } OnibiGirStateEntry;
+typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
+typedef struct { long from; long to; VALUE actions; } OnibiGirEdgeEntry;
+typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
+typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
@@ -1360,6 +1364,52 @@ static void onibi_value_map_delete(OnibiValueMap *map, VALUE key) {
 
 static void onibi_value_map_free(OnibiValueMap *map) {
   xfree(map->entries); map->entries = NULL; map->count = map->capacity = 0;
+}
+
+static void onibi_gir_state_vector_push(OnibiGirStateVector *vector, OnibiGirStateEntry entry, VALUE roots) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "GIR state vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGirStateEntry, next);
+    vector->capacity = next;
+  }
+  vector->entries[vector->count++] = entry;
+  rb_ary_push(roots, entry.payload);
+}
+
+static void onibi_gir_edge_vector_init(OnibiGirEdgeVector *vector) {
+  vector->entries = NULL; vector->count = 0; vector->capacity = 0;
+}
+
+static void onibi_gir_edge_vector_push(OnibiGirEdgeVector *vector, OnibiGirEdgeEntry entry, VALUE roots) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "GIR edge vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGirEdgeEntry, next);
+    vector->capacity = next;
+  }
+  vector->entries[vector->count++] = entry;
+  rb_ary_push(roots, entry.actions);
+}
+
+static void onibi_gir_edge_vector_insert(OnibiGirEdgeVector *vector, size_t index, OnibiGirEdgeEntry entry, VALUE roots) {
+  if (index > vector->count) index = vector->count;
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "GIR edge vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGirEdgeEntry, next);
+    vector->capacity = next;
+  }
+  memmove(&vector->entries[index + 1], &vector->entries[index], (vector->count - index) * sizeof(*vector->entries));
+  vector->entries[index] = entry; vector->count++;
+  rb_ary_push(roots, entry.actions);
+}
+
+static void onibi_gir_state_vector_free(OnibiGirStateVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
@@ -1576,56 +1626,43 @@ static OnibiPosixKind onibi_posix_kind_id(ID property) {
 }
 
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
-  VALUE state = rb_hash_new();
-  rb_hash_aset(state, ID2SYM(id_key_id), LONG2NUM(id));
-  rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(op));
   OnibiGStateOp opcode = op == id_g_accept ? ONIBI_G_ACCEPT :
     op == id_g_char ? ONIBI_G_CHAR : op == id_g_class ? ONIBI_G_CLASS :
     op == id_g_any ? ONIBI_G_ANY : op == id_g_grapheme ? ONIBI_G_GRAPHEME :
     op == id_g_backref ? ONIBI_G_BACKREF : op == id_g_call ? ONIBI_G_CALL :
     op == id_g_atomic ? ONIBI_G_ATOMIC : op == id_g_absent ? ONIBI_G_ABSENT :
     (OnibiGStateOp)-1;
-  if (opcode >= ONIBI_G_ACCEPT) rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(opcode));
-  rb_hash_aset(state, ID2SYM(id_key_payload), payload);
-  rb_ary_push(builder->states, state);
+  onibi_gir_state_vector_push(&builder->states, (OnibiGirStateEntry){id, op, opcode, payload}, builder->map_roots);
 }
 
 static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE actions = rb_ary_new();
-  VALUE edge = rb_hash_new();
-  rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
-  rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-  rb_ary_push(builder->edges, edge);
+  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, actions}, builder->map_roots);
 }
 
 static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
-  for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
-    VALUE prior = rb_ary_entry(builder->edges, i);
-    if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from &&
-      NUM2LONG(onibi_hash_value_id(prior, id_key_to)) == to) {
-      VALUE prior_actions = onibi_hash_value_id(prior, id_key_actions);
+  for (size_t i = 0; i < builder->edges.count; i++) {
+    OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
+    if (prior->from == from && prior->to == to) {
+      VALUE prior_actions = prior->actions;
       VALUE merged_actions = rb_ary_dup(actions);
       onibi_append_values(merged_actions, prior_actions);
-      rb_hash_aset(prior, ID2SYM(id_key_actions), merged_actions);
+      prior->actions = merged_actions;
+      rb_ary_push(builder->map_roots, merged_actions);
       return;
     }
   }
-  VALUE edge = rb_hash_new();
-  rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
-  rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-  rb_ary_push(builder->edges, edge);
+  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, actions}, builder->map_roots);
 }
 
 static onibi_fragment_t onibi_fragment_empty(void) {
@@ -1653,16 +1690,13 @@ static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
   for (size_t i = 0; i < exits->count; i++) {
     long from = (long)exits->items[i];
     for (long j = 0; j < start_count; j++) {
-      VALUE edge = rb_hash_new();
-      rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
-      rb_hash_aset(edge, ID2SYM(id_key_to), start_values[j]);
-      rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-      long insert_at = RARRAY_LEN(builder->edges);
-      for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
-        VALUE prior = rb_ary_entry(builder->edges, k);
-        if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from) { insert_at = k; break; }
+      size_t insert_at = builder->edges.count;
+      for (size_t k = 0; k < builder->edges.count; k++) {
+        if (builder->edges.entries[k].from == from) { insert_at = k; break; }
       }
-      rb_funcall(builder->edges, id_insert, 2, LONG2NUM(insert_at), edge);
+      onibi_gir_edge_vector_insert(&builder->edges, insert_at,
+                                   (OnibiGirEdgeEntry){from, NUM2LONG(start_values[j]), actions},
+                                   builder->map_roots);
     }
   }
 }
@@ -1724,15 +1758,29 @@ static VALUE onibi_counter_action(ID op, long slot, VALUE limit) {
   return action;
 }
 
-static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
-  for (long i = 0; i < RARRAY_LEN(builder->states); i++) rb_obj_freeze(rb_ary_entry(builder->states, i));
-  for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
-    VALUE edge = rb_ary_entry(builder->edges, i);
-    rb_obj_freeze(onibi_hash_value_id(edge, id_key_actions));
-    rb_obj_freeze(edge);
+static void onibi_materialize_gir(onibi_gir_builder_t *builder, VALUE *states_out, VALUE *edges_out) {
+  VALUE states = rb_ary_new_capa((long)builder->states.count);
+  for (size_t i = 0; i < builder->states.count; i++) {
+    OnibiGirStateEntry *entry = &builder->states.entries[i];
+    VALUE state = rb_hash_new();
+    rb_hash_aset(state, ID2SYM(id_key_id), LONG2NUM(entry->id));
+    rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(entry->op));
+    if (entry->opcode >= ONIBI_G_ACCEPT) rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(entry->opcode));
+    rb_hash_aset(state, ID2SYM(id_key_payload), entry->payload);
+    rb_obj_freeze(state); rb_ary_push(states, state);
   }
-  rb_obj_freeze(builder->states);
-  rb_obj_freeze(builder->edges);
+  VALUE edges = rb_ary_new_capa((long)builder->edges.count);
+  for (size_t i = 0; i < builder->edges.count; i++) {
+    OnibiGirEdgeEntry *entry = &builder->edges.entries[i];
+    VALUE edge = rb_hash_new();
+    rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(entry->from));
+    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(entry->to));
+    rb_obj_freeze(entry->actions);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), entry->actions);
+    rb_obj_freeze(edge); rb_ary_push(edges, edge);
+  }
+  rb_obj_freeze(states); rb_obj_freeze(edges);
+  *states_out = states; *edges_out = edges;
 }
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
@@ -2655,8 +2703,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
   onibi_gir_builder_t builder;
   memset(&builder, 0, sizeof(builder));
-  builder.states = rb_ary_new();
-  builder.edges = rb_ary_new();
+  onibi_gir_edge_vector_init(&builder.edges);
+  builder.states.entries = NULL; builder.states.count = builder.states.capacity = 0;
   onibi_value_map_init(&builder.capture_names);
   onibi_value_map_init(&builder.capture_bodies);
   onibi_value_map_init(&builder.capture_ids);
@@ -2719,10 +2767,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_obj_freeze(edge);
   }
   rb_obj_freeze(start_edges);
-  onibi_freeze_gir_arrays(&builder);
+  VALUE gir_states, gir_edges;
+  onibi_materialize_gir(&builder, &gir_states, &gir_edges);
   VALUE graph = rb_hash_new();
-  rb_hash_aset(graph, ID2SYM(id_key_states), builder.states);
-  rb_hash_aset(graph, ID2SYM(id_key_edges), builder.edges);
+  rb_hash_aset(graph, ID2SYM(id_key_states), gir_states);
+  rb_hash_aset(graph, ID2SYM(id_key_edges), gir_edges);
   rb_hash_aset(graph, ID2SYM(id_key_start_edges), start_edges);
   rb_hash_aset(graph, ID2SYM(id_key_accept), LONG2NUM(accept));
   /* Program zero is the root callable program.  Keep an explicit descriptor
@@ -2738,8 +2787,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(id_key_subprograms), subprograms);
   rb_hash_aset(graph, ID2SYM(id_key_capture_count), LONG2NUM(builder.capture_count));
   long counter_count = builder.counter_count;
-  for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
-    VALUE actions = onibi_hash_value_id(rb_ary_entry(builder.edges, i), id_key_actions);
+  for (size_t i = 0; i < builder.edges.count; i++) {
+    VALUE actions = builder.edges.entries[i].actions;
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       VALUE action = rb_ary_entry(actions, j);
       OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
@@ -2777,6 +2826,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_value_map_free(&builder.capture_ids);
   onibi_value_map_free(&builder.active_subroutines);
   onibi_value_map_free(&builder.subprogram_ids);
+  onibi_gir_state_vector_free(&builder.states);
+  onibi_gir_edge_vector_free(&builder.edges);
   rb_obj_freeze(result);
   return result;
 }

@@ -101,7 +101,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_gir_guard_lookup_uses_c_vector_storage
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ VALUE states; VALUE edges;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "OnibiGuardVector capture_guards"
@@ -111,7 +111,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_gir_compile_indexes_use_c_value_maps
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ VALUE states; VALUE edges;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "OnibiValueMap capture_names"
@@ -121,7 +121,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_c_compile_maps_keep_ruby_values_rooted
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ VALUE states; VALUE edges;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "VALUE map_roots"
@@ -148,6 +148,17 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes fragment, "OnibiIdVector exits"
     assert_includes source, "onibi_id_vector_move"
     assert_includes source, "onibi_id_vector_append"
+  end
+
+  def test_gir_builder_materializes_states_and_edges_once
+    source = File.read(EXTENSION_SOURCE)
+    materializer = source[/static void onibi_materialize_gir\(.*?\n}\n/m]
+
+    refute_nil materializer
+    assert_includes materializer, "OnibiGirStateEntry"
+    assert_includes materializer, "OnibiGirEdgeEntry"
+    assert_includes materializer, "rb_obj_freeze(states)"
+    assert_includes materializer, "rb_obj_freeze(edges)"
   end
 
   def test_ast_nodes_retain_numeric_name_ids
