@@ -2205,6 +2205,20 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (actions[i].op > ONIBI_RA_PROGRESS)
       rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
   }
+  const OnibiClassDesc *classes = (const OnibiClassDesc *)(RSTRING_PTR(blob) + header.classes_offset);
+  uint64_t class_data_start = (uint64_t)header.classes_offset +
+    (uint64_t)header.class_count * sizeof(OnibiClassDesc);
+  for (uint32_t i = 0; i < header.class_count; i++) {
+    if (classes[i].data_offset < class_data_start ||
+        (uint64_t)classes[i].data_offset + classes[i].data_length > header.literals_offset)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor range");
+  }
+  const OnibiLiteralDesc *literals = (const OnibiLiteralDesc *)(RSTRING_PTR(blob) + header.descriptors_offset);
+  for (uint32_t i = 0; i < NUM2UINT(onibi_hash_value(semantic, "literal_count")); i++) {
+    if (literals[i].data_offset < header.literals_offset ||
+        (uint64_t)literals[i].data_offset + literals[i].data_length > header.descriptors_offset)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor range");
+  }
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
