@@ -249,7 +249,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     } else if (byte == '|') kind = "alternation";
     else if (byte == '(') kind = "group_start";
     else if (byte == ')') kind = "group_end";
-    else if (strchr("*+?{} ,", byte) != NULL) kind = "quantifier";
+    else if (strchr("*+?{}", byte) != NULL) kind = "quantifier";
     else if (byte == '.') kind = "wildcard";
     else if (byte == '^' || byte == '$') kind = "anchor";
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));

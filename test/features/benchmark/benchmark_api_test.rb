@@ -482,6 +482,11 @@ class BenchmarkApiTest < Minitest::Test
     assert ast[:children].first[:negative]
   end
 
+  def test_tokenizer_keeps_comma_and_space_as_literals
+    assert_equal :literal, Onibi::Lexer.new(",").tokens.first[:kind]
+    assert Onibi::Regexp.new("a b").vm_match?("a b")
+  end
+
   def test_compiler_resolves_local_case_and_line_options
     case_scope = Onibi::Regexp.new("(?i:a)")
     assert case_scope.vm_match?("A")
