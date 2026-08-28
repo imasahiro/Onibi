@@ -24,6 +24,7 @@ static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static int onibi_ascii_property_name_p(VALUE name);
+static int onibi_valid_encoding(VALUE str);
 
 static VALUE onibi_rseq_trusted_marker(VALUE self) {
   (void)self;
@@ -88,6 +89,15 @@ static int onibi_utf8_literal_program_p(const onibi_regexp_t *obj) {
     rb_enc_get_index(obj->source) == rb_utf8_encindex() &&
     obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
     (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
+}
+
+static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
+  int encoding = rb_enc_get_index(str);
+  if (rb_enc_compatible(str, obj->source) == NULL) return 0;
+  if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex()) return 1;
+  if (onibi_utf8_literal_program_p(obj) && encoding == rb_utf8_encindex())
+    return onibi_valid_encoding(str);
+  return 0;
 }
 
 static int onibi_utf8_decode(VALUE bytes, uint32_t *codepoint) {
@@ -2658,9 +2668,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       !(obj->options & 32) && (!(obj->options & 16) || onibi_utf8_literal_program_p(obj)) &&
-      (rb_str_strlen(str) == RSTRING_LEN(str) ||
-       (onibi_utf8_literal_program_p(obj) && rb_enc_get_index(str) == rb_utf8_encindex())) &&
-      rb_enc_compatible(str, obj->source) != NULL &&
+      onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
@@ -3856,9 +3864,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_set_deadline(obj->timeout_seconds);
   if (!(obj->options & 32) && (!(obj->options & 16) || onibi_utf8_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
-      (rb_str_strlen(str) == RSTRING_LEN(str) ||
-       (onibi_utf8_literal_program_p(obj) && rb_enc_get_index(str) == rb_utf8_encindex())) &&
-      rb_enc_compatible(str, obj->source) != NULL &&
+      onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
@@ -3878,9 +3884,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   int graph_ok = !(obj->options & 32) && (!(obj->options & 16) || onibi_utf8_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
-    (rb_str_strlen(str) == RSTRING_LEN(str) ||
-     (onibi_utf8_literal_program_p(obj) && rb_enc_get_index(str) == rb_utf8_encindex())) &&
-    rb_enc_compatible(str, obj->source) != NULL &&
+    onibi_vm_input_eligible(obj, str) &&
     (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
     (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str));
   if (!graph_ok) {

@@ -1319,6 +1319,17 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("あ")
   end
 
+  def test_utf8_vm_input_validation_uses_coderange_api
+    input_class = Class.new(String) do
+      def valid_encoding?
+        raise "must use MRI coderange API"
+      end
+    end
+    input = input_class.new("é")
+
+    assert Onibi::Regexp.new("é").vm_match?(input)
+  end
+
   def test_vm_polls_pending_thread_interrupts
     regexp = Onibi::Regexp.new("a")
     worker = Thread.new { regexp.vm_match?("b" * 20_000_000) }
