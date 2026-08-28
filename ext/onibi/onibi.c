@@ -84,7 +84,6 @@ static void onibi_set_gir_action_opcode(VALUE action, ID op);
 static OnibiRAssertKind onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(VALUE name);
-static int onibi_ascii_property_id_p(ID property);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype(VALUE name);
 typedef enum {
@@ -298,11 +297,22 @@ typedef enum {
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
 static long onibi_token_byte(VALUE token);
 
+typedef enum {
+  ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
+  ONIBI_ASCII_PROP_HEX, ONIBI_ASCII_PROP_DIGIT, ONIBI_ASCII_PROP_ALPHA,
+  ONIBI_ASCII_PROP_ALNUM, ONIBI_ASCII_PROP_LOWER, ONIBI_ASCII_PROP_UPPER,
+  ONIBI_ASCII_PROP_SPACE, ONIBI_ASCII_PROP_BLANK, ONIBI_ASCII_PROP_WORD,
+  ONIBI_ASCII_PROP_XDIGIT, ONIBI_ASCII_PROP_CNTRL, ONIBI_ASCII_PROP_PRINT,
+  ONIBI_ASCII_PROP_GRAPH, ONIBI_ASCII_PROP_PUNCT
+} OnibiAsciiProperty;
+
+static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property);
+
 typedef struct OnibiFeatureToken {
   OnibiTokenKind kind;
   long byte;
   ID name_id;
-  unsigned char ascii_property;
+  OnibiAsciiProperty property_kind;
   unsigned char inline_ignorecase;
 } OnibiFeatureToken;
 
@@ -328,8 +338,8 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       VALUE name = onibi_hash_value_id(token, id_key_name);
       VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
       vector.items[i].name_id = NIL_P(name_id) ? 0 : NUM2ULONG(name_id);
-      vector.items[i].ascii_property = (vector.items[i].name_id != 0 &&
-        onibi_ascii_property_id_p(vector.items[i].name_id)) ? 1 : 0;
+      vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
+        onibi_ascii_property_kind_id(vector.items[i].name_id);
       vector.items[i].inline_ignorecase = (!NIL_P(name) &&
         memchr(RSTRING_PTR(name), 'i', (size_t)RSTRING_LEN(name)) != NULL) ? 1 : 0;
     }
@@ -1260,15 +1270,6 @@ static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
   }
 }
 
-typedef enum {
-  ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
-  ONIBI_ASCII_PROP_HEX, ONIBI_ASCII_PROP_DIGIT, ONIBI_ASCII_PROP_ALPHA,
-  ONIBI_ASCII_PROP_ALNUM, ONIBI_ASCII_PROP_LOWER, ONIBI_ASCII_PROP_UPPER,
-  ONIBI_ASCII_PROP_SPACE, ONIBI_ASCII_PROP_BLANK, ONIBI_ASCII_PROP_WORD,
-  ONIBI_ASCII_PROP_XDIGIT, ONIBI_ASCII_PROP_CNTRL, ONIBI_ASCII_PROP_PRINT,
-  ONIBI_ASCII_PROP_GRAPH, ONIBI_ASCII_PROP_PUNCT
-} OnibiAsciiProperty;
-
 static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property) {
   static ID ids[15]; static int ready = 0;
   if (!ready) {
@@ -1283,10 +1284,6 @@ static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property) {
 static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
   return NIL_P(name) ? ONIBI_ASCII_PROP_UNKNOWN :
     onibi_ascii_property_kind_id(rb_intern_str(name));
-}
-
-static int onibi_ascii_property_id_p(ID property) {
-  return onibi_ascii_property_kind_id(property) != ONIBI_ASCII_PROP_UNKNOWN;
 }
 
 static int onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c) {
@@ -3205,7 +3202,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
       if (token->byte == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
       if (token->byte == 'p' || token->byte == 'P') {
-        if (token->ascii_property) {
+        if (token->property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
           obj->has_ascii_property = 1;
           ID property_id = token->name_id;
           if (property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
