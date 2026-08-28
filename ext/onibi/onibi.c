@@ -81,7 +81,7 @@ static void onibi_rseq_validate(VALUE rseq);
 static inline VALUE onibi_hash_value_id(VALUE hash, ID key) { return rb_hash_aref(hash, ID2SYM(key)); }
 static OnibiGActionOp onibi_gir_action_opcode(ID op);
 static void onibi_set_gir_action_opcode(VALUE action, ID op);
-static uint16_t onibi_rseq_assert_kind(ID op);
+static OnibiRAssertKind onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(VALUE name);
 static int onibi_ascii_property_id_p(ID property);
@@ -2657,7 +2657,7 @@ static uint8_t onibi_rseq_action_flags(ID op) {
   return 0;
 }
 
-static uint16_t onibi_rseq_assert_kind(ID op) {
+static OnibiRAssertKind onibi_rseq_assert_kind(ID op) {
   if (op == id_a_assert_begin_buffer) return ONIBI_RAP_BEGIN_BUFFER;
   if (op == id_a_assert_end_buffer) return ONIBI_RAP_END_BUFFER;
   if (op == id_a_assert_begin_line) return ONIBI_RAP_BEGIN_LINE;
