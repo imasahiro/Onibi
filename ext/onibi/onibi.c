@@ -2172,7 +2172,11 @@ static void onibi_rseq_validate(VALUE rseq) {
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   if (NIL_P(semantic) || NIL_P(semantic_states) || !RB_TYPE_P(semantic_states, T_ARRAY) ||
+      NIL_P(semantic_edges) || !RB_TYPE_P(semantic_edges, T_ARRAY) ||
+      NIL_P(semantic_actions) || !RB_TYPE_P(semantic_actions, T_ARRAY) ||
       RARRAY_LEN(semantic_states) != header.state_count ||
+      RARRAY_LEN(semantic_edges) != header.edge_count - header.start_edge_count ||
+      RARRAY_LEN(semantic_actions) != header.action_count ||
       header.start_edge_count > header.edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
       NUM2UINT(onibi_hash_value(semantic, "features")) != header.features ||
