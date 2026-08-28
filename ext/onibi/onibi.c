@@ -3846,7 +3846,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     if (op == id_a_assert_semi_end_buffer && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
     if (op == id_a_assert_lookahead) {
-      VALUE predicates = onibi_hash_value(action, "predicates");
+      VALUE predicates = onibi_hash_value_id(action, id_key_predicates);
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         int matched = 1;
         for (long i = 0; i < RARRAY_LEN(predicates); i++) {
@@ -3854,74 +3854,74 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           long at = pos + i;
           if (at >= length) { matched = 0; break; }
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[at];
-          ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
+          ID kind = SYM2ID(onibi_hash_value_id(predicate, id_key_kind));
           if (kind == id_pred_byte) {
-            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
-            matched = matched && (RTEST(onibi_hash_value(predicate, "ignorecase")) ?
+            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value_id(predicate, id_key_byte));
+            matched = matched && (RTEST(onibi_hash_value_id(predicate, id_key_ignorecase)) ?
               tolower(byte) == tolower(expected) : byte == expected);
           } else if (kind == id_pred_any) {
-            matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
+            matched = matched && (byte != '\n' || RTEST(onibi_hash_value_id(predicate, id_key_multiline)));
           }
           else {
-            VALUE bits = onibi_hash_value(predicate, "bitmap");
+            VALUE bits = onibi_hash_value_id(predicate, id_key_bitmap);
             matched = matched && RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
               (((unsigned char *)RSTRING_PTR(bits))[byte >> 3] & (1U << (byte & 7))) != 0;
           }
           if (!matched) break;
         }
-        if (matched != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        if (matched != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
-      VALUE bitmap = onibi_hash_value(action, "bitmap");
+      VALUE bitmap = onibi_hash_value_id(action, id_key_bitmap);
       if (!NIL_P(bitmap)) {
         int hit = pos < length && RSTRING_LEN(bitmap) == 32 &&
           (((unsigned char *)RSTRING_PTR(bitmap))[(unsigned char)RSTRING_PTR(subject)[pos] >> 3] &
            (1U << ((unsigned char)RSTRING_PTR(subject)[pos] & 7))) != 0;
-        if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
       VALUE bytes = onibi_hash_value(action, "bytes");
       long width = RSTRING_LEN(bytes);
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
-      if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+      if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
     }
     if (op == id_a_assert_lookbehind) {
-      VALUE predicates = onibi_hash_value(action, "predicates");
+      VALUE predicates = onibi_hash_value_id(action, id_key_predicates);
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         long width = RARRAY_LEN(predicates);
         int matched = pos >= width;
         for (long i = 0; matched && i < width; i++) {
           VALUE predicate = rb_ary_entry(predicates, i);
           unsigned char byte = (unsigned char)RSTRING_PTR(subject)[pos - width + i];
-          ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
+          ID kind = SYM2ID(onibi_hash_value_id(predicate, id_key_kind));
           if (kind == id_pred_byte) {
-            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
-            matched = RTEST(onibi_hash_value(predicate, "ignorecase")) ?
+            unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value_id(predicate, id_key_byte));
+            matched = RTEST(onibi_hash_value_id(predicate, id_key_ignorecase)) ?
               tolower(byte) == tolower(expected) : byte == expected;
           } else if (kind == id_pred_any) {
-            matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
+            matched = matched && (byte != '\n' || RTEST(onibi_hash_value_id(predicate, id_key_multiline)));
           }
           else {
-            VALUE bits = onibi_hash_value(predicate, "bitmap");
+            VALUE bits = onibi_hash_value_id(predicate, id_key_bitmap);
             matched = RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
               (((unsigned char *)RSTRING_PTR(bits))[byte >> 3] & (1U << (byte & 7))) != 0;
           }
         }
-        if (matched != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        if (matched != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
-      VALUE bitmap = onibi_hash_value(action, "bitmap");
+      VALUE bitmap = onibi_hash_value_id(action, id_key_bitmap);
       if (!NIL_P(bitmap)) {
         int hit = pos > 0 && RSTRING_LEN(bitmap) == 32 &&
           (((unsigned char *)RSTRING_PTR(bitmap))[(unsigned char)RSTRING_PTR(subject)[pos - 1] >> 3] &
            (1U << ((unsigned char)RSTRING_PTR(subject)[pos - 1] & 7))) != 0;
-        if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
         continue;
       }
       VALUE bytes = onibi_hash_value(action, "bytes");
       long width = RSTRING_LEN(bytes);
       int hit = pos >= width && memcmp(RSTRING_PTR(subject) + pos - width, RSTRING_PTR(bytes), (size_t)width) == 0;
-      if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
+      if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
     }
   }
   return 1;
