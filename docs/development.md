@@ -154,6 +154,19 @@ The Ruby data decision is:
 | tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
 | execution class | C enum | Internal dispatcher choice |
 
+The remaining compiler containers have three separate roles:
+
+| Container | Current role | Migration order |
+| --- | --- | --- |
+| fragment `starts`/`exits` | Ordered state-ID sets | First; C dynamic vector |
+| fragment action arrays | Ordered semantic actions | Second; typed action vector |
+| capture and exit guards | State-ID lookup during edge creation | Third; C map with explicit ownership |
+| GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | Last; convert at the RSeq boundary only |
+
+The compiler must not expose these containers through Ruby constants. Ruby
+objects can remain temporary adapters until each C owner has a complete
+conversion path and focused ordering tests.
+
 The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
