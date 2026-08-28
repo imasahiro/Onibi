@@ -13,7 +13,7 @@
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
+static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -1989,7 +1989,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
-      RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
+      (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0))))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -2017,7 +2017,10 @@ static VALUE onibi_inspect(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(obj->regexp, id_inspect, 0);
 }
-static VALUE onibi_to_s(VALUE self) { return onibi_inspect(self); }
+static VALUE onibi_to_s(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return rb_funcall(obj->regexp, id_to_s, 0);
+}
 static VALUE onibi_execution_class(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return obj->execution_class;
@@ -3022,7 +3025,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if ((obj->options & (16 | 32)) == 0 &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, obj->source) != NULL &&
-      RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
+      (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0))))
     {
       /* The immutable RSeq was validated and its physical execution view was
          built during initialize.  Do not rescan the program on each match. */
@@ -3041,7 +3044,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   StringValue(str);
   int graph_ok = ((obj->options & (16 | 32)) == 0) && !NIL_P(obj->rseq) &&
     rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, obj->source) != NULL &&
-    RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0));
+    (rb_enc_str_asciionly_p(str) || RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)));
   if (!graph_ok) {
     if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   }
@@ -3116,7 +3119,7 @@ void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
   id_new = rb_intern("new");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
-  id_options = rb_intern("options"); id_inspect = rb_intern("inspect");
+  id_options = rb_intern("options"); id_inspect = rb_intern("inspect"); id_to_s = rb_intern("to_s");
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   id_encoding = rb_intern("encoding");
   id_index = rb_intern("index");
