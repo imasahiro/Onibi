@@ -339,7 +339,7 @@ typedef enum {
 } OnibiAstKind;
 
 static inline OnibiAstKind onibi_ast_kind(VALUE node) {
-  VALUE code = rb_hash_aref(node, ID2SYM(id_key_type_code));
+  VALUE code = onibi_hash_value_id(node, id_key_type_code);
   return NIL_P(code) ? ONIBI_AST_UNKNOWN : (OnibiAstKind)NUM2UINT(code);
 }
 
