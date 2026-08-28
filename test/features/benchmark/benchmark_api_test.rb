@@ -65,10 +65,14 @@ class BenchmarkApiTest < Minitest::Test
         assert_operator header.fetch(key), :>, 0
         assert_equal 0, header.fetch(key) % 4
       end
-      assert_equal header[:blob_size], header[:subprograms_offset]
+      assert_operator header[:blob_size], :>, header[:subprograms_offset]
+      assert_equal header[:subprogram_count] * 12, header[:blob_size] - header[:subprograms_offset]
       assert_equal header[:blob_size], program[:blob].bytesize
       assert program[:subprograms].frozen?
       assert_equal header[:subprogram_count], program[:subprograms].length
+      descriptor = program[:subprograms].first
+      physical = program[:blob].byteslice(header[:subprograms_offset], 12).unpack("L<3")
+      assert_equal [descriptor[:entry], descriptor[:accept], descriptor[:flags]], physical
     end
     assert_equal 3, literal[:header][:literal_count]
     assert_equal 1, Onibi::Regexp.new("aa").pipeline[:rseq_program][:header][:literal_count]

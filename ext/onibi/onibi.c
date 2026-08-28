@@ -2058,7 +2058,17 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), builder.edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  /* Program zero is the root callable program.  Keep an explicit descriptor
+     even before nested dynamic constructs add their own entries. */
   VALUE subprograms = rb_ary_new();
+  VALUE root_descriptor = rb_hash_new();
+  long root_entry = RARRAY_LEN(fragment.starts) > 0 ?
+    NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
+  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(root_entry));
+  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(root_descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
+  rb_obj_freeze(root_descriptor);
+  rb_ary_push(subprograms, root_descriptor);
   rb_obj_freeze(subprograms);
   rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), subprograms);
   rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
@@ -2253,11 +2263,12 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
   uint64_t literal_desc_size = (uint64_t)literal_count * sizeof(OnibiLiteralDesc);
   uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
+  uint64_t subprogram_section_size = (uint64_t)RARRAY_LEN(subprograms) * sizeof(OnibiSubprogramDesc);
   uint64_t physical_size = sizeof(OnibiRSeqHeader) +
     (uint64_t)sizeof(OnibiRState) * (uint64_t)RARRAY_LEN(states) +
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
     (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions) +
-    class_section_size + literal_desc_size + literal_data_size;
+    class_section_size + literal_desc_size + literal_data_size + subprogram_section_size;
   if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
       RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
@@ -2299,6 +2310,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
   physical.features = features;
   physical.class_count = class_count;
+  physical.subprogram_count = (uint32_t)RARRAY_LEN(subprograms);
   physical.capture_count = capture_count;
   physical.semantic_capture_count = capture_count;
   physical.counter_count = counter_count;
@@ -2351,6 +2363,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.descriptors_offset = (uint32_t)offset;
   offset += literal_desc_size;
   physical.subprograms_offset = (uint32_t)offset;
+  offset += subprogram_section_size;
   physical.blob_size = (uint32_t)offset;
   rb_hash_aset(header, ID2SYM(rb_intern("states_offset")), UINT2NUM(physical.states_offset));
   rb_hash_aset(header, ID2SYM(rb_intern("edges_offset")), UINT2NUM(physical.edges_offset));
@@ -2479,6 +2492,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     literal_descs[literal_index].flags = RTEST(onibi_hash_value(payload, "ignorecase")) ? 1 : 0;
     literal_data[literal_index] = (unsigned char)NUM2INT(onibi_hash_value(payload, "byte"));
     literal_index++;
+  }
+  OnibiSubprogramDesc *physical_subprograms =
+    (OnibiSubprogramDesc *)(RSTRING_PTR(blob) + physical.subprograms_offset);
+  for (long i = 0; i < RARRAY_LEN(subprograms); i++) {
+    VALUE descriptor = rb_ary_entry(subprograms, i);
+    physical_subprograms[i].entry = (OnibiStateId)NUM2ULONG(onibi_hash_value(descriptor, "entry"));
+    physical_subprograms[i].accept = (OnibiStateId)NUM2ULONG(onibi_hash_value(descriptor, "accept"));
+    physical_subprograms[i].flags = (uint32_t)NUM2ULONG(onibi_hash_value(descriptor, "flags"));
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
@@ -3858,7 +3879,8 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.classes_offset > header.blob_size || header.literals_offset > header.blob_size ||
       header.descriptors_offset > header.blob_size || header.subprograms_offset > header.blob_size ||
       header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
-      header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.blob_size)
+      header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.subprograms_offset ||
+      header.subprograms_offset + (uint64_t)header.subprogram_count * sizeof(OnibiSubprogramDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   for (long i = 0; i < RARRAY_LEN(semantic_subprograms); i++) {
     VALUE descriptor = rb_ary_entry(semantic_subprograms, i);
@@ -3870,6 +3892,12 @@ static void onibi_rseq_validate(VALUE rseq) {
         NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= (long)header.state_count ||
         NUM2LONG(flags) < 0)
       rb_raise(rb_eArgError, "invalid RSeq subprogram descriptor");
+    const OnibiSubprogramDesc *physical = (const OnibiSubprogramDesc *)
+      (RSTRING_PTR(blob) + header.subprograms_offset) + i;
+    if (physical->entry != (OnibiStateId)NUM2ULONG(entry_state) ||
+        physical->accept != (OnibiStateId)NUM2ULONG(accept_state) ||
+        physical->flags != (uint32_t)NUM2ULONG(flags))
+      rb_raise(rb_eArgError, "RSeq subprogram descriptor disagrees with semantic table");
   }
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   for (uint32_t i = 0; i < header.state_count; i++) {
