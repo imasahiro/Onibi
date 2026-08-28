@@ -3001,12 +3001,12 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, id_g_accept, Qnil);
-  VALUE accept_starts = rb_ary_new();
-  rb_ary_push(accept_starts, LONG2NUM(accept));
+  OnibiIdVector accept_starts;
+  onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
   OnibiIdVector exit_ids;
   exit_ids = fragment.exits;
-  if (fragment.lazy) onibi_connect_vector_prepend_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
-  else onibi_connect_vector_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
+  onibi_connect_fragment_actions(&builder, &exit_ids, &accept_starts, fragment.pending_actions, fragment.lazy);
+  onibi_id_vector_free(&accept_starts);
   VALUE start_edges = rb_ary_new();
   long root_entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   if (fragment.nullable && fragment.lazy) {

@@ -112,6 +112,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes connector, "onibi_gir_edge_actions(builder, from, to, actions)"
   end
 
+  def test_compiler_accept_start_uses_c_vector
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+
+    refute_nil compiler
+    assert_includes compiler, "OnibiIdVector accept_starts;"
+    assert_includes compiler, "onibi_id_vector_single(&accept_starts"
+    refute_includes compiler, "VALUE accept_starts = rb_ary_new();"
+  end
+
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
