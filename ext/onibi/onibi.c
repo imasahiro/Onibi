@@ -4082,7 +4082,10 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     ID op = physical_states[i].op == ONIBI_RS_CHAR ? rb_intern("G_CHAR") :
       physical_states[i].op == ONIBI_RS_CLASS ? rb_intern("G_CLASS") :
       physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") :
-      physical_states[i].op == ONIBI_RS_BACKREF ? rb_intern("G_BACKREF") : rb_intern("G_ACCEPT");
+      physical_states[i].op == ONIBI_RS_BACKREF ? rb_intern("G_BACKREF") :
+      physical_states[i].op == ONIBI_RS_CALL ? rb_intern("G_CALL") :
+      physical_states[i].op == ONIBI_RS_ATOMIC ? rb_intern("G_ATOMIC") :
+      physical_states[i].op == ONIBI_RS_ABSENT ? rb_intern("G_ABSENT") : rb_intern("G_ACCEPT");
     rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
     rb_ary_push(states, state);
   }
