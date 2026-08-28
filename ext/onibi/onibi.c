@@ -2339,6 +2339,18 @@ static void onibi_rseq_validate(VALUE rseq) {
       !RTEST(rb_obj_frozen_p(semantic_start_edges)) ||
       (!NIL_P(physical_graph) && !RTEST(rb_obj_frozen_p(physical_graph))))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
+  if (!NIL_P(physical_graph)) {
+    VALUE cached_states = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "states") : Qnil;
+    VALUE cached_edges = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "edges") : Qnil;
+    VALUE cached_starts = RB_TYPE_P(physical_graph, T_HASH) ? onibi_hash_value(physical_graph, "start_edges") : Qnil;
+    if (!RB_TYPE_P(physical_graph, T_HASH) || !RB_TYPE_P(cached_states, T_ARRAY) ||
+        !RB_TYPE_P(cached_edges, T_ARRAY) || !RB_TYPE_P(cached_starts, T_ARRAY) ||
+        !RTEST(rb_obj_frozen_p(cached_states)) || !RTEST(rb_obj_frozen_p(cached_edges)) ||
+        !RTEST(rb_obj_frozen_p(cached_starts)) || RARRAY_LEN(cached_states) != RARRAY_LEN(semantic_states) ||
+        RARRAY_LEN(cached_edges) != RARRAY_LEN(semantic_edges) ||
+        RARRAY_LEN(cached_starts) != RARRAY_LEN(semantic_start_edges))
+      rb_raise(rb_eArgError, "invalid cached RSeq execution view");
+  }
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   if (NIL_P(semantic) || NIL_P(semantic_states) || !RB_TYPE_P(semantic_states, T_ARRAY) ||
