@@ -1257,7 +1257,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
   if (onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION) {
-    VALUE operands = onibi_hash_value(payload, "operands");
+    VALUE operands = onibi_hash_value_id(payload, id_key_operands);
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) < 2)
       rb_raise(eRegexpError, "class intersection has no operands");
     /* Set intersection is defined before case folding.  Folding each
@@ -1280,8 +1280,8 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     rb_obj_freeze(result);
     return result;
   }
-  VALUE ranges = onibi_hash_value(payload, "ranges");
-  VALUE escape_name = onibi_hash_value(payload, "name");
+  VALUE ranges = onibi_hash_value_id(payload, id_key_ranges);
+  VALUE escape_name = onibi_hash_value_id(payload, id_key_name);
   if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
     int upper = isupper((unsigned char)RSTRING_PTR(escape_name)[0]);
     int code = tolower((unsigned char)RSTRING_PTR(escape_name)[0]);
@@ -1296,7 +1296,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       int hit = onibi_ascii_property_hit_kind(property_kind, c);
       if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
-    if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P')
+    if (NUM2INT(onibi_hash_value_id(payload, id_key_byte)) == 'P')
       for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
   }
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
@@ -1308,31 +1308,31 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     if (first < 0) first = 0; if (last > 255) last = 255;
     for (int c = first; c <= last; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
   }
-  VALUE children = onibi_hash_value(payload, "children");
+  VALUE children = onibi_hash_value_id(payload, id_key_children);
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
-    OnibiTokenKind token_kind = NIL_P(onibi_hash_value(child, "kind_code")) ?
+    OnibiTokenKind token_kind = NIL_P(onibi_hash_value_id(child, id_key_kind_code)) ?
       (OnibiTokenKind)-1 : onibi_token_kind_code(child);
     OnibiAstKind ast_kind = onibi_ast_kind(child);
     if (token_kind == ONIBI_TOKEN_LITERAL || ast_kind == ONIBI_AST_LITERAL) {
-      onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
+      onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)), fold);
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
-      VALUE name = onibi_hash_value(child, "name");
+      VALUE name = onibi_hash_value_id(child, id_key_name);
       if (onibi_ascii_property_name_p(name)) {
         OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
         for (int c = 0; c < 256; c++) {
           int hit = onibi_ascii_property_hit_kind(property_kind, c);
           if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
         }
-        if (NUM2INT(onibi_hash_value(child, "byte")) == 'P')
+        if (NUM2INT(onibi_hash_value_id(child, id_key_byte)) == 'P')
           for (long byte = 0; byte < 32; byte++) bits[byte] = (unsigned char)~bits[byte];
         continue;
       }
-      int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+      int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte))) :
         (RSTRING_LEN(name) == 1 ? tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
       if (escape_code == 'r' || escape_code == 'p' || escape_code == 'x' || escape_code == 'u')
         rb_raise(eRegexpError, "escape is not supported in RSeq class");
-      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte))) :
         (RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]));
       int code = escape_code;
       for (int c = 0; c < 256; c++) {
@@ -1341,7 +1341,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
     } else if (token_kind == ONIBI_TOKEN_POSIX_CLASS) {
-      VALUE name = onibi_hash_value(child, "name");
+      VALUE name = onibi_hash_value_id(child, id_key_name);
       OnibiPosixKind posix = onibi_posix_kind(name);
       for (int c = 0; c < 256; c++) {
         int hit = posix == ONIBI_POSIX_ALPHA ? isalpha(c) :
@@ -1361,7 +1361,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         bits[byte] |= (unsigned char)RSTRING_PTR(nested)[byte];
     }
   }
-  if (RTEST(onibi_hash_value(payload, "negated")))
+  if (RTEST(onibi_hash_value_id(payload, id_key_negated)))
     for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
   VALUE bitmap = rb_str_new((const char *)bits, sizeof(bits));
   rb_obj_freeze(bitmap);
