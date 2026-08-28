@@ -2094,6 +2094,10 @@ static int onibi_ascii_property_token_p(VALUE token) {
 static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   int in_class = 0;
   long class_depth = 0;
+  int repeat_active = 0;
+  uint64_t repeat_value = 0;
+  int repeat_have_digit = 0;
+  int repeat_over_limit = 0;
   VALUE previous = Qnil;
   obj->has_class_intersection = 0;
   obj->has_nested_class = 0;
@@ -2127,28 +2131,30 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       previous = Qnil;
       continue;
     }
+    if (repeat_active) {
+      long value = onibi_token_byte(token);
+      if (kind == rb_intern("quantifier") && value == '}') {
+        if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
+        repeat_active = 0;
+      } else if (kind == rb_intern("quantifier") && value == ',') {
+        if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
+        repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
+      } else if (kind == rb_intern("literal") && value >= '0' && value <= '9') {
+        repeat_have_digit = 1;
+        if (repeat_value > (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
+            (repeat_value == (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && (uint64_t)(value - '0') > 0U))
+          repeat_over_limit = 1;
+        else if (repeat_value <= UINT64_MAX / 10U)
+          repeat_value = repeat_value * 10U + (uint64_t)(value - '0');
+      } else {
+        repeat_active = 0;
+      }
+    }
     if (in_class && kind == rb_intern("literal") && onibi_token_byte(token) == '[')
       obj->has_nested_class = 1;
     if (!in_class && kind == rb_intern("quantifier") && onibi_token_byte(token) == '{') {
-      uint64_t value = 0;
-      int have_digit = 0;
-      int over_limit = 0;
-      for (long j = i + 1; j < RARRAY_LEN(tokens); j++) {
-        long digit = onibi_token_byte(rb_ary_entry(tokens, j));
-        if (digit == '}') break;
-        if (digit == ',') {
-          value = 0;
-          have_digit = 0;
-          over_limit = 0;
-          continue;
-        }
-        if (digit < '0' || digit > '9') { have_digit = 0; over_limit = 0; break; }
-        have_digit = 1;
-        if (value > (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
-            (value == (uint64_t)ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && (uint64_t)(digit - '0') > 0U)) over_limit = 1;
-        else value = value * 10U + (uint64_t)(digit - '0');
-      }
-      if (have_digit && over_limit) obj->has_large_repeat = 1;
+      repeat_active = 1;
+      repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
     }
     if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
         kind == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
