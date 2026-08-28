@@ -106,6 +106,11 @@ static double onibi_timeout_value(VALUE value) {
 }
 
 typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+
+static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
+  return (obj->options & 16) ||
+    (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal);
+}
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
@@ -126,6 +131,11 @@ static int onibi_character_boundary(VALUE str, long pos) {
 
 static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
   int encoding = rb_enc_get_index(str);
+  /* A fixed-encoding regexp cannot consume non-ASCII bytes tagged as
+   * ASCII-8BIT.  Let MRI report Encoding::CompatibilityError instead of
+   * entering the byte-oriented RSeq path. */
+  if (onibi_regexp_fixed_p(obj) && encoding == rb_ascii8bit_encindex() &&
+      !rb_enc_str_asciionly_p(str)) return 0;
   if (rb_enc_compatible(str, obj->source) == NULL) return 0;
   if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex()) return 1;
   if (onibi_encoded_literal_program_p(obj) &&
@@ -238,6 +248,38 @@ static ID onibi_token_kind_id(OnibiTokenKind kind) {
   return ids[kind];
 }
 
+/* These sets are lexer grammar, not user data.  Keep them as direct
+ * predicates so tokenization does not call a string-search routine for each
+ * source byte. */
+static int onibi_option_char_p(unsigned char c) {
+  return c == 'i' || c == 'm' || c == 'x';
+}
+
+static int onibi_anchor_escape_p(unsigned char c) {
+  switch (c) {
+    case 'A': case 'z': case 'Z': case 'G': case 'b': case 'B': return 1;
+    default: return 0;
+  }
+}
+
+static int onibi_class_escape_p(unsigned char c) {
+  switch (c) {
+    case 'd': case 'D': case 's': case 'S': case 'w': case 'W':
+    case 'h': case 'H': case 'R': case 'X': case 'p': case 'P':
+    case 'u': return 1;
+    default: return 0;
+  }
+}
+
+static int onibi_simple_escape_p(unsigned char c) {
+  return c == 'd' || c == 'D' || c == 's' || c == 'S' ||
+         c == 'w' || c == 'W' || c == 'h' || c == 'H';
+}
+
+static int onibi_quantifier_byte_p(unsigned char c) {
+  return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
+}
+
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   VALUE tokens = rb_ary_new();
   /* One escape is one semantic token.  Do not let an escaped metacharacter
@@ -279,19 +321,19 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) &&
                RSTRING_PTR(src)[i + 1] == '?' &&
                (RSTRING_PTR(src)[i + 2] == '-' ||
-                strchr("imx", RSTRING_PTR(src)[i + 2]) != NULL)) {
+               onibi_option_char_p((unsigned char)RSTRING_PTR(src)[i + 2]))) {
       long option_end = i + 2;
       int valid = 1;
       if (RSTRING_PTR(src)[option_end] == '-') { option_negative = 1; option_end++; }
       long option_count = option_end;
       while (option_end < RSTRING_LEN(src) &&
-             strchr("imx", RSTRING_PTR(src)[option_end]) != NULL) option_end++;
+             onibi_option_char_p((unsigned char)RSTRING_PTR(src)[option_end])) option_end++;
       long positive_end = option_end;
       long negative_start = -1;
       if (!option_negative && option_end < RSTRING_LEN(src) && RSTRING_PTR(src)[option_end] == '-') {
         negative_start = ++option_end;
         while (option_end < RSTRING_LEN(src) &&
-               strchr("imx", RSTRING_PTR(src)[option_end]) != NULL) option_end++;
+               onibi_option_char_p((unsigned char)RSTRING_PTR(src)[option_end])) option_end++;
         if (option_end == negative_start) valid = 0;
       }
       int global_modifier = 0;
@@ -468,10 +510,10 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       else if (escaped == 'a') byte = '\a';
       else if (escaped == 'e') byte = 0x1b;
     if (hex_literal || octal_literal) kind = ONIBI_TOKEN_LITERAL;
-    else if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = ONIBI_TOKEN_ANCHOR;
+    else if (!in_class && onibi_anchor_escape_p(escaped)) kind = ONIBI_TOKEN_ANCHOR;
       else if (!in_class && escaped == 'K') kind = ONIBI_TOKEN_MATCH_RESET;
       else if (!in_class && escaped >= '1' && escaped <= '9') kind = ONIBI_TOKEN_BACKREF;
-      else if (strchr("dDsSwWhHRXpPu", escaped) != NULL) kind = ONIBI_TOKEN_ESCAPE;
+      else if (onibi_class_escape_p(escaped)) kind = ONIBI_TOKEN_ESCAPE;
       i++;
       if ((escaped == 'p' || escaped == 'P') && i + 1 < RSTRING_LEN(src) &&
           RSTRING_PTR(src)[i + 1] == '{') {
@@ -508,7 +550,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     } else if (byte == '|') kind = ONIBI_TOKEN_ALTERNATION;
     else if (kind == ONIBI_TOKEN_LITERAL && byte == '(') kind = ONIBI_TOKEN_GROUP_START;
     else if (kind == ONIBI_TOKEN_LITERAL && byte == ')') kind = ONIBI_TOKEN_GROUP_END;
-    else if (kind == ONIBI_TOKEN_LITERAL && strchr("*+?{}", byte) != NULL) kind = ONIBI_TOKEN_QUANTIFIER;
+    else if (kind == ONIBI_TOKEN_LITERAL && onibi_quantifier_byte_p(byte)) kind = ONIBI_TOKEN_QUANTIFIER;
     else if (kind == ONIBI_TOKEN_LITERAL && byte == '.') kind = ONIBI_TOKEN_WILDCARD;
     else if (kind == ONIBI_TOKEN_LITERAL && (byte == '^' || byte == '$')) kind = ONIBI_TOKEN_ANCHOR;
     if (kind == ONIBI_TOKEN_LITERAL && byte >= 0x80) {
@@ -2126,8 +2168,9 @@ skip_utf8_range_expansion:
       if (child_type == ID2SYM(rb_intern("escape"))) {
         VALUE name = onibi_hash_value(child, "name");
         int simple = !NIL_P(name) &&
-          (onibi_ascii_property_name_p(name) ||
-           (RSTRING_LEN(name) == 1 && strchr("dDsSwWhH", RSTRING_PTR(name)[0]) != NULL));
+           (onibi_ascii_property_name_p(name) ||
+           (RSTRING_LEN(name) == 1 &&
+            onibi_simple_escape_p((unsigned char)RSTRING_PTR(name)[0])));
         if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");
         VALUE payload = rb_hash_dup(child);
         rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
@@ -3205,7 +3248,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
-      !(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) &&
+      !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
@@ -3230,7 +3273,7 @@ static VALUE onibi_options(VALUE self) {
 static VALUE onibi_fixed_encoding_p(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   /* MRI fixes NOENCODING only when syntax forces a binary property mode. */
-  return (obj->options & 16) ||
+  return onibi_regexp_fixed_p(obj) ||
     ((obj->options & 32) && obj->has_ascii_property) ||
     (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal) ? Qtrue : Qfalse;
 }
@@ -3468,7 +3511,9 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
     rb_ary_push(edges, left); rb_ary_push(edges, right);
   } else if (RARRAY_LEN(tokens) == 2 && onibi_token_kind(rb_ary_entry(tokens, 1)) == rb_intern("quantifier") &&
-             strchr("*+?", (int)onibi_token_byte(rb_ary_entry(tokens, 1))) != NULL) {
+             (onibi_token_byte(rb_ary_entry(tokens, 1)) == '*' ||
+              onibi_token_byte(rb_ary_entry(tokens, 1)) == '+' ||
+              onibi_token_byte(rb_ary_entry(tokens, 1)) == '?')) {
     edges = rb_ary_new();
     VALUE first = rb_hash_new();
     rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
@@ -4892,7 +4937,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   onibi_set_deadline(obj->timeout_seconds);
-  if (!(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) &&
+  if (!(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
@@ -4940,7 +4985,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
   }
-  int graph_ok = !(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
+  int graph_ok = !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
     onibi_vm_input_eligible(obj, str) &&
     (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
      (obj->has_unicode_property &&
