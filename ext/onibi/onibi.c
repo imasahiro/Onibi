@@ -287,6 +287,26 @@ static VALUE onibi_ast_node(const char *type, VALUE token) {
 }
 
 static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end);
+static VALUE onibi_deep_freeze(VALUE value);
+
+static int onibi_deep_freeze_hash_entry(VALUE key, VALUE value, VALUE unused) {
+  (void)key;
+  (void)unused;
+  onibi_deep_freeze(value);
+  return ST_CONTINUE;
+}
+
+/* AST and compiled metadata are published as immutable object graphs. */
+static VALUE onibi_deep_freeze(VALUE value) {
+  if (RB_TYPE_P(value, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(value); i++)
+      onibi_deep_freeze(rb_ary_entry(value, i));
+  } else if (RB_TYPE_P(value, T_HASH)) {
+    rb_hash_foreach(value, onibi_deep_freeze_hash_entry, Qnil);
+  }
+  rb_obj_freeze(value);
+  return value;
+}
 
 static long onibi_find_close(VALUE tokens, long begin, long end, ID open, ID close) {
   long depth = 0;
@@ -594,7 +614,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   rb_hash_aset(result, ID2SYM(rb_intern("source")), source_copy);
   rb_hash_aset(result, ID2SYM(rb_intern("options")), onibi_parser_options(options));
   rb_hash_aset(result, ID2SYM(rb_intern("tokens")), tokens);
-  rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_parse_range(source, tokens, 0, RARRAY_LEN(tokens)));
+  rb_hash_aset(result, ID2SYM(rb_intern("ast")), onibi_deep_freeze(onibi_parse_range(source, tokens, 0, RARRAY_LEN(tokens))));
   rb_obj_freeze(result);
   return result;
 }

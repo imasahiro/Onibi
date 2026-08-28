@@ -594,6 +594,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %w[ignorecase multiline], Onibi::Parser.parse("a", "iim")[:options]
   end
 
+  def test_parser_publishes_an_immutable_ast_graph
+    ast = Onibi::Parser.parse("(ab|c)")[:ast]
+    assert_predicate ast, :frozen?
+    assert_predicate ast[:children], :frozen?
+    assert_predicate ast[:children].first, :frozen?
+    assert_raises(FrozenError) { ast[:children] << { type: :literal } }
+  end
+
   def test_parser_rejects_overflowing_quantifier_counts
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{999999999999999999999}") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{-1}") }
