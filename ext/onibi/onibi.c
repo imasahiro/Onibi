@@ -2521,12 +2521,48 @@ static void onibi_rseq_validate(VALUE rseq) {
   }
 }
 
+/* Build the regular execution view from the published RSeq blob.  Semantic
+   payloads remain Ruby values, but state operations and edge destinations
+   come from the physical layout.  This keeps the VM on the RSeq contract. */
+static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
+  VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE semantic_states = onibi_hash_value(rseq, "states");
+  VALUE semantic_edges = onibi_hash_value(rseq, "edges");
+  VALUE graph = rb_hash_new();
+  VALUE states = rb_ary_new_capa(RARRAY_LEN(semantic_states));
+  VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
+  OnibiRSeqHeader header;
+  memcpy(&header, RSTRING_PTR(blob), sizeof(header));
+  const OnibiRState *physical_states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
+  const OnibiREdge *physical_edges = (const OnibiREdge *)(RSTRING_PTR(blob) + header.edges_offset);
+  for (long i = 0; i < RARRAY_LEN(semantic_states); i++) {
+    VALUE state = rb_hash_dup(rb_ary_entry(semantic_states, i));
+    ID op = physical_states[i].op == ONIBI_RS_CHAR ? rb_intern("G_CHAR") :
+      physical_states[i].op == ONIBI_RS_CLASS ? rb_intern("G_CLASS") :
+      physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") : rb_intern("G_ACCEPT");
+    rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
+    rb_ary_push(states, state);
+  }
+  for (long i = 0; i < RARRAY_LEN(semantic_edges); i++) {
+    VALUE edge = rb_hash_dup(rb_ary_entry(semantic_edges, i));
+    uint32_t destination = physical_edges[i].destination;
+    if (destination == ONIBI_ACCEPT_STATE) destination = (uint32_t)(RARRAY_LEN(states) - 1);
+    rb_hash_aset(edge, ID2SYM(rb_intern("to")), UINT2NUM(destination));
+    rb_ary_push(edges, edge);
+  }
+  rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
+  rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
+  rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), onibi_hash_value(rseq, "start_edges"));
+  return graph;
+}
+
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
+  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
-    if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
+    if (onibi_gir_match(graph, str, start, &end)) return Qtrue;
   }
   return Qfalse;
 }
