@@ -326,23 +326,18 @@ typedef struct {
   size_t count;
 } OnibiFeatureTokenVector;
 
-static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
-  OnibiFeatureTokenVector vector = { NULL, (size_t)RARRAY_LEN(tokens) };
-  if (vector.count > 0) {
-    if (vector.count > SIZE_MAX / sizeof(*vector.items))
-      rb_raise(rb_eNoMemError, "token feature vector is too large");
-    vector.items = ALLOC_N(OnibiFeatureToken, vector.count);
-    for (size_t i = 0; i < vector.count; i++) {
-      VALUE token = rb_ary_entry(tokens, (long)i);
-      vector.items[i].kind = onibi_token_kind_code(token);
-      vector.items[i].byte = onibi_token_byte(token);
-      vector.items[i].start = onibi_token_start(token);
-      vector.items[i].end = onibi_token_end(token);
-      vector.items[i].name_id = onibi_token_name_id(token);
-      vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
-        onibi_ascii_property_kind_id(vector.items[i].name_id);
-      vector.items[i].inline_ignorecase = onibi_token_inline_ignorecase(token);
-    }
+static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens, OnibiFeatureToken *items) {
+  OnibiFeatureTokenVector vector = { items, (size_t)RARRAY_LEN(tokens) };
+  for (size_t i = 0; i < vector.count; i++) {
+    VALUE token = rb_ary_entry(tokens, (long)i);
+    vector.items[i].kind = onibi_token_kind_code(token);
+    vector.items[i].byte = onibi_token_byte(token);
+    vector.items[i].start = onibi_token_start(token);
+    vector.items[i].end = onibi_token_end(token);
+    vector.items[i].name_id = onibi_token_name_id(token);
+    vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
+      onibi_ascii_property_kind_id(vector.items[i].name_id);
+    vector.items[i].inline_ignorecase = onibi_token_inline_ignorecase(token);
   }
   return vector;
 }
@@ -3858,9 +3853,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->rseq = Qnil;
   obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
-  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens);
+  size_t feature_count = (size_t)RARRAY_LEN(tokens);
+  if (feature_count > SIZE_MAX / sizeof(OnibiFeatureToken))
+    rb_raise(rb_eNoMemError, "token feature vector is too large");
+  int feature_heap = feature_count > 256;
+  OnibiFeatureToken *feature_storage = feature_count == 0 ? NULL :
+    (feature_heap ? ALLOC_N(OnibiFeatureToken, feature_count) : ALLOCA_N(OnibiFeatureToken, feature_count));
+  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens, feature_storage);
   onibi_token_features(&feature_tokens, obj);
-  xfree(feature_tokens.items);
+  if (feature_heap) xfree(feature_tokens.items);
   if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
       obj->has_property_escape) opts |= 16;
   if (((opts & 32) && rb_enc_str_asciionly_p(source) &&

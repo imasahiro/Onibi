@@ -84,7 +84,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   def test_compiled_token_view_has_explicit_c_owner
     source = File.read(EXTENSION_SOURCE)
 
-    assert_includes source, "OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens);"
+    assert_includes source, "OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens, feature_storage);"
     assert_includes source, "onibi_token_features(&feature_tokens, obj);"
     assert_includes source, "xfree(feature_tokens.items);"
     refute_includes source, "obj->feature_tokens"
