@@ -280,6 +280,40 @@ typedef enum {
   ONIBI_TOKEN_WILDCARD
 } OnibiTokenKind;
 
+static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
+static long onibi_token_byte(VALUE token);
+
+typedef struct {
+  OnibiTokenKind kind;
+  long byte;
+  VALUE name;
+} OnibiFeatureToken;
+
+typedef struct {
+  OnibiFeatureToken *items;
+  size_t count;
+} OnibiFeatureTokenVector;
+
+static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
+  OnibiFeatureTokenVector vector = { NULL, (size_t)RARRAY_LEN(tokens) };
+  if (vector.count > 0) {
+    vector.items = ALLOC_N(OnibiFeatureToken, vector.count);
+    for (size_t i = 0; i < vector.count; i++) {
+      VALUE token = rb_ary_entry(tokens, (long)i);
+      vector.items[i].kind = onibi_token_kind_code(token);
+      vector.items[i].byte = onibi_token_byte(token);
+      vector.items[i].name = onibi_hash_value_id(token, id_key_name);
+    }
+  }
+  return vector;
+}
+
+static void onibi_feature_tokens_free(OnibiFeatureTokenVector *vector) {
+  xfree(vector->items);
+  vector->items = NULL;
+  vector->count = 0;
+}
+
 typedef enum {
   ONIBI_AST_UNKNOWN = 0,
   ONIBI_AST_SEQUENCE, ONIBI_AST_ALTERNATIVE, ONIBI_AST_LITERAL,
@@ -2992,22 +3026,17 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
   return rb_funcall(rb_cRegexp, id_new, 2, source, options);
 }
 
-static int onibi_ascii_property_token_p(VALUE token) {
-  if (onibi_token_byte(token) != 'p' && onibi_token_byte(token) != 'P') return 0;
-  VALUE name = onibi_hash_value_id(token, id_key_name);
-  return onibi_ascii_property_name_p(name);
-}
-
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
    token stream.  Runtime entry points use these bits and never rescan source. */
 static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
+  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens);
   int in_class = 0;
   long class_depth = 0;
   int repeat_active = 0;
   uint64_t repeat_value = 0;
   int repeat_have_digit = 0;
   int repeat_over_limit = 0;
-  VALUE previous = Qnil;
+  OnibiFeatureToken *previous = NULL;
   obj->has_class_intersection = 0;
   obj->has_nested_class = 0;
   obj->has_large_repeat = 0;
@@ -3031,17 +3060,17 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
   obj->has_inline_ignorecase = 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    VALUE token = rb_ary_entry(tokens, i);
-    OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
-    if (kind_code == ONIBI_TOKEN_LITERAL && onibi_token_byte(token) > 127) {
+  for (size_t i = 0; i < feature_tokens.count; i++) {
+    OnibiFeatureToken *token = &feature_tokens.items[i];
+    OnibiTokenKind kind_code = token->kind;
+    if (kind_code == ONIBI_TOKEN_LITERAL && token->byte > 127) {
       obj->has_non_ascii_literal = 1;
       if (in_class) obj->has_non_ascii_class = 1;
     }
     if (kind_code == ONIBI_TOKEN_WILDCARD) obj->has_wildcard = 1;
     if (kind_code == ONIBI_TOKEN_ANCHOR) obj->has_anchor = 1;
     if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START || kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
-      VALUE option_name = onibi_hash_value_id(token, id_key_name);
+      VALUE option_name = token->name;
       if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
         obj->has_inline_ignorecase = 1;
     }
@@ -3049,17 +3078,17 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
       if (in_class) obj->has_nested_class = 1;
       in_class = 1;
       class_depth++;
-      previous = Qnil;
+      previous = NULL;
       continue;
     }
     if (kind_code == ONIBI_TOKEN_CLASS_END) {
       if (class_depth > 0) class_depth--;
       in_class = class_depth > 0;
-      previous = Qnil;
+      previous = NULL;
       continue;
     }
     if (repeat_active) {
-      long value = onibi_token_byte(token);
+      long value = token->byte;
       if (kind_code == ONIBI_TOKEN_QUANTIFIER && value == '}') {
         if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
         repeat_active = 0;
@@ -3077,16 +3106,15 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         repeat_active = 0;
       }
     }
-    if (in_class && kind_code == ONIBI_TOKEN_LITERAL && onibi_token_byte(token) == '[')
+    if (in_class && kind_code == ONIBI_TOKEN_LITERAL && token->byte == '[')
       obj->has_nested_class = 1;
-    if (!in_class && kind_code == ONIBI_TOKEN_QUANTIFIER && onibi_token_byte(token) == '{') {
+    if (!in_class && kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{') {
       repeat_active = 1;
       repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
     }
-    if (in_class && !NIL_P(previous) &&
-        (OnibiTokenKind)NUM2UINT(rb_hash_aref(previous, ID2SYM(id_key_kind_code))) == ONIBI_TOKEN_LITERAL &&
-        kind_code == ONIBI_TOKEN_LITERAL && onibi_token_byte(previous) == '&' &&
-        onibi_token_byte(token) == '&') obj->has_class_intersection = 1;
+    if (in_class && previous && previous->kind == ONIBI_TOKEN_LITERAL &&
+        kind_code == ONIBI_TOKEN_LITERAL && previous->byte == '&' && token->byte == '&')
+      obj->has_class_intersection = 1;
     if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
       obj->has_subroutine = 1;
       obj->has_dynamic = 1;
@@ -3102,11 +3130,11 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
          construct only for diagnostics; compile failure selects MRI. */
       obj->has_conditional = 1;
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
-      if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
-      if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
-        if (onibi_ascii_property_token_p(token)) {
+      if (token->byte == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
+      if (token->byte == 'p' || token->byte == 'P') {
+        if (onibi_ascii_property_name_p(token->name)) {
           obj->has_ascii_property = 1;
-          VALUE property_name = onibi_hash_value_id(token, id_key_name);
+          VALUE property_name = token->name;
           ID property_id = NIL_P(property_name) ? 0 : rb_intern_str(property_name);
           if (!NIL_P(property_name) && property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
@@ -3114,16 +3142,17 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         }
         else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
       }
-      if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
+      if (token->byte == 'u') obj->has_unicode_escape = 1;
     } else if (kind_code == ONIBI_TOKEN_META_ESCAPE) {
       obj->has_meta_escape = 1;
       obj->has_dynamic = 1;
     } else if (kind_code == ONIBI_TOKEN_GROUP_START ||
-               (kind_code == ONIBI_TOKEN_QUANTIFIER && onibi_token_byte(token) == '{')) {
+               (kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{')) {
       obj->has_tagged = 1;
     }
     previous = token;
   }
+  onibi_feature_tokens_free(&feature_tokens);
 }
 
 static int onibi_ast_safe_multibyte_class(VALUE ast) {
