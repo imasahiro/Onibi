@@ -2879,9 +2879,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         if (onibi_ascii_property_token_p(token)) {
           obj->has_ascii_property = 1;
           VALUE property_name = onibi_hash_value(token, "name");
-          if (!NIL_P(property_name) &&
-              rb_intern_str(property_name) != id_prop_ascii &&
-              rb_intern_str(property_name) != id_prop_ascii_hex)
+          ID property_id = NIL_P(property_name) ? 0 : rb_intern_str(property_name);
+          if (!NIL_P(property_name) && property_id != id_prop_ascii && property_id != id_prop_ascii_hex)
             obj->has_unicode_property = 1;
           if (in_class) obj->has_unicode_property_in_class = 1;
         }
