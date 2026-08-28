@@ -229,6 +229,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
   end
 
+  def test_grapheme_and_property_escapes_cross_dynamic_boundary
+    grapheme = Onibi::Regexp.new("\\X")
+    property = Onibi::Regexp.new("\\p{L}")
+    refute grapheme.program_cached?
+    refute property.program_cached?
+    assert_equal :DYNAMIC, grapheme.pipeline[:interpreter]
+    assert_equal :DYNAMIC, property.pipeline[:interpreter]
+  end
+
   def test_character_class_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[a-z]+")
     assert_equal :RSEQ, regexp.pipeline[:vm]
