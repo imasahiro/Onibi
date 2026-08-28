@@ -140,7 +140,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -154,7 +154,8 @@ static int onibi_mri_compat_path_p(const onibi_regexp_t *obj) {
   return (obj->has_class_intersection && (obj->options & 1)) ||
     obj->has_ascii_property ||
     (obj->has_non_ascii_literal &&
-     ((obj->options & 1) || obj->has_inline_ignorecase));
+     ((obj->options & 1) || obj->has_inline_ignorecase)) ||
+    obj->has_anchor_repeat;
 }
 
 static void onibi_call_stack_reset(void) {
@@ -3147,6 +3148,37 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
   return 0;
 }
 
+static int onibi_ast_contains_anchor(VALUE ast) {
+  if (NIL_P(ast)) return 0;
+  if (RB_TYPE_P(ast, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(ast); i++)
+      if (onibi_ast_contains_anchor(rb_ary_entry(ast, i))) return 1;
+    return 0;
+  }
+  if (!RB_TYPE_P(ast, T_HASH)) return 0;
+  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("anchor"))) return 1;
+  const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+    if (onibi_ast_contains_anchor(onibi_hash_value(ast, keys[i]))) return 1;
+  return 0;
+}
+
+static int onibi_ast_anchor_repeat(VALUE ast) {
+  if (NIL_P(ast)) return 0;
+  if (RB_TYPE_P(ast, T_ARRAY)) {
+    for (long i = 0; i < RARRAY_LEN(ast); i++)
+      if (onibi_ast_anchor_repeat(rb_ary_entry(ast, i))) return 1;
+    return 0;
+  }
+  if (!RB_TYPE_P(ast, T_HASH)) return 0;
+  if (onibi_hash_value(ast, "type") == ID2SYM(rb_intern("quantifier")) &&
+      onibi_ast_contains_anchor(onibi_hash_value(ast, "atom"))) return 1;
+  const char *keys[] = {"body", "children", "branches", "atom", "yes", "no"};
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+    if (onibi_ast_anchor_repeat(onibi_hash_value(ast, keys[i]))) return 1;
+  return 0;
+}
+
 static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
   if (!RB_TYPE_P(ast, T_HASH)) return 1;
   ID type = onibi_symbol_value(ast, "type");
@@ -3306,6 +3338,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     if (!NIL_P(obj->parsed)) {
       VALUE parsed_ast = onibi_hash_value(obj->parsed, "ast");
       obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
+      obj->has_anchor_repeat = onibi_ast_anchor_repeat(parsed_ast);
       (void)onibi_ast_nullable(parsed_ast, &obj->has_nullable_capture);
     }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
