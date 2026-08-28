@@ -196,6 +196,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
+| RSeq class and literal payload indexes | No | C `OnibiValueVector` during lowering | Payload identity is used only for deduplication and blob indexing. Ruby arrays are not needed for this temporary index. |
 | fragment start/exit IDs | No | `OnibiIdVector` | IDs are numeric and ordered. Fragment composition, guard insertion, and GIR connections use C vectors. Ruby arrays are not used for fragment state IDs. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard lookup now uses an owned C vector of state IDs and Ruby action arrays. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |

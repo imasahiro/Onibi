@@ -161,6 +161,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes materializer, "rb_obj_freeze(edges)"
   end
 
+  def test_rseq_lowering_deduplicates_payloads_in_c_vectors
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "OnibiValueVector class_payloads"
+    assert_includes lowerer, "OnibiValueVector literal_payloads"
+    assert_includes lowerer, "onibi_value_vector_free(&class_payloads)"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]

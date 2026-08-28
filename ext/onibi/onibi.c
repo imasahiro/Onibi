@@ -1245,6 +1245,7 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; } OnibiGir
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
+typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1410,6 +1411,21 @@ static void onibi_gir_state_vector_free(OnibiGirStateVector *vector) {
 }
 static void onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector) {
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
+
+static void onibi_value_vector_init(OnibiValueVector *vector) {
+  vector->items = NULL; vector->count = vector->capacity = 0;
+}
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->items)) rb_raise(rb_eNoMemError, "RSeq value vector is too large");
+    vector->items = REALLOC_N(vector->items, VALUE, next); vector->capacity = next;
+  }
+  vector->items[vector->count++] = value;
+}
+static void onibi_value_vector_free(OnibiValueVector *vector) {
+  xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
@@ -2883,23 +2899,24 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (to < 0 || to >= state_count)
       rb_raise(rb_eArgError, "RSeq lowering received an invalid start edge");
   }
-  VALUE class_payloads = rb_ary_new();
+  OnibiValueVector class_payloads;
+  onibi_value_vector_init(&class_payloads);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     VALUE state = rb_ary_entry(states, i);
     if (NUM2UINT(onibi_hash_value_id(state, id_key_opcode)) != ONIBI_G_CLASS) continue;
     VALUE payload = onibi_hash_value_id(state, id_key_payload);
     int found = 0;
-    for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
-      VALUE prior = rb_ary_entry(class_payloads, j);
+    for (size_t j = 0; j < class_payloads.count; j++) {
+      VALUE prior = class_payloads.items[j];
       if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
           rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) {
         found = 1;
         break;
       }
     }
-    if (!found) rb_ary_push(class_payloads, payload);
+    if (!found) onibi_value_vector_push(&class_payloads, payload);
   }
-  uint32_t class_count = (uint32_t)RARRAY_LEN(class_payloads);
+  uint32_t class_count = (uint32_t)class_payloads.count;
   VALUE actions = rb_ary_new();
   VALUE r_edges = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
@@ -2967,23 +2984,24 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   int ignorecase = (options & 1) != 0;
   int multiline = (options & 4) != 0;
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
-  VALUE literal_payloads = rb_ary_new();
+  OnibiValueVector literal_payloads;
+  onibi_value_vector_init(&literal_payloads);
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     unsigned int opcode = NUM2UINT(onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode));
     if (opcode != ONIBI_G_CHAR) continue;
     VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
     int found = 0;
-    for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
-      VALUE prior = rb_ary_entry(literal_payloads, j);
+    for (size_t j = 0; j < literal_payloads.count; j++) {
+      VALUE prior = literal_payloads.items[j];
       if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
           rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) {
         found = 1;
         break;
       }
     }
-    if (!found) rb_ary_push(literal_payloads, payload);
+    if (!found) onibi_value_vector_push(&literal_payloads, payload);
   }
-  uint32_t literal_count = (uint32_t)RARRAY_LEN(literal_payloads);
+  uint32_t literal_count = (uint32_t)literal_payloads.count;
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
   uint64_t literal_desc_size = (uint64_t)literal_count * sizeof(OnibiLiteralDesc);
   uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
@@ -3133,8 +3151,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (opcode == ONIBI_G_CLASS) {
       VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
       class_index = 0;
-      for (long j = 0; j < RARRAY_LEN(class_payloads); j++) {
-        VALUE prior = rb_ary_entry(class_payloads, j);
+      for (size_t j = 0; j < class_payloads.count; j++) {
+        VALUE prior = class_payloads.items[j];
         if (rb_equal(onibi_hash_value_id(prior, id_key_bitmap), onibi_hash_value_id(payload, id_key_bitmap)) &&
             rb_equal(onibi_hash_value_id(prior, id_key_negated), onibi_hash_value_id(payload, id_key_negated))) break;
         class_index++;
@@ -3144,8 +3162,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     else if (opcode == ONIBI_G_CHAR) {
       VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
       literal_index = 0;
-      for (long j = 0; j < RARRAY_LEN(literal_payloads); j++) {
-        VALUE prior = rb_ary_entry(literal_payloads, j);
+      for (size_t j = 0; j < literal_payloads.count; j++) {
+        VALUE prior = literal_payloads.items[j];
         if (rb_equal(onibi_hash_value_id(prior, id_key_byte), onibi_hash_value_id(payload, id_key_byte)) &&
             rb_equal(onibi_hash_value_id(prior, id_key_ignorecase), onibi_hash_value_id(payload, id_key_ignorecase))) break;
         literal_index++;
@@ -3205,8 +3223,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
   unsigned char *class_data = (unsigned char *)(class_descs + class_count);
   class_index = 0;
-  for (long i = 0; i < RARRAY_LEN(class_payloads); i++) {
-    VALUE payload = rb_ary_entry(class_payloads, i);
+  for (size_t i = 0; i < class_payloads.count; i++) {
+    VALUE payload = class_payloads.items[i];
     VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
     class_descs[class_index].data_offset = (uint32_t)(physical.classes_offset + class_count * sizeof(OnibiClassDesc) + class_index * 32U);
     class_descs[class_index].data_length = 32;
@@ -3218,8 +3236,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   unsigned char *literal_data = (unsigned char *)(RSTRING_PTR(blob) + physical.literals_offset);
   OnibiLiteralDesc *literal_descs = (OnibiLiteralDesc *)(RSTRING_PTR(blob) + physical.descriptors_offset);
   literal_index = 0;
-  for (long i = 0; i < RARRAY_LEN(literal_payloads); i++) {
-    VALUE payload = rb_ary_entry(literal_payloads, i);
+  for (size_t i = 0; i < literal_payloads.count; i++) {
+    VALUE payload = literal_payloads.items[i];
     literal_descs[literal_index].data_offset = physical.literals_offset + literal_index;
     literal_descs[literal_index].data_length = 1;
     literal_descs[literal_index].flags = RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ? 1 : 0;
@@ -3250,6 +3268,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   /* Validate once, before publication.  Match calls use this immutable
      validated representation without repeating structural scans. */
   onibi_rseq_validate(result);
+  onibi_value_vector_free(&class_payloads);
+  onibi_value_vector_free(&literal_payloads);
   return result;
 }
 
