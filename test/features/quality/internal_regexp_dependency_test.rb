@@ -35,4 +35,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/\b(?:str|mem)?ncmp\s*\(/, source)
     refute_match(/\bstrcmp\s*\(/, source)
   end
+
+  def test_feature_token_record_has_no_ruby_value_fields
+    source = File.read(EXTENSION_SOURCE)
+    record = source[/typedef struct \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
+
+    refute_nil record
+    refute_match(/\bVALUE\b/, record)
+  end
 end
