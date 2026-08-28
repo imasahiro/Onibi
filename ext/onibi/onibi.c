@@ -1365,9 +1365,19 @@ static void onibi_gir_validate(VALUE graph) {
   VALUE subprograms = onibi_hash_value(graph, "subprograms");
   long capture_count = NUM2LONG(onibi_hash_value(graph, "capture_count"));
   long counter_count = NUM2LONG(onibi_hash_value(graph, "counter_count"));
+  long state_count = RARRAY_LEN(states);
   if (!RB_TYPE_P(subprograms, T_ARRAY) || !RTEST(rb_obj_frozen_p(subprograms)))
     rb_raise(eRegexpError, "GIR subprogram table is not immutable");
-  long state_count = RARRAY_LEN(states);
+  for (long i = 0; i < RARRAY_LEN(subprograms); i++) {
+    VALUE entry = rb_ary_entry(subprograms, i);
+    if (!RB_TYPE_P(entry, T_HASH)) rb_raise(eRegexpError, "GIR subprogram descriptor is not a hash");
+    VALUE entry_state = onibi_hash_value(entry, "entry");
+    VALUE accept_state = onibi_hash_value(entry, "accept");
+    if (NIL_P(entry_state) || NIL_P(accept_state) ||
+        NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= state_count ||
+        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= state_count)
+      rb_raise(eRegexpError, "GIR subprogram entry is out of range");
+  }
   VALUE accept_value = onibi_hash_value(graph, "accept");
   if (NIL_P(accept_value)) rb_raise(eRegexpError, "GIR accept state is missing");
   long accept = NUM2LONG(accept_value);
@@ -3848,6 +3858,15 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.classes_offset + (uint64_t)header.class_count * (sizeof(OnibiClassDesc) + 32U) > header.literals_offset ||
       header.descriptors_offset + (uint64_t)NUM2UINT(onibi_hash_value(semantic, "literal_count")) * sizeof(OnibiLiteralDesc) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
+  for (long i = 0; i < RARRAY_LEN(semantic_subprograms); i++) {
+    VALUE descriptor = rb_ary_entry(semantic_subprograms, i);
+    VALUE entry_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "entry") : Qnil;
+    VALUE accept_state = RB_TYPE_P(descriptor, T_HASH) ? onibi_hash_value(descriptor, "accept") : Qnil;
+    if (NIL_P(entry_state) || NIL_P(accept_state) ||
+        NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= (long)header.state_count ||
+        NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= (long)header.state_count)
+      rb_raise(rb_eArgError, "invalid RSeq subprogram descriptor");
+  }
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   for (uint32_t i = 0; i < header.state_count; i++) {
     VALUE semantic_state = rb_ary_entry(semantic_states, i);
