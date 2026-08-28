@@ -1375,8 +1375,12 @@ static const OnibiGuardEntry *onibi_guard_vector_find_entry(const OnibiGuardVect
 }
 
 static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
+  long incoming = RARRAY_LEN(actions);
+  if ((uint64_t)incoming > UINT32_MAX) rb_raise(rb_eArgError, "GIR guard action list is too large");
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
+      if (vector->entries[i].action_count > UINT32_MAX - (uint32_t)incoming)
+        rb_raise(rb_eArgError, "GIR guard action list is too large");
       onibi_value_vector_append_array(&vector->entries[i].actions, actions, roots);
       vector->entries[i].action_count = (uint32_t)vector->entries[i].actions.count;
       return;
