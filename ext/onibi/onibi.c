@@ -12,7 +12,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 
 typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; } onibi_regexp_t;
-typedef struct { VALUE source; } onibi_lexer_t;
+typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
 static void onibi_mark(void *ptr) {
@@ -32,9 +32,15 @@ static const rb_data_type_t onibi_type = {
 };
 
 static void onibi_lexer_free(void *ptr) { xfree(ptr); }
+static void onibi_lexer_mark(void *ptr) {
+  onibi_lexer_t *obj = (onibi_lexer_t *)ptr;
+  if (!obj) return;
+  rb_gc_mark(obj->source);
+  rb_gc_mark(obj->tokens);
+}
 static size_t onibi_lexer_memsize(const void *ptr) { return ptr ? sizeof(onibi_lexer_t) : 0; }
 static const rb_data_type_t onibi_lexer_type = {
-  "Onibi::Lexer", { 0, onibi_lexer_free, onibi_lexer_memsize }, 0, 0,
+  "Onibi::Lexer", { onibi_lexer_mark, onibi_lexer_free, onibi_lexer_memsize }, 0, 0,
   RUBY_TYPED_FREE_IMMEDIATELY
 };
 
@@ -128,6 +134,7 @@ static VALUE onibi_lexer_initialize(VALUE self, VALUE source) {
   source = StringValue(source);
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
+  obj->tokens = onibi_tokenize(obj->source);
   rb_obj_freeze(self);
   return self;
 }
@@ -135,7 +142,7 @@ static VALUE onibi_lexer_initialize(VALUE self, VALUE source) {
 static VALUE onibi_lexer_tokens(VALUE self) {
   onibi_lexer_t *obj;
   TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
-  return onibi_tokenize(obj->source);
+  return obj->tokens;
 }
 
 static ID onibi_token_kind(VALUE token) {

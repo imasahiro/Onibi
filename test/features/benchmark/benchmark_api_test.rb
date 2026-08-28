@@ -231,6 +231,7 @@ class BenchmarkApiTest < Minitest::Test
     assert_predicate lexer, :frozen?
     assert_predicate tokens, :frozen?
     assert tokens.all?(&:frozen?)
+    assert_same tokens, lexer.tokens
   end
 
   def test_lexer_keeps_character_class_operators_inside_the_class
