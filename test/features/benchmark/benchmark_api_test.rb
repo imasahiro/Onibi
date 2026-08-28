@@ -231,6 +231,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
   end
 
+  def test_dynamic_fallback_match_result_preserves_capture_boundaries
+    regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
+    expected = ::Regexp.new("(a)?(?(1)b|c)").match("c")
+    result = regexp.vm_match_result("c")
+
+    assert_equal :MRI, regexp.pipeline[:vm]
+    assert_equal expected.offset(0), [result[:start], result[:end]]
+    refute result.key?(:captures)
+  end
+
   def test_grapheme_and_property_escapes_cross_dynamic_boundary
     grapheme = Onibi::Regexp.new("\\X")
     property = Onibi::Regexp.new("\\p{L}")
