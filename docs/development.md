@@ -174,7 +174,7 @@ The remaining compiler containers have three separate roles:
 | fragment `starts`/`exits` | Ordered state-ID sets | Partial; final connections use a C vector, internal construction remains Ruby-backed |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
 | capture and exit guards | State-ID lookup during edge creation | C guard vectors; action lists remain Ruby-backed |
-| capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. |
+| capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | Last; convert at the RSeq boundary only |
 
 Detailed ownership review:

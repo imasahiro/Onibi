@@ -1241,7 +1241,7 @@ typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
@@ -1278,12 +1278,13 @@ static VALUE onibi_guard_vector_find(const OnibiGuardVector *vector, OnibiStateI
   return Qnil;
 }
 
-static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions) {
+static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
       VALUE merged = rb_ary_dup(vector->entries[i].actions);
       onibi_append_values(merged, actions);
       vector->entries[i].actions = merged;
+      rb_ary_push(roots, merged);
       return;
     }
   }
@@ -1295,6 +1296,7 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
   }
   vector->entries[vector->count].state = state;
   vector->entries[vector->count].actions = rb_ary_dup(actions);
+  rb_ary_push(roots, vector->entries[vector->count].actions);
   vector->count++;
 }
 
@@ -1316,10 +1318,12 @@ static VALUE onibi_value_map_find(const OnibiValueMap *map, VALUE key) {
   return Qnil;
 }
 
-static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value) {
+static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALUE roots) {
   for (size_t i = 0; i < map->count; i++) {
     if (onibi_value_map_key_equal(map->entries[i].key, key)) {
       map->entries[i].value = value;
+      rb_ary_push(roots, key);
+      rb_ary_push(roots, value);
       return;
     }
   }
@@ -1331,6 +1335,8 @@ static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value) {
   }
   map->entries[map->count].key = key;
   map->entries[map->count].value = value;
+  rb_ary_push(roots, key);
+  rb_ary_push(roots, value);
   map->count++;
 }
 
@@ -1685,7 +1691,7 @@ static void onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
   OnibiIdVector ids;
   onibi_id_vector_from_array(&ids, starts);
   for (size_t i = 0; i < ids.count; i++) {
-    onibi_guard_vector_add(&builder->capture_guards, ids.items[i], guard);
+    onibi_guard_vector_add(&builder->capture_guards, ids.items[i], guard, builder->map_roots);
   }
   onibi_id_vector_free(&ids);
 }
@@ -1695,7 +1701,7 @@ static void onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
   OnibiIdVector ids;
   onibi_id_vector_from_array(&ids, exits);
   for (size_t i = 0; i < ids.count; i++) {
-    onibi_guard_vector_add(&builder->exit_guards, ids.items[i], actions);
+    onibi_guard_vector_add(&builder->exit_guards, ids.items[i], actions, builder->map_roots);
   }
   onibi_id_vector_free(&ids);
 }
@@ -1779,21 +1785,21 @@ static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long
     long id;
     if (NIL_P(id_value)) {
       id = (*next_capture)++;
-      onibi_value_map_set(&builder->capture_ids, start, LONG2NUM(id));
+      onibi_value_map_set(&builder->capture_ids, start, LONG2NUM(id), builder->map_roots);
     } else id = NUM2LONG(id_value);
     VALUE key = rb_str_new_cstr("");
     char number[32];
     snprintf(number, sizeof(number), "%ld", id + 1);
     key = rb_str_new_cstr(number);
-    onibi_value_map_set(&builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body));
+    onibi_value_map_set(&builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
     VALUE name = onibi_hash_value_id(ast, id_key_name);
     if (!NIL_P(name)) {
       if (!NIL_P(onibi_value_map_find(&builder->capture_names, name)))
         rb_raise(eRegexpError, "duplicate named capture requires compatibility execution");
       /* MRI resolves a duplicate named backreference to the first matching
          group definition.  Keep the earliest slot in the compile index. */
-      onibi_value_map_set(&builder->capture_names, name, LONG2NUM(id));
-      onibi_value_map_set(&builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body));
+      onibi_value_map_set(&builder->capture_names, name, LONG2NUM(id), builder->map_roots);
+      onibi_value_map_set(&builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
     }
     onibi_collect_captures(onibi_hash_value_id(ast, id_key_body), builder, next_capture);
     return;
@@ -1811,8 +1817,8 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
                                            onibi_gir_builder_t *builder) {
   long id = RARRAY_LEN(builder->subprograms);
   rb_ary_push(builder->subprograms, Qnil); /* reserve the recursive target */
-  onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id));
-  onibi_value_map_set(&builder->active_subroutines, name, Qtrue);
+  onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id), builder->map_roots);
+  onibi_value_map_set(&builder->active_subroutines, name, Qtrue, builder->map_roots);
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   onibi_value_map_delete(&builder->active_subroutines, name);
   VALUE capture_id_value = onibi_value_map_find(&builder->capture_names, name);
@@ -2494,7 +2500,7 @@ skip_utf8_range_expansion:
     long capture_id;
     if (NIL_P(capture_id_value)) {
       capture_id = builder->capture_count++;
-      onibi_value_map_set(&builder->capture_ids, capture_ast_key, LONG2NUM(capture_id));
+      onibi_value_map_set(&builder->capture_ids, capture_ast_key, LONG2NUM(capture_id), builder->map_roots);
     } else capture_id = NUM2LONG(capture_id_value);
     VALUE capture_body = onibi_hash_value_id(ast, id_key_body);
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
@@ -2510,11 +2516,11 @@ skip_utf8_range_expansion:
       rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
-    onibi_value_map_set(&builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body));
+    onibi_value_map_set(&builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body), builder->map_roots);
     if (!NIL_P(capture_name)) {
       if (NIL_P(onibi_value_map_find(&builder->capture_names, capture_name)))
-        onibi_value_map_set(&builder->capture_names, capture_name, LONG2NUM(capture_id));
-      onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body));
+        onibi_value_map_set(&builder->capture_names, capture_name, LONG2NUM(capture_id), builder->map_roots);
+      onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
     }
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
@@ -2634,6 +2640,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_value_map_init(&builder.active_subroutines);
   builder.subprograms = subprograms;
   onibi_value_map_init(&builder.subprogram_ids);
+  builder.map_roots = rb_ary_new();
   onibi_guard_vector_init(&builder.capture_guards);
   onibi_guard_vector_init(&builder.exit_guards);
   builder.ignorecase = ignorecase;
