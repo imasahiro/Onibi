@@ -376,6 +376,12 @@ class BenchmarkApiTest < Minitest::Test
     refute non_digit.vm_match?("7")
   end
 
+  def test_extended_option_stays_on_mri_until_whitespace_lowering_exists
+    regexp = Onibi::Regexp.new("a b", 2)
+    refute regexp.program_cached?
+    assert regexp.match?("ab")
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")

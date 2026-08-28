@@ -1289,7 +1289,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = rb_ary_entry(program, 2);
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) || strstr(RSTRING_PTR(source), "&&") != NULL ||
+    if (!onibi_ascii_pattern(source) || (opts & (2 | 16 | 32)) || strstr(RSTRING_PTR(source), "&&") != NULL ||
         strstr(RSTRING_PTR(source), "\\g<") != NULL) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
