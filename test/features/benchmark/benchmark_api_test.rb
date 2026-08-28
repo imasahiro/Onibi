@@ -473,6 +473,14 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("a", "i").vm_match?("A")
   end
 
+  def test_constructor_publishes_compiled_program_independent_of_source_object
+    pattern = String.new("abc")
+    regexp = Onibi::Regexp.new(pattern)
+    pattern.replace("xyz")
+    assert regexp.vm_match?("abc")
+    refute regexp.vm_match?("xyz")
+  end
+
   def test_parser_preserves_option_scope_metadata
     tokens = Onibi::Lexer.new("(?im:a)").tokens
     assert_equal :option_scope_start, tokens.first[:kind]
