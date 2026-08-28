@@ -133,8 +133,15 @@ Do not restore the Ruby matcher as production code.
 
 ## Current architecture audit
 
-The C extension now defines `Onibi::Lexer`, `Onibi::Parser`, `Onibi::Compiler`,
-`Onibi::RSeq`, and `Onibi::VM`.
+Only `Onibi::Regexp` and its MRI-compatible support classes are public. Lexer,
+parser, compiler, RSeq, and VM objects are anonymous C implementation objects.
+They have no Ruby constants and are not part of the public API.
+
+Token, AST, and GIR Ruby containers are compile-time temporaries. The Regexp
+object releases them after initialization. RSeq physical data uses typed C
+structures and an immutable blob. The regular VM stores repeat counters in a
+fixed C array. Captures and tag history remain Ruby `VALUE`s only where the
+GC and MatchData boundary requires them.
 
 The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
