@@ -1004,7 +1004,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE active_subroutines; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1203,6 +1203,8 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
+  if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
@@ -1226,6 +1228,8 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
+  if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
@@ -1279,6 +1283,16 @@ static void onibi_add_capture_guard(onibi_gir_builder_t *builder, VALUE starts, 
     VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
     onibi_append_values(merged, guard);
     rb_hash_aset(builder->capture_guards, key, merged);
+  }
+}
+
+static void onibi_add_exit_guard(onibi_gir_builder_t *builder, VALUE exits, VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(exits); i++) {
+    VALUE key = rb_ary_entry(exits, i);
+    VALUE prior = rb_hash_aref(builder->exit_guards, key);
+    VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
+    onibi_append_values(merged, actions);
+    rb_hash_aset(builder->exit_guards, key, merged);
   }
 }
 
@@ -1761,8 +1775,6 @@ skip_utf8_range_expansion:
     if (capture_id < 0) rb_raise(eRegexpError, "conditional capture is invalid");
     onibi_fragment_t yes = onibi_compile_node(onibi_hash_value(ast, "yes"), builder);
     onibi_fragment_t no = onibi_compile_node(onibi_hash_value(ast, "no"), builder);
-    if (RARRAY_LEN(yes.pending_actions) > 0 || RARRAY_LEN(no.pending_actions) > 0)
-      rb_raise(eRegexpError, "conditional branch actions are not supported");
     VALUE yes_guard = rb_ary_new();
     rb_ary_push(yes_guard, onibi_capture_test_action(capture_id, 1));
     onibi_append_values(yes_guard, yes.start_actions);
@@ -1771,6 +1783,8 @@ skip_utf8_range_expansion:
     onibi_append_values(no_guard, no.start_actions);
     onibi_add_capture_guard(builder, yes.starts, yes_guard);
     onibi_add_capture_guard(builder, no.starts, no_guard);
+    onibi_add_exit_guard(builder, yes.exits, yes.pending_actions);
+    onibi_add_exit_guard(builder, no.exits, no.pending_actions);
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_dup(yes.starts);
     onibi_append_values(result.starts, no.starts);
@@ -1982,7 +1996,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline, 0 };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline, 0 };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);

@@ -257,6 +257,15 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.vm_match?("ac")
   end
 
+  def test_conditional_branch_capture_actions_follow_the_guard
+    regexp = Onibi::Regexp.new("(a)(?(1)(b)|c)")
+    result = regexp.vm_match_result("ab")
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert_equal({ start: 0, end: 1 }, result[:captures][1])
+    assert_equal({ start: 1, end: 2 }, result[:captures][2])
+  end
+
   def test_grapheme_and_property_escapes_cross_dynamic_boundary
     grapheme = Onibi::Regexp.new("\\X")
     property = Onibi::Regexp.new("\\p{L}")
