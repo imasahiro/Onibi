@@ -676,6 +676,10 @@ static ID onibi_token_kind(VALUE token) {
   return SYM2ID(rb_hash_aref(token, ID2SYM(id_key_kind)));
 }
 
+static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
+  return (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
+}
+
 static long onibi_token_byte(VALUE token) {
   return NUM2LONG(rb_hash_aref(token, ID2SYM(id_key_byte)));
 }
@@ -1015,7 +1019,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   VALUE children = rb_ary_new();
   for (long i = begin; i < end;) {
     VALUE node = onibi_parse_atom(tokens, &i, end);
-    if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+    if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
       VALUE modifier = rb_ary_entry(tokens, i);
       long marker = onibi_token_byte(modifier);
       if (marker == '*' || marker == '+' || marker == '?') {
@@ -1026,7 +1030,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         VALUE max = marker == '?' ? LONG2NUM(1) : Qnil;
         i++;
         int greedy = 1, possessive = 0;
-        if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+        if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
           long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
           if (suffix == '?') { greedy = 0; i++; }
           else if (suffix == '+') { possessive = 1; i++; }
@@ -1107,7 +1111,7 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         rb_hash_aset(quantifier, ID2SYM(rb_intern("max")), has_max ? LONG2NUM(max_value) : Qnil);
         i = close + 1;
         int greedy = 1, possessive = 0;
-        if (i < end && onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("quantifier")) {
+        if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
           long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
           if (suffix == '?') { greedy = 0; i++; }
           else if (suffix == '+') { possessive = 1; i++; }
