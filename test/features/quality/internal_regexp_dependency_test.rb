@@ -42,6 +42,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/rb_hash_(?:aref|aset)\([^\n]*rb_intern\s*\(/, source)
   end
 
+  def test_vm_position_assertions_use_numeric_subtype_codes
+    source = File.read(EXTENSION_SOURCE)
+    vm = source[/static int onibi_vm_actions_ok\(.*?\n}\n/m]
+
+    refute_nil vm
+    assert_includes vm, "id_key_assert_kind"
+    assert_includes vm, "ONIBI_RAP_LOOKAHEAD"
+    assert_includes vm, "ONIBI_RAP_LOOKBEHIND"
+  end
+
   def test_feature_token_record_has_no_ruby_value_fields
     source = File.read(EXTENSION_SOURCE)
     record = source[/typedef struct(?: OnibiFeatureToken)? \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
