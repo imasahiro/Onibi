@@ -398,6 +398,9 @@ class BenchmarkApiTest < Minitest::Test
   def test_unsupported_subroutine_calls_are_classified_by_tokens
     tokens = Onibi::Lexer.new("\\g<name>").tokens
     assert_equal :subroutine, tokens.first[:kind]
+    ast = Onibi::Parser.parse("\\g<name>")[:ast]
+    assert_equal :subroutine, ast[:children].first[:type]
+    assert_equal "name", ast[:children].first[:name]
     assert_raises(RegexpError) { Onibi::Regexp.new("\\g<name>") }
   end
 

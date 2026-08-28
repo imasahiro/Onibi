@@ -174,6 +174,7 @@ static VALUE onibi_tokenize(VALUE src) {
       if (close < RSTRING_LEN(src)) {
         kind = "subroutine";
         byte = 'g';
+        backref_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
       }
     }
@@ -397,6 +398,15 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
                  rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
     rb_obj_freeze(node);
     *index = close + 1;
+    return node;
+  }
+  if (kind == rb_intern("subroutine")) {
+    VALUE node = onibi_ast_node("subroutine", token);
+    VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
+    if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
+    rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
+    rb_obj_freeze(node);
+    *index = *index + 1;
     return node;
   }
   VALUE node = NIL_P(token) ? Qnil :
@@ -956,6 +966,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_ary_push(result.starts, LONG2NUM(id)); rb_ary_push(result.exits, LONG2NUM(id));
     return result;
   }
+  if (type == ID2SYM(rb_intern("subroutine")))
+    rb_raise(eRegexpError, "subroutine calls require the dynamic interpreter");
   if (type == ID2SYM(rb_intern("anchor")))
   {
     onibi_fragment_t result = onibi_fragment_empty();
