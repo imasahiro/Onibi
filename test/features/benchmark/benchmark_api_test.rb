@@ -56,6 +56,21 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal 1, header[:class_count]
   end
 
+  def test_rseq_materializes_literal_and_class_descriptor_sections
+    literal = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+    class_program = Onibi::Regexp.new("[a-z]").pipeline[:rseq_program]
+    [literal, class_program].each do |program|
+      header = program[:header]
+      %i[states_offset edges_offset actions_offset classes_offset literals_offset descriptors_offset].each do |key|
+        assert_operator header.fetch(key), :>, 0
+        assert_equal 0, header.fetch(key) % 4
+      end
+      assert_equal header[:blob_size], program[:blob].bytesize
+    end
+    assert_equal 3, literal[:header][:literal_count]
+    assert_equal 1, class_program[:header][:class_count]
+  end
+
   def test_literal_pipeline_exposes_compiler_stages
     pipeline = Onibi::Regexp.new("abc").pipeline
     assert_equal(%i[literal literal literal], pipeline[:tokens].map { |token| token[:kind] })

@@ -79,6 +79,19 @@ typedef struct {
   uint32_t action_offset;
 } OnibiREdge;
 
+typedef struct {
+  uint32_t data_offset;
+  uint16_t data_length;
+  uint8_t kind;
+  uint8_t flags;
+} OnibiClassDesc;
+
+typedef struct {
+  uint32_t data_offset;
+  uint16_t data_length;
+  uint16_t flags;
+} OnibiLiteralDesc;
+
 #define ONIBI_ACCEPT_STATE UINT32_MAX
 #define ONIBI_RSEQ_MAGIC UINT32_C(0x4f4e5251) /* "ONRQ" */
 #define ONIBI_RSEQ_VERSION UINT16_C(1)
@@ -112,5 +125,7 @@ typedef struct {
 typedef char onibi_rstate_size_must_be_12[(sizeof(OnibiRState) == 12) ? 1 : -1];
 typedef char onibi_redge_size_must_be_8[(sizeof(OnibiREdge) == 8) ? 1 : -1];
 typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
+typedef char onibi_class_desc_size_must_be_8[(sizeof(OnibiClassDesc) == 8) ? 1 : -1];
+typedef char onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
 
 #endif

@@ -816,6 +816,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (to < 0 || to >= state_count)
       rb_raise(rb_eArgError, "RSeq lowering received an invalid start edge");
   }
+  uint32_t class_count = 0;
+  for (long i = 0; i < RARRAY_LEN(states); i++)
+    if (SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op")) == rb_intern("G_CLASS")) class_count++;
   VALUE actions = rb_ary_new();
   VALUE r_edges = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
@@ -858,17 +861,25 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(options, i), rb_str_new_cstr("multiline"))) multiline = 1;
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
+  uint32_t literal_count = 0;
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
+    if (op == rb_intern("G_CHAR")) literal_count++;
+  }
+  uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
+  uint64_t literal_desc_size = (uint64_t)literal_count * sizeof(OnibiLiteralDesc);
+  uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
   uint64_t physical_size = sizeof(OnibiRSeqHeader) +
     (uint64_t)sizeof(OnibiRState) * (uint64_t)RARRAY_LEN(states) +
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
-    (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions);
+    (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions) +
+    class_section_size + literal_desc_size + literal_data_size;
   if (RARRAY_LEN(states) > UINT32_MAX || physical_edge_count > UINT32_MAX ||
       RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
-  uint32_t features = 0, class_count = 0, capture_count = 0, counter_count = 0;
+  uint32_t features = 0, capture_count = 0, counter_count = 0;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
-    if (op == rb_intern("G_CLASS")) class_count++;
     if (op == rb_intern("G_BACKREF")) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
@@ -885,6 +896,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
   rb_hash_aset(header, ID2SYM(rb_intern("capture_count")), UINT2NUM(capture_count));
   rb_hash_aset(header, ID2SYM(rb_intern("counter_count")), UINT2NUM(counter_count));
+  rb_hash_aset(header, ID2SYM(rb_intern("literal_count")), UINT2NUM(literal_count));
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
   rb_hash_aset(header, ID2SYM(rb_intern("ignorecase")), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(rb_intern("multiline")), multiline ? Qtrue : Qfalse);
@@ -943,11 +955,25 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   offset += (uint32_t)(sizeof(OnibiREdge) * physical.edge_count);
   physical.actions_offset = offset;
   offset += (uint32_t)(sizeof(OnibiRAction) * RARRAY_LEN(actions));
+  physical.classes_offset = offset;
+  offset += (uint32_t)class_section_size;
+  physical.literals_offset = offset;
+  offset += (uint32_t)literal_data_size;
+  physical.descriptors_offset = offset;
+  offset += (uint32_t)literal_desc_size;
   physical.blob_size = offset;
+  rb_hash_aset(header, ID2SYM(rb_intern("states_offset")), UINT2NUM(physical.states_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("edges_offset")), UINT2NUM(physical.edges_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("actions_offset")), UINT2NUM(physical.actions_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("classes_offset")), UINT2NUM(physical.classes_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("literals_offset")), UINT2NUM(physical.literals_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("descriptors_offset")), UINT2NUM(physical.descriptors_offset));
+  rb_hash_aset(header, ID2SYM(rb_intern("blob_size")), UINT2NUM(physical.blob_size));
   VALUE blob = rb_str_new(NULL, offset);
   memset(RSTRING_PTR(blob), 0, offset);
   memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
   OnibiRState *physical_states = (OnibiRState *)(RSTRING_PTR(blob) + physical.states_offset);
+  uint32_t class_index = 0, literal_index = 0;
   for (long i = 0; i < RARRAY_LEN(states); i++) {
     VALUE state = rb_ary_entry(states, i);
     ID op = SYM2ID(onibi_hash_value(state, "op"));
@@ -964,6 +990,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
+    if (op == rb_intern("G_CLASS")) physical_states[i].payload = class_index++;
+    else if (op == rb_intern("G_CHAR")) physical_states[i].payload = literal_index++;
   }
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
   for (long i = 0; i < RARRAY_LEN(r_edges); i++) {
@@ -999,6 +1027,34 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
     VALUE value = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("value")));
     if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
+  }
+  OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
+  unsigned char *class_data = (unsigned char *)(class_descs + class_count);
+  class_index = 0;
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    VALUE state = rb_ary_entry(states, i);
+    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CLASS")) continue;
+    VALUE payload = onibi_hash_value(state, "payload");
+    VALUE bitmap = onibi_hash_value(payload, "bitmap");
+    class_descs[class_index].data_offset = (uint32_t)(physical.classes_offset + class_count * sizeof(OnibiClassDesc) + class_index * 32U);
+    class_descs[class_index].data_length = 32;
+    class_descs[class_index].kind = 0;
+    class_descs[class_index].flags = RTEST(onibi_hash_value(payload, "negated")) ? 1 : 0;
+    if (!NIL_P(bitmap) && RSTRING_LEN(bitmap) == 32) memcpy(class_data + class_index * 32U, RSTRING_PTR(bitmap), 32);
+    class_index++;
+  }
+  unsigned char *literal_data = (unsigned char *)(RSTRING_PTR(blob) + physical.literals_offset);
+  OnibiLiteralDesc *literal_descs = (OnibiLiteralDesc *)(RSTRING_PTR(blob) + physical.descriptors_offset);
+  literal_index = 0;
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    VALUE state = rb_ary_entry(states, i);
+    if (SYM2ID(onibi_hash_value(state, "op")) != rb_intern("G_CHAR")) continue;
+    VALUE payload = onibi_hash_value(state, "payload");
+    literal_descs[literal_index].data_offset = physical.literals_offset + literal_index;
+    literal_descs[literal_index].data_length = 1;
+    literal_descs[literal_index].flags = RTEST(onibi_hash_value(payload, "ignorecase")) ? 1 : 0;
+    literal_data[literal_index] = (unsigned char)NUM2INT(onibi_hash_value(payload, "byte"));
+    literal_index++;
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
@@ -1659,7 +1715,14 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.states_offset + header.state_count * sizeof(OnibiRState) > header.edges_offset ||
       header.edges_offset + header.edge_count * sizeof(OnibiREdge) > header.actions_offset ||
       header.start_edge_count > header.edge_count ||
-      header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size)
+      header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size ||
+      (header.classes_offset & 3U) != 0 || (header.literals_offset & 3U) != 0 ||
+      (header.descriptors_offset & 3U) != 0 ||
+      (header.classes_offset && header.classes_offset < header.actions_offset) ||
+      (header.literals_offset && header.literals_offset < header.classes_offset) ||
+      (header.descriptors_offset && header.descriptors_offset < header.literals_offset) ||
+      header.classes_offset > header.blob_size || header.literals_offset > header.blob_size ||
+      header.descriptors_offset > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
 }
 
