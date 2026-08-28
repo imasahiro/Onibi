@@ -460,7 +460,9 @@ class BenchmarkApiTest < Minitest::Test
     ast = Onibi::Parser.parse("prefix\\Ksuffix")[:ast]
 
     assert_equal :match_reset, ast[:children][6][:type]
-    refute Onibi::Regexp.new("prefix\\Ksuffix").program_cached?
+    regexp = Onibi::Regexp.new("prefix\\Ksuffix")
+    assert regexp.program_cached?
+    assert_equal({ start: 8, end: 14 }, regexp.vm_match_result("xxprefixsuffixzz"))
   end
 
   def test_capture_tokens_and_execution_class
