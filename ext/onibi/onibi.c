@@ -210,7 +210,13 @@ static ID onibi_token_kind_id(OnibiTokenKind kind) {
     "meta_escape", "anchor", "match_reset", "escape", "class_start", "class_end",
     "class_range", "class_negate", "alternation", "group_end", "quantifier", "wildcard"
   };
-  return rb_intern(names[kind]);
+  static ID ids[sizeof(names) / sizeof(names[0])];
+  static int initialized = 0;
+  if (!initialized) {
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) ids[i] = rb_intern(names[i]);
+    initialized = 1;
+  }
+  return ids[kind];
 }
 
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
