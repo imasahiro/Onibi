@@ -1118,6 +1118,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("features")), UINT2NUM(features));
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
   rb_hash_aset(header, ID2SYM(rb_intern("capture_count")), UINT2NUM(capture_count));
+  rb_hash_aset(header, ID2SYM(rb_intern("semantic_capture_count")), UINT2NUM(capture_count));
+  rb_hash_aset(header, ID2SYM(rb_intern("subprogram_count")), UINT2NUM(0));
   rb_hash_aset(header, ID2SYM(rb_intern("counter_count")), UINT2NUM(counter_count));
   rb_hash_aset(header, ID2SYM(rb_intern("literal_count")), UINT2NUM(literal_count));
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
@@ -2017,6 +2019,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       NUM2UINT(onibi_hash_value(semantic, "class_count")) != header.class_count ||
       NUM2UINT(onibi_hash_value(semantic, "capture_count")) != header.capture_count ||
       NUM2UINT(onibi_hash_value(semantic, "counter_count")) != header.counter_count ||
+      NUM2UINT(onibi_hash_value(semantic, "subprogram_count")) != header.subprogram_count ||
       NUM2UINT(onibi_hash_value(semantic, "start_edge_count")) != header.start_edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "blob_size")) != header.blob_size)
     rb_raise(rb_eArgError, "RSeq semantic and physical headers disagree");
