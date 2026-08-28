@@ -3211,7 +3211,7 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   return (((unsigned char *)RSTRING_PTR(bitmap))[byte >> 3] & (1U << (byte & 7))) != 0;
 }
 
-static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
+static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
   rb_thread_check_ints();
   onibi_check_deadline();
   VALUE key = rb_ary_new_from_args(3, LONG2NUM(state_id), LONG2NUM(pos), counters);
@@ -3232,21 +3232,21 @@ static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, lo
     if (!hit) return 0;
     pos++;
   }
-  for (long i = 0; i < RARRAY_LEN(edges); i++) {
-    VALUE edge = rb_ary_entry(edges, i);
-    if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
+  VALUE state_edges = rb_ary_entry(outgoing, state_id);
+  for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
+    VALUE edge = rb_ary_entry(state_edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE next_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters)) continue;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
-    if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited, next_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited, next_counters, matched_end)) return 1;
   }
   return 0;
 }
 
 static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end) {
   VALUE states = onibi_hash_value(graph, "states");
-  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE outgoing = onibi_hash_value(graph, "outgoing");
   VALUE starts = onibi_hash_value(graph, "start_edges");
   VALUE visited = rb_hash_new();
   VALUE counters = rb_hash_new();
@@ -3256,7 +3256,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
     VALUE branch_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters)) continue;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
-    if (onibi_vm_walk(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited, branch_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited, branch_counters, matched_end)) return 1;
   }
   return 0;
 }
@@ -3305,7 +3305,7 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
   return tags;
 }
 
-static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long state_id, long pos,
+static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos,
                                   VALUE visited, VALUE captures, VALUE counters, VALUE tags, long reported_start,
                                   long *matched_end, long *matched_start, VALUE *matched_captures) {
   rb_thread_check_ints();
@@ -3354,9 +3354,9 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
       pos++;
     }
   }
-  for (long i = 0; i < RARRAY_LEN(edges); i++) {
-    VALUE edge = rb_ary_entry(edges, i);
-    if (NUM2LONG(onibi_hash_value(edge, "from")) != state_id) continue;
+  VALUE state_edges = rb_ary_entry(outgoing, state_id);
+  for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
+    VALUE edge = rb_ary_entry(state_edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE next_counters = rb_hash_dup(counters);
     if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters)) continue;
@@ -3365,7 +3365,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
     long next_reported_start = reported_start;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
     next_tags = onibi_apply_capture_actions(edge_actions, pos, next_captures, next_tags, &next_reported_start);
-    if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
+    if (onibi_vm_walk_captures(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
                                visited, next_captures, next_counters, next_tags, next_reported_start,
                                matched_end, matched_start, matched_captures)) return 1;
   }
@@ -3375,7 +3375,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
 static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end,
                                     long *matched_start, VALUE *matched_captures) {
   VALUE states = onibi_hash_value(graph, "states");
-  VALUE edges = onibi_hash_value(graph, "edges");
+  VALUE outgoing = onibi_hash_value(graph, "outgoing");
   VALUE starts = onibi_hash_value(graph, "start_edges");
   VALUE visited = rb_hash_new();
   VALUE captures = rb_hash_new();
@@ -3390,7 +3390,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
     long reported_start = start;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
     VALUE branch_tags = onibi_apply_capture_actions(edge_actions, start, branch_captures, tags, &reported_start);
-    if (onibi_vm_walk_captures(states, edges, str, NUM2LONG(onibi_hash_value(edge, "to")), start,
+    if (onibi_vm_walk_captures(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), start,
                                visited, branch_captures, branch_counters, branch_tags, reported_start,
                                matched_end, matched_start, matched_captures)) return 1;
   }
@@ -3704,6 +3704,8 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   VALUE states = rb_ary_new_capa(RARRAY_LEN(semantic_states));
   VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
   VALUE start_edges = rb_ary_new_capa(RARRAY_LEN(semantic_start_edges));
+  VALUE outgoing = rb_ary_new_capa(RARRAY_LEN(semantic_states));
+  for (long i = 0; i < RARRAY_LEN(semantic_states); i++) rb_ary_push(outgoing, rb_ary_new());
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   const OnibiRState *physical_states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
@@ -3734,6 +3736,8 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     }
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
     rb_ary_push(edges, edge);
+    long from = NUM2LONG(onibi_hash_value(edge, "from"));
+    if (from >= 0 && from < RARRAY_LEN(outgoing)) rb_ary_push(rb_ary_entry(outgoing, from), edge);
   }
   for (long i = 0; i < RARRAY_LEN(semantic_start_edges); i++) {
     VALUE edge = rb_hash_dup(rb_ary_entry(semantic_start_edges, i));
@@ -3754,6 +3758,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
+  rb_hash_aset(graph, ID2SYM(rb_intern("outgoing")), outgoing);
   return graph;
 }
 
@@ -3872,11 +3877,12 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (graph_ok) {
     onibi_set_deadline(obj->timeout_seconds);
     VALUE rseq = obj->rseq;
+    VALUE graph = onibi_rseq_physical_graph(rseq);
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
       long reported_start = pos;
       VALUE capture_state = rb_hash_new();
-      if (!onibi_gir_match_captures(rseq, str, pos, &end, &reported_start, &capture_state)) continue;
+      if (!onibi_gir_match_captures(graph, str, pos, &end, &reported_start, &capture_state)) continue;
       VALUE result = rb_hash_new();
       rb_hash_aset(result, ID2SYM(rb_intern("start")), LONG2NUM(reported_start));
       rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(end));
