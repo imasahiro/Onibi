@@ -1431,7 +1431,6 @@ static void onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALU
   for (size_t i = 0; i < map->count; i++) {
     if (onibi_value_map_key_equal(map->entries[i].key, key)) {
       map->entries[i].value = value;
-      rb_ary_push(roots, key);
       rb_ary_push(roots, value);
       return;
     }

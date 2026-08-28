@@ -325,6 +325,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
     assert_includes source, "onibi_value_map_reserve(map, 1)"
+    refute_includes source, "map->entries[i].value = value;\n      rb_ary_push(roots, key)"
   end
 
   def test_ast_audit_defines_typed_node_migration_boundary
