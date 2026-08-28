@@ -222,6 +222,25 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 
+The two largest remaining migrations are staged at explicit ownership
+boundaries:
+
+1. The token stream will use a C record for kind, byte, span, numeric name
+   ID, and option flags. Name strings, capture names, and multibyte literal
+   bytes remain Ruby payload references until the parser no longer needs the
+   adapter. This keeps the parser order stable while removing fixed-field
+   Hash lookups first.
+2. The AST will use a C node arena after the token view is complete. Each node
+   will store numeric type and span fields plus C child indexes. Ruby values
+   will remain only for variable payloads that cross the compiler boundary.
+   The arena will own node lifetime; the published GIR adapter will be the
+   only Ruby snapshot.
+
+These migrations are not combined. The token view must preserve exact source
+spans before AST links can replace Ruby array indexes. The AST arena must keep
+all Ruby payloads rooted until GIR publication, so its owner and release path
+are verified separately.
+
 ### AST field audit
 
 The AST is not part of the `Regexp` public API. The compiler uses these fields:
