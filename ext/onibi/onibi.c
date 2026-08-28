@@ -1368,11 +1368,12 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     VALUE child = rb_ary_entry(children, i);
     VALUE kind_value = onibi_hash_value(child, "kind");
-    if (NIL_P(kind_value)) kind_value = onibi_hash_value(child, "type");
-    ID kind = NIL_P(kind_value) ? 0 : SYM2ID(kind_value);
-    if (kind == rb_intern("literal")) {
+    OnibiTokenKind token_kind = NIL_P(onibi_hash_value(child, "kind_code")) ?
+      (OnibiTokenKind)-1 : onibi_token_kind_code(child);
+    OnibiAstKind ast_kind = NIL_P(kind_value) ? onibi_ast_kind(child) : ONIBI_AST_UNKNOWN;
+    if (token_kind == ONIBI_TOKEN_LITERAL || ast_kind == ONIBI_AST_LITERAL) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
-    } else if (kind == rb_intern("escape")) {
+    } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value(child, "name");
       if (onibi_ascii_property_name_p(name)) {
         OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
@@ -1396,7 +1397,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
           (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
         if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
-    } else if (kind == rb_intern("posix_class")) {
+    } else if (token_kind == ONIBI_TOKEN_POSIX_CLASS) {
       VALUE name = onibi_hash_value(child, "name");
       OnibiPosixKind posix = onibi_posix_kind(name);
       for (int c = 0; c < 256; c++) {
@@ -1411,7 +1412,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
           posix == ONIBI_POSIX_XDIGIT ? isxdigit(c) : 0;
         if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
-    } else if (kind == rb_intern("character_class")) {
+    } else if (ast_kind == ONIBI_AST_CHARACTER_CLASS || ast_kind == ONIBI_AST_CLASS_INTERSECTION) {
       VALUE nested = onibi_class_bitmap(child, fold);
       for (long byte = 0; byte < 32; byte++)
         bits[byte] |= (unsigned char)RSTRING_PTR(nested)[byte];
