@@ -405,6 +405,12 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("\a")
   end
 
+  def test_unicode_escape_does_not_enter_ascii_rseq
+    regexp = Onibi::Regexp.new("\\u{41}")
+    refute regexp.program_cached?
+    assert regexp.match?("A")
+  end
+
   def test_nullable_program_keeps_immediate_accept_start_edge
     empty = Onibi::Regexp.new("")
     optional = Onibi::Regexp.new("a?")

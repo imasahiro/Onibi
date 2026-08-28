@@ -191,7 +191,7 @@ static VALUE onibi_tokenize(VALUE src) {
     else if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = "anchor";
       else if (!in_class && escaped == 'K') kind = "match_reset";
       else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
-      else if (strchr("dDsSwWhHRXpP", escaped) != NULL) kind = "escape";
+      else if (strchr("dDsSwWhHRXpPu", escaped) != NULL) kind = "escape";
       i++;
     } else if (byte == '[' && !in_class) {
       kind = "class_start";
@@ -751,7 +751,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
       int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
-      if (code == 'r' || code == 'p' || code == 'x')
+      if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
     VALUE payload = ast;
