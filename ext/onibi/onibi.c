@@ -4076,7 +4076,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       continue;
     }
     VALUE assertion_value = onibi_hash_value_id(action, id_key_assert_kind);
-    uint16_t assertion = NIL_P(assertion_value) ? 0 : (uint16_t)NUM2ULONG(assertion_value);
+    OnibiRAssertKind assertion = NIL_P(assertion_value) ? (OnibiRAssertKind)0 :
+      (OnibiRAssertKind)NUM2ULONG(assertion_value);
     if (assertion == ONIBI_RAP_BEGIN_BUFFER && pos != 0) return 0;
     if (assertion == ONIBI_RAP_SEARCH_ORIGIN && pos != 0) return 0;
     if (assertion == ONIBI_RAP_END_BUFFER && pos != length) return 0;
