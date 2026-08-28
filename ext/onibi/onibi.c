@@ -1243,7 +1243,7 @@ typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
 typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; } OnibiGirStateEntry;
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
-typedef struct { long from; long to; VALUE actions; } OnibiGirEdgeEntry;
+typedef struct { long from; long to; long action_offset; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
 typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; VALUE subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
@@ -1658,7 +1658,7 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, actions}, builder->map_roots);
+  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, actions}, builder->map_roots);
 }
 
 static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
@@ -1678,7 +1678,7 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
-  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, actions}, builder->map_roots);
+  onibi_gir_edge_vector_push(&builder->edges, (OnibiGirEdgeEntry){from, to, 0, actions}, builder->map_roots);
 }
 
 static onibi_fragment_t onibi_fragment_empty(void) {
@@ -1711,7 +1711,7 @@ static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
         if (builder->edges.entries[k].from == from) { insert_at = k; break; }
       }
       onibi_gir_edge_vector_insert(&builder->edges, insert_at,
-                                   (OnibiGirEdgeEntry){from, NUM2LONG(start_values[j]), actions},
+                                   (OnibiGirEdgeEntry){from, NUM2LONG(start_values[j]), 0, actions},
                                    builder->map_roots);
     }
   }
@@ -2918,17 +2918,16 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   uint32_t class_count = (uint32_t)class_payloads.count;
   VALUE actions = rb_ary_new();
-  VALUE r_edges = rb_ary_new();
+  OnibiGirEdgeVector r_edge_records;
+  onibi_gir_edge_vector_init(&r_edge_records);
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     if (!RTEST(rb_obj_frozen_p(edge)) || !RTEST(rb_obj_frozen_p(edge_actions)))
       rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR edges");
-    VALUE out = rb_hash_new();
-    rb_hash_aset(out, ID2SYM(id_key_from), onibi_hash_value_id(edge, id_key_from));
-    rb_hash_aset(out, ID2SYM(id_key_to), onibi_hash_value_id(edge, id_key_to));
-    rb_hash_aset(out, ID2SYM(id_key_action_offset),
-                 RARRAY_LEN(edge_actions) == 0 ? INT2NUM(0) : LONG2NUM(RARRAY_LEN(actions)));
+    long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
+    long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
+    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : RARRAY_LEN(actions);
     VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
@@ -2945,20 +2944,17 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_ary_push(actions, terminator);
     }
     rb_obj_freeze(copied_actions);
-    rb_hash_aset(out, ID2SYM(id_key_actions), copied_actions);
-    rb_obj_freeze(out);
-    rb_ary_push(r_edges, out);
+    onibi_gir_edge_vector_push(&r_edge_records, (OnibiGirEdgeEntry){from, to, action_offset, copied_actions}, actions);
   }
-  VALUE r_start_edges = rb_ary_new();
+  OnibiGirEdgeVector r_start_edge_records;
+  onibi_gir_edge_vector_init(&r_start_edge_records);
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
     VALUE edge = rb_ary_entry(start_edges, i);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     if (!RTEST(rb_obj_frozen_p(edge)) || !RTEST(rb_obj_frozen_p(edge_actions)))
       rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR start edges");
-    VALUE out = rb_hash_new();
-    rb_hash_aset(out, ID2SYM(id_key_to), onibi_hash_value_id(edge, id_key_to));
-    rb_hash_aset(out, ID2SYM(id_key_action_offset),
-                 RARRAY_LEN(edge_actions) == 0 ? INT2NUM(0) : LONG2NUM(RARRAY_LEN(actions)));
+    long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
+    long action_offset = RARRAY_LEN(edge_actions) == 0 ? 0 : RARRAY_LEN(actions);
     VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
@@ -2975,10 +2971,26 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_ary_push(actions, terminator);
     }
     rb_obj_freeze(copied_actions);
-    rb_hash_aset(out, ID2SYM(id_key_actions), copied_actions);
-    rb_obj_freeze(out);
-    rb_ary_push(r_start_edges, out);
+    onibi_gir_edge_vector_push(&r_start_edge_records, (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions}, actions);
   }
+  VALUE r_edges = rb_ary_new_capa((long)r_edge_records.count);
+  for (size_t i = 0; i < r_edge_records.count; i++) {
+    OnibiGirEdgeEntry *record = &r_edge_records.entries[i];
+    VALUE out = rb_hash_new();
+    rb_hash_aset(out, ID2SYM(id_key_from), LONG2NUM(record->from));
+    rb_hash_aset(out, ID2SYM(id_key_to), LONG2NUM(record->to));
+    rb_hash_aset(out, ID2SYM(id_key_action_offset), LONG2NUM(record->action_offset));
+    rb_hash_aset(out, ID2SYM(id_key_actions), record->actions); rb_obj_freeze(out); rb_ary_push(r_edges, out);
+  }
+  VALUE r_start_edges = rb_ary_new_capa((long)r_start_edge_records.count);
+  for (size_t i = 0; i < r_start_edge_records.count; i++) {
+    OnibiGirEdgeEntry *record = &r_start_edge_records.entries[i];
+    VALUE out = rb_hash_new();
+    rb_hash_aset(out, ID2SYM(id_key_to), LONG2NUM(record->to));
+    rb_hash_aset(out, ID2SYM(id_key_action_offset), LONG2NUM(record->action_offset));
+    rb_hash_aset(out, ID2SYM(id_key_actions), record->actions); rb_obj_freeze(out); rb_ary_push(r_start_edges, out);
+  }
+  rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges);
   VALUE header = rb_hash_new();
   int options = compiled_data->options;
   int ignorecase = (options & 1) != 0;
@@ -3270,6 +3282,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   onibi_rseq_validate(result);
   onibi_value_vector_free(&class_payloads);
   onibi_value_vector_free(&literal_payloads);
+  onibi_gir_edge_vector_free(&r_edge_records);
+  onibi_gir_edge_vector_free(&r_start_edge_records);
   return result;
 }
 
