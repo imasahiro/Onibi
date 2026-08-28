@@ -1403,6 +1403,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
+    char capture_key[32];
+    snprintf(capture_key, sizeof(capture_key), "%ld", capture_id + 1);
+    rb_hash_aset(builder->capture_bodies, rb_str_new_cstr(capture_key), onibi_hash_value(ast, "body"));
     if (!NIL_P(capture_name)) {
       rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
       rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value(ast, "body"));

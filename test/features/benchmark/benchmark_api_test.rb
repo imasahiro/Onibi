@@ -277,6 +277,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 0, end: 4 }, regexp.vm_match_result("aaaa").slice(:start, :end))
   end
 
+  def test_simple_numeric_subexpression_call_inlines_literal_body
+    regexp = Onibi::Regexp.new("(a)\\g<1>")
+    assert regexp.program_cached?
+    assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
+  end
+
   def test_anchor_assertions_are_edge_actions
     edges = Onibi::Regexp.new("^abc$").pipeline[:gir_graph][:edges]
     assert_equal :ASSERT_BEGIN_BUFFER, edges.first[:actions].first[:op]
