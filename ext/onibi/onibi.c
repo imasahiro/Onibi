@@ -1271,7 +1271,7 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t p
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; uint32_t action_count; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
-typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; } OnibiRSeqActionEntry;
+typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; uint8_t has_slot; uint16_t slot; uint8_t has_arg32; uint32_t arg32; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
@@ -1459,11 +1459,20 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
     if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "RSeq action vector is too large");
     vector->entries = REALLOC_N(vector->entries, OnibiRSeqActionEntry, next); vector->capacity = next;
   }
+  VALUE slot = onibi_hash_value_id(value, id_key_slot);
+  VALUE width = onibi_hash_value_id(value, id_key_width);
+  VALUE limit = onibi_hash_value_id(value, id_key_limit);
+  VALUE arg_value = onibi_hash_value_id(value, id_key_value);
+  VALUE arg32 = !NIL_P(width) ? width : (!NIL_P(limit) ? limit : arg_value);
   vector->entries[vector->count++] = (OnibiRSeqActionEntry){
     value, (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code)),
     SYM2ID(onibi_hash_value_id(value, id_key_op)),
     RTEST(onibi_hash_value_id(value, id_key_set)) ? 1 : 0,
-    RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0
+    RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0,
+    NIL_P(slot) ? 0 : 1,
+    NIL_P(slot) ? 0 : (uint16_t)NUM2ULONG(slot),
+    NIL_P(arg32) ? 0 : 1,
+    NIL_P(arg32) ? 0 : (uint32_t)NUM2ULONG(arg32)
   };
 }
 static void onibi_rseq_action_vector_free(OnibiRSeqActionVector *vector) {
@@ -3322,14 +3331,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       physical_actions[i].flags = op == id_a_assert_lookahead ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
     }
-    VALUE slot = onibi_hash_value_id(action, id_key_slot);
-    if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
-    VALUE limit = onibi_hash_value_id(action, id_key_limit);
-    if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
-    VALUE value = onibi_hash_value_id(action, id_key_value);
-    if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
-    VALUE width = onibi_hash_value_id(action, id_key_width);
-    if (!NIL_P(width)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(width);
+    if (action_records.entries[i].has_slot)
+      physical_actions[i].arg16 = action_records.entries[i].slot;
+    if (action_records.entries[i].has_arg32)
+      physical_actions[i].arg32 = action_records.entries[i].arg32;
   }
   OnibiClassDesc *class_descs = (OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
   unsigned char *class_data = (unsigned char *)(class_descs + class_count);
