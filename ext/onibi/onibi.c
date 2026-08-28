@@ -1367,6 +1367,10 @@ static void onibi_value_map_free(OnibiValueMap *map) {
   xfree(map->entries); map->entries = NULL; map->count = map->capacity = 0;
 }
 
+static void onibi_gir_state_vector_init(OnibiGirStateVector *vector) {
+  vector->entries = NULL; vector->count = 0; vector->capacity = 0;
+}
+
 static void onibi_gir_state_vector_push(OnibiGirStateVector *vector, OnibiGirStateEntry entry, VALUE roots) {
   if (vector->count == vector->capacity) {
     size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
@@ -2884,6 +2888,19 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       !RTEST(rb_obj_frozen_p(subprograms)))
     rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR");
   long state_count = RARRAY_LEN(states);
+  OnibiGirStateVector state_records;
+  onibi_gir_state_vector_init(&state_records);
+  VALUE state_roots = rb_ary_new();
+  for (long i = 0; i < state_count; i++) {
+    VALUE state = rb_ary_entry(states, i);
+    OnibiGirStateEntry record = {
+      NUM2LONG(onibi_hash_value_id(state, id_key_id)),
+      SYM2ID(onibi_hash_value_id(state, id_key_op)),
+      (OnibiGStateOp)NUM2UINT(onibi_hash_value_id(state, id_key_opcode)),
+      onibi_hash_value_id(state, id_key_payload)
+    };
+    onibi_gir_state_vector_push(&state_records, record, state_roots);
+  }
   long accept_state = NUM2LONG(onibi_hash_value_id(graph, id_key_accept));
   if (accept_state < 0 || accept_state >= state_count)
     rb_raise(rb_eArgError, "RSeq lowering received an invalid accept state");
@@ -2901,10 +2918,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   OnibiValueVector class_payloads;
   onibi_value_vector_init(&class_payloads);
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    VALUE state = rb_ary_entry(states, i);
-    if (NUM2UINT(onibi_hash_value_id(state, id_key_opcode)) != ONIBI_G_CLASS) continue;
-    VALUE payload = onibi_hash_value_id(state, id_key_payload);
+  for (size_t i = 0; i < state_records.count; i++) {
+    OnibiGirStateEntry *state = &state_records.entries[i];
+    if (state->opcode != ONIBI_G_CLASS) continue;
+    VALUE payload = state->payload;
     int found = 0;
     for (size_t j = 0; j < class_payloads.count; j++) {
       VALUE prior = class_payloads.items[j];
@@ -3003,10 +3020,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
   OnibiValueVector literal_payloads;
   onibi_value_vector_init(&literal_payloads);
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    unsigned int opcode = NUM2UINT(onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode));
+  for (size_t i = 0; i < state_records.count; i++) {
+    unsigned int opcode = state_records.entries[i].opcode;
     if (opcode != ONIBI_G_CHAR) continue;
-    VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
+    VALUE payload = state_records.entries[i].payload;
     int found = 0;
     for (size_t j = 0; j < literal_payloads.count; j++) {
       VALUE prior = literal_payloads.items[j];
@@ -3024,7 +3041,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
   uint64_t subprogram_section_size = (uint64_t)RARRAY_LEN(subprograms) * sizeof(OnibiSubprogramDesc);
   uint64_t physical_size = sizeof(OnibiRSeqHeader) +
-    (uint64_t)sizeof(OnibiRState) * (uint64_t)RARRAY_LEN(states) +
+    (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count +
     (uint64_t)sizeof(OnibiREdge) * physical_edge_count +
     (uint64_t)sizeof(OnibiRAction) * (uint64_t)RARRAY_LEN(actions) +
     class_section_size + literal_desc_size + literal_data_size + subprogram_section_size;
@@ -3032,9 +3049,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       RARRAY_LEN(actions) > UINT32_MAX || physical_size > UINT32_MAX)
     rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
   uint32_t features = 0, capture_count = 0, counter_count = 0;
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    VALUE opcode = onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode);
-    if (!NIL_P(opcode) && NUM2UINT(opcode) == ONIBI_G_BACKREF) features |= 1U;
+  for (size_t i = 0; i < state_records.count; i++) {
+    if (state_records.entries[i].opcode == ONIBI_G_BACKREF) features |= 1U;
   }
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
@@ -3067,7 +3083,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(id_key_version), INT2NUM(1));
   rb_hash_aset(header, ID2SYM(id_key_ignorecase), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(id_key_multiline), multiline ? Qtrue : Qfalse);
-  rb_hash_aset(header, ID2SYM(id_key_state_count), LONG2NUM(RARRAY_LEN(states)));
+  rb_hash_aset(header, ID2SYM(id_key_state_count), LONG2NUM((long)state_records.count));
   rb_hash_aset(header, ID2SYM(id_key_edge_count), LONG2NUM(RARRAY_LEN(r_edges)));
   rb_hash_aset(header, ID2SYM(id_key_action_count), LONG2NUM(RARRAY_LEN(actions)));
   rb_hash_aset(header, ID2SYM(id_key_start_edge_base), LONG2NUM(RARRAY_LEN(r_edges)));
@@ -3084,8 +3100,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.semantic_capture_count = capture_count;
   physical.counter_count = counter_count;
   physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    unsigned int opcode = NUM2UINT(onibi_hash_value_id(rb_ary_entry(states, i), id_key_opcode));
+  for (size_t i = 0; i < state_records.count; i++) {
+    unsigned int opcode = state_records.entries[i].opcode;
     if (opcode == ONIBI_G_GRAPHEME || opcode == ONIBI_G_BACKREF || opcode == ONIBI_G_CALL ||
         opcode == ONIBI_G_ATOMIC || opcode == ONIBI_G_ABSENT) {
       physical.exec_kind = 2;
@@ -3114,13 +3130,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       }
     }
   }
-  physical.state_count = (uint32_t)RARRAY_LEN(states);
+  physical.state_count = (uint32_t)state_records.count;
   physical.edge_count = (uint32_t)(RARRAY_LEN(r_edges) + RARRAY_LEN(start_edges));
   physical.action_count = (uint32_t)RARRAY_LEN(actions);
   physical.start_edge_count = (uint32_t)RARRAY_LEN(r_start_edges);
   uint64_t offset = sizeof(OnibiRSeqHeader);
   physical.states_offset = (uint32_t)offset;
-  offset += (uint64_t)sizeof(OnibiRState) * (uint64_t)RARRAY_LEN(states);
+  offset += (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count;
   physical.edges_offset = (uint32_t)offset;
   offset += (uint64_t)sizeof(OnibiREdge) * (uint64_t)physical.edge_count;
   physical.actions_offset = (uint32_t)offset;
@@ -3147,9 +3163,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
   OnibiRState *physical_states = (OnibiRState *)(RSTRING_PTR(blob) + physical.states_offset);
   uint32_t class_index = 0, literal_index = 0;
-  for (long i = 0; i < RARRAY_LEN(states); i++) {
-    VALUE state = rb_ary_entry(states, i);
-    unsigned int opcode = NUM2UINT(onibi_hash_value_id(state, id_key_opcode));
+  for (size_t i = 0; i < state_records.count; i++) {
+    OnibiGirStateEntry *state = &state_records.entries[i];
+    unsigned int opcode = state->opcode;
     physical_states[i].op = (uint8_t)(opcode == ONIBI_G_CHAR ? ONIBI_RS_CHAR :
       opcode == ONIBI_G_CLASS ? ONIBI_RS_CLASS : opcode == ONIBI_G_ANY ? ONIBI_RS_ANY :
       opcode == ONIBI_G_GRAPHEME ? ONIBI_RS_GRAPHEME : opcode == ONIBI_G_BACKREF ? ONIBI_RS_BACKREF :
@@ -3166,7 +3182,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
     if (opcode == ONIBI_G_CLASS) {
-      VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
+      VALUE payload = state->payload;
       class_index = 0;
       for (size_t j = 0; j < class_payloads.count; j++) {
         VALUE prior = class_payloads.items[j];
@@ -3177,7 +3193,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       physical_states[i].payload = class_index;
     }
     else if (opcode == ONIBI_G_CHAR) {
-      VALUE payload = onibi_hash_value_id(rb_ary_entry(states, i), id_key_payload);
+      VALUE payload = state->payload;
       literal_index = 0;
       for (size_t j = 0; j < literal_payloads.count; j++) {
         VALUE prior = literal_payloads.items[j];
@@ -3290,6 +3306,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   onibi_value_vector_free(&action_records);
   onibi_gir_edge_vector_free(&r_edge_records);
   onibi_gir_edge_vector_free(&r_start_edge_records);
+  onibi_gir_state_vector_free(&state_records);
   return result;
 }
 
