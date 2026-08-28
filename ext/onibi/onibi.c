@@ -1350,8 +1350,9 @@ static void onibi_value_vector_free(OnibiValueVector *vector) {
 }
 
 static void onibi_value_vector_append_array(OnibiValueVector *destination, VALUE source, VALUE roots) {
-  onibi_value_vector_reserve(destination, (size_t)RARRAY_LEN(source));
-  for (long i = 0; i < RARRAY_LEN(source); i++)
+  long count = RARRAY_LEN(source);
+  onibi_value_vector_reserve(destination, (size_t)count);
+  for (long i = 0; i < count; i++)
     onibi_value_vector_push(destination, rb_ary_entry(source, i), roots);
 }
 
