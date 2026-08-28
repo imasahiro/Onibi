@@ -2164,21 +2164,21 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                   obj->has_grapheme || obj->has_property_escape) ?
+                   obj->has_grapheme || obj->has_property_escape || obj->has_subroutine) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
     obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                   obj->has_grapheme || obj->has_property_escape) ? program : rb_ary_entry(program, 0);
+                   obj->has_grapheme || obj->has_property_escape || obj->has_subroutine) ? program : rb_ary_entry(program, 0);
     obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                     obj->has_grapheme || obj->has_property_escape) ? Qnil : rb_ary_entry(program, 1);
+                     obj->has_grapheme || obj->has_property_escape || obj->has_subroutine) ? Qnil : rb_ary_entry(program, 1);
     obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                 obj->has_grapheme || obj->has_property_escape) ? Qnil : rb_ary_entry(program, 2);
+                 obj->has_grapheme || obj->has_property_escape || obj->has_subroutine) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
-        obj->has_class_intersection || obj->has_nested_class || obj->has_subroutine) {
+        obj->has_class_intersection || obj->has_nested_class) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
