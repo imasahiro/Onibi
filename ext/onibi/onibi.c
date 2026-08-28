@@ -1,4 +1,5 @@
 #include "ruby.h"
+#include "ruby/encoding.h"
 #include "onibi_ir.h"
 #include <string.h>
 #include <stdio.h>
@@ -10,6 +11,13 @@ static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
+
+static int onibi_ascii_pattern(VALUE source) {
+  if (!rb_enc_str_asciicompat_p(source)) return 0;
+  for (long i = 0; i < RSTRING_LEN(source); i++)
+    if ((unsigned char)RSTRING_PTR(source)[i] >= 0x80) return 0;
+  return 1;
+}
 
 typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
@@ -1124,7 +1132,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     obj->rseq = rb_ary_entry(program, 2);
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
-    if (strstr(RSTRING_PTR(source), "&&") != NULL ||
+    if (!onibi_ascii_pattern(source) || strstr(RSTRING_PTR(source), "&&") != NULL ||
         strstr(RSTRING_PTR(source), "\\g<") != NULL) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
@@ -1175,7 +1183,8 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
-      rb_str_strlen(str) == RSTRING_LEN(str))
+      rb_str_strlen(str) == RSTRING_LEN(str) &&
+      rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -1795,7 +1804,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
-      !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+      !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
+      rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
   return rb_funcall(obj->regexp, id_match_p, 1, str);
 }

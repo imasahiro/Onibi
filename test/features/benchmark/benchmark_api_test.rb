@@ -449,6 +449,12 @@ class BenchmarkApiTest < Minitest::Test
     assert class_regexp.vm_match?("Q")
   end
 
+  def test_non_ascii_pattern_stays_on_mri_until_encoding_lowering_exists
+    regexp = Onibi::Regexp.new("あ")
+    refute regexp.program_cached?
+    assert regexp.match?("あ")
+  end
+
   def test_multiline_anchors_are_compiled_into_line_assertions
     regexp = Onibi::Regexp.new("^a$", 4)
     assert regexp.vm_match?("x\na\nx")
