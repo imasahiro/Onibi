@@ -56,6 +56,7 @@ static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
 static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_capture_count;
+static ID id_key_counter_count;
 static ID id_type_class_intersection;
 static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
@@ -3985,17 +3986,6 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
   return 1;
 }
 
-/* Most TAGGED programs have no repeat counters.  Keep the counter register
- * file absent in that case; this avoids a hash copy on every graph edge. */
-static int onibi_actions_use_counters(VALUE actions) {
-  for (long i = 0; i < RARRAY_LEN(actions); i++) {
-    ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
-    if (op == id_a_counter_init || op == id_a_counter_increment ||
-        op == id_a_test_counter_lt || op == id_a_test_counter_ge) return 1;
-  }
-  return 0;
-}
-
 static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
@@ -4309,7 +4299,7 @@ static long onibi_grapheme_width(VALUE str, long pos) {
   return end - pos;
 }
 
-static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
+static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, int use_counters, long *matched_end) {
   typedef struct { long state_id, pos, next_edge; VALUE counters; } OnibiWalkFrame;
   /* Counter-bearing repeat paths can visit one state at many counter values.
    * Reserve a bounded workspace independent of graph state count. */
@@ -4355,7 +4345,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE next_counters = frame->counters;
-    if (onibi_actions_use_counters(edge_actions)) {
+    if (use_counters) {
       next_counters = NIL_P(frame->counters) ? rb_hash_new() : rb_hash_dup(frame->counters);
     }
     if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
@@ -4371,13 +4361,14 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE outgoing = onibi_hash_value_id(graph, id_key_outgoing);
   VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
   VALUE visited = rb_hash_new();
+  int use_counters = NUM2UINT(onibi_hash_value_id(graph, id_key_counter_count)) != 0;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE branch_counters = onibi_actions_use_counters(edge_actions) ? rb_hash_new() : Qnil;
+    VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, Qnil)) continue;
     if (!NIL_P(branch_counters)) onibi_vm_apply_counter_actions(edge_actions, branch_counters);
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, matched_end)) return 1;
+    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, use_counters, matched_end)) return 1;
   }
   return 0;
 }
@@ -5078,6 +5069,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("outgoing")), outgoing);
   rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), onibi_hash_value(rseq, "subprograms"));
+  rb_hash_aset(graph, ID2SYM(id_key_counter_count), UINT2NUM(header.counter_count));
   return graph;
 }
 
@@ -5446,6 +5438,7 @@ void Init_onibi(void) {
   id_key_bytes = rb_intern("bytes"); id_key_blob = rb_intern("blob"); id_key_header = rb_intern("header");
   id_key_edges = rb_intern("edges"); id_type_class_intersection = rb_intern("class_intersection");
   id_key_capture_count = rb_intern("capture_count");
+  id_key_counter_count = rb_intern("counter_count");
   id_kind_literal = rb_intern("literal"); id_kind_escape = rb_intern("escape");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
