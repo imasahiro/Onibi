@@ -601,6 +601,7 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.program_frozen?
     assert_operator regexp.program_size, :>, regexp.source.bytesize
     assert_same regexp.pipeline, regexp.pipeline
+    assert_same regexp.pipeline[:tokens], regexp.pipeline[:parsed][:tokens]
     canonical = regexp.pipeline[:canonical]
     assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
     assert_same regexp.pipeline[:compiled][:graph], canonical[:gir]
