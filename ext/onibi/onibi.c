@@ -1004,8 +1004,9 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
+static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
@@ -1199,6 +1200,8 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
+  VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
 }
@@ -1207,6 +1210,8 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
+  VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
 }
@@ -1283,6 +1288,7 @@ static int onibi_gir_action_valid(ID action) {
     action == rb_intern("ASSERT_SEARCH_ORIGIN") || action == rb_intern("ASSERT_WORD_BOUNDARY") ||
     action == rb_intern("ASSERT_NONWORD_BOUNDARY") || action == rb_intern("ASSERT_LOOKAHEAD") ||
     action == rb_intern("ASSERT_LOOKBEHIND") || action == rb_intern("COUNTER_INIT") ||
+    action == rb_intern("TEST_CAPTURE") ||
     action == rb_intern("COUNTER_INCREMENT") || action == rb_intern("TEST_COUNTER_LT") ||
     action == rb_intern("TEST_COUNTER_GE");
 }
@@ -1293,7 +1299,7 @@ static void onibi_gir_validate_action_operands(VALUE action) {
   if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR capture slot");
-  } else if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
+  } else if (op == rb_intern("TEST_CAPTURE") || op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
              op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR counter slot");
@@ -1905,7 +1911,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -1986,6 +1992,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
 
 static uint8_t onibi_rseq_action_flags(ID op) {
   if (op == rb_intern("CAPTURE_CLOSE")) return ONIBI_RA_CAPTURE_CLOSE;
+  if (op == rb_intern("TEST_CAPTURE")) return ONIBI_RA_TEST_CAPTURE_SET;
   if (op == rb_intern("TEST_COUNTER_GE")) return ONIBI_RA_COUNTER_GE;
   return 0;
 }
@@ -2314,10 +2321,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
       op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
       op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND") ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("TEST_CAPTURE") ? ONIBI_RA_TEST_CAPTURE :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
     physical_actions[i].flags = onibi_rseq_action_flags(op);
+    if (op == rb_intern("TEST_CAPTURE") && !RTEST(onibi_hash_value(rb_ary_entry(actions, i), "set")))
+      physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     physical_actions[i].arg16 = onibi_rseq_assert_kind(op);
     if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
       int positive = RTEST(onibi_hash_value(rb_ary_entry(actions, i), "positive"));
@@ -3202,10 +3212,17 @@ static VALUE onibi_pipeline(VALUE self) {
   return obj->pipeline;
 }
 
-static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters) {
+static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value(action, "op"));
+    if (op == rb_intern("TEST_CAPTURE")) {
+      long capture = NUM2LONG(onibi_hash_value(action, "slot"));
+      int set = !NIL_P(captures) && !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture))) &&
+        !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture + 1)));
+      if (set != RTEST(onibi_hash_value(action, "set"))) return 0;
+      continue;
+    }
     if (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
       VALUE value = rb_hash_aref(counters, onibi_hash_value(action, "slot"));
       long count = NIL_P(value) ? 0 : NUM2LONG(value);
@@ -3457,7 +3474,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     VALUE edge = rb_ary_entry(state_edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE next_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
     if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), pos, visited, next_counters, matched_end)) return 1;
   }
@@ -3474,7 +3491,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE branch_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
     if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), start, visited, branch_counters, matched_end)) return 1;
   }
@@ -3580,7 +3597,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
     VALUE edge = rb_ary_entry(state_edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE next_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters, captures)) continue;
     VALUE next_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
     VALUE next_tags = tags;
     long next_reported_start = reported_start;
@@ -3606,7 +3623,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
     VALUE branch_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters)) continue;
+    if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, captures)) continue;
     VALUE branch_captures = onibi_has_capture_action(edge_actions) ? onibi_capture_copy(captures) : captures;
     long reported_start = start;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
@@ -3839,6 +3856,7 @@ static void onibi_rseq_validate(VALUE rseq) {
        op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
        op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
        op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("TEST_CAPTURE") ? ONIBI_RA_TEST_CAPTURE :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
       (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) ? ONIBI_RA_COUNTER_TEST :
@@ -3874,6 +3892,8 @@ static void onibi_rseq_validate(VALUE rseq) {
       (!NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
        (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0));
     uint8_t expected_flags = onibi_rseq_action_flags(op);
+    if (op == rb_intern("TEST_CAPTURE") && !RTEST(onibi_hash_value(semantic_action, "set")))
+      expected_flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) : onibi_rseq_assert_kind(op);
     if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
       int positive = RTEST(onibi_hash_value(semantic_action, "positive"));
