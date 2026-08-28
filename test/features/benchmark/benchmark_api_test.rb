@@ -392,6 +392,13 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_hex_escape_is_one_literal_token
+    regexp = Onibi::Regexp.new("\\x41")
+    assert_equal [{ kind: :literal, byte: 65, start: 0, end: 5 }], regexp.pipeline[:tokens]
+    assert regexp.vm_match?("A")
+    assert Onibi::Regexp.new("\\x4").vm_match?("x4")
+  end
+
   def test_nullable_program_keeps_immediate_accept_start_edge
     empty = Onibi::Regexp.new("")
     optional = Onibi::Regexp.new("a?")
