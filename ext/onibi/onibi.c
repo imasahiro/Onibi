@@ -138,7 +138,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -252,10 +252,7 @@ static void onibi_mark(void *ptr) {
   if (!obj) return;
   rb_gc_mark(obj->regexp);
   rb_gc_mark(obj->source);
-  rb_gc_mark(obj->tokens);
   rb_gc_mark(obj->execution_kind);
-  rb_gc_mark(obj->parsed);
-  rb_gc_mark(obj->compiled);
   rb_gc_mark(obj->rseq);
   rb_gc_mark(obj->names);
   rb_gc_mark(obj->named_captures);
@@ -3268,8 +3265,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->source);
   obj->names = Qnil;
   obj->named_captures = Qnil;
-  obj->parsed = obj->compiled = obj->rseq = Qnil;
-  obj->tokens = Qnil;
+  obj->rseq = Qnil;
   obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   onibi_token_features(tokens, obj);
@@ -3302,20 +3298,20 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->named_captures);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
+  VALUE parsed = Qnil, compiled = Qnil;
   VALUE program = (obj->has_large_repeat ||
                    obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = (obj->has_large_repeat ||
+    parsed = (obj->has_large_repeat ||
                    obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
-    obj->compiled = (obj->has_large_repeat ||
+    compiled = (obj->has_large_repeat ||
                      obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     obj->rseq = (obj->has_large_repeat ||
                  obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
-    obj->tokens = tokens;
-    if (!NIL_P(obj->parsed)) {
-      VALUE parsed_ast = onibi_hash_value(obj->parsed, "ast");
+    if (!NIL_P(parsed)) {
+      VALUE parsed_ast = onibi_hash_value(parsed, "ast");
       obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
       obj->has_anchor_repeat = onibi_ast_anchor_repeat(parsed_ast);
       obj->has_nullable_absence = onibi_ast_nullable_absence(parsed_ast);
@@ -3330,22 +3326,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
     if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
         ((opts & 16) && !encoded_literal_program) || (opts & 32)) {
-      obj->parsed = obj->compiled = obj->rseq = Qnil;
+      parsed = compiled = obj->rseq = Qnil;
     }
   } else {
     rb_set_errinfo(Qnil);
     /* Keep a failed lowering on the dynamic MRI boundary. */
     obj->has_dynamic = 1;
-    obj->tokens = tokens;
   }
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
   obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
     (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
-  /* Token, AST, and GIR Ruby containers are compile-time temporaries.  The
-   * published Regexp keeps only the immutable RSeq and scalar feature data. */
-  obj->tokens = Qnil;
-  obj->parsed = Qnil;
-  obj->compiled = Qnil;
   rb_obj_freeze(self);
   return self;
 }
