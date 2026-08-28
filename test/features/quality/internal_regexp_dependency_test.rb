@@ -290,6 +290,11 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "rb_ary_dup(repeat.pending_actions)"
   end
 
+  def test_start_edges_preallocate_fragment_actions
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions))"
+  end
+
   def test_rseq_subprograms_use_typed_records
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]

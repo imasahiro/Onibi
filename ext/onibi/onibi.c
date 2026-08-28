@@ -2940,7 +2940,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   if (fragment.nullable && fragment.lazy) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
-    VALUE actions = rb_ary_dup(fragment.start_actions);
+    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
+    onibi_append_values(actions, fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
     rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
@@ -2952,8 +2953,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     VALUE destination = UINT2NUM(start_ids.items[i]);
     const OnibiGuardEntry *capture_guard =
       onibi_guard_vector_find_entry(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
-    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) +
-                                    (capture_guard ? (long)capture_guard->action_count : 0));
+    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
     onibi_append_values(actions, fragment.start_actions);
     if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
     rb_hash_aset(edge, ID2SYM(id_key_to), destination);
@@ -2965,7 +2965,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   if (fragment.nullable && !fragment.lazy) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
-    VALUE actions = rb_ary_dup(fragment.start_actions);
+    VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
+    onibi_append_values(actions, fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
     rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
     rb_ary_push(start_edges, edge);
