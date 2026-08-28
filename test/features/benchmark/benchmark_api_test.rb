@@ -280,6 +280,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_simple_numeric_subexpression_call_inlines_literal_body
     regexp = Onibi::Regexp.new("(a)\\g<1>")
     assert regexp.program_cached?
+    assert_equal :TAGGED_ORDERED, regexp.execution_class.to_sym
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 
@@ -489,6 +490,7 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?<x>a)\\g<x>")
     assert_equal :subroutine, regexp.pipeline[:ast][:children].last[:type]
     assert regexp.program_cached?
+    assert_equal :TAGGED_ORDERED, regexp.execution_class.to_sym
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 

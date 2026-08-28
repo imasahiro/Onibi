@@ -2194,6 +2194,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
+  if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
   if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
