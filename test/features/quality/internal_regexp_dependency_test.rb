@@ -133,6 +133,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes compiler, "onibi_gir_edge_vector_free(&start_edge_records)"
   end
 
+  def test_conditional_guards_use_c_action_vectors
+    source = File.read(EXTENSION_SOURCE)
+    conditional = source[/if \(type_code == ONIBI_AST_CONDITIONAL\).*?\n    onibi_add_exit_guard_fragment/m]
+
+    refute_nil conditional
+    assert_includes conditional, "OnibiValueVector yes_guard"
+    assert_includes conditional, "onibi_guard_vector_add_values"
+    refute_includes conditional, "VALUE yes_guard = rb_ary_new()"
+  end
+
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]

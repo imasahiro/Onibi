@@ -1461,6 +1461,33 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
   vector->count++;
 }
 
+static void onibi_guard_vector_add_values(OnibiGuardVector *vector, OnibiStateId state,
+                                          const OnibiValueVector *actions) {
+  for (size_t i = 0; i < vector->count; i++) {
+    if (vector->entries[i].state == state) {
+      onibi_value_vector_reserve(&vector->entries[i].actions, actions->count);
+      memcpy(vector->entries[i].actions.items + vector->entries[i].actions.count,
+             actions->items, sizeof(VALUE) * actions->count);
+      vector->entries[i].actions.count += actions->count;
+      vector->entries[i].action_count = (uint32_t)vector->entries[i].actions.count;
+      return;
+    }
+  }
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "GIR guard vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGuardEntry, next);
+    vector->capacity = next;
+  }
+  OnibiGuardEntry *entry = &vector->entries[vector->count++];
+  entry->state = state;
+  onibi_value_vector_init(&entry->actions);
+  onibi_value_vector_reserve(&entry->actions, actions->count);
+  memcpy(entry->actions.items, actions->items, sizeof(VALUE) * actions->count);
+  entry->actions.count = actions->count;
+  entry->action_count = (uint32_t)actions->count;
+}
+
 static void onibi_guard_vector_free(OnibiGuardVector *vector) {
   for (size_t i = 0; i < vector->count; i++) onibi_value_vector_free(&vector->entries[i].actions);
   xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
@@ -2689,14 +2716,20 @@ skip_utf8_range_expansion:
     if (capture_id < 0) rb_raise(eRegexpError, "conditional capture is invalid");
     onibi_fragment_t yes = onibi_compile_node(onibi_hash_value_id(ast, id_key_yes), builder);
     onibi_fragment_t no = onibi_compile_node(onibi_hash_value_id(ast, id_key_no), builder);
-    VALUE yes_guard = rb_ary_new();
-    rb_ary_push(yes_guard, onibi_capture_test_action(capture_id, 1));
-    onibi_append_values(yes_guard, yes.start_actions);
-    VALUE no_guard = rb_ary_new();
-    rb_ary_push(no_guard, onibi_capture_test_action(capture_id, 0));
-    onibi_append_values(no_guard, no.start_actions);
-    onibi_add_capture_guard_fragment(builder, &yes.starts, yes_guard);
-    onibi_add_capture_guard_fragment(builder, &no.starts, no_guard);
+    OnibiValueVector yes_guard;
+    onibi_value_vector_init(&yes_guard);
+    onibi_value_vector_push(&yes_guard, onibi_capture_test_action(capture_id, 1), builder->map_roots);
+    onibi_value_vector_append_array(&yes_guard, yes.start_actions, builder->map_roots);
+    OnibiValueVector no_guard;
+    onibi_value_vector_init(&no_guard);
+    onibi_value_vector_push(&no_guard, onibi_capture_test_action(capture_id, 0), builder->map_roots);
+    onibi_value_vector_append_array(&no_guard, no.start_actions, builder->map_roots);
+    for (size_t i = 0; i < yes.starts.count; i++)
+      onibi_guard_vector_add_values(&builder->capture_guards, yes.starts.items[i], &yes_guard);
+    for (size_t i = 0; i < no.starts.count; i++)
+      onibi_guard_vector_add_values(&builder->capture_guards, no.starts.items[i], &no_guard);
+    onibi_value_vector_free(&yes_guard);
+    onibi_value_vector_free(&no_guard);
     onibi_add_exit_guard_fragment(builder, &yes.exits, yes.pending_actions);
     onibi_add_exit_guard_fragment(builder, &no.exits, no.pending_actions);
     onibi_fragment_t result = onibi_fragment_empty();
