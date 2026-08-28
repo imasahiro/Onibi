@@ -384,6 +384,13 @@ class BenchmarkApiTest < Minitest::Test
     refute non_digit.vm_match?("7")
   end
 
+  def test_shorthand_escapes_inside_classes_use_bitmap_predicates
+    digit = Onibi::Regexp.new("[\\d]")
+    assert digit.program_cached?
+    assert digit.vm_match?("5")
+    refute digit.vm_match?("q")
+  end
+
   def test_control_escapes_become_literal_bytes
     { "\\n" => "\n", "\\r" => "\r", "\\t" => "\t", "\\f" => "\f" }.each do |pattern, input|
       regexp = Onibi::Regexp.new(pattern)

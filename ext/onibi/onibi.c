@@ -588,6 +588,20 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     ID kind = SYM2ID(onibi_hash_value(child, "kind"));
     if (kind == rb_intern("literal")) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
+    } else if (kind == rb_intern("escape")) {
+      VALUE name = onibi_hash_value(child, "name");
+      int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+        (RSTRING_LEN(name) == 1 ? tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
+      if (escape_code == 'r' || escape_code == 'p' || escape_code == 'x' || escape_code == 'u')
+        rb_raise(eRegexpError, "escape is not supported in RSeq class");
+      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+        (RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]));
+      int code = escape_code;
+      for (int c = 0; c < 256; c++) {
+        int hit = code == 'd' ? isdigit(c) : (code == 's' ? isspace(c) :
+          (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
+        if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
+      }
     } else if (kind == rb_intern("posix_class")) {
       VALUE name = onibi_hash_value(child, "name");
       const char *n = StringValueCStr(name);
@@ -1826,6 +1840,16 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
       unsigned char literal = (unsigned char)NUM2INT(onibi_hash_value(child, "byte"));
       if (fold) literal = (unsigned char)tolower(literal);
       if (byte == literal) hit = 1;
+    }
+    if (kind == rb_intern("escape")) {
+      VALUE name = onibi_hash_value(child, "name");
+      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+        (RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]));
+      unsigned char code = NIL_P(name) ? (unsigned char)tolower((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
+        (RSTRING_LEN(name) == 1 ? (unsigned char)tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
+      int escaped_hit = code == 'd' ? isdigit(byte) : (code == 's' ? isspace(byte) :
+        (code == 'w' ? (isalnum(byte) || byte == '_') : (code == 'h' ? isxdigit(byte) : 0)));
+      hit |= upper ? !escaped_hit : escaped_hit;
     }
     if (kind == rb_intern("posix_class")) {
       VALUE name = onibi_hash_value(child, "name");
