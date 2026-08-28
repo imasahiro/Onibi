@@ -1529,6 +1529,16 @@ static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VAL
       onibi_gir_edge_actions(builder, NUM2LONG(exit_values[i]), NUM2LONG(start_values[j]), actions);
 }
 
+static void onibi_connect_vector_actions(onibi_gir_builder_t *builder,
+                                         const OnibiIdVector *exits,
+                                         VALUE starts, VALUE actions) {
+  VALUE *start_values = RARRAY_PTR(starts);
+  long start_count = RARRAY_LEN(starts);
+  for (size_t i = 0; i < exits->count; i++)
+    for (long j = 0; j < start_count; j++)
+      onibi_gir_edge_actions(builder, (long)exits->items[i], NUM2LONG(start_values[j]), actions);
+}
+
 static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
   VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
   long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
@@ -2498,8 +2508,10 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_gir_state(&builder, accept, id_g_accept, Qnil);
   VALUE accept_starts = rb_ary_new();
   rb_ary_push(accept_starts, LONG2NUM(accept));
+  OnibiIdVector exit_ids;
+  onibi_id_vector_from_array(&exit_ids, fragment.exits);
   if (fragment.lazy) onibi_connect_prepend_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
-  else onibi_connect_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
+  else onibi_connect_vector_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
   VALUE start_edges = rb_ary_new();
   if (fragment.nullable && fragment.lazy) {
     VALUE edge = rb_hash_new();
@@ -2523,6 +2535,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_ary_push(start_edges, edge);
   }
   onibi_id_vector_free(&start_ids);
+  onibi_id_vector_free(&exit_ids);
   if (fragment.nullable && !fragment.lazy) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
