@@ -218,6 +218,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil lowerer
     assert_includes lowerer, "action_records.entries[i].value"
     assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
+    assert_includes source, "uint8_t set; uint8_t positive"
+    assert_includes lowerer, "action_records.entries[i].positive"
   end
 
   def test_rseq_literal_payloads_cache_numeric_fields

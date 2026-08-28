@@ -1271,7 +1271,7 @@ typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t p
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; uint32_t action_count; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
-typedef struct { VALUE value; OnibiGActionOp code; ID op; } OnibiRSeqActionEntry;
+typedef struct { VALUE value; OnibiGActionOp code; ID op; uint8_t set; uint8_t positive; } OnibiRSeqActionEntry;
 typedef struct { OnibiRSeqActionEntry *entries; size_t count; size_t capacity; } OnibiRSeqActionVector;
 typedef struct { VALUE payload; VALUE bitmap; int negated; } OnibiRSeqClassPayloadEntry;
 typedef struct { OnibiRSeqClassPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqClassPayloadVector;
@@ -1461,7 +1461,9 @@ static void onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE v
   }
   vector->entries[vector->count++] = (OnibiRSeqActionEntry){
     value, (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(value, id_key_action_code)),
-    SYM2ID(onibi_hash_value_id(value, id_key_op))
+    SYM2ID(onibi_hash_value_id(value, id_key_op)),
+    RTEST(onibi_hash_value_id(value, id_key_set)) ? 1 : 0,
+    RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0
   };
 }
 static void onibi_rseq_action_vector_free(OnibiRSeqActionVector *vector) {
@@ -3310,13 +3312,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       action_code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD :
       action_code == ONIBI_GA_TEST_COUNTER_LT || action_code == ONIBI_GA_TEST_COUNTER_GE ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
     physical_actions[i].flags = onibi_rseq_action_flags(op);
-    if (op == id_a_test_capture && !RTEST(onibi_hash_value_id(action, id_key_set)))
+    if (op == id_a_test_capture && !action_records.entries[i].set)
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     VALUE assert_kind = onibi_hash_value_id(action, id_key_assert_kind);
     physical_actions[i].arg16 = NIL_P(assert_kind) ? onibi_rseq_assert_kind(op) :
       (uint16_t)NUM2ULONG(assert_kind);
     if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
-      int positive = RTEST(onibi_hash_value_id(action, id_key_positive));
+      int positive = action_records.entries[i].positive;
       physical_actions[i].flags = op == id_a_assert_lookahead ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
     }

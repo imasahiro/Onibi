@@ -206,7 +206,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
 | RSeq class and literal payload indexes | No | Typed C payload vectors during lowering | Payload identity is used only for deduplication and blob indexing. Class records cache bitmap and negation; literal records cache byte and ignorecase. Ruby arrays are not needed for these temporary indexes. |
-| RSeq flattened actions | No | C `OnibiRSeqActionVector` until publication | Each record caches the Ruby payload plus numeric opcode and operation ID. The frozen Ruby action array is materialized once for validation and diagnostics. |
+| RSeq flattened actions | No | C `OnibiRSeqActionVector` until publication | Each record caches the Ruby payload, numeric opcode, operation ID, and common boolean flags. The frozen Ruby action array is materialized once for validation and diagnostics. |
 | RSeq state records | No | C `OnibiGirStateVector` during lowering | Opcode and payload lookup uses fixed C fields. The frozen GIR state array remains as the semantic adapter. |
 | RSeq state payload indexes | No | Cached `payload_index` in the C state record | Deduplication computes the class/literal index once. Physical state encoding does not repeat payload comparisons. |
 | RSeq physical edges | No | C edge records during blob construction | Destination and action offsets are already available in the lowering records. Physicalization does not need another Ruby Hash scan. |
