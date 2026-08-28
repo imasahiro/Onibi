@@ -538,6 +538,15 @@ class BenchmarkApiTest < Minitest::Test
     refute_same input_action, rseq[:start_edges].first[:actions].first
   end
 
+  def test_rseq_action_programs_have_explicit_end_markers
+    rseq = Onibi::Regexp.new("(a)").pipeline[:rseq_program]
+    programs = rseq[:edges].map { |edge| edge[:actions] } + rseq[:start_edges].map { |edge| edge[:actions] }
+    programs.reject(&:empty?).each do |actions|
+      assert_equal :END, actions.last[:op]
+    end
+    assert_includes rseq[:actions].map { |action| action[:op] }, :END
+  end
+
   def test_vm_rejects_rseq_semantic_flag_mismatch
     regexp = Onibi::Regexp.new("abc")
     rseq = regexp.pipeline[:rseq_program]

@@ -1270,6 +1270,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       rb_ary_push(copied_actions, copy);
       rb_ary_push(actions, copy);
     }
+    if (RARRAY_LEN(edge_actions) > 0) {
+      VALUE terminator = rb_hash_new();
+      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("END")));
+      terminator = onibi_deep_freeze(terminator);
+      rb_ary_push(copied_actions, terminator);
+      rb_ary_push(actions, terminator);
+    }
     rb_obj_freeze(copied_actions);
     rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
     rb_obj_freeze(out);
@@ -1290,6 +1297,13 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
       rb_ary_push(copied_actions, copy);
       rb_ary_push(actions, copy);
+    }
+    if (RARRAY_LEN(edge_actions) > 0) {
+      VALUE terminator = rb_hash_new();
+      rb_hash_aset(terminator, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("END")));
+      terminator = onibi_deep_freeze(terminator);
+      rb_ary_push(copied_actions, terminator);
+      rb_ary_push(actions, terminator);
     }
     rb_obj_freeze(copied_actions);
     rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
