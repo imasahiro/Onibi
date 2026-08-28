@@ -37,6 +37,7 @@ static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedenco
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
 static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_entry_actions;
+static ID id_key_kind;
 static ID id_key_slot, id_key_set;
 static ID id_key_type, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
@@ -130,12 +131,13 @@ static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
     (rb_enc_str_asciionly_p(obj->source) && obj->has_non_ascii_literal);
 }
 
-/* Onigmo applies Unicode case folding to negated class intersections with
- * rules that are not representable by the byte bitmap payload.  The MRI
- * regexp is compiled once during initialize, so this compatibility path does
- * not rescan source text during a match. */
-static int onibi_mri_intersection_path_p(const onibi_regexp_t *obj) {
-  return obj->has_class_intersection && (obj->options & 1);
+/* Some Unicode/POSIX property rules are not representable by the compact
+ * ctype payload yet.  The MRI regexp is compiled once during initialize, so
+ * this compatibility path does not rescan source text during a match. */
+static int onibi_mri_compat_path_p(const onibi_regexp_t *obj) {
+  return (obj->has_class_intersection && (obj->options & 1)) ||
+    obj->has_ascii_property ||
+    obj->has_non_ascii_literal;
 }
 
 static void onibi_call_stack_reset(void) {
@@ -688,11 +690,11 @@ static VALUE onibi_lexer_tokens(VALUE self) {
 }
 
 static ID onibi_token_kind(VALUE token) {
-  return SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
+  return SYM2ID(rb_hash_aref(token, ID2SYM(id_key_kind)));
 }
 
 static long onibi_token_byte(VALUE token) {
-  return NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("byte"))));
+  return NUM2LONG(rb_hash_aref(token, ID2SYM(id_key_byte)));
 }
 
 static VALUE onibi_ast_node(const char *type, VALUE token) {
@@ -3313,7 +3315,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
-      !onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
+      !onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
@@ -3995,6 +3997,22 @@ static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, lon
   return 1;
 }
 
+static int onibi_ctype_casefold_hit(VALUE str, long pos, OnigCodePoint code, int ctype,
+                                    int hit) {
+  if (hit) return 1;
+  const OnigEncoding enc = rb_enc_get(str);
+  const OnigUChar *ptr = (const OnigUChar *)RSTRING_PTR(str) + pos;
+  const OnigUChar *end = (const OnigUChar *)RSTRING_PTR(str) + RSTRING_LEN(str);
+  OnigCaseFoldCodeItem folds[ONIGENC_GET_CASE_FOLD_CODES_MAX_NUM];
+  int count = ONIGENC_GET_CASE_FOLD_CODES_BY_STR(enc, ONIGENC_CASE_FOLD_DEFAULT,
+                                                  ptr, end, folds);
+  for (int i = 0; i < count; i++) {
+    for (int j = 0; j < folds[i].code_len; j++)
+      if (folds[i].code[j] != code && ONIGENC_IS_CODE_CTYPE(enc, folds[i].code[j], ctype)) return 1;
+  }
+  return 0;
+}
+
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
   if (onibi_hash_value_id(payload, id_key_type) == ID2SYM(id_type_class_intersection) &&
       rb_enc_get_index(str) == rb_utf8_encindex()) {
@@ -4028,6 +4046,8 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     OnigCodePoint code; long length = 0;
     if (!onibi_codepoint_at(str, pos, &code, &length)) return 0;
     int hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, ctype);
+    if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))
+      hit = onibi_ctype_casefold_hit(str, pos, code, ctype, hit);
     if (NUM2INT(onibi_hash_value_id(payload, id_key_byte)) == 'P') hit = !hit;
     *width = length;
     return hit;
@@ -5140,7 +5160,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   StringValue(str);
   onibi_call_stack_reset();
   onibi_set_deadline(obj->timeout_seconds);
-  if (!onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
+  if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
@@ -5188,7 +5208,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
   }
-  int graph_ok = !onibi_mri_intersection_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
+  int graph_ok = !onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
     onibi_vm_input_eligible(obj, str) &&
     (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
      (obj->has_unicode_property &&
@@ -5299,7 +5319,7 @@ void Init_onibi(void) {
   id_key_op = rb_intern("op"); id_key_payload = rb_intern("payload");
   id_key_actions = rb_intern("actions"); id_key_to = rb_intern("to");
   id_key_multiline = rb_intern("multiline"); id_key_ignorecase = rb_intern("ignorecase");
-  id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
+  id_key_kind = rb_intern("kind"); id_key_byte = rb_intern("byte"); id_key_capture = rb_intern("capture");
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set");
