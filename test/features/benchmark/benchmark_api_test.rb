@@ -661,6 +661,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(FrozenError) { ast[:children] << { type: :literal } }
   end
 
+  def test_rseq_publishes_an_immutable_physical_execution_view
+    rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+    view = rseq[:physical_graph]
+    assert_predicate view, :frozen?
+    assert_predicate view[:states], :frozen?
+    assert_predicate view[:edges], :frozen?
+    assert_predicate view[:start_edges], :frozen?
+    assert_raises(FrozenError) { view[:states] << {} }
+  end
+
   def test_parser_rejects_overflowing_quantifier_counts
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{999999999999999999999}") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{-1}") }
