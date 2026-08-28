@@ -190,6 +190,10 @@ The first conversion is complete for parser and compiler result adapters. The
 remaining token, AST, fragment, GIR, and RSeq conversions stay separate so
 each change can preserve ordering and GC tests.
 
+GIR actions now carry a numeric `action_code` enum beside their diagnostic
+Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
+only as a semantic adapter until the typed action vector conversion.
+
 The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
 conversion path and focused ordering tests.
