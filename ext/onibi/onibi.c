@@ -2182,10 +2182,12 @@ static void onibi_rseq_validate(VALUE rseq) {
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
   VALUE semantic_actions = onibi_hash_value(rseq, "actions");
+  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
-      !RTEST(rb_obj_frozen_p(semantic_states)) || !RTEST(rb_obj_frozen_p(semantic_edges)) ||
-      !RTEST(rb_obj_frozen_p(semantic_actions)))
+      !RTEST(rb_obj_frozen_p(semantic)) || !RTEST(rb_obj_frozen_p(semantic_states)) ||
+      !RTEST(rb_obj_frozen_p(semantic_edges)) || !RTEST(rb_obj_frozen_p(semantic_actions)) ||
+      !RTEST(rb_obj_frozen_p(semantic_start_edges)))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
@@ -2283,7 +2285,6 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (edges[i].destination != destination || edges[i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic edge");
   }
-  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
   if (NIL_P(semantic_start_edges) || !RB_TYPE_P(semantic_start_edges, T_ARRAY) ||
       RARRAY_LEN(semantic_start_edges) != header.start_edge_count)
     rb_raise(rb_eArgError, "RSeq start edges are invalid");
