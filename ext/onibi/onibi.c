@@ -56,7 +56,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -64,6 +64,7 @@ static void onibi_mark(void *ptr) {
   onibi_regexp_t *obj = (onibi_regexp_t *)ptr;
   if (!obj) return;
   rb_gc_mark(obj->regexp);
+  rb_gc_mark(obj->source);
   rb_gc_mark(obj->execution_class);
   rb_gc_mark(obj->execution_kind);
   rb_gc_mark(obj->parsed);
@@ -1298,6 +1299,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->options = opts;
   obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
+  obj->source = rb_str_dup(source);
+  rb_obj_freeze(obj->source);
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   VALUE program_args = rb_ary_new_from_args(2, source, options);
@@ -1361,7 +1364,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       rb_str_strlen(str) == RSTRING_LEN(str) &&
-      rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
+      rb_enc_compatible(str, obj->source) != NULL)
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -1371,7 +1374,7 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
    entry point free of source inspection. */
 static VALUE onibi_source(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return rb_funcall(obj->regexp, id_source, 0);
+  return obj->source;
 }
 static VALUE onibi_options(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -2041,7 +2044,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
   int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq) &&
-    rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL;
+    rb_str_strlen(str) == RSTRING_LEN(str) && rb_enc_compatible(str, obj->source) != NULL;
   if (!graph_ok) {
     if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   }
