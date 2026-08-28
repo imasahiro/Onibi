@@ -1247,11 +1247,12 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   }
   OnibiParsed *parsed;
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed, &onibi_parsed_type, parsed);
+  parsed->ast = Qnil;
+  parsed->ast_flags = 0;
   parsed->options = onibi_option_mask(options);
   /* The AST is an internal compiler value.  Do not deep-freeze it here: it is
      never exposed through the Regexp API and freezing would rescan the tree. */
   parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
-  parsed->ast_flags = 0;
   if (onibi_ast_safe_multibyte_class(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
   if (onibi_ast_anchor_repeat(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
   if (onibi_ast_nullable_absence(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
