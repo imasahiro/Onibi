@@ -148,6 +148,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes regexp_struct, "has_subroutine"
   end
 
+  def test_active_regexp_state_has_no_boolean_feature_fields
+    source = File.read(EXTENSION_SOURCE).gsub(/#if 0.*?#endif/m, "")
+
+    refute_match(/obj->has_(?:class_intersection|nested_class|large_repeat|absence|conditional|backref|subroutine|grapheme|wildcard|anchor|meta_escape|unicode_escape)/, source)
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
