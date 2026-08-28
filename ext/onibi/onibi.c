@@ -1464,6 +1464,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
+      op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
       op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND") ? ONIBI_RA_ASSERT_POSITION :
       op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
       op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
@@ -2298,6 +2299,26 @@ static void onibi_rseq_validate(VALUE rseq) {
   }
   const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
   for (uint32_t i = 0; i < header.action_count; i++) {
+    VALUE semantic_action = rb_ary_entry(semantic_actions, i);
+    ID op = SYM2ID(onibi_hash_value(semantic_action, "op"));
+    uint8_t expected_op = (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) ? ONIBI_RA_CAPTURE :
+      op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :
+      (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
+       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
+       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
+       op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
+       op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
+      op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
+      (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END;
+    VALUE slot = onibi_hash_value(semantic_action, "slot");
+    VALUE limit = onibi_hash_value(semantic_action, "limit");
+    VALUE value = onibi_hash_value(semantic_action, "value");
+    uint32_t expected_arg32 = !NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
+      (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0);
+    if (actions[i].op != expected_op || (!NIL_P(slot) && actions[i].arg16 != (uint16_t)NUM2ULONG(slot)) ||
+        ((!NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
+      rb_raise(rb_eArgError, "RSeq action disagrees with semantic action");
     if (actions[i].op > ONIBI_RA_PROGRESS)
       rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
   }
