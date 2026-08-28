@@ -4604,6 +4604,7 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
        until their physical edge priority has a dedicated direct lowering. */
     if (states[i].edge_count > 1) return -1;
     if (states[i].flags != 0) return -1;
+    if (states[i].op == ONIBI_RS_CLASS || states[i].op == ONIBI_RS_ANY) return -1;
     if (states[i].op != 0 && states[i].op != ONIBI_RS_CHAR &&
         states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY) return -1;
     if (states[i].op == ONIBI_RS_CHAR) {
