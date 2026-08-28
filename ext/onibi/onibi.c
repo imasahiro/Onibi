@@ -57,6 +57,7 @@ static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms
 static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_capture_count;
 static ID id_key_counter_count;
+static ID id_key_negative_name, id_key_negative;
 static ID id_type_class_intersection;
 static ID id_kind_literal, id_kind_escape;
 static ID id_recursive_marker;
@@ -663,12 +664,12 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(id_key_name), backref_name); }
     if (!NIL_P(backref_number)) rb_hash_aset(token, ID2SYM(id_key_capture), backref_number);
     if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(id_key_name), group_name); }
-    if (!NIL_P(option_negative_name)) { rb_obj_freeze(option_negative_name); rb_hash_aset(token, ID2SYM(rb_intern("negative_name")), option_negative_name); }
+    if (!NIL_P(option_negative_name)) { rb_obj_freeze(option_negative_name); rb_hash_aset(token, ID2SYM(id_key_negative_name), option_negative_name); }
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(id_key_name), posix_name); }
     if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(id_key_name), escape_name); }
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(id_key_bytes), literal_bytes); }
     if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
-      rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
+      rb_hash_aset(token, ID2SYM(id_key_negative), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
     if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
@@ -5456,6 +5457,7 @@ void Init_onibi(void) {
   id_key_edges = rb_intern("edges"); id_type_class_intersection = rb_intern("class_intersection");
   id_key_capture_count = rb_intern("capture_count");
   id_key_counter_count = rb_intern("counter_count");
+  id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
   id_kind_literal = rb_intern("literal"); id_kind_escape = rb_intern("escape");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
