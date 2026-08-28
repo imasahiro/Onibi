@@ -126,6 +126,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE backref_name = Qnil;
     VALUE group_name = Qnil;
     VALUE posix_name = Qnil;
+    int option_negative = 0;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
         (RSTRING_PTR(src)[i + 2] == '=' || RSTRING_PTR(src)[i + 2] == '!')) {
       kind = "lookahead_start";
@@ -136,6 +137,24 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       kind = "lookbehind_start";
       byte = (unsigned char)RSTRING_PTR(src)[i + 3];
       i += 3;
+    } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) &&
+               RSTRING_PTR(src)[i + 1] == '?' &&
+               (RSTRING_PTR(src)[i + 2] == '-' ||
+                strchr("imx", RSTRING_PTR(src)[i + 2]) != NULL)) {
+      long option_end = i + 2;
+      int valid = 1;
+      if (RSTRING_PTR(src)[option_end] == '-') { option_negative = 1; option_end++; }
+      long option_count = option_end;
+      while (option_end < RSTRING_LEN(src) &&
+             strchr("imx", RSTRING_PTR(src)[option_end]) != NULL) option_end++;
+      if (option_end == option_count || option_end >= RSTRING_LEN(src) ||
+          RSTRING_PTR(src)[option_end] != ':') valid = 0;
+      if (valid) {
+        kind = "option_scope_start";
+        byte = ':';
+        i = option_end;
+        group_name = rb_str_substr(src, option_count, option_end - option_count);
+      }
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == ':') {
       kind = "noncapture_start";
@@ -240,6 +259,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), backref_name); }
     if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), group_name); }
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
+    if (strcmp(kind, "option_scope_start") == 0)
+      rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
   }
@@ -316,7 +337,7 @@ static long onibi_find_close(VALUE tokens, long begin, long end, ID open, ID clo
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
     if (kind == open || kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") ||
         kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") ||
-        kind == rb_intern("lookbehind_start")) depth++;
+        kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start")) depth++;
     else if (kind == close && --depth == 0) return i;
   }
   return -1;
@@ -374,6 +395,18 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     VALUE node = onibi_ast_node(behind ? "lookbehind" : "lookahead", token);
     rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
     rb_hash_aset(node, ID2SYM(rb_intern("positive")), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
+    rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
+  if (kind == rb_intern("option_scope_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("option_scope_start"), rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated option scope");
+    VALUE node = onibi_ast_node("option_scope", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
+    rb_hash_aset(node, ID2SYM(rb_intern("options")), rb_hash_aref(token, ID2SYM(rb_intern("name"))));
+    rb_hash_aset(node, ID2SYM(rb_intern("negative")), rb_hash_aref(token, ID2SYM(rb_intern("negative"))));
     rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
     rb_obj_freeze(node);
     *index = close + 1;
@@ -473,7 +506,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
+    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("atomic_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("option_scope_start") || kind == rb_intern("class_start")) depth++;
     else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
     else if (kind == rb_intern("alternation") && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(src, tokens, part, i));
@@ -1037,6 +1070,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("subroutine")))
     rb_raise(eRegexpError, "subroutine calls require the dynamic interpreter");
+  if (type == ID2SYM(rb_intern("option_scope")))
+    rb_raise(eRegexpError, "option scopes require resolved GIR flags");
   if (type == ID2SYM(rb_intern("anchor")))
   {
     onibi_fragment_t result = onibi_fragment_empty();

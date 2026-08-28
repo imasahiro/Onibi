@@ -473,6 +473,15 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("a", "i").vm_match?("A")
   end
 
+  def test_parser_preserves_option_scope_metadata
+    tokens = Onibi::Lexer.new("(?im:a)").tokens
+    assert_equal :option_scope_start, tokens.first[:kind]
+    ast = Onibi::Parser.parse("(?-x:a)")[:ast]
+    assert_equal :option_scope, ast[:children].first[:type]
+    assert_equal "x", ast[:children].first[:options]
+    assert ast[:children].first[:negative]
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")
