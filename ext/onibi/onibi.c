@@ -22,6 +22,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
+static VALUE onibi_hash_value(VALUE hash, const char *name);
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -993,6 +994,24 @@ static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VAL
       onibi_gir_edge_actions(builder, NUM2LONG(rb_ary_entry(exits, i)), NUM2LONG(rb_ary_entry(starts, j)), actions);
 }
 
+static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(exits); i++) {
+    long from = NUM2LONG(rb_ary_entry(exits, i));
+    for (long j = 0; j < RARRAY_LEN(starts); j++) {
+      VALUE edge = rb_hash_new();
+      rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
+      rb_hash_aset(edge, ID2SYM(rb_intern("to")), rb_ary_entry(starts, j));
+      rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
+      long insert_at = RARRAY_LEN(builder->edges);
+      for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
+        VALUE prior = rb_ary_entry(builder->edges, k);
+        if (NUM2LONG(onibi_hash_value(prior, "from")) == from) { insert_at = k; break; }
+      }
+      rb_funcall(builder->edges, rb_intern("insert"), 2, LONG2NUM(insert_at), edge);
+    }
+  }
+}
+
 static void onibi_append_values(VALUE destination, VALUE values) {
   for (long i = 0; i < RARRAY_LEN(values); i++) rb_ary_push(destination, rb_ary_entry(values, i));
 }
@@ -1161,7 +1180,8 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
       }
       VALUE transition_actions = rb_ary_dup(result.pending_actions);
       onibi_append_values(transition_actions, part.start_actions);
-      onibi_connect_actions(builder, old_exits, part.starts, transition_actions);
+      if (result.lazy) onibi_connect_prepend_actions(builder, old_exits, part.starts, transition_actions);
+      else onibi_connect_actions(builder, old_exits, part.starts, transition_actions);
       result.exits = rb_ary_dup(part.exits);
       /* A prior exit can bypass this part only when this part is nullable. */
       if (part.nullable) onibi_append_values(result.exits, old_exits);
@@ -1394,9 +1414,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
       return result;
     }
-    if (!RTEST(onibi_hash_value(ast, "greedy")) &&
-        (NIL_P(max_value) || NUM2LONG(max_value) != min))
-      rb_raise(eRegexpError, "variable lazy repeat requires ordered repeat lowering");
     long counter_slot = -1;
     if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
       counter_slot = builder->counter_count++;
@@ -1447,6 +1464,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       onibi_connect(builder, repeat.exits, repeat.starts);
       for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
     }
+    result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
     return result;
   }
   rb_raise(eRegexpError, "unsupported AST node");
@@ -1469,7 +1487,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
   VALUE accept_starts = rb_ary_new();
   rb_ary_push(accept_starts, LONG2NUM(accept));
-  onibi_connect_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
+  if (fragment.lazy) onibi_connect_prepend_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
+  else onibi_connect_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
   VALUE start_edges = rb_ary_new();
   if (fragment.nullable && fragment.lazy) {
     VALUE edge = rb_hash_new();

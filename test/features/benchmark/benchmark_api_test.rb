@@ -422,10 +422,11 @@ class BenchmarkApiTest < Minitest::Test
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
     lazy = Onibi::Regexp.new("a+?")
     possessive = Onibi::Regexp.new("a++")
-    refute lazy.program_cached?
+    assert lazy.program_cached?
     refute possessive.program_cached?
     assert_equal "a", lazy.match("aaa")[0]
     assert_equal "aaa", possessive.match("aaa")[0]
+    assert_equal({ start: 0, end: 4 }, Onibi::Regexp.new("a+?b").vm_match_result("aaab"))
   end
 
   def test_encoding_flags_are_parsed_but_not_sent_to_ascii_rseq
