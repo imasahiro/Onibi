@@ -1106,7 +1106,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       return result;
     }
     VALUE atom = onibi_hash_value(ast, "atom");
-    long counter_slot = builder->counter_count++;
+    long counter_slot = -1;
+    if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
+      counter_slot = builder->counter_count++;
     onibi_fragment_t result = onibi_fragment_empty();
     result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = min == 0;
     if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
