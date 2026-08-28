@@ -562,6 +562,32 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
           spec_buf[spec_len++] = (char)onibi_token_byte(spec_token);
         }
         spec_buf[spec_len] = '\0';
+        int valid_spec = spec_len > 0;
+        long comma_count = 0, comma_at = -1;
+        for (size_t spec_i = 0; valid_spec && spec_i < spec_len; spec_i++) {
+          if (spec_buf[spec_i] == ',') {
+            comma_count++; comma_at = (long)spec_i;
+          } else if (spec_buf[spec_i] < '0' || spec_buf[spec_i] > '9') valid_spec = 0;
+        }
+        if (comma_count > 1 || (comma_count == 1 &&
+            (comma_at == 0 && comma_at + 1 == (long)spec_len))) valid_spec = 0;
+        if (comma_count == 1 && comma_at > 0 && comma_at + 1 < (long)spec_len) {
+          /* both sides contain digits */
+        } else if (comma_count == 1 && comma_at == 0 && spec_len == 1) valid_spec = 0;
+        if (!valid_spec) {
+          if (memchr(spec_buf, '-', spec_len) != NULL)
+            rb_raise(eRegexpError, "invalid quantifier");
+          rb_ary_push(children, node);
+          for (long literal_i = i; literal_i <= close; literal_i++) {
+            VALUE literal_token = rb_ary_entry(tokens, literal_i);
+            VALUE literal = onibi_ast_node("literal", literal_token);
+            rb_hash_aset(literal, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(literal_token)));
+            rb_obj_freeze(literal);
+            rb_ary_push(children, literal);
+          }
+          i = close + 1;
+          continue;
+        }
         long min = 0, max_value = 0;
         const char *body = spec_buf;
         char *comma = strchr(body, ',');

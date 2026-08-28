@@ -487,6 +487,13 @@ class BenchmarkApiTest < Minitest::Test
     assert Onibi::Regexp.new("a b").vm_match?("a b")
   end
 
+  def test_parser_keeps_invalid_repeat_braces_literal
+    regexp = Onibi::Regexp.new("a{}")
+    assert regexp.vm_match?("a{}")
+    refute regexp.vm_match?("a")
+    assert_equal %i[literal literal literal], regexp.pipeline[:canonical][:ast][:children].map { |node| node[:type] }
+  end
+
   def test_compiler_resolves_local_case_and_line_options
     case_scope = Onibi::Regexp.new("(?i:a)")
     assert case_scope.vm_match?("A")
