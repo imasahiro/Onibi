@@ -848,9 +848,9 @@ class BenchmarkApiTest < Minitest::Test
     assert repeated.vm_match?("aab")
   end
 
-  def test_nullable_capture_uses_mri_until_tag_history_exists
+  def test_nullable_capture_uses_tag_history_in_rseq
     regexp = Onibi::Regexp.new("(a*)")
-    refute regexp.program_cached?
+    assert regexp.program_cached?
     assert_equal Regexp.new("(a*)").match("aa").to_a, regexp.match("aa").to_a
     assert_equal({ 1 => { start: 0, end: 2 } }, regexp.vm_match_result("aa")[:captures])
   end
@@ -865,6 +865,17 @@ class BenchmarkApiTest < Minitest::Test
     result = Onibi::Regexp.new("(a(b))").vm_match_result("xxabbxx")
     assert_equal({ start: 2, end: 4 }, result.slice(:start, :end))
     assert_equal({ 1 => { start: 2, end: 4 }, 2 => { start: 3, end: 4 } }, result[:captures])
+  end
+
+  def test_tagged_vm_materializes_nullable_captures
+    ["(a*)", "(a?)", "()"].each do |source|
+      regexp = Onibi::Regexp.new(source)
+      expected = ::Regexp.new(source).match("xyz")
+      assert regexp.program_cached?, source
+      result = regexp.vm_match_result("xyz")
+      assert_equal expected.offset(0), [result[:start], result[:end]], source
+      assert_equal expected.offset(1), [result[:captures][1][:start], result[:captures][1][:end]], source
+    end
   end
 
   def test_backreference_has_explicit_dynamic_pipeline_nodes

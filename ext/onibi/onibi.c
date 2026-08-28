@@ -1301,8 +1301,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   if (type == ID2SYM(rb_intern("capture"))) {
     long capture_id = builder->capture_count++;
     onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
-    if (result.nullable)
-      rb_raise(eRegexpError, "nullable captures require tag history");
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
     rb_hash_aset(open, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id));
