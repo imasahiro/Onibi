@@ -2580,9 +2580,18 @@ static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
-  /* Dynamic execution uses the same ordered capture walk, with dynamic
-     states such as G_BACKREF resolved by the walk itself. */
-  return onibi_vm_tagged_ordered(rseq, str);
+  /* Dynamic execution owns its dispatch loop.  The capture walker resolves
+     backreferences and counters; this loop adds the dynamic deadline and
+     interrupt boundary without routing through TAGGED_ORDERED. */
+  for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    rb_thread_check_ints();
+    onibi_check_deadline();
+    long end = 0;
+    long reported_start = start;
+    VALUE captures = rb_hash_new();
+    if (onibi_gir_match_captures(rseq, str, start, &end, &reported_start, &captures)) return Qtrue;
+  }
+  return Qfalse;
 }
 
 static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
