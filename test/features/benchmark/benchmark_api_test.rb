@@ -659,6 +659,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %w[ignorecase multiline], Onibi::Parser.parse("a", "iim")[:options]
   end
 
+  def test_parser_accepts_named_option_arrays
+    parsed = Onibi::Parser.parse("a # comment\n b", ["extended"])
+    assert_equal ["extended"], parsed[:options]
+    assert_equal ["a", "b"], parsed[:tokens].select { |token| token[:kind] == :literal }.map { |token| token[:byte].chr }
+  end
+
   def test_parser_publishes_an_immutable_ast_graph
     ast = Onibi::Parser.parse("(ab|c)")[:ast]
     assert_predicate ast, :frozen?
