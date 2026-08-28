@@ -1236,7 +1236,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   return result;
 }
 
-typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
+typedef struct { OnibiIdVector starts; OnibiIdVector exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
 typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
@@ -1262,10 +1262,19 @@ static void onibi_id_vector_free(OnibiIdVector *vector) {
   xfree(vector->items); vector->items = NULL; vector->count = vector->capacity = 0;
 }
 
-static void onibi_id_vector_from_array(OnibiIdVector *vector, VALUE values) {
+static void onibi_id_vector_move(OnibiIdVector *destination, OnibiIdVector *source) {
+  onibi_id_vector_free(destination);
+  *destination = *source;
+  onibi_id_vector_init(source);
+}
+
+static void onibi_id_vector_append(OnibiIdVector *destination, const OnibiIdVector *source) {
+  for (size_t i = 0; i < source->count; i++) onibi_id_vector_push(destination, source->items[i]);
+}
+
+static void onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value) {
   onibi_id_vector_init(vector);
-  for (long i = 0; i < RARRAY_LEN(values); i++)
-    onibi_id_vector_push(vector, (OnibiStateId)NUM2ULONG(rb_ary_entry(values, i)));
+  onibi_id_vector_push(vector, value);
 }
 
 static void onibi_guard_vector_init(OnibiGuardVector *vector) {
@@ -1621,7 +1630,7 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
 
 static onibi_fragment_t onibi_fragment_empty(void) {
   onibi_fragment_t fragment;
-  fragment.starts = rb_ary_new(); fragment.exits = rb_ary_new();
+  onibi_id_vector_init(&fragment.starts); onibi_id_vector_init(&fragment.exits);
   fragment.start_actions = rb_ary_new(); fragment.pending_actions = rb_ary_new(); fragment.nullable = 1; fragment.lazy = 0;
   return fragment;
 }
@@ -1661,23 +1670,18 @@ static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
 /* Fragment composition still stores Ruby arrays, but all numeric exit
  * traversal goes through the C vector boundary. */
 static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
-                                           VALUE exits, VALUE starts, VALUE actions,
+                                           const OnibiIdVector *exits, const OnibiIdVector *starts, VALUE actions,
                                            int prepend) {
-  OnibiIdVector exit_ids;
-  onibi_id_vector_from_array(&exit_ids, exits);
-  if (prepend) onibi_connect_vector_prepend_actions(builder, &exit_ids, starts, actions);
-  else onibi_connect_vector_actions(builder, &exit_ids, starts, actions);
-  onibi_id_vector_free(&exit_ids);
+  VALUE start_values = rb_ary_new_capa((long)starts->count);
+  for (size_t i = 0; i < starts->count; i++) rb_ary_push(start_values, ULONG2NUM(starts->items[i]));
+  if (prepend) onibi_connect_vector_prepend_actions(builder, exits, start_values, actions);
+  else onibi_connect_vector_actions(builder, exits, start_values, actions);
 }
 
-static void onibi_connect_fragment(onibi_gir_builder_t *builder, VALUE exits, VALUE starts) {
-  OnibiIdVector exit_ids;
-  onibi_id_vector_from_array(&exit_ids, exits);
-  VALUE *start_values = RARRAY_PTR(starts);
-  for (size_t i = 0; i < exit_ids.count; i++)
-    for (long j = 0; j < RARRAY_LEN(starts); j++)
-      onibi_gir_edge(builder, (long)exit_ids.items[i], NUM2LONG(start_values[j]));
-  onibi_id_vector_free(&exit_ids);
+static void onibi_connect_fragment(onibi_gir_builder_t *builder, const OnibiIdVector *exits, const OnibiIdVector *starts) {
+  for (size_t i = 0; i < exits->count; i++)
+    for (size_t j = 0; j < starts->count; j++)
+      onibi_gir_edge(builder, (long)exits->items[i], (long)starts->items[j]);
 }
 
 static void onibi_append_values(VALUE destination, VALUE values) {
@@ -1687,23 +1691,17 @@ static void onibi_append_values(VALUE destination, VALUE values) {
 }
 
 static void onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
-                                             VALUE starts, VALUE guard) {
-  OnibiIdVector ids;
-  onibi_id_vector_from_array(&ids, starts);
-  for (size_t i = 0; i < ids.count; i++) {
-    onibi_guard_vector_add(&builder->capture_guards, ids.items[i], guard, builder->map_roots);
+                                             const OnibiIdVector *starts, VALUE guard) {
+  for (size_t i = 0; i < starts->count; i++) {
+    onibi_guard_vector_add(&builder->capture_guards, starts->items[i], guard, builder->map_roots);
   }
-  onibi_id_vector_free(&ids);
 }
 
 static void onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
-                                          VALUE exits, VALUE actions) {
-  OnibiIdVector ids;
-  onibi_id_vector_from_array(&ids, exits);
-  for (size_t i = 0; i < ids.count; i++) {
-    onibi_guard_vector_add(&builder->exit_guards, ids.items[i], actions, builder->map_roots);
+                                          const OnibiIdVector *exits, VALUE actions) {
+  for (size_t i = 0; i < exits->count; i++) {
+    onibi_guard_vector_add(&builder->exit_guards, exits->items[i], actions, builder->map_roots);
   }
-  onibi_id_vector_free(&ids);
 }
 
 static VALUE onibi_capture_test_action(long slot, int set) {
@@ -1763,9 +1761,11 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, id_g_accept, Qnil);
-  VALUE accept_starts = rb_ary_new_from_args(1, LONG2NUM(accept));
-  onibi_connect_fragment_actions(builder, fragment.exits, accept_starts, fragment.pending_actions, 0);
-  long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
+  OnibiIdVector accept_starts;
+  onibi_id_vector_init(&accept_starts);
+  onibi_id_vector_push(&accept_starts, (OnibiStateId)accept);
+  onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts, fragment.pending_actions, 0);
+  long entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   VALUE descriptor = rb_hash_new();
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
     rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
@@ -1773,6 +1773,9 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
     rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
   rb_ary_push(builder->subprograms, descriptor);
+  onibi_id_vector_free(&fragment.starts);
+  onibi_id_vector_free(&fragment.exits);
+  onibi_id_vector_free(&accept_starts);
   return RARRAY_LEN(builder->subprograms) - 1;
 }
 
@@ -1842,9 +1845,11 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
   }
   long accept = builder->next_id++;
   onibi_gir_state(builder, accept, id_g_accept, Qnil);
-  onibi_connect_fragment_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
+  OnibiIdVector accept_starts;
+  onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
+  onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
                                  fragment.pending_actions, 0);
-  long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
+  long entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   VALUE descriptor = rb_hash_new();
     rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
     rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
@@ -1852,6 +1857,9 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
   rb_obj_freeze(descriptor);
   rb_ary_store(builder->subprograms, id, descriptor);
+  onibi_id_vector_free(&fragment.starts);
+  onibi_id_vector_free(&fragment.exits);
+  onibi_id_vector_free(&accept_starts);
   return id;
 }
 
@@ -2012,7 +2020,7 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
   int have_consuming = 0;
   for (long i = 0; i < RARRAY_LEN(children); i++) {
     onibi_fragment_t part = onibi_compile_node(rb_ary_entry(children, i), builder);
-    if (RARRAY_LEN(part.starts) == 0) {
+    if (part.starts.count == 0) {
       if (have_consuming) {
         onibi_append_values(result.pending_actions, part.start_actions);
         onibi_append_values(result.pending_actions, part.pending_actions);
@@ -2021,29 +2029,36 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
         onibi_append_values(result.start_actions, part.pending_actions);
       }
       result.nullable = result.nullable && part.nullable;
+      onibi_id_vector_free(&part.starts);
+      onibi_id_vector_free(&part.exits);
       continue;
     }
     if (!have_consuming) {
-      result.starts = part.starts;
-      result.exits = part.exits;
+      onibi_id_vector_move(&result.starts, &part.starts);
+      onibi_id_vector_move(&result.exits, &part.exits);
       onibi_append_values(result.start_actions, part.start_actions);
       result.lazy = part.lazy;
       have_consuming = 1;
     } else {
-      VALUE old_exits = result.exits;
+      OnibiIdVector old_exits = result.exits;
+      onibi_id_vector_init(&result.exits);
       if (result.nullable) {
         if (result.lazy) {
-          VALUE reordered = rb_ary_dup(part.starts);
-          onibi_append_values(reordered, result.starts);
+          OnibiIdVector reordered;
+          onibi_id_vector_init(&reordered);
+          onibi_id_vector_append(&reordered, &part.starts);
+          onibi_id_vector_append(&reordered, &result.starts);
+          onibi_id_vector_free(&result.starts);
           result.starts = reordered;
-        } else onibi_append_values(result.starts, part.starts);
+        } else onibi_id_vector_append(&result.starts, &part.starts);
       }
       VALUE transition_actions = rb_ary_dup(result.pending_actions);
       onibi_append_values(transition_actions, part.start_actions);
-      onibi_connect_fragment_actions(builder, old_exits, part.starts, transition_actions, result.lazy);
-      result.exits = rb_ary_dup(part.exits);
+      onibi_connect_fragment_actions(builder, &old_exits, &part.starts, transition_actions, result.lazy);
+      onibi_id_vector_move(&result.exits, &part.exits);
       /* A prior exit can bypass this part only when this part is nullable. */
-      if (part.nullable) onibi_append_values(result.exits, old_exits);
+      if (part.nullable) onibi_id_vector_append(&result.exits, &old_exits);
+      onibi_id_vector_free(&old_exits);
       result.pending_actions = rb_ary_new();
       result.lazy = part.lazy;
     }
@@ -2077,13 +2092,14 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         /* A literal-only class is an ordered union of encoded literals.
            Each branch lowers to one or more G_CHAR states. */
         onibi_fragment_t result = onibi_fragment_empty();
-        result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+        result.nullable = 0;
         for (long i = 0; i < RARRAY_LEN(children); i++) {
           VALUE child = rb_hash_dup(rb_ary_entry(children, i));
           rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
           onibi_fragment_t branch = onibi_compile_node(child, builder);
-          onibi_append_values(result.starts, branch.starts);
-          onibi_append_values(result.exits, branch.exits);
+          onibi_id_vector_append(&result.starts, &branch.starts);
+          onibi_id_vector_append(&result.exits, &branch.exits);
+          onibi_id_vector_free(&branch.starts); onibi_id_vector_free(&branch.exits);
         }
         return result;
       }
@@ -2095,14 +2111,15 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         if (NUM2UINT(onibi_hash_value_id(rb_ary_entry(children, i), id_key_kind_code)) != ONIBI_TOKEN_LITERAL) literal_children = 0;
       if (!literal_children) goto skip_utf8_range_expansion;
       onibi_fragment_t result = onibi_fragment_empty();
-      result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+      result.nullable = 0;
       int expandable = 1; long expanded = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_hash_dup(rb_ary_entry(children, i));
         rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
         onibi_fragment_t branch = onibi_compile_node(child, builder);
-        onibi_append_values(result.starts, branch.starts);
-        onibi_append_values(result.exits, branch.exits);
+        onibi_id_vector_append(&result.starts, &branch.starts);
+        onibi_id_vector_append(&result.exits, &branch.exits);
+        onibi_id_vector_free(&branch.starts); onibi_id_vector_free(&branch.exits);
       }
       for (long i = 0; i < RARRAY_LEN(ranges); i++) {
         VALUE range = rb_ary_entry(ranges, i);
@@ -2120,8 +2137,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
           rb_hash_aset(literal, ID2SYM(id_key_byte), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
           rb_hash_aset(literal, ID2SYM(id_key_bytes), bytes);
           onibi_fragment_t branch = onibi_compile_node(literal, builder);
-          onibi_append_values(result.starts, branch.starts);
-          onibi_append_values(result.exits, branch.exits);
+          onibi_id_vector_append(&result.starts, &branch.starts);
+          onibi_id_vector_append(&result.exits, &branch.exits);
+          onibi_id_vector_free(&branch.starts); onibi_id_vector_free(&branch.exits);
           if (cp == last) break;
         }
       }
@@ -2137,7 +2155,7 @@ skip_utf8_range_expansion:
     VALUE literal_bytes = onibi_hash_value_id(ast, id_key_bytes);
     if (!NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) > 1) {
       onibi_fragment_t result = onibi_fragment_empty();
-      result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+      result.nullable = 0;
       for (long i = 0; i < RSTRING_LEN(literal_bytes); i++) {
         VALUE byte_ast = rb_hash_dup(ast);
         rb_hash_aset(byte_ast, ID2SYM(id_key_byte),
@@ -2145,9 +2163,10 @@ skip_utf8_range_expansion:
         rb_hash_aset(byte_ast, ID2SYM(id_key_bytes),
                      rb_str_new(RSTRING_PTR(literal_bytes) + i, 1));
         onibi_fragment_t part = onibi_compile_node(byte_ast, builder);
-        if (i == 0) result.starts = part.starts;
-        else onibi_connect_fragment(builder, result.exits, part.starts);
-        result.exits = part.exits;
+      if (i == 0) onibi_id_vector_move(&result.starts, &part.starts);
+      else onibi_connect_fragment(builder, &result.exits, &part.starts);
+      if (i != 0) onibi_id_vector_free(&part.starts);
+      onibi_id_vector_move(&result.exits, &part.exits);
       }
       return result;
     }
@@ -2156,19 +2175,20 @@ skip_utf8_range_expansion:
     return onibi_compile_sequence(onibi_hash_value_id(ast, id_key_children), builder);
   if (type_code == ONIBI_AST_ALTERNATIVE) {
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
+    result.nullable = 0;
     VALUE branches = onibi_hash_value_id(ast, id_key_branches);
     for (long i = 0; i < RARRAY_LEN(branches); i++) {
       onibi_fragment_t branch = onibi_compile_node(rb_ary_entry(branches, i), builder);
-      for (long j = 0; j < RARRAY_LEN(branch.starts); j++) rb_ary_push(result.starts, rb_ary_entry(branch.starts, j));
-      for (long j = 0; j < RARRAY_LEN(branch.exits); j++) rb_ary_push(result.exits, rb_ary_entry(branch.exits, j));
+      onibi_id_vector_append(&result.starts, &branch.starts);
+      onibi_id_vector_append(&result.exits, &branch.exits);
       /* Preserve actions on each alternative edge.  A branch action cannot
          be lifted to the fragment because that would apply it to siblings. */
       if (RARRAY_LEN(branch.start_actions) > 0)
-        onibi_add_capture_guard_fragment(builder, branch.starts, branch.start_actions);
+        onibi_add_capture_guard_fragment(builder, &branch.starts, branch.start_actions);
       if (RARRAY_LEN(branch.pending_actions) > 0)
-        onibi_add_exit_guard_fragment(builder, branch.exits, branch.pending_actions);
+        onibi_add_exit_guard_fragment(builder, &branch.exits, branch.pending_actions);
       result.nullable = result.nullable || branch.nullable;
+      onibi_id_vector_free(&branch.starts); onibi_id_vector_free(&branch.exits);
     }
     return result;
   }
@@ -2255,8 +2275,9 @@ skip_utf8_range_expansion:
     }
     onibi_gir_state(builder, id, op, payload);
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
-    rb_ary_push(result.starts, LONG2NUM(id)); rb_ary_push(result.exits, LONG2NUM(id));
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+    result.nullable = 0;
     return result;
   }
   if (type_code == ONIBI_AST_SUBROUTINE)
@@ -2274,8 +2295,8 @@ skip_utf8_range_expansion:
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_call, payload);
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
-    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
     result.nullable = 0;
     return result;
   }
@@ -2381,15 +2402,17 @@ skip_utf8_range_expansion:
     VALUE no_guard = rb_ary_new();
     rb_ary_push(no_guard, onibi_capture_test_action(capture_id, 0));
     onibi_append_values(no_guard, no.start_actions);
-    onibi_add_capture_guard_fragment(builder, yes.starts, yes_guard);
-    onibi_add_capture_guard_fragment(builder, no.starts, no_guard);
-    onibi_add_exit_guard_fragment(builder, yes.exits, yes.pending_actions);
-    onibi_add_exit_guard_fragment(builder, no.exits, no.pending_actions);
+    onibi_add_capture_guard_fragment(builder, &yes.starts, yes_guard);
+    onibi_add_capture_guard_fragment(builder, &no.starts, no_guard);
+    onibi_add_exit_guard_fragment(builder, &yes.exits, yes.pending_actions);
+    onibi_add_exit_guard_fragment(builder, &no.exits, no.pending_actions);
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_dup(yes.starts);
-    onibi_append_values(result.starts, no.starts);
-    result.exits = rb_ary_dup(yes.exits);
-    onibi_append_values(result.exits, no.exits);
+    onibi_id_vector_append(&result.starts, &yes.starts);
+    onibi_id_vector_append(&result.starts, &no.starts);
+    onibi_id_vector_append(&result.exits, &yes.exits);
+    onibi_id_vector_append(&result.exits, &no.exits);
+    onibi_id_vector_free(&yes.starts); onibi_id_vector_free(&yes.exits);
+    onibi_id_vector_free(&no.starts); onibi_id_vector_free(&no.exits);
     result.nullable = yes.nullable || no.nullable;
     result.lazy = yes.lazy;
     return result;
@@ -2403,8 +2426,8 @@ skip_utf8_range_expansion:
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_atomic, payload);
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
-    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
     result.nullable = 0;
     return result;
   }
@@ -2417,8 +2440,8 @@ skip_utf8_range_expansion:
     long id = builder->next_id++;
     onibi_gir_state(builder, id, id_g_absent, payload);
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
-    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
     result.nullable = 1;
     return result;
   }
@@ -2551,7 +2574,7 @@ skip_utf8_range_expansion:
     if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
       counter_slot = builder->counter_count++;
     onibi_fragment_t result = onibi_fragment_empty();
-    result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = min == 0;
+    result.nullable = min == 0;
     if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
       rb_raise(eRegexpError, "invalid quantifier range");
     long max = NIL_P(max_value) ? -1 : NUM2LONG(max_value);
@@ -2566,52 +2589,52 @@ skip_utf8_range_expansion:
     }
     for (long i = 0; i < min; i++) {
       onibi_fragment_t part = onibi_compile_node(atom, builder);
-      if (i == 0) result.starts = part.starts;
+      if (i == 0) onibi_id_vector_move(&result.starts, &part.starts);
       else {
         VALUE actions = rb_ary_new();
         if (counter_slot >= 0)
           rb_ary_push(actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
-        onibi_connect_fragment_actions(builder, result.exits, part.starts, actions, 0);
+        onibi_connect_fragment_actions(builder, &result.exits, &part.starts, actions, 0);
       }
-      result.exits = part.exits;
+      onibi_id_vector_move(&result.exits, &part.exits);
     }
     if (max >= 0 && max > min) {
       long optional = max - min;
       for (long i = 0; i < optional; i++) {
         onibi_fragment_t part = onibi_compile_node(atom, builder);
-        if (RARRAY_LEN(result.starts) == 0) result.starts = part.starts;
+        if (result.starts.count == 0) onibi_id_vector_move(&result.starts, &part.starts);
         VALUE repeat_actions = rb_ary_new();
         rb_ary_push(repeat_actions, onibi_counter_action(id_a_test_counter_lt, counter_slot, LONG2NUM(max)));
         rb_ary_push(repeat_actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
-        if (RARRAY_LEN(result.exits) > 0)
-          onibi_connect_fragment_actions(builder, result.exits, part.starts, repeat_actions, 0);
-        VALUE next_exits = rb_ary_dup(result.exits);
-        onibi_append_values(next_exits, part.exits);
-        result.exits = next_exits;
+        if (result.exits.count > 0)
+          onibi_connect_fragment_actions(builder, &result.exits, &part.starts, repeat_actions, 0);
+        onibi_id_vector_append(&result.exits, &part.exits);
+        onibi_id_vector_free(&part.starts); onibi_id_vector_free(&part.exits);
       }
       rb_ary_push(result.pending_actions, onibi_counter_action(id_a_test_counter_ge, counter_slot, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
-      if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
+      if (result.starts.count == 0) onibi_id_vector_move(&result.starts, &repeat.starts);
       if (!repeat.nullable) onibi_append_values(result.start_actions, repeat.start_actions);
-      if (RARRAY_LEN(result.exits) > 0) {
+      if (result.exits.count > 0) {
         if (repeat.nullable) {
-          onibi_connect_fragment(builder, result.exits, repeat.starts);
+          onibi_connect_fragment(builder, &result.exits, &repeat.starts);
         } else {
           VALUE next_actions = rb_ary_dup(repeat.pending_actions);
           onibi_append_values(next_actions, repeat.start_actions);
-          onibi_connect_fragment_actions(builder, result.exits, repeat.starts, next_actions, 0);
+          onibi_connect_fragment_actions(builder, &result.exits, &repeat.starts, next_actions, 0);
         }
       }
       if (repeat.nullable) {
-        onibi_connect_fragment(builder, repeat.exits, repeat.starts);
+        onibi_connect_fragment(builder, &repeat.exits, &repeat.starts);
       } else {
         VALUE loop_actions = rb_ary_dup(repeat.pending_actions);
         onibi_append_values(loop_actions, repeat.start_actions);
-        onibi_connect_fragment_actions(builder, repeat.exits, repeat.starts, loop_actions, 0);
+        onibi_connect_fragment_actions(builder, &repeat.exits, &repeat.starts, loop_actions, 0);
       }
       onibi_append_values(result.pending_actions, repeat.pending_actions);
-      for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
+      onibi_id_vector_append(&result.exits, &repeat.exits);
+      onibi_id_vector_free(&repeat.starts); onibi_id_vector_free(&repeat.exits);
     }
     result.lazy = !RTEST(onibi_hash_value_id(ast, id_key_greedy));
     return result;
@@ -2654,10 +2677,11 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE accept_starts = rb_ary_new();
   rb_ary_push(accept_starts, LONG2NUM(accept));
   OnibiIdVector exit_ids;
-  onibi_id_vector_from_array(&exit_ids, fragment.exits);
+  exit_ids = fragment.exits;
   if (fragment.lazy) onibi_connect_vector_prepend_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
   else onibi_connect_vector_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
   VALUE start_edges = rb_ary_new();
+  long root_entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   if (fragment.nullable && fragment.lazy) {
     VALUE edge = rb_hash_new();
     rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
@@ -2667,7 +2691,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     rb_ary_push(start_edges, edge);
   }
   OnibiIdVector start_ids;
-  onibi_id_vector_from_array(&start_ids, fragment.starts);
+  start_ids = fragment.starts;
   for (size_t i = 0; i < start_ids.count; i++) {
     VALUE edge = rb_hash_new();
     VALUE destination = UINT2NUM(start_ids.items[i]);
@@ -2704,8 +2728,6 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   /* Program zero is the root callable program.  Keep an explicit descriptor
      even before nested dynamic constructs add their own entries. */
   VALUE root_descriptor = rb_hash_new();
-  long root_entry = RARRAY_LEN(fragment.starts) > 0 ?
-    NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
   rb_hash_aset(root_descriptor, ID2SYM(id_key_entry), LONG2NUM(root_entry));
   rb_hash_aset(root_descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
   rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));

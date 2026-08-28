@@ -171,7 +171,7 @@ The remaining compiler containers have three separate roles:
 
 | Container | Current role | Migration order |
 | --- | --- | --- |
-| fragment `starts`/`exits` | Ordered state-ID sets | Partial; final connections use a C vector, internal construction remains Ruby-backed |
+| fragment `starts`/`exits` | Ordered state-ID sets | Owned `OnibiIdVector` values with explicit move and append operations |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
 | capture and exit guards | State-ID lookup during edge creation | C guard vectors; action lists remain Ruby-backed |
 | capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
@@ -196,7 +196,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | Convert after fragment migration | The builder mutates them during compilation. The RSeq boundary needs a stable snapshot only. |
-| fragment start/exit IDs | No | Partial `OnibiIdVector` conversion | IDs are numeric and ordered. Final GIR exit connections, including lazy ordering, now consume a C vector. Fragment composition still uses Ruby arrays and is a remaining migration target. |
+| fragment start/exit IDs | No | `OnibiIdVector` | IDs are numeric and ordered. Fragment composition, guard insertion, and GIR connections use C vectors. Ruby arrays are not used for fragment state IDs. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard lookup now uses an owned C vector of state IDs and Ruby action arrays. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
 | regular VM visited set | No | C bitset with owned large-set storage | Numeric state/position pairs use a C bitset. Sets up to 64 MiB use owned C memory when stack storage is too large; counter-bearing paths retain a safe Ruby fallback. |

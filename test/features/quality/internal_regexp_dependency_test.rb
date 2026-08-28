@@ -139,6 +139,17 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "xfree(visited_bits)"
   end
 
+  def test_fragments_store_state_ids_in_c_vectors
+    source = File.read(EXTENSION_SOURCE)
+    fragment = source[/typedef struct \{ OnibiIdVector starts;.*?\} onibi_fragment_t;/m]
+
+    refute_nil fragment
+    assert_includes fragment, "OnibiIdVector starts"
+    assert_includes fragment, "OnibiIdVector exits"
+    assert_includes source, "onibi_id_vector_move"
+    assert_includes source, "onibi_id_vector_append"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
