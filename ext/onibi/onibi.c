@@ -2545,6 +2545,7 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
+  VALUE semantic_actions = onibi_hash_value(rseq, "actions");
   VALUE graph = rb_hash_new();
   VALUE states = rb_ary_new_capa(RARRAY_LEN(semantic_states));
   VALUE edges = rb_ary_new_capa(RARRAY_LEN(semantic_edges));
@@ -2565,6 +2566,17 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
     uint32_t destination = physical_edges[i].destination;
     if (destination == ONIBI_ACCEPT_STATE) destination = (uint32_t)(RARRAY_LEN(states) - 1);
     rb_hash_aset(edge, ID2SYM(rb_intern("to")), UINT2NUM(destination));
+    VALUE physical_program = rb_ary_new();
+    uint32_t action_offset = physical_edges[i].action_offset;
+    if (action_offset != 0) {
+      uint32_t action_index = action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+      for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
+        VALUE action = rb_ary_entry(semantic_actions, a);
+        rb_ary_push(physical_program, action);
+        if (SYM2ID(onibi_hash_value(action, "op")) == rb_intern("END")) break;
+      }
+    }
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
     rb_ary_push(edges, edge);
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
