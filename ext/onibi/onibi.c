@@ -1261,6 +1261,7 @@ typedef enum {
 } OnibiAsciiProperty;
 
 static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
+  if (NIL_P(name)) return ONIBI_ASCII_PROP_UNKNOWN;
   static ID ids[15]; static int ready = 0;
   if (!ready) {
     const char *names[] = {"ASCII", "ASCII_Hex_Digit", "Digit", "Alpha", "Alnum", "Lower", "Upper", "Space", "Blank", "Word", "XDigit", "Cntrl", "Print", "Graph", "Punct"};
@@ -1337,8 +1338,10 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
-  } else if (onibi_ascii_property_name_p(escape_name)) {
-    OnibiAsciiProperty property_kind = onibi_ascii_property_kind(escape_name);
+  } else {
+    OnibiAsciiProperty property_kind = NIL_P(escape_name) ? ONIBI_ASCII_PROP_UNKNOWN :
+      onibi_ascii_property_kind(escape_name);
+    if (property_kind == ONIBI_ASCII_PROP_UNKNOWN) goto class_children;
     for (int c = 0; c < 256; c++) {
       int hit = onibi_ascii_property_hit_kind(property_kind, c);
       if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
@@ -1346,6 +1349,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
     if (NUM2INT(onibi_hash_value_id(payload, id_key_byte)) == 'P')
       for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
   }
+class_children:
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
     VALUE range = rb_ary_entry(ranges, i);
     if (RARRAY_LEN(range) != 2) continue;
@@ -1365,8 +1369,8 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)), fold);
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
-      if (onibi_ascii_property_name_p(name)) {
-        OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
+      OnibiAsciiProperty property_kind = onibi_ascii_property_kind(name);
+      if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
         for (int c = 0; c < 256; c++) {
           int hit = onibi_ascii_property_hit_kind(property_kind, c);
           if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
