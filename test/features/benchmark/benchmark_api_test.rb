@@ -767,6 +767,13 @@ class BenchmarkApiTest < Minitest::Test
                  Onibi::Parser.parse("a", ["fixedencoding", "noencoding"])[:options]
   end
 
+  def test_boolean_options_match_mri_contract
+    assert_equal ["ignorecase"], Onibi::Parser.parse("a", true)[:options]
+    assert_equal [], Onibi::Parser.parse("a", false)[:options]
+    assert Onibi::Regexp.new("a", true).vm_match?("A")
+    refute Onibi::Regexp.new("a", false).vm_match?("A")
+  end
+
   def test_parser_accepts_named_option_arrays
     parsed = Onibi::Parser.parse("a # comment\n b", ["extended"])
     assert_equal ["extended"], parsed[:options]

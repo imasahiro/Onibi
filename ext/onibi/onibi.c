@@ -741,7 +741,9 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
           VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
           if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) { extended = 1; break; }
         }
-      } else extended = (NUM2INT(options) & 2) != 0;
+      } else if (options == Qtrue) extended = 0;
+      else if (options == Qfalse) extended = 0;
+      else extended = (NUM2INT(options) & 2) != 0;
     }
     tokens = onibi_tokenize_internal(source, extended);
   }
@@ -1847,6 +1849,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
 
 static int onibi_option_mask(VALUE options) {
   if (NIL_P(options)) return 0;
+  if (options == Qtrue) return 1;
+  if (options == Qfalse) return 0;
   if (RB_TYPE_P(options, T_STRING)) {
     int mask = 0;
     const char *text = RSTRING_PTR(options);
