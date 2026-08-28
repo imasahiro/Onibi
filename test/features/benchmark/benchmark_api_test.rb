@@ -843,6 +843,13 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("\a")
   end
 
+  def test_contiguous_octal_escapes_form_one_encoded_literal
+    regexp = Onibi::Regexp.new("\\343\\201\\202")
+    assert_equal 1, regexp.pipeline[:tokens].length
+    assert regexp.vm_match?("あ")
+    refute regexp.vm_match?("い")
+  end
+
   def test_unicode_escape_does_not_enter_ascii_rseq
     regexp = Onibi::Regexp.new("\\u{41}")
     refute regexp.program_cached?

@@ -418,6 +418,39 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
           }
         }
       }
+      if (escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
+          RSTRING_PTR(src)[i + 2] >= '0' && RSTRING_PTR(src)[i + 2] <= '7') {
+        VALUE decoded = rb_str_new(NULL, 0);
+        int value = 0;
+        int digits = 0;
+        while (digits < 3 && i + 1 < RSTRING_LEN(src) &&
+               RSTRING_PTR(src)[i + 1] >= '0' && RSTRING_PTR(src)[i + 1] <= '7') {
+          value = (value << 3) | (RSTRING_PTR(src)[i + 1] - '0');
+          i++; digits++;
+        }
+        char first_byte = (char)value;
+        rb_str_cat(decoded, &first_byte, 1);
+        while (i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '\\' &&
+               RSTRING_PTR(src)[i + 2] >= '0' && RSTRING_PTR(src)[i + 2] <= '7') {
+          long cursor = i + 2;
+          int next_value = 0;
+          int next_digits = 0;
+          while (next_digits < 3 && cursor < RSTRING_LEN(src) &&
+                 RSTRING_PTR(src)[cursor] >= '0' && RSTRING_PTR(src)[cursor] <= '7') {
+            next_value = (next_value << 3) | (RSTRING_PTR(src)[cursor] - '0');
+            cursor++; next_digits++;
+          }
+          char next_byte = (char)next_value;
+          rb_str_cat(decoded, &next_byte, 1);
+          i = cursor - 1;
+        }
+        byte = (unsigned char)RSTRING_PTR(decoded)[0];
+        octal_literal = 1;
+        if (RSTRING_LEN(decoded) > 1) {
+          rb_enc_associate(decoded, rb_enc_get(src));
+          literal_bytes = decoded;
+        }
+      }
       if (escaped == '0') {
         int value = 0, digits = 0;
         while (digits < 3 && i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' && RSTRING_PTR(src)[i + 1] <= '7') {
