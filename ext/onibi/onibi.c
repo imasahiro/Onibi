@@ -84,7 +84,7 @@ static OnibiGActionOp onibi_gir_action_opcode(ID op);
 static void onibi_set_gir_action_opcode(VALUE action, ID op);
 static OnibiRAssertKind onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
-static int onibi_ascii_property_name_p(VALUE name);
+static int onibi_ascii_property_name_p(ID name_id);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype_id(ID property);
 typedef enum {
@@ -1649,9 +1649,8 @@ static int onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c) {
   }
 }
 
-static int onibi_ascii_property_name_p(VALUE name) {
-  if (NIL_P(name)) return 0;
-  return onibi_ascii_property_kind(name) != ONIBI_ASCII_PROP_UNKNOWN;
+static int onibi_ascii_property_name_p(ID name_id) {
+  return name_id != 0 && onibi_ascii_property_kind_id(name_id) != ONIBI_ASCII_PROP_UNKNOWN;
 }
 
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
@@ -2453,7 +2452,7 @@ skip_utf8_range_expansion:
       VALUE name_id = onibi_hash_value_id(ast, id_key_name_id);
       int is_property = !NIL_P(name_id) ?
         (onibi_ascii_property_kind_id(NUM2ULONG(name_id)) != ONIBI_ASCII_PROP_UNKNOWN) :
-        onibi_ascii_property_name_p(name);
+        onibi_ascii_property_name_p((ID)NUM2ULONG(name_id));
       if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !is_property)
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : (RSTRING_LEN(name) == 1 ?
@@ -2725,8 +2724,9 @@ skip_utf8_range_expansion:
       }
       if (child_type == ONIBI_AST_ESCAPE) {
         VALUE name = onibi_hash_value_id(child, id_key_name);
+        VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
         int simple = !NIL_P(name) &&
-           (onibi_ascii_property_name_p(name) ||
+           ((!NIL_P(name_id) && onibi_ascii_property_name_p((ID)NUM2ULONG(name_id))) ||
            (RSTRING_LEN(name) == 1 &&
             onibi_simple_escape_p((unsigned char)RSTRING_PTR(name)[0])));
         if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");

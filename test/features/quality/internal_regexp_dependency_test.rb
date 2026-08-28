@@ -335,6 +335,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase))"
   end
 
+  def test_compiler_ascii_property_check_uses_name_id
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "static int onibi_ascii_property_name_p(ID name_id)"
+    refute_includes source, "onibi_ascii_property_name_p(name)"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"
