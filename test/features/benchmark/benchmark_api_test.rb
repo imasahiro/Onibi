@@ -292,6 +292,22 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_utf8_literal_lowers_to_byte_sequence_states
+    regexp = Onibi::Regexp.new("é")
+
+    assert regexp.program_cached?
+    assert regexp.vm_match?("café")
+    refute regexp.vm_match?("cafe")
+    assert_equal({ start: 3, end: 5 }, regexp.vm_match_result("café"))
+  end
+
+  def test_utf8_literal_ignorecase_waits_for_encoding_aware_lowering
+    regexp = Onibi::Regexp.new("é", Onibi::Regexp::IGNORECASE)
+
+    refute regexp.program_cached?
+    assert regexp.match?("É")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)
@@ -1239,9 +1255,10 @@ class BenchmarkApiTest < Minitest::Test
     assert class_regexp.vm_match?("Q")
   end
 
-  def test_non_ascii_pattern_stays_on_mri_until_encoding_lowering_exists
+  def test_utf8_literal_pattern_uses_byte_sequence_lowering
     regexp = Onibi::Regexp.new("あ")
-    refute regexp.program_cached?
+    assert regexp.program_cached?
+    assert regexp.vm_match?("あ")
     assert regexp.match?("あ")
   end
 
