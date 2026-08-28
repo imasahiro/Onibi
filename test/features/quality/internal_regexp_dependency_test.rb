@@ -81,6 +81,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes classifier, "ID property"
   end
 
+  def test_unicode_classification_accepts_cached_name_ids
+    source = File.read(EXTENSION_SOURCE)
+    classifier = source[/static int onibi_unicode_ctype_id\(.*?\n}\n/m]
+
+    refute_nil classifier
+    refute_includes classifier, "rb_intern_str"
+    assert_includes classifier, "ID property"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
