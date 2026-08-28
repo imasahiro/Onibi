@@ -238,6 +238,14 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, property.pipeline[:interpreter]
   end
 
+  def test_atomic_group_has_explicit_ast_and_dynamic_boundary
+    regexp = Onibi::Regexp.new("(?>a|ab)b")
+    parsed = Onibi::Parser.parse("(?>a|ab)b")
+    assert_equal :atomic, parsed[:ast][:children].first[:type]
+    assert_equal :DYNAMIC, regexp.pipeline[:interpreter]
+    refute regexp.program_cached?
+  end
+
   def test_character_class_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[a-z]+")
     assert_equal :RSEQ, regexp.pipeline[:vm]

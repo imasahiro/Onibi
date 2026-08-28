@@ -69,7 +69,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_grapheme; int has_property_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_grapheme; int has_property_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1967,6 +1967,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_large_repeat = 0;
   obj->has_absence = 0;
   obj->has_conditional = 0;
+  obj->has_atomic = 0;
   obj->has_grapheme = 0;
   obj->has_property_escape = 0;
   obj->has_subroutine = 0;
@@ -2009,6 +2010,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start") ||
                kind == rb_intern("absence_start") || kind == rb_intern("conditional_start")) {
       obj->has_dynamic = 1;
+      if (kind == rb_intern("atomic_start")) obj->has_atomic = 1;
       if (kind == rb_intern("absence_start")) obj->has_absence = 1;
       if (kind == rb_intern("conditional_start")) obj->has_conditional = 1;
     } else if (kind == rb_intern("escape")) {
@@ -2142,16 +2144,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   onibi_token_features(tokens, obj);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+  VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
                    obj->has_grapheme || obj->has_property_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
                    obj->has_grapheme || obj->has_property_escape) ? program : rb_ary_entry(program, 0);
-    obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
                      obj->has_grapheme || obj->has_property_escape) ? Qnil : rb_ary_entry(program, 1);
-    obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
                  obj->has_grapheme || obj->has_property_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
