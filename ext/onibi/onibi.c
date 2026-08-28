@@ -38,7 +38,8 @@ static ID id_a_assert_begin_buffer, id_a_assert_search_origin, id_a_assert_end_b
 static ID id_a_assert_begin_line, id_a_assert_end_line, id_a_assert_word_boundary;
 static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
 static ID id_a_assert_lookahead, id_a_assert_lookbehind;
-static ID id_pred_byte, id_pred_any;
+static ID id_pred_byte, id_pred_bitmap, id_pred_any;
+static ID id_a_end, id_key_physical_graph;
 static ID id_exec_regular, id_exec_tagged, id_exec_dynamic;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
@@ -2852,7 +2853,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (op == rb_intern("TEST_CAPTURE") && !RTEST(onibi_hash_value(rb_ary_entry(actions, i), "set")))
       physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     physical_actions[i].arg16 = onibi_rseq_assert_kind(op);
-    if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
+    if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = RTEST(onibi_hash_value(rb_ary_entry(actions, i), "positive"));
       physical_actions[i].flags = op == rb_intern("ASSERT_LOOKAHEAD") ?
         (positive ? 1 : 2) : (positive ? 5 : 6);
@@ -4587,7 +4588,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
-  VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(rb_intern("physical_graph")));
+  VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(id_key_physical_graph));
   VALUE semantic = onibi_hash_value(rseq, "header");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
@@ -4703,15 +4704,11 @@ static void onibi_rseq_validate(VALUE rseq) {
         !RTEST(rb_obj_frozen_p(onibi_hash_value(semantic_state, "payload"))))
       rb_raise(rb_eArgError, "invalid semantic RSeq state");
     ID semantic_op = SYM2ID(onibi_hash_value(semantic_state, "op"));
-    uint8_t expected_op = semantic_op == rb_intern("G_ACCEPT") ? 0 :
-      semantic_op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
-      semantic_op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS :
-      semantic_op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
-      semantic_op == rb_intern("G_GRAPHEME") ? ONIBI_RS_GRAPHEME :
-      semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF :
-      semantic_op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
-      semantic_op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC :
-      semantic_op == rb_intern("G_ABSENT") ? ONIBI_RS_ABSENT : 0xff;
+    uint8_t expected_op = semantic_op == id_g_accept ? 0 :
+      semantic_op == id_g_char ? ONIBI_RS_CHAR : semantic_op == id_g_class ? ONIBI_RS_CLASS :
+      semantic_op == id_g_any ? ONIBI_RS_ANY : semantic_op == id_g_grapheme ? ONIBI_RS_GRAPHEME :
+      semantic_op == id_g_backref ? ONIBI_RS_BACKREF : semantic_op == id_g_call ? ONIBI_RS_CALL :
+      semantic_op == id_g_atomic ? ONIBI_RS_ATOMIC : semantic_op == id_g_absent ? ONIBI_RS_ABSENT : 0xff;
     if (expected_op == 0xff || states[i].op != expected_op)
       rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
     if (!NIL_P(physical_graph)) {
@@ -4721,12 +4718,12 @@ static void onibi_rseq_validate(VALUE rseq) {
           !rb_equal(onibi_hash_value(cached_state, "payload"), onibi_hash_value(semantic_state, "payload")))
         rb_raise(rb_eArgError, "cached RSeq state disagrees with semantic state");
     }
-    if (semantic_op == rb_intern("G_CLASS")) {
+    if (semantic_op == id_g_class) {
       VALUE bitmap = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "bitmap");
       if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
         rb_raise(rb_eArgError, "RSeq class state has no compiled bitmap");
     }
-    if (semantic_op == rb_intern("G_CHAR")) {
+    if (semantic_op == id_g_char) {
       VALUE byte = onibi_hash_value(onibi_hash_value(semantic_state, "payload"), "byte");
       if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
         rb_raise(rb_eArgError, "RSeq character state has an invalid byte");
@@ -4760,7 +4757,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (RARRAY_LEN(semantic_edge_actions) > 0) {
       VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
       VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
-      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != rb_intern("END"))
+      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != id_a_end)
         rb_raise(rb_eArgError, "RSeq edge action program is not terminated");
     }
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
@@ -4795,7 +4792,7 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (RARRAY_LEN(semantic_edge_actions) > 0) {
       VALUE terminator = rb_ary_entry(semantic_edge_actions, RARRAY_LEN(semantic_edge_actions) - 1);
       VALUE terminator_op = RB_TYPE_P(terminator, T_HASH) ? onibi_hash_value(terminator, "op") : Qnil;
-      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != rb_intern("END"))
+      if (!SYMBOL_P(terminator_op) || SYM2ID(terminator_op) != id_a_end)
         rb_raise(rb_eArgError, "RSeq start-edge action program is not terminated");
     }
     uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
@@ -4824,18 +4821,16 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (!RB_TYPE_P(semantic_action, T_HASH) || !RTEST(rb_obj_frozen_p(semantic_action)))
       rb_raise(rb_eArgError, "invalid semantic RSeq action");
     ID op = SYM2ID(onibi_hash_value(semantic_action, "op"));
-    uint8_t expected_op = (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) ? ONIBI_RA_CAPTURE :
-      op == rb_intern("MATCH_RESET") ? ONIBI_RA_MATCH_RESET :
-      (op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
-       op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
-       op == rb_intern("ASSERT_SEMI_END_BUFFER") || op == rb_intern("ASSERT_SEARCH_ORIGIN") ||
-       op == rb_intern("ASSERT_WORD_BOUNDARY") || op == rb_intern("ASSERT_NONWORD_BOUNDARY") ||
-       op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) ? ONIBI_RA_ASSERT_POSITION :
-      op == rb_intern("TEST_CAPTURE") ? ONIBI_RA_TEST_CAPTURE :
-      op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
-      op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
-      (op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) ? ONIBI_RA_COUNTER_TEST :
-      op == rb_intern("END") ? ONIBI_RA_END : 0xff;
+    uint8_t expected_op = (op == id_capture_open || op == id_capture_close) ? ONIBI_RA_CAPTURE :
+      op == id_match_reset ? ONIBI_RA_MATCH_RESET :
+      (op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer || op == id_a_assert_begin_line ||
+       op == id_a_assert_end_line || op == id_a_assert_semi_end_buffer || op == id_a_assert_search_origin ||
+       op == id_a_assert_word_boundary || op == id_a_assert_nonword_boundary ||
+       op == id_a_assert_lookahead || op == id_a_assert_lookbehind) ? ONIBI_RA_ASSERT_POSITION :
+      op == id_a_test_capture ? ONIBI_RA_TEST_CAPTURE : op == id_a_counter_init ? ONIBI_RA_COUNTER_SET :
+      op == id_a_counter_increment ? ONIBI_RA_COUNTER_ADD :
+      (op == id_a_test_counter_lt || op == id_a_test_counter_ge) ? ONIBI_RA_COUNTER_TEST :
+      op == id_a_end ? ONIBI_RA_END : 0xff;
     VALUE slot = onibi_hash_value(semantic_action, "slot");
     VALUE limit = onibi_hash_value(semantic_action, "limit");
     VALUE value = onibi_hash_value(semantic_action, "value");
@@ -4849,14 +4844,14 @@ static void onibi_rseq_validate(VALUE rseq) {
         VALUE predicate = rb_ary_entry(predicates, p);
         VALUE kind = onibi_hash_value(predicate, "kind");
         if (!RB_TYPE_P(predicate, T_HASH) || !RTEST(rb_obj_frozen_p(predicate)) ||
-            (kind != ID2SYM(rb_intern("byte")) && kind != ID2SYM(rb_intern("bitmap")) &&
-             kind != ID2SYM(rb_intern("any"))))
+            (kind != ID2SYM(id_pred_byte) && kind != ID2SYM(id_pred_bitmap) &&
+             kind != ID2SYM(id_pred_any)))
           rb_raise(rb_eArgError, "RSeq lookaround predicate has an invalid kind");
-        if (kind == ID2SYM(rb_intern("byte"))) {
+        if (kind == ID2SYM(id_pred_byte)) {
           VALUE byte = onibi_hash_value(predicate, "byte");
           if (NIL_P(byte) || NUM2LONG(byte) < 0 || NUM2LONG(byte) > 255)
             rb_raise(rb_eArgError, "RSeq lookaround byte predicate is invalid");
-        } else if (kind == ID2SYM(rb_intern("bitmap"))) {
+        } else if (kind == ID2SYM(id_pred_bitmap)) {
           VALUE bitmap = onibi_hash_value(predicate, "bitmap");
           if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32 || !RTEST(rb_obj_frozen_p(bitmap)))
             rb_raise(rb_eArgError, "RSeq lookaround bitmap predicate is invalid");
@@ -4867,12 +4862,12 @@ static void onibi_rseq_validate(VALUE rseq) {
       (!NIL_P(limit) ? (uint32_t)NUM2ULONG(limit) :
        (!NIL_P(value) ? (uint32_t)NUM2ULONG(value) : 0));
     uint8_t expected_flags = onibi_rseq_action_flags(op);
-    if (op == rb_intern("TEST_CAPTURE") && !RTEST(onibi_hash_value(semantic_action, "set")))
+    if (op == id_a_test_capture && !RTEST(onibi_hash_value(semantic_action, "set")))
       expected_flags = ONIBI_RA_TEST_CAPTURE_UNSET;
     uint16_t expected_arg16 = !NIL_P(slot) ? (uint16_t)NUM2ULONG(slot) : onibi_rseq_assert_kind(op);
-    if (op == rb_intern("ASSERT_LOOKAHEAD") || op == rb_intern("ASSERT_LOOKBEHIND")) {
+    if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
       int positive = RTEST(onibi_hash_value(semantic_action, "positive"));
-      expected_flags = op == rb_intern("ASSERT_LOOKAHEAD") ? (positive ? 1 : 2) : (positive ? 5 : 6);
+      expected_flags = op == id_a_assert_lookahead ? (positive ? 1 : 2) : (positive ? 5 : 6);
     }
     if (expected_op == 0xff || actions[i].op != expected_op || actions[i].flags != expected_flags || actions[i].arg16 != expected_arg16 ||
         ((!NIL_P(width) || !NIL_P(limit) || !NIL_P(value)) && actions[i].arg32 != expected_arg32))
@@ -4943,14 +4938,11 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   const OnibiREdge *physical_edges = (const OnibiREdge *)(RSTRING_PTR(blob) + header.edges_offset);
   for (long i = 0; i < RARRAY_LEN(semantic_states); i++) {
     VALUE state = rb_hash_dup(rb_ary_entry(semantic_states, i));
-    ID op = physical_states[i].op == ONIBI_RS_CHAR ? rb_intern("G_CHAR") :
-      physical_states[i].op == ONIBI_RS_CLASS ? rb_intern("G_CLASS") :
-      physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") :
-      physical_states[i].op == ONIBI_RS_GRAPHEME ? rb_intern("G_GRAPHEME") :
-      physical_states[i].op == ONIBI_RS_BACKREF ? rb_intern("G_BACKREF") :
-      physical_states[i].op == ONIBI_RS_CALL ? rb_intern("G_CALL") :
-      physical_states[i].op == ONIBI_RS_ATOMIC ? rb_intern("G_ATOMIC") :
-      physical_states[i].op == ONIBI_RS_ABSENT ? rb_intern("G_ABSENT") : rb_intern("G_ACCEPT");
+    ID op = physical_states[i].op == ONIBI_RS_CHAR ? id_g_char :
+      physical_states[i].op == ONIBI_RS_CLASS ? id_g_class : physical_states[i].op == ONIBI_RS_ANY ? id_g_any :
+      physical_states[i].op == ONIBI_RS_GRAPHEME ? id_g_grapheme : physical_states[i].op == ONIBI_RS_BACKREF ? id_g_backref :
+      physical_states[i].op == ONIBI_RS_CALL ? id_g_call : physical_states[i].op == ONIBI_RS_ATOMIC ? id_g_atomic :
+      physical_states[i].op == ONIBI_RS_ABSENT ? id_g_absent : id_g_accept;
     rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
     rb_ary_push(states, state);
   }
@@ -4966,7 +4958,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
       for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
         VALUE action = rb_ary_entry(semantic_actions, a);
         rb_ary_push(physical_program, action);
-        if (SYM2ID(onibi_hash_value(action, "op")) == rb_intern("END")) break;
+        if (SYM2ID(onibi_hash_value(action, "op")) == id_a_end) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
@@ -4984,7 +4976,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
       for (uint32_t a = action_index; a < (uint32_t)RARRAY_LEN(semantic_actions); a++) {
         VALUE action = rb_ary_entry(semantic_actions, a);
         rb_ary_push(physical_program, action);
-        if (SYM2ID(onibi_hash_value(action, "op")) == rb_intern("END")) break;
+        if (SYM2ID(onibi_hash_value(action, "op")) == id_a_end) break;
       }
     }
     rb_hash_aset(edge, ID2SYM(rb_intern("actions")), physical_program);
@@ -5326,7 +5318,8 @@ void Init_onibi(void) {
   id_a_assert_word_boundary = rb_intern("ASSERT_WORD_BOUNDARY"); id_a_assert_nonword_boundary = rb_intern("ASSERT_NONWORD_BOUNDARY");
   id_a_assert_semi_end_buffer = rb_intern("ASSERT_SEMI_END_BUFFER");
   id_a_assert_lookahead = rb_intern("ASSERT_LOOKAHEAD"); id_a_assert_lookbehind = rb_intern("ASSERT_LOOKBEHIND");
-  id_pred_byte = rb_intern("byte"); id_pred_any = rb_intern("any");
+  id_pred_byte = rb_intern("byte"); id_pred_bitmap = rb_intern("bitmap"); id_pred_any = rb_intern("any");
+  id_a_end = rb_intern("END"); id_key_physical_graph = rb_intern("physical_graph");
   id_exec_regular = rb_intern("REGULAR_FAST"); id_exec_tagged = rb_intern("TAGGED_ORDERED");
   id_exec_dynamic = rb_intern("DYNAMIC");
   id_opt_ignorecase = rb_intern("ignorecase"); id_opt_multiline = rb_intern("multiline");
