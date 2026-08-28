@@ -1783,6 +1783,7 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
       VALUE merged_actions = rb_ary_dup(actions);
       onibi_append_values(merged_actions, prior_actions);
       prior->actions = merged_actions;
+      prior->action_count = (uint32_t)RARRAY_LEN(merged_actions);
       rb_ary_push(builder->map_roots, merged_actions);
       return;
     }
