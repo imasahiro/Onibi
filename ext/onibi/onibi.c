@@ -27,6 +27,7 @@ static _Thread_local uint64_t onibi_deadline_ns = 0;
 static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
 static _Thread_local unsigned int onibi_call_stack_size = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
+static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
@@ -3340,7 +3341,7 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
   }
   VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
                            : rb_funcall(obj->regexp, id_match, 2, str, pos);
-  if (NIL_P(match)) return Qnil;
+  if (NIL_P(match)) { rb_backref_set(Qnil); return Qnil; }
   return rb_block_given_p() ? rb_yield(match) : match;
 }
 
@@ -3455,8 +3456,23 @@ static VALUE onibi_regexp_escape(VALUE klass, VALUE string) {
   return rb_funcall(rb_cRegexp, rb_intern("escape"), 1, string);
 }
 
+static VALUE onibi_native_regexp_source(VALUE regexp) {
+  VALUE method = rb_funcall(rb_cRegexp, id_instance_method, 1, ID2SYM(id_source));
+  VALUE bound = rb_funcall(method, id_bind, 1, regexp);
+  return rb_funcall(bound, id_call, 0);
+}
+
 static VALUE onibi_regexp_union(int argc, VALUE *argv, VALUE klass) {
-  VALUE mri_regexp = rb_funcallv(rb_cRegexp, rb_intern("union"), argc, argv);
+  VALUE normalized = rb_ary_new_capa(argc);
+  for (int i = 0; i < argc; i++) {
+    VALUE item = argv[i];
+    if (rb_obj_is_kind_of(item, rb_cRegexp) && rb_obj_class(item) != rb_cRegexp) {
+      VALUE source = onibi_native_regexp_source(item);
+      item = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(rb_reg_options(item)));
+    }
+    rb_ary_push(normalized, item);
+  }
+  VALUE mri_regexp = rb_funcallv(rb_cRegexp, rb_intern("union"), (int)RARRAY_LEN(normalized), RARRAY_PTR(normalized));
   return rb_funcall(klass, id_new, 1, mri_regexp);
 }
 
@@ -5343,6 +5359,7 @@ static VALUE onibi_gsub(int argc, VALUE *argv, VALUE self) {
 void Init_onibi(void) {
   id_initialize = rb_intern("initialize"); id_match = rb_intern("match");
   id_new = rb_intern("new");
+  id_instance_method = rb_intern("instance_method"); id_bind = rb_intern("bind"); id_call = rb_intern("call");
   id_bytebegin = rb_intern("bytebegin"); id_byteend = rb_intern("byteend"); id_length = rb_intern("length");
   id_case_equal = rb_intern("==="); id_last_match = rb_intern("last_match"); id_tilde = rb_intern("~");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
