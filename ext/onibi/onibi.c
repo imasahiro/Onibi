@@ -55,6 +55,7 @@ static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_name_id, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
+static ID id_key_inline_ignorecase;
 static ID id_key_body, id_key_options, id_key_negative_options, id_key_capturing;
 static ID id_key_condition, id_key_branches, id_key_yes, id_key_no, id_key_atom;
 static ID id_key_min, id_key_max, id_key_greedy, id_key_possessive;
@@ -335,13 +336,11 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       VALUE token = rb_ary_entry(tokens, (long)i);
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
-      VALUE name = onibi_hash_value_id(token, id_key_name);
       VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
       vector.items[i].name_id = NIL_P(name_id) ? 0 : NUM2ULONG(name_id);
       vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
         onibi_ascii_property_kind_id(vector.items[i].name_id);
-      vector.items[i].inline_ignorecase = (!NIL_P(name) &&
-        memchr(RSTRING_PTR(name), 'i', (size_t)RSTRING_LEN(name)) != NULL) ? 1 : 0;
+      vector.items[i].inline_ignorecase = RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase)) ? 1 : 0;
     }
   }
   return vector;
@@ -718,6 +717,9 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE token_name = onibi_hash_value_id(token, id_key_name);
     if (!NIL_P(token_name))
       rb_hash_aset(token, ID2SYM(id_key_name_id), ULONG2NUM(rb_intern_str(token_name)));
+    if (!NIL_P(token_name))
+      rb_hash_aset(token, ID2SYM(id_key_inline_ignorecase),
+                   memchr(RSTRING_PTR(token_name), 'i', (size_t)RSTRING_LEN(token_name)) ? Qtrue : Qfalse);
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(id_key_bytes), literal_bytes); }
     if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
       rb_hash_aset(token, ID2SYM(id_key_negative), option_negative ? Qtrue : Qfalse);
@@ -6002,6 +6004,7 @@ void Init_onibi(void) {
   id_key_negated = rb_intern("negated"); id_key_bitmap = rb_intern("bitmap");
   id_key_preserve_if_set = rb_intern("preserve_if_set");
   id_key_limit = rb_intern("limit"); id_key_positive = rb_intern("positive");
+  id_key_inline_ignorecase = rb_intern("inline_ignorecase");
   id_key_predicates = rb_intern("predicates");
   id_key_states = rb_intern("states"); id_key_outgoing = rb_intern("outgoing");
   id_key_start_edges = rb_intern("start_edges"); id_key_subprograms = rb_intern("subprograms");

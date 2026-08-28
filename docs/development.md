@@ -256,7 +256,9 @@ view. The vector has no Ruby `VALUE` fields; source token Hashes remain only
 the parser adapter. POSIX class dispatch also consumes the cached token
 `name_id`; it does not intern the class name during bitmap construction.
 The tokenizer records each optional name as `name_id` once, so later feature
-classification does not intern the same name again.
+classification does not intern the same name again. It also records the
+inline-ignorecase flag once, so feature classification does not scan the name
+string again.
 AST nodes retain this numeric `name_id` for escape properties, so compiler
 validation can reuse the token ID without another string-to-ID conversion.
 

@@ -329,6 +329,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "map->entries[i].value = value;\n      rb_ary_push(roots, key)"
   end
 
+  def test_feature_tokens_read_cached_inline_option_flag
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "id_key_inline_ignorecase"
+    assert_includes source, "RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase))"
+  end
+
   def test_ast_audit_defines_typed_node_migration_boundary
     document = File.read(File.expand_path("../../../docs/development.md", __dir__))
     assert_includes document, "Pending: typed C node arena"
