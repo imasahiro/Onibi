@@ -616,6 +616,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes parser_range, "OnibiTokenKind kind = onibi_token_kind_code(token);"
   end
 
+  def test_parser_ranges_use_c_records_before_ast_materialization
+    source = File.read(EXTENSION_SOURCE)
+    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
+
+    refute_nil parser_class
+    assert_includes parser_class, "OnibiRangeRecord"
+    assert_includes parser_class, "range_records[range_count].first"
+    assert_includes parser_class, "rb_ary_new_capa(2)"
+  end
+
   def test_parser_uses_cached_id_accessor_for_token_fields
     source = File.read(EXTENSION_SOURCE)
     parser = source[/static long onibi_find_close\(.*?static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]

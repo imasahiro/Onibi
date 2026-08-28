@@ -878,9 +878,13 @@ static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind 
 }
 
 static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
+  typedef struct { VALUE first; VALUE last; } OnibiRangeRecord;
   VALUE node = onibi_ast_node(ONIBI_AST_CHARACTER_CLASS, rb_ary_entry(tokens, begin));
   long class_capacity = close > begin ? close - begin : 0;
   VALUE children = rb_ary_new_capa(class_capacity), ranges = rb_ary_new_capa(class_capacity);
+  VALUE range_roots = rb_ary_new_capa(class_capacity * 2);
+  OnibiRangeRecord *range_records = class_capacity > 0 ? ALLOC_N(OnibiRangeRecord, class_capacity) : NULL;
+  long range_count = 0;
   int negated = 0;
   long intersection = -1;
   long depth = 0;
@@ -912,6 +916,7 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
     }
     rb_hash_aset(result, ID2SYM(id_key_operands), operands);
     rb_obj_freeze(operands);
+    xfree(range_records);
     return result;
   }
   for (long i = begin + 1; i < close; i++) {
@@ -954,16 +959,26 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
           (NIL_P(first_bytes) && NIL_P(last_bytes) &&
            onibi_token_byte(first_token) > onibi_token_byte(last_token)))
         rb_raise(eRegexpError, "empty range in character class");
-      VALUE range = rb_ary_new_capa(2);
-      rb_ary_push(range, NIL_P(first_bytes) ? LONG2NUM(onibi_token_byte(first_token)) : first_bytes);
-      rb_ary_push(range, NIL_P(last_bytes) ? LONG2NUM(onibi_token_byte(last_token)) : last_bytes);
-      rb_obj_freeze(range);
-      rb_ary_push(ranges, range);
+      if (range_count >= class_capacity) rb_raise(rb_eNoMemError, "character class range vector is too large");
+      range_records[range_count].first = NIL_P(first_bytes) ? LONG2NUM(onibi_token_byte(first_token)) : first_bytes;
+      range_records[range_count].last = NIL_P(last_bytes) ? LONG2NUM(onibi_token_byte(last_token)) : last_bytes;
+      rb_ary_push(range_roots, range_records[range_count].first);
+      rb_ary_push(range_roots, range_records[range_count].last);
+      range_count++;
       i++;
       continue;
     }
     rb_ary_push(children, token);
   }
+  for (long i = 0; i < range_count; i++) {
+    VALUE range = rb_ary_new_capa(2);
+    rb_ary_push(range, range_records[i].first);
+    rb_ary_push(range, range_records[i].last);
+    rb_obj_freeze(range);
+    rb_ary_push(ranges, range);
+  }
+  xfree(range_records);
+  rb_ary_clear(range_roots);
   rb_hash_aset(node, ID2SYM(id_key_children), children);
   rb_hash_aset(node, ID2SYM(id_key_ranges), ranges);
   rb_hash_aset(node, ID2SYM(id_key_negated), negated ? Qtrue : Qfalse);
