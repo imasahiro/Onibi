@@ -15,9 +15,20 @@ typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALU
 typedef struct { VALUE source; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
+static void onibi_mark(void *ptr) {
+  onibi_regexp_t *obj = (onibi_regexp_t *)ptr;
+  if (!obj) return;
+  rb_gc_mark(obj->regexp);
+  rb_gc_mark(obj->execution_class);
+  rb_gc_mark(obj->execution_kind);
+  rb_gc_mark(obj->parsed);
+  rb_gc_mark(obj->compiled);
+  rb_gc_mark(obj->rseq);
+  rb_gc_mark(obj->pipeline);
+}
 static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
 static const rb_data_type_t onibi_type = {
-  "Onibi::Regexp", { 0, onibi_free, onibi_memsize }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+  "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
 static void onibi_lexer_free(void *ptr) { xfree(ptr); }
@@ -874,8 +885,9 @@ static VALUE onibi_program_cached(VALUE self) {
 static VALUE onibi_pipeline_build(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE out = rb_hash_new();
-  VALUE src = rb_funcall(obj->regexp, id_source, 0);
-  VALUE tokens = onibi_tokenize(src);
+  VALUE parsed = obj->parsed;
+  VALUE src = NIL_P(parsed) ? rb_funcall(obj->regexp, id_source, 0) : onibi_hash_value(parsed, "source");
+  VALUE tokens = NIL_P(parsed) ? onibi_tokenize(src) : onibi_hash_value(parsed, "tokens");
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
   int is_quant = RSTRING_LEN(src) >= 2 && (strchr("*+?", RSTRING_PTR(src)[RSTRING_LEN(src)-1]) != NULL ||
@@ -1362,7 +1374,6 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  VALUE src = rb_funcall(obj->regexp, id_source, 0);
   if (NIL_P(obj->rseq)) {
     VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
     if (NIL_P(match)) return Qnil;
@@ -1397,42 +1408,14 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
     }
     return Qnil;
   }
-  VALUE needle = src;
-  if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')')
-    needle = rb_str_substr(src, 1, RSTRING_LEN(src) - 2);
-  VALUE start = rb_funcall(str, id_index, 1, needle);
-  if (RSTRING_LEN(src) == 1 && RSTRING_PTR(src)[0] == '.') {
-    start = Qnil;
-    for (long i = 0; i < RSTRING_LEN(str); i++) if (RSTRING_PTR(str)[i] != '\n') { start = LONG2NUM(i); break; }
-    needle = rb_str_new_cstr("x");
-  } else if (RSTRING_LEN(src) == 3 && RSTRING_PTR(src)[1] == '.') {
-    start = Qnil;
-    for (long i = 0; i + 2 < RSTRING_LEN(str); i++) if (RSTRING_PTR(str)[i] == RSTRING_PTR(src)[0] &&
-        RSTRING_PTR(str)[i + 2] == RSTRING_PTR(src)[2]) { start = LONG2NUM(i); break; }
-    needle = rb_str_substr(src, 0, 3);
-  }
-  if (RSTRING_PTR(src) && strchr(RSTRING_PTR(src), '|')) {
-    start = Qnil; needle = Qnil;
-    long begin = 0;
-    for (long i = 0; i <= RSTRING_LEN(src); i++) if (i == RSTRING_LEN(src) || RSTRING_PTR(src)[i] == '|') {
-      VALUE branch = rb_str_substr(src, begin, i - begin), candidate = rb_funcall(str, id_index, 1, branch);
-      if (!NIL_P(candidate) && (NIL_P(start) || NUM2LONG(candidate) < NUM2LONG(start))) { start = candidate; needle = branch; }
-      begin = i + 1;
-    }
-  }
-  if (NIL_P(start)) return Qnil;
+  VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
+  if (NIL_P(match)) return Qnil;
   VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("start")), start);
-  rb_hash_aset(result, ID2SYM(rb_intern("end")), LONG2NUM(NUM2LONG(start) + RSTRING_LEN(needle)));
-  if (RSTRING_LEN(src) >= 3 && RSTRING_PTR(src)[0] == '(' && RSTRING_PTR(src)[RSTRING_LEN(src) - 1] == ')') {
-    VALUE captures = rb_hash_new(), group = rb_hash_new();
-    rb_hash_aset(group, ID2SYM(rb_intern("start")), start);
-    rb_hash_aset(group, ID2SYM(rb_intern("end")), LONG2NUM(NUM2LONG(start) + RSTRING_LEN(needle)));
-    rb_hash_aset(captures, INT2NUM(1), group);
-    rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
-  }
+  rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("begin"), 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("end"), 1, INT2NUM(0)));
   return result;
 }
+
 static VALUE onibi_scan(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(str, id_scan, 1, obj->regexp);
