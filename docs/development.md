@@ -143,6 +143,17 @@ structures and an immutable blob. The regular VM stores repeat counters in a
 fixed C array. Captures and tag history remain Ruby `VALUE`s only where the
 GC and MatchData boundary requires them.
 
+The Ruby data decision is:
+
+| Data | Owner | Reason |
+| --- | --- | --- |
+| source, options, names, named captures | Ruby `VALUE` | Regexp public API and MRI encoding rules |
+| tokens, AST, GIR | C compiler scope | Compile-time only; never retained by Regexp |
+| RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
+| regular repeat counters | C array | Numeric VM slots; no Ruby identity |
+| tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
+| execution class | C enum | Internal dispatcher choice |
+
 The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
