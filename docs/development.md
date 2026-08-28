@@ -210,7 +210,7 @@ each change can preserve ordering and GC tests.
 
 Feature classification now copies the fixed token fields into an immutable
 `OnibiFeatureTokenVector` owned by each compiled regexp. The scanner compares
-enum kinds, numeric bytes, and precomputed property IDs and flags from this C
+enum kinds, numeric bytes, and precomputed property IDs, property kinds, and flags from this C
 view. The vector has no Ruby `VALUE` fields; source token Hashes remain only
 the parser adapter.
 The tokenizer records each optional name as `name_id` once, so later feature
