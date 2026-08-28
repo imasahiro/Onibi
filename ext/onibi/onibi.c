@@ -1503,6 +1503,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         rb_ary_push(predicates, predicate);
         continue;
       }
+      if (child_type == ID2SYM(rb_intern("any"))) {
+        VALUE predicate = rb_hash_new();
+        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("any")));
+        rb_hash_aset(predicate, ID2SYM(rb_intern("multiline")), builder->multiline ? Qtrue : Qfalse);
+        rb_ary_push(predicates, predicate);
+        continue;
+      }
       if (child_type != ID2SYM(rb_intern("literal")))
         rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
       VALUE predicate = rb_hash_new();
@@ -2852,6 +2859,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
             matched = matched && (RTEST(onibi_hash_value(predicate, "ignorecase")) ?
               tolower(byte) == tolower(expected) : byte == expected);
+          } else if (kind == rb_intern("any")) {
+            matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
           }
           else {
             VALUE bits = onibi_hash_value(predicate, "bitmap");
@@ -2889,6 +2898,8 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
             unsigned char expected = (unsigned char)NUM2INT(onibi_hash_value(predicate, "byte"));
             matched = RTEST(onibi_hash_value(predicate, "ignorecase")) ?
               tolower(byte) == tolower(expected) : byte == expected;
+          } else if (kind == rb_intern("any")) {
+            matched = matched && (byte != '\n' || RTEST(onibi_hash_value(predicate, "multiline")));
           }
           else {
             VALUE bits = onibi_hash_value(predicate, "bitmap");

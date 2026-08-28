@@ -500,6 +500,16 @@ class BenchmarkApiTest < Minitest::Test
     assert behind.vm_match?("Aa")
   end
 
+  def test_wildcard_lookaround_preserves_newline_semantics
+    positive = Onibi::Regexp.new("(?=.)\\n")
+    multiline = Onibi::Regexp.new("(?m:(?=.))\\n")
+
+    assert positive.program_cached?
+    assert multiline.program_cached?
+    refute positive.vm_match?("\n")
+    assert multiline.vm_match?("\n")
+  end
+
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
     lazy = Onibi::Regexp.new("a+?")
     possessive = Onibi::Regexp.new("a++")
