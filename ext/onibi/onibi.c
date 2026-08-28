@@ -445,8 +445,15 @@ static int onibi_quantifier_byte_p(unsigned char c) {
   return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
 }
 
+typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
+static void onibi_value_vector_init(OnibiValueVector *vector);
+static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
+static void onibi_value_vector_free(OnibiValueVector *vector);
+
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
-  VALUE tokens = rb_ary_new_capa(RSTRING_LEN(src));
+  OnibiValueVector token_records;
+  onibi_value_vector_init(&token_records);
+  VALUE token_roots = rb_ary_new_capa(RSTRING_LEN(src));
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
   int in_class = 0;
@@ -775,12 +782,16 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
       rb_hash_aset(token, ID2SYM(id_key_negative), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
-    rb_ary_push(tokens, token);
+    onibi_value_vector_push(&token_records, token, token_roots);
     if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
       int prior_extended = extended_stack[--extended_depth];
       if (prior_extended >= 0) extended = prior_extended;
     }
   }
+  VALUE tokens = rb_ary_new_capa((long)token_records.count);
+  for (size_t i = 0; i < token_records.count; i++) rb_ary_push(tokens, token_records.items[i]);
+  onibi_value_vector_free(&token_records);
+  rb_ary_clear(token_roots);
   rb_obj_freeze(tokens);
   return tokens;
 }
@@ -876,11 +887,6 @@ static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind 
   }
   return -1;
 }
-
-typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
-static void onibi_value_vector_init(OnibiValueVector *vector);
-static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
-static void onibi_value_vector_free(OnibiValueVector *vector);
 
 static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
   typedef struct { VALUE first; VALUE last; } OnibiRangeRecord;
