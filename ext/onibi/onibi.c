@@ -4987,7 +4987,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE states = onibi_hash_value_id(graph, id_key_states);
   VALUE outgoing = onibi_hash_value_id(graph, id_key_outgoing);
   VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
-  VALUE visited = rb_hash_new();
+  VALUE visited = Qnil;
   unsigned char *visited_bits = NULL;
   size_t visited_span = (size_t)RSTRING_LEN(str) + 1U;
   size_t visited_size = 0;
@@ -5004,6 +5004,7 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   }
   VALUE counter_count = onibi_hash_value_id(graph, id_key_counter_count);
   int use_counters = !NIL_P(counter_count) && NUM2UINT(counter_count) != 0;
+  if (use_counters || visited_bits == NULL) visited = rb_hash_new();
   uint32_t counter_slots = use_counters ? NUM2UINT(counter_count) : 0;
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);

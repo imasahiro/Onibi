@@ -362,6 +362,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes named, "rb_ary_dup(fragment.start_actions)"
   end
 
+  def test_regular_vm_uses_hash_visited_only_without_c_bitset
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static int onibi_gir_match\(.*?\n}\n/m]
+
+    refute_nil matcher
+    assert_includes matcher, "VALUE visited = Qnil"
+    assert_includes matcher, "if (use_counters || visited_bits == NULL) visited = rb_hash_new();"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
