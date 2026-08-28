@@ -861,7 +861,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = *index + 1;
     return node;
   }
-  if (kind == rb_intern("noncapture_start")) {
+  if (kind_code == ONIBI_TOKEN_NONCAPTURE_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("noncapture_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
     VALUE node = onibi_ast_node("group", token);
@@ -872,7 +872,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("atomic_start")) {
+  if (kind_code == ONIBI_TOKEN_ATOMIC_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("atomic_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated atomic group");
     VALUE node = onibi_ast_node("atomic", token);
@@ -882,7 +882,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("absence_start")) {
+  if (kind_code == ONIBI_TOKEN_ABSENCE_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("absence_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated absence operator");
     VALUE node = onibi_ast_node("absence", token);
@@ -892,7 +892,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("conditional_start")) {
+  if (kind_code == ONIBI_TOKEN_CONDITIONAL_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("conditional_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated conditional group");
     VALUE node = onibi_ast_node("conditional", token);
@@ -912,7 +912,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("group_start")) {
+  if (kind_code == ONIBI_TOKEN_GROUP_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("group_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
     VALUE node = onibi_ast_node("capture", token);
@@ -933,7 +933,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("class_start")) {
+  if (kind_code == ONIBI_TOKEN_CLASS_START) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("class_start"), rb_intern("class_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated character class");
     VALUE node = onibi_parse_class(tokens, *index, close);
@@ -943,7 +943,7 @@ static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
-  if (kind == rb_intern("subroutine")) {
+  if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
     VALUE node = onibi_ast_node("subroutine", token);
     VALUE name = rb_hash_aref(token, ID2SYM(rb_intern("name")));
     if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(rb_intern("name")), name);
