@@ -855,7 +855,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -1290,8 +1290,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     VALUE name = onibi_hash_value(ast, "name");
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
+    if (RTEST(rb_hash_aref(builder->active_subroutines, name)))
+      rb_raise(eRegexpError, "recursive subroutine requires dynamic call state");
     if (onibi_ast_has_capture(body)) rb_raise(eRegexpError, "capturing subroutine requires dynamic call state");
-    return onibi_compile_node(body, builder);
+    rb_hash_aset(builder->active_subroutines, name, Qtrue);
+    onibi_fragment_t result = onibi_compile_node(body, builder);
+    rb_hash_delete(builder->active_subroutines, name);
+    return result;
   }
   if (type == ID2SYM(rb_intern("option_global"))) {
     VALUE option_names = onibi_hash_value(ast, "options");
@@ -1501,7 +1506,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
