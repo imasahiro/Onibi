@@ -4072,22 +4072,23 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
           (code == ONIBI_GA_TEST_COUNTER_GE && !(count >= limit))) return 0;
       continue;
     }
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
-    if (op == id_a_assert_begin_buffer && pos != 0) return 0;
-    if (op == id_a_assert_search_origin && pos != 0) return 0;
-    if (op == id_a_assert_end_buffer && pos != length) return 0;
-    if (op == id_a_assert_begin_line && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
-    if (op == id_a_assert_end_line && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;
-    if (op == id_a_assert_word_boundary || op == id_a_assert_nonword_boundary) {
+    VALUE assertion_value = onibi_hash_value_id(action, id_key_assert_kind);
+    uint16_t assertion = NIL_P(assertion_value) ? 0 : (uint16_t)NUM2ULONG(assertion_value);
+    if (assertion == ONIBI_RAP_BEGIN_BUFFER && pos != 0) return 0;
+    if (assertion == ONIBI_RAP_SEARCH_ORIGIN && pos != 0) return 0;
+    if (assertion == ONIBI_RAP_END_BUFFER && pos != length) return 0;
+    if (assertion == ONIBI_RAP_BEGIN_LINE && pos != 0 && RSTRING_PTR(subject)[pos - 1] != '\n') return 0;
+    if (assertion == ONIBI_RAP_END_LINE && pos != length && RSTRING_PTR(subject)[pos] != '\n') return 0;
+    if (assertion == ONIBI_RAP_WORD_BOUNDARY || assertion == ONIBI_RAP_NONWORD_BOUNDARY) {
       int before = pos > 0 && (isalnum((unsigned char)RSTRING_PTR(subject)[pos - 1]) || RSTRING_PTR(subject)[pos - 1] == '_');
       int after = pos < length && (isalnum((unsigned char)RSTRING_PTR(subject)[pos]) || RSTRING_PTR(subject)[pos] == '_');
       int boundary = before != after;
-      if ((op == id_a_assert_word_boundary && !boundary) ||
-          (op == id_a_assert_nonword_boundary && boundary)) return 0;
+      if ((assertion == ONIBI_RAP_WORD_BOUNDARY && !boundary) ||
+          (assertion == ONIBI_RAP_NONWORD_BOUNDARY && boundary)) return 0;
     }
-    if (op == id_a_assert_semi_end_buffer && pos != length &&
+    if (assertion == ONIBI_RAP_SEMI_END_BUFFER && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
-    if (op == id_a_assert_lookahead) {
+    if (assertion == ONIBI_RAP_LOOKAHEAD) {
       VALUE predicates = onibi_hash_value_id(action, id_key_predicates);
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         int matched = 1;
@@ -4127,7 +4128,7 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       int hit = pos + width <= length && memcmp(RSTRING_PTR(subject) + pos, RSTRING_PTR(bytes), (size_t)width) == 0;
       if (hit != RTEST(onibi_hash_value_id(action, id_key_positive))) return 0;
     }
-    if (op == id_a_assert_lookbehind) {
+    if (assertion == ONIBI_RAP_LOOKBEHIND) {
       VALUE predicates = onibi_hash_value_id(action, id_key_predicates);
       if (RB_TYPE_P(predicates, T_ARRAY)) {
         long width = RARRAY_LEN(predicates);
