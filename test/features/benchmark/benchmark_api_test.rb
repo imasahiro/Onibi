@@ -475,7 +475,8 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(RegexpError) { Onibi::Regexp.new("\\g<name>") }
     regexp = Onibi::Regexp.new("(?<x>a)\\g<x>")
     assert_equal :subroutine, regexp.pipeline[:ast][:children].last[:type]
-    refute regexp.program_cached?
+    assert regexp.program_cached?
+    assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 
   def test_class_intersection_stays_out_of_ascii_rseq

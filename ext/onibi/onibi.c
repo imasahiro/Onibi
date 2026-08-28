@@ -855,7 +855,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; int ignorecase; int multiline; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
@@ -1286,7 +1286,13 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     return result;
   }
   if (type == ID2SYM(rb_intern("subroutine")))
-    rb_raise(eRegexpError, "subroutine calls require the dynamic interpreter");
+  {
+    VALUE name = onibi_hash_value(ast, "name");
+    VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
+    if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
+    if (onibi_ast_has_capture(body)) rb_raise(eRegexpError, "capturing subroutine requires dynamic call state");
+    return onibi_compile_node(body, builder);
+  }
   if (type == ID2SYM(rb_intern("option_global"))) {
     VALUE option_names = onibi_hash_value(ast, "options");
     int negative = RTEST(onibi_hash_value(ast, "negative"));
@@ -1397,7 +1403,10 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
     rb_hash_aset(close, ID2SYM(rb_intern("slot")), LONG2NUM(2 * capture_id + 1));
     VALUE capture_name = onibi_hash_value(ast, "name");
-    if (!NIL_P(capture_name)) rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
+    if (!NIL_P(capture_name)) {
+      rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
+      rb_hash_aset(builder->capture_bodies, capture_name, onibi_hash_value(ast, "body"));
+    }
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
     if (result.nullable) onibi_append_values(result.start_actions, result.pending_actions);
@@ -1489,7 +1498,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), ignorecase, multiline };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -2154,16 +2163,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape || obj->has_subroutine) ?
+                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
     obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape || obj->has_subroutine) ? program : rb_ary_entry(program, 0);
+                   obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
     obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                     obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape || obj->has_subroutine) ? Qnil : rb_ary_entry(program, 1);
+                     obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional || obj->has_atomic ||
-                 obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape || obj->has_subroutine) ? Qnil : rb_ary_entry(program, 2);
+                 obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
@@ -2403,7 +2412,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     }
     rb_hash_aset(ast, ID2SYM(rb_intern("branches")), branches);
   }
-  rb_hash_aset(out, ID2SYM(rb_intern("ast")), NIL_P(obj->compiled) && !NIL_P(parsed) ?
+  rb_hash_aset(out, ID2SYM(rb_intern("ast")), (obj->has_subroutine || NIL_P(obj->compiled)) && !NIL_P(parsed) ?
                onibi_hash_value(parsed, "ast") : ast);
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
