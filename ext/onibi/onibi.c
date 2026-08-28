@@ -60,6 +60,7 @@ static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms
 static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_from, id_key_accept, id_key_action_offset;
 static ID id_key_flags;
+static ID id_key_id;
 static ID id_key_capture_count;
 static ID id_key_counter_count;
 static ID id_key_state_count, id_key_features, id_key_edge_count, id_key_action_count;
@@ -1723,7 +1724,7 @@ static void onibi_gir_validate_action_operands(VALUE action) {
   VALUE code_value = onibi_hash_value_id(action, id_key_action_code);
   if (NIL_P(code_value)) rb_raise(eRegexpError, "GIR action opcode is missing");
   OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
-  VALUE slot = onibi_hash_value(action, "slot");
+  VALUE slot = onibi_hash_value_id(action, id_key_slot);
   if (code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) {
     if (NIL_P(slot) || NUM2LONG(slot) < 0)
       rb_raise(eRegexpError, "invalid GIR capture slot");
@@ -1734,42 +1735,42 @@ static void onibi_gir_validate_action_operands(VALUE action) {
       rb_raise(eRegexpError, "invalid GIR counter slot");
   }
   if (code == ONIBI_GA_TEST_COUNTER_LT || code == ONIBI_GA_TEST_COUNTER_GE) {
-    VALUE limit = onibi_hash_value(action, "limit");
+    VALUE limit = onibi_hash_value_id(action, id_key_limit);
     if (NIL_P(limit) || NUM2LONG(limit) < 0)
       rb_raise(eRegexpError, "invalid GIR counter limit");
   }
 }
 
 static void onibi_gir_validate(VALUE graph) {
-  VALUE states = onibi_hash_value(graph, "states");
-  VALUE edges = onibi_hash_value(graph, "edges");
-  VALUE starts = onibi_hash_value(graph, "start_edges");
-  VALUE subprograms = onibi_hash_value(graph, "subprograms");
-  long capture_count = NUM2LONG(onibi_hash_value(graph, "capture_count"));
-  long counter_count = NUM2LONG(onibi_hash_value(graph, "counter_count"));
+  VALUE states = onibi_hash_value_id(graph, id_key_states);
+  VALUE edges = onibi_hash_value_id(graph, id_key_edges);
+  VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
+  VALUE subprograms = onibi_hash_value_id(graph, id_key_subprograms);
+  long capture_count = NUM2LONG(onibi_hash_value_id(graph, id_key_capture_count));
+  long counter_count = NUM2LONG(onibi_hash_value_id(graph, id_key_counter_count));
   long state_count = RARRAY_LEN(states);
   if (!RB_TYPE_P(subprograms, T_ARRAY) || !RTEST(rb_obj_frozen_p(subprograms)))
     rb_raise(eRegexpError, "GIR subprogram table is not immutable");
   for (long i = 0; i < RARRAY_LEN(subprograms); i++) {
     VALUE entry = rb_ary_entry(subprograms, i);
     if (!RB_TYPE_P(entry, T_HASH)) rb_raise(eRegexpError, "GIR subprogram descriptor is not a hash");
-    VALUE entry_state = onibi_hash_value(entry, "entry");
-    VALUE accept_state = onibi_hash_value(entry, "accept");
-    VALUE flags = onibi_hash_value(entry, "flags");
+    VALUE entry_state = onibi_hash_value_id(entry, id_key_entry);
+    VALUE accept_state = onibi_hash_value_id(entry, id_key_accept);
+    VALUE flags = onibi_hash_value_id(entry, id_key_flags);
     if (NIL_P(entry_state) || NIL_P(accept_state) || NIL_P(flags) ||
         NUM2LONG(entry_state) < 0 || NUM2LONG(entry_state) >= state_count ||
         NUM2LONG(accept_state) < 0 || NUM2LONG(accept_state) >= state_count ||
         NUM2LONG(flags) < 0)
       rb_raise(eRegexpError, "GIR subprogram entry is out of range");
   }
-  VALUE accept_value = onibi_hash_value(graph, "accept");
+  VALUE accept_value = onibi_hash_value_id(graph, id_key_accept);
   if (NIL_P(accept_value)) rb_raise(eRegexpError, "GIR accept state is missing");
   long accept = NUM2LONG(accept_value);
   if (accept < 0 || accept >= state_count)
     rb_raise(eRegexpError, "GIR accept state is out of range");
   for (long i = 0; i < state_count; i++) {
     VALUE state = rb_ary_entry(states, i);
-    if (NUM2LONG(onibi_hash_value(state, "id")) != i)
+    if (NUM2LONG(onibi_hash_value_id(state, id_key_id)) != i)
       rb_raise(eRegexpError, "GIR state ids are not contiguous");
     VALUE opcode_value = onibi_hash_value_id(state, id_key_opcode);
     if (NIL_P(opcode_value)) rb_raise(eRegexpError, "GIR state opcode is missing");
@@ -1779,27 +1780,27 @@ static void onibi_gir_validate(VALUE graph) {
     if (i == accept && opcode != ONIBI_G_ACCEPT)
       rb_raise(eRegexpError, "GIR accept state has a non-accept opcode");
     if (opcode == ONIBI_G_BACKREF) {
-      VALUE capture = onibi_hash_value(onibi_hash_value(state, "payload"), "capture");
+      VALUE capture = onibi_hash_value_id(onibi_hash_value_id(state, id_key_payload), id_key_capture);
       if (NIL_P(capture) || NUM2LONG(capture) < 1 || NUM2LONG(capture) > capture_count)
         rb_raise(eRegexpError, "GIR backreference capture is out of range");
     }
   }
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
-    long from = NUM2LONG(onibi_hash_value(edge, "from"));
-    long to = NUM2LONG(onibi_hash_value(edge, "to"));
+    long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
+    long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
     if (from < 0 || from >= state_count || to < 0 || to >= state_count)
       rb_raise(eRegexpError, "GIR edge is out of range");
-    if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+    if (!RB_TYPE_P(onibi_hash_value_id(edge, id_key_actions), T_ARRAY))
       rb_raise(eRegexpError, "GIR edge actions are not an array");
-    VALUE actions = onibi_hash_value(edge, "actions");
+    VALUE actions = onibi_hash_value_id(edge, id_key_actions);
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       VALUE action_value = rb_ary_entry(actions, j);
       VALUE code_value = onibi_hash_value_id(action_value, id_key_action_code);
       if (NIL_P(code_value) || NUM2UINT(code_value) > ONIBI_GA_TEST_COUNTER_GE)
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
       onibi_gir_validate_action_operands(action_value);
-      VALUE slot = onibi_hash_value(action_value, "slot");
+      VALUE slot = onibi_hash_value_id(action_value, id_key_slot);
       OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
@@ -1812,19 +1813,19 @@ static void onibi_gir_validate(VALUE graph) {
   }
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
-    long to = NUM2LONG(onibi_hash_value(edge, "to"));
+    long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
     if (to < 0 || to >= state_count)
       rb_raise(eRegexpError, "GIR start edge is out of range");
-    if (!RB_TYPE_P(onibi_hash_value(edge, "actions"), T_ARRAY))
+    if (!RB_TYPE_P(onibi_hash_value_id(edge, id_key_actions), T_ARRAY))
       rb_raise(eRegexpError, "GIR start actions are not an array");
-    VALUE actions = onibi_hash_value(edge, "actions");
+    VALUE actions = onibi_hash_value_id(edge, id_key_actions);
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       VALUE action_value = rb_ary_entry(actions, j);
       VALUE code_value = onibi_hash_value_id(action_value, id_key_action_code);
       if (NIL_P(code_value) || NUM2UINT(code_value) > ONIBI_GA_TEST_COUNTER_GE)
         rb_raise(eRegexpError, "unknown GIR start action opcode");
       onibi_gir_validate_action_operands(action_value);
-      VALUE slot = onibi_hash_value(action_value, "slot");
+      VALUE slot = onibi_hash_value_id(action_value, id_key_slot);
       OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(code_value);
       if ((code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE) &&
           NUM2LONG(slot) >= capture_count * 2)
@@ -5499,6 +5500,7 @@ void Init_onibi(void) {
   id_key_edges = rb_intern("edges"); id_key_from = rb_intern("from");
   id_key_accept = rb_intern("accept"); id_key_action_offset = rb_intern("action_offset");
   id_key_flags = rb_intern("flags");
+  id_key_id = rb_intern("id");
   id_key_capture_count = rb_intern("capture_count");
   id_key_counter_count = rb_intern("counter_count");
   id_key_state_count = rb_intern("state_count"); id_key_features = rb_intern("features");
