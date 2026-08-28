@@ -72,6 +72,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes classifier, "token->property_kind"
   end
 
+  def test_ast_nodes_retain_numeric_name_ids
+    source = File.read(EXTENSION_SOURCE)
+    ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
+
+    refute_nil ast_node
+    assert_includes ast_node, "id_key_name_id"
+    assert_includes ast_node, "name_id"
+  end
+
   def test_numeric_assertion_dispatch_preserves_public_matching
     assert Onibi::Regexp.new("^a$").match?("a")
     assert Onibi::Regexp.new("(?=a)a").match?("a")
