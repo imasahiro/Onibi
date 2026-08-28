@@ -181,13 +181,13 @@ The remaining compiler containers have three separate roles:
 | --- | --- | --- |
 | fragment `starts`/`exits` | Ordered state-ID sets | Owned `OnibiIdVector` values with explicit move and append operations |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
-| capture and exit guards | State-ID lookup during edge creation | C guard vectors; action lists remain Ruby-backed |
+| capture and exit guards | State-ID lookup during edge creation | C guard vectors with cached action counts; action lists remain Ruby-backed |
 | capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | C vectors during construction; materialize frozen Ruby adapters once at the GIR boundary |
 
 Detailed ownership review:
 
-The current source has 81 `rb_hash_new` calls and 59 `rb_ary_new` calls.
+The current source has 81 `rb_hash_new` calls and 58 `rb_ary_new` calls.
 These counts include public result objects, semantic payloads, and temporary
 compiler adapters. They are not all migration targets. The table below gives
 the required classification for each data family.

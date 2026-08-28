@@ -1262,7 +1262,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 }
 
 typedef struct { OnibiIdVector starts; OnibiIdVector exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
+typedef struct { OnibiStateId state; VALUE actions; uint32_t action_count; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE *items; size_t count; size_t capacity; } OnibiValueVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
@@ -1350,12 +1350,19 @@ static VALUE onibi_guard_vector_find(const OnibiGuardVector *vector, OnibiStateI
   return Qnil;
 }
 
+static uint32_t onibi_guard_vector_count(const OnibiGuardVector *vector, OnibiStateId state) {
+  for (size_t i = 0; i < vector->count; i++)
+    if (vector->entries[i].state == state) return vector->entries[i].action_count;
+  return 0;
+}
+
 static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions, VALUE roots) {
   for (size_t i = 0; i < vector->count; i++) {
     if (vector->entries[i].state == state) {
       VALUE merged = rb_ary_dup(vector->entries[i].actions);
       onibi_append_values(merged, actions);
       vector->entries[i].actions = merged;
+      vector->entries[i].action_count = (uint32_t)RARRAY_LEN(merged);
       rb_ary_push(roots, merged);
       return;
     }
@@ -1368,6 +1375,7 @@ static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
   }
   vector->entries[vector->count].state = state;
   vector->entries[vector->count].actions = rb_ary_dup(actions);
+  vector->entries[vector->count].action_count = (uint32_t)RARRAY_LEN(actions);
   rb_ary_push(roots, vector->entries[vector->count].actions);
   vector->count++;
 }
@@ -1790,7 +1798,9 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
 }
 
 static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
-  VALUE actions = rb_ary_new();
+  uint32_t capture_count = onibi_guard_vector_count(&builder->capture_guards, (OnibiStateId)to);
+  uint32_t exit_count = onibi_guard_vector_count(&builder->exit_guards, (OnibiStateId)from);
+  VALUE actions = rb_ary_new_capa((long)capture_count + (long)exit_count + (long)capture_count);
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
@@ -1812,7 +1822,11 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
       return;
     }
   }
+  uint32_t capture_count = onibi_guard_vector_count(&builder->capture_guards, (OnibiStateId)to);
+  uint32_t exit_count = onibi_guard_vector_count(&builder->exit_guards, (OnibiStateId)from);
   VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
+  if (RARRAY_LEN(actions) + (long)capture_count + (long)exit_count > LONG_MAX)
+    rb_raise(rb_eArgError, "GIR action list is too large");
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(guard); onibi_append_values(merged, actions); actions = merged; }
   VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
