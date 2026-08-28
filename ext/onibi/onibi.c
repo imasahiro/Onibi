@@ -2510,7 +2510,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
     }
     rb_hash_aset(ast, ID2SYM(rb_intern("branches")), branches);
   }
-  rb_hash_aset(out, ID2SYM(rb_intern("ast")), (obj->has_subroutine || NIL_P(obj->compiled)) && !NIL_P(parsed) ?
+  rb_hash_aset(out, ID2SYM(rb_intern("ast")), (obj->has_subroutine || obj->has_class_intersection || obj->has_nested_class || NIL_P(obj->compiled)) && !NIL_P(parsed) ?
                onibi_hash_value(parsed, "ast") : ast);
   VALUE gir = rb_ary_new();
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {

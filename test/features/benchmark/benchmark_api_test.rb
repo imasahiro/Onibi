@@ -499,6 +499,7 @@ class BenchmarkApiTest < Minitest::Test
   def test_class_intersection_stays_out_of_ascii_rseq
     regexp = Onibi::Regexp.new("[a&&b]")
     assert regexp.program_cached?
+    assert_equal :class_intersection, regexp.pipeline[:ast][:children].first[:type]
     refute regexp.vm_match?("a")
     refute regexp.vm_match?("b")
   end
