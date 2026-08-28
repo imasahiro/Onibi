@@ -742,9 +742,9 @@ static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
                UINT2NUM((unsigned int)kind));
   if (!NIL_P(token)) {
     rb_hash_aset(node, ID2SYM(id_key_start),
-                 rb_hash_aref(token, ID2SYM(id_key_start)));
+                 onibi_hash_value_id(token, id_key_start));
     rb_hash_aset(node, ID2SYM(id_key_end),
-                 rb_hash_aref(token, ID2SYM(id_key_end)));
+                 onibi_hash_value_id(token, id_key_end));
   }
   return node;
 }
