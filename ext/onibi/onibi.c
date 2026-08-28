@@ -5417,7 +5417,6 @@ void Init_onibi(void) {
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
-  rb_define_const(mOnibi, "Error", rb_eStandardError);
   /* Lexer, parser, compiler, RSeq, and VM are implementation objects.
    * Keep their methods available to the C pipeline, but do not publish
   * Ruby constants for them.  Only Onibi::Regexp is public. */
