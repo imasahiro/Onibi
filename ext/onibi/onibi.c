@@ -979,6 +979,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
     VALUE slot = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("slot")));
     if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
+    VALUE limit = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("limit")));
+    if (!NIL_P(limit)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(limit);
+    VALUE value = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("value")));
+    if (!NIL_P(value)) physical_actions[i].arg32 = (uint32_t)NUM2ULONG(value);
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
