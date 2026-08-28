@@ -1346,8 +1346,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       result.lazy = !RTEST(onibi_hash_value(ast, "greedy"));
       return result;
     }
-    if (!RTEST(onibi_hash_value(ast, "greedy")))
-      rb_raise(eRegexpError, "lazy repeat requires ordered repeat lowering");
+    if (!RTEST(onibi_hash_value(ast, "greedy")) &&
+        (NIL_P(max_value) || NUM2LONG(max_value) != min))
+      rb_raise(eRegexpError, "variable lazy repeat requires ordered repeat lowering");
     long counter_slot = -1;
     if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
       counter_slot = builder->counter_count++;

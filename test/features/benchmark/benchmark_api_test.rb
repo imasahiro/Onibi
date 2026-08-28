@@ -886,6 +886,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal ::Regexp.new("a{2}+").match?("aa"), regexp.match?("aa")
   end
 
+  def test_fixed_lazy_repeat_lowers_to_rseq
+    regexp = Onibi::Regexp.new("a{2}?")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("aa")
+    refute regexp.vm_match?("a")
+  end
+
   def test_fixed_possessive_repeat_accepts_class_atoms
     class_regexp = Onibi::Regexp.new("[ab]{2}+")
     capture_regexp = Onibi::Regexp.new("(ab){2}+")
