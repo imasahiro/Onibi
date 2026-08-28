@@ -5199,6 +5199,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         frame->call_status = 0;
         frame->call_parent = -1;
         VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
+        if (depth >= capacity) onibi_vm_stack_overflow();
         long *call_counters = use_counters && counter_count > 0 ?
           counter_pool + (size_t)depth * counter_count : NULL;
         if (call_counters) memset(call_counters, 0, sizeof(long) * counter_count);
@@ -5212,7 +5213,6 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         }
         if (use_counters) onibi_vm_apply_counter_actions_c(actions, &call_counter_state);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
-        if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
                                              call_captures, call_tags, call_counters, Qnil, 0,
@@ -5237,6 +5237,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         frame->call_status = 0;
         frame->call_kind = op == ONIBI_RS_ABSENT ? 3 : 2;
         VALUE entry_actions = onibi_hash_value_id(descriptor, id_key_entry_actions);
+        if (depth >= capacity) onibi_vm_stack_overflow();
         long *call_counters = use_counters && counter_count > 0 ?
           counter_pool + (size_t)depth * counter_count : NULL;
         if (call_counters) memset(call_counters, 0, sizeof(long) * counter_count);
@@ -5252,7 +5253,6 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         }
         if (use_counters) onibi_vm_apply_counter_actions_c(actions, &call_counter_state);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
-        if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
                                              call_captures, call_tags, call_counters, Qnil, 0,
@@ -5297,6 +5297,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     if (frame->next_edge >= RARRAY_LEN(state_edges)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
+    if (depth >= capacity) onibi_vm_stack_overflow();
     long *next_counters = frame->counters;
     if (use_counters && counter_count > 0) {
       next_counters = counter_pool + (size_t)depth * counter_count;
@@ -5309,7 +5310,6 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     long next_reported_start = frame->reported_start;
     if (use_counters) onibi_vm_apply_counter_actions_c(edge_actions, &next_counter_state);
     VALUE next_tags = onibi_apply_capture_actions(edge_actions, frame->pos, next_captures, frame->tags, &next_reported_start);
-    if (depth >= capacity) onibi_vm_stack_overflow();
     stack[depth++] = (OnibiCaptureFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0,
                                          next_reported_start, next_captures, next_tags,
                                          next_counters, Qnil, 0, frame->call_parent, 0, 0, 0, 0};

@@ -226,7 +226,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard action lists now use C-owned VALUE vectors; fragment lists remain the next migration boundary. |
 | RSeq semantic program | No public API | Partial C lowering records; immutable Ruby adapter at publication | VM reads the physical blob. Payload indexes and temporary edge records use C vectors; semantic arrays remain only for validation and diagnostics. |
 | regular VM visited set | No | C bitset with owned large-set storage | Numeric state/position pairs use a C bitset. Sets up to 64 MiB use owned C memory when stack storage is too large; counter-bearing paths retain a safe Ruby fallback. |
-| tagged VM counter maps | No | Pending: C counter snapshots | Counter slots are numeric and private. Current Ruby Hash use occurs in call frames and ordered edge branches; one migration must cover both paths and the visited-key identity. |
+| tagged VM counter maps | No | C counter snapshots per frame | Counter slots are numeric and private. Branch and subroutine frames use fixed C slots; visited identity stores only the counter bytes. |
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 
@@ -295,8 +295,8 @@ created by the `Regexp` public API; diagnostics use the C analysis fields.
 
 The tagged VM counter migration is separate from capture maps. Capture maps
 can become public match data, but counter slots never cross the `Regexp` API.
-The replacement must use a fixed C array per frame and include the counter
-snapshot in visited-state identity without allocating a Ruby Hash.
+Every tagged frame now uses fixed C counter storage, and visited identity
+includes the counter bytes without allocating a counter Hash.
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
 The first conversion is complete for parser and compiler result adapters. The
@@ -335,13 +335,11 @@ The compiler must not expose these containers through Ruby constants. Ruby
 objects can remain temporary adapters until each C owner has a complete
 conversion path and focused ordering tests.
 
-The tagged counter map is a deliberate later boundary. A C replacement must
-copy counters when a frame branches, preserve values across subroutine calls,
-and keep capture/tag history independent. Converting only the entry map would
-leave edge branches on Ruby Hash and would not remove the repeated copy cost.
-The current audit finds counter Hash allocation at tagged call entry, atomic or
-absence entry, and every outgoing edge. These are one migration unit: replace
-the frame field, branch copy, call-frame seed, and action checks together.
+The tagged counter map is now a C frame state. Branches copy fixed-width slots,
+subroutine frames start with zeroed slots, and action checks use
+`OnibiCounterState`. Capture and tag history remain independent Ruby values.
+The visited key stores counter bytes only as an identity component; it does not
+store a counter Hash or allocate one per branch.
 
 Capture and exit guard maps have the same constraint. Their keys are numeric
 state IDs, but their values are ordered, mutable action lists. Keep the Ruby
