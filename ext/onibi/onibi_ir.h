@@ -166,6 +166,19 @@ typedef struct {
   uint32_t blob_size;
 } OnibiRSeqHeader;
 
+/* Read-only view over a published RSeq blob.  The VM uses this view for
+   physical execution data.  It avoids repeated offset arithmetic and keeps
+   the blob ownership in the Ruby String. */
+typedef struct {
+  const unsigned char *blob;
+  const OnibiRSeqHeader *header;
+  const OnibiRState *states;
+  const OnibiREdge *edges;
+  const OnibiRAction *actions;
+  const OnibiClassDesc *classes;
+  const OnibiLiteralDesc *literals;
+} OnibiRSeqView;
+
 typedef char onibi_rstate_size_must_be_12[(sizeof(OnibiRState) == 12) ? 1 : -1];
 typedef char onibi_redge_size_must_be_8[(sizeof(OnibiREdge) == 8) ? 1 : -1];
 typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
