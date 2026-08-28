@@ -745,6 +745,8 @@ static void onibi_gir_validate(VALUE graph) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE starts = onibi_hash_value(graph, "start_edges");
+  long capture_count = NUM2LONG(onibi_hash_value(graph, "capture_count"));
+  long counter_count = NUM2LONG(onibi_hash_value(graph, "counter_count"));
   long state_count = RARRAY_LEN(states);
   VALUE accept_value = onibi_hash_value(graph, "accept");
   if (NIL_P(accept_value)) rb_raise(eRegexpError, "GIR accept state is missing");
@@ -778,6 +780,14 @@ static void onibi_gir_validate(VALUE graph) {
       if (!onibi_gir_action_valid(action))
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
+      VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
+      if ((action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE")) &&
+          NUM2LONG(slot) >= capture_count * 2)
+        rb_raise(eRegexpError, "GIR capture slot is out of range");
+      if ((action == rb_intern("COUNTER_INIT") || action == rb_intern("COUNTER_INCREMENT") ||
+           action == rb_intern("TEST_COUNTER_LT") || action == rb_intern("TEST_COUNTER_GE")) &&
+          NUM2LONG(slot) >= counter_count)
+        rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
   }
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
@@ -792,6 +802,14 @@ static void onibi_gir_validate(VALUE graph) {
       ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
       if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
       onibi_gir_validate_action_operands(rb_ary_entry(actions, j));
+      VALUE slot = onibi_hash_value(rb_ary_entry(actions, j), "slot");
+      if ((action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE")) &&
+          NUM2LONG(slot) >= capture_count * 2)
+        rb_raise(eRegexpError, "GIR capture slot is out of range");
+      if ((action == rb_intern("COUNTER_INIT") || action == rb_intern("COUNTER_INCREMENT") ||
+           action == rb_intern("TEST_COUNTER_LT") || action == rb_intern("TEST_COUNTER_GE")) &&
+          NUM2LONG(slot) >= counter_count)
+        rb_raise(eRegexpError, "GIR counter slot is out of range");
     }
   }
 }
@@ -1065,6 +1083,31 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), builder.edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
+  long counter_count = 0;
+  for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
+    VALUE actions = onibi_hash_value(rb_ary_entry(builder.edges, i), "actions");
+    for (long j = 0; j < RARRAY_LEN(actions); j++) {
+      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
+      if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
+          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+        long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
+        if (slot + 1 > counter_count) counter_count = slot + 1;
+      }
+    }
+  }
+  for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
+    VALUE actions = onibi_hash_value(rb_ary_entry(start_edges, i), "actions");
+    for (long j = 0; j < RARRAY_LEN(actions); j++) {
+      ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
+      if (op == rb_intern("COUNTER_INIT") || op == rb_intern("COUNTER_INCREMENT") ||
+          op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE")) {
+        long slot = NUM2LONG(onibi_hash_value(rb_ary_entry(actions, j), "slot"));
+        if (slot + 1 > counter_count) counter_count = slot + 1;
+      }
+    }
+  }
+  rb_hash_aset(graph, ID2SYM(rb_intern("counter_count")), LONG2NUM(counter_count));
   rb_hash_aset(graph, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
