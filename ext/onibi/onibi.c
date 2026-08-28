@@ -49,7 +49,7 @@ static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_e
 static ID id_key_kind, id_key_kind_code, id_key_opcode;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set;
-static ID id_key_type, id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
+static ID id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_states, id_key_outgoing, id_key_start_edges, id_key_subprograms;
@@ -299,9 +299,7 @@ static OnibiAstKind onibi_ast_kind_from_type(const char *type) {
 
 static inline OnibiAstKind onibi_ast_kind(VALUE node) {
   VALUE code = rb_hash_aref(node, ID2SYM(id_key_type_code));
-  if (!NIL_P(code)) return (OnibiAstKind)NUM2UINT(code);
-  VALUE type = rb_hash_aref(node, ID2SYM(id_key_type));
-  return SYMBOL_P(type) ? onibi_ast_kind_from_type(rb_id2name(SYM2ID(type))) : ONIBI_AST_UNKNOWN;
+  return NIL_P(code) ? ONIBI_AST_UNKNOWN : (OnibiAstKind)NUM2UINT(code);
 }
 
 /* These sets are lexer grammar, not user data.  Keep them as direct
@@ -696,7 +694,6 @@ static long onibi_token_byte(VALUE token) {
 
 static VALUE onibi_ast_node(const char *type, VALUE token) {
   VALUE node = rb_hash_new();
-  rb_hash_aset(node, ID2SYM(id_key_type), ID2SYM(rb_intern(type)));
   rb_hash_aset(node, ID2SYM(id_key_type_code),
                UINT2NUM((unsigned int)onibi_ast_kind_from_type(type)));
   if (!NIL_P(token)) {
@@ -1875,7 +1872,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
         for (long i = 0; i < RARRAY_LEN(children); i++) {
           VALUE child = rb_hash_dup(rb_ary_entry(children, i));
-          rb_hash_aset(child, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
           rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
           onibi_fragment_t branch = onibi_compile_node(child, builder);
           onibi_append_values(result.starts, branch.starts);
@@ -1895,7 +1891,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int expandable = 1; long expanded = 0;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
         VALUE child = rb_hash_dup(rb_ary_entry(children, i));
-        rb_hash_aset(child, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
         rb_hash_aset(child, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
         onibi_fragment_t branch = onibi_compile_node(child, builder);
         onibi_append_values(result.starts, branch.starts);
@@ -1913,7 +1908,6 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         for (uint32_t cp = first; cp <= last; cp++) {
           VALUE literal = rb_hash_new();
           VALUE bytes = onibi_utf8_encode(cp);
-          rb_hash_aset(literal, ID2SYM(id_key_type), ID2SYM(id_kind_literal));
           rb_hash_aset(literal, ID2SYM(id_key_type_code), UINT2NUM(ONIBI_AST_LITERAL));
           rb_hash_aset(literal, ID2SYM(rb_intern("byte")), INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
           rb_hash_aset(literal, ID2SYM(rb_intern("bytes")), bytes);
@@ -5415,7 +5409,7 @@ void Init_onibi(void) {
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set");
-  id_key_type = rb_intern("type"); id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name");
+  id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name");
   id_key_ctype = rb_intern("ctype"); id_key_ranges = rb_intern("ranges");
   id_key_children = rb_intern("children"); id_key_operands = rb_intern("operands");
   id_key_negated = rb_intern("negated"); id_key_bitmap = rb_intern("bitmap");
