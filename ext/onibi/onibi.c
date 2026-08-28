@@ -2155,11 +2155,13 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
   VALUE semantic = onibi_hash_value(rseq, "header");
+  VALUE semantic_states = onibi_hash_value(rseq, "states");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
-  if (NIL_P(semantic) ||
+  if (NIL_P(semantic) || NIL_P(semantic_states) || !RB_TYPE_P(semantic_states, T_ARRAY) ||
+      RARRAY_LEN(semantic_states) != header.state_count ||
       header.start_edge_count > header.edge_count ||
       NUM2UINT(onibi_hash_value(semantic, "state_count")) != header.state_count ||
       NUM2UINT(onibi_hash_value(semantic, "features")) != header.features ||
@@ -2199,6 +2201,15 @@ static void onibi_rseq_validate(VALUE rseq) {
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   const OnibiRState *states = (const OnibiRState *)(RSTRING_PTR(blob) + header.states_offset);
   for (uint32_t i = 0; i < header.state_count; i++) {
+    VALUE semantic_state = rb_ary_entry(semantic_states, i);
+    ID semantic_op = SYM2ID(onibi_hash_value(semantic_state, "op"));
+    uint8_t expected_op = semantic_op == rb_intern("G_ACCEPT") ? 0 :
+      semantic_op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
+      semantic_op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS :
+      semantic_op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
+      semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : 0xff;
+    if (expected_op == 0xff || states[i].op != expected_op)
+      rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
     if (states[i].op > ONIBI_RS_RUN_ANY)
       rb_raise(rb_eArgError, "invalid Onibi RSeq state opcode");
     if ((uint64_t)states[i].edge_base + states[i].edge_count > header.edge_count - header.start_edge_count)
