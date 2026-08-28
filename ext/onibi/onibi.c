@@ -2979,46 +2979,49 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   exit_ids = fragment.exits;
   onibi_connect_fragment_actions(&builder, &exit_ids, &accept_starts, fragment.pending_actions, fragment.lazy);
   onibi_id_vector_free(&accept_starts);
-  VALUE start_edges = rb_ary_new();
+  OnibiGirEdgeVector start_edge_records;
+  onibi_gir_edge_vector_init(&start_edge_records);
   long root_entry = fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
   if (fragment.nullable && fragment.lazy) {
-    VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
     VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
     onibi_append_values(actions, fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
-    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-    rb_ary_push(start_edges, edge);
+    onibi_gir_edge_vector_push(&start_edge_records,
+                               (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions), actions},
+                               builder.map_roots);
   }
   OnibiIdVector start_ids;
   start_ids = fragment.starts;
   for (size_t i = 0; i < start_ids.count; i++) {
-    VALUE edge = rb_hash_new();
-    VALUE destination = UINT2NUM(start_ids.items[i]);
+    long destination = (long)start_ids.items[i];
     const OnibiGuardEntry *capture_guard =
       onibi_guard_vector_find_entry(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
     VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
     onibi_append_values(actions, fragment.start_actions);
     if (capture_guard) onibi_append_vector_values(actions, &capture_guard->actions);
-    rb_hash_aset(edge, ID2SYM(id_key_to), destination);
-    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-    rb_ary_push(start_edges, edge);
+    onibi_gir_edge_vector_push(&start_edge_records,
+                               (OnibiGirEdgeEntry){-1, destination, 0, (uint32_t)RARRAY_LEN(actions), actions},
+                               builder.map_roots);
   }
   onibi_id_vector_free(&start_ids);
   onibi_id_vector_free(&exit_ids);
   if (fragment.nullable && !fragment.lazy) {
-    VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(accept));
     VALUE actions = rb_ary_new_capa(RARRAY_LEN(fragment.start_actions) + RARRAY_LEN(fragment.pending_actions));
     onibi_append_values(actions, fragment.start_actions);
     onibi_append_values(actions, fragment.pending_actions);
-    rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
-    rb_ary_push(start_edges, edge);
+    onibi_gir_edge_vector_push(&start_edge_records,
+                               (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions), actions},
+                               builder.map_roots);
   }
-  for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
-    VALUE edge = rb_ary_entry(start_edges, i);
-    rb_obj_freeze(onibi_hash_value_id(edge, id_key_actions));
+  VALUE start_edges = rb_ary_new_capa((long)start_edge_records.count);
+  for (size_t i = 0; i < start_edge_records.count; i++) {
+    OnibiGirEdgeEntry *record = &start_edge_records.entries[i];
+    VALUE edge = rb_hash_new();
+    rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(record->to));
+    rb_obj_freeze(record->actions);
+    rb_hash_aset(edge, ID2SYM(id_key_actions), record->actions);
     rb_obj_freeze(edge);
+    rb_ary_push(start_edges, edge);
   }
   rb_obj_freeze(start_edges);
   VALUE gir_states, gir_edges;
@@ -3074,6 +3077,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled, &onibi_compiled_type, compiled_result);
   compiled_result->graph = graph;
   compiled_result->options = parsed_options;
+  onibi_gir_edge_vector_free(&start_edge_records);
   onibi_guard_vector_free(&builder.capture_guards);
   onibi_guard_vector_free(&builder.exit_guards);
   onibi_value_map_free(&builder.capture_names);

@@ -123,6 +123,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes compiler, "VALUE accept_starts = rb_ary_new();"
   end
 
+  def test_compiler_materializes_start_edges_from_c_records
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+
+    refute_nil compiler
+    assert_includes compiler, "OnibiGirEdgeVector start_edge_records;"
+    assert_includes compiler, "onibi_gir_edge_vector_push(&start_edge_records"
+    assert_includes compiler, "onibi_gir_edge_vector_free(&start_edge_records)"
+  end
+
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
