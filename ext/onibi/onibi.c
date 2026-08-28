@@ -3502,25 +3502,9 @@ static VALUE onibi_to_s(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(obj->regexp, id_to_s, 0);
 }
-static VALUE onibi_execution_class(VALUE self) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return obj->execution_class;
-}
 static VALUE onibi_encoding(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return rb_funcall(obj->regexp, id_encoding, 0);
-}
-static VALUE onibi_program_size(VALUE self) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return LONG2NUM(obj->program_size);
-}
-static VALUE onibi_program_frozen(VALUE self) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return !NIL_P(obj->rseq) && RTEST(rb_obj_frozen_p(obj->rseq)) ? Qtrue : Qfalse;
-}
-static VALUE onibi_program_cached(VALUE self) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return NIL_P(obj->rseq) ? Qfalse : Qtrue;
 }
 static VALUE onibi_timeout(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -3927,12 +3911,6 @@ static VALUE onibi_pipeline_build(VALUE self) {
     rb_hash_aset(out, ID2SYM(rb_intern("canonical")), canonical);
   }
   return out;
-}
-
-static VALUE onibi_pipeline(VALUE self) {
-  onibi_regexp_t *obj;
-  TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return obj->pipeline;
 }
 
 static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
@@ -5261,9 +5239,6 @@ static int onibi_rseq_simple_match(VALUE rseq, VALUE str, long start, long *matc
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   onibi_call_stack_reset();
-  VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
-  OnibiRSeqHeader header;
-  memcpy(&header, RSTRING_PTR(blob), sizeof(header));
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     if (!onibi_character_boundary(str, start)) continue;
     rb_thread_check_ints();
@@ -5588,15 +5563,8 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "no_encoding?", onibi_no_encoding_p, 0);
   rb_define_method(cRegexp, "inspect", onibi_inspect, 0);
   rb_define_method(cRegexp, "to_s", onibi_to_s, 0);
-  rb_define_method(cRegexp, "execution_class", onibi_execution_class, 0);
   rb_define_method(cRegexp, "encoding", onibi_encoding, 0);
-  rb_define_method(cRegexp, "program_size", onibi_program_size, 0);
-  rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
-  rb_define_method(cRegexp, "program_cached?", onibi_program_cached, 0);
   rb_define_method(cRegexp, "timeout", onibi_timeout, 0);
-  rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
-  rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
-  rb_define_method(cRegexp, "vm_match_result", onibi_vm_match_result, 1);
   rb_define_method(cRegexp, "scan", onibi_scan, 1);
   rb_define_method(cRegexp, "gsub", onibi_gsub, -1);
   rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
