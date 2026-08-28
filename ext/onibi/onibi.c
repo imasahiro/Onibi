@@ -19,6 +19,7 @@ static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
+static void onibi_rseq_validate(VALUE rseq);
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -1617,6 +1618,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
                onibi_deep_freeze(onibi_rseq_physical_graph(result)));
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
+  /* Validate once, before publication.  Match calls use this immutable
+     validated representation without repeating structural scans. */
+  onibi_rseq_validate(result);
   return result;
 }
 
@@ -2832,7 +2836,12 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
       rb_enc_compatible(str, obj->source) != NULL &&
       RTEST(rb_funcall(str, rb_intern("valid_encoding?"), 0)))
     {
-      VALUE result = onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
+      /* The immutable RSeq was validated and its physical execution view was
+         built during initialize.  Do not rescan the program on each match. */
+      VALUE result = obj->execution_kind == ID2SYM(rb_intern("REGULAR_FAST")) ?
+        onibi_vm_regular_fast(obj->rseq, str) :
+        (obj->execution_kind == ID2SYM(rb_intern("TAGGED_ORDERED")) ?
+          onibi_vm_tagged_ordered(obj->rseq, str) : onibi_vm_dynamic(obj->rseq, str));
       onibi_deadline_ns = 0;
       return result;
     }
