@@ -3017,7 +3017,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   int options = compiled_data->options;
   int ignorecase = (options & 1) != 0;
   int multiline = (options & 4) != 0;
-  uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
+  uint64_t physical_edge_count = (uint64_t)r_edge_records.count + (uint64_t)r_start_edge_records.count;
   OnibiValueVector literal_payloads;
   onibi_value_vector_init(&literal_payloads);
   for (size_t i = 0; i < state_records.count; i++) {
@@ -3084,10 +3084,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(id_key_ignorecase), ignorecase ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(id_key_multiline), multiline ? Qtrue : Qfalse);
   rb_hash_aset(header, ID2SYM(id_key_state_count), LONG2NUM((long)state_records.count));
-  rb_hash_aset(header, ID2SYM(id_key_edge_count), LONG2NUM(RARRAY_LEN(r_edges)));
+  rb_hash_aset(header, ID2SYM(id_key_edge_count), LONG2NUM((long)r_edge_records.count));
   rb_hash_aset(header, ID2SYM(id_key_action_count), LONG2NUM(RARRAY_LEN(actions)));
-  rb_hash_aset(header, ID2SYM(id_key_start_edge_base), LONG2NUM(RARRAY_LEN(r_edges)));
-  rb_hash_aset(header, ID2SYM(id_key_start_edge_count), LONG2NUM(RARRAY_LEN(start_edges)));
+  rb_hash_aset(header, ID2SYM(id_key_start_edge_base), LONG2NUM((long)r_edge_records.count));
+  rb_hash_aset(header, ID2SYM(id_key_start_edge_count), LONG2NUM((long)r_start_edge_records.count));
   OnibiRSeqHeader physical;
   memset(&physical, 0, sizeof(physical));
   physical.magic = ONIBI_RSEQ_MAGIC;
@@ -3099,7 +3099,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.capture_count = capture_count;
   physical.semantic_capture_count = capture_count;
   physical.counter_count = counter_count;
-  physical.start_edge_base = (uint32_t)RARRAY_LEN(r_edges);
+  physical.start_edge_base = (uint32_t)r_edge_records.count;
   for (size_t i = 0; i < state_records.count; i++) {
     unsigned int opcode = state_records.entries[i].opcode;
     if (opcode == ONIBI_G_GRAPHEME || opcode == ONIBI_G_BACKREF || opcode == ONIBI_G_CALL ||
@@ -3131,9 +3131,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
   }
   physical.state_count = (uint32_t)state_records.count;
-  physical.edge_count = (uint32_t)(RARRAY_LEN(r_edges) + RARRAY_LEN(start_edges));
+  physical.edge_count = (uint32_t)(r_edge_records.count + r_start_edge_records.count);
   physical.action_count = (uint32_t)RARRAY_LEN(actions);
-  physical.start_edge_count = (uint32_t)RARRAY_LEN(r_start_edges);
+  physical.start_edge_count = (uint32_t)r_start_edge_records.count;
   uint64_t offset = sizeof(OnibiRSeqHeader);
   physical.states_offset = (uint32_t)offset;
   offset += (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count;
@@ -3173,9 +3173,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       opcode == ONIBI_G_ABSENT ? ONIBI_RS_ABSENT : opcode == ONIBI_G_ACCEPT ? 0 : 0xff);
     uint32_t edge_base = 0;
     uint16_t edge_count = 0;
-    for (long e = 0; e < RARRAY_LEN(r_edges); e++) {
-      VALUE edge = rb_ary_entry(r_edges, e);
-      if (NUM2LONG(onibi_hash_value_id(edge, id_key_from)) != i) continue;
+    for (size_t e = 0; e < r_edge_records.count; e++) {
+      if (r_edge_records.entries[e].from != (long)i) continue;
       if (edge_count == 0) edge_base = (uint32_t)e;
       edge_count++;
     }
@@ -3205,21 +3204,20 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
   }
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
-  for (long i = 0; i < RARRAY_LEN(r_edges); i++) {
-    VALUE edge = rb_ary_entry(r_edges, i);
-    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value_id(edge, id_key_to));
-    if (destination == (uint32_t)(RARRAY_LEN(states) - 1)) destination = ONIBI_ACCEPT_STATE;
+  for (size_t i = 0; i < r_edge_records.count; i++) {
+    OnibiGirEdgeEntry *record = &r_edge_records.entries[i];
+    uint32_t destination = (uint32_t)record->to;
+    if (destination == (uint32_t)(state_records.count - 1)) destination = ONIBI_ACCEPT_STATE;
     physical_edges[i].destination = destination;
-    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value_id(edge, id_key_action_offset));
-    physical_edges[i].action_offset = action_index == 0 && RARRAY_LEN(onibi_hash_value_id(edge, id_key_actions)) == 0 ? 0 :
-      (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
+    physical_edges[i].action_offset = RARRAY_LEN(record->actions) == 0 ? 0 :
+      (uint32_t)(sizeof(OnibiRAction) * ((uint32_t)record->action_offset + 1));
   }
-  for (long i = 0; i < RARRAY_LEN(r_start_edges); i++) {
-    VALUE edge = rb_ary_entry(r_start_edges, i);
-    physical_edges[RARRAY_LEN(r_edges) + i].destination = (uint32_t)NUM2ULONG(onibi_hash_value_id(edge, id_key_to));
-    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value_id(edge, id_key_action_offset));
-    physical_edges[RARRAY_LEN(r_edges) + i].action_offset = RARRAY_LEN(onibi_hash_value_id(edge, id_key_actions)) == 0 ? 0 :
-      (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
+  for (size_t i = 0; i < r_start_edge_records.count; i++) {
+    OnibiGirEdgeEntry *record = &r_start_edge_records.entries[i];
+    size_t index = r_edge_records.count + i;
+    physical_edges[index].destination = (uint32_t)record->to;
+    physical_edges[index].action_offset = RARRAY_LEN(record->actions) == 0 ? 0 :
+      (uint32_t)(sizeof(OnibiRAction) * ((uint32_t)record->action_offset + 1));
   }
   OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
   for (long i = 0; i < RARRAY_LEN(actions); i++) {

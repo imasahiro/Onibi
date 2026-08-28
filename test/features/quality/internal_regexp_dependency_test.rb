@@ -201,6 +201,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "onibi_gir_state_vector_free(&state_records)"
   end
 
+  def test_rseq_physical_edges_use_c_records
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "r_edge_records.entries[i]"
+    assert_includes lowerer, "r_start_edge_records.entries[i]"
+    refute_match(/physical_edges\[i\].*onibi_hash_value\(edge/, lowerer)
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
