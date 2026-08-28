@@ -19,6 +19,7 @@
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
+static _Thread_local unsigned int onibi_call_depth = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
@@ -1036,7 +1037,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1416,6 +1417,62 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
   return RARRAY_LEN(builder->subprograms) - 1;
 }
 
+static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long *next_capture) {
+  if (!RB_TYPE_P(ast, T_HASH)) return;
+  ID type = onibi_symbol_value(ast, "type");
+  if (type == ID2SYM(rb_intern("capture"))) {
+    VALUE start = onibi_hash_value(ast, "start");
+    VALUE id_value = rb_hash_aref(builder->capture_ids, start);
+    long id;
+    if (NIL_P(id_value)) {
+      id = (*next_capture)++;
+      rb_hash_aset(builder->capture_ids, start, LONG2NUM(id));
+    } else id = NUM2LONG(id_value);
+    VALUE key = rb_str_new_cstr("");
+    char number[32];
+    snprintf(number, sizeof(number), "%ld", id + 1);
+    key = rb_str_new_cstr(number);
+    rb_hash_aset(builder->capture_bodies, key, onibi_hash_value(ast, "body"));
+    VALUE name = onibi_hash_value(ast, "name");
+    if (!NIL_P(name)) {
+      rb_hash_aset(builder->capture_names, name, LONG2NUM(id));
+      rb_hash_aset(builder->capture_bodies, name, onibi_hash_value(ast, "body"));
+    }
+    onibi_collect_captures(onibi_hash_value(ast, "body"), builder, next_capture);
+    return;
+  }
+  const char *keys[] = { "body", "children", "branches", "atom", "yes", "no" };
+  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+    VALUE child = onibi_hash_value(ast, keys[i]);
+    if (RB_TYPE_P(child, T_ARRAY))
+      for (long j = 0; j < RARRAY_LEN(child); j++) onibi_collect_captures(rb_ary_entry(child, j), builder, next_capture);
+    else onibi_collect_captures(child, builder, next_capture);
+  }
+}
+
+static long onibi_compile_named_subprogram(VALUE name, VALUE body,
+                                           onibi_gir_builder_t *builder) {
+  long id = RARRAY_LEN(builder->subprograms);
+  rb_ary_push(builder->subprograms, Qnil); /* reserve the recursive target */
+  rb_hash_aset(builder->subprogram_ids, name, LONG2NUM(id));
+  rb_hash_aset(builder->active_subroutines, name, Qtrue);
+  onibi_fragment_t fragment = onibi_compile_node(body, builder);
+  rb_hash_delete(builder->active_subroutines, name);
+  long accept = builder->next_id++;
+  onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
+  onibi_connect_actions(builder, fragment.exits, rb_ary_new_from_args(1, LONG2NUM(accept)),
+                        fragment.pending_actions);
+  long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
+  VALUE descriptor = rb_hash_new();
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(entry));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry_actions")), onibi_deep_freeze(rb_ary_dup(fragment.start_actions)));
+  rb_obj_freeze(descriptor);
+  rb_ary_store(builder->subprograms, id, descriptor);
+  return id;
+}
+
 static int onibi_gir_action_valid(ID action) {
   return action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
     action == rb_intern("MATCH_RESET") || action == rb_intern("ASSERT_BEGIN_BUFFER") ||
@@ -1782,10 +1839,11 @@ skip_utf8_range_expansion:
     VALUE body = NIL_P(name) ? Qnil : rb_hash_aref(builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
     if (RTEST(rb_hash_aref(builder->active_subroutines, name)))
-      rb_raise(eRegexpError, "recursive subroutine requires dynamic call state");
-    rb_hash_aset(builder->active_subroutines, name, Qtrue);
-    long subprogram_id = onibi_compile_subprogram(body, builder, 0);
-    rb_hash_delete(builder->active_subroutines, name);
+      rb_raise(eRegexpError, "recursive subroutine requires a call frame");
+    VALUE existing = rb_hash_aref(builder->subprogram_ids, name);
+    long subprogram_id;
+    if (!NIL_P(existing)) subprogram_id = NUM2LONG(existing);
+    else subprogram_id = onibi_compile_named_subprogram(name, body, builder);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
     rb_obj_freeze(payload);
@@ -2135,7 +2193,10 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
   VALUE subprograms = rb_ary_new();
   rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, ignorecase, multiline, 0 };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, rb_hash_new(), ignorecase, multiline, 0 };
+  long prepass_capture_count = 0;
+  onibi_collect_captures(ast, &builder, &prepass_capture_count);
+  builder.capture_count = prepass_capture_count;
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -3758,6 +3819,8 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
                                     long start, long *matched_end, VALUE *matched_captures) {
   if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
       subprogram_id >= RARRAY_LEN(subprograms)) return 0;
+  if (onibi_call_depth >= 256U) rb_raise(eRegexpError, "subroutine call depth exceeded");
+  onibi_call_depth++;
   VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
   VALUE entry = onibi_hash_value(descriptor, "entry");
   if (NIL_P(entry)) return 0;
@@ -3775,7 +3838,9 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
   long nested_start = 0;
   VALUE captures = Qnil;
   long nested_end = 0;
-  if (!onibi_gir_match_captures(nested, str, start, &nested_end, &nested_start, &captures)) return 0;
+  int matched = onibi_gir_match_captures(nested, str, start, &nested_end, &nested_start, &captures);
+  onibi_call_depth--;
+  if (!matched) return 0;
   *matched_end = nested_end;
   *matched_captures = captures;
   return 1;
