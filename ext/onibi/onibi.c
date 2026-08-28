@@ -23,6 +23,8 @@ static _Thread_local unsigned int onibi_call_depth = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
+static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call, id_g_char, id_g_class, id_g_any, id_g_backref;
+static ID id_capture_open, id_capture_close, id_match_reset;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
@@ -3938,19 +3940,19 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
-  if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; return 1; }
-  if (op == rb_intern("G_GRAPHEME")) {
+  if (op == id_g_accept) { *matched_end = pos; return 1; }
+  if (op == id_g_grapheme) {
     long consumed = onibi_grapheme_width(str, pos);
     if (consumed <= 0) return 0;
     pos += consumed;
-  } else if (op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
-  else if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
+  } else if (op == id_g_atomic || op == id_g_absent) return 0;
+  else if (op == id_g_char || op == id_g_class || op == id_g_any) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
     VALUE payload = onibi_hash_value(state, "payload");
     long consumed = 1;
-    int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
-      (op == rb_intern("G_CHAR") ?
+    int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
+      (op == id_g_char ?
         (RTEST(onibi_hash_value(payload, "ignorecase")) ?
           tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
           byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
@@ -4007,7 +4009,7 @@ static VALUE onibi_materialize_tags(VALUE tags, VALUE fallback) {
 static int onibi_has_capture_action(VALUE actions) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
-    if (op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE")) return 1;
+    if (op == id_capture_open || op == id_capture_close) return 1;
   }
   return 0;
 }
@@ -4019,8 +4021,8 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
     ID op = SYM2ID(onibi_hash_value(action, "op"));
-    if (op == rb_intern("MATCH_RESET")) { *reported_start = pos; continue; }
-    if (op != rb_intern("CAPTURE_OPEN") && op != rb_intern("CAPTURE_CLOSE")) continue;
+    if (op == id_match_reset) { *reported_start = pos; continue; }
+    if (op != id_capture_open && op != id_capture_close) continue;
     VALUE slot = onibi_hash_value(action, "slot");
     rb_hash_aset(captures, slot, LONG2NUM(pos));
     VALUE event = rb_ary_new_from_args(3, tags, slot, LONG2NUM(pos));
@@ -4040,7 +4042,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   rb_hash_aset(visited, key, Qtrue);
   VALUE state = rb_ary_entry(states, state_id);
   ID op = SYM2ID(onibi_hash_value(state, "op"));
-  if (op == rb_intern("G_ACCEPT")) {
+  if (op == id_g_accept) {
     *matched_end = pos;
     *matched_start = reported_start;
     *matched_captures = onibi_materialize_tags(tags, captures);
@@ -4048,19 +4050,19 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_GRAPHEME")) {
+  if (op == id_g_grapheme) {
     long consumed = onibi_grapheme_width(str, pos);
     if (consumed <= 0) return 0;
     pos += consumed;
   }
-  if (op == rb_intern("G_ABSENT")) {
+  if (op == id_g_absent) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
     long probe_end = pos;
     VALUE ignored = Qnil;
     if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos,
                                  captures, tags, &probe_end, &ignored)) return 0;
-  } else if (op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC")) {
+  } else if (op == id_g_call || op == id_g_atomic) {
     VALUE payload = onibi_hash_value(state, "payload");
     long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
     VALUE called_captures = Qnil;
@@ -4072,9 +4074,9 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       captures = merged;
       tags = Qnil;
     }
-  } else if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
+  } else if (op == id_g_char || op == id_g_class || op == id_g_any || op == id_g_backref) {
     if (pos >= RSTRING_LEN(str)) return 0;
-    if (op == rb_intern("G_BACKREF")) {
+    if (op == id_g_backref) {
       VALUE payload = onibi_hash_value(state, "payload");
       long capture = NUM2LONG(onibi_hash_value(payload, "capture"));
       VALUE begin = rb_hash_aref(captures, LONG2NUM(2 * (capture - 1)));
@@ -4097,8 +4099,8 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
       VALUE payload = onibi_hash_value(state, "payload");
       long consumed = 1;
-      int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
-        (op == rb_intern("G_CHAR") ?
+      int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
+        (op == id_g_char ?
           (RTEST(onibi_hash_value(payload, "ignorecase")) ?
             tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
             byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
@@ -4755,6 +4757,13 @@ void Init_onibi(void) {
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   id_encoding = rb_intern("encoding");
   id_index = rb_intern("index");
+  id_g_accept = rb_intern("G_ACCEPT"); id_g_grapheme = rb_intern("G_GRAPHEME");
+  id_g_atomic = rb_intern("G_ATOMIC"); id_g_absent = rb_intern("G_ABSENT");
+  id_g_call = rb_intern("G_CALL"); id_g_char = rb_intern("G_CHAR");
+  id_g_class = rb_intern("G_CLASS"); id_g_any = rb_intern("G_ANY");
+  id_g_backref = rb_intern("G_BACKREF");
+  id_capture_open = rb_intern("CAPTURE_OPEN"); id_capture_close = rb_intern("CAPTURE_CLOSE");
+  id_match_reset = rb_intern("MATCH_RESET");
   mOnibi = rb_define_module("Onibi");
   eRegexpError = rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
   rb_define_const(mOnibi, "Error", rb_eStandardError);
