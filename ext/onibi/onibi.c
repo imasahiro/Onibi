@@ -3337,7 +3337,7 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
         (rb_enc_get_index(str) == rb_utf8_encindex() ||
          rb_enc_get_index(str) == rb_enc_get_index(obj->source)))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str))) {
-    if (!RTEST(onibi_vm_match_p(self, str))) return Qnil;
+    if (!RTEST(onibi_vm_match_p(self, str))) { rb_backref_set(Qnil); return Qnil; }
   }
   VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
                            : rb_funcall(obj->regexp, id_match, 2, str, pos);
