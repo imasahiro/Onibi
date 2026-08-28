@@ -83,7 +83,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
@@ -2549,6 +2549,44 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
   return 0;
 }
 
+static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
+  if (!RB_TYPE_P(ast, T_HASH)) return 1;
+  ID type = onibi_symbol_value(ast, "type");
+  if (type == ID2SYM(rb_intern("capture"))) {
+    int body_nullable = onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
+    if (body_nullable) *nullable_capture = 1;
+    return body_nullable;
+  }
+  if (type == ID2SYM(rb_intern("quantifier"))) {
+    VALUE min = onibi_hash_value(ast, "min");
+    if (!NIL_P(min) && NUM2LONG(min) == 0) {
+      (void)onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
+      return 1;
+    }
+    return onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
+  }
+  if (type == ID2SYM(rb_intern("sequence"))) {
+    int result = 1;
+    VALUE children = onibi_hash_value(ast, "children");
+    for (long i = 0; i < RARRAY_LEN(children); i++)
+      if (!onibi_ast_nullable(rb_ary_entry(children, i), nullable_capture)) result = 0;
+    return result;
+  }
+  if (type == ID2SYM(rb_intern("alternative"))) {
+    int result = 0;
+    VALUE branches = onibi_hash_value(ast, "branches");
+    for (long i = 0; i < RARRAY_LEN(branches); i++)
+      if (onibi_ast_nullable(rb_ary_entry(branches, i), nullable_capture)) result = 1;
+    return result;
+  }
+  if (type == ID2SYM(rb_intern("group")) || type == ID2SYM(rb_intern("option_scope")) ||
+      type == ID2SYM(rb_intern("atomic")))
+    return onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
+  if (type == ID2SYM(rb_intern("lookahead")) || type == ID2SYM(rb_intern("lookbehind")) ||
+      type == ID2SYM(rb_intern("anchor")) || type == ID2SYM(rb_intern("match_reset"))) return 1;
+  return 0;
+}
+
 static int onibi_option_mask(VALUE options) {
   if (NIL_P(options)) return 0;
   if (options == Qtrue) return 1;
@@ -2616,6 +2654,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->source);
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
+  obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   onibi_token_features(tokens, obj);
   if (((opts & 32) && rb_enc_str_asciionly_p(source) &&
@@ -2656,6 +2695,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     if (!NIL_P(obj->parsed)) {
       VALUE parsed_ast = onibi_hash_value(obj->parsed, "ast");
       obj->has_safe_multibyte_class = onibi_ast_safe_multibyte_class(parsed_ast);
+      (void)onibi_ast_nullable(parsed_ast, &obj->has_nullable_capture);
     }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
@@ -4029,9 +4069,33 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_deadline_ns = 0;
   return rb_funcall(obj->regexp, id_match_p, 1, str);
 }
+
+static VALUE onibi_mri_match_result(VALUE match) {
+  VALUE result = rb_hash_new();
+  rb_hash_aset(result, ID2SYM(rb_intern("start")), rb_funcall(match, rb_intern("bytebegin"), 1, INT2NUM(0)));
+  rb_hash_aset(result, ID2SYM(rb_intern("end")), rb_funcall(match, rb_intern("byteend"), 1, INT2NUM(0)));
+  VALUE captures = rb_hash_new();
+  long capture_count = NUM2LONG(rb_funcall(match, rb_intern("length"), 0)) - 1;
+  for (long group_id = 1; group_id <= capture_count; group_id++) {
+    VALUE begin = rb_funcall(match, rb_intern("bytebegin"), 1, LONG2NUM(group_id));
+    VALUE finish = rb_funcall(match, rb_intern("byteend"), 1, LONG2NUM(group_id));
+    if (NIL_P(begin) || NIL_P(finish) || NUM2LONG(begin) < 0 || NUM2LONG(finish) < 0) continue;
+    VALUE group = rb_hash_new();
+    rb_hash_aset(group, ID2SYM(rb_intern("start")), begin);
+    rb_hash_aset(group, ID2SYM(rb_intern("end")), finish);
+    rb_hash_aset(captures, LONG2NUM(group_id), group);
+  }
+  if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+  return result;
+}
+
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
+  if (obj->has_nullable_capture) {
+    VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
+    return NIL_P(match) ? Qnil : onibi_mri_match_result(match);
+  }
   int graph_ok = !(obj->options & 32) && (!(obj->options & 16) || onibi_encoded_literal_program_p(obj)) && !NIL_P(obj->rseq) &&
     onibi_vm_input_eligible(obj, str) &&
     (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
