@@ -445,6 +445,14 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
   end
 
+  def test_class_bitmap_caches_child_escape_byte
+    source = File.read(EXTENSION_SOURCE)
+    bitmap = source[/static VALUE onibi_class_bitmap\(VALUE payload, int fold\) \{.*?\n}\n/m]
+
+    refute_nil bitmap
+    assert_includes bitmap, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"

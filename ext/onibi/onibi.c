@@ -1739,6 +1739,7 @@ class_children:
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
       VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
+      VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);
       OnibiAsciiProperty property_kind = NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN :
         onibi_ascii_property_kind_id(NUM2ULONG(name_id));
       if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
@@ -1746,15 +1747,15 @@ class_children:
           int hit = onibi_ascii_property_hit_kind(property_kind, c);
           if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
         }
-        if (NUM2INT(onibi_hash_value_id(child, id_key_byte)) == 'P')
+        if (!NIL_P(child_byte_value) && NUM2INT(child_byte_value) == 'P')
           for (long byte = 0; byte < 32; byte++) bits[byte] = (unsigned char)~bits[byte];
         continue;
       }
-      int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte))) :
+      int escape_code = NIL_P(name) ? tolower((unsigned char)NUM2INT(child_byte_value)) :
         (RSTRING_LEN(name) == 1 ? tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
       if (escape_code == 'r' || escape_code == 'p' || escape_code == 'x' || escape_code == 'u')
         rb_raise(eRegexpError, "escape is not supported in RSeq class");
-      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte))) :
+      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(child_byte_value)) :
         (RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]));
       int code = escape_code;
       for (int c = 0; c < 256; c++) {
