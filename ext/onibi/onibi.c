@@ -2062,6 +2062,17 @@ static void onibi_append_values(VALUE destination, VALUE values) {
   for (long i = 0; i < count; i++) rb_ary_push(destination, items[i]);
 }
 
+static VALUE onibi_concat_action_values(VALUE first, VALUE second) {
+  long first_count = RARRAY_LEN(first);
+  long second_count = RARRAY_LEN(second);
+  if (first_count == 0) return second;
+  if (second_count == 0) return first;
+  VALUE result = rb_ary_new_capa(first_count + second_count);
+  onibi_append_values(result, first);
+  onibi_append_values(result, second);
+  return result;
+}
+
 static void onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
                                              const OnibiIdVector *starts, VALUE guard) {
   for (size_t i = 0; i < starts->count; i++) {
@@ -3021,20 +3032,16 @@ skip_utf8_range_expansion:
         if (repeat.nullable) {
           onibi_connect_fragment(builder, &result.exits, &repeat.starts);
         } else {
-          VALUE next_actions = rb_ary_new_capa(RARRAY_LEN(repeat.pending_actions) +
-                                               RARRAY_LEN(repeat.start_actions));
-          onibi_append_values(next_actions, repeat.pending_actions);
-          onibi_append_values(next_actions, repeat.start_actions);
+          VALUE next_actions = onibi_concat_action_values(repeat.pending_actions,
+                                                          repeat.start_actions);
           onibi_connect_fragment_actions(builder, &result.exits, &repeat.starts, next_actions, 0);
         }
       }
       if (repeat.nullable) {
         onibi_connect_fragment(builder, &repeat.exits, &repeat.starts);
       } else {
-        VALUE loop_actions = rb_ary_new_capa(RARRAY_LEN(repeat.pending_actions) +
-                                             RARRAY_LEN(repeat.start_actions));
-        onibi_append_values(loop_actions, repeat.pending_actions);
-        onibi_append_values(loop_actions, repeat.start_actions);
+        VALUE loop_actions = onibi_concat_action_values(repeat.pending_actions,
+                                                         repeat.start_actions);
         onibi_connect_fragment_actions(builder, &repeat.exits, &repeat.starts, loop_actions, 0);
       }
       onibi_fragment_append_actions(&result.pending_actions, repeat.pending_actions);
