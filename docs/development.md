@@ -237,6 +237,10 @@ copy counters when a frame branches, preserve values across subroutine calls,
 and keep capture/tag history independent. Converting only the entry map would
 leave edge branches on Ruby Hash and would not remove the repeated copy cost.
 
+Capture and exit guard maps have the same constraint. Their keys are numeric
+state IDs, but their values are ordered, mutable action lists. Keep the Ruby
+adapter until a C map has an explicit exception-safe owner for those lists.
+
 The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
