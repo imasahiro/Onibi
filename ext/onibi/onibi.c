@@ -2272,6 +2272,16 @@ static void onibi_rseq_validate(VALUE rseq) {
          edges[i].action_offset >= header.blob_size - header.actions_offset))
       rb_raise(rb_eArgError, "invalid Onibi RSeq edge action offset");
   }
+  for (uint32_t i = 0; i < header.edge_count - header.start_edge_count; i++) {
+    VALUE semantic_edge = rb_ary_entry(semantic_edges, i);
+    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
+    if (destination == header.state_count - 1) destination = ONIBI_ACCEPT_STATE;
+    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
+    uint32_t expected_offset = action_index == 0 && RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :
+      (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
+    if (edges[i].destination != destination || edges[i].action_offset != expected_offset)
+      rb_raise(rb_eArgError, "RSeq edge disagrees with semantic edge");
+  }
   const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
   for (uint32_t i = 0; i < header.action_count; i++) {
     if (actions[i].op > ONIBI_RA_PROGRESS)
