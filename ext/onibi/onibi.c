@@ -3954,7 +3954,6 @@ static void onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *c
 static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length, VALUE counters, VALUE captures) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
-    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(action, id_key_action_code));
     if (code == ONIBI_GA_TEST_CAPTURE) {
       long capture = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
@@ -3978,7 +3977,9 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       long limit = NUM2LONG(onibi_hash_value_id(action, id_key_limit));
       if ((code == ONIBI_GA_TEST_COUNTER_LT && !(count < limit)) ||
           (code == ONIBI_GA_TEST_COUNTER_GE && !(count >= limit))) return 0;
+      continue;
     }
+    ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
     if (op == id_a_assert_begin_buffer && pos != 0) return 0;
     if (op == id_a_assert_search_origin && pos != 0) return 0;
     if (op == id_a_assert_end_buffer && pos != length) return 0;
