@@ -1454,7 +1454,9 @@ static void onibi_rseq_validate(VALUE rseq) {
       header.blob_size != (uint32_t)RSTRING_LEN(blob) ||
       header.states_offset < sizeof(OnibiRSeqHeader) ||
       header.edges_offset < header.states_offset ||
-      header.actions_offset < header.edges_offset ||
+      header.states_offset + header.state_count * sizeof(OnibiRState) > header.edges_offset ||
+      header.edges_offset + header.edge_count * sizeof(OnibiREdge) > header.actions_offset ||
+      header.start_edge_count > header.edge_count ||
       header.actions_offset + header.action_count * sizeof(OnibiRAction) > header.blob_size)
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
 }
