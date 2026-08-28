@@ -2065,6 +2065,11 @@ static void onibi_rseq_validate(VALUE rseq) {
          edges[i].action_offset >= header.blob_size - header.actions_offset))
       rb_raise(rb_eArgError, "invalid Onibi RSeq edge action offset");
   }
+  const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
+  for (uint32_t i = 0; i < header.action_count; i++) {
+    if (actions[i].op > ONIBI_RA_PROGRESS)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
+  }
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
