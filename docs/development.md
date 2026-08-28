@@ -198,6 +198,12 @@ The tokenizer publishes frozen semantic tokens with byte spans. The parser
 publishes a frozen regular-core AST. The compiler consumes only that AST and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
 
+Parser and compiler opcode checks use initialization-time ID values. They do
+not call `rb_intern` during GIR validation, RSeq lowering, or VM dispatch.
+AST field keys in parser construction also use cached IDs. This removes
+repeated string-to-symbol work while the token and AST vector migrations are
+implemented in separate steps.
+
 RSeq lowering preserves state, edge, start-edge, and action order. It publishes
 an immutable semantic view, an immutable physical execution view, and a
 validated, aligned, relocatable v1 blob. The physical view is built during
