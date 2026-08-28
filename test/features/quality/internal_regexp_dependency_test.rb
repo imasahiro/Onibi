@@ -476,7 +476,9 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     [initialize, match, match_p, vm_match_p].each { |method| refute_nil method }
     assert_includes initialize, "int source_encoding_index = rb_enc_get_index(source);"
+    assert_includes initialize, "int source_ascii_only = rb_enc_str_asciionly_p(source);"
     assert_equal 1, initialize.scan("rb_enc_get_index(source)").length
+    assert_equal 1, initialize.scan("rb_enc_str_asciionly_p(source)").length
     assert_includes match, "int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;"
     assert_includes match, "int str_ascii_only = RB_TYPE_P(str, T_STRING) && rb_enc_str_asciionly_p(str);"
     assert_equal 1, match.scan("rb_enc_get_index(str)").length

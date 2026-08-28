@@ -3840,11 +3840,11 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
   int source_encoding_index = rb_enc_get_index(source);
+  int source_ascii_only = rb_enc_str_asciionly_p(source);
   obj->source_encoding_index = source_encoding_index;
-  if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() &&
-      !rb_enc_str_asciionly_p(source))
+  if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() && !source_ascii_only)
     rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
-  if (!(opts & 32) && !rb_enc_str_asciionly_p(source) && !(opts & 16)) opts |= 16;
+  if (!(opts & 32) && !source_ascii_only && !(opts & 16)) opts |= 16;
   obj->options = opts;
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
@@ -3864,7 +3864,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   if (feature_heap) xfree(feature_tokens.items);
   if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
       obj->has_property_escape) opts |= 16;
-  if (((opts & 32) && rb_enc_str_asciionly_p(source) &&
+    if (((opts & 32) && source_ascii_only &&
        (obj->has_non_ascii_literal || obj->has_property_escape)) ||
       (!(opts & 32) && source_encoding_index != rb_utf8_encindex() &&
        source_encoding_index != rb_usascii_encindex() &&
@@ -3915,7 +3915,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
        runs once during compilation.  Match calls do not inspect source. */
     int encoded_literal_program = (opts & 16) && !(opts & (1 | 32)) &&
       source_encoding_index != rb_ascii8bit_encindex() &&
-      !rb_enc_str_asciionly_p(source) &&
+      !source_ascii_only &&
       obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
       (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
     if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
