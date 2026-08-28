@@ -1215,6 +1215,10 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE start_edges = onibi_hash_value(graph, "start_edges");
+  if (!RTEST(rb_obj_frozen_p(compiled)) || !RTEST(rb_obj_frozen_p(graph)) ||
+      !RTEST(rb_obj_frozen_p(states)) || !RTEST(rb_obj_frozen_p(edges)) ||
+      !RTEST(rb_obj_frozen_p(start_edges)))
+    rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR");
   long state_count = RARRAY_LEN(states);
   long accept_state = NUM2LONG(onibi_hash_value(graph, "accept"));
   if (accept_state < 0 || accept_state >= state_count)
@@ -1253,16 +1257,21 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   for (long i = 0; i < RARRAY_LEN(edges); i++) {
     VALUE edge = rb_ary_entry(edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
+    if (!RTEST(rb_obj_frozen_p(edge)) || !RTEST(rb_obj_frozen_p(edge_actions)))
+      rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR edges");
     VALUE out = rb_hash_new();
     rb_hash_aset(out, ID2SYM(rb_intern("from")), onibi_hash_value(edge, "from"));
     rb_hash_aset(out, ID2SYM(rb_intern("to")), onibi_hash_value(edge, "to"));
     rb_hash_aset(out, ID2SYM(rb_intern("action_offset")), LONG2NUM(RARRAY_LEN(actions)));
-    rb_hash_aset(out, ID2SYM(rb_intern("actions")), edge_actions);
+    VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
-      rb_obj_freeze(action);
-      rb_ary_push(actions, action);
+      VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
+      rb_ary_push(copied_actions, copy);
+      rb_ary_push(actions, copy);
     }
+    rb_obj_freeze(copied_actions);
+    rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
     rb_obj_freeze(out);
     rb_ary_push(r_edges, out);
   }
@@ -1270,15 +1279,20 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
     VALUE edge = rb_ary_entry(start_edges, i);
     VALUE edge_actions = onibi_hash_value(edge, "actions");
+    if (!RTEST(rb_obj_frozen_p(edge)) || !RTEST(rb_obj_frozen_p(edge_actions)))
+      rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR start edges");
     VALUE out = rb_hash_new();
     rb_hash_aset(out, ID2SYM(rb_intern("to")), onibi_hash_value(edge, "to"));
     rb_hash_aset(out, ID2SYM(rb_intern("action_offset")), LONG2NUM(RARRAY_LEN(actions)));
-    rb_hash_aset(out, ID2SYM(rb_intern("actions")), edge_actions);
+    VALUE copied_actions = rb_ary_new();
     for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
       VALUE action = rb_ary_entry(edge_actions, j);
-      rb_obj_freeze(action);
-      rb_ary_push(actions, action);
+      VALUE copy = onibi_deep_freeze(rb_hash_dup(action));
+      rb_ary_push(copied_actions, copy);
+      rb_ary_push(actions, copy);
     }
+    rb_obj_freeze(copied_actions);
+    rb_hash_aset(out, ID2SYM(rb_intern("actions")), copied_actions);
     rb_obj_freeze(out);
     rb_ary_push(r_start_edges, out);
   }

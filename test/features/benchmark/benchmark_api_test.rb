@@ -528,6 +528,16 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::RSeq.lower(invalid) }
   end
 
+  def test_rseq_lowering_does_not_mutate_gir_actions
+    compiled = Onibi::Compiler.compile(Onibi::Parser.parse("(a)"))
+    input_action = compiled[:graph][:start_edges].first[:actions].first
+    refute_predicate input_action, :frozen?
+    rseq = Onibi::RSeq.lower(compiled)
+    refute_predicate input_action, :frozen?
+    assert_predicate rseq[:start_edges].first[:actions].first, :frozen?
+    refute_same input_action, rseq[:start_edges].first[:actions].first
+  end
+
   def test_vm_rejects_rseq_semantic_flag_mismatch
     regexp = Onibi::Regexp.new("abc")
     rseq = regexp.pipeline[:rseq_program]
