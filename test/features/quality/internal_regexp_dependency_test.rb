@@ -331,6 +331,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "code == (OnigCodePoint)NUM2INT(child_byte)"
   end
 
+  def test_tokenizer_preallocates_transient_adapter
+    source = File.read(EXTENSION_SOURCE)
+    tokenizer = source[/static VALUE onibi_tokenize_internal\(.*?\n}\n/m]
+
+    refute_nil tokenizer
+    assert_includes tokenizer, "rb_ary_new_capa(RSTRING_LEN(src))"
+    refute_includes tokenizer, "VALUE tokens = rb_ary_new();"
+  end
+
   def test_compiler_subprograms_use_c_vector_until_publication
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "OnibiValueVector subprograms"

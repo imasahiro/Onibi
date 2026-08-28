@@ -395,7 +395,7 @@ static int onibi_quantifier_byte_p(unsigned char c) {
 }
 
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
-  VALUE tokens = rb_ary_new();
+  VALUE tokens = rb_ary_new_capa(RSTRING_LEN(src));
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
   int in_class = 0;
