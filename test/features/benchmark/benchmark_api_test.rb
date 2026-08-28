@@ -292,6 +292,17 @@ class BenchmarkApiTest < Minitest::Test
     end
   end
 
+  def test_standard_property_uses_mri_encoding_ctype_for_utf8_input
+    alpha = Onibi::Regexp.new("\\p{Alpha}")
+    inverse = Onibi::Regexp.new("\\P{Alpha}")
+
+    assert alpha.program_cached?
+    assert alpha.vm_match?("é")
+    refute alpha.vm_match?("1")
+    assert inverse.vm_match?("1")
+    refute inverse.vm_match?("é")
+  end
+
   def test_utf8_literal_lowers_to_byte_sequence_states
     regexp = Onibi::Regexp.new("é")
 

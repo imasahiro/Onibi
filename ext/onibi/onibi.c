@@ -1,6 +1,7 @@
 #include "ruby.h"
 #include "ruby/encoding.h"
 #include "ruby/thread.h"
+#include "ruby/onigmo.h"
 #include "onibi_ir.h"
 #include <string.h>
 #include <stdio.h>
@@ -81,7 +82,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static int onibi_utf8_literal_program_p(const onibi_regexp_t *obj) {
@@ -95,7 +96,9 @@ static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
   int encoding = rb_enc_get_index(str);
   if (rb_enc_compatible(str, obj->source) == NULL) return 0;
   if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex()) return 1;
-  if (onibi_utf8_literal_program_p(obj) && encoding == rb_utf8_encindex())
+  if ((onibi_utf8_literal_program_p(obj) ||
+       (obj->has_unicode_property && !obj->has_unicode_property_in_class)) &&
+      encoding == rb_utf8_encindex())
     return onibi_valid_encoding(str);
   return 0;
 }
@@ -2387,6 +2390,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_atomic = 0;
   obj->has_backref = 0;
   obj->has_ascii_property = 0;
+  obj->has_unicode_property = 0;
+  obj->has_unicode_property_in_class = 0;
   obj->has_grapheme = 0;
   obj->has_property_escape = 0;
   obj->has_unicode_escape = 0;
@@ -2462,7 +2467,15 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     } else if (kind == rb_intern("escape")) {
       if (onibi_token_byte(token) == 'X') { obj->has_grapheme = 1; obj->has_dynamic = 1; }
       if ((onibi_token_byte(token) == 'p' || onibi_token_byte(token) == 'P')) {
-        if (onibi_ascii_property_token_p(token)) obj->has_ascii_property = 1;
+        if (onibi_ascii_property_token_p(token)) {
+          obj->has_ascii_property = 1;
+          VALUE property_name = onibi_hash_value(token, "name");
+          if (!NIL_P(property_name) &&
+              rb_str_cmp(property_name, rb_str_new_cstr("ASCII")) != 0 &&
+              rb_str_cmp(property_name, rb_str_new_cstr("ASCII_Hex_Digit")) != 0)
+            obj->has_unicode_property = 1;
+          if (in_class) obj->has_unicode_property_in_class = 1;
+        }
         else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
       }
       if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
@@ -2669,7 +2682,8 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       !(obj->options & 32) && (!(obj->options & 16) || onibi_utf8_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
-      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
+      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
+       (obj->has_unicode_property && rb_enc_get_index(str) == rb_utf8_encindex())) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
@@ -3223,12 +3237,46 @@ static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
   }
 }
 
-static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
+static int onibi_unicode_ctype(VALUE name) {
+  const char *property = StringValueCStr(name);
+  if (strcmp(property, "Alpha") == 0 || strcmp(property, "Letter") == 0) return ONIGENC_CTYPE_ALPHA;
+  if (strcmp(property, "Digit") == 0) return ONIGENC_CTYPE_DIGIT;
+  if (strcmp(property, "Alnum") == 0) return ONIGENC_CTYPE_ALNUM;
+  if (strcmp(property, "Lower") == 0) return ONIGENC_CTYPE_LOWER;
+  if (strcmp(property, "Upper") == 0) return ONIGENC_CTYPE_UPPER;
+  if (strcmp(property, "Space") == 0) return ONIGENC_CTYPE_SPACE;
+  if (strcmp(property, "Blank") == 0) return ONIGENC_CTYPE_BLANK;
+  if (strcmp(property, "Word") == 0) return ONIGENC_CTYPE_WORD;
+  if (strcmp(property, "XDigit") == 0) return ONIGENC_CTYPE_XDIGIT;
+  if (strcmp(property, "Cntrl") == 0) return ONIGENC_CTYPE_CNTRL;
+  if (strcmp(property, "Print") == 0) return ONIGENC_CTYPE_PRINT;
+  if (strcmp(property, "Graph") == 0) return ONIGENC_CTYPE_GRAPH;
+  if (strcmp(property, "Punct") == 0) return ONIGENC_CTYPE_PUNCT;
+  return -1;
+}
+
+static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
+  VALUE name = onibi_hash_value(payload, "name");
+  int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
+  if (ctype >= 0 && rb_enc_get_index(str) == rb_utf8_encindex()) {
+    const char *ptr = RSTRING_PTR(str) + pos;
+    const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
+    if (pos > 0 && ((unsigned char)ptr[0] & 0xc0) == 0x80 &&
+        (((unsigned char)ptr[-1] & 0xc0) == 0x80 || (unsigned char)ptr[-1] >= 0xc0)) return 0;
+    int length = rb_enc_mbclen(ptr, end, rb_enc_get(str));
+    if (length <= 0 || ptr + length > end) return 0;
+    OnigCodePoint code = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)ptr, (const OnigUChar *)end);
+    int hit = ONIGENC_IS_CODE_CTYPE(rb_enc_get(str), code, ctype);
+    if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P') hit = !hit;
+    *width = length;
+    return hit;
+  }
   int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
   if (fold) byte = (unsigned char)tolower(byte);
   VALUE bitmap = onibi_hash_value(payload, "bitmap");
   if (NIL_P(bitmap) || !RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
     rb_raise(eRegexpError, "class payload has no compiled bitmap");
+  *width = 1;
   return (((unsigned char *)RSTRING_PTR(bitmap))[byte >> 3] & (1U << (byte & 7))) != 0;
 }
 
@@ -3245,13 +3293,14 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
     VALUE payload = onibi_hash_value(state, "payload");
+    long consumed = 1;
     int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
       (op == rb_intern("G_CHAR") ?
         (RTEST(onibi_hash_value(payload, "ignorecase")) ?
           tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
-          byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, byte));
+          byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
     if (!hit) return 0;
-    pos++;
+    pos += consumed;
   }
   VALUE state_edges = rb_ary_entry(outgoing, state_id);
   for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
@@ -3366,13 +3415,14 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
     } else {
       unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
       VALUE payload = onibi_hash_value(state, "payload");
+      long consumed = 1;
       int hit = op == rb_intern("G_ANY") ? (byte != '\n' || RTEST(onibi_hash_value(payload, "multiline"))) :
         (op == rb_intern("G_CHAR") ?
           (RTEST(onibi_hash_value(payload, "ignorecase")) ?
             tolower(byte) == tolower(NUM2INT(onibi_hash_value(payload, "byte"))) :
-            byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, byte));
+            byte == NUM2INT(onibi_hash_value(payload, "byte"))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
       if (!hit) return 0;
-      pos++;
+      pos += consumed;
     }
   }
   VALUE state_edges = rb_ary_entry(outgoing, state_id);
@@ -3865,7 +3915,8 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   if (!(obj->options & 32) && (!(obj->options & 16) || onibi_utf8_literal_program_p(obj)) &&
       !NIL_P(obj->rseq) &&
       onibi_vm_input_eligible(obj, str) &&
-      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str)) &&
+      (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
+       (obj->has_unicode_property && rb_enc_get_index(str) == rb_utf8_encindex())) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     {
       /* The immutable RSeq was validated and its physical execution view was
