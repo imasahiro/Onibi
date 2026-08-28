@@ -264,6 +264,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, Onibi::Regexp.new("(a)-\\1").pipeline[:interpreter]
   end
 
+  def test_dynamic_backreference_accepts_an_empty_nullable_capture
+    regexp = Onibi::Regexp.new("(a*)\\1")
+    assert_equal({ start: 0, end: 0 }, regexp.vm_match_result("b").slice(:start, :end))
+    assert_equal({ start: 0, end: 4 }, regexp.vm_match_result("aaaa").slice(:start, :end))
+  end
+
   def test_anchor_assertions_are_edge_actions
     edges = Onibi::Regexp.new("^abc$").pipeline[:gir_graph][:edges]
     assert_equal :ASSERT_BEGIN_BUFFER, edges.first[:actions].first[:op]

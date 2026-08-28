@@ -1393,6 +1393,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (!NIL_P(capture_name)) rb_hash_aset(builder->capture_names, capture_name, LONG2NUM(capture_id));
     rb_ary_push(result.start_actions, open);
     rb_ary_push(result.pending_actions, close);
+    if (result.nullable) onibi_append_values(result.start_actions, result.pending_actions);
     return result;
   }
   if (type == ID2SYM(rb_intern("group")))
