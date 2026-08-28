@@ -80,7 +80,20 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes vm, "id_key_assert_kind"
     assert_includes vm, "ONIBI_RAP_LOOKAHEAD"
     assert_includes vm, "ONIBI_RAP_LOOKBEHIND"
+    assert_includes vm, "ONIBI_RAP_SEARCH_ORIGIN && pos != search_origin"
     refute_match(/id_a_assert_(?:begin_buffer|end_buffer|begin_line|end_line|lookahead|lookbehind)/, vm)
+  end
+
+  def test_search_origin_is_constant_across_candidate_starts
+    source = File.read(EXTENSION_SOURCE)
+    regular = source[/static VALUE onibi_vm_regular_fast\(.*?\n}\n/m]
+    tagged = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
+    dynamic = source[/static VALUE onibi_vm_dynamic\(.*?\n}\n/m]
+
+    [regular, tagged, dynamic].each do |executor|
+      refute_nil executor
+      assert_includes executor, "for (long start = search_origin;"
+    end
   end
 
   def test_compiled_token_view_has_explicit_c_owner
