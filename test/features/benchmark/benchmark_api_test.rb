@@ -753,6 +753,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %w[ignorecase multiline], Onibi::Parser.parse("a", "iim")[:options]
   end
 
+  def test_parser_normalizes_noencoding_option
+    assert_equal ["noencoding"], Onibi::Parser.parse("a", "n")[:options]
+    assert_equal %w[fixedencoding noencoding],
+                 Onibi::Parser.parse("a", ["fixedencoding", "noencoding"])[:options]
+  end
+
   def test_parser_accepts_named_option_arrays
     parsed = Onibi::Parser.parse("a # comment\n b", ["extended"])
     assert_equal ["extended"], parsed[:options]

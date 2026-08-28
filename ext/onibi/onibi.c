@@ -703,7 +703,10 @@ static VALUE onibi_parser_options(VALUE options) {
   else if (RB_TYPE_P(options, T_STRING)) {
     const char *p = RSTRING_PTR(options);
     for (long i = 0; i < RSTRING_LEN(options); i++) {
-      const char *name = p[i] == 'i' ? "ignorecase" : (p[i] == 'm' ? "multiline" : (p[i] == 'x' ? "extended" : NULL));
+      const char *name = p[i] == 'i' ? "ignorecase" :
+                         (p[i] == 'm' ? "multiline" :
+                         (p[i] == 'x' ? "extended" :
+                         (p[i] == 'n' ? "noencoding" : NULL)));
       if (name != NULL) { VALUE value = rb_str_new_cstr(name); rb_obj_freeze(value); rb_ary_push(result, value); }
       else rb_raise(rb_eArgError, "unknown regexp option");
     }
@@ -1864,6 +1867,8 @@ static int onibi_option_mask(VALUE options) {
       if (rb_str_cmp(name, rb_str_new_cstr("ignorecase")) == 0) mask |= 1;
       else if (rb_str_cmp(name, rb_str_new_cstr("multiline")) == 0) mask |= 4;
       else if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) mask |= 2;
+      else if (rb_str_cmp(name, rb_str_new_cstr("fixedencoding")) == 0) mask |= 16;
+      else if (rb_str_cmp(name, rb_str_new_cstr("noencoding")) == 0) mask |= 32;
       else rb_raise(rb_eArgError, "unknown regexp option");
     }
     return mask;
