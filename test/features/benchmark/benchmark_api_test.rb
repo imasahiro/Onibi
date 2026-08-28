@@ -739,6 +739,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_includes actions.map { |action| action[:op] }, :ASSERT_WORD_BOUNDARY
   end
 
+  def test_search_origin_anchor_is_an_edge_assertion
+    regexp = Onibi::Regexp.new("\\Ga")
+    assert regexp.program_cached?
+    assert regexp.vm_match?("a")
+    refute regexp.vm_match?("ba")
+    assert_equal :ASSERT_SEARCH_ORIGIN,
+                 regexp.pipeline[:compiled][:graph][:start_edges].first[:actions].first[:op]
+  end
+
   def test_match_reset_is_a_semantic_parser_node
     ast = Onibi::Parser.parse("prefix\\Ksuffix")[:ast]
 
