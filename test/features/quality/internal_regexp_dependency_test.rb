@@ -339,6 +339,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static int onibi_ascii_property_name_p(ID name_id)"
     refute_includes source, "onibi_ascii_property_name_p(name)"
+    assert_includes source, "VALUE escape_name_id = onibi_hash_value_id(payload, id_key_name_id)"
   end
 
   def test_ast_audit_defines_typed_node_migration_boundary

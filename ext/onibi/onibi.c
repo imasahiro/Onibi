@@ -1682,6 +1682,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   }
   VALUE ranges = onibi_hash_value_id(payload, id_key_ranges);
   VALUE escape_name = onibi_hash_value_id(payload, id_key_name);
+  VALUE escape_name_id = onibi_hash_value_id(payload, id_key_name_id);
   if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
     int upper = isupper((unsigned char)RSTRING_PTR(escape_name)[0]);
     int code = tolower((unsigned char)RSTRING_PTR(escape_name)[0]);
@@ -1691,8 +1692,8 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
   } else {
-    OnibiAsciiProperty property_kind = NIL_P(escape_name) ? ONIBI_ASCII_PROP_UNKNOWN :
-      onibi_ascii_property_kind(escape_name);
+    OnibiAsciiProperty property_kind = NIL_P(escape_name_id) ? ONIBI_ASCII_PROP_UNKNOWN :
+      onibi_ascii_property_kind_id((ID)NUM2ULONG(escape_name_id));
     if (property_kind == ONIBI_ASCII_PROP_UNKNOWN) goto class_children;
     for (int c = 0; c < 256; c++) {
       int hit = onibi_ascii_property_hit_kind(property_kind, c);

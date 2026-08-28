@@ -260,7 +260,8 @@ classification does not intern the same name again. It also records the
 inline-ignorecase flag once, so feature classification does not scan the name
 string again.
 AST nodes retain this numeric `name_id` for escape properties, so compiler
-validation can reuse the token ID without another string-to-ID conversion.
+validation and class bitmap construction can reuse the token ID without
+another string-to-ID conversion.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Position assertions also carry a numeric `assert_kind` subtype.
