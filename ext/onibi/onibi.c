@@ -1559,6 +1559,28 @@ static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE ex
   }
 }
 
+static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
+                                                 const OnibiIdVector *exits,
+                                                 VALUE starts, VALUE actions) {
+  VALUE *start_values = RARRAY_PTR(starts);
+  long start_count = RARRAY_LEN(starts);
+  for (size_t i = 0; i < exits->count; i++) {
+    long from = (long)exits->items[i];
+    for (long j = 0; j < start_count; j++) {
+      VALUE edge = rb_hash_new();
+      rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
+      rb_hash_aset(edge, ID2SYM(id_key_to), start_values[j]);
+      rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
+      long insert_at = RARRAY_LEN(builder->edges);
+      for (long k = 0; k < RARRAY_LEN(builder->edges); k++) {
+        VALUE prior = rb_ary_entry(builder->edges, k);
+        if (NUM2LONG(onibi_hash_value_id(prior, id_key_from)) == from) { insert_at = k; break; }
+      }
+      rb_funcall(builder->edges, id_insert, 2, LONG2NUM(insert_at), edge);
+    }
+  }
+}
+
 static void onibi_append_values(VALUE destination, VALUE values) {
   VALUE *items = RARRAY_PTR(values);
   long count = RARRAY_LEN(values);
@@ -2510,7 +2532,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_ary_push(accept_starts, LONG2NUM(accept));
   OnibiIdVector exit_ids;
   onibi_id_vector_from_array(&exit_ids, fragment.exits);
-  if (fragment.lazy) onibi_connect_prepend_actions(&builder, fragment.exits, accept_starts, fragment.pending_actions);
+  if (fragment.lazy) onibi_connect_vector_prepend_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
   else onibi_connect_vector_actions(&builder, &exit_ids, accept_starts, fragment.pending_actions);
   VALUE start_edges = rb_ary_new();
   if (fragment.nullable && fragment.lazy) {
