@@ -2043,6 +2043,9 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), builder.edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  VALUE subprograms = rb_ary_new();
+  rb_obj_freeze(subprograms);
+  rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), subprograms);
   rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
   long counter_count = builder.counter_count;
   for (long i = 0; i < RARRAY_LEN(builder.edges); i++) {
@@ -2107,9 +2110,11 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE start_edges = onibi_hash_value(graph, "start_edges");
+  VALUE subprograms = onibi_hash_value(graph, "subprograms");
   if (!RTEST(rb_obj_frozen_p(compiled)) || !RTEST(rb_obj_frozen_p(graph)) ||
       !RTEST(rb_obj_frozen_p(states)) || !RTEST(rb_obj_frozen_p(edges)) ||
-      !RTEST(rb_obj_frozen_p(start_edges)))
+      !RTEST(rb_obj_frozen_p(start_edges)) || !RB_TYPE_P(subprograms, T_ARRAY) ||
+      !RTEST(rb_obj_frozen_p(subprograms)))
     rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR");
   long state_count = RARRAY_LEN(states);
   long accept_state = NUM2LONG(onibi_hash_value(graph, "accept"));
@@ -2260,7 +2265,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(header, ID2SYM(rb_intern("class_count")), UINT2NUM(class_count));
   rb_hash_aset(header, ID2SYM(rb_intern("capture_count")), UINT2NUM(capture_count));
   rb_hash_aset(header, ID2SYM(rb_intern("semantic_capture_count")), UINT2NUM(capture_count));
-  rb_hash_aset(header, ID2SYM(rb_intern("subprogram_count")), UINT2NUM(0));
+  rb_hash_aset(header, ID2SYM(rb_intern("subprogram_count")), UINT2NUM((uint32_t)RARRAY_LEN(subprograms)));
   rb_hash_aset(header, ID2SYM(rb_intern("counter_count")), UINT2NUM(counter_count));
   rb_hash_aset(header, ID2SYM(rb_intern("literal_count")), UINT2NUM(literal_count));
   rb_hash_aset(header, ID2SYM(rb_intern("version")), INT2NUM(1));
@@ -2461,8 +2466,6 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
-  VALUE subprograms = rb_ary_new();
-  rb_obj_freeze(subprograms);
   rb_hash_aset(result, ID2SYM(rb_intern("header")), header);
   rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(result, ID2SYM(rb_intern("edges")), r_edges);
