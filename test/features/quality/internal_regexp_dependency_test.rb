@@ -261,7 +261,10 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_gir_guard_records_cache_action_count
     source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "uint32_t action_count; } OnibiGuardEntry"
+    record = source[/typedef struct \{ OnibiStateId state;.*?\} OnibiGuardEntry;/m]
+    refute_nil record
+    assert_includes record, "OnibiValueVector actions"
+    refute_includes record, "VALUE actions"
     assert_includes source, "onibi_guard_vector_find_entry"
     assert_includes source, "onibi_value_vector_append_array(&vector->entries[i].actions"
     assert_includes source, "onibi_value_vector_reserve(destination, (size_t)RARRAY_LEN(source))"
