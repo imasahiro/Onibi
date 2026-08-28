@@ -231,12 +231,12 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal :DYNAMIC, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
   end
 
-  def test_dynamic_fallback_match_result_preserves_capture_boundaries
+  def test_nullable_conditional_uses_capture_state_for_branch_selection
     regexp = Onibi::Regexp.new("(a)?(?(1)b|c)")
     expected = ::Regexp.new("(a)?(?(1)b|c)").match("c")
     result = regexp.vm_match_result("c")
 
-    assert_equal :MRI, regexp.pipeline[:vm]
+    assert_equal :RSEQ, regexp.pipeline[:vm]
     assert_equal expected.offset(0), [result[:start], result[:end]]
     refute result.key?(:captures)
   end

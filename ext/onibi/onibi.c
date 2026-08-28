@@ -1758,8 +1758,6 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type == ID2SYM(rb_intern("conditional"))) {
-    if (builder->optional_seen)
-      rb_raise(eRegexpError, "conditional after optional capture requires dynamic state");
     VALUE condition = onibi_hash_value(ast, "condition");
     char *endptr = NULL;
     long capture_id = strtol(StringValueCStr(condition), &endptr, 10) - 1;
