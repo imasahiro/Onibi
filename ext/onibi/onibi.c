@@ -1947,7 +1947,9 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
     }
-    if (builder->ignorecase && type == ID2SYM(rb_intern("character_class"))) {
+    if (builder->ignorecase &&
+        (type == ID2SYM(rb_intern("character_class")) ||
+         type == ID2SYM(rb_intern("class_intersection")))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("ignorecase")), Qtrue);
       rb_obj_freeze(payload);
@@ -3859,6 +3861,7 @@ static int onibi_unicode_ctype(VALUE name) {
    this integer, so matching never compares property strings. */
 static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
   VALUE copy = rb_hash_dup(payload);
+  int fold = RTEST(onibi_hash_value_id(copy, id_key_ignorecase));
   VALUE name = onibi_hash_value(copy, "name");
   int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
   if (ctype >= 0) rb_hash_aset(copy, ID2SYM(rb_intern("ctype")), INT2NUM(ctype));
@@ -3875,6 +3878,8 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
         if (child_ctype >= 0)
           rb_hash_aset(child_copy, ID2SYM(rb_intern("ctype")), INT2NUM(child_ctype));
       }
+      if (fold && RB_TYPE_P(child_copy, T_HASH))
+        rb_hash_aset(child_copy, ID2SYM(id_key_ignorecase), Qtrue);
       rb_ary_push(compiled, child_copy);
     }
     rb_hash_aset(copy, ID2SYM(rb_intern("children")), compiled);
@@ -3884,6 +3889,7 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
     VALUE compiled_operands = rb_ary_new_capa(RARRAY_LEN(operands));
     for (long i = 0; i < RARRAY_LEN(operands); i++) {
       VALUE operand = onibi_class_payload_with_ctypes(rb_ary_entry(operands, i));
+      if (fold) rb_hash_aset(operand, ID2SYM(id_key_ignorecase), Qtrue);
       VALUE operand_type = onibi_hash_value(operand, "type");
       if (operand_type == ID2SYM(rb_intern("character_class")) ||
           operand_type == ID2SYM(rb_intern("class_intersection")))
@@ -3912,9 +3918,16 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;
     long common_width = 0;
     int hit = 1;
+    int fold = RTEST(onibi_hash_value_id(payload, id_key_ignorecase));
     for (long i = 0; i < RARRAY_LEN(operands); i++) {
       long operand_width = 0;
-      int operand_hit = onibi_vm_class_match(rb_ary_entry(operands, i), str, pos, byte, &operand_width);
+      VALUE operand = rb_ary_entry(operands, i);
+      if (fold && RB_TYPE_P(operand, T_HASH) &&
+          !RTEST(onibi_hash_value_id(operand, id_key_ignorecase))) {
+        operand = rb_hash_dup(operand);
+        rb_hash_aset(operand, ID2SYM(id_key_ignorecase), Qtrue);
+      }
+      int operand_hit = onibi_vm_class_match(operand, str, pos, byte, &operand_width);
       if (i == 0) common_width = operand_width;
       else if (operand_width != common_width) operand_hit = 0;
       hit = hit && operand_hit;
