@@ -91,6 +91,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "obj->feature_token_count"
   end
 
+  def test_feature_vector_helper_does_not_allocate_storage
+    source = File.read(EXTENSION_SOURCE)
+    helper = source[/static OnibiFeatureTokenVector onibi_feature_tokens\(.*?\n}\n/m]
+
+    refute_nil helper
+    refute_includes helper, "ALLOC_N"
+    refute_includes helper, "REALLOC_N"
+    refute_includes helper, "rb_ary_new"
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
