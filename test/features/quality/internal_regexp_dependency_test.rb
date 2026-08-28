@@ -390,6 +390,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "VALUE graph = onibi_rseq_physical_graph(rseq);"
   end
 
+  def test_capture_seed_does_not_duplicate_empty_counter_state
+    source = File.read(EXTENSION_SOURCE)
+    refute_includes source, "rb_hash_dup(counters)"
+    assert_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"

@@ -5285,10 +5285,9 @@ static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE su
   VALUE visited = rb_hash_new();
   VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
   rb_hash_delete(captures, ID2SYM(id_recursive_marker));
-  VALUE counters = use_counters ? rb_hash_new() : Qnil;
   VALUE tags = initial_tags;
   VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
-  VALUE branch_counters = use_counters ? rb_hash_dup(counters) : Qnil;
+  VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;
   if (!onibi_vm_actions_ok(actions, str, start, RSTRING_LEN(str), branch_counters, captures)) return 0;
   VALUE branch_captures = onibi_has_capture_action(actions) ? onibi_capture_copy(captures) : captures;
   long reported_start = start;
