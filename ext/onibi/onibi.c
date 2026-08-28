@@ -43,6 +43,7 @@ static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
 static ID id_a_end, id_key_physical_graph;
 static ID id_insert;
+static ID id_timeout, id_options, id_encode, id_message, id_names, id_named_captures;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended, id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
 static ID id_key_op, id_key_payload, id_key_actions, id_key_to, id_key_multiline, id_key_ignorecase;
@@ -3337,8 +3338,8 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   VALUE timeout = Qnil;
   if (RB_TYPE_P(options, T_HASH)) {
-    timeout = rb_hash_aref(options, ID2SYM(rb_intern("timeout")));
-    options = rb_hash_aref(options, ID2SYM(rb_intern("options")));
+    timeout = rb_hash_aref(options, ID2SYM(id_timeout));
+    options = rb_hash_aref(options, ID2SYM(id_options));
   }
   if (NIL_P(timeout)) timeout = inherited_timeout;
   int opts = onibi_option_mask(options);
@@ -3367,7 +3368,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->options = opts;
   VALUE regexp_source = source;
   if (rb_enc_get_index(source) != rb_utf8_encindex() && obj->has_unicode_escape) {
-    regexp_source = rb_funcall(source, rb_intern("encode"), 1, rb_enc_from_encoding(rb_utf8_encoding()));
+    regexp_source = rb_funcall(source, id_encode, 1, rb_enc_from_encoding(rb_utf8_encoding()));
     opts |= 16;
     obj->options = opts;
   }
@@ -3376,12 +3377,12 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->regexp = rb_protect(onibi_make_mri_regexp, regexp_args, &regexp_state);
   if (regexp_state) {
     VALUE error = rb_errinfo();
-    VALUE message = rb_funcall(error, rb_intern("message"), 0);
+    VALUE message = rb_funcall(error, id_message, 0);
     rb_set_errinfo(Qnil);
     rb_raise(eRegexpError, "%s", StringValueCStr(message));
   }
-  obj->names = rb_funcall(obj->regexp, rb_intern("names"), 0);
-  obj->named_captures = rb_funcall(obj->regexp, rb_intern("named_captures"), 0);
+  obj->names = rb_funcall(obj->regexp, id_names, 0);
+  obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
   rb_obj_freeze(obj->names);
   rb_obj_freeze(obj->named_captures);
   VALUE program_args = rb_ary_new_from_args(3, source, INT2NUM(opts), tokens);
@@ -5528,6 +5529,9 @@ void Init_onibi(void) {
   id_key_subprograms_offset = rb_intern("subprograms_offset");
   id_key_negative_name = rb_intern("negative_name"); id_key_negative = rb_intern("negative");
   id_insert = rb_intern("insert");
+  id_timeout = rb_intern("timeout"); id_options = rb_intern("options");
+  id_encode = rb_intern("encode"); id_message = rb_intern("message");
+  id_names = rb_intern("names"); id_named_captures = rb_intern("named_captures");
   id_kind_literal = rb_intern("literal");
   id_recursive_marker = rb_intern("__onibi_recursive_call__");
   mOnibi = rb_define_module("Onibi");
