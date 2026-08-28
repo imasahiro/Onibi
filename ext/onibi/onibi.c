@@ -1061,22 +1061,14 @@ typedef enum {
 } OnibiAsciiProperty;
 
 static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
-  const char *property = StringValueCStr(name);
-  if (strcmp(property, "ASCII") == 0) return ONIBI_ASCII_PROP_ASCII;
-  if (strcmp(property, "ASCII_Hex_Digit") == 0) return ONIBI_ASCII_PROP_HEX;
-  if (strcmp(property, "Digit") == 0) return ONIBI_ASCII_PROP_DIGIT;
-  if (strcmp(property, "Alpha") == 0) return ONIBI_ASCII_PROP_ALPHA;
-  if (strcmp(property, "Alnum") == 0) return ONIBI_ASCII_PROP_ALNUM;
-  if (strcmp(property, "Lower") == 0) return ONIBI_ASCII_PROP_LOWER;
-  if (strcmp(property, "Upper") == 0) return ONIBI_ASCII_PROP_UPPER;
-  if (strcmp(property, "Space") == 0) return ONIBI_ASCII_PROP_SPACE;
-  if (strcmp(property, "Blank") == 0) return ONIBI_ASCII_PROP_BLANK;
-  if (strcmp(property, "Word") == 0) return ONIBI_ASCII_PROP_WORD;
-  if (strcmp(property, "XDigit") == 0) return ONIBI_ASCII_PROP_XDIGIT;
-  if (strcmp(property, "Cntrl") == 0) return ONIBI_ASCII_PROP_CNTRL;
-  if (strcmp(property, "Print") == 0) return ONIBI_ASCII_PROP_PRINT;
-  if (strcmp(property, "Graph") == 0) return ONIBI_ASCII_PROP_GRAPH;
-  if (strcmp(property, "Punct") == 0) return ONIBI_ASCII_PROP_PUNCT;
+  static ID ids[15]; static int ready = 0;
+  if (!ready) {
+    const char *names[] = {"ASCII", "ASCII_Hex_Digit", "Digit", "Alpha", "Alnum", "Lower", "Upper", "Space", "Blank", "Word", "XDigit", "Cntrl", "Print", "Graph", "Punct"};
+    for (size_t i = 0; i < 15; i++) ids[i] = rb_intern(names[i]);
+    ready = 1;
+  }
+  ID property = rb_intern_str(name);
+  for (int i = 0; i < 15; i++) if (property == ids[i]) return (OnibiAsciiProperty)i;
   return ONIBI_ASCII_PROP_UNKNOWN;
 }
 
@@ -1243,16 +1235,10 @@ static int onibi_ast_has_capture(VALUE ast) {
 }
 
 static OnibiPosixKind onibi_posix_kind(VALUE name) {
-  const char *text = StringValueCStr(name);
-  if (strcmp(text, "alpha") == 0) return ONIBI_POSIX_ALPHA;
-  if (strcmp(text, "digit") == 0) return ONIBI_POSIX_DIGIT;
-  if (strcmp(text, "alnum") == 0) return ONIBI_POSIX_ALNUM;
-  if (strcmp(text, "space") == 0) return ONIBI_POSIX_SPACE;
-  if (strcmp(text, "blank") == 0) return ONIBI_POSIX_BLANK;
-  if (strcmp(text, "lower") == 0) return ONIBI_POSIX_LOWER;
-  if (strcmp(text, "upper") == 0) return ONIBI_POSIX_UPPER;
-  if (strcmp(text, "word") == 0) return ONIBI_POSIX_WORD;
-  if (strcmp(text, "xdigit") == 0) return ONIBI_POSIX_XDIGIT;
+  static ID ids[9]; static int ready = 0;
+  if (!ready) { const char *names[] = {"alpha", "digit", "alnum", "space", "blank", "lower", "upper", "word", "xdigit"}; for (size_t i = 0; i < 9; i++) ids[i] = rb_intern(names[i]); ready = 1; }
+  ID property = rb_intern_str(name);
+  for (int i = 0; i < 9; i++) if (property == ids[i]) return (OnibiPosixKind)(i + 1);
   return ONIBI_POSIX_UNKNOWN;
 }
 
