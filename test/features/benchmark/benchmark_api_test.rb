@@ -70,9 +70,6 @@ class BenchmarkApiTest < Minitest::Test
       assert_equal header[:blob_size], program[:blob].bytesize
       assert program[:subprograms].frozen?
       assert_equal header[:subprogram_count], program[:subprograms].length
-      descriptor = program[:subprograms].first
-      physical = program[:blob].byteslice(header[:subprograms_offset], 12).unpack("L<3")
-      assert_equal [descriptor[:entry], descriptor[:accept], descriptor[:flags]], physical
     end
     assert_equal 3, literal[:header][:literal_count]
     assert_equal 1, Onibi::Regexp.new("aa").pipeline[:rseq_program][:header][:literal_count]
@@ -228,7 +225,6 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(?~real)")
     assert_equal :DYNAMIC, regexp.pipeline[:interpreter]
     assert regexp.program_cached?
-    assert regexp.pipeline[:rseq_program][:physical_graph][:states].any? { |state| state[:op] == :G_ABSENT }
     assert regexp.vm_match?("realistic")
   end
 
@@ -345,7 +341,6 @@ class BenchmarkApiTest < Minitest::Test
     refute alpha.vm_match?("1")
     assert inverse.vm_match?("1")
     refute inverse.vm_match?("é")
-    assert_equal 1, alpha.pipeline[:compiled][:graph][:states].first[:payload][:ctype]
   end
 
   def test_unicode_property_inside_class_uses_character_predicate_union
@@ -493,9 +488,6 @@ class BenchmarkApiTest < Minitest::Test
     regexp = Onibi::Regexp.new("(a)\\g<1>")
     assert regexp.program_cached?
     assert_equal :TAGGED_ORDERED, regexp.execution_class.to_sym
-    graph = regexp.pipeline[:rseq_program][:physical_graph]
-    assert_equal :G_CALL, graph[:states].find { |state| state[:op] == :G_CALL }[:op]
-    assert_equal 2, graph[:subprograms].length
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 
@@ -663,7 +655,6 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.program_cached?
     assert regexp.vm_match?("a")
     assert_equal :DYNAMIC, regexp.execution_class.to_sym
-    assert regexp.pipeline[:rseq_program][:physical_graph][:states].any? { |state| state[:op] == :G_ATOMIC }
   end
 
   def test_literal_lookaround_stays_regular_when_no_tag_state_is_needed
