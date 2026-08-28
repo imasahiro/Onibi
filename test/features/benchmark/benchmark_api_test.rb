@@ -221,6 +221,14 @@ class BenchmarkApiTest < Minitest::Test
     refute Onibi::Regexp.new("(?~real)").program_cached?
   end
 
+  def test_conditional_group_has_explicit_ast_and_dynamic_boundary
+    parsed = Onibi::Parser.parse("(a)?(?(1)b|c)")
+    conditional = parsed[:ast][:children].last
+    assert_equal :conditional, conditional[:type]
+    assert_equal "1", conditional[:condition]
+    assert_equal :DYNAMIC, Onibi::Regexp.new("(a)?(?(1)b|c)").pipeline[:interpreter]
+  end
+
   def test_character_class_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[a-z]+")
     assert_equal :RSEQ, regexp.pipeline[:vm]
