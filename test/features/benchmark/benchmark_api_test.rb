@@ -202,6 +202,12 @@ class BenchmarkApiTest < Minitest::Test
     refute regexp.match?("xxcxx")
   end
 
+  def test_nested_character_class_crosses_dynamic_boundary
+    regexp = Onibi::Regexp.new("[a-z[0-9]]")
+    refute regexp.program_cached?
+    assert regexp.match?("5")
+  end
+
   def test_character_class_repeat_dispatches_to_rseq
     regexp = Onibi::Regexp.new("[a-z]+")
     assert_equal :RSEQ, regexp.pipeline[:vm]

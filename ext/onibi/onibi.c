@@ -67,7 +67,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1908,6 +1908,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   int in_class = 0;
   VALUE previous = Qnil;
   obj->has_class_intersection = 0;
+  obj->has_nested_class = 0;
   obj->has_subroutine = 0;
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
@@ -1916,6 +1917,8 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     ID kind = onibi_token_kind(token);
     if (kind == rb_intern("class_start")) { in_class = 1; previous = Qnil; continue; }
     if (kind == rb_intern("class_end")) { in_class = 0; previous = Qnil; continue; }
+    if (in_class && kind == rb_intern("literal") && onibi_token_byte(token) == '[')
+      obj->has_nested_class = 1;
     if (in_class && !NIL_P(previous) && onibi_token_kind(previous) == rb_intern("literal") &&
         kind == rb_intern("literal") && onibi_token_byte(previous) == '&' &&
         onibi_token_byte(token) == '&') obj->has_class_intersection = 1;
@@ -2060,7 +2063,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
     if (!onibi_ascii_pattern(source) || (opts & (16 | 32)) ||
-        obj->has_class_intersection || obj->has_subroutine) {
+        obj->has_class_intersection || obj->has_nested_class || obj->has_subroutine) {
       obj->parsed = obj->compiled = obj->rseq = Qnil;
     }
   } else {
