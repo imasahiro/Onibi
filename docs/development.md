@@ -165,7 +165,7 @@ The remaining compiler containers have three separate roles:
 
 | Container | Current role | Migration order |
 | --- | --- | --- |
-| fragment `starts`/`exits` | Ordered state-ID sets | First; C dynamic vector |
+| fragment `starts`/`exits` | Ordered state-ID sets | Partial; final connections use a C vector, internal construction remains Ruby-backed |
 | fragment action arrays | Ordered semantic actions | Second; typed action vector |
 | capture and exit guards | State-ID lookup during edge creation | Third; C map with explicit ownership |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | Last; convert at the RSeq boundary only |
@@ -189,7 +189,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | Convert after fragment migration | The builder mutates them during compilation. The RSeq boundary needs a stable snapshot only. |
-| fragment start/exit IDs | No | Convert to `OnibiIdVector` | IDs are numeric and ordered. Ruby Array gives no semantic value. Final GIR exit connections, including lazy ordering, now consume the C vector. |
+| fragment start/exit IDs | No | Partial `OnibiIdVector` conversion | IDs are numeric and ordered. Final GIR exit connections, including lazy ordering, now consume a C vector. Fragment composition still uses Ruby arrays and is a remaining migration target. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
 | regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
