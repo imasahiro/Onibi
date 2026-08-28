@@ -926,6 +926,14 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
                    onibi_class_bitmap(payload, builder->ignorecase));
       rb_obj_freeze(payload);
     }
+    if (type == ID2SYM(rb_intern("escape"))) {
+      payload = rb_hash_dup(payload);
+      rb_hash_aset(payload, ID2SYM(rb_intern("ranges")), rb_ary_new());
+      rb_hash_aset(payload, ID2SYM(rb_intern("children")), rb_ary_new());
+      rb_hash_aset(payload, ID2SYM(rb_intern("bitmap")),
+                   onibi_class_bitmap(payload, builder->ignorecase));
+      rb_obj_freeze(payload);
+    }
     if (builder->multiline && type == ID2SYM(rb_intern("any"))) {
       payload = rb_hash_dup(payload);
       rb_hash_aset(payload, ID2SYM(rb_intern("multiline")), Qtrue);
@@ -1965,9 +1973,11 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   int fold = RTEST(onibi_hash_value(payload, "ignorecase"));
   if (fold) byte = (unsigned char)tolower(byte);
   VALUE bitmap = onibi_hash_value(payload, "bitmap");
-  if (!NIL_P(bitmap)) {
-    return (RSTRING_PTR(bitmap)[byte >> 3] & (1U << (byte & 7))) != 0;
-  }
+  if (NIL_P(bitmap) || !RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
+    rb_raise(eRegexpError, "class payload has no compiled bitmap");
+  return (RSTRING_PTR(bitmap)[byte >> 3] & (1U << (byte & 7))) != 0;
+  /* Non-canonical class payloads are rejected above. */
+#if 0
   VALUE type = onibi_hash_value(payload, "type");
   if (type == ID2SYM(rb_intern("escape"))) {
     VALUE name = onibi_hash_value(payload, "name");
@@ -2023,6 +2033,7 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
     }
   }
   return RTEST(onibi_hash_value(payload, "negated")) ? !hit : hit;
+#endif
 }
 
 static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, long *matched_end) {
