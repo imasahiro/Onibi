@@ -1590,6 +1590,23 @@ static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VAL
 static VALUE onibi_class_payload_with_ctypes(VALUE payload);
 static int onibi_unicode_ctype(VALUE name);
 
+typedef struct { VALUE graph; int options; } OnibiCompiled;
+static void onibi_compiled_mark(void *ptr) {
+  OnibiCompiled *compiled = (OnibiCompiled *)ptr;
+  if (compiled) rb_gc_mark(compiled->graph);
+}
+static void onibi_compiled_free(void *ptr) { xfree(ptr); }
+static size_t onibi_compiled_memsize(const void *ptr) { return ptr ? sizeof(OnibiCompiled) : 0; }
+static const rb_data_type_t onibi_compiled_type = {
+  "Onibi::Compiled", { onibi_compiled_mark, onibi_compiled_free, onibi_compiled_memsize, NULL, { NULL } },
+  0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+};
+static inline OnibiCompiled *onibi_compiled_get(VALUE value) {
+  OnibiCompiled *compiled;
+  TypedData_Get_Struct(value, OnibiCompiled, &onibi_compiled_type, compiled);
+  return compiled;
+}
+
 static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, uint32_t flags) {
   onibi_fragment_t fragment = onibi_compile_node(body, builder);
   long accept = builder->next_id++;
@@ -2519,10 +2536,10 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("options")), INT2NUM(parsed_options));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
-  VALUE result = rb_hash_new();
-  rb_hash_aset(result, ID2SYM(rb_intern("ast")), ast);
-  rb_hash_aset(result, ID2SYM(rb_intern("options")), INT2NUM(parsed_options));
-  rb_hash_aset(result, ID2SYM(rb_intern("graph")), graph);
+  OnibiCompiled *compiled_result;
+  VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled, &onibi_compiled_type, compiled_result);
+  compiled_result->graph = graph;
+  compiled_result->options = parsed_options;
   rb_obj_freeze(result);
   return result;
 }
@@ -2550,7 +2567,8 @@ static uint16_t onibi_rseq_assert_kind(ID op) {
 
 static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   (void)self;
-  VALUE graph = onibi_hash_value(compiled, "graph");
+  OnibiCompiled *compiled_data = onibi_compiled_get(compiled);
+  VALUE graph = compiled_data->graph;
   if (NIL_P(graph)) rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
@@ -2655,7 +2673,7 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     rb_ary_push(r_start_edges, out);
   }
   VALUE header = rb_hash_new();
-  int options = NUM2INT(onibi_hash_value(compiled, "options"));
+  int options = compiled_data->options;
   int ignorecase = (options & 1) != 0;
   int multiline = (options & 4) != 0;
   uint64_t physical_edge_count = (uint64_t)RARRAY_LEN(r_edges) + (uint64_t)RARRAY_LEN(start_edges);
