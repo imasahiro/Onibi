@@ -4149,11 +4149,13 @@ static long onibi_grapheme_width(VALUE str, long pos) {
    called graph shares immutable states and outgoing edges with its caller. */
 static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprograms,
                                     VALUE str, long subprogram_id,
+                                    long continuation,
                                     long start, VALUE initial_captures, VALUE initial_tags,
                                     long *matched_end, VALUE *matched_captures) {
   if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
       subprogram_id >= RARRAY_LEN(subprograms)) return 0;
-  onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
+  OnibiCallFrame *call_frame = onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
+  call_frame->continuation = (OnibiStateId)continuation;
   VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
   VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
   if (NIL_P(entry)) { onibi_call_frame_pop(); return 0; }
@@ -4333,6 +4335,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
         long probe_end = frame->pos; VALUE ignored = Qnil;
         if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
+                                     frame->state_id,
                                      frame->pos, frame->captures, frame->tags,
                                      &probe_end, &ignored)) { depth--; continue; }
       } else if (op == id_g_call || op == id_g_atomic) {
@@ -4340,6 +4343,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
         VALUE called_captures = Qnil;
         if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
+                                      frame->state_id,
                                       frame->pos, frame->captures, frame->tags,
                                       &frame->pos, &called_captures)) { depth--; continue; }
         if (RB_TYPE_P(called_captures, T_HASH)) {
