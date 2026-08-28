@@ -3007,7 +3007,7 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
 
 static int onibi_ascii_property_token_p(VALUE token) {
   if (onibi_token_byte(token) != 'p' && onibi_token_byte(token) != 'P') return 0;
-  VALUE name = onibi_hash_value(token, "name");
+  VALUE name = onibi_hash_value_id(token, id_key_name);
   return onibi_ascii_property_name_p(name);
 }
 
@@ -3054,7 +3054,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     if (kind_code == ONIBI_TOKEN_WILDCARD) obj->has_wildcard = 1;
     if (kind_code == ONIBI_TOKEN_ANCHOR) obj->has_anchor = 1;
     if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START || kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
-      VALUE option_name = onibi_hash_value(token, "name");
+      VALUE option_name = onibi_hash_value_id(token, id_key_name);
       if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
         obj->has_inline_ignorecase = 1;
     }
