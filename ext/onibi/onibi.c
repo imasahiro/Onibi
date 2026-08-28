@@ -1362,8 +1362,11 @@ static void onibi_gir_validate(VALUE graph) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
   VALUE starts = onibi_hash_value(graph, "start_edges");
+  VALUE subprograms = onibi_hash_value(graph, "subprograms");
   long capture_count = NUM2LONG(onibi_hash_value(graph, "capture_count"));
   long counter_count = NUM2LONG(onibi_hash_value(graph, "counter_count"));
+  if (!RB_TYPE_P(subprograms, T_ARRAY) || !RTEST(rb_obj_frozen_p(subprograms)))
+    rb_raise(eRegexpError, "GIR subprogram table is not immutable");
   long state_count = RARRAY_LEN(states);
   VALUE accept_value = onibi_hash_value(graph, "accept");
   if (NIL_P(accept_value)) rb_raise(eRegexpError, "GIR accept state is missing");
@@ -2071,6 +2074,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     }
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("counter_count")), LONG2NUM(counter_count));
+  rb_hash_aset(graph, ID2SYM(rb_intern("subprogram_count")), LONG2NUM(RARRAY_LEN(subprograms)));
   rb_hash_aset(graph, ID2SYM(rb_intern("options")), onibi_hash_value(parsed, "options"));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
