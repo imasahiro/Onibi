@@ -113,6 +113,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
      enter the AST as syntax. */
   int in_class = 0;
   long class_body_start = -1;
+  int extended_stack[256];
+  long extended_depth = 0;
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     long start = i;
     VALUE token = rb_hash_new();
@@ -128,6 +130,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     VALUE posix_name = Qnil;
     VALUE literal_bytes = Qnil;
     int option_negative = 0;
+    int option_scope_x = -1;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
         (RSTRING_PTR(src)[i + 2] == '=' || RSTRING_PTR(src)[i + 2] == '!')) {
       kind = "lookahead_start";
@@ -155,6 +158,9 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         byte = ':';
         i = option_end;
         group_name = rb_str_substr(src, option_count, option_end - option_count);
+        if (memchr(RSTRING_PTR(src) + option_count, 'x',
+                   (size_t)(option_end - option_count)) != NULL)
+          option_scope_x = 1;
       }
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == ':') {
@@ -263,6 +269,17 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         byte = (unsigned char)RSTRING_PTR(src)[start];
       }
     }
+    if (strcmp(kind, "group_start") == 0 || strcmp(kind, "noncapture_start") == 0 ||
+        strcmp(kind, "atomic_start") == 0 || strcmp(kind, "lookahead_start") == 0 ||
+        strcmp(kind, "lookbehind_start") == 0 || strcmp(kind, "option_scope_start") == 0) {
+      if (extended_depth >= (long)(sizeof(extended_stack) / sizeof(extended_stack[0])))
+        rb_raise(eRegexpError, "regexp nesting is too deep");
+      extended_stack[extended_depth++] = -1;
+      if (strcmp(kind, "option_scope_start") == 0) {
+        extended_stack[extended_depth - 1] = extended;
+        if (option_scope_x >= 0) extended = option_negative ? 0 : 1;
+      }
+    }
     rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
@@ -275,6 +292,10 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
+    if (strcmp(kind, "group_end") == 0 && extended_depth > 0) {
+      int prior_extended = extended_stack[--extended_depth];
+      if (prior_extended >= 0) extended = prior_extended;
+    }
   }
   rb_obj_freeze(tokens);
   return tokens;

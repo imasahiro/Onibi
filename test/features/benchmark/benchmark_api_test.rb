@@ -482,6 +482,13 @@ class BenchmarkApiTest < Minitest::Test
     assert ast[:children].first[:negative]
   end
 
+  def test_tokenizer_applies_scoped_extended_whitespace_rules
+    enabled = Onibi::Lexer.new("(?x:a b)").tokens
+    disabled = Onibi::Lexer.new("(?-x:a b)").tokens
+    assert_equal %i[option_scope_start literal literal group_end], enabled.map { |token| token[:kind] }
+    assert_equal %i[option_scope_start literal literal literal group_end], disabled.map { |token| token[:kind] }
+  end
+
   def test_tokenizer_keeps_comma_and_space_as_literals
     assert_equal :literal, Onibi::Lexer.new(",").tokens.first[:kind]
     assert Onibi::Regexp.new("a b").vm_match?("a b")
