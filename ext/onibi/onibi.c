@@ -21,6 +21,14 @@
 #define ONIBI_FEATURE_ANCHOR (1U << 5)
 #define ONIBI_FEATURE_META_ESCAPE (1U << 6)
 #define ONIBI_FEATURE_UNICODE_ESCAPE (1U << 7)
+#define ONIBI_FEATURE_CLASS_INTERSECTION (1U << 8)
+#define ONIBI_FEATURE_NESTED_CLASS (1U << 9)
+#define ONIBI_FEATURE_LARGE_REPEAT (1U << 10)
+#define ONIBI_FEATURE_ABSENCE (1U << 11)
+#define ONIBI_FEATURE_CONDITIONAL (1U << 12)
+#define ONIBI_FEATURE_BACKREF (1U << 13)
+#define ONIBI_FEATURE_SUBROUTINE (1U << 14)
+#define ONIBI_FEATURE_P(obj, flag) (((obj)->feature_flags & (flag)) != 0)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -168,7 +176,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; unsigned int feature_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_property_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_subroutine; int has_inline_ignorecase; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; unsigned int feature_flags; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_property_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -179,12 +187,12 @@ static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
  * ctype payload yet.  The MRI regexp is compiled once during initialize, so
  * this compatibility path does not rescan source text during a match. */
 static int onibi_mri_compat_path_p(const onibi_regexp_t *obj) {
-  return (obj->has_class_intersection && (obj->options & 1)) ||
+  return (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CLASS_INTERSECTION) && (obj->options & 1)) ||
     obj->has_ascii_property ||
     (obj->has_non_ascii_literal &&
      ((obj->options & 1) || obj->has_inline_ignorecase)) ||
     (obj->ast_flags & ONIBI_AST_FLAG_ANCHOR_REPEAT) != 0 ||
-    (obj->has_absence && (obj->has_conditional || (obj->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0));
+    (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ABSENCE) && (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL) || (obj->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0));
 }
 
 static void onibi_call_stack_reset(void) {
@@ -238,7 +246,7 @@ static int onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str) {
     return onibi_valid_encoding(str);
   if (obj->has_unicode_property &&
       (!obj->has_unicode_property_in_class ||
-       (!obj->has_nested_class && !obj->has_class_intersection)) &&
+       (!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NESTED_CLASS) && !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CLASS_INTERSECTION))) &&
       encoding == rb_utf8_encindex())
     return onibi_valid_encoding(str);
   return 0;
@@ -3546,12 +3554,10 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   int repeat_have_digit = 0;
   int repeat_over_limit = 0;
   OnibiFeatureToken *previous = NULL;
-  obj->has_class_intersection = 0;
-  obj->has_nested_class = 0;
-  obj->has_large_repeat = 0;
-  obj->has_absence = 0;
-  obj->has_conditional = 0;
-  obj->has_backref = 0;
+  obj->feature_flags &= ~(ONIBI_FEATURE_CLASS_INTERSECTION | ONIBI_FEATURE_NESTED_CLASS |
+                          ONIBI_FEATURE_LARGE_REPEAT | ONIBI_FEATURE_ABSENCE |
+                          ONIBI_FEATURE_CONDITIONAL | ONIBI_FEATURE_BACKREF |
+                          ONIBI_FEATURE_SUBROUTINE);
   obj->has_ascii_property = 0;
   obj->has_unicode_property = 0;
   obj->has_unicode_property_in_class = 0;
@@ -3560,7 +3566,6 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->has_non_ascii_class = 0;
   obj->ast_flags = 0;
   obj->feature_flags = 0;
-  obj->has_subroutine = 0;
   obj->execution_flags = 0;
   obj->has_inline_ignorecase = 0;
   for (size_t i = 0; i < feature_tokens->count; i++) {
@@ -3577,7 +3582,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
         obj->has_inline_ignorecase = 1;
     }
     if (kind_code == ONIBI_TOKEN_CLASS_START) {
-      if (in_class) obj->has_nested_class = 1;
+      if (in_class) obj->feature_flags |= ONIBI_FEATURE_NESTED_CLASS;
       in_class = 1;
       class_depth++;
       previous = NULL;
@@ -3592,10 +3597,10 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
     if (repeat_active) {
       long value = token->byte;
       if (kind_code == ONIBI_TOKEN_QUANTIFIER && value == '}') {
-        if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
+        if (repeat_have_digit && repeat_over_limit) obj->feature_flags |= ONIBI_FEATURE_LARGE_REPEAT;
         repeat_active = 0;
       } else if (kind_code == ONIBI_TOKEN_QUANTIFIER && value == ',') {
-        if (repeat_have_digit && repeat_over_limit) obj->has_large_repeat = 1;
+        if (repeat_have_digit && repeat_over_limit) obj->feature_flags |= ONIBI_FEATURE_LARGE_REPEAT;
         repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
       } else if (kind_code == ONIBI_TOKEN_LITERAL && value >= '0' && value <= '9') {
         repeat_have_digit = 1;
@@ -3609,28 +3614,28 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
       }
     }
     if (in_class && kind_code == ONIBI_TOKEN_LITERAL && token->byte == '[')
-      obj->has_nested_class = 1;
+      obj->feature_flags |= ONIBI_FEATURE_NESTED_CLASS;
     if (!in_class && kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{') {
       repeat_active = 1;
       repeat_value = 0; repeat_have_digit = 0; repeat_over_limit = 0;
     }
     if (in_class && previous && previous->kind == ONIBI_TOKEN_LITERAL &&
         kind_code == ONIBI_TOKEN_LITERAL && previous->byte == '&' && token->byte == '&')
-      obj->has_class_intersection = 1;
+      obj->feature_flags |= ONIBI_FEATURE_CLASS_INTERSECTION;
     if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
-      obj->has_subroutine = 1;
+      obj->feature_flags |= ONIBI_FEATURE_SUBROUTINE;
       obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
     } else if (kind_code == ONIBI_TOKEN_BACKREF ||
                kind_code == ONIBI_TOKEN_ATOMIC_START ||
                kind_code == ONIBI_TOKEN_ABSENCE_START) {
       obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
-      if (kind_code == ONIBI_TOKEN_BACKREF) obj->has_backref = 1;
+      if (kind_code == ONIBI_TOKEN_BACKREF) obj->feature_flags |= ONIBI_FEATURE_BACKREF;
       if (kind_code == ONIBI_TOKEN_ATOMIC_START) obj->execution_flags |= ONIBI_FEATURE_ATOMIC;
-      if (kind_code == ONIBI_TOKEN_ABSENCE_START) obj->has_absence = 1;
+      if (kind_code == ONIBI_TOKEN_ABSENCE_START) obj->feature_flags |= ONIBI_FEATURE_ABSENCE;
     } else if (kind_code == ONIBI_TOKEN_CONDITIONAL_START) {
       /* Simple capture conditionals lower to guarded GIR edges.  Mark the
          construct only for diagnostics; compile failure selects MRI. */
-      obj->has_conditional = 1;
+      obj->feature_flags |= ONIBI_FEATURE_CONDITIONAL;
     } else if (kind_code == ONIBI_TOKEN_ESCAPE) {
       if (token->byte == 'X') { obj->feature_flags |= ONIBI_FEATURE_GRAPHEME; obj->execution_flags |= ONIBI_FEATURE_DYNAMIC; }
       if (token->byte == 'p' || token->byte == 'P') {
@@ -3897,14 +3902,14 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   VALUE program_args = rb_ary_new_from_args(3, source, INT2NUM(opts), tokens);
   int program_state = 0;
   VALUE parsed = Qnil;
-  VALUE program = (obj->has_large_repeat ||
+  VALUE program = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
                    obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    parsed = (obj->has_large_repeat ||
+    parsed = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
                    obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ? program : rb_ary_entry(program, 0);
-    obj->rseq = (obj->has_large_repeat ||
+    obj->rseq = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
                  obj->has_property_escape || (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE)) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
       OnibiParsed *parsed_data = onibi_parsed_get(parsed);
@@ -3930,7 +3935,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep a failed lowering on the dynamic MRI boundary. */
     obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
   }
-  if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
+  if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) && !NIL_P(obj->rseq)) obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
   obj->execution_kind = (obj->execution_flags & ONIBI_FEATURE_DYNAMIC) ? ONIBI_EXEC_DYNAMIC :
     ((obj->execution_flags & ONIBI_FEATURE_TAGGED) ? ONIBI_EXEC_TAGGED : ONIBI_EXEC_REGULAR);
   rb_obj_freeze(self);
@@ -4098,8 +4103,8 @@ static VALUE onibi_regexp_linear_time_p(VALUE klass, VALUE pattern) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(regexp, onibi_regexp_t, &onibi_type, obj);
   return (!(obj->execution_flags & (ONIBI_FEATURE_DYNAMIC | ONIBI_FEATURE_ATOMIC)) &&
-          !obj->has_backref && !obj->has_subroutine &&
-          !obj->has_absence && !obj->has_conditional) ? Qtrue : Qfalse;
+          !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_BACKREF) && !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) &&
+          !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ABSENCE) && !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL)) ? Qtrue : Qfalse;
 }
 
 #if 0 /* Private diagnostic pipeline; kept only as historical reference. */
@@ -5967,7 +5972,7 @@ static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
         onibi_vm_regular_fast(obj->rseq, str) :
         (obj->execution_kind == ONIBI_EXEC_TAGGED ?
           onibi_vm_tagged_ordered(obj->rseq, str,
-            obj->has_conditional || obj->has_backref || obj->has_subroutine) :
+            ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL) || ONIBI_FEATURE_P(obj, ONIBI_FEATURE_BACKREF) || ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE)) :
           onibi_vm_dynamic(obj->rseq, str));
       onibi_deadline_ns = 0;
       return result;

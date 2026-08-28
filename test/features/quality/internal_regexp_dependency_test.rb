@@ -135,6 +135,19 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes regexp_struct, "has_unicode_escape"
   end
 
+  def test_compiler_features_use_numeric_bitset
+    source = File.read(EXTENSION_SOURCE)
+    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+
+    assert_includes regexp_struct, "unsigned int feature_flags;"
+    refute_includes regexp_struct, "has_class_intersection"
+    refute_includes regexp_struct, "has_nested_class"
+    refute_includes regexp_struct, "has_large_repeat"
+    refute_includes regexp_struct, "has_conditional"
+    refute_includes regexp_struct, "has_backref"
+    refute_includes regexp_struct, "has_subroutine"
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
