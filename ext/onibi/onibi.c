@@ -3397,8 +3397,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_obj_freeze(obj->execution_class);
   obj->execution_kind = obj->has_dynamic ? ID2SYM(id_exec_dynamic) :
     (obj->has_tagged ? ID2SYM(id_exec_tagged) : ID2SYM(id_exec_regular));
-  obj->pipeline = onibi_pipeline_build(self);
-  rb_obj_freeze(obj->pipeline);
+  /* Pipeline display data is not part of the Regexp API.  Keep the field
+   * empty and avoid allocating a second token/AST snapshot at initialize. */
+  obj->pipeline = Qnil;
   rb_obj_freeze(self);
   return self;
 }
