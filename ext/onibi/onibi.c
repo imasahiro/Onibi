@@ -778,20 +778,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
   source = StringValue(source);
   VALUE tokens = supplied_tokens;
   if (NIL_P(tokens)) {
-    int extended = 0;
-    if (!NIL_P(options)) {
-      if (RB_TYPE_P(options, T_STRING)) extended = memchr(RSTRING_PTR(options), 'x', (size_t)RSTRING_LEN(options)) != NULL;
-      else if (RB_TYPE_P(options, T_ARRAY)) {
-        for (long i = 0; i < RARRAY_LEN(options); i++) {
-          VALUE item = rb_ary_entry(options, i);
-          VALUE name = SYMBOL_P(item) ? rb_sym2str(item) : StringValue(item);
-          if (rb_str_cmp(name, rb_str_new_cstr("extended")) == 0) { extended = 1; break; }
-        }
-      } else if (options == Qtrue) extended = 0;
-      else if (options == Qfalse) extended = 0;
-      else extended = (NUM2INT(options) & 2) != 0;
-    }
-    tokens = onibi_tokenize_internal(source, extended);
+    tokens = onibi_tokenize_internal(source, onibi_extended_option_p(options));
   }
   VALUE result = rb_hash_new();
   VALUE source_copy = rb_str_dup(source);
