@@ -499,9 +499,9 @@ class InternalRegexpDependencyTest < Minitest::Test
     tokenizer = source[/static VALUE onibi_tokenize_internal\(.*?\n}\n/m]
 
     refute_nil tokenizer
-    assert_includes tokenizer, "OnibiValueVector token_records"
-    assert_includes tokenizer, "onibi_value_vector_push(&token_records"
-    assert_includes tokenizer, "VALUE tokens = rb_ary_new_capa((long)token_records.count)"
+    assert_includes tokenizer, "OnibiTokenRecord *token_records"
+    assert_includes tokenizer, "onibi_token_record_push(&token_records"
+    assert_includes tokenizer, "VALUE tokens = rb_ary_new_capa((long)token_count)"
     refute_includes tokenizer, "VALUE tokens = rb_ary_new();"
     assert_operator tokenizer.index("VALUE token = rb_hash_new();"), :>,
       tokenizer.index("if (extended && !in_class && (byte == ' ' ||")

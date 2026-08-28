@@ -450,9 +450,34 @@ static void onibi_value_vector_init(OnibiValueVector *vector);
 static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots);
 static void onibi_value_vector_free(OnibiValueVector *vector);
 
+typedef struct {
+  OnibiTokenKind kind;
+  unsigned char byte;
+  long start;
+  long end;
+  VALUE name;
+  VALUE capture;
+  VALUE negative_name;
+  VALUE name_id;
+  VALUE inline_ignorecase;
+  VALUE bytes;
+  unsigned char negative;
+} OnibiTokenRecord;
+
+static void onibi_token_record_push(OnibiTokenRecord **records, size_t *count,
+                                    size_t *capacity, OnibiTokenRecord record) {
+  if (*count == *capacity) {
+    size_t next = *capacity == 0 ? 16 : *capacity * 2;
+    if (next < *capacity || next > SIZE_MAX / sizeof(**records)) rb_raise(rb_eNoMemError, "token vector is too large");
+    *records = REALLOC_N(*records, OnibiTokenRecord, next);
+    *capacity = next;
+  }
+  (*records)[(*count)++] = record;
+}
+
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
-  OnibiValueVector token_records;
-  onibi_value_vector_init(&token_records);
+  OnibiTokenRecord *token_records = NULL;
+  size_t token_count = 0, token_capacity = 0;
   VALUE token_roots = rb_ary_new_capa(RSTRING_LEN(src));
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
@@ -471,7 +496,6 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       continue;
     }
     if (extended && !in_class && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')) continue;
-    VALUE token = rb_hash_new();
     VALUE backref_name = Qnil;
     VALUE backref_number = Qnil;
     VALUE group_name = Qnil;
@@ -762,35 +786,44 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     }
     if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
-    rb_hash_aset(token, ID2SYM(id_key_kind_code), UINT2NUM((unsigned int)kind));
-    rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(byte));
-    rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(start));
-    rb_hash_aset(token, ID2SYM(id_key_end), LONG2NUM(i + 1));
-    if (!NIL_P(backref_name)) { rb_obj_freeze(backref_name); rb_hash_aset(token, ID2SYM(id_key_name), backref_name); }
-    if (!NIL_P(backref_number)) rb_hash_aset(token, ID2SYM(id_key_capture), backref_number);
-    if (!NIL_P(group_name)) { rb_obj_freeze(group_name); rb_hash_aset(token, ID2SYM(id_key_name), group_name); }
-    if (!NIL_P(option_negative_name)) { rb_obj_freeze(option_negative_name); rb_hash_aset(token, ID2SYM(id_key_negative_name), option_negative_name); }
-    if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(id_key_name), posix_name); }
-    if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(id_key_name), escape_name); }
-    VALUE token_name = onibi_hash_value_id(token, id_key_name);
-    if (!NIL_P(token_name))
-      rb_hash_aset(token, ID2SYM(id_key_name_id), ULONG2NUM(rb_intern_str(token_name)));
-    if (!NIL_P(token_name))
-      rb_hash_aset(token, ID2SYM(id_key_inline_ignorecase),
-                   memchr(RSTRING_PTR(token_name), 'i', (size_t)RSTRING_LEN(token_name)) ? Qtrue : Qfalse);
-    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(id_key_bytes), literal_bytes); }
-    if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
-      rb_hash_aset(token, ID2SYM(id_key_negative), option_negative ? Qtrue : Qfalse);
-    rb_obj_freeze(token);
-    onibi_value_vector_push(&token_records, token, token_roots);
+    VALUE token_name = !NIL_P(backref_name) ? backref_name :
+      (!NIL_P(group_name) ? group_name :
+       (!NIL_P(posix_name) ? posix_name : escape_name));
+    VALUE name_id = NIL_P(token_name) ? Qnil : ULONG2NUM(rb_intern_str(token_name));
+    VALUE inline_ignorecase = NIL_P(token_name) ? Qnil :
+      (memchr(RSTRING_PTR(token_name), 'i', (size_t)RSTRING_LEN(token_name)) ? Qtrue : Qfalse);
+    if (!NIL_P(token_name)) { rb_obj_freeze(token_name); rb_ary_push(token_roots, token_name); }
+    if (!NIL_P(backref_number)) rb_ary_push(token_roots, backref_number);
+    if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_ary_push(token_roots, literal_bytes); }
+    OnibiTokenRecord record = { kind, byte, start, i + 1, token_name, backref_number,
+                                option_negative_name, name_id, inline_ignorecase, literal_bytes,
+                                (unsigned char)(option_negative ? 1 : 0) };
+    onibi_token_record_push(&token_records, &token_count, &token_capacity, record);
     if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
       int prior_extended = extended_stack[--extended_depth];
       if (prior_extended >= 0) extended = prior_extended;
     }
   }
-  VALUE tokens = rb_ary_new_capa((long)token_records.count);
-  for (size_t i = 0; i < token_records.count; i++) rb_ary_push(tokens, token_records.items[i]);
-  onibi_value_vector_free(&token_records);
+  VALUE tokens = rb_ary_new_capa((long)token_count);
+  for (size_t i = 0; i < token_count; i++) {
+    OnibiTokenRecord *record = &token_records[i];
+    VALUE token = rb_hash_new();
+    rb_hash_aset(token, ID2SYM(id_key_kind_code), UINT2NUM((unsigned int)record->kind));
+    rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(record->byte));
+    rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(record->start));
+    rb_hash_aset(token, ID2SYM(id_key_end), LONG2NUM(record->end));
+    if (!NIL_P(record->name)) rb_hash_aset(token, ID2SYM(id_key_name), record->name);
+    if (!NIL_P(record->capture)) rb_hash_aset(token, ID2SYM(id_key_capture), record->capture);
+    if (!NIL_P(record->negative_name)) rb_hash_aset(token, ID2SYM(id_key_negative_name), record->negative_name);
+    if (!NIL_P(record->name_id)) rb_hash_aset(token, ID2SYM(id_key_name_id), record->name_id);
+    if (!NIL_P(record->inline_ignorecase)) rb_hash_aset(token, ID2SYM(id_key_inline_ignorecase), record->inline_ignorecase);
+    if (!NIL_P(record->bytes)) rb_hash_aset(token, ID2SYM(id_key_bytes), record->bytes);
+    if (record->kind == ONIBI_TOKEN_OPTION_SCOPE_START || record->kind == ONIBI_TOKEN_OPTION_GLOBAL)
+      rb_hash_aset(token, ID2SYM(id_key_negative), record->negative ? Qtrue : Qfalse);
+    rb_obj_freeze(token);
+    rb_ary_push(tokens, token);
+  }
+  xfree(token_records);
   rb_ary_clear(token_roots);
   rb_obj_freeze(tokens);
   return tokens;
