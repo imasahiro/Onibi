@@ -5424,7 +5424,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
         if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), Qnil, &call_counter_state, call_captures)) {
           onibi_call_frame_pop();
-          if (op == id_g_absent) { frame->waiting_call = 0; continue; }
+          if (op == ONIBI_RS_ABSENT) { frame->waiting_call = 0; continue; }
           ONIBI_CAPTURE_POP_FRAME(); continue;
         }
         if (use_counters) onibi_vm_apply_counter_actions_c(actions, &call_counter_state);

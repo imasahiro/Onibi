@@ -576,6 +576,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_operator source.scan("? entry_actions : onibi_empty_actions").length, :>=, 3
   end
 
+  def test_absence_entry_action_failure_uses_numeric_rseq_opcode
+    source = File.read(EXTENSION_SOURCE)
+    walker = source[/static int onibi_vm_walk_captures\(.*?\n}\n/m]
+
+    refute_nil walker
+    refute_includes walker, "op == id_g_absent"
+    assert_includes walker, "if (op == ONIBI_RS_ABSENT) { frame->waiting_call = 0; continue; }"
+  end
+
   def test_protected_compile_callbacks_use_stack_arguments
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "typedef struct {\n  VALUE source;\n  VALUE options;\n  VALUE tokens;\n} OnibiProgramArgs;"
