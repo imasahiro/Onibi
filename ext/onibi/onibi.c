@@ -3141,16 +3141,16 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   OnibiAstKind type = onibi_ast_kind(ast);
   if (type == ONIBI_AST_CHARACTER_CLASS) {
-    VALUE children = onibi_hash_value(ast, "children");
-    VALUE ranges = onibi_hash_value(ast, "ranges");
-    if (RTEST(onibi_hash_value(ast, "negated")) || !RB_TYPE_P(children, T_ARRAY) ||
+    VALUE children = onibi_hash_value_id(ast, id_key_children);
+    VALUE ranges = onibi_hash_value_id(ast, id_key_ranges);
+    if (RTEST(onibi_hash_value_id(ast, id_key_negated)) || !RB_TYPE_P(children, T_ARRAY) ||
         !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(children) == 0) return 0;
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
-      VALUE kind_code = onibi_hash_value(child, "kind_code");
+      VALUE kind_code = onibi_hash_value_id(child, id_key_kind_code);
       OnibiAstKind child_type = onibi_ast_kind(child);
       if ((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_LITERAL) || child_type == ONIBI_AST_LITERAL) continue;
-      VALUE child_name = onibi_hash_value(child, "name");
+      VALUE child_name = onibi_hash_value_id(child, id_key_name);
       if (((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_ESCAPE) || child_type == ONIBI_AST_ESCAPE) && !NIL_P(child_name) &&
           onibi_unicode_ctype(child_name) >= 0) continue;
       return 0;
@@ -3165,7 +3165,7 @@ static int onibi_ast_safe_multibyte_class(VALUE ast) {
     return 1;
   }
   if (type == ONIBI_AST_SEQUENCE) {
-    VALUE children = onibi_hash_value(ast, "children");
+    VALUE children = onibi_hash_value_id(ast, id_key_children);
     if (!RB_TYPE_P(children, T_ARRAY)) return 0;
     for (long i = 0; i < RARRAY_LEN(children); i++)
       if (!onibi_ast_safe_multibyte_class(rb_ary_entry(children, i))) return 0;
@@ -3199,7 +3199,7 @@ static int onibi_ast_anchor_repeat(VALUE ast) {
   }
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_QUANTIFIER &&
-      onibi_ast_contains_anchor(onibi_hash_value(ast, "atom"))) return 1;
+      onibi_ast_contains_anchor(onibi_hash_value_id(ast, id_key_atom))) return 1;
   const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
     if (onibi_ast_anchor_repeat(onibi_hash_value_id(ast, keys[i]))) return 1;
