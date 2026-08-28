@@ -261,6 +261,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes document, "Capture maps"
   end
 
+  def test_rseq_physical_graph_adapter_is_marked_for_c_view_migration
+    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
+    assert_includes document, "Pending: `OnibiRSeqView`-backed VM entry"
+    assert_includes document, "capture walkers still require a C view migration"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
