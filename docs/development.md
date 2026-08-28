@@ -183,7 +183,7 @@ the required classification for each data family.
 | AST (`Hash`/`Array`) | No | Convert to typed nodes | Node kinds and links are fixed. Ruby Hash lookup is not needed after parsing. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | Convert after fragment migration | The builder mutates them during compilation. The RSeq boundary needs a stable snapshot only. |
-| fragment start/exit IDs | No | Convert to `OnibiIdVector` | IDs are numeric and ordered. Ruby Array gives no semantic value. |
+| fragment start/exit IDs | No | Convert to `OnibiIdVector` | IDs are numeric and ordered. Ruby Array gives no semantic value. Final GIR exit connections now consume the C vector. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. |
 | RSeq semantic program | No public API | Convert to an immutable C program owner | VM reads the same fields on every match. The blob and descriptors already use C types. |
 | regular VM visited set | No | Converted to a bounded C bitset | Numeric state/position pairs do not need Ruby Hash keys. Large or counter-bearing paths retain a safe fallback. |
