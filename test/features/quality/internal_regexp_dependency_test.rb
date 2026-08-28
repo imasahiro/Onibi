@@ -454,6 +454,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes bitmap, "VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);"
     assert_includes bitmap, "ID name_id = onibi_token_name_id(child);"
     refute_includes bitmap, "NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN"
+    assert_includes bitmap, "ID escape_name_id = onibi_token_name_id(payload);"
   end
 
   def test_compiler_value_maps_use_c_owned_growth
@@ -473,7 +474,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static int onibi_ascii_property_name_p(ID name_id)"
     refute_includes source, "onibi_ascii_property_name_p(name)"
-    assert_includes source, "VALUE escape_name_id = onibi_hash_value_id(payload, id_key_name_id)"
+    assert_includes source, "ID escape_name_id = onibi_token_name_id(payload)"
   end
 
   def test_ast_audit_defines_typed_node_migration_boundary
