@@ -1621,11 +1621,6 @@ static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property) {
   return ONIBI_ASCII_PROP_UNKNOWN;
 }
 
-static OnibiAsciiProperty onibi_ascii_property_kind(VALUE name) {
-  return NIL_P(name) ? ONIBI_ASCII_PROP_UNKNOWN :
-    onibi_ascii_property_kind_id(rb_intern_str(name));
-}
-
 static int onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c) {
   int ascii_alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
   int ascii_digit = c >= '0' && c <= '9';
@@ -1723,7 +1718,7 @@ class_children:
     } else if (token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE || ast_kind == ONIBI_AST_ESCAPE) {
       VALUE name = onibi_hash_value_id(child, id_key_name);
       VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
-      OnibiAsciiProperty property_kind = NIL_P(name_id) ? onibi_ascii_property_kind(name) :
+      OnibiAsciiProperty property_kind = NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN :
         onibi_ascii_property_kind_id(NUM2ULONG(name_id));
       if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
         for (int c = 0; c < 256; c++) {

@@ -318,6 +318,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_equal 0, source.scan(/NIL_P\([^)]*name_id\).*rb_intern_str/).length
     assert_equal 0, source.scan(/NIL_P\([^)]*child_name_id\).*rb_intern_str/).length
     assert_equal 0, source.scan(/NIL_P\([^)]*property_name_id\).*rb_intern_str/).length
+    refute_includes source, "onibi_ascii_property_kind(VALUE name)"
+    assert_includes source, "NIL_P(name_id) ? ONIBI_ASCII_PROP_UNKNOWN"
   end
 
   def test_compiler_subprograms_use_c_vector_until_publication
