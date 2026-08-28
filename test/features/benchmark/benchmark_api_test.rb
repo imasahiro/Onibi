@@ -283,6 +283,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 
+  def test_recursive_subexpression_call_crosses_dynamic_boundary
+    pattern = "(?<x>a(?:\\g<x>)?)\\g<x>"
+    regexp = Onibi::Regexp.new(pattern)
+    refute regexp.program_cached?
+    assert_equal Regexp.new(pattern).match("aaa").to_a, regexp.match("aaa").to_a
+  end
+
   def test_anchor_assertions_are_edge_actions
     edges = Onibi::Regexp.new("^abc$").pipeline[:gir_graph][:edges]
     assert_equal :ASSERT_BEGIN_BUFFER, edges.first[:actions].first[:op]
