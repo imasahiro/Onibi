@@ -1535,14 +1535,6 @@ static onibi_fragment_t onibi_fragment_empty(void) {
   return fragment;
 }
 
-static void onibi_connect(onibi_gir_builder_t *builder, VALUE exits, VALUE starts) {
-  VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
-  long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
-  for (long i = 0; i < exit_count; i++)
-    for (long j = 0; j < start_count; j++)
-      onibi_gir_edge(builder, NUM2LONG(exit_values[i]), NUM2LONG(start_values[j]));
-}
-
 static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions) {
   VALUE *exit_values = RARRAY_PTR(exits), *start_values = RARRAY_PTR(starts);
   long exit_count = RARRAY_LEN(exits), start_count = RARRAY_LEN(starts);
@@ -1592,6 +1584,16 @@ static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
   onibi_id_vector_from_array(&exit_ids, exits);
   if (prepend) onibi_connect_vector_prepend_actions(builder, &exit_ids, starts, actions);
   else onibi_connect_vector_actions(builder, &exit_ids, starts, actions);
+  onibi_id_vector_free(&exit_ids);
+}
+
+static void onibi_connect_fragment(onibi_gir_builder_t *builder, VALUE exits, VALUE starts) {
+  OnibiIdVector exit_ids;
+  onibi_id_vector_from_array(&exit_ids, exits);
+  VALUE *start_values = RARRAY_PTR(starts);
+  for (size_t i = 0; i < exit_ids.count; i++)
+    for (long j = 0; j < RARRAY_LEN(starts); j++)
+      onibi_gir_edge(builder, (long)exit_ids.items[i], NUM2LONG(start_values[j]));
   onibi_id_vector_free(&exit_ids);
 }
 
@@ -2056,7 +2058,7 @@ skip_utf8_range_expansion:
                      rb_str_new(RSTRING_PTR(literal_bytes) + i, 1));
         onibi_fragment_t part = onibi_compile_node(byte_ast, builder);
         if (i == 0) result.starts = part.starts;
-        else onibi_connect(builder, result.exits, part.starts);
+        else onibi_connect_fragment(builder, result.exits, part.starts);
         result.exits = part.exits;
       }
       return result;
@@ -2475,7 +2477,7 @@ skip_utf8_range_expansion:
         VALUE actions = rb_ary_new();
         if (counter_slot >= 0)
           rb_ary_push(actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
-        onibi_connect_actions(builder, result.exits, part.starts, actions);
+        onibi_connect_fragment_actions(builder, result.exits, part.starts, actions, 0);
       }
       result.exits = part.exits;
     }
@@ -2488,7 +2490,7 @@ skip_utf8_range_expansion:
         rb_ary_push(repeat_actions, onibi_counter_action(id_a_test_counter_lt, counter_slot, LONG2NUM(max)));
         rb_ary_push(repeat_actions, onibi_counter_action(id_a_counter_increment, counter_slot, Qnil));
         if (RARRAY_LEN(result.exits) > 0)
-          onibi_connect_actions(builder, result.exits, part.starts, repeat_actions);
+          onibi_connect_fragment_actions(builder, result.exits, part.starts, repeat_actions, 0);
         VALUE next_exits = rb_ary_dup(result.exits);
         onibi_append_values(next_exits, part.exits);
         result.exits = next_exits;
@@ -2500,19 +2502,19 @@ skip_utf8_range_expansion:
       if (!repeat.nullable) onibi_append_values(result.start_actions, repeat.start_actions);
       if (RARRAY_LEN(result.exits) > 0) {
         if (repeat.nullable) {
-          onibi_connect(builder, result.exits, repeat.starts);
+          onibi_connect_fragment(builder, result.exits, repeat.starts);
         } else {
           VALUE next_actions = rb_ary_dup(repeat.pending_actions);
           onibi_append_values(next_actions, repeat.start_actions);
-          onibi_connect_actions(builder, result.exits, repeat.starts, next_actions);
+          onibi_connect_fragment_actions(builder, result.exits, repeat.starts, next_actions, 0);
         }
       }
       if (repeat.nullable) {
-        onibi_connect(builder, repeat.exits, repeat.starts);
+        onibi_connect_fragment(builder, repeat.exits, repeat.starts);
       } else {
         VALUE loop_actions = rb_ary_dup(repeat.pending_actions);
         onibi_append_values(loop_actions, repeat.start_actions);
-        onibi_connect_actions(builder, repeat.exits, repeat.starts, loop_actions);
+        onibi_connect_fragment_actions(builder, repeat.exits, repeat.starts, loop_actions, 0);
       }
       onibi_append_values(result.pending_actions, repeat.pending_actions);
       for (long i = 0; i < RARRAY_LEN(repeat.exits); i++) rb_ary_push(result.exits, rb_ary_entry(repeat.exits, i));
