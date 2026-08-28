@@ -4151,30 +4151,30 @@ static int onibi_unicode_ctype(VALUE name) {
 static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
   VALUE copy = rb_hash_dup(payload);
   int fold = RTEST(onibi_hash_value_id(copy, id_key_ignorecase));
-  VALUE name = onibi_hash_value(copy, "name");
+  VALUE name = onibi_hash_value_id(copy, id_key_name);
   int ctype = NIL_P(name) ? -1 : onibi_unicode_ctype(name);
-  if (ctype >= 0) rb_hash_aset(copy, ID2SYM(rb_intern("ctype")), INT2NUM(ctype));
-  VALUE children = onibi_hash_value(copy, "children");
+  if (ctype >= 0) rb_hash_aset(copy, ID2SYM(id_key_ctype), INT2NUM(ctype));
+  VALUE children = onibi_hash_value_id(copy, id_key_children);
   if (RB_TYPE_P(children, T_ARRAY)) {
     VALUE compiled = rb_ary_new_capa(RARRAY_LEN(children));
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
       VALUE child_copy = RB_TYPE_P(child, T_HASH) ? rb_hash_dup(child) : child;
       if (RB_TYPE_P(child_copy, T_HASH) &&
-          (onibi_hash_value(child_copy, "kind_code") == UINT2NUM(ONIBI_TOKEN_ESCAPE) ||
+          (onibi_hash_value_id(child_copy, id_key_kind_code) == UINT2NUM(ONIBI_TOKEN_ESCAPE) ||
            onibi_ast_kind(child_copy) == ONIBI_AST_ESCAPE)) {
-        VALUE child_name = onibi_hash_value(child_copy, "name");
+        VALUE child_name = onibi_hash_value_id(child_copy, id_key_name);
         int child_ctype = NIL_P(child_name) ? -1 : onibi_unicode_ctype(child_name);
         if (child_ctype >= 0)
-          rb_hash_aset(child_copy, ID2SYM(rb_intern("ctype")), INT2NUM(child_ctype));
+          rb_hash_aset(child_copy, ID2SYM(id_key_ctype), INT2NUM(child_ctype));
       }
       if (fold && RB_TYPE_P(child_copy, T_HASH))
         rb_hash_aset(child_copy, ID2SYM(id_key_ignorecase), Qtrue);
       rb_ary_push(compiled, child_copy);
     }
-    rb_hash_aset(copy, ID2SYM(rb_intern("children")), compiled);
+    rb_hash_aset(copy, ID2SYM(id_key_children), compiled);
   }
-  VALUE operands = onibi_hash_value(copy, "operands");
+  VALUE operands = onibi_hash_value_id(copy, id_key_operands);
   if (RB_TYPE_P(operands, T_ARRAY)) {
     VALUE compiled_operands = rb_ary_new_capa(RARRAY_LEN(operands));
     for (long i = 0; i < RARRAY_LEN(operands); i++) {
@@ -4183,10 +4183,10 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
       OnibiAstKind operand_type = onibi_ast_kind(operand);
       if (operand_type == ONIBI_AST_CHARACTER_CLASS ||
           operand_type == ONIBI_AST_CLASS_INTERSECTION)
-        rb_hash_aset(operand, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(operand, 0));
+        rb_hash_aset(operand, ID2SYM(id_key_bitmap), onibi_class_bitmap(operand, 0));
       rb_ary_push(compiled_operands, operand);
     }
-    rb_hash_aset(copy, ID2SYM(rb_intern("operands")), compiled_operands);
+    rb_hash_aset(copy, ID2SYM(id_key_operands), compiled_operands);
   }
   return copy;
 }
