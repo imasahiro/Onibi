@@ -436,7 +436,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   def test_fragment_transition_actions_are_preallocated
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "rb_ary_new_capa(RARRAY_LEN(result.pending_actions)"
-    assert_includes source, "rb_ary_new_capa(RARRAY_LEN(repeat.pending_actions)"
+    assert_includes source, "onibi_concat_action_values(repeat.pending_actions"
     refute_includes source, "rb_ary_dup(result.pending_actions)"
     refute_includes source, "rb_ary_dup(repeat.pending_actions)"
   end
@@ -676,6 +676,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes compiler, "if (RARRAY_LEN(result.pending_actions) == 0)"
     assert_includes compiler, "transition_actions = part.start_actions"
     assert_includes compiler, "transition_actions = result.pending_actions"
+  end
+
+  def test_repeat_action_concat_reuses_empty_side
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "static VALUE onibi_concat_action_values(VALUE first, VALUE second)"
+    assert_includes source, "onibi_concat_action_values(repeat.pending_actions"
   end
 
   def test_parser_uses_cached_id_accessor_for_token_fields
