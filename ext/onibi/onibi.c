@@ -1976,64 +1976,6 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
   if (NIL_P(bitmap) || !RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
     rb_raise(eRegexpError, "class payload has no compiled bitmap");
   return (RSTRING_PTR(bitmap)[byte >> 3] & (1U << (byte & 7))) != 0;
-  /* Non-canonical class payloads are rejected above. */
-#if 0
-  VALUE type = onibi_hash_value(payload, "type");
-  if (type == ID2SYM(rb_intern("escape"))) {
-    VALUE name = onibi_hash_value(payload, "name");
-    int upper = RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]);
-    unsigned char n = (unsigned char)tolower((unsigned char)RSTRING_PTR(name)[0]);
-    int hit = n == 'd' ? isdigit(byte) : (n == 's' ? isspace(byte) :
-      (n == 'w' ? (isalnum(byte) || byte == '_') :
-       (n == 'h' ? isxdigit(byte) : 0)));
-    return upper ? !hit : hit;
-  }
-  VALUE ranges = onibi_hash_value(payload, "ranges");
-  VALUE children = onibi_hash_value(payload, "children");
-  int hit = 0;
-  for (long i = 0; i < RARRAY_LEN(ranges); i++) {
-    VALUE range = rb_ary_entry(ranges, i);
-    if (RARRAY_LEN(range) == 2) {
-      unsigned char first = (unsigned char)NUM2INT(rb_ary_entry(range, 0));
-      unsigned char last = (unsigned char)NUM2INT(rb_ary_entry(range, 1));
-      if (fold) { first = (unsigned char)tolower(first); last = (unsigned char)tolower(last); }
-      if (byte >= first && byte <= last) hit = 1;
-    }
-  }
-  for (long i = 0; i < RARRAY_LEN(children); i++) {
-    VALUE child = rb_ary_entry(children, i);
-    ID kind = SYM2ID(onibi_hash_value(child, "kind"));
-    if (kind == rb_intern("literal")) {
-      unsigned char literal = (unsigned char)NUM2INT(onibi_hash_value(child, "byte"));
-      if (fold) literal = (unsigned char)tolower(literal);
-      if (byte == literal) hit = 1;
-    }
-    if (kind == rb_intern("escape")) {
-      VALUE name = onibi_hash_value(child, "name");
-      int upper = NIL_P(name) ? isupper((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
-        (RSTRING_LEN(name) == 1 && isupper((unsigned char)RSTRING_PTR(name)[0]));
-      unsigned char code = NIL_P(name) ? (unsigned char)tolower((unsigned char)NUM2INT(onibi_hash_value(child, "byte"))) :
-        (RSTRING_LEN(name) == 1 ? (unsigned char)tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
-      int escaped_hit = code == 'd' ? isdigit(byte) : (code == 's' ? isspace(byte) :
-        (code == 'w' ? (isalnum(byte) || byte == '_') : (code == 'h' ? isxdigit(byte) : 0)));
-      hit |= upper ? !escaped_hit : escaped_hit;
-    }
-    if (kind == rb_intern("posix_class")) {
-      VALUE name = onibi_hash_value(child, "name");
-      const char *n = StringValueCStr(name);
-      if (strcmp(n, "alpha") == 0) hit |= isalpha(byte);
-      else if (strcmp(n, "digit") == 0) hit |= isdigit(byte);
-      else if (strcmp(n, "alnum") == 0) hit |= isalnum(byte);
-      else if (strcmp(n, "space") == 0) hit |= isspace(byte);
-      else if (strcmp(n, "blank") == 0) hit |= (byte == ' ' || byte == '\t');
-      else if (strcmp(n, "lower") == 0) hit |= islower(byte);
-      else if (strcmp(n, "upper") == 0) hit |= isupper(byte);
-      else if (strcmp(n, "word") == 0) hit |= (isalnum(byte) || byte == '_');
-      else if (strcmp(n, "xdigit") == 0) hit |= isxdigit(byte);
-    }
-  }
-  return RTEST(onibi_hash_value(payload, "negated")) ? !hit : hit;
-#endif
 }
 
 static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, long *matched_end) {
