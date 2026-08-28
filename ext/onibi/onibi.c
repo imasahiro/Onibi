@@ -3210,35 +3210,35 @@ static int onibi_ast_nullable(VALUE ast, int *nullable_capture) {
   if (!RB_TYPE_P(ast, T_HASH)) return 1;
   OnibiAstKind type = onibi_ast_kind(ast);
   if (type == ONIBI_AST_CAPTURE) {
-    int body_nullable = onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
+    int body_nullable = onibi_ast_nullable(onibi_hash_value_id(ast, id_key_body), nullable_capture);
     if (body_nullable) *nullable_capture = 1;
     return body_nullable;
   }
   if (type == ONIBI_AST_QUANTIFIER) {
-    VALUE min = onibi_hash_value(ast, "min");
+    VALUE min = onibi_hash_value_id(ast, id_key_min);
     if (!NIL_P(min) && NUM2LONG(min) == 0) {
-      if (onibi_ast_has_capture(onibi_hash_value(ast, "atom"))) *nullable_capture = 1;
-      (void)onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
+      if (onibi_ast_has_capture(onibi_hash_value_id(ast, id_key_atom))) *nullable_capture = 1;
+      (void)onibi_ast_nullable(onibi_hash_value_id(ast, id_key_atom), nullable_capture);
       return 1;
     }
-    return onibi_ast_nullable(onibi_hash_value(ast, "atom"), nullable_capture);
+    return onibi_ast_nullable(onibi_hash_value_id(ast, id_key_atom), nullable_capture);
   }
   if (type == ONIBI_AST_SEQUENCE) {
     int result = 1;
-    VALUE children = onibi_hash_value(ast, "children");
+    VALUE children = onibi_hash_value_id(ast, id_key_children);
     for (long i = 0; i < RARRAY_LEN(children); i++)
       if (!onibi_ast_nullable(rb_ary_entry(children, i), nullable_capture)) result = 0;
     return result;
   }
   if (type == ONIBI_AST_ALTERNATIVE) {
     int result = 0;
-    VALUE branches = onibi_hash_value(ast, "branches");
+    VALUE branches = onibi_hash_value_id(ast, id_key_branches);
     for (long i = 0; i < RARRAY_LEN(branches); i++)
       if (onibi_ast_nullable(rb_ary_entry(branches, i), nullable_capture)) result = 1;
     return result;
   }
   if (type == ONIBI_AST_GROUP || type == ONIBI_AST_OPTION_SCOPE || type == ONIBI_AST_ATOMIC)
-    return onibi_ast_nullable(onibi_hash_value(ast, "body"), nullable_capture);
+    return onibi_ast_nullable(onibi_hash_value_id(ast, id_key_body), nullable_capture);
   if (type == ONIBI_AST_LOOKAHEAD || type == ONIBI_AST_LOOKBEHIND ||
       type == ONIBI_AST_ANCHOR || type == ONIBI_AST_MATCH_RESET) return 1;
   return 0;
@@ -3254,7 +3254,7 @@ static int onibi_ast_nullable_absence(VALUE ast) {
   if (!RB_TYPE_P(ast, T_HASH)) return 0;
   if (onibi_ast_kind(ast) == ONIBI_AST_ABSENCE) {
     int ignored = 0;
-    if (onibi_ast_nullable(onibi_hash_value(ast, "body"), &ignored)) return 1;
+    if (onibi_ast_nullable(onibi_hash_value_id(ast, id_key_body), &ignored)) return 1;
   }
   const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no};
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
