@@ -108,6 +108,11 @@ static VALUE onibi_tokenize(VALUE src) {
       kind = "lookbehind_start";
       byte = (unsigned char)RSTRING_PTR(src)[i + 3];
       i += 3;
+    } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
+               RSTRING_PTR(src)[i + 2] == ':') {
+      kind = "noncapture_start";
+      byte = ':';
+      i += 2;
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
@@ -274,6 +279,17 @@ static VALUE onibi_parse_atom(VALUE src, VALUE tokens, long *index, long end) {
     *index = close + 1;
     return node;
   }
+  if (kind == rb_intern("noncapture_start")) {
+    long close = onibi_find_close(tokens, *index, end, rb_intern("noncapture_start"), rb_intern("group_end"));
+    if (close < 0) rb_raise(eRegexpError, "unterminated group");
+    VALUE node = onibi_ast_node("group", token);
+    rb_hash_aset(node, ID2SYM(rb_intern("body")), onibi_parse_range(src, tokens, *index + 1, close));
+    rb_hash_aset(node, ID2SYM(rb_intern("capturing")), Qfalse);
+    rb_hash_aset(node, ID2SYM(rb_intern("end")), rb_hash_aref(rb_ary_entry(tokens, close), ID2SYM(rb_intern("end"))));
+    rb_obj_freeze(node);
+    *index = close + 1;
+    return node;
+  }
   if (kind == rb_intern("group_start")) {
     long close = onibi_find_close(tokens, *index, end, rb_intern("group_start"), rb_intern("group_end"));
     if (close < 0) rb_raise(eRegexpError, "unterminated group");
@@ -338,7 +354,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
   long part = begin, depth = 0;
   for (long i = begin; i < end; i++) {
     ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("group_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
+    if (kind == rb_intern("group_start") || kind == rb_intern("noncapture_start") || kind == rb_intern("lookahead_start") || kind == rb_intern("lookbehind_start") || kind == rb_intern("class_start")) depth++;
     else if (kind == rb_intern("group_end") || kind == rb_intern("class_end")) depth--;
     else if (kind == rb_intern("alternation") && depth == 0) {
       rb_ary_push(branches, onibi_parse_range(src, tokens, part, i));
@@ -762,6 +778,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_ary_push(result.pending_actions, close);
     return result;
   }
+  if (type == ID2SYM(rb_intern("group")))
+    return onibi_compile_node(onibi_hash_value(ast, "body"), builder);
   if (type == ID2SYM(rb_intern("quantifier"))) {
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);

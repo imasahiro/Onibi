@@ -332,6 +332,16 @@ class BenchmarkApiTest < Minitest::Test
                  positive.pipeline[:compiled][:graph][:start_edges].first[:actions].first[:op]
   end
 
+  def test_non_capturing_group_is_semantic_and_does_not_allocate_capture
+    parsed = Onibi::Parser.parse("(?:ab)")
+    node = parsed[:ast][:children].first
+    assert_equal :group, node[:type]
+    refute node[:capturing]
+    regexp = Onibi::Regexp.new("(?:ab)")
+    assert_equal :REGULAR_FAST, regexp.execution_class.to_sym
+    assert regexp.vm_match?("zab")
+  end
+
   def test_parser_rejects_invalid_regular_core_syntax
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("[abc") }
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{3,2}") }
