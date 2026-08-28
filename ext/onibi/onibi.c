@@ -4458,8 +4458,10 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE visited = rb_hash_new();
   unsigned char *visited_bits = NULL;
   size_t visited_span = (size_t)RSTRING_LEN(str) + 1U;
-  size_t visited_size = (size_t)RARRAY_LEN(states) * visited_span;
-  if (visited_size <= (size_t)1 << 20) {
+  size_t visited_size = 0;
+  if (visited_span != 0 && (size_t)RARRAY_LEN(states) <= SIZE_MAX / visited_span)
+    visited_size = (size_t)RARRAY_LEN(states) * visited_span;
+  if (visited_size != 0 && visited_size <= (size_t)1 << 20) {
     visited_bits = ALLOCA_N(unsigned char, visited_size);
     memset(visited_bits, 0, visited_size);
   }
