@@ -384,6 +384,14 @@ class BenchmarkApiTest < Minitest::Test
     refute non_digit.vm_match?("7")
   end
 
+  def test_control_escapes_become_literal_bytes
+    { "\\n" => "\n", "\\r" => "\r", "\\t" => "\t", "\\f" => "\f" }.each do |pattern, input|
+      regexp = Onibi::Regexp.new(pattern)
+      assert regexp.program_cached?
+      assert regexp.vm_match?(input)
+    end
+  end
+
   def test_nullable_program_keeps_immediate_accept_start_edge
     empty = Onibi::Regexp.new("")
     optional = Onibi::Regexp.new("a?")
