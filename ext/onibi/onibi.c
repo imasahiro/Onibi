@@ -1420,7 +1420,7 @@ static VALUE onibi_pipeline_build(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   VALUE out = rb_hash_new();
   VALUE parsed = obj->parsed;
-  VALUE src = NIL_P(parsed) ? rb_funcall(obj->regexp, id_source, 0) : onibi_hash_value(parsed, "source");
+  VALUE src = NIL_P(parsed) ? obj->source : onibi_hash_value(parsed, "source");
   VALUE tokens = NIL_P(parsed) ? onibi_tokenize(src) : onibi_hash_value(parsed, "tokens");
   rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
   VALUE ast = rb_hash_new();
