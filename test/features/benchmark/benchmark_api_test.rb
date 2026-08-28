@@ -329,6 +329,14 @@ class BenchmarkApiTest < Minitest::Test
     assert mixed.vm_match?("é")
   end
 
+  def test_utf8_class_range_preserves_encoded_range_endpoints
+    ast = Onibi::Parser.parse("[é-ê]")[:ast][:children].first
+
+    assert_equal [["é", "ê"]], ast[:ranges]
+    refute Onibi::Regexp.new("[é-ê]").program_cached?
+    assert Onibi::Regexp.new("[é-ê]").match?("ê")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)

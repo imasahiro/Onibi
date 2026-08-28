@@ -541,11 +541,21 @@ static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
       ID last_kind = onibi_token_kind(rb_ary_entry(tokens, i + 1));
       if (first_kind != rb_intern("literal") || last_kind != rb_intern("literal"))
         rb_raise(eRegexpError, "invalid range endpoint in character class");
-      if (onibi_token_byte(rb_ary_entry(tokens, i - 1)) > onibi_token_byte(rb_ary_entry(tokens, i + 1)))
+      VALUE first_token = rb_ary_entry(tokens, i - 1);
+      VALUE last_token = rb_ary_entry(tokens, i + 1);
+      VALUE first_bytes = onibi_hash_value(first_token, "bytes");
+      VALUE last_bytes = onibi_hash_value(last_token, "bytes");
+      if (NIL_P(first_bytes) != NIL_P(last_bytes)) {
+        if (NIL_P(first_bytes)) first_bytes = rb_str_new((const char[]){(char)onibi_token_byte(first_token)}, 1);
+        if (NIL_P(last_bytes)) last_bytes = rb_str_new((const char[]){(char)onibi_token_byte(last_token)}, 1);
+      }
+      if ((!NIL_P(first_bytes) && !NIL_P(last_bytes) && rb_str_cmp(first_bytes, last_bytes) > 0) ||
+          (NIL_P(first_bytes) && NIL_P(last_bytes) &&
+           onibi_token_byte(first_token) > onibi_token_byte(last_token)))
         rb_raise(eRegexpError, "empty range in character class");
       VALUE range = rb_ary_new();
-      rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i - 1))));
-      rb_ary_push(range, LONG2NUM(onibi_token_byte(rb_ary_entry(tokens, i + 1))));
+      rb_ary_push(range, NIL_P(first_bytes) ? LONG2NUM(onibi_token_byte(first_token)) : first_bytes);
+      rb_ary_push(range, NIL_P(last_bytes) ? LONG2NUM(onibi_token_byte(last_token)) : last_bytes);
       rb_obj_freeze(range);
       rb_ary_push(ranges, range);
       i++;
@@ -1006,6 +1016,7 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
     VALUE range = rb_ary_entry(ranges, i);
     if (RARRAY_LEN(range) != 2) continue;
+    if (!RB_INTEGER_TYPE_P(rb_ary_entry(range, 0)) || !RB_INTEGER_TYPE_P(rb_ary_entry(range, 1))) continue;
     int first = NUM2INT(rb_ary_entry(range, 0));
     int last = NUM2INT(rb_ary_entry(range, 1));
     if (first < 0) first = 0; if (last > 255) last = 255;
