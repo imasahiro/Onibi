@@ -3005,7 +3005,8 @@ static int onibi_option_mask(VALUE options) {
     }
     return mask;
   }
-  return NUM2INT(options);
+  /* MRI ignores option bits that are not part of the public regexp mask. */
+  return NUM2INT(options) & (1 | 2 | 4 | 16 | 32);
 }
 
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
