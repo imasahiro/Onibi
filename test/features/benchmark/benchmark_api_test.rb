@@ -322,6 +322,17 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 3, end: 5 }, regexp.vm_match_result("café"))
   end
 
+  def test_fixed_encoding_literal_uses_character_boundaries
+    pattern = "あ".encode("EUC-JP")
+    input = "xxあyy".encode("EUC-JP")
+    regexp = Onibi::Regexp.new(pattern)
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?(input)
+    refute regexp.vm_match?("xx".encode("EUC-JP"))
+    assert_equal ::Regexp.new(pattern).match?(input), regexp.match?(input)
+  end
+
   def test_utf8_literal_ignorecase_waits_for_encoding_aware_lowering
     regexp = Onibi::Regexp.new("é", Onibi::Regexp::IGNORECASE)
 
