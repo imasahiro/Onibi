@@ -148,7 +148,7 @@ The Ruby data decision is:
 | Data | Owner | Reason |
 | --- | --- | --- |
 | source, options, names, named captures | Ruby `VALUE` | Regexp public API and MRI encoding rules |
-| tokens, AST, GIR | C compiler scope | Compile-time only; never retained by Regexp |
+| tokens, AST, GIR | C compiler scope | Compile-time only; feature scanning uses a typed C token view; never retained by Regexp |
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
@@ -193,6 +193,11 @@ the required classification for each data family.
 The first conversion is complete for parser and compiler result adapters. The
 remaining token, AST, fragment, GIR, and RSeq conversions stay separate so
 each change can preserve ordering and GC tests.
+
+Feature classification now copies the fixed token fields into a short-lived
+`OnibiFeatureTokenVector`. The scanner compares enum kinds and numeric bytes
+from this C view. Optional Ruby names remain `VALUE`s only for property-name
+classification and stay rooted by the source token array.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Validation and RSeq lowering use this enum; the Symbol remains
