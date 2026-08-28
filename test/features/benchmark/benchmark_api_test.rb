@@ -1022,6 +1022,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_raises(ArgumentError) { Onibi::VM.execute(rseq.merge(physical_graph: invalid_view), "abc", :REGULAR_FAST) }
   end
 
+  def test_published_rseq_has_private_trust_marker_without_hash_data
+    rseq = Onibi::Regexp.new("abc").pipeline[:rseq_program]
+
+    assert_respond_to rseq, :__onibi_trusted_rseq__
+    refute_respond_to rseq.merge, :__onibi_trusted_rseq__
+  end
+
   def test_vm_rejects_malformed_lookaround_predicates
     rseq = Onibi::Regexp.new("(?=[ab]c)[a-z]c").pipeline[:rseq_program]
     index = rseq[:actions].index { |action| action[:op] == :ASSERT_LOOKAHEAD }

@@ -15,7 +15,7 @@
 static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new;
+static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_to_s, id_new, id_trusted_rseq;
 static VALUE onibi_rseq_physical_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -24,6 +24,11 @@ static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static int onibi_ascii_property_name_p(VALUE name);
+
+static VALUE onibi_rseq_trusted_marker(VALUE self) {
+  (void)self;
+  return Qtrue;
+}
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -2310,7 +2315,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
   rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
                onibi_deep_freeze(onibi_rseq_physical_graph(result)));
-  rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
+  rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions);
+  rb_define_singleton_method(result, "__onibi_trusted_rseq__", onibi_rseq_trusted_marker, 0);
+  rb_obj_freeze(result);
   /* Validate once, before publication.  Match calls use this immutable
      validated representation without repeating structural scans. */
   onibi_rseq_validate(result);
@@ -3820,7 +3827,7 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
 static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
   (void)self;
   StringValue(str);
-  onibi_rseq_validate(rseq);
+  if (!rb_respond_to(rseq, id_trusted_rseq)) onibi_rseq_validate(rseq);
   if (execution_class != ID2SYM(rb_intern("REGULAR_FAST")) &&
       execution_class != ID2SYM(rb_intern("TAGGED_ORDERED")) &&
       execution_class != ID2SYM(rb_intern("DYNAMIC")))
@@ -3943,6 +3950,7 @@ void Init_onibi(void) {
   id_new = rb_intern("new");
   id_match_p = rb_intern("match?"); id_source = rb_intern("source");
   id_options = rb_intern("options"); id_inspect = rb_intern("inspect"); id_to_s = rb_intern("to_s");
+  id_trusted_rseq = rb_intern("__onibi_trusted_rseq__");
   id_scan = rb_intern("scan"); id_gsub = rb_intern("gsub");
   id_encoding = rb_intern("encoding");
   id_index = rb_intern("index");
