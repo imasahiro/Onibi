@@ -3411,6 +3411,7 @@ static VALUE onibi_build_program(VALUE argument) {
   VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
   VALUE compiled = onibi_compiler_compile(Qnil, parsed);
   VALUE rseq = onibi_rseq_lower(Qnil, compiled);
+  onibi_parsed_get(parsed)->ast = Qnil;
   return rb_ary_new_from_args(2, parsed, rseq);
 }
 

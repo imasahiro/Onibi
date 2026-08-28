@@ -289,6 +289,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "parsed_data->ast = Qnil"
     assert_includes source, "The AST is an initialization artifact"
+    assert_includes source, "onibi_parsed_get(parsed)->ast = Qnil"
   end
 
   def test_internal_ast_is_not_deep_frozen_during_parse
