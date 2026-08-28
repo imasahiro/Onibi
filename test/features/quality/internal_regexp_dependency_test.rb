@@ -372,6 +372,15 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "if (use_counters || visited_bits == NULL) visited = rb_hash_new();"
   end
 
+  def test_tagged_vm_reuses_cached_physical_graph_for_all_starts
+    source = File.read(EXTENSION_SOURCE)
+    matcher = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
+
+    refute_nil matcher
+    assert_equal 1, matcher.scan("onibi_rseq_physical_graph(rseq)").length
+    assert_includes matcher, "VALUE graph = onibi_rseq_physical_graph(rseq);"
+  end
+
   def test_compiler_value_maps_use_c_owned_growth
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static void onibi_value_map_reserve"
