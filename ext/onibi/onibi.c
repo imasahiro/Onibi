@@ -183,7 +183,23 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; unsigned char source_ascii_only; double timeout_seconds; unsigned int ast_flags; unsigned int execution_flags; unsigned int feature_flags; } onibi_regexp_t;
+typedef struct {
+  /* Ruby-visible MRI compatibility values. */
+  VALUE regexp;
+  VALUE source;
+  VALUE rseq;
+  VALUE names;
+  VALUE named_captures;
+  /* Immutable compile-time decisions used by the C dispatcher. */
+  OnibiExecutionKind execution_kind;
+  int options;
+  int source_encoding_index;
+  unsigned char source_ascii_only;
+  unsigned int ast_flags;
+  unsigned int execution_flags;
+  unsigned int feature_flags;
+  double timeout_seconds;
+} onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||

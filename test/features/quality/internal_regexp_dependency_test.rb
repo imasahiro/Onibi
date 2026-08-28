@@ -104,7 +104,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
-    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     refute_nil regexp_struct
     assert_includes regexp_struct, "unsigned int ast_flags;"
@@ -115,7 +115,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_execution_features_use_numeric_bitset
     source = File.read(EXTENSION_SOURCE)
-    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int execution_flags;"
     refute_includes regexp_struct, "has_dynamic"
@@ -125,7 +125,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_syntax_features_use_numeric_bitset
     source = File.read(EXTENSION_SOURCE)
-    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int feature_flags;"
     refute_includes regexp_struct, "has_grapheme"
@@ -137,7 +137,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_compiler_features_use_numeric_bitset
     source = File.read(EXTENSION_SOURCE)
-    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int feature_flags;"
     refute_includes regexp_struct, "has_class_intersection"
