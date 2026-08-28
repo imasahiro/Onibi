@@ -2461,11 +2461,14 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
+  VALUE subprograms = rb_ary_new();
+  rb_obj_freeze(subprograms);
   rb_hash_aset(result, ID2SYM(rb_intern("header")), header);
   rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
   rb_hash_aset(result, ID2SYM(rb_intern("edges")), r_edges);
   rb_hash_aset(result, ID2SYM(rb_intern("start_edges")), r_start_edges);
   rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
+  rb_hash_aset(result, ID2SYM(rb_intern("subprograms")), subprograms);
   rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
   rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
                onibi_deep_freeze(onibi_rseq_physical_graph(result)));
@@ -3753,10 +3756,12 @@ static void onibi_rseq_validate(VALUE rseq) {
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
   VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
   VALUE semantic_actions = onibi_hash_value(rseq, "actions");
+  VALUE semantic_subprograms = onibi_hash_value(rseq, "subprograms");
   if (NIL_P(blob) || RSTRING_LEN(blob) < (long)sizeof(OnibiRSeqHeader) ||
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
       !RTEST(rb_obj_frozen_p(semantic)) || !RTEST(rb_obj_frozen_p(semantic_states)) ||
       !RTEST(rb_obj_frozen_p(semantic_edges)) || !RTEST(rb_obj_frozen_p(semantic_actions)) ||
+      !RB_TYPE_P(semantic_subprograms, T_ARRAY) || !RTEST(rb_obj_frozen_p(semantic_subprograms)) ||
       !RTEST(rb_obj_frozen_p(semantic_start_edges)) ||
       (!NIL_P(physical_graph) && !RTEST(rb_obj_frozen_p(physical_graph))))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
@@ -3803,6 +3808,7 @@ static void onibi_rseq_validate(VALUE rseq) {
       NUM2UINT(onibi_hash_value(semantic, "class_count")) != header.class_count ||
       NUM2UINT(onibi_hash_value(semantic, "capture_count")) != header.capture_count ||
       NUM2UINT(onibi_hash_value(semantic, "counter_count")) != header.counter_count ||
+      RARRAY_LEN(semantic_subprograms) != header.subprogram_count ||
       NUM2UINT(onibi_hash_value(semantic, "subprogram_count")) != header.subprogram_count ||
       NUM2UINT(onibi_hash_value(semantic, "start_edge_base")) != header.start_edge_base ||
       NUM2UINT(onibi_hash_value(semantic, "start_edge_count")) != header.start_edge_count ||
@@ -4133,6 +4139,7 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
   rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("start_edges")), start_edges);
   rb_hash_aset(graph, ID2SYM(rb_intern("outgoing")), outgoing);
+  rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), onibi_hash_value(rseq, "subprograms"));
   return graph;
 }
 
