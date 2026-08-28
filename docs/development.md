@@ -184,6 +184,10 @@ Deterministic capture conditionals lower to ordered `TEST_CAPTURE` guarded
 edges. Branch capture actions use the same tag history. Conditional branches
 with unsupported internal actions remain an explicit MRI boundary.
 
+The RSeq physical opcode contract preserves `G_CALL`, `G_ATOMIC`, and
+`G_ABSENT` state identifiers. The flat graph VM rejects these states until
+their subprogram call-frame executor is available.
+
 Remaining gates are complete option and encoding semantics, atomic backtracking
 states, variable-width lookaround subprograms, and complete tag-history sharing.
 
