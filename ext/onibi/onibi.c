@@ -153,7 +153,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; double timeout_seconds; struct OnibiFeatureToken *feature_tokens; size_t feature_token_count; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; double timeout_seconds; struct OnibiFeatureToken *feature_tokens; size_t feature_token_count; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -194,7 +194,7 @@ static void onibi_call_frame_pop(void) {
 }
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) && !(obj->options & (1 | 32)) &&
-    rb_enc_get_index(obj->source) != rb_ascii8bit_encindex() &&
+    obj->source_encoding_index != rb_ascii8bit_encindex() &&
     !rb_enc_str_asciionly_p(obj->source) &&
     obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
     (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
@@ -3851,6 +3851,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
   int source_encoding_index = rb_enc_get_index(source);
+  obj->source_encoding_index = source_encoding_index;
   if ((opts & 32) && source_encoding_index != rb_ascii8bit_encindex() &&
       !rb_enc_str_asciionly_p(source))
     rb_raise(eRegexpError, "non-ASCII pattern with no encoding");
@@ -3950,7 +3951,6 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;
-  int source_encoding_index = rb_enc_get_index(obj->source);
   /* Run the compiled C interpreter before MatchData materialization.  The
      MRI call below remains only the final host-side MatchData constructor. */
   if (NIL_P(pos) && RB_TYPE_P(str, T_STRING) && !NIL_P(obj->rseq) &&
@@ -3960,7 +3960,7 @@ static VALUE onibi_match(int argc, VALUE *argv, VALUE self) {
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
         (str_encoding_index == rb_utf8_encindex() ||
-         str_encoding_index == source_encoding_index))) &&
+         str_encoding_index == obj->source_encoding_index))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str))) {
     if (!RTEST(onibi_vm_match_p(self, str))) { rb_backref_set(Qnil); return Qnil; }
   }
@@ -3976,14 +3976,13 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   int str_encoding_index = RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;
-  int source_encoding_index = rb_enc_get_index(obj->source);
   if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
       !onibi_mri_compat_path_p(obj) && !(obj->options & 32) && (!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
       onibi_vm_input_eligible(obj, str) &&
       (!obj->has_ascii_property || rb_enc_str_asciionly_p(str) ||
        (obj->has_unicode_property &&
         (str_encoding_index == rb_utf8_encindex() ||
-         str_encoding_index == source_encoding_index))) &&
+         str_encoding_index == obj->source_encoding_index))) &&
       (rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str)))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
