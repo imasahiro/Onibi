@@ -17,7 +17,7 @@
 
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
 
-static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
+static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 /* The call metadata is explicit VM state.  The graph walker still uses its
@@ -178,8 +178,6 @@ static OnibiCallFrame *onibi_call_frame_push(OnibiSubprogramId subprogram_id) {
 static void onibi_call_frame_pop(void) {
   if (onibi_call_stack_size > 0) onibi_call_stack_size--;
 }
-typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
-
 static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) && !(obj->options & (1 | 32)) &&
     rb_enc_get_index(obj->source) != rb_ascii8bit_encindex() &&
@@ -268,24 +266,6 @@ static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_
 static const rb_data_type_t onibi_type = {
   "Onibi::Regexp", { onibi_mark, onibi_free, onibi_memsize, NULL, { NULL } }, 0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
-
-static void onibi_lexer_free(void *ptr) { xfree(ptr); }
-static void onibi_lexer_mark(void *ptr) {
-  onibi_lexer_t *obj = (onibi_lexer_t *)ptr;
-  if (!obj) return;
-  rb_gc_mark(obj->source);
-  rb_gc_mark(obj->tokens);
-}
-static size_t onibi_lexer_memsize(const void *ptr) { return ptr ? sizeof(onibi_lexer_t) : 0; }
-static const rb_data_type_t onibi_lexer_type = {
-  "Onibi::Lexer", { onibi_lexer_mark, onibi_lexer_free, onibi_lexer_memsize, NULL, { NULL } }, 0, 0,
-  RUBY_TYPED_FREE_IMMEDIATELY
-};
-
-static VALUE onibi_lexer_alloc(VALUE klass) {
-  onibi_lexer_t *obj;
-  return TypedData_Make_Struct(klass, onibi_lexer_t, &onibi_lexer_type, obj);
-}
 
 typedef enum {
   ONIBI_TOKEN_LITERAL = 0, ONIBI_TOKEN_LOOKAHEAD_START, ONIBI_TOKEN_LOOKBEHIND_START,
@@ -696,25 +676,6 @@ static int onibi_extended_option_p(VALUE options) {
     return 0;
   }
   return (NUM2INT(options) & 2) != 0;
-}
-
-static VALUE onibi_lexer_initialize(int argc, VALUE *argv, VALUE self) {
-  onibi_lexer_t *obj;
-  TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
-  VALUE source, options = Qnil;
-  rb_scan_args(argc, argv, "11", &source, &options);
-  source = StringValue(source);
-  obj->source = rb_str_dup(source);
-  rb_obj_freeze(obj->source);
-  obj->tokens = onibi_tokenize_internal(obj->source, onibi_extended_option_p(options));
-  rb_obj_freeze(self);
-  return self;
-}
-
-static VALUE onibi_lexer_tokens(VALUE self) {
-  onibi_lexer_t *obj;
-  TypedData_Get_Struct(self, onibi_lexer_t, &onibi_lexer_type, obj);
-  return obj->tokens;
 }
 
 static ID onibi_token_kind(VALUE token) {
@@ -5496,10 +5457,6 @@ void Init_onibi(void) {
   /* Lexer, parser, compiler, RSeq, and VM are implementation objects.
    * Keep their methods available to the C pipeline, but do not publish
   * Ruby constants for them.  Only Onibi::Regexp is public. */
-  cLexer = rb_class_new(rb_cObject);
-  rb_define_alloc_func(cLexer, onibi_lexer_alloc);
-  rb_define_method(cLexer, "initialize", onibi_lexer_initialize, -1);
-  rb_define_method(cLexer, "tokens", onibi_lexer_tokens, 0);
   VALUE parser = rb_module_new();
   rb_define_singleton_method(parser, "parse", onibi_parser_parse, -1);
   VALUE compiler = rb_module_new();
