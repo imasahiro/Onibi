@@ -455,6 +455,15 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.match?("あ")
   end
 
+  def test_vm_polls_pending_thread_interrupts
+    regexp = Onibi::Regexp.new("a")
+    worker = Thread.new { regexp.vm_match?("b" * 20_000_000) }
+    worker.report_on_exception = false
+    Thread.pass
+    worker.raise(Interrupt)
+    assert_raises(Interrupt) { worker.value }
+  end
+
   def test_multiline_anchors_are_compiled_into_line_assertions
     regexp = Onibi::Regexp.new("^a$", 4)
     assert regexp.vm_match?("x\na\nx")

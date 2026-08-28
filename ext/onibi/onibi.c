@@ -1,5 +1,6 @@
 #include "ruby.h"
 #include "ruby/encoding.h"
+#include "ruby/thread.h"
 #include "onibi_ir.h"
 #include <string.h>
 #include <stdio.h>
@@ -1609,6 +1610,7 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
 }
 
 static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, long *matched_end) {
+  rb_thread_check_ints();
   VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
@@ -1668,6 +1670,7 @@ static void onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures,
 static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long state_id, long pos,
                                   VALUE visited, VALUE captures, long reported_start,
                                   long *matched_end, long *matched_start, VALUE *matched_captures) {
+  rb_thread_check_ints();
   VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
@@ -1759,6 +1762,7 @@ static void onibi_rseq_validate(VALUE rseq) {
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    rb_thread_check_ints();
     long end = 0;
     if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
   }
@@ -1767,6 +1771,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
+    rb_thread_check_ints();
     long end = 0;
     long reported_start = start;
     VALUE captures = rb_hash_new();
