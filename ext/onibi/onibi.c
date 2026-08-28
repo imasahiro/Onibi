@@ -838,7 +838,8 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "11", &str, &pos);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  if (NIL_P(pos) && !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
+  if (NIL_P(pos) && !NIL_P(obj->rseq) && RB_TYPE_P(str, T_STRING) &&
+      rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_match_p(self, str);
   return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
                     : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
@@ -1363,6 +1364,7 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
 
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  StringValue(str);
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str))
     return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
