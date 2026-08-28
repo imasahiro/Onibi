@@ -705,6 +705,7 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 }
 
 static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
+  (void)self;
   VALUE source, options = Qnil;
   rb_scan_args(argc, argv, "11", &source, &options);
   return onibi_parser_parse_internal(source, options, Qnil);
@@ -1261,6 +1262,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
 }
 
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
+  (void)self;
   VALUE ast = onibi_hash_value(parsed, "ast");
   if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
   VALUE parsed_options = onibi_hash_value(parsed, "options");
@@ -1368,6 +1370,7 @@ static uint16_t onibi_rseq_assert_kind(ID op) {
 }
 
 static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
+  (void)self;
   VALUE graph = onibi_hash_value(compiled, "graph");
   if (NIL_P(graph)) rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
   VALUE states = onibi_hash_value(graph, "states");
@@ -1990,10 +1993,12 @@ static VALUE onibi_timeout(VALUE self) {
   return obj->timeout_seconds > 0.0 ? DBL2NUM(obj->timeout_seconds) : Qnil;
 }
 static VALUE onibi_timeout_set(VALUE klass, VALUE value) {
+  (void)klass;
   onibi_default_timeout = onibi_timeout_value(value);
   return NIL_P(value) ? Qnil : DBL2NUM(onibi_default_timeout);
 }
 static VALUE onibi_timeout_default(VALUE klass) {
+  (void)klass;
   return onibi_default_timeout > 0.0 ? DBL2NUM(onibi_default_timeout) : Qnil;
 }
 
@@ -2941,6 +2946,7 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution_class) {
+  (void)self;
   StringValue(str);
   onibi_rseq_validate(rseq);
   if (execution_class != ID2SYM(rb_intern("REGULAR_FAST")) &&
