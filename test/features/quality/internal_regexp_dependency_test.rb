@@ -254,6 +254,13 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_match(/parsed->ast = onibi_deep_freeze/, parser)
   end
 
+  def test_tagged_counter_maps_are_marked_for_c_snapshot_migration
+    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
+    assert_includes document, "Pending: C counter snapshots"
+    assert_includes document, "fixed C array per frame"
+    assert_includes document, "Capture maps"
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]

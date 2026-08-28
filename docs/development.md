@@ -206,7 +206,7 @@ fixed token fields in C and keep only payload references at the adapter edge.
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard lookup now uses an owned C vector of state IDs and Ruby action arrays. |
 | RSeq semantic program | No public API | Partial C lowering records; immutable Ruby adapter at publication | VM reads the physical blob. Payload indexes and temporary edge records use C vectors; semantic arrays remain only for validation and diagnostics. |
 | regular VM visited set | No | C bitset with owned large-set storage | Numeric state/position pairs use a C bitset. Sets up to 64 MiB use owned C memory when stack storage is too large; counter-bearing paths retain a safe Ruby fallback. |
-| tagged VM counter maps | No | Pending C counter snapshots | Frame branching duplicates numeric counter values in Ruby Hash objects. The conversion must cover call frames and ordered edge branches together. |
+| tagged VM counter maps | No | Pending: C counter snapshots | Counter slots are numeric and private. Current Ruby Hash use occurs in call frames and ordered edge branches; one migration must cover both paths and the visited-key identity. |
 | lookaround predicate kind | No | Numeric `predicate_code` enum | The Symbol name remains diagnostic; VM dispatch uses the numeric code. |
 | position assertion subtype | No | Numeric `assert_kind` code | VM position checks and RSeq physicalization use the numeric subtype; `op` remains only for semantic adapter details. |
 
@@ -226,6 +226,11 @@ The AST is not part of the `Regexp` public API. The compiler uses these fields:
 The first AST migration unit is the node arena and its ordered child vectors.
 Payload VALUE fields stay GC-rooted in the arena. A frozen Ruby AST adapter is
 created only when a diagnostic or compatibility caller requests it.
+
+The tagged VM counter migration is separate from capture maps. Capture maps
+can become public match data, but counter slots never cross the `Regexp` API.
+The replacement must use a fixed C array per frame and include the counter
+snapshot in visited-state identity without allocating a Ruby Hash.
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
 The first conversion is complete for parser and compiler result adapters. The
