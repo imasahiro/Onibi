@@ -2533,7 +2533,6 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   }
   rb_hash_aset(graph, ID2SYM(rb_intern("counter_count")), LONG2NUM(counter_count));
   rb_hash_aset(graph, ID2SYM(rb_intern("subprogram_count")), LONG2NUM(RARRAY_LEN(subprograms)));
-  rb_hash_aset(graph, ID2SYM(rb_intern("options")), INT2NUM(parsed_options));
   onibi_gir_validate(graph);
   rb_obj_freeze(graph);
   OnibiCompiled *compiled_result;
