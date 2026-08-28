@@ -95,6 +95,13 @@ static void onibi_check_deadline(void) {
     rb_raise(eTimeoutError, "regexp match timeout");
 }
 
+static void onibi_vm_stack_overflow(void) __attribute__((noreturn));
+static void onibi_vm_stack_overflow(void) {
+  if (onibi_deadline_ns != 0)
+    rb_raise(eTimeoutError, "regexp match timeout");
+  rb_raise(eRegexpError, "GIR graph is too deep");
+}
+
 static void onibi_set_deadline(double seconds) {
   if (seconds <= 0.0 || seconds >= (double)UINT64_MAX / 1e9) {
     onibi_deadline_ns = 0;
@@ -115,7 +122,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -234,6 +241,8 @@ static void onibi_mark(void *ptr) {
   rb_gc_mark(obj->compiled);
   rb_gc_mark(obj->rseq);
   rb_gc_mark(obj->pipeline);
+  rb_gc_mark(obj->names);
+  rb_gc_mark(obj->named_captures);
 }
 static size_t onibi_memsize(const void *ptr) { return ptr ? sizeof(onibi_regexp_t) : 0; }
 static const rb_data_type_t onibi_type = {
@@ -3135,13 +3144,13 @@ static int onibi_option_mask(VALUE options) {
   if (options == Qfalse) return 0;
   if (RB_TYPE_P(options, T_STRING)) {
     int mask = 0;
-    const char *text = RSTRING_PTR(options);
+    const char *text = StringValueCStr(options);
     for (long i = 0; i < RSTRING_LEN(options); i++) {
       if (text[i] == 'i') mask |= 1;
       else if (text[i] == 'x') mask |= 2;
       else if (text[i] == 'm') mask |= 4;
       else if (text[i] == 'n') mask |= 32;
-      else rb_raise(rb_eArgError, "unknown regexp option");
+      else rb_raise(rb_eArgError, "unknown regexp option: %s", text);
     }
     return mask;
   }
@@ -3160,6 +3169,8 @@ static int onibi_option_mask(VALUE options) {
     }
     return mask;
   }
+  /* MRI treats any other truthy scalar as the default true option. */
+  if (RTEST(options) && !RB_INTEGER_TYPE_P(options)) return 1;
   /* MRI ignores option bits that are not part of the public regexp mask. */
   return NUM2INT(options) & (1 | 2 | 4 | 16 | 32);
 }
@@ -3196,11 +3207,15 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->options = opts;
   obj->source = rb_str_dup(source);
   rb_obj_freeze(obj->source);
+  obj->names = Qnil;
+  obj->named_captures = Qnil;
   obj->parsed = obj->compiled = obj->rseq = Qnil;
   obj->tokens = Qnil;
   obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   onibi_token_features(tokens, obj);
+  if (!(opts & 32) && rb_enc_get_index(source) == rb_utf8_encindex() &&
+      obj->has_property_escape) opts |= 16;
   if (((opts & 32) && rb_enc_str_asciionly_p(source) &&
        (obj->has_non_ascii_literal || obj->has_property_escape)) ||
       (!(opts & 32) && rb_enc_get_index(source) != rb_utf8_encindex() &&
@@ -3222,6 +3237,10 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     rb_set_errinfo(Qnil);
     rb_raise(eRegexpError, "%s", StringValueCStr(message));
   }
+  obj->names = rb_funcall(obj->regexp, rb_intern("names"), 0);
+  obj->named_captures = rb_funcall(obj->regexp, rb_intern("named_captures"), 0);
+  rb_obj_freeze(obj->names);
+  rb_obj_freeze(obj->named_captures);
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
   VALUE program = (obj->has_large_repeat ||
@@ -3305,7 +3324,32 @@ static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self) {
    entry point free of source inspection. */
 static VALUE onibi_source(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return obj->source;
+  return rb_funcall(obj->regexp, id_source, 0);
+}
+static VALUE onibi_names(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return obj->names;
+}
+static VALUE onibi_named_captures(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return obj->named_captures;
+}
+static VALUE onibi_casefold_p(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return (obj->options & 1) ? Qtrue : Qfalse;
+}
+static VALUE onibi_hash(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  st_index_t value = rb_str_hash(obj->source);
+  value ^= (st_index_t)(unsigned int)obj->options;
+  return ULONG2NUM((unsigned long)value);
+}
+static VALUE onibi_equal(VALUE self, VALUE other) {
+  if (!rb_obj_is_kind_of(other, cRegexp)) return Qfalse;
+  onibi_regexp_t *left; onibi_regexp_t *right;
+  TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, left);
+  TypedData_Get_Struct(other, onibi_regexp_t, &onibi_type, right);
+  return (left->options == right->options && rb_str_equal(left->source, right->source)) ? Qtrue : Qfalse;
 }
 static VALUE onibi_options(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -4191,7 +4235,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     VALUE next_counters = rb_hash_dup(frame->counters);
     if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
-    if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+    if (depth >= capacity) onibi_vm_stack_overflow();
     stack[depth++] = (OnibiWalkFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0, next_counters};
   }
   return 0;
@@ -4365,7 +4409,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         }
         onibi_vm_apply_counter_actions(actions, call_counters);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
-        if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+        if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
                                              call_captures, call_counters, call_tags, Qnil, 0,
@@ -4402,7 +4446,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         }
         onibi_vm_apply_counter_actions(actions, call_counters);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
-        if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+        if (depth >= capacity) onibi_vm_stack_overflow();
         long call_parent = depth - 1;
         stack[depth++] = (OnibiCaptureFrame){NUM2LONG(entry), frame->pos, 0, call_reported_start,
                                              call_captures, call_counters, call_tags, Qnil, 0,
@@ -4453,7 +4497,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     long next_reported_start = frame->reported_start;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
     VALUE next_tags = onibi_apply_capture_actions(edge_actions, frame->pos, next_captures, frame->tags, &next_reported_start);
-    if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+    if (depth >= capacity) onibi_vm_stack_overflow();
     stack[depth++] = (OnibiCaptureFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0,
                                          next_reported_start, next_captures, next_counters,
                                          next_tags, Qnil, 0, frame->call_parent, 0, 0, 0, 0};
@@ -5266,6 +5310,12 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "match", onibi_match, -1);
   rb_define_method(cRegexp, "match?", onibi_match_p, -1);
   rb_define_method(cRegexp, "source", onibi_source, 0);
+  rb_define_method(cRegexp, "names", onibi_names, 0);
+  rb_define_method(cRegexp, "named_captures", onibi_named_captures, 0);
+  rb_define_method(cRegexp, "casefold?", onibi_casefold_p, 0);
+  rb_define_method(cRegexp, "==", onibi_equal, 1);
+  rb_define_method(cRegexp, "eql?", onibi_equal, 1);
+  rb_define_method(cRegexp, "hash", onibi_hash, 0);
   rb_define_method(cRegexp, "options", onibi_options, 0);
   rb_define_method(cRegexp, "fixed_encoding?", onibi_fixed_encoding_p, 0);
   rb_define_method(cRegexp, "no_encoding?", onibi_no_encoding_p, 0);
