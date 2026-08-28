@@ -533,6 +533,16 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
   VALUE ranges = onibi_hash_value(payload, "ranges");
+  VALUE escape_name = onibi_hash_value(payload, "name");
+  if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
+    int upper = isupper((unsigned char)RSTRING_PTR(escape_name)[0]);
+    int code = tolower((unsigned char)RSTRING_PTR(escape_name)[0]);
+    for (int c = 0; c < 256; c++) {
+      int hit = code == 'd' ? isdigit(c) : (code == 's' ? isspace(c) :
+        (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
+      if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
+    }
+  }
   for (long i = 0; i < RARRAY_LEN(ranges); i++) {
     VALUE range = rb_ary_entry(ranges, i);
     if (RARRAY_LEN(range) != 2) continue;
@@ -707,6 +717,12 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
   }
   if (type == ID2SYM(rb_intern("literal")) || type == ID2SYM(rb_intern("escape")) ||
       type == ID2SYM(rb_intern("backref")) || type == ID2SYM(rb_intern("character_class")) || type == ID2SYM(rb_intern("any"))) {
+    if (type == ID2SYM(rb_intern("escape"))) {
+      VALUE name = onibi_hash_value(ast, "name");
+      int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
+      if (code == 'r' || code == 'p' || code == 'x')
+        rb_raise(eRegexpError, "escape is not supported in RSeq");
+    }
     VALUE payload = ast;
     if (type == ID2SYM(rb_intern("backref")) && !NIL_P(onibi_hash_value(ast, "name"))) {
       VALUE id_value = rb_hash_aref(builder->capture_names, onibi_hash_value(ast, "name"));

@@ -366,6 +366,16 @@ class BenchmarkApiTest < Minitest::Test
     refute Onibi::Regexp.new("a", 32).program_cached?
   end
 
+  def test_shorthand_escape_classes_compile_to_bitmaps
+    digit = Onibi::Regexp.new("\\d")
+    non_digit = Onibi::Regexp.new("\\D")
+    assert digit.program_cached?
+    assert digit.vm_match?("7")
+    refute digit.vm_match?("x")
+    assert non_digit.vm_match?("x")
+    refute non_digit.vm_match?("7")
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")
