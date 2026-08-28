@@ -20,10 +20,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 
 static int onibi_ascii_pattern(VALUE source) {
-  if (!rb_enc_str_asciicompat_p(source)) return 0;
-  for (long i = 0; i < RSTRING_LEN(source); i++)
-    if ((unsigned char)RSTRING_PTR(source)[i] >= 0x80) return 0;
-  return 1;
+  return rb_enc_str_asciionly_p(source);
 }
 
 static int onibi_hex_digit(unsigned char c) {
