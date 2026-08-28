@@ -14,6 +14,7 @@ static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
+static VALUE onibi_rseq_physical_regular_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static VALUE onibi_vm_match_result(VALUE self, VALUE str);
@@ -1579,6 +1580,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   rb_hash_aset(result, ID2SYM(rb_intern("start_edges")), r_start_edges);
   rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
   rb_hash_aset(result, ID2SYM(rb_intern("blob")), blob);
+  rb_hash_aset(result, ID2SYM(rb_intern("physical_graph")),
+               onibi_deep_freeze(onibi_rseq_physical_regular_graph(result)));
   rb_obj_freeze(header); rb_obj_freeze(r_edges); rb_obj_freeze(r_start_edges); rb_obj_freeze(actions); rb_obj_freeze(result);
   return result;
 }
@@ -2323,6 +2326,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
 
 static void onibi_rseq_validate(VALUE rseq) {
   VALUE blob = onibi_hash_value(rseq, "blob");
+  VALUE physical_graph = rb_hash_aref(rseq, ID2SYM(rb_intern("physical_graph")));
   VALUE semantic = onibi_hash_value(rseq, "header");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
@@ -2332,7 +2336,8 @@ static void onibi_rseq_validate(VALUE rseq) {
       !RTEST(rb_obj_frozen_p(rseq)) || !RTEST(rb_obj_frozen_p(blob)) ||
       !RTEST(rb_obj_frozen_p(semantic)) || !RTEST(rb_obj_frozen_p(semantic_states)) ||
       !RTEST(rb_obj_frozen_p(semantic_edges)) || !RTEST(rb_obj_frozen_p(semantic_actions)) ||
-      !RTEST(rb_obj_frozen_p(semantic_start_edges)))
+      !RTEST(rb_obj_frozen_p(semantic_start_edges)) ||
+      (!NIL_P(physical_graph) && !RTEST(rb_obj_frozen_p(physical_graph))))
     rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
   OnibiRSeqHeader header;
   memcpy(&header, RSTRING_PTR(blob), sizeof(header));
@@ -2542,6 +2547,8 @@ static void onibi_rseq_validate(VALUE rseq) {
    payloads remain Ruby values, but state operations and edge destinations
    come from the physical layout.  This keeps the VM on the RSeq contract. */
 static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
+  VALUE cached = rb_hash_aref(rseq, ID2SYM(rb_intern("physical_graph")));
+  if (!NIL_P(cached)) return cached;
   VALUE blob = onibi_hash_value(rseq, "blob");
   VALUE semantic_states = onibi_hash_value(rseq, "states");
   VALUE semantic_edges = onibi_hash_value(rseq, "edges");
