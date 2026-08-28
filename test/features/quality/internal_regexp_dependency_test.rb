@@ -101,6 +101,17 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes helper, "rb_ary_new"
   end
 
+  def test_regexp_keeps_ast_analysis_as_one_bitset
+    source = File.read(EXTENSION_SOURCE)
+    regexp_struct = source[/typedef struct \{ VALUE regexp;.*?\} onibi_regexp_t;/m]
+
+    refute_nil regexp_struct
+    assert_includes regexp_struct, "unsigned int ast_flags;"
+    refute_includes regexp_struct, "has_anchor_repeat"
+    refute_includes regexp_struct, "has_nullable_absence"
+    refute_includes regexp_struct, "has_safe_multibyte_class"
+  end
+
   def test_feature_classification_does_not_reintern_token_names
     source = File.read(EXTENSION_SOURCE)
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]

@@ -6,6 +6,10 @@
 
 #define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
 #define ONIBI_SUBPROGRAM_ABSENT UINT32_C(2)
+#define ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS (1U << 0)
+#define ONIBI_AST_FLAG_ANCHOR_REPEAT (1U << 1)
+#define ONIBI_AST_FLAG_NULLABLE_ABSENCE (1U << 2)
+#define ONIBI_AST_FLAG_NULLABLE_CAPTURE (1U << 3)
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -153,7 +157,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; int has_anchor_repeat; int has_nullable_absence; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; OnibiExecutionKind execution_kind; VALUE rseq; VALUE names; VALUE named_captures; int options; int source_encoding_index; double timeout_seconds; unsigned int ast_flags; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -168,8 +172,8 @@ static int onibi_mri_compat_path_p(const onibi_regexp_t *obj) {
     obj->has_ascii_property ||
     (obj->has_non_ascii_literal &&
      ((obj->options & 1) || obj->has_inline_ignorecase)) ||
-    obj->has_anchor_repeat ||
-    (obj->has_absence && (obj->has_conditional || obj->has_nullable_absence));
+    (obj->ast_flags & ONIBI_AST_FLAG_ANCHOR_REPEAT) != 0 ||
+    (obj->has_absence && (obj->has_conditional || (obj->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0));
 }
 
 static void onibi_call_stack_reset(void) {
@@ -197,7 +201,7 @@ static int onibi_encoded_literal_program_p(const onibi_regexp_t *obj) {
     obj->source_encoding_index != rb_ascii8bit_encindex() &&
     !rb_enc_str_asciionly_p(obj->source) &&
     obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
-    (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
+    (!obj->has_non_ascii_class || (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
 }
 
 static int onibi_character_boundary(VALUE str, long pos) {
@@ -1225,13 +1229,6 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
   rb_obj_freeze(children); rb_obj_freeze(sequence);
   return sequence;
 }
-
-typedef enum {
-  ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS = 1U << 0,
-  ONIBI_AST_FLAG_ANCHOR_REPEAT = 1U << 1,
-  ONIBI_AST_FLAG_NULLABLE_ABSENCE = 1U << 2,
-  ONIBI_AST_FLAG_NULLABLE_CAPTURE = 1U << 3
-} OnibiAstAnalysisFlag;
 
 typedef struct {
   VALUE ast;
@@ -3551,7 +3548,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->has_unicode_escape = 0;
   obj->has_non_ascii_literal = 0;
   obj->has_non_ascii_class = 0;
-  obj->has_safe_multibyte_class = 0;
+  obj->ast_flags = 0;
   obj->has_wildcard = 0;
   obj->has_anchor = 0;
   obj->has_meta_escape = 0;
@@ -3851,7 +3848,6 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->names = Qnil;
   obj->named_captures = Qnil;
   obj->rseq = Qnil;
-  obj->has_nullable_capture = 0;
   VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
   size_t feature_count = (size_t)RARRAY_LEN(tokens);
   if (feature_count > SIZE_MAX / sizeof(OnibiFeatureToken))
@@ -3903,10 +3899,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
                  obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
     if (!NIL_P(parsed)) {
       OnibiParsed *parsed_data = onibi_parsed_get(parsed);
-      obj->has_safe_multibyte_class = (parsed_data->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0;
-      obj->has_anchor_repeat = (parsed_data->ast_flags & ONIBI_AST_FLAG_ANCHOR_REPEAT) != 0;
-      obj->has_nullable_absence = (parsed_data->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0;
-      obj->has_nullable_capture = (parsed_data->ast_flags & ONIBI_AST_FLAG_NULLABLE_CAPTURE) != 0;
+      obj->ast_flags = parsed_data->ast_flags;
       /* The AST is an initialization artifact.  The published RSeq/GIR
          objects carry all runtime data, so release the Ruby adapter now. */
       parsed_data->ast = Qnil;
@@ -3917,7 +3910,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       source_encoding_index != rb_ascii8bit_encindex() &&
       !source_ascii_only &&
       obj->has_non_ascii_literal && !obj->has_wildcard && !obj->has_anchor &&
-      (!obj->has_non_ascii_class || obj->has_safe_multibyte_class);
+      (!obj->has_non_ascii_class || (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
     if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
         ((opts & 16) && !encoded_literal_program) || (opts & 32)) {
       parsed = obj->rseq = Qnil;
