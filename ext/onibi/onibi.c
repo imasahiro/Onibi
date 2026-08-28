@@ -301,6 +301,7 @@ static inline long onibi_token_byte(VALUE token);
 static inline long onibi_token_start(VALUE token);
 static inline long onibi_token_end(VALUE token);
 static inline ID onibi_token_name_id(VALUE token);
+static inline unsigned char onibi_token_inline_ignorecase(VALUE token);
 
 typedef enum {
   ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
@@ -347,7 +348,7 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       vector.items[i].name_id = onibi_token_name_id(token);
       vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
         onibi_ascii_property_kind_id(vector.items[i].name_id);
-      vector.items[i].inline_ignorecase = RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase)) ? 1 : 0;
+      vector.items[i].inline_ignorecase = onibi_token_inline_ignorecase(token);
     }
   }
   return vector;
@@ -782,6 +783,10 @@ static inline long onibi_token_end(VALUE token) {
 static inline ID onibi_token_name_id(VALUE token) {
   VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
   return NIL_P(name_id) ? (ID)0 : (ID)NUM2ULONG(name_id);
+}
+
+static inline unsigned char onibi_token_inline_ignorecase(VALUE token) {
+  return RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase)) ? 1 : 0;
 }
 
 static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
