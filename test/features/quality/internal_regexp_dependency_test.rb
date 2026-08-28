@@ -546,4 +546,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes record, "long end;"
     assert_includes record, "OnibiAsciiProperty property_kind"
   end
+
+  def test_token_fixed_fields_have_dedicated_accessors
+    source = File.read(EXTENSION_SOURCE)
+    assert_includes source, "static inline long onibi_token_start(VALUE token)"
+    assert_includes source, "static inline long onibi_token_end(VALUE token)"
+    assert_includes source, "vector.items[i].start = onibi_token_start(token)"
+    assert_includes source, "vector.items[i].end = onibi_token_end(token)"
+  end
 end

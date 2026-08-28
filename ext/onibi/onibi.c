@@ -298,6 +298,8 @@ typedef enum {
 
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
 static long onibi_token_byte(VALUE token);
+static inline long onibi_token_start(VALUE token);
+static inline long onibi_token_end(VALUE token);
 
 typedef enum {
   ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
@@ -339,8 +341,8 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       VALUE token = rb_ary_entry(tokens, (long)i);
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
-      vector.items[i].start = NUM2LONG(onibi_hash_value_id(token, id_key_start));
-      vector.items[i].end = NUM2LONG(onibi_hash_value_id(token, id_key_end));
+      vector.items[i].start = onibi_token_start(token);
+      vector.items[i].end = onibi_token_end(token);
       VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
       vector.items[i].name_id = NIL_P(name_id) ? 0 : NUM2ULONG(name_id);
       vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
@@ -766,6 +768,14 @@ static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
 
 static long onibi_token_byte(VALUE token) {
   return NUM2LONG(onibi_hash_value_id(token, id_key_byte));
+}
+
+static inline long onibi_token_start(VALUE token) {
+  return NUM2LONG(onibi_hash_value_id(token, id_key_start));
+}
+
+static inline long onibi_token_end(VALUE token) {
+  return NUM2LONG(onibi_hash_value_id(token, id_key_end));
 }
 
 static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
