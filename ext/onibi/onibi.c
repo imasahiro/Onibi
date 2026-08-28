@@ -2051,6 +2051,17 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (states[i].op == ONIBI_RS_CHAR && states[i].payload >= NUM2UINT(onibi_hash_value(semantic, "literal_count")))
       rb_raise(rb_eArgError, "invalid Onibi RSeq literal descriptor id");
   }
+  const OnibiREdge *edges = (const OnibiREdge *)(RSTRING_PTR(blob) + header.edges_offset);
+  uint32_t edge_total = header.edge_count;
+  for (uint32_t i = 0; i < edge_total; i++) {
+    if (edges[i].destination != ONIBI_ACCEPT_STATE && edges[i].destination >= header.state_count)
+      rb_raise(rb_eArgError, "invalid Onibi RSeq edge destination");
+    if (edges[i].action_offset != 0 &&
+        (edges[i].action_offset < sizeof(OnibiRAction) ||
+         edges[i].action_offset % sizeof(OnibiRAction) != 0 ||
+         edges[i].action_offset >= header.blob_size - header.actions_offset))
+      rb_raise(rb_eArgError, "invalid Onibi RSeq edge action offset");
+  }
 }
 
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
