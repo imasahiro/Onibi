@@ -503,6 +503,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes matcher, "if (use_counters || visited_bits == NULL) visited = rb_hash_new();"
   end
 
+  def test_vm_uses_shared_empty_actions_for_missing_entry_actions
+    source = File.read(EXTENSION_SOURCE)
+    refute_includes source, "RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new()"
+    assert_operator source.scan("? entry_actions : onibi_empty_actions").length, :>=, 3
+  end
+
   def test_tagged_vm_reuses_cached_physical_graph_for_all_starts
     source = File.read(EXTENSION_SOURCE)
     matcher = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]

@@ -1931,35 +1931,6 @@ static onibi_fragment_t onibi_fragment_empty(void) {
   return fragment;
 }
 
-static void onibi_connect_vector_actions(onibi_gir_builder_t *builder,
-                                         const OnibiIdVector *exits,
-                                         VALUE starts, VALUE actions) {
-  VALUE *start_values = RARRAY_PTR(starts);
-  long start_count = RARRAY_LEN(starts);
-  for (size_t i = 0; i < exits->count; i++)
-    for (long j = 0; j < start_count; j++)
-      onibi_gir_edge_actions(builder, (long)exits->items[i], NUM2LONG(start_values[j]), actions);
-}
-
-static void onibi_connect_vector_prepend_actions(onibi_gir_builder_t *builder,
-                                                 const OnibiIdVector *exits,
-                                                 VALUE starts, VALUE actions) {
-  VALUE *start_values = RARRAY_PTR(starts);
-  long start_count = RARRAY_LEN(starts);
-  for (size_t i = 0; i < exits->count; i++) {
-    long from = (long)exits->items[i];
-    for (long j = 0; j < start_count; j++) {
-      size_t insert_at = builder->edges.count;
-      for (size_t k = 0; k < builder->edges.count; k++) {
-        if (builder->edges.entries[k].from == from) { insert_at = k; break; }
-      }
-      onibi_gir_edge_vector_insert(&builder->edges, insert_at,
-                                   (OnibiGirEdgeEntry){from, NUM2LONG(start_values[j]), 0, (uint32_t)RARRAY_LEN(actions), actions},
-                                   builder->map_roots);
-    }
-  }
-}
-
 /* Fragment composition still stores Ruby arrays, but all numeric exit
  * traversal goes through the C vector boundary. */
 static void onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
@@ -5238,7 +5209,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         VALUE call_captures = RB_TYPE_P(frame->captures, T_HASH) ? rb_hash_dup(frame->captures) : rb_hash_new();
         VALUE call_tags = frame->tags;
         long call_reported_start = frame->reported_start;
-        VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
+        VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
         if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
           onibi_call_frame_pop(); ONIBI_CAPTURE_POP_FRAME(); continue;
         }
@@ -5273,7 +5244,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         VALUE call_captures = RB_TYPE_P(frame->captures, T_HASH) ? rb_hash_dup(frame->captures) : rb_hash_new();
         VALUE call_tags = frame->tags;
         long call_reported_start = frame->reported_start;
-        VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
+        VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
         if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
           onibi_call_frame_pop();
           if (op == id_g_absent) { frame->waiting_call = 0; continue; }
@@ -5351,7 +5322,7 @@ static int onibi_gir_match_captures_entry(VALUE states, VALUE outgoing, VALUE su
   VALUE captures = RB_TYPE_P(initial_captures, T_HASH) ? rb_hash_dup(initial_captures) : rb_hash_new();
   rb_hash_delete(captures, ID2SYM(id_recursive_marker));
   VALUE tags = initial_tags;
-  VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
+  VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : onibi_empty_actions;
   VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;
   if (!onibi_vm_actions_ok(actions, str, start, RSTRING_LEN(str), branch_counters, captures)) return 0;
   VALUE branch_captures = onibi_has_capture_action(actions) ? onibi_capture_copy(captures) : captures;
