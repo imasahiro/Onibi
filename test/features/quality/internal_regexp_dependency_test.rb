@@ -220,6 +220,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "physical.action_count = (uint32_t)action_records.count"
   end
 
+  def test_rseq_literal_payloads_cache_numeric_fields
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes lowerer, "OnibiRSeqLiteralPayloadVector literal_payloads"
+    assert_includes lowerer, "prior->byte"
+    assert_includes lowerer, "entry->ignorecase"
+  end
+
   def test_rseq_subprograms_use_typed_records
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
