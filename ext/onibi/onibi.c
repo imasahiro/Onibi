@@ -52,7 +52,7 @@ static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry, id_key_e
 static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code, id_key_predicate_code;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set, id_key_value;
-static ID id_key_type_code, id_key_name, id_key_ctype, id_key_ranges, id_key_children;
+static ID id_key_type_code, id_key_name, id_key_name_id, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
 static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_body, id_key_options, id_key_negative_options, id_key_capturing;
@@ -311,7 +311,8 @@ static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens) {
       vector.items[i].kind = onibi_token_kind_code(token);
       vector.items[i].byte = onibi_token_byte(token);
       VALUE name = onibi_hash_value_id(token, id_key_name);
-      vector.items[i].name_id = NIL_P(name) ? 0 : rb_intern_str(name);
+      VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
+      vector.items[i].name_id = NIL_P(name_id) ? 0 : NUM2ULONG(name_id);
       vector.items[i].ascii_property = (!NIL_P(name) && onibi_ascii_property_name_p(name)) ? 1 : 0;
       vector.items[i].inline_ignorecase = (!NIL_P(name) &&
         memchr(RSTRING_PTR(name), 'i', (size_t)RSTRING_LEN(name)) != NULL) ? 1 : 0;
@@ -694,6 +695,9 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(option_negative_name)) { rb_obj_freeze(option_negative_name); rb_hash_aset(token, ID2SYM(id_key_negative_name), option_negative_name); }
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(id_key_name), posix_name); }
     if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(id_key_name), escape_name); }
+    VALUE token_name = onibi_hash_value_id(token, id_key_name);
+    if (!NIL_P(token_name))
+      rb_hash_aset(token, ID2SYM(id_key_name_id), ULONG2NUM(rb_intern_str(token_name)));
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(id_key_bytes), literal_bytes); }
     if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
       rb_hash_aset(token, ID2SYM(id_key_negative), option_negative ? Qtrue : Qfalse);
@@ -5496,7 +5500,7 @@ void Init_onibi(void) {
   id_key_subprogram = rb_intern("subprogram"); id_key_entry = rb_intern("entry");
   id_key_entry_actions = rb_intern("entry_actions"); id_key_slot = rb_intern("slot");
   id_key_set = rb_intern("set"); id_key_value = rb_intern("value");
-  id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name");
+  id_key_type_code = rb_intern("type_code"); id_key_name = rb_intern("name"); id_key_name_id = rb_intern("name_id");
   id_key_ctype = rb_intern("ctype"); id_key_ranges = rb_intern("ranges");
   id_key_children = rb_intern("children"); id_key_operands = rb_intern("operands");
   id_key_body = rb_intern("body"); id_key_options = rb_intern("options");
