@@ -345,6 +345,10 @@ class BenchmarkApiTest < Minitest::Test
     assert regexp.vm_match?("é")
     assert regexp.vm_match?("ê")
     refute regexp.vm_match?("ë")
+
+    mixed = Onibi::Regexp.new("[aé-ê]")
+    assert mixed.vm_match?("a")
+    assert mixed.vm_match?("ê")
   end
 
   def test_meta_and_control_escapes_cross_rseq_boundary

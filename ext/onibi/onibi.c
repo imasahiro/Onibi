@@ -1434,9 +1434,20 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     }
     if (!RTEST(onibi_hash_value(ast, "negated")) && RB_TYPE_P(children, T_ARRAY) &&
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
+      int literal_children = 1;
+      for (long i = 0; i < RARRAY_LEN(children); i++)
+        if (onibi_hash_value(rb_ary_entry(children, i), "kind") != ID2SYM(rb_intern("literal"))) literal_children = 0;
+      if (!literal_children) goto skip_utf8_range_expansion;
       onibi_fragment_t result = onibi_fragment_empty();
       result.starts = rb_ary_new(); result.exits = rb_ary_new(); result.nullable = 0;
       int expandable = 1; long expanded = 0;
+      for (long i = 0; i < RARRAY_LEN(children); i++) {
+        VALUE child = rb_hash_dup(rb_ary_entry(children, i));
+        rb_hash_aset(child, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
+        onibi_fragment_t branch = onibi_compile_node(child, builder);
+        onibi_append_values(result.starts, branch.starts);
+        onibi_append_values(result.exits, branch.exits);
+      }
       for (long i = 0; i < RARRAY_LEN(ranges); i++) {
         VALUE range = rb_ary_entry(ranges, i);
         uint32_t first = 0, last = 0;
@@ -1460,6 +1471,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       }
       if (expandable) return result;
     }
+skip_utf8_range_expansion:
+    ;
   }
   /* A tokenizer literal can contain one encoded UTF-8 character.  Lower its
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
