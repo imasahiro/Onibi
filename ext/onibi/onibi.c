@@ -140,7 +140,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; VALUE names; VALUE named_captures; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_ascii_property; int has_unicode_property; int has_unicode_property_in_class; int has_nullable_capture; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_non_ascii_class; int has_safe_multibyte_class; int has_wildcard; int has_anchor; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; int has_inline_ignorecase; } onibi_regexp_t;
 
 static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
   return (obj->options & 16) ||
@@ -153,7 +153,8 @@ static int onibi_regexp_fixed_p(const onibi_regexp_t *obj) {
 static int onibi_mri_compat_path_p(const onibi_regexp_t *obj) {
   return (obj->has_class_intersection && (obj->options & 1)) ||
     obj->has_ascii_property ||
-    obj->has_non_ascii_literal;
+    (obj->has_non_ascii_literal &&
+     ((obj->options & 1) || obj->has_inline_ignorecase));
 }
 
 static void onibi_call_stack_reset(void) {
@@ -3015,6 +3016,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_subroutine = 0;
   obj->has_dynamic = 0;
   obj->has_tagged = 0;
+  obj->has_inline_ignorecase = 0;
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
     ID kind = onibi_token_kind(token);
@@ -3024,6 +3026,11 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     }
     if (kind == rb_intern("wildcard")) obj->has_wildcard = 1;
     if (kind == rb_intern("anchor")) obj->has_anchor = 1;
+    if ((kind == rb_intern("option_scope_start") || kind == rb_intern("option_global"))) {
+      VALUE option_name = onibi_hash_value(token, "name");
+      if (!NIL_P(option_name) && memchr(RSTRING_PTR(option_name), 'i', (size_t)RSTRING_LEN(option_name)) != NULL)
+        obj->has_inline_ignorecase = 1;
+    }
     if (kind == rb_intern("class_start")) {
       if (in_class) obj->has_nested_class = 1;
       in_class = 1;
