@@ -709,10 +709,6 @@ static int onibi_extended_option_p(VALUE options) {
   return (NUM2INT(options) & 2) != 0;
 }
 
-static ID onibi_token_kind(VALUE token) {
-  return SYM2ID(rb_hash_aref(token, ID2SYM(id_key_kind)));
-}
-
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
   return (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
 }
@@ -3061,7 +3057,6 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   for (long i = 0; i < RARRAY_LEN(tokens); i++) {
     VALUE token = rb_ary_entry(tokens, i);
     OnibiTokenKind kind_code = (OnibiTokenKind)NUM2UINT(rb_hash_aref(token, ID2SYM(id_key_kind_code)));
-    ID kind = onibi_token_kind(token);
     if (kind_code == ONIBI_TOKEN_LITERAL && onibi_token_byte(token) > 127) {
       obj->has_non_ascii_literal = 1;
       if (in_class) obj->has_non_ascii_class = 1;
@@ -3143,11 +3138,11 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
         else { obj->has_property_escape = 1; obj->has_dynamic = 1; }
       }
       if (onibi_token_byte(token) == 'u') obj->has_unicode_escape = 1;
-    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_META_ESCAPE)) {
+    } else if (kind_code == ONIBI_TOKEN_META_ESCAPE) {
       obj->has_meta_escape = 1;
       obj->has_dynamic = 1;
-    } else if (kind == onibi_token_kind_id(ONIBI_TOKEN_GROUP_START) ||
-               (kind == onibi_token_kind_id(ONIBI_TOKEN_QUANTIFIER) && onibi_token_byte(token) == '{')) {
+    } else if (kind_code == ONIBI_TOKEN_GROUP_START ||
+               (kind_code == ONIBI_TOKEN_QUANTIFIER && onibi_token_byte(token) == '{')) {
       obj->has_tagged = 1;
     }
     previous = token;
