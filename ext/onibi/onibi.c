@@ -1004,7 +1004,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE active_subroutines; int ignorecase; int multiline; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE active_subroutines; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1202,16 +1202,31 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
+  VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
 }
 
 static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to, VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(builder->edges); i++) {
+    VALUE prior = rb_ary_entry(builder->edges, i);
+    if (NUM2LONG(onibi_hash_value(prior, "from")) == from &&
+      NUM2LONG(onibi_hash_value(prior, "to")) == to) {
+      VALUE prior_actions = onibi_hash_value(prior, "actions");
+      VALUE merged_actions = rb_ary_dup(actions);
+      onibi_append_values(merged_actions, prior_actions);
+      rb_hash_aset(prior, ID2SYM(rb_intern("actions")), merged_actions);
+      return;
+    }
+  }
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(to));
   VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
+  VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
   rb_ary_push(builder->edges, edge);
 }
@@ -1255,6 +1270,24 @@ static void onibi_connect_prepend_actions(onibi_gir_builder_t *builder, VALUE ex
 
 static void onibi_append_values(VALUE destination, VALUE values) {
   for (long i = 0; i < RARRAY_LEN(values); i++) rb_ary_push(destination, rb_ary_entry(values, i));
+}
+
+static void onibi_add_capture_guard(onibi_gir_builder_t *builder, VALUE starts, VALUE guard) {
+  for (long i = 0; i < RARRAY_LEN(starts); i++) {
+    VALUE key = rb_ary_entry(starts, i);
+    VALUE prior = rb_hash_aref(builder->capture_guards, key);
+    VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
+    onibi_append_values(merged, guard);
+    rb_hash_aset(builder->capture_guards, key, merged);
+  }
+}
+
+static VALUE onibi_capture_test_action(long slot, int set) {
+  VALUE action = rb_hash_new();
+  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("TEST_CAPTURE")));
+  rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
+  rb_hash_aset(action, ID2SYM(rb_intern("set")), set ? Qtrue : Qfalse);
+  return action;
 }
 
 static VALUE onibi_counter_action(const char *op, long slot, VALUE limit) {
@@ -1710,6 +1743,39 @@ skip_utf8_range_expansion:
     rb_ary_push(result.pending_actions, action);
     return result;
   }
+  if (type == ID2SYM(rb_intern("conditional"))) {
+    if (builder->optional_seen)
+      rb_raise(eRegexpError, "conditional after optional capture requires dynamic state");
+    VALUE condition = onibi_hash_value(ast, "condition");
+    char *endptr = NULL;
+    long capture_id = strtol(StringValueCStr(condition), &endptr, 10) - 1;
+    if (endptr == StringValueCStr(condition) || *endptr != '\0') {
+      VALUE named = rb_hash_aref(builder->capture_names, condition);
+      if (NIL_P(named)) rb_raise(eRegexpError, "conditional capture is undefined");
+      capture_id = NUM2LONG(named);
+    }
+    if (capture_id < 0) rb_raise(eRegexpError, "conditional capture is invalid");
+    onibi_fragment_t yes = onibi_compile_node(onibi_hash_value(ast, "yes"), builder);
+    onibi_fragment_t no = onibi_compile_node(onibi_hash_value(ast, "no"), builder);
+    if (RARRAY_LEN(yes.pending_actions) > 0 || RARRAY_LEN(no.pending_actions) > 0)
+      rb_raise(eRegexpError, "conditional branch actions are not supported");
+    VALUE yes_guard = rb_ary_new();
+    rb_ary_push(yes_guard, onibi_capture_test_action(capture_id, 1));
+    onibi_append_values(yes_guard, yes.start_actions);
+    VALUE no_guard = rb_ary_new();
+    rb_ary_push(no_guard, onibi_capture_test_action(capture_id, 0));
+    onibi_append_values(no_guard, no.start_actions);
+    onibi_add_capture_guard(builder, yes.starts, yes_guard);
+    onibi_add_capture_guard(builder, no.starts, no_guard);
+    onibi_fragment_t result = onibi_fragment_empty();
+    result.starts = rb_ary_dup(yes.starts);
+    onibi_append_values(result.starts, no.starts);
+    result.exits = rb_ary_dup(yes.exits);
+    onibi_append_values(result.exits, no.exits);
+    result.nullable = yes.nullable || no.nullable;
+    result.lazy = yes.lazy;
+    return result;
+  }
   if (type == ID2SYM(rb_intern("atomic"))) {
     VALUE body = onibi_hash_value(ast, "body");
     if (!onibi_ast_atomic_simple(body))
@@ -1815,6 +1881,7 @@ skip_utf8_range_expansion:
     VALUE min_value = onibi_hash_value(ast, "min"), max_value = onibi_hash_value(ast, "max");
     long min = NUM2LONG(min_value);
     VALUE atom = onibi_hash_value(ast, "atom");
+    if (min == 0) builder->optional_seen = 1;
     if (RTEST(onibi_hash_value(ast, "possessive")) &&
         (NIL_P(max_value) || NUM2LONG(max_value) != min))
       rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
@@ -1911,7 +1978,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline };
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline, 0 };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -1930,8 +1997,13 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   }
   for (long i = 0; i < RARRAY_LEN(fragment.starts); i++) {
     VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), rb_ary_entry(fragment.starts, i));
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_dup(fragment.start_actions));
+    VALUE destination = rb_ary_entry(fragment.starts, i);
+    VALUE actions = rb_ary_new();
+    VALUE guard = rb_hash_aref(builder.capture_guards, destination);
+    onibi_append_values(actions, fragment.start_actions);
+    if (!NIL_P(guard)) onibi_append_values(actions, guard);
+    rb_hash_aset(edge, ID2SYM(rb_intern("to")), destination);
+    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), actions);
     rb_ary_push(start_edges, edge);
   }
   if (fragment.nullable && !fragment.lazy) {
@@ -2707,16 +2779,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   }
   VALUE program_args = rb_ary_new_from_args(3, source, options, tokens);
   int program_state = 0;
-  VALUE program = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+  VALUE program = (obj->has_large_repeat || obj->has_absence ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ?
     rb_protect(onibi_parse_program, program_args, &program_state) :
     rb_protect(onibi_build_program, program_args, &program_state);
   if (!program_state) {
-    obj->parsed = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->parsed = (obj->has_large_repeat || obj->has_absence ||
                    obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? program : rb_ary_entry(program, 0);
-    obj->compiled = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->compiled = (obj->has_large_repeat || obj->has_absence ||
                      obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 1);
-    obj->rseq = (obj->has_large_repeat || obj->has_absence || obj->has_conditional ||
+    obj->rseq = (obj->has_large_repeat || obj->has_absence ||
                  obj->has_grapheme || obj->has_property_escape || obj->has_meta_escape) ? Qnil : rb_ary_entry(program, 2);
     obj->tokens = tokens;
     if (!NIL_P(obj->parsed)) {
@@ -3220,6 +3292,14 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       long capture = NUM2LONG(onibi_hash_value(action, "slot"));
       int set = !NIL_P(captures) && !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture))) &&
         !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture + 1)));
+      if (!set && !NIL_P(captures)) {
+        for (long event = 0; event < RARRAY_LEN(actions); event++) {
+          VALUE event_action = rb_ary_entry(actions, event);
+          if (SYM2ID(onibi_hash_value(event_action, "op")) == rb_intern("CAPTURE_CLOSE") &&
+              NUM2LONG(onibi_hash_value(event_action, "slot")) == 2 * capture + 1 &&
+              !NIL_P(rb_hash_aref(captures, LONG2NUM(2 * capture)))) { set = 1; break; }
+        }
+      }
       if (set != RTEST(onibi_hash_value(action, "set"))) return 0;
       continue;
     }

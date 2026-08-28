@@ -241,6 +241,14 @@ class BenchmarkApiTest < Minitest::Test
     refute result.key?(:captures)
   end
 
+  def test_deterministic_conditional_uses_guarded_gir_edges
+    regexp = Onibi::Regexp.new("(a)(?(1)b|c)")
+
+    assert_equal :RSEQ, regexp.pipeline[:vm]
+    assert regexp.vm_match?("ab")
+    refute regexp.vm_match?("ac")
+  end
+
   def test_grapheme_and_property_escapes_cross_dynamic_boundary
     grapheme = Onibi::Regexp.new("\\X")
     property = Onibi::Regexp.new("\\p{L}")
