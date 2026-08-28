@@ -492,6 +492,13 @@ class BenchmarkApiTest < Minitest::Test
     refute inverse.vm_match?("A")
   end
 
+  def test_lazy_optional_preserves_exit_priority
+    regexp = Onibi::Regexp.new("a??b")
+    assert regexp.vm_match?("b")
+    assert_equal({ start: 0, end: 1 }, regexp.vm_match_result("b"))
+    assert regexp.vm_match?("ab")
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")
