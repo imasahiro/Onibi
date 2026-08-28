@@ -269,6 +269,29 @@ class BenchmarkApiTest < Minitest::Test
     refute property.vm_match?("é")
   end
 
+  def test_ascii_safe_posix_properties_lower_to_bitmaps
+    {
+      "Digit" => ["7", "A"],
+      "Alpha" => ["A", "7"],
+      "Alnum" => ["7", "-"],
+      "Lower" => ["a", "A"],
+      "Upper" => ["A", "a"],
+      "Space" => [" ", "A"],
+      "Blank" => ["\t", "A"],
+      "Word" => ["_", "-"],
+      "XDigit" => ["F", "g"],
+      "Cntrl" => ["\x01", "A"],
+      "Print" => ["A", "\x01"],
+      "Graph" => ["A", " "],
+      "Punct" => [".", "A"]
+    }.each do |name, (matching, non_matching)|
+      property = Onibi::Regexp.new("\\p{#{name}}")
+      assert property.program_cached?, name
+      assert property.vm_match?(matching), name
+      refute property.vm_match?(non_matching), name
+    end
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)

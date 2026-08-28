@@ -23,6 +23,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str);
 static VALUE onibi_pipeline_build(VALUE self);
 static void onibi_rseq_validate(VALUE rseq);
 static VALUE onibi_hash_value(VALUE hash, const char *name);
+static int onibi_ascii_property_name_p(VALUE name);
 
 static int onibi_ascii_pattern(VALUE source) {
   return rb_enc_str_asciionly_p(source);
@@ -930,6 +931,32 @@ static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
   }
 }
 
+static int onibi_ascii_property_hit(VALUE name, int c) {
+  const char *property = StringValueCStr(name);
+  if (strcmp(property, "ASCII") == 0) return c < 128;
+  if (strcmp(property, "ASCII_Hex_Digit") == 0) return isxdigit(c);
+  if (strcmp(property, "Digit") == 0) return isdigit(c);
+  if (strcmp(property, "Alpha") == 0) return isalpha(c);
+  if (strcmp(property, "Alnum") == 0) return isalnum(c);
+  if (strcmp(property, "Lower") == 0) return islower(c);
+  if (strcmp(property, "Upper") == 0) return isupper(c);
+  if (strcmp(property, "Space") == 0) return isspace(c);
+  if (strcmp(property, "Blank") == 0) return c == ' ' || c == '\t';
+  if (strcmp(property, "Word") == 0) return isalnum(c) || c == '_';
+  if (strcmp(property, "XDigit") == 0) return isxdigit(c);
+  if (strcmp(property, "Cntrl") == 0) return iscntrl(c);
+  if (strcmp(property, "Print") == 0) return isprint(c);
+  if (strcmp(property, "Graph") == 0) return isgraph(c);
+  if (strcmp(property, "Punct") == 0) return ispunct(c);
+  return -1;
+}
+
+static int onibi_ascii_property_name_p(VALUE name) {
+  if (NIL_P(name)) return 0;
+  const char *property = StringValueCStr(name);
+  return onibi_ascii_property_hit(name, 0) >= 0 || strcmp(property, "ASCII") == 0;
+}
+
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
@@ -958,12 +985,10 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
-  } else if (!NIL_P(escape_name) &&
-             (rb_str_equal(escape_name, rb_str_new_cstr("ASCII")) ||
-              rb_str_equal(escape_name, rb_str_new_cstr("ASCII_Hex_Digit")))) {
-    int limit = rb_str_equal(escape_name, rb_str_new_cstr("ASCII")) ? 128 : 256;
-    for (int c = 0; c < limit; c++) {
-      if (limit == 128 || isxdigit(c)) onibi_bitmap_set(bits, (unsigned char)c, fold);
+  } else if (onibi_ascii_property_name_p(escape_name)) {
+    for (int c = 0; c < 256; c++) {
+      int hit = onibi_ascii_property_hit(escape_name, c);
+      if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
     if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P')
       for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
@@ -986,11 +1011,10 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
     } else if (kind == rb_intern("escape")) {
       VALUE name = onibi_hash_value(child, "name");
-      if (!NIL_P(name) && (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
-                           rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")))) {
-        int limit = rb_str_equal(name, rb_str_new_cstr("ASCII")) ? 128 : 256;
-        for (int c = 0; c < limit; c++) {
-          if (limit == 128 || isxdigit(c)) onibi_bitmap_set(bits, (unsigned char)c, fold);
+      if (onibi_ascii_property_name_p(name)) {
+        for (int c = 0; c < 256; c++) {
+          int hit = onibi_ascii_property_hit(name, c);
+          if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
         }
         if (NUM2INT(onibi_hash_value(child, "byte")) == 'P')
           for (long byte = 0; byte < 32; byte++) bits[byte] = (unsigned char)~bits[byte];
@@ -1345,12 +1369,12 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
-      if (!NIL_P(name) && RSTRING_LEN(name) > 1 &&
-          !rb_str_equal(name, rb_str_new_cstr("ASCII")) &&
-          !rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")))
+      if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !onibi_ascii_property_name_p(name))
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
-      int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
-      if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
+      int code = NIL_P(name) ? 0 : (RSTRING_LEN(name) == 1 ?
+        tolower((unsigned char)RSTRING_PTR(name)[0]) : 0);
+      if ((NIL_P(name) || RSTRING_LEN(name) <= 1) &&
+          (code == 'r' || code == 'p' || code == 'x' || code == 'u'))
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
     VALUE payload = ast;
@@ -1530,8 +1554,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       if (child_type == ID2SYM(rb_intern("escape"))) {
         VALUE name = onibi_hash_value(child, "name");
         int simple = !NIL_P(name) &&
-          (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
-           rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")) ||
+          (onibi_ascii_property_name_p(name) ||
            (RSTRING_LEN(name) == 1 && strchr("dDsSwWhH", RSTRING_PTR(name)[0]) != NULL));
         if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");
         VALUE payload = rb_hash_dup(child);
@@ -2174,8 +2197,7 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
 static int onibi_ascii_property_token_p(VALUE token) {
   if (onibi_token_byte(token) != 'p' && onibi_token_byte(token) != 'P') return 0;
   VALUE name = onibi_hash_value(token, "name");
-  return !NIL_P(name) && (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
-    rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")));
+  return onibi_ascii_property_name_p(name);
 }
 
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
