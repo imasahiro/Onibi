@@ -2282,6 +2282,20 @@ static void onibi_rseq_validate(VALUE rseq) {
     if (edges[i].destination != destination || edges[i].action_offset != expected_offset)
       rb_raise(rb_eArgError, "RSeq edge disagrees with semantic edge");
   }
+  VALUE semantic_start_edges = onibi_hash_value(rseq, "start_edges");
+  if (NIL_P(semantic_start_edges) || !RB_TYPE_P(semantic_start_edges, T_ARRAY) ||
+      RARRAY_LEN(semantic_start_edges) != header.start_edge_count)
+    rb_raise(rb_eArgError, "RSeq start edges are invalid");
+  for (uint32_t i = 0; i < header.start_edge_count; i++) {
+    VALUE semantic_edge = rb_ary_entry(semantic_start_edges, i);
+    uint32_t destination = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "to"));
+    uint32_t action_index = (uint32_t)NUM2ULONG(onibi_hash_value(semantic_edge, "action_offset"));
+    uint32_t expected_offset = RARRAY_LEN(onibi_hash_value(semantic_edge, "actions")) == 0 ? 0 :
+      (uint32_t)(sizeof(OnibiRAction) * (action_index + 1));
+    if (edges[header.edge_count - header.start_edge_count + i].destination != destination ||
+        edges[header.edge_count - header.start_edge_count + i].action_offset != expected_offset)
+      rb_raise(rb_eArgError, "RSeq edge disagrees with semantic start edge");
+  }
   const OnibiRAction *actions = (const OnibiRAction *)(RSTRING_PTR(blob) + header.actions_offset);
   for (uint32_t i = 0; i < header.action_count; i++) {
     if (actions[i].op > ONIBI_RA_PROGRESS)
