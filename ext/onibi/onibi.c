@@ -2201,6 +2201,16 @@ static VALUE onibi_timeout_default(VALUE klass) {
   return onibi_default_timeout > 0.0 ? DBL2NUM(onibi_default_timeout) : Qnil;
 }
 
+static VALUE onibi_regexp_escape(VALUE klass, VALUE string) {
+  (void)klass;
+  return rb_funcall(rb_cRegexp, rb_intern("escape"), 1, string);
+}
+
+static VALUE onibi_regexp_union(int argc, VALUE *argv, VALUE klass) {
+  VALUE mri_regexp = rb_funcallv(rb_cRegexp, rb_intern("union"), argc, argv);
+  return rb_funcall(klass, id_new, 1, mri_regexp);
+}
+
 static VALUE onibi_pipeline_token_slice(VALUE source, VALUE token) {
   long start = NUM2LONG(onibi_hash_value(token, "start"));
   long finish = NUM2LONG(onibi_hash_value(token, "end"));
@@ -3324,6 +3334,8 @@ void Init_onibi(void) {
   eTimeoutError = rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
   rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
   rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
+  rb_define_singleton_method(cRegexp, "escape", onibi_regexp_escape, 1);
+  rb_define_singleton_method(cRegexp, "union", onibi_regexp_union, -1);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
   rb_define_method(cRegexp, "match", onibi_match, -1);
