@@ -496,6 +496,7 @@ static VALUE onibi_parse_range(VALUE src, VALUE tokens, long begin, long end) {
           if (*endptr != '\0') rb_raise(eRegexpError, "invalid quantifier");
           max_value = min;
         }
+        if (min < 0 || (has_max && max_value < 0)) rb_raise(eRegexpError, "invalid quantifier");
         if (has_max && max_value < min) rb_raise(eRegexpError, "invalid quantifier range");
         VALUE quantifier = onibi_ast_node("quantifier", modifier);
         rb_hash_aset(quantifier, ID2SYM(rb_intern("atom")), node);

@@ -529,6 +529,7 @@ class BenchmarkApiTest < Minitest::Test
 
   def test_parser_rejects_overflowing_quantifier_counts
     assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{999999999999999999999}") }
+    assert_raises(Onibi::RegexpError) { Onibi::Parser.parse("a{-1}") }
   end
 
   def test_compiler_lowers_capture_boundaries_to_actions
