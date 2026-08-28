@@ -483,10 +483,13 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal({ start: 0, end: 4 }, regexp.vm_match_result("aaaa").slice(:start, :end))
   end
 
-  def test_simple_numeric_subexpression_call_inlines_literal_body
+  def test_simple_numeric_subexpression_call_uses_a_compiled_subprogram
     regexp = Onibi::Regexp.new("(a)\\g<1>")
     assert regexp.program_cached?
     assert_equal :TAGGED_ORDERED, regexp.execution_class.to_sym
+    graph = regexp.pipeline[:rseq_program][:physical_graph]
+    assert_equal :G_CALL, graph[:states].find { |state| state[:op] == :G_CALL }[:op]
+    assert_equal 2, graph[:subprograms].length
     assert_equal({ start: 0, end: 2 }, regexp.vm_match_result("aa").slice(:start, :end))
   end
 

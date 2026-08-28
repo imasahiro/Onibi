@@ -1004,7 +1004,7 @@ static VALUE onibi_parser_parse(int argc, VALUE *argv, VALUE self) {
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
 static VALUE onibi_hash_value(VALUE hash, const char *name);
 static void onibi_append_values(VALUE destination, VALUE values);
 
@@ -1326,6 +1326,26 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
 }
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
+static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload);
+static void onibi_connect_actions(onibi_gir_builder_t *builder, VALUE exits, VALUE starts, VALUE actions);
+
+static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder) {
+  onibi_fragment_t fragment = onibi_compile_node(body, builder);
+  if (RARRAY_LEN(fragment.start_actions) != 0 || RARRAY_LEN(fragment.pending_actions) != 0)
+    rb_raise(eRegexpError, "subprogram has unsupported entry actions");
+  long accept = builder->next_id++;
+  onibi_gir_state(builder, accept, rb_intern("G_ACCEPT"), Qnil);
+  VALUE accept_starts = rb_ary_new_from_args(1, LONG2NUM(accept));
+  onibi_connect_actions(builder, fragment.exits, accept_starts, fragment.pending_actions);
+  long entry = RARRAY_LEN(fragment.starts) > 0 ? NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
+  VALUE descriptor = rb_hash_new();
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("entry")), LONG2NUM(entry));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
+  rb_hash_aset(descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
+  rb_obj_freeze(descriptor);
+  rb_ary_push(builder->subprograms, descriptor);
+  return RARRAY_LEN(builder->subprograms) - 1;
+}
 
 static int onibi_gir_action_valid(ID action) {
   return action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
@@ -1692,8 +1712,17 @@ skip_utf8_range_expansion:
       rb_raise(eRegexpError, "recursive subroutine requires dynamic call state");
     if (onibi_ast_has_capture(body)) rb_raise(eRegexpError, "capturing subroutine requires dynamic call state");
     rb_hash_aset(builder->active_subroutines, name, Qtrue);
-    onibi_fragment_t result = onibi_compile_node(body, builder);
+    long subprogram_id = onibi_compile_subprogram(body, builder);
     rb_hash_delete(builder->active_subroutines, name);
+    VALUE payload = rb_hash_new();
+    rb_hash_aset(payload, ID2SYM(rb_intern("subprogram")), LONG2NUM(subprogram_id));
+    rb_obj_freeze(payload);
+    long id = builder->next_id++;
+    onibi_gir_state(builder, id, rb_intern("G_CALL"), payload);
+    onibi_fragment_t result = onibi_fragment_empty();
+    result.starts = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.exits = rb_ary_new_from_args(1, LONG2NUM(id));
+    result.nullable = 0;
     return result;
   }
   if (type == ID2SYM(rb_intern("option_global"))) {
@@ -2010,7 +2039,9 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   for (long i = 0; i < RARRAY_LEN(parsed_options); i++)
     if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("ignorecase"))) ignorecase = 1;
     else if (rb_str_equal(rb_ary_entry(parsed_options, i), rb_str_new_cstr("multiline"))) multiline = 1;
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), ignorecase, multiline, 0 };
+  VALUE subprograms = rb_ary_new();
+  rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
+  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, ignorecase, multiline, 0 };
   onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, rb_intern("G_ACCEPT"), Qnil);
@@ -2060,7 +2091,6 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(graph, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
   /* Program zero is the root callable program.  Keep an explicit descriptor
      even before nested dynamic constructs add their own entries. */
-  VALUE subprograms = rb_ary_new();
   VALUE root_descriptor = rb_hash_new();
   long root_entry = RARRAY_LEN(fragment.starts) > 0 ?
     NUM2LONG(rb_ary_entry(fragment.starts, 0)) : accept;
@@ -2068,7 +2098,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   rb_hash_aset(root_descriptor, ID2SYM(rb_intern("accept")), LONG2NUM(accept));
   rb_hash_aset(root_descriptor, ID2SYM(rb_intern("flags")), INT2NUM(0));
   rb_obj_freeze(root_descriptor);
-  rb_ary_push(subprograms, root_descriptor);
+  rb_ary_store(builder.subprograms, 0, root_descriptor);
+  subprograms = builder.subprograms;
   rb_obj_freeze(subprograms);
   rb_hash_aset(graph, ID2SYM(rb_intern("subprograms")), subprograms);
   rb_hash_aset(graph, ID2SYM(rb_intern("capture_count")), LONG2NUM(builder.capture_count));
@@ -3595,6 +3626,36 @@ static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned cha
   return (((unsigned char *)RSTRING_PTR(bitmap))[byte >> 3] & (1U << (byte & 7))) != 0;
 }
 
+static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *matched_end,
+                                    long *matched_start, VALUE *matched_captures);
+
+/* Execute a non-capturing subprogram from the current input position.  The
+   called graph shares immutable states and outgoing edges with its caller. */
+static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprograms,
+                                    VALUE str, long subprogram_id,
+                                    long start, long *matched_end) {
+  if (!RB_TYPE_P(subprograms, T_ARRAY) || subprogram_id < 0 ||
+      subprogram_id >= RARRAY_LEN(subprograms)) return 0;
+  VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
+  VALUE entry = onibi_hash_value(descriptor, "entry");
+  if (NIL_P(entry)) return 0;
+  VALUE starts = rb_ary_new();
+  VALUE edge = rb_hash_new();
+  rb_hash_aset(edge, ID2SYM(rb_intern("to")), entry);
+  rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
+  rb_ary_push(starts, edge);
+  VALUE nested = rb_hash_new();
+  rb_hash_aset(nested, ID2SYM(rb_intern("states")), states);
+  rb_hash_aset(nested, ID2SYM(rb_intern("outgoing")), outgoing);
+  rb_hash_aset(nested, ID2SYM(rb_intern("start_edges")), starts);
+  long nested_start = 0;
+  VALUE captures = Qnil;
+  long nested_end = 0;
+  if (!onibi_gir_match_captures(nested, str, start, &nested_end, &nested_start, &captures)) return 0;
+  *matched_end = nested_end;
+  return 1;
+}
+
 static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
   rb_thread_check_ints();
   onibi_check_deadline();
@@ -3605,7 +3666,7 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
   ID op = SYM2ID(onibi_hash_value(state, "op"));
   if (op == rb_intern("G_ACCEPT")) { *matched_end = pos; return 1; }
   /* Dynamic subprogram states are not valid in the flat graph walker. */
-  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
+  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
   if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
@@ -3692,7 +3753,7 @@ static VALUE onibi_apply_capture_actions(VALUE actions, long pos, VALUE captures
   return tags;
 }
 
-static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos,
+static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprograms, VALUE str, long state_id, long pos,
                                   VALUE visited, VALUE captures, VALUE counters, VALUE tags, long reported_start,
                                   long *matched_end, long *matched_start, VALUE *matched_captures) {
   rb_thread_check_ints();
@@ -3710,8 +3771,12 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
   }
   /* Dynamic subprogram states require a call frame and must not fall through
      as epsilon transitions in the ordinary graph walker. */
-  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_CALL") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
-  if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
+  if (op == rb_intern("G_GRAPHEME") || op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) return 0;
+  if (op == rb_intern("G_CALL")) {
+    VALUE payload = onibi_hash_value(state, "payload");
+    long subprogram_id = NUM2LONG(onibi_hash_value(payload, "subprogram"));
+    if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id, pos, &pos)) return 0;
+  } else if (op == rb_intern("G_CHAR") || op == rb_intern("G_CLASS") || op == rb_intern("G_ANY") || op == rb_intern("G_BACKREF")) {
     if (pos >= RSTRING_LEN(str)) return 0;
     if (op == rb_intern("G_BACKREF")) {
       VALUE payload = onibi_hash_value(state, "payload");
@@ -3756,7 +3821,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE str, long 
     long next_reported_start = reported_start;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
     next_tags = onibi_apply_capture_actions(edge_actions, pos, next_captures, next_tags, &next_reported_start);
-    if (onibi_vm_walk_captures(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
+    if (onibi_vm_walk_captures(states, outgoing, subprograms, str, NUM2LONG(onibi_hash_value(edge, "to")), pos,
                                visited, next_captures, next_counters, next_tags, next_reported_start,
                                matched_end, matched_start, matched_captures)) return 1;
   }
@@ -3781,7 +3846,7 @@ static int onibi_gir_match_captures(VALUE graph, VALUE str, long start, long *ma
     long reported_start = start;
     onibi_vm_apply_counter_actions(edge_actions, branch_counters);
     VALUE branch_tags = onibi_apply_capture_actions(edge_actions, start, branch_captures, tags, &reported_start);
-    if (onibi_vm_walk_captures(states, outgoing, str, NUM2LONG(onibi_hash_value(edge, "to")), start,
+    if (onibi_vm_walk_captures(states, outgoing, onibi_hash_value(graph, "subprograms"), str, NUM2LONG(onibi_hash_value(edge, "to")), start,
                                visited, branch_captures, branch_counters, branch_tags, reported_start,
                                matched_end, matched_start, matched_captures)) return 1;
   }
