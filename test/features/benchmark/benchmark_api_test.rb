@@ -482,6 +482,16 @@ class BenchmarkApiTest < Minitest::Test
     assert ast[:children].first[:negative]
   end
 
+  def test_compiler_resolves_local_case_and_line_options
+    case_scope = Onibi::Regexp.new("(?i:a)")
+    assert case_scope.vm_match?("A")
+    refute case_scope.vm_match?("B")
+    line_scope = Onibi::Regexp.new("(?m:.)")
+    assert line_scope.vm_match?("\n")
+    inverse = Onibi::Regexp.new("(?-i:a)", 1)
+    refute inverse.vm_match?("A")
+  end
+
   def test_tagged_capture_walk_keeps_distinct_capture_histories
     regexp = Onibi::Regexp.new("(a|aa)\\1")
     assert regexp.vm_match?("aaaa")
