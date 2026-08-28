@@ -1010,7 +1010,7 @@ static VALUE onibi_program_size(VALUE self) {
 }
 static VALUE onibi_program_frozen(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  return RTEST(rb_obj_frozen_p(obj->execution_class)) ? Qtrue : Qfalse;
+  return !NIL_P(obj->rseq) && RTEST(rb_obj_frozen_p(obj->rseq)) ? Qtrue : Qfalse;
 }
 static VALUE onibi_program_cached(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);

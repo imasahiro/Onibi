@@ -403,12 +403,14 @@ class BenchmarkApiTest < Minitest::Test
   def test_regexp_compiles_pipeline_once_at_initialize
     regexp = Onibi::Regexp.new("abc")
     assert regexp.program_cached?
+    assert regexp.program_frozen?
     assert_same regexp.pipeline, regexp.pipeline
     canonical = regexp.pipeline[:canonical]
     assert_same regexp.pipeline[:parsed][:ast], canonical[:ast]
     assert_same regexp.pipeline[:compiled][:graph], canonical[:gir]
     assert_same regexp.pipeline[:rseq_program], canonical[:rseq]
     refute Onibi::Regexp.new("(?=a)b").program_cached?
+    refute Onibi::Regexp.new("(?=a)b").program_frozen?
   end
 
   def test_ignorecase_is_compiled_into_rseq_header
