@@ -2348,7 +2348,9 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     ID op = SYM2ID(onibi_hash_value(state, "op"));
     physical_states[i].op = (uint8_t)(op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
       op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS : op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
-      op == rb_intern("G_ACCEPT") ? 0 : ONIBI_RS_BACKREF);
+      op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
+      op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC : op == rb_intern("G_ABSENT") ? ONIBI_RS_ABSENT :
+      op == rb_intern("G_ACCEPT") ? 0 : 0xff);
     uint32_t edge_base = 0;
     uint16_t edge_count = 0;
     for (long e = 0; e < RARRAY_LEN(r_edges); e++) {
@@ -3837,7 +3839,10 @@ static void onibi_rseq_validate(VALUE rseq) {
       semantic_op == rb_intern("G_CHAR") ? ONIBI_RS_CHAR :
       semantic_op == rb_intern("G_CLASS") ? ONIBI_RS_CLASS :
       semantic_op == rb_intern("G_ANY") ? ONIBI_RS_ANY :
-      semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF : 0xff;
+      semantic_op == rb_intern("G_BACKREF") ? ONIBI_RS_BACKREF :
+      semantic_op == rb_intern("G_CALL") ? ONIBI_RS_CALL :
+      semantic_op == rb_intern("G_ATOMIC") ? ONIBI_RS_ATOMIC :
+      semantic_op == rb_intern("G_ABSENT") ? ONIBI_RS_ABSENT : 0xff;
     if (expected_op == 0xff || states[i].op != expected_op)
       rb_raise(rb_eArgError, "RSeq semantic and physical states disagree");
     if (!NIL_P(physical_graph)) {
