@@ -296,18 +296,11 @@ module Onibi
 
     class << self
       def compile(pattern, options = nil, timeout: nil)
-        raise ArgumentError, "timeout is not supported" unless timeout.nil?
+        return new(pattern, options) if timeout.nil?
 
-        new(pattern, options)
+        new(pattern, { options: options, timeout: timeout })
       end
 
-      def timeout=(_value)
-        raise ArgumentError, "timeout is not supported"
-      end
-
-      def timeout
-        nil
-      end
     end
   end
 end

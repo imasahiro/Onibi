@@ -5,8 +5,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <time.h>
+#include <math.h>
+#include <float.h>
 
-static VALUE mOnibi, cRegexp, cLexer, eRegexpError;
+static VALUE mOnibi, cRegexp, cLexer, eRegexpError, eTimeoutError;
+static double onibi_default_timeout = 0.0;
+static _Thread_local uint64_t onibi_deadline_ns = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options, id_inspect, id_new;
 static ID id_scan, id_gsub, id_encoding, id_index;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
@@ -20,7 +25,28 @@ static int onibi_ascii_pattern(VALUE source) {
   return 1;
 }
 
-typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; } onibi_regexp_t;
+static uint64_t onibi_now_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
+}
+
+static void onibi_check_deadline(void) {
+  if (onibi_deadline_ns != 0 && onibi_now_ns() >= onibi_deadline_ns)
+    rb_raise(eTimeoutError, "regexp match timeout");
+}
+
+static double onibi_timeout_value(VALUE value) {
+  if (NIL_P(value)) return 0.0;
+  if (RB_TYPE_P(value, T_STRING)) rb_raise(rb_eTypeError, "no implicit conversion to float from string");
+  if (value == Qtrue || value == Qfalse) rb_raise(rb_eTypeError, "no implicit conversion to float from %s", value == Qtrue ? "true" : "false");
+  double seconds = NUM2DBL(rb_to_float(value));
+  if (isnan(seconds)) return 0.0;
+  if (seconds <= 0.0) rb_raise(rb_eArgError, "invalid timeout: %g", seconds);
+  return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
+}
+
+typedef struct { VALUE regexp; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -1119,8 +1145,26 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   rb_scan_args(argc, argv, "11", &pattern, &options);
   onibi_regexp_t *obj;
   TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  VALUE inherited_timeout = Qnil;
+  if (rb_obj_is_kind_of(pattern, cRegexp)) {
+    onibi_regexp_t *prior; TypedData_Get_Struct(pattern, onibi_regexp_t, &onibi_type, prior);
+    pattern = rb_funcall(prior->regexp, id_source, 0);
+    if (NIL_P(options)) options = INT2NUM(prior->options);
+    inherited_timeout = prior->timeout_seconds > 0.0 ? DBL2NUM(prior->timeout_seconds) : Qnil;
+  } else if (rb_obj_is_kind_of(pattern, rb_cRegexp)) {
+    VALUE prior = pattern;
+    pattern = rb_funcall(prior, id_source, 0);
+    if (NIL_P(options)) options = rb_funcall(prior, id_options, 0);
+  }
+  VALUE timeout = Qnil;
+  if (RB_TYPE_P(options, T_HASH)) {
+    timeout = rb_hash_aref(options, ID2SYM(rb_intern("timeout")));
+    options = rb_hash_aref(options, ID2SYM(rb_intern("options")));
+  }
+  if (NIL_P(timeout)) timeout = inherited_timeout;
   int opts = NIL_P(options) ? 0 : NUM2INT(options);
   obj->options = opts;
+  obj->timeout_seconds = NIL_P(timeout) ? onibi_default_timeout : onibi_timeout_value(timeout);
   VALUE source = StringValue(pattern);
   obj->regexp = rb_funcall(rb_cRegexp, id_new, 2, source, INT2NUM(opts));
   obj->parsed = obj->compiled = obj->rseq = Qnil;
@@ -1225,6 +1269,17 @@ static VALUE onibi_program_frozen(VALUE self) {
 static VALUE onibi_program_cached(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   return NIL_P(obj->rseq) ? Qfalse : Qtrue;
+}
+static VALUE onibi_timeout(VALUE self) {
+  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+  return obj->timeout_seconds > 0.0 ? DBL2NUM(obj->timeout_seconds) : Qnil;
+}
+static VALUE onibi_timeout_set(VALUE klass, VALUE value) {
+  onibi_default_timeout = onibi_timeout_value(value);
+  return NIL_P(value) ? Qnil : DBL2NUM(onibi_default_timeout);
+}
+static VALUE onibi_timeout_default(VALUE klass) {
+  return onibi_default_timeout > 0.0 ? DBL2NUM(onibi_default_timeout) : Qnil;
 }
 static VALUE onibi_pipeline_build(VALUE self) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -1611,6 +1666,7 @@ static int onibi_vm_class_match(VALUE payload, unsigned char byte) {
 
 static int onibi_vm_walk(VALUE states, VALUE edges, VALUE str, long state_id, long pos, VALUE visited, long *matched_end) {
   rb_thread_check_ints();
+  onibi_check_deadline();
   VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
@@ -1671,6 +1727,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE edges, VALUE str, long sta
                                   VALUE visited, VALUE captures, long reported_start,
                                   long *matched_end, long *matched_start, VALUE *matched_captures) {
   rb_thread_check_ints();
+  onibi_check_deadline();
   VALUE key = rb_ary_new_from_args(2, LONG2NUM(state_id), LONG2NUM(pos));
   if (RTEST(rb_hash_aref(visited, key))) return 0;
   rb_hash_aset(visited, key, Qtrue);
@@ -1763,6 +1820,7 @@ static void onibi_rseq_validate(VALUE rseq) {
 static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
+    onibi_check_deadline();
     long end = 0;
     if (onibi_gir_match(rseq, str, start, &end)) return Qtrue;
   }
@@ -1772,6 +1830,7 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
+    onibi_check_deadline();
     long end = 0;
     long reported_start = start;
     VALUE captures = rb_hash_new();
@@ -1808,10 +1867,16 @@ static VALUE onibi_vm_execute(VALUE self, VALUE rseq, VALUE str, VALUE execution
 static VALUE onibi_vm_match_p(VALUE self, VALUE str) {
   onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
   StringValue(str);
+  onibi_deadline_ns = obj->timeout_seconds > 0.0 ? onibi_now_ns() + (uint64_t)(obj->timeout_seconds * 1e9) : 0;
   if ((obj->options == 0 || obj->options == 1 || obj->options == 4) &&
       !NIL_P(obj->rseq) && rb_str_strlen(str) == RSTRING_LEN(str) &&
       rb_enc_compatible(str, rb_funcall(obj->regexp, id_source, 0)) != NULL)
-    return onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
+    {
+      VALUE result = onibi_vm_execute(Qnil, obj->rseq, str, obj->execution_kind);
+      onibi_deadline_ns = 0;
+      return result;
+    }
+  onibi_deadline_ns = 0;
   return rb_funcall(obj->regexp, id_match_p, 1, str);
 }
 static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
@@ -1827,6 +1892,7 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
   }
   int graph_ok = (obj->options == 0 || obj->options == 1 || obj->options == 4) && !NIL_P(obj->rseq);
   if (graph_ok) {
+    onibi_deadline_ns = obj->timeout_seconds > 0.0 ? onibi_now_ns() + (uint64_t)(obj->timeout_seconds * 1e9) : 0;
     VALUE rseq = obj->rseq;
     for (long pos = 0; pos <= RSTRING_LEN(str); pos++) {
       long end = 0;
@@ -1848,8 +1914,10 @@ static VALUE onibi_vm_match_result(VALUE self, VALUE str) {
         }
       }
       if (RHASH_SIZE(captures) > 0) rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+      onibi_deadline_ns = 0;
       return result;
     }
+    onibi_deadline_ns = 0;
     return Qnil;
   }
   VALUE match = rb_funcall(obj->regexp, id_match, 1, str);
@@ -1893,6 +1961,9 @@ void Init_onibi(void) {
   VALUE vm = rb_define_module_under(mOnibi, "VM");
   rb_define_singleton_method(vm, "execute", onibi_vm_execute, 3);
   cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
+  eTimeoutError = rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
+  rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
+  rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
   rb_define_alloc_func(cRegexp, onibi_alloc);
   rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
   rb_define_method(cRegexp, "match", onibi_match, -1);
@@ -1906,6 +1977,7 @@ void Init_onibi(void) {
   rb_define_method(cRegexp, "program_size", onibi_program_size, 0);
   rb_define_method(cRegexp, "program_frozen?", onibi_program_frozen, 0);
   rb_define_method(cRegexp, "program_cached?", onibi_program_cached, 0);
+  rb_define_method(cRegexp, "timeout", onibi_timeout, 0);
   rb_define_method(cRegexp, "pipeline", onibi_pipeline, 0);
   rb_define_method(cRegexp, "vm_match?", onibi_vm_match_p, 1);
   rb_define_method(cRegexp, "vm_match_result", onibi_vm_match_result, 1);
