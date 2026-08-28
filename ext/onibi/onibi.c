@@ -2557,7 +2557,8 @@ static VALUE onibi_rseq_physical_regular_graph(VALUE rseq) {
     VALUE state = rb_hash_dup(rb_ary_entry(semantic_states, i));
     ID op = physical_states[i].op == ONIBI_RS_CHAR ? rb_intern("G_CHAR") :
       physical_states[i].op == ONIBI_RS_CLASS ? rb_intern("G_CLASS") :
-      physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") : rb_intern("G_ACCEPT");
+      physical_states[i].op == ONIBI_RS_ANY ? rb_intern("G_ANY") :
+      physical_states[i].op == ONIBI_RS_BACKREF ? rb_intern("G_BACKREF") : rb_intern("G_ACCEPT");
     rb_hash_aset(state, ID2SYM(rb_intern("op")), ID2SYM(op));
     rb_ary_push(states, state);
   }
@@ -2597,13 +2598,14 @@ static VALUE onibi_vm_regular_fast(VALUE rseq, VALUE str) {
 }
 
 static VALUE onibi_vm_tagged_ordered(VALUE rseq, VALUE str) {
+  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
     long reported_start = start;
     VALUE captures = rb_hash_new();
-    if (onibi_gir_match_captures(rseq, str, start, &end, &reported_start, &captures)) return Qtrue;
+    if (onibi_gir_match_captures(graph, str, start, &end, &reported_start, &captures)) return Qtrue;
   }
   return Qfalse;
 }
@@ -2612,13 +2614,14 @@ static VALUE onibi_vm_dynamic(VALUE rseq, VALUE str) {
   /* Dynamic execution owns its dispatch loop.  The capture walker resolves
      backreferences and counters; this loop adds the dynamic deadline and
      interrupt boundary without routing through TAGGED_ORDERED. */
+  VALUE graph = onibi_rseq_physical_regular_graph(rseq);
   for (long start = 0; start <= RSTRING_LEN(str); start++) {
     rb_thread_check_ints();
     onibi_check_deadline();
     long end = 0;
     long reported_start = start;
     VALUE captures = rb_hash_new();
-    if (onibi_gir_match_captures(rseq, str, start, &end, &reported_start, &captures)) return Qtrue;
+    if (onibi_gir_match_captures(graph, str, start, &end, &reported_start, &captures)) return Qtrue;
   }
   return Qfalse;
 }
