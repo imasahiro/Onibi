@@ -230,6 +230,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes lowerer, "entry->ignorecase"
   end
 
+  def test_rseq_states_cache_payload_indexes
+    source = File.read(EXTENSION_SOURCE)
+    lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
+
+    refute_nil lowerer
+    assert_includes source, "uint32_t payload_index"
+    assert_includes lowerer, "state->payload_index"
+    assert_includes lowerer, "physical_states[i].payload = state->payload_index"
+  end
+
   def test_rseq_subprograms_use_typed_records
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]

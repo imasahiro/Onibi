@@ -1267,7 +1267,7 @@ typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
 typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
 typedef struct { VALUE key; VALUE value; } OnibiValueEntry;
 typedef struct { OnibiValueEntry *entries; size_t count; size_t capacity; } OnibiValueMap;
-typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; } OnibiGirStateEntry;
+typedef struct { long id; ID op; OnibiGStateOp opcode; VALUE payload; uint32_t payload_index; } OnibiGirStateEntry;
 typedef struct { OnibiGirStateEntry *entries; size_t count; size_t capacity; } OnibiGirStateVector;
 typedef struct { long from; long to; long action_offset; VALUE actions; } OnibiGirEdgeEntry;
 typedef struct { OnibiGirEdgeEntry *entries; size_t count; size_t capacity; } OnibiGirEdgeVector;
@@ -1739,7 +1739,7 @@ static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE 
     op == id_g_backref ? ONIBI_G_BACKREF : op == id_g_call ? ONIBI_G_CALL :
     op == id_g_atomic ? ONIBI_G_ATOMIC : op == id_g_absent ? ONIBI_G_ABSENT :
     (OnibiGStateOp)-1;
-  onibi_gir_state_vector_push(&builder->states, (OnibiGirStateEntry){id, op, opcode, payload}, builder->map_roots);
+  onibi_gir_state_vector_push(&builder->states, (OnibiGirStateEntry){id, op, opcode, payload, 0}, builder->map_roots);
 }
 
 static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
@@ -2984,7 +2984,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
       NUM2LONG(onibi_hash_value_id(state, id_key_id)),
       SYM2ID(onibi_hash_value_id(state, id_key_op)),
       (OnibiGStateOp)NUM2UINT(onibi_hash_value_id(state, id_key_opcode)),
-      onibi_hash_value_id(state, id_key_payload)
+      onibi_hash_value_id(state, id_key_payload),
+      0
     };
     onibi_gir_state_vector_push(&state_records, record, state_roots);
   }
@@ -3014,15 +3015,18 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (state->opcode != ONIBI_G_CLASS) continue;
     VALUE payload = state->payload;
     int found = 0;
+    size_t payload_index = class_payloads.count;
     for (size_t j = 0; j < class_payloads.count; j++) {
       OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
       if (rb_equal(prior->bitmap, onibi_hash_value_id(payload, id_key_bitmap)) &&
           prior->negated == RTEST(onibi_hash_value_id(payload, id_key_negated))) {
         found = 1;
+        payload_index = j;
         break;
       }
     }
     if (!found) onibi_rseq_class_payload_vector_push(&class_payloads, payload);
+    state->payload_index = (uint32_t)payload_index;
   }
   uint32_t class_count = (uint32_t)class_payloads.count;
   OnibiRSeqActionVector action_records;
@@ -3116,15 +3120,18 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     if (opcode != ONIBI_G_CHAR) continue;
     VALUE payload = state_records.entries[i].payload;
     int found = 0;
+    size_t payload_index = literal_payloads.count;
     for (size_t j = 0; j < literal_payloads.count; j++) {
       OnibiRSeqLiteralPayloadEntry *prior = &literal_payloads.entries[j];
       if (prior->byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte)) &&
           prior->ignorecase == RTEST(onibi_hash_value_id(payload, id_key_ignorecase))) {
         found = 1;
+        payload_index = j;
         break;
       }
     }
     if (!found) onibi_rseq_literal_payload_vector_push(&literal_payloads, payload);
+    state_records.entries[i].payload_index = (uint32_t)payload_index;
   }
   uint32_t literal_count = (uint32_t)literal_payloads.count;
   uint64_t class_section_size = (uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
@@ -3271,28 +3278,8 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     }
     physical_states[i].edge_base = edge_base;
     physical_states[i].edge_count = edge_count;
-    if (opcode == ONIBI_G_CLASS) {
-      VALUE payload = state->payload;
-      class_index = 0;
-      for (size_t j = 0; j < class_payloads.count; j++) {
-        OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
-        if (rb_equal(prior->bitmap, onibi_hash_value_id(payload, id_key_bitmap)) &&
-            prior->negated == RTEST(onibi_hash_value_id(payload, id_key_negated))) break;
-        class_index++;
-      }
-      physical_states[i].payload = class_index;
-    }
-    else if (opcode == ONIBI_G_CHAR) {
-      VALUE payload = state->payload;
-      literal_index = 0;
-      for (size_t j = 0; j < literal_payloads.count; j++) {
-        OnibiRSeqLiteralPayloadEntry *prior = &literal_payloads.entries[j];
-        if (prior->byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte)) &&
-            prior->ignorecase == RTEST(onibi_hash_value_id(payload, id_key_ignorecase))) break;
-        literal_index++;
-      }
-      physical_states[i].payload = literal_index;
-    }
+    if (opcode == ONIBI_G_CLASS || opcode == ONIBI_G_CHAR)
+      physical_states[i].payload = state->payload_index;
   }
   OnibiREdge *physical_edges = (OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
   for (size_t i = 0; i < r_edge_records.count; i++) {
