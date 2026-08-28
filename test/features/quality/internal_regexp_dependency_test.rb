@@ -307,7 +307,8 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_physical_graph_copies_cached_action_ranges
     source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "uint32_t action_count = (uint32_t)RARRAY_LEN"
+    assert_includes source, "uint32_t action_count = action_offset == 0 ? 0"
+    assert_includes source, "rb_ary_new_capa((long)action_count)"
     assert_includes source, "action_index + n"
     refute_includes source[/static VALUE onibi_rseq_physical_graph\(VALUE rseq\).*?\n}\n/m],
       "id_key_action_code)) == ONIBI_GA_END"

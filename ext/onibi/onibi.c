@@ -5693,11 +5693,12 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     uint32_t destination = physical_edges[i].destination;
     if (destination == ONIBI_ACCEPT_STATE) destination = (uint32_t)(RARRAY_LEN(states) - 1);
     rb_hash_aset(edge, ID2SYM(id_key_to), UINT2NUM(destination));
-    VALUE physical_program = rb_ary_new();
     uint32_t action_offset = physical_edges[i].action_offset;
+    uint32_t action_count = action_offset == 0 ? 0 :
+      (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_edges, i), id_key_actions));
+    VALUE physical_program = rb_ary_new_capa((long)action_count);
     if (action_offset != 0) {
       uint32_t action_index = action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-      uint32_t action_count = (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_edges, i), id_key_actions));
       for (uint32_t n = 0; n < action_count; n++) {
         VALUE action = rb_ary_entry(semantic_actions, action_index + n);
         rb_ary_push(physical_program, action);
@@ -5712,10 +5713,11 @@ static VALUE onibi_rseq_physical_graph(VALUE rseq) {
     VALUE edge = rb_hash_dup(rb_ary_entry(semantic_start_edges, i));
     const OnibiREdge *physical_edge = &physical_edges[header.start_edge_base + i];
     rb_hash_aset(edge, ID2SYM(id_key_to), UINT2NUM(physical_edge->destination));
-    VALUE physical_program = rb_ary_new();
+    uint32_t action_count = physical_edge->action_offset == 0 ? 0 :
+      (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_start_edges, i), id_key_actions));
+    VALUE physical_program = rb_ary_new_capa((long)action_count);
     if (physical_edge->action_offset != 0) {
       uint32_t action_index = physical_edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-      uint32_t action_count = (uint32_t)RARRAY_LEN(onibi_hash_value_id(rb_ary_entry(semantic_start_edges, i), id_key_actions));
       for (uint32_t n = 0; n < action_count; n++) {
         VALUE action = rb_ary_entry(semantic_actions, action_index + n);
         rb_ary_push(physical_program, action);
