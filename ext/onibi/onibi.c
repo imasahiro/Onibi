@@ -3985,6 +3985,17 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
   return 1;
 }
 
+/* Most TAGGED programs have no repeat counters.  Keep the counter register
+ * file absent in that case; this avoids a hash copy on every graph edge. */
+static int onibi_actions_use_counters(VALUE actions) {
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    ID op = SYM2ID(onibi_hash_value_id(rb_ary_entry(actions, i), id_key_op));
+    if (op == id_a_counter_init || op == id_a_counter_increment ||
+        op == id_a_test_counter_lt || op == id_a_test_counter_ge) return 1;
+  }
+  return 0;
+}
+
 static void onibi_vm_apply_counter_actions(VALUE actions, VALUE counters) {
   for (long i = 0; i < RARRAY_LEN(actions); i++) {
     VALUE action = rb_ary_entry(actions, i);
@@ -4312,7 +4323,9 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     onibi_check_deadline();
     OnibiWalkFrame *frame = &stack[depth - 1];
     if (frame->next_edge == 0) {
-      VALUE key = rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos), frame->counters);
+      VALUE key = NIL_P(frame->counters) ?
+        rb_ary_new_from_args(2, LONG2NUM(frame->state_id), LONG2NUM(frame->pos)) :
+        rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos), frame->counters);
       if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
       rb_hash_aset(visited, key, Qtrue);
       VALUE state = rb_ary_entry(states, frame->state_id);
@@ -4341,9 +4354,12 @@ static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id,
     if (frame->next_edge >= RARRAY_LEN(state_edges)) { depth--; continue; }
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE next_counters = rb_hash_dup(frame->counters);
+    VALUE next_counters = frame->counters;
+    if (onibi_actions_use_counters(edge_actions)) {
+      next_counters = NIL_P(frame->counters) ? rb_hash_new() : rb_hash_dup(frame->counters);
+    }
     if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
-    onibi_vm_apply_counter_actions(edge_actions, next_counters);
+    if (!NIL_P(next_counters)) onibi_vm_apply_counter_actions(edge_actions, next_counters);
     if (depth >= capacity) onibi_vm_stack_overflow();
     stack[depth++] = (OnibiWalkFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0, next_counters};
   }
@@ -4355,13 +4371,12 @@ static int onibi_gir_match(VALUE graph, VALUE str, long start, long *matched_end
   VALUE outgoing = onibi_hash_value_id(graph, id_key_outgoing);
   VALUE starts = onibi_hash_value_id(graph, id_key_start_edges);
   VALUE visited = rb_hash_new();
-  VALUE counters = rb_hash_new();
   for (long i = 0; i < RARRAY_LEN(starts); i++) {
     VALUE edge = rb_ary_entry(starts, i);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE branch_counters = rb_hash_dup(counters);
+    VALUE branch_counters = onibi_actions_use_counters(edge_actions) ? rb_hash_new() : Qnil;
     if (!onibi_vm_actions_ok(edge_actions, str, start, RSTRING_LEN(str), branch_counters, Qnil)) continue;
-    onibi_vm_apply_counter_actions(edge_actions, branch_counters);
+    if (!NIL_P(branch_counters)) onibi_vm_apply_counter_actions(edge_actions, branch_counters);
     if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), start, visited, branch_counters, matched_end)) return 1;
   }
   return 0;
