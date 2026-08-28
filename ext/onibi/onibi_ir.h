@@ -54,6 +54,8 @@ typedef struct {
 
 /* Flags preserve semantic action variants in the compact physical form. */
 #define ONIBI_RA_CAPTURE_CLOSE UINT8_C(1)
+#define ONIBI_RA_TEST_CAPTURE_SET UINT8_C(1)
+#define ONIBI_RA_TEST_CAPTURE_UNSET UINT8_C(2)
 #define ONIBI_RA_COUNTER_GE UINT8_C(1)
 #define ONIBI_RA_ASSERT_END_BUFFER UINT8_C(1)
 #define ONIBI_RA_ASSERT_BEGIN_LINE UINT8_C(2)
