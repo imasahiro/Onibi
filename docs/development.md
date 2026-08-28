@@ -164,7 +164,7 @@ cross an explicit dynamic boundary. They must not enter a partial fast path.
 ## Current C pipeline status
 
 Focused tests cover tokenizer, parser, AST, GIR, RSeq, and VM contracts. The
-benchmark contract suite has 52 cases and 323 assertions after an explicit C
+benchmark contract suite has 52 cases and 324 assertions after an explicit C
 build.
 
 Remaining gates are complete RSeq literal/class descriptor sections, removal of
