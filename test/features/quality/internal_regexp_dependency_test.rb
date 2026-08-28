@@ -99,6 +99,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes option_code, "rb_sym2str(item)"
   end
 
+  def test_gir_guard_lookup_uses_c_vector_storage
+    source = File.read(EXTENSION_SOURCE)
+    builder = source[/typedef struct \{ VALUE states; VALUE edges;.*?onibi_gir_builder_t;/m]
+
+    refute_nil builder
+    assert_includes builder, "OnibiGuardVector capture_guards"
+    assert_includes builder, "OnibiGuardVector exit_guards"
+    refute_match(/rb_hash_aref\(builder->(?:capture|exit)_guards/, source)
+  end
+
   def test_ast_nodes_retain_numeric_name_ids
     source = File.read(EXTENSION_SOURCE)
     ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]

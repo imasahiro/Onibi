@@ -1237,7 +1237,10 @@ static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supp
 }
 
 typedef struct { VALUE starts; VALUE exits; VALUE start_actions; VALUE pending_actions; int nullable; int lazy; } onibi_fragment_t;
-typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; VALUE capture_guards; VALUE exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct { OnibiStateId state; VALUE actions; } OnibiGuardEntry;
+typedef struct { OnibiGuardEntry *entries; size_t count; size_t capacity; } OnibiGuardVector;
+typedef struct { VALUE states; VALUE edges; long next_id; long capture_count; long counter_count; VALUE capture_names; VALUE capture_bodies; VALUE capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; VALUE active_subroutines; VALUE subprograms; VALUE subprogram_ids; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
   vector->items = NULL; vector->count = 0; vector->capacity = 0;
@@ -1262,8 +1265,40 @@ static void onibi_id_vector_from_array(OnibiIdVector *vector, VALUE values) {
   for (long i = 0; i < RARRAY_LEN(values); i++)
     onibi_id_vector_push(vector, (OnibiStateId)NUM2ULONG(rb_ary_entry(values, i)));
 }
-static void onibi_append_values(VALUE destination, VALUE values);
 
+static void onibi_guard_vector_init(OnibiGuardVector *vector) {
+  vector->entries = NULL; vector->count = 0; vector->capacity = 0;
+}
+
+static VALUE onibi_guard_vector_find(const OnibiGuardVector *vector, OnibiStateId state) {
+  for (size_t i = 0; i < vector->count; i++)
+    if (vector->entries[i].state == state) return vector->entries[i].actions;
+  return Qnil;
+}
+
+static void onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state, VALUE actions) {
+  for (size_t i = 0; i < vector->count; i++) {
+    if (vector->entries[i].state == state) {
+      VALUE merged = rb_ary_dup(vector->entries[i].actions);
+      onibi_append_values(merged, actions);
+      vector->entries[i].actions = merged;
+      return;
+    }
+  }
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
+    if (next > SIZE_MAX / sizeof(*vector->entries)) rb_raise(rb_eNoMemError, "GIR guard vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGuardEntry, next);
+    vector->capacity = next;
+  }
+  vector->entries[vector->count].state = state;
+  vector->entries[vector->count].actions = rb_ary_dup(actions);
+  vector->count++;
+}
+
+static void onibi_guard_vector_free(OnibiGuardVector *vector) {
+  xfree(vector->entries); vector->entries = NULL; vector->count = vector->capacity = 0;
+}
 static void onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold) {
   bits[value >> 3] |= (unsigned char)(1U << (value & 7));
   if (fold) {
@@ -1498,10 +1533,10 @@ static void onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to) {
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
-  VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  VALUE guards = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
-  VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
-  VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
+  VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
+  VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
@@ -1523,10 +1558,10 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
   VALUE edge = rb_hash_new();
   rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(from));
   rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(to));
-  VALUE guards = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
+  VALUE guards = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
   if (!NIL_P(guards)) { VALUE merged = rb_ary_dup(guards); onibi_append_values(merged, actions); actions = merged; }
-  VALUE guard = rb_hash_aref(builder->capture_guards, LONG2NUM(to));
-  VALUE exit_guard = rb_hash_aref(builder->exit_guards, LONG2NUM(from));
+  VALUE guard = onibi_guard_vector_find(&builder->capture_guards, (OnibiStateId)to);
+  VALUE exit_guard = onibi_guard_vector_find(&builder->exit_guards, (OnibiStateId)from);
   if (!NIL_P(exit_guard)) { VALUE merged = rb_ary_dup(exit_guard); onibi_append_values(merged, actions); actions = merged; }
   if (!NIL_P(guard)) { VALUE merged = rb_ary_dup(actions); onibi_append_values(merged, guard); actions = merged; }
   rb_hash_aset(edge, ID2SYM(id_key_actions), actions);
@@ -1605,11 +1640,7 @@ static void onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
   OnibiIdVector ids;
   onibi_id_vector_from_array(&ids, starts);
   for (size_t i = 0; i < ids.count; i++) {
-    VALUE key = ULONG2NUM(ids.items[i]);
-    VALUE prior = rb_hash_aref(builder->capture_guards, key);
-    VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
-    onibi_append_values(merged, guard);
-    rb_hash_aset(builder->capture_guards, key, merged);
+    onibi_guard_vector_add(&builder->capture_guards, ids.items[i], guard);
   }
   onibi_id_vector_free(&ids);
 }
@@ -1619,11 +1650,7 @@ static void onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
   OnibiIdVector ids;
   onibi_id_vector_from_array(&ids, exits);
   for (size_t i = 0; i < ids.count; i++) {
-    VALUE key = ULONG2NUM(ids.items[i]);
-    VALUE prior = rb_hash_aref(builder->exit_guards, key);
-    VALUE merged = NIL_P(prior) ? rb_ary_new() : rb_ary_dup(prior);
-    onibi_append_values(merged, actions);
-    rb_hash_aset(builder->exit_guards, key, merged);
+    onibi_guard_vector_add(&builder->exit_guards, ids.items[i], actions);
   }
   onibi_id_vector_free(&ids);
 }
@@ -2552,7 +2579,20 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   int multiline = (parsed_options & 4) != 0;
   VALUE subprograms = rb_ary_new();
   rb_ary_push(subprograms, Qnil); /* root descriptor is filled after compile */
-  onibi_gir_builder_t builder = { rb_ary_new(), rb_ary_new(), 0, 0, 0, rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), rb_hash_new(), subprograms, rb_hash_new(), ignorecase, multiline, 0 };
+  onibi_gir_builder_t builder;
+  memset(&builder, 0, sizeof(builder));
+  builder.states = rb_ary_new();
+  builder.edges = rb_ary_new();
+  builder.capture_names = rb_hash_new();
+  builder.capture_bodies = rb_hash_new();
+  builder.capture_ids = rb_hash_new();
+  builder.active_subroutines = rb_hash_new();
+  builder.subprograms = subprograms;
+  builder.subprogram_ids = rb_hash_new();
+  onibi_guard_vector_init(&builder.capture_guards);
+  onibi_guard_vector_init(&builder.exit_guards);
+  builder.ignorecase = ignorecase;
+  builder.multiline = multiline;
   long prepass_capture_count = 0;
   onibi_collect_captures(ast, &builder, &prepass_capture_count);
   builder.capture_count = prepass_capture_count;
@@ -2580,7 +2620,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
     VALUE edge = rb_hash_new();
     VALUE destination = UINT2NUM(start_ids.items[i]);
     VALUE actions = rb_ary_new();
-    VALUE guard = rb_hash_aref(builder.capture_guards, destination);
+    VALUE guard = onibi_guard_vector_find(&builder.capture_guards, (OnibiStateId)start_ids.items[i]);
     onibi_append_values(actions, fragment.start_actions);
     if (!NIL_P(guard)) onibi_append_values(actions, guard);
     rb_hash_aset(edge, ID2SYM(id_key_to), destination);
@@ -2656,6 +2696,8 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled, &onibi_compiled_type, compiled_result);
   compiled_result->graph = graph;
   compiled_result->options = parsed_options;
+  onibi_guard_vector_free(&builder.capture_guards);
+  onibi_guard_vector_free(&builder.exit_guards);
   rb_obj_freeze(result);
   return result;
 }
