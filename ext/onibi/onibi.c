@@ -4173,40 +4173,53 @@ static int onibi_vm_call_subprogram(VALUE states, VALUE outgoing, VALUE subprogr
 }
 
 static int onibi_vm_walk(VALUE states, VALUE outgoing, VALUE str, long state_id, long pos, VALUE visited, VALUE counters, long *matched_end) {
-  rb_thread_check_ints();
-  onibi_check_deadline();
-  VALUE key = rb_ary_new_from_args(3, LONG2NUM(state_id), LONG2NUM(pos), counters);
-  if (RTEST(rb_hash_aref(visited, key))) return 0;
-  rb_hash_aset(visited, key, Qtrue);
-  VALUE state = rb_ary_entry(states, state_id);
-  ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
-  if (op == id_g_accept) { *matched_end = pos; return 1; }
-  if (op == id_g_grapheme) {
-    long consumed = onibi_grapheme_width(str, pos);
-    if (consumed <= 0) return 0;
-    pos += consumed;
-  } else if (op == id_g_atomic || op == id_g_absent) return 0;
-  else if (op == id_g_char || op == id_g_class || op == id_g_any) {
-    if (pos >= RSTRING_LEN(str)) return 0;
-    unsigned char byte = (unsigned char)RSTRING_PTR(str)[pos];
-    VALUE payload = onibi_hash_value_id(state, id_key_payload);
-    long consumed = 1;
-    int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value_id(payload, id_key_multiline))) :
-      (op == id_g_char ?
-        (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ?
-          tolower(byte) == tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte))) :
-          byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte))) : onibi_vm_class_match(payload, str, pos, byte, &consumed));
-    if (!hit) return 0;
-    pos += consumed;
-  }
-  VALUE state_edges = rb_ary_entry(outgoing, state_id);
-  for (long i = 0; i < RARRAY_LEN(state_edges); i++) {
-    VALUE edge = rb_ary_entry(state_edges, i);
+  typedef struct { long state_id, pos, next_edge; VALUE counters; } OnibiWalkFrame;
+  /* Counter-bearing repeat paths can visit one state at many counter values.
+   * Reserve a bounded workspace independent of graph state count. */
+  long capacity = RARRAY_LEN(states) * 64 + 64;
+  if (capacity > 65536) capacity = 65536;
+  OnibiWalkFrame *stack = ALLOCA_N(OnibiWalkFrame, capacity);
+  long depth = 0;
+  stack[depth++] = (OnibiWalkFrame){state_id, pos, 0, counters};
+  while (depth > 0) {
+    rb_thread_check_ints();
+    onibi_check_deadline();
+    OnibiWalkFrame *frame = &stack[depth - 1];
+    if (frame->next_edge == 0) {
+      VALUE key = rb_ary_new_from_args(3, LONG2NUM(frame->state_id), LONG2NUM(frame->pos), frame->counters);
+      if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
+      rb_hash_aset(visited, key, Qtrue);
+      VALUE state = rb_ary_entry(states, frame->state_id);
+      ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
+      if (op == id_g_accept) { *matched_end = frame->pos; return 1; }
+      if (op == id_g_grapheme) {
+        long consumed = onibi_grapheme_width(str, frame->pos);
+        if (consumed <= 0) { depth--; continue; }
+        frame->pos += consumed;
+      } else if (op == id_g_atomic || op == id_g_absent) { depth--; continue; }
+      else if (op == id_g_char || op == id_g_class || op == id_g_any) {
+        if (frame->pos >= RSTRING_LEN(str)) { depth--; continue; }
+        unsigned char byte = (unsigned char)RSTRING_PTR(str)[frame->pos];
+        VALUE payload = onibi_hash_value_id(state, id_key_payload);
+        long consumed = 1;
+        int hit = op == id_g_any ? (byte != '\n' || RTEST(onibi_hash_value_id(payload, id_key_multiline))) :
+          (op == id_g_char ?
+            (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ?
+              tolower(byte) == tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte))) :
+              byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte))) : onibi_vm_class_match(payload, str, frame->pos, byte, &consumed));
+        if (!hit) { depth--; continue; }
+        frame->pos += consumed;
+      }
+    }
+    VALUE state_edges = rb_ary_entry(outgoing, frame->state_id);
+    if (frame->next_edge >= RARRAY_LEN(state_edges)) { depth--; continue; }
+    VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-    VALUE next_counters = rb_hash_dup(counters);
-    if (!onibi_vm_actions_ok(edge_actions, str, pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
+    VALUE next_counters = rb_hash_dup(frame->counters);
+    if (!onibi_vm_actions_ok(edge_actions, str, frame->pos, RSTRING_LEN(str), next_counters, Qnil)) continue;
     onibi_vm_apply_counter_actions(edge_actions, next_counters);
-    if (onibi_vm_walk(states, outgoing, str, NUM2LONG(onibi_hash_value_id(edge, id_key_to)), pos, visited, next_counters, matched_end)) return 1;
+    if (depth >= capacity) rb_raise(eRegexpError, "GIR graph is too deep");
+    stack[depth++] = (OnibiWalkFrame){NUM2LONG(onibi_hash_value_id(edge, id_key_to)), frame->pos, 0, next_counters};
   }
   return 0;
 }
