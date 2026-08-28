@@ -711,6 +711,18 @@ static void onibi_freeze_gir_arrays(onibi_gir_builder_t *builder) {
 
 static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
 
+static int onibi_gir_action_valid(ID action) {
+  return action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
+    action == rb_intern("MATCH_RESET") || action == rb_intern("ASSERT_BEGIN_BUFFER") ||
+    action == rb_intern("ASSERT_END_BUFFER") || action == rb_intern("ASSERT_BEGIN_LINE") ||
+    action == rb_intern("ASSERT_END_LINE") || action == rb_intern("ASSERT_SEMI_END_BUFFER") ||
+    action == rb_intern("ASSERT_SEARCH_ORIGIN") || action == rb_intern("ASSERT_WORD_BOUNDARY") ||
+    action == rb_intern("ASSERT_NONWORD_BOUNDARY") || action == rb_intern("ASSERT_LOOKAHEAD") ||
+    action == rb_intern("ASSERT_LOOKBEHIND") || action == rb_intern("COUNTER_INIT") ||
+    action == rb_intern("COUNTER_INCREMENT") || action == rb_intern("TEST_COUNTER_LT") ||
+    action == rb_intern("TEST_COUNTER_GE");
+}
+
 static void onibi_gir_validate(VALUE graph) {
   VALUE states = onibi_hash_value(graph, "states");
   VALUE edges = onibi_hash_value(graph, "edges");
@@ -738,15 +750,7 @@ static void onibi_gir_validate(VALUE graph) {
     VALUE actions = onibi_hash_value(edge, "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (action != rb_intern("CAPTURE_OPEN") && action != rb_intern("CAPTURE_CLOSE") &&
-          action != rb_intern("MATCH_RESET") && action != rb_intern("ASSERT_BEGIN_BUFFER") &&
-          action != rb_intern("ASSERT_END_BUFFER") && action != rb_intern("ASSERT_BEGIN_LINE") &&
-          action != rb_intern("ASSERT_END_LINE") && action != rb_intern("ASSERT_SEMI_END_BUFFER") &&
-          action != rb_intern("ASSERT_SEARCH_ORIGIN") && action != rb_intern("ASSERT_WORD_BOUNDARY") &&
-          action != rb_intern("ASSERT_NONWORD_BOUNDARY") && action != rb_intern("ASSERT_LOOKAHEAD") &&
-          action != rb_intern("ASSERT_LOOKBEHIND") && action != rb_intern("COUNTER_INIT") &&
-          action != rb_intern("COUNTER_INCREMENT") && action != rb_intern("TEST_COUNTER_LT") &&
-          action != rb_intern("TEST_COUNTER_GE"))
+      if (!onibi_gir_action_valid(action))
         rb_raise(eRegexpError, "unknown GIR edge action opcode");
     }
   }
@@ -760,16 +764,7 @@ static void onibi_gir_validate(VALUE graph) {
     VALUE actions = onibi_hash_value(edge, "actions");
     for (long j = 0; j < RARRAY_LEN(actions); j++) {
       ID action = SYM2ID(onibi_hash_value(rb_ary_entry(actions, j), "op"));
-      if (action == rb_intern("CAPTURE_OPEN") || action == rb_intern("CAPTURE_CLOSE") ||
-          action == rb_intern("MATCH_RESET") || action == rb_intern("ASSERT_BEGIN_BUFFER") ||
-          action == rb_intern("ASSERT_END_BUFFER") || action == rb_intern("ASSERT_BEGIN_LINE") ||
-          action == rb_intern("ASSERT_END_LINE") || action == rb_intern("ASSERT_SEMI_END_BUFFER") ||
-          action == rb_intern("ASSERT_SEARCH_ORIGIN") || action == rb_intern("ASSERT_WORD_BOUNDARY") ||
-          action == rb_intern("ASSERT_NONWORD_BOUNDARY") || action == rb_intern("ASSERT_LOOKAHEAD") ||
-          action == rb_intern("ASSERT_LOOKBEHIND") || action == rb_intern("COUNTER_INIT") ||
-          action == rb_intern("COUNTER_INCREMENT") || action == rb_intern("TEST_COUNTER_LT") ||
-          action == rb_intern("TEST_COUNTER_GE")) continue;
-      rb_raise(eRegexpError, "unknown GIR start action opcode");
+      if (!onibi_gir_action_valid(action)) rb_raise(eRegexpError, "unknown GIR start action opcode");
     }
   }
 }
