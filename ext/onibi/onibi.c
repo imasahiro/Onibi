@@ -190,6 +190,29 @@ static VALUE onibi_lexer_alloc(VALUE klass) {
   return TypedData_Make_Struct(klass, onibi_lexer_t, &onibi_lexer_type, obj);
 }
 
+typedef enum {
+  ONIBI_TOKEN_LITERAL = 0, ONIBI_TOKEN_LOOKAHEAD_START, ONIBI_TOKEN_LOOKBEHIND_START,
+  ONIBI_TOKEN_OPTION_GLOBAL, ONIBI_TOKEN_OPTION_SCOPE_START, ONIBI_TOKEN_NONCAPTURE_START,
+  ONIBI_TOKEN_ATOMIC_START, ONIBI_TOKEN_ABSENCE_START, ONIBI_TOKEN_CONDITIONAL_START,
+  ONIBI_TOKEN_GROUP_START, ONIBI_TOKEN_POSIX_CLASS, ONIBI_TOKEN_BACKREF,
+  ONIBI_TOKEN_SUBROUTINE, ONIBI_TOKEN_META_ESCAPE, ONIBI_TOKEN_ANCHOR,
+  ONIBI_TOKEN_MATCH_RESET, ONIBI_TOKEN_ESCAPE, ONIBI_TOKEN_CLASS_START,
+  ONIBI_TOKEN_CLASS_END, ONIBI_TOKEN_CLASS_RANGE, ONIBI_TOKEN_CLASS_NEGATE,
+  ONIBI_TOKEN_ALTERNATION, ONIBI_TOKEN_GROUP_END, ONIBI_TOKEN_QUANTIFIER,
+  ONIBI_TOKEN_WILDCARD
+} OnibiTokenKind;
+
+static ID onibi_token_kind_id(OnibiTokenKind kind) {
+  static const char *const names[] = {
+    "literal", "lookahead_start", "lookbehind_start", "option_global",
+    "option_scope_start", "noncapture_start", "atomic_start", "absence_start",
+    "conditional_start", "group_start", "posix_class", "backref", "subroutine",
+    "meta_escape", "anchor", "match_reset", "escape", "class_start", "class_end",
+    "class_range", "class_negate", "alternation", "group_end", "quantifier", "wildcard"
+  };
+  return rb_intern(names[kind]);
+}
+
 static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   VALUE tokens = rb_ary_new();
   /* One escape is one semantic token.  Do not let an escaped metacharacter
@@ -203,7 +226,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
   for (long i = 0; i < RSTRING_LEN(src); i++) {
     long start = i;
     VALUE token = rb_hash_new();
-    const char *kind = "literal";
+    OnibiTokenKind kind = ONIBI_TOKEN_LITERAL;
     unsigned char byte = (unsigned char)RSTRING_PTR(src)[i];
     if (extended && !in_class && byte == '#') {
       while (i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] != '\n') i++;
@@ -220,12 +243,12 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     int option_scope_x = -1;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
         (RSTRING_PTR(src)[i + 2] == '=' || RSTRING_PTR(src)[i + 2] == '!')) {
-      kind = "lookahead_start";
+      kind = ONIBI_TOKEN_LOOKAHEAD_START;
       byte = (unsigned char)RSTRING_PTR(src)[i + 2];
       i += 2;
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == '<' && (RSTRING_PTR(src)[i + 3] == '=' || RSTRING_PTR(src)[i + 3] == '!')) {
-      kind = "lookbehind_start";
+      kind = ONIBI_TOKEN_LOOKBEHIND_START;
       byte = (unsigned char)RSTRING_PTR(src)[i + 3];
       i += 3;
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) &&
@@ -251,7 +274,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       else if (RSTRING_PTR(src)[option_end] == ')') global_modifier = 1;
       else if (RSTRING_PTR(src)[option_end] != ':') valid = 0;
       if (valid) {
-        kind = global_modifier ? "option_global" : "option_scope_start";
+        kind = global_modifier ? ONIBI_TOKEN_OPTION_GLOBAL : ONIBI_TOKEN_OPTION_SCOPE_START;
         byte = global_modifier ? ')' : ':';
         i = option_end;
         long name_end = negative_start >= 0 ? positive_end : option_end;
@@ -265,17 +288,17 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       }
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == ':') {
-      kind = "noncapture_start";
+      kind = ONIBI_TOKEN_NONCAPTURE_START;
       byte = ':';
       i += 2;
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == '>') {
-      kind = "atomic_start";
+      kind = ONIBI_TOKEN_ATOMIC_START;
       byte = '>';
       i += 2;
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
                RSTRING_PTR(src)[i + 2] == '~') {
-      kind = "absence_start";
+      kind = ONIBI_TOKEN_ABSENCE_START;
       byte = '~';
       i += 2;
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
@@ -283,7 +306,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != ')') close++;
       if (close < RSTRING_LEN(src)) {
-        kind = "conditional_start";
+        kind = ONIBI_TOKEN_CONDITIONAL_START;
         byte = '(';
         group_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
@@ -292,7 +315,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
       if (close < RSTRING_LEN(src)) {
-        kind = "group_start";
+        kind = ONIBI_TOKEN_GROUP_START;
         group_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
       }
@@ -301,7 +324,7 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       long close = i + 2;
       while (close + 1 < RSTRING_LEN(src) && !(RSTRING_PTR(src)[close] == ':' && RSTRING_PTR(src)[close + 1] == ']')) close++;
       if (close + 1 < RSTRING_LEN(src)) {
-        kind = "posix_class";
+        kind = ONIBI_TOKEN_POSIX_CLASS;
         posix_name = rb_str_substr(src, i + 2, close - (i + 2));
         i = close + 1;
       }
@@ -310,31 +333,31 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
       if (close < RSTRING_LEN(src)) {
-        kind = "backref";
+        kind = ONIBI_TOKEN_BACKREF;
         byte = 'k';
         backref_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
         }
     }
-    if (strcmp(kind, "literal") == 0 && !in_class && byte == '\\' &&
+    if (kind == ONIBI_TOKEN_LITERAL && !in_class && byte == '\\' &&
         i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'g' && RSTRING_PTR(src)[i + 2] == '<') {
       long close = i + 3;
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
       if (close < RSTRING_LEN(src)) {
-        kind = "subroutine";
+        kind = ONIBI_TOKEN_SUBROUTINE;
         byte = 'g';
         backref_name = rb_str_substr(src, i + 3, close - (i + 3));
         i = close;
       }
     }
-    if (strcmp(kind, "literal") == 0 && byte == '\\' && i + 2 < RSTRING_LEN(src) &&
+    if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' && i + 2 < RSTRING_LEN(src) &&
         (RSTRING_PTR(src)[i + 1] == 'M' || RSTRING_PTR(src)[i + 1] == 'C') &&
         RSTRING_PTR(src)[i + 2] == '-') {
-      kind = "meta_escape";
+      kind = ONIBI_TOKEN_META_ESCAPE;
       byte = (unsigned char)RSTRING_PTR(src)[i + 1];
       i += 2;
     }
-    if (strcmp(kind, "literal") == 0 && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
+    if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' && i + 1 < RSTRING_LEN(src)) {
       unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
       int hex_literal = 0;
       int octal_literal = 0;
@@ -360,11 +383,11 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       else if (escaped == 'v') byte = '\v';
       else if (escaped == 'a') byte = '\a';
       else if (escaped == 'e') byte = 0x1b;
-    if (hex_literal || octal_literal) kind = "literal";
-    else if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = "anchor";
-      else if (!in_class && escaped == 'K') kind = "match_reset";
-      else if (!in_class && escaped >= '1' && escaped <= '9') kind = "backref";
-      else if (strchr("dDsSwWhHRXpPu", escaped) != NULL) kind = "escape";
+    if (hex_literal || octal_literal) kind = ONIBI_TOKEN_LITERAL;
+    else if (!in_class && strchr("AzZGbB", escaped) != NULL) kind = ONIBI_TOKEN_ANCHOR;
+      else if (!in_class && escaped == 'K') kind = ONIBI_TOKEN_MATCH_RESET;
+      else if (!in_class && escaped >= '1' && escaped <= '9') kind = ONIBI_TOKEN_BACKREF;
+      else if (strchr("dDsSwWhHRXpPu", escaped) != NULL) kind = ONIBI_TOKEN_ESCAPE;
       i++;
       if ((escaped == 'p' || escaped == 'P') && i + 1 < RSTRING_LEN(src) &&
           RSTRING_PTR(src)[i + 1] == '{') {
@@ -376,35 +399,35 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         }
       }
     } else if (byte == '[' && !in_class) {
-      kind = "class_start";
+      kind = ONIBI_TOKEN_CLASS_START;
       in_class = 1;
       class_depth = 1;
       class_body_start = i + 1;
-    } else if (strcmp(kind, "literal") == 0 && byte == '[' && in_class) {
-      kind = "class_start";
+    } else if (kind == ONIBI_TOKEN_LITERAL && byte == '[' && in_class) {
+      kind = ONIBI_TOKEN_CLASS_START;
       if (class_depth >= (long)(sizeof(class_body_starts) / sizeof(class_body_starts[0])))
         rb_raise(eRegexpError, "regexp character class nesting is too deep");
       class_body_starts[class_depth - 1] = class_body_start;
       class_depth++;
       class_body_start = i + 1;
     } else if (byte == ']' && in_class && class_depth > 1) {
-      kind = "class_end";
+      kind = ONIBI_TOKEN_CLASS_END;
       class_depth--;
       class_body_start = class_body_starts[class_depth - 1];
     } else if (byte == ']' && in_class) {
-      kind = "class_end";
+      kind = ONIBI_TOKEN_CLASS_END;
       in_class = 0;
       class_depth = 0;
     } else if (in_class) {
-      if (byte == '-' && i > class_body_start) kind = "class_range";
-      else if (byte == '^' && i == class_body_start) kind = "class_negate";
-    } else if (byte == '|') kind = "alternation";
-    else if (strcmp(kind, "literal") == 0 && byte == '(') kind = "group_start";
-    else if (strcmp(kind, "literal") == 0 && byte == ')') kind = "group_end";
-    else if (strcmp(kind, "literal") == 0 && strchr("*+?{}", byte) != NULL) kind = "quantifier";
-    else if (strcmp(kind, "literal") == 0 && byte == '.') kind = "wildcard";
-    else if (strcmp(kind, "literal") == 0 && (byte == '^' || byte == '$')) kind = "anchor";
-    if (strcmp(kind, "literal") == 0 && byte >= 0x80) {
+      if (byte == '-' && i > class_body_start) kind = ONIBI_TOKEN_CLASS_RANGE;
+      else if (byte == '^' && i == class_body_start) kind = ONIBI_TOKEN_CLASS_NEGATE;
+    } else if (byte == '|') kind = ONIBI_TOKEN_ALTERNATION;
+    else if (kind == ONIBI_TOKEN_LITERAL && byte == '(') kind = ONIBI_TOKEN_GROUP_START;
+    else if (kind == ONIBI_TOKEN_LITERAL && byte == ')') kind = ONIBI_TOKEN_GROUP_END;
+    else if (kind == ONIBI_TOKEN_LITERAL && strchr("*+?{}", byte) != NULL) kind = ONIBI_TOKEN_QUANTIFIER;
+    else if (kind == ONIBI_TOKEN_LITERAL && byte == '.') kind = ONIBI_TOKEN_WILDCARD;
+    else if (kind == ONIBI_TOKEN_LITERAL && (byte == '^' || byte == '$')) kind = ONIBI_TOKEN_ANCHOR;
+    if (kind == ONIBI_TOKEN_LITERAL && byte >= 0x80) {
       int char_len = rb_enc_mbclen(RSTRING_PTR(src) + start,
                                    RSTRING_PTR(src) + RSTRING_LEN(src),
                                    rb_enc_get(src));
@@ -418,20 +441,20 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         byte = (unsigned char)RSTRING_PTR(src)[start];
       }
     }
-    if (strcmp(kind, "group_start") == 0 || strcmp(kind, "noncapture_start") == 0 ||
-        strcmp(kind, "atomic_start") == 0 || strcmp(kind, "absence_start") == 0 || strcmp(kind, "conditional_start") == 0 || strcmp(kind, "lookahead_start") == 0 ||
-        strcmp(kind, "lookbehind_start") == 0 || strcmp(kind, "option_scope_start") == 0) {
+    if (kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
+        kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_ABSENCE_START || kind == ONIBI_TOKEN_CONDITIONAL_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
+        kind == ONIBI_TOKEN_LOOKBEHIND_START || kind == ONIBI_TOKEN_OPTION_SCOPE_START) {
       if (extended_depth >= (long)(sizeof(extended_stack) / sizeof(extended_stack[0])))
         rb_raise(eRegexpError, "regexp nesting is too deep");
       extended_stack[extended_depth++] = -1;
-      if (strcmp(kind, "option_scope_start") == 0) {
+      if (kind == ONIBI_TOKEN_OPTION_SCOPE_START) {
         extended_stack[extended_depth - 1] = extended;
         if (option_scope_x >= 0) extended = option_negative ? 0 : 1;
       }
     }
-    if (strcmp(kind, "option_global") == 0 && option_scope_x >= 0)
+    if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
-    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern(kind)));
+    rb_hash_aset(token, ID2SYM(rb_intern("kind")), ID2SYM(onibi_token_kind_id(kind)));
     rb_hash_aset(token, ID2SYM(rb_intern("byte")), INT2NUM(byte));
     rb_hash_aset(token, ID2SYM(rb_intern("start")), LONG2NUM(start));
     rb_hash_aset(token, ID2SYM(rb_intern("end")), LONG2NUM(i + 1));
@@ -441,11 +464,11 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     if (!NIL_P(posix_name)) { rb_obj_freeze(posix_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), posix_name); }
     if (!NIL_P(escape_name)) { rb_obj_freeze(escape_name); rb_hash_aset(token, ID2SYM(rb_intern("name")), escape_name); }
     if (!NIL_P(literal_bytes)) { rb_obj_freeze(literal_bytes); rb_hash_aset(token, ID2SYM(rb_intern("bytes")), literal_bytes); }
-    if (strcmp(kind, "option_scope_start") == 0 || strcmp(kind, "option_global") == 0)
+    if (kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_OPTION_GLOBAL)
       rb_hash_aset(token, ID2SYM(rb_intern("negative")), option_negative ? Qtrue : Qfalse);
     rb_obj_freeze(token);
     rb_ary_push(tokens, token);
-    if (strcmp(kind, "group_end") == 0 && extended_depth > 0) {
+    if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
       int prior_extended = extended_stack[--extended_depth];
       if (prior_extended >= 0) extended = prior_extended;
     }
@@ -1047,6 +1070,14 @@ static int onibi_ascii_property_name_p(VALUE name) {
   return onibi_ascii_property_hit(name, 0) >= 0 || strcmp(property, "ASCII") == 0;
 }
 
+typedef enum {
+  ONIBI_POSIX_UNKNOWN = 0,
+  ONIBI_POSIX_ALPHA, ONIBI_POSIX_DIGIT, ONIBI_POSIX_ALNUM,
+  ONIBI_POSIX_SPACE, ONIBI_POSIX_BLANK, ONIBI_POSIX_LOWER,
+  ONIBI_POSIX_UPPER, ONIBI_POSIX_WORD, ONIBI_POSIX_XDIGIT
+} OnibiPosixKind;
+static OnibiPosixKind onibi_posix_kind(VALUE name);
+
 static VALUE onibi_class_bitmap(VALUE payload, int fold) {
   unsigned char bits[32];
   memset(bits, 0, sizeof(bits));
@@ -1125,17 +1156,17 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       }
     } else if (kind == rb_intern("posix_class")) {
       VALUE name = onibi_hash_value(child, "name");
-      const char *n = StringValueCStr(name);
+      OnibiPosixKind posix = onibi_posix_kind(name);
       for (int c = 0; c < 256; c++) {
-        int hit = (strcmp(n, "alpha") == 0) ? isalpha(c) :
-          (strcmp(n, "digit") == 0) ? isdigit(c) :
-          (strcmp(n, "alnum") == 0) ? isalnum(c) :
-          (strcmp(n, "space") == 0) ? isspace(c) :
-          (strcmp(n, "blank") == 0) ? (c == ' ' || c == '\t') :
-          (strcmp(n, "lower") == 0) ? islower(c) :
-          (strcmp(n, "upper") == 0) ? isupper(c) :
-          (strcmp(n, "word") == 0) ? (isalnum(c) || c == '_') :
-          (strcmp(n, "xdigit") == 0) ? isxdigit(c) : 0;
+        int hit = posix == ONIBI_POSIX_ALPHA ? isalpha(c) :
+          posix == ONIBI_POSIX_DIGIT ? isdigit(c) :
+          posix == ONIBI_POSIX_ALNUM ? isalnum(c) :
+          posix == ONIBI_POSIX_SPACE ? isspace(c) :
+          posix == ONIBI_POSIX_BLANK ? (c == ' ' || c == '\t') :
+          posix == ONIBI_POSIX_LOWER ? islower(c) :
+          posix == ONIBI_POSIX_UPPER ? isupper(c) :
+          posix == ONIBI_POSIX_WORD ? (isalnum(c) || c == '_') :
+          posix == ONIBI_POSIX_XDIGIT ? isxdigit(c) : 0;
         if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
       }
     } else if (kind == rb_intern("character_class")) {
@@ -1172,6 +1203,20 @@ static int onibi_ast_has_capture(VALUE ast) {
   for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
     if (onibi_ast_has_capture(onibi_hash_value(ast, keys[i]))) return 1;
   return 0;
+}
+
+static OnibiPosixKind onibi_posix_kind(VALUE name) {
+  const char *text = StringValueCStr(name);
+  if (strcmp(text, "alpha") == 0) return ONIBI_POSIX_ALPHA;
+  if (strcmp(text, "digit") == 0) return ONIBI_POSIX_DIGIT;
+  if (strcmp(text, "alnum") == 0) return ONIBI_POSIX_ALNUM;
+  if (strcmp(text, "space") == 0) return ONIBI_POSIX_SPACE;
+  if (strcmp(text, "blank") == 0) return ONIBI_POSIX_BLANK;
+  if (strcmp(text, "lower") == 0) return ONIBI_POSIX_LOWER;
+  if (strcmp(text, "upper") == 0) return ONIBI_POSIX_UPPER;
+  if (strcmp(text, "word") == 0) return ONIBI_POSIX_WORD;
+  if (strcmp(text, "xdigit") == 0) return ONIBI_POSIX_XDIGIT;
+  return ONIBI_POSIX_UNKNOWN;
 }
 
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload) {
@@ -1291,12 +1336,12 @@ static VALUE onibi_capture_test_action(long slot, int set) {
   return action;
 }
 
-static VALUE onibi_counter_action(const char *op, long slot, VALUE limit) {
+static VALUE onibi_counter_action(ID op, long slot, VALUE limit) {
   VALUE action = rb_hash_new();
-  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(op)));
+  rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(op));
   rb_hash_aset(action, ID2SYM(rb_intern("slot")), LONG2NUM(slot));
   if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(rb_intern("limit")), limit);
-  if (strcmp(op, "COUNTER_INIT") == 0)
+  if (op == rb_intern("COUNTER_INIT"))
     rb_hash_aset(action, ID2SYM(rb_intern("value")), INT2NUM(1));
   return action;
 }
@@ -1982,7 +2027,7 @@ skip_utf8_range_expansion:
     if (max >= 0 && max != min) {
       /* Counted repeats use one counter slot.  The first start edge
          initializes it.  Optional bodies use ordered test edges. */
-      VALUE init = onibi_counter_action("COUNTER_INIT", counter_slot, Qnil);
+      VALUE init = onibi_counter_action(rb_intern("COUNTER_INIT"), counter_slot, Qnil);
       rb_hash_aset(init, ID2SYM(rb_intern("value")), INT2NUM(min > 0 ? 1 : 0));
       rb_ary_push(result.start_actions, init);
     }
@@ -1992,7 +2037,7 @@ skip_utf8_range_expansion:
       else {
         VALUE actions = rb_ary_new();
         if (counter_slot >= 0)
-          rb_ary_push(actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
+          rb_ary_push(actions, onibi_counter_action(rb_intern("COUNTER_INCREMENT"), counter_slot, Qnil));
         onibi_connect_actions(builder, result.exits, part.starts, actions);
       }
       result.exits = part.exits;
@@ -2003,15 +2048,15 @@ skip_utf8_range_expansion:
         onibi_fragment_t part = onibi_compile_node(atom, builder);
         if (RARRAY_LEN(result.starts) == 0) result.starts = part.starts;
         VALUE repeat_actions = rb_ary_new();
-        rb_ary_push(repeat_actions, onibi_counter_action("TEST_COUNTER_LT", counter_slot, LONG2NUM(max)));
-        rb_ary_push(repeat_actions, onibi_counter_action("COUNTER_INCREMENT", counter_slot, Qnil));
+        rb_ary_push(repeat_actions, onibi_counter_action(rb_intern("TEST_COUNTER_LT"), counter_slot, LONG2NUM(max)));
+        rb_ary_push(repeat_actions, onibi_counter_action(rb_intern("COUNTER_INCREMENT"), counter_slot, Qnil));
         if (RARRAY_LEN(result.exits) > 0)
           onibi_connect_actions(builder, result.exits, part.starts, repeat_actions);
         VALUE next_exits = rb_ary_dup(result.exits);
         onibi_append_values(next_exits, part.exits);
         result.exits = next_exits;
       }
-      rb_ary_push(result.pending_actions, onibi_counter_action("TEST_COUNTER_GE", counter_slot, LONG2NUM(min)));
+      rb_ary_push(result.pending_actions, onibi_counter_action(rb_intern("TEST_COUNTER_GE"), counter_slot, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (RARRAY_LEN(result.starts) == 0) result.starts = repeat.starts;
