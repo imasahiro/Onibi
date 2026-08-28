@@ -260,6 +260,15 @@ class BenchmarkApiTest < Minitest::Test
     refute negative.vm_match?("A")
   end
 
+  def test_ascii_hex_digit_property_lowers_to_bitmap
+    property = Onibi::Regexp.new("\\p{ASCII_Hex_Digit}")
+
+    assert property.program_cached?
+    assert property.vm_match?("F")
+    refute property.vm_match?("g")
+    refute property.vm_match?("é")
+  end
+
   def test_meta_and_control_escapes_cross_rseq_boundary
     meta = Onibi::Regexp.new("\\M-a".b)
     control = Onibi::Regexp.new("\\M-\\C-A".b)

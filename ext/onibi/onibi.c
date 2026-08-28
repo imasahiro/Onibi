@@ -958,8 +958,13 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
         (code == 'w' ? (isalnum(c) || c == '_') : (code == 'h' ? isxdigit(c) : 0)));
       if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
-  } else if (!NIL_P(escape_name) && rb_str_equal(escape_name, rb_str_new_cstr("ASCII"))) {
-    for (int c = 0; c < 128; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
+  } else if (!NIL_P(escape_name) &&
+             (rb_str_equal(escape_name, rb_str_new_cstr("ASCII")) ||
+              rb_str_equal(escape_name, rb_str_new_cstr("ASCII_Hex_Digit")))) {
+    int limit = rb_str_equal(escape_name, rb_str_new_cstr("ASCII")) ? 128 : 256;
+    for (int c = 0; c < limit; c++) {
+      if (limit == 128 || isxdigit(c)) onibi_bitmap_set(bits, (unsigned char)c, fold);
+    }
     if (NUM2INT(onibi_hash_value(payload, "byte")) == 'P')
       for (long i = 0; i < 32; i++) bits[i] = (unsigned char)~bits[i];
   }
@@ -981,8 +986,12 @@ static VALUE onibi_class_bitmap(VALUE payload, int fold) {
       onibi_bitmap_set(bits, (unsigned char)NUM2INT(onibi_hash_value(child, "byte")), fold);
     } else if (kind == rb_intern("escape")) {
       VALUE name = onibi_hash_value(child, "name");
-      if (!NIL_P(name) && rb_str_equal(name, rb_str_new_cstr("ASCII"))) {
-        for (int c = 0; c < 128; c++) onibi_bitmap_set(bits, (unsigned char)c, fold);
+      if (!NIL_P(name) && (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
+                           rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")))) {
+        int limit = rb_str_equal(name, rb_str_new_cstr("ASCII")) ? 128 : 256;
+        for (int c = 0; c < limit; c++) {
+          if (limit == 128 || isxdigit(c)) onibi_bitmap_set(bits, (unsigned char)c, fold);
+        }
         if (NUM2INT(onibi_hash_value(child, "byte")) == 'P')
           for (long byte = 0; byte < 32; byte++) bits[byte] = (unsigned char)~bits[byte];
         continue;
@@ -1336,7 +1345,9 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type == ID2SYM(rb_intern("escape"))) {
       VALUE name = onibi_hash_value(ast, "name");
-      if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !rb_str_equal(name, rb_str_new_cstr("ASCII")))
+      if (!NIL_P(name) && RSTRING_LEN(name) > 1 &&
+          !rb_str_equal(name, rb_str_new_cstr("ASCII")) &&
+          !rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")))
         rb_raise(eRegexpError, "Unicode property escapes require encoded GIR classes");
       int code = NIL_P(name) ? 0 : tolower((unsigned char)RSTRING_PTR(name)[0]);
       if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
@@ -1520,6 +1531,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         VALUE name = onibi_hash_value(child, "name");
         int simple = !NIL_P(name) &&
           (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
+           rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")) ||
            (RSTRING_LEN(name) == 1 && strchr("dDsSwWhH", RSTRING_PTR(name)[0]) != NULL));
         if (!simple) rb_raise(eRegexpError, "lookaround body has an unsupported escape");
         VALUE payload = rb_hash_dup(child);
@@ -2162,7 +2174,8 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
 static int onibi_ascii_property_token_p(VALUE token) {
   if (onibi_token_byte(token) != 'p' && onibi_token_byte(token) != 'P') return 0;
   VALUE name = onibi_hash_value(token, "name");
-  return !NIL_P(name) && rb_str_equal(name, rb_str_new_cstr("ASCII"));
+  return !NIL_P(name) && (rb_str_equal(name, rb_str_new_cstr("ASCII")) ||
+    rb_str_equal(name, rb_str_new_cstr("ASCII_Hex_Digit")));
 }
 
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
