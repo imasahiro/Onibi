@@ -62,6 +62,12 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes source, "onibi_feature_token_bytes(obj->feature_token_count)"
   end
 
+  def test_numeric_assertion_dispatch_preserves_public_matching
+    assert Onibi::Regexp.new("^a$").match?("a")
+    assert Onibi::Regexp.new("(?=a)a").match?("a")
+    assert Onibi::Regexp.new("(?<=a)b").match?("ab")
+  end
+
   def test_feature_token_record_has_no_ruby_value_fields
     source = File.read(EXTENSION_SOURCE)
     record = source[/typedef struct(?: OnibiFeatureToken)? \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
