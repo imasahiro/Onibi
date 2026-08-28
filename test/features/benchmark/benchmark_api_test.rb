@@ -489,6 +489,15 @@ class BenchmarkApiTest < Minitest::Test
     assert_equal %i[option_scope_start literal literal literal group_end], disabled.map { |token| token[:kind] }
   end
 
+  def test_compiler_uses_tokenized_scoped_extended_body
+    enabled = Onibi::Regexp.new("(?x:a b)")
+    disabled = Onibi::Regexp.new("(?-x:a b)")
+    assert enabled.program_cached?
+    assert enabled.vm_match?("ab")
+    refute disabled.vm_match?("ab")
+    assert disabled.vm_match?("a b")
+  end
+
   def test_tokenizer_keeps_comma_and_space_as_literals
     assert_equal :literal, Onibi::Lexer.new(",").tokens.first[:kind]
     assert Onibi::Regexp.new("a b").vm_match?("a b")

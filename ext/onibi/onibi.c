@@ -1145,9 +1145,8 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     rb_raise(eRegexpError, "subroutine calls require the dynamic interpreter");
   if (type == ID2SYM(rb_intern("option_scope"))) {
     VALUE option_names = onibi_hash_value(ast, "options");
-    if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING) ||
-        memchr(RSTRING_PTR(option_names), 'x', (size_t)RSTRING_LEN(option_names)) != NULL)
-      rb_raise(eRegexpError, "extended option scopes require tokenizer state");
+    if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
+      rb_raise(eRegexpError, "option scope has no flags");
     int saved_ignorecase = builder->ignorecase;
     int saved_multiline = builder->multiline;
     int negative = RTEST(onibi_hash_value(ast, "negative"));
@@ -1155,6 +1154,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
       int enabled = negative ? 0 : 1;
       if (RSTRING_PTR(option_names)[i] == 'i') builder->ignorecase = enabled;
       else if (RSTRING_PTR(option_names)[i] == 'm') builder->multiline = enabled;
+      else if (RSTRING_PTR(option_names)[i] == 'x') continue;
       else rb_raise(eRegexpError, "unknown option scope flag");
     }
     onibi_fragment_t result = onibi_compile_node(onibi_hash_value(ast, "body"), builder);
