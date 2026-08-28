@@ -752,6 +752,16 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
   physical.magic = ONIBI_RSEQ_MAGIC;
   physical.version = ONIBI_RSEQ_VERSION;
   physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
+  for (long i = 0; i < RARRAY_LEN(states); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(states, i), "op"));
+    if (op == rb_intern("G_BACKREF") || op == rb_intern("G_CALL") ||
+        op == rb_intern("G_ATOMIC") || op == rb_intern("G_ABSENT")) {
+      physical.exec_kind = 2;
+      break;
+    }
+    if (op == rb_intern("G_ACCEPT")) continue;
+  }
+  if (physical.exec_kind == 0 && RARRAY_LEN(actions) > 0) physical.exec_kind = 1;
   physical.state_count = (uint32_t)RARRAY_LEN(states);
   physical.edge_count = (uint32_t)(RARRAY_LEN(r_edges) + RARRAY_LEN(start_edges));
   physical.action_count = (uint32_t)RARRAY_LEN(actions);
@@ -799,6 +809,19 @@ static VALUE onibi_rseq_lower(VALUE self, VALUE compiled) {
     VALUE edge = rb_ary_entry(start_edges, i);
     physical_edges[RARRAY_LEN(r_edges) + i].destination = (uint32_t)NUM2ULONG(onibi_hash_value(edge, "to"));
     physical_edges[RARRAY_LEN(r_edges) + i].action_offset = 0;
+  }
+  OnibiRAction *physical_actions = (OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
+  for (long i = 0; i < RARRAY_LEN(actions); i++) {
+    ID op = SYM2ID(onibi_hash_value(rb_ary_entry(actions, i), "op"));
+    physical_actions[i].op = (uint8_t)(op == rb_intern("CAPTURE_OPEN") || op == rb_intern("CAPTURE_CLOSE") ? ONIBI_RA_CAPTURE :
+      op == rb_intern("ASSERT_BEGIN_BUFFER") || op == rb_intern("ASSERT_END_BUFFER") ||
+      op == rb_intern("ASSERT_BEGIN_LINE") || op == rb_intern("ASSERT_END_LINE") ||
+      op == rb_intern("ASSERT_SEMI_END_BUFFER") ? ONIBI_RA_ASSERT_POSITION :
+      op == rb_intern("COUNTER_INIT") ? ONIBI_RA_COUNTER_SET :
+      op == rb_intern("COUNTER_INCREMENT") ? ONIBI_RA_COUNTER_ADD :
+      op == rb_intern("TEST_COUNTER_LT") || op == rb_intern("TEST_COUNTER_GE") ? ONIBI_RA_COUNTER_TEST : ONIBI_RA_END);
+    VALUE slot = rb_hash_aref(rb_ary_entry(actions, i), ID2SYM(rb_intern("slot")));
+    if (!NIL_P(slot)) physical_actions[i].arg16 = (uint16_t)NUM2ULONG(slot);
   }
   rb_obj_freeze(blob);
   VALUE result = rb_hash_new();
