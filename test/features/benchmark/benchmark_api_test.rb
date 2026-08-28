@@ -469,6 +469,17 @@ class BenchmarkApiTest < Minitest::Test
     refute behind.vm_match?("ca")
   end
 
+  def test_mixed_literal_and_class_lookaround_preserves_fixed_width
+    ahead = Onibi::Regexp.new("(?=[ab]c)[a-z]c")
+    behind = Onibi::Regexp.new("(?<=[ab]c)c")
+
+    assert ahead.program_cached?
+    assert behind.program_cached?
+    assert ahead.vm_match?("ac")
+    assert behind.vm_match?("acc")
+    refute behind.vm_match?("abc")
+  end
+
   def test_unimplemented_quantifier_ordering_modifiers_use_mri_boundary
     lazy = Onibi::Regexp.new("a+?")
     possessive = Onibi::Regexp.new("a++")

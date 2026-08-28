@@ -1485,28 +1485,36 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
     if (!RB_TYPE_P(children, T_ARRAY))
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE bytes = rb_str_new(NULL, 0);
-    VALUE bitmap = Qnil;
+    VALUE predicates = rb_ary_new();
     for (long i = 0; i < RARRAY_LEN(children); i++) {
       VALUE child = rb_ary_entry(children, i);
       VALUE child_type = onibi_symbol_value(child, "type");
       if (child_type == ID2SYM(rb_intern("character_class")) ||
           child_type == ID2SYM(rb_intern("class_intersection"))) {
-        if (RARRAY_LEN(children) != 1) rb_raise(eRegexpError, "class lookaround must have fixed literal width");
-        bitmap = onibi_class_bitmap(child, builder->ignorecase);
+        VALUE predicate = rb_hash_new();
+        rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("bitmap")));
+        rb_hash_aset(predicate, ID2SYM(rb_intern("bitmap")), onibi_class_bitmap(child, builder->ignorecase));
+        rb_ary_push(predicates, predicate);
         continue;
       }
       if (child_type != ID2SYM(rb_intern("literal")))
-        rb_raise(eRegexpError, "lookahead body is not a literal sequence");
+        rb_raise(eRegexpError, "lookaround body is not a fixed literal/class sequence");
+      VALUE predicate = rb_hash_new();
+      rb_hash_aset(predicate, ID2SYM(rb_intern("kind")), ID2SYM(rb_intern("byte")));
+      rb_hash_aset(predicate, ID2SYM(rb_intern("byte")), onibi_hash_value(child, "byte"));
+      rb_ary_push(predicates, predicate);
       rb_str_cat(bytes, (const char[]){(char)NUM2INT(onibi_hash_value(child, "byte"))}, 1);
     }
     rb_obj_freeze(bytes);
+    rb_obj_freeze(predicates);
     VALUE action = rb_hash_new();
     const char *assertion_op = type == ID2SYM(rb_intern("lookbehind")) ?
       "ASSERT_LOOKBEHIND" : "ASSERT_LOOKAHEAD";
     rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(assertion_op)));
     rb_hash_aset(action, ID2SYM(rb_intern("positive")), onibi_hash_value(ast, "positive"));
     rb_hash_aset(action, ID2SYM(rb_intern("bytes")), bytes);
-    if (!NIL_P(bitmap)) rb_hash_aset(action, ID2SYM(rb_intern("bitmap")), bitmap);
+    if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(rb_intern("predicates")), predicates);
+    rb_hash_aset(action, ID2SYM(rb_intern("width")), LONG2NUM(RARRAY_LEN(predicates)));
     onibi_fragment_t result = onibi_fragment_empty();
     result.nullable = 1;
     rb_ary_push(result.start_actions, action);
@@ -2824,6 +2832,26 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
     if (op == rb_intern("ASSERT_SEMI_END_BUFFER") && pos != length &&
         !(pos + 1 == length && length > 0 && RSTRING_PTR(subject)[length - 1] == '\n')) return 0;
     if (op == rb_intern("ASSERT_LOOKAHEAD")) {
+      VALUE predicates = onibi_hash_value(action, "predicates");
+      if (RB_TYPE_P(predicates, T_ARRAY)) {
+        int matched = 1;
+        for (long i = 0; i < RARRAY_LEN(predicates); i++) {
+          VALUE predicate = rb_ary_entry(predicates, i);
+          long at = pos + i;
+          if (at >= length) { matched = 0; break; }
+          unsigned char byte = (unsigned char)RSTRING_PTR(subject)[at];
+          ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
+          if (kind == rb_intern("byte")) matched = matched && byte == NUM2INT(onibi_hash_value(predicate, "byte"));
+          else {
+            VALUE bits = onibi_hash_value(predicate, "bitmap");
+            matched = matched && RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
+              (((unsigned char *)RSTRING_PTR(bits))[byte >> 3] & (1U << (byte & 7))) != 0;
+          }
+          if (!matched) break;
+        }
+        if (matched != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        continue;
+      }
       VALUE bitmap = onibi_hash_value(action, "bitmap");
       if (!NIL_P(bitmap)) {
         int hit = pos < length && RSTRING_LEN(bitmap) == 32 &&
@@ -2838,6 +2866,24 @@ static int onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long leng
       if (hit != RTEST(onibi_hash_value(action, "positive"))) return 0;
     }
     if (op == rb_intern("ASSERT_LOOKBEHIND")) {
+      VALUE predicates = onibi_hash_value(action, "predicates");
+      if (RB_TYPE_P(predicates, T_ARRAY)) {
+        long width = RARRAY_LEN(predicates);
+        int matched = pos >= width;
+        for (long i = 0; matched && i < width; i++) {
+          VALUE predicate = rb_ary_entry(predicates, i);
+          unsigned char byte = (unsigned char)RSTRING_PTR(subject)[pos - width + i];
+          ID kind = SYM2ID(onibi_hash_value(predicate, "kind"));
+          if (kind == rb_intern("byte")) matched = byte == NUM2INT(onibi_hash_value(predicate, "byte"));
+          else {
+            VALUE bits = onibi_hash_value(predicate, "bitmap");
+            matched = RB_TYPE_P(bits, T_STRING) && RSTRING_LEN(bits) == 32 &&
+              (((unsigned char *)RSTRING_PTR(bits))[byte >> 3] & (1U << (byte & 7))) != 0;
+          }
+        }
+        if (matched != RTEST(onibi_hash_value(action, "positive"))) return 0;
+        continue;
+      }
       VALUE bitmap = onibi_hash_value(action, "bitmap");
       if (!NIL_P(bitmap)) {
         int hit = pos > 0 && RSTRING_LEN(bitmap) == 32 &&
