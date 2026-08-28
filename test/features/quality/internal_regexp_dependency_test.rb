@@ -143,6 +143,16 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes conditional, "VALUE yes_guard = rb_ary_new()"
   end
 
+  def test_empty_fragments_share_immutable_action_storage
+    source = File.read(EXTENSION_SOURCE)
+    fragment = source[/static onibi_fragment_t onibi_fragment_empty\(.*?\n}\n/m]
+
+    refute_nil fragment
+    assert_includes fragment, "fragment.start_actions = onibi_empty_actions"
+    assert_includes fragment, "fragment.pending_actions = onibi_empty_actions"
+    assert_includes source, "onibi_fragment_actions_mutable"
+  end
+
   def test_regexp_keeps_ast_analysis_as_one_bitset
     source = File.read(EXTENSION_SOURCE)
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]

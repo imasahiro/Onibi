@@ -1958,8 +1958,20 @@ static void onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long
 static onibi_fragment_t onibi_fragment_empty(void) {
   onibi_fragment_t fragment;
   onibi_id_vector_init(&fragment.starts); onibi_id_vector_init(&fragment.exits);
-  fragment.start_actions = rb_ary_new(); fragment.pending_actions = rb_ary_new(); fragment.nullable = 1; fragment.lazy = 0;
+  fragment.start_actions = onibi_empty_actions;
+  fragment.pending_actions = onibi_empty_actions;
+  fragment.nullable = 1; fragment.lazy = 0;
   return fragment;
+}
+
+static VALUE onibi_fragment_actions_mutable(VALUE *actions) {
+  if (*actions == onibi_empty_actions) *actions = rb_ary_new();
+  return *actions;
+}
+
+static void onibi_fragment_append_actions(VALUE *destination, VALUE source) {
+  if (RARRAY_LEN(source) == 0) return;
+  onibi_append_values(onibi_fragment_actions_mutable(destination), source);
 }
 
 /* Fragment composition still stores Ruby arrays, but all numeric exit
@@ -2344,11 +2356,11 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
     onibi_fragment_t part = onibi_compile_node(rb_ary_entry(children, i), builder);
     if (part.starts.count == 0) {
       if (have_consuming) {
-        onibi_append_values(result.pending_actions, part.start_actions);
-        onibi_append_values(result.pending_actions, part.pending_actions);
+        onibi_fragment_append_actions(&result.pending_actions, part.start_actions);
+        onibi_fragment_append_actions(&result.pending_actions, part.pending_actions);
       } else {
-        onibi_append_values(result.start_actions, part.start_actions);
-        onibi_append_values(result.start_actions, part.pending_actions);
+        onibi_fragment_append_actions(&result.start_actions, part.start_actions);
+        onibi_fragment_append_actions(&result.start_actions, part.pending_actions);
       }
       result.nullable = result.nullable && part.nullable;
       onibi_id_vector_free(&part.starts);
@@ -2358,7 +2370,7 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
     if (!have_consuming) {
       onibi_id_vector_move(&result.starts, &part.starts);
       onibi_id_vector_move(&result.exits, &part.exits);
-      onibi_append_values(result.start_actions, part.start_actions);
+      onibi_fragment_append_actions(&result.start_actions, part.start_actions);
       result.lazy = part.lazy;
       have_consuming = 1;
     } else {
@@ -2383,10 +2395,10 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
       /* A prior exit can bypass this part only when this part is nullable. */
       if (part.nullable) onibi_id_vector_append(&result.exits, &old_exits);
       onibi_id_vector_free(&old_exits);
-      result.pending_actions = rb_ary_new();
+      result.pending_actions = onibi_empty_actions;
       result.lazy = part.lazy;
     }
-    onibi_append_values(result.pending_actions, part.pending_actions);
+    onibi_fragment_append_actions(&result.pending_actions, part.pending_actions);
     result.nullable = result.nullable && part.nullable;
   }
   return result;
@@ -2691,7 +2703,7 @@ skip_utf8_range_expansion:
     else if (marker == 'Z') op = id_a_assert_semi_end_buffer;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
     onibi_set_gir_action_opcode(action, op);
-    rb_ary_push(result.pending_actions, action);
+    rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions), action);
     return result;
   }
   if (type_code == ONIBI_AST_MATCH_RESET) {
@@ -2699,7 +2711,7 @@ skip_utf8_range_expansion:
     VALUE action = rb_hash_new();
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_match_reset));
     onibi_set_gir_action_opcode(action, id_match_reset);
-    rb_ary_push(result.pending_actions, action);
+    rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions), action);
     return result;
   }
   if (type_code == ONIBI_AST_CONDITIONAL) {
@@ -2844,7 +2856,7 @@ skip_utf8_range_expansion:
     rb_hash_aset(action, ID2SYM(id_key_width), LONG2NUM(RARRAY_LEN(predicates)));
     onibi_fragment_t result = onibi_fragment_empty();
     result.nullable = 1;
-    rb_ary_push(result.start_actions, action);
+    rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions), action);
     return result;
   }
   if (type_code == ONIBI_AST_CAPTURE) {
@@ -2875,9 +2887,9 @@ skip_utf8_range_expansion:
         onibi_value_map_set(&builder->capture_names, capture_name, LONG2NUM(capture_id), builder->map_roots);
       onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
     }
-    rb_ary_push(result.start_actions, open);
-    rb_ary_push(result.pending_actions, close);
-    if (result.nullable) onibi_append_values(result.start_actions, result.pending_actions);
+    rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions), open);
+    rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions), close);
+    if (result.nullable) onibi_fragment_append_actions(&result.start_actions, result.pending_actions);
     return result;
   }
   if (type_code == ONIBI_AST_GROUP)
@@ -2915,7 +2927,7 @@ skip_utf8_range_expansion:
          initializes it.  Optional bodies use ordered test edges. */
       VALUE init = onibi_counter_action(id_a_counter_init, counter_slot, Qnil);
       rb_hash_aset(init, ID2SYM(id_key_value), INT2NUM(min > 0 ? 1 : 0));
-      rb_ary_push(result.start_actions, init);
+      rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions), init);
     }
     for (long i = 0; i < min; i++) {
       onibi_fragment_t part = onibi_compile_node(atom, builder);
@@ -2941,11 +2953,11 @@ skip_utf8_range_expansion:
         onibi_id_vector_append(&result.exits, &part.exits);
         onibi_id_vector_free(&part.starts); onibi_id_vector_free(&part.exits);
       }
-      rb_ary_push(result.pending_actions, onibi_counter_action(id_a_test_counter_ge, counter_slot, LONG2NUM(min)));
+          rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions), onibi_counter_action(id_a_test_counter_ge, counter_slot, LONG2NUM(min)));
     } else if (NIL_P(max_value)) {
       onibi_fragment_t repeat = onibi_compile_node(atom, builder);
       if (result.starts.count == 0) onibi_id_vector_move(&result.starts, &repeat.starts);
-      if (!repeat.nullable) onibi_append_values(result.start_actions, repeat.start_actions);
+      if (!repeat.nullable) onibi_fragment_append_actions(&result.start_actions, repeat.start_actions);
       if (result.exits.count > 0) {
         if (repeat.nullable) {
           onibi_connect_fragment(builder, &result.exits, &repeat.starts);
@@ -2966,7 +2978,7 @@ skip_utf8_range_expansion:
         onibi_append_values(loop_actions, repeat.start_actions);
         onibi_connect_fragment_actions(builder, &repeat.exits, &repeat.starts, loop_actions, 0);
       }
-      onibi_append_values(result.pending_actions, repeat.pending_actions);
+      onibi_fragment_append_actions(&result.pending_actions, repeat.pending_actions);
       onibi_id_vector_append(&result.exits, &repeat.exits);
       onibi_id_vector_free(&repeat.starts); onibi_id_vector_free(&repeat.exits);
     }
