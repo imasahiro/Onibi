@@ -4313,8 +4313,21 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
     rb_thread_check_ints();
     onibi_check_deadline();
     OnibiCaptureFrame *frame = &stack[depth - 1];
+    /* Pop a traversal frame and, when it is a subprogram root, its explicit
+     * call frame as well. */
+#define ONIBI_CAPTURE_POP_FRAME() do { \
+      long parent_frame = frame->call_parent; \
+      depth--; \
+      if (parent_frame >= 0 && depth == parent_frame + 1) { \
+        onibi_call_frame_pop(); \
+        /* A failed call is a failed transition.  Let the caller continue
+         * with its next ordered edge instead of failing the whole caller. */ \
+        stack[parent_frame].waiting_call = 0; \
+        stack[parent_frame].call_status = 0; \
+      } \
+    } while (0)
     if (frame->waiting_call) {
-      if (frame->call_status < 0) { depth--; continue; }
+      if (frame->call_status < 0) { ONIBI_CAPTURE_POP_FRAME(); continue; }
       if (frame->call_status > 0) {
         if (RB_TYPE_P(frame->called_captures, T_HASH)) {
           frame->captures = rb_hash_dup(frame->captures);
@@ -4332,7 +4345,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       VALUE key = rb_ary_new_from_args(6, LONG2NUM(frame->state_id), LONG2NUM(frame->pos),
                                        frame->captures, frame->counters, frame->tags,
                                        LONG2NUM(frame->reported_start));
-      if (RTEST(rb_hash_aref(visited, key))) { depth--; continue; }
+      if (RTEST(rb_hash_aref(visited, key))) { ONIBI_CAPTURE_POP_FRAME(); continue; }
       rb_hash_aset(visited, key, Qtrue);
       VALUE state = rb_ary_entry(states, frame->state_id);
       ID op = SYM2ID(onibi_hash_value_id(state, id_key_op));
@@ -4356,7 +4369,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
       }
       if (op == id_g_grapheme) {
         long consumed = onibi_grapheme_width(str, frame->pos);
-        if (consumed <= 0) { depth--; continue; }
+        if (consumed <= 0) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         frame->pos += consumed;
       }
       if (op == id_g_absent) {
@@ -4366,14 +4379,14 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         if (onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
                                      frame->state_id,
                                      frame->pos, frame->captures, frame->tags,
-                                     &probe_end, &ignored)) { depth--; continue; }
+                                     &probe_end, &ignored)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
       } else if (op == id_g_call) {
         VALUE payload = onibi_hash_value_id(state, id_key_payload);
         long subprogram_id = NUM2LONG(onibi_hash_value_id(payload, id_key_subprogram));
-        if (subprogram_id < 0 || subprogram_id >= RARRAY_LEN(subprograms)) { depth--; continue; }
+        if (subprogram_id < 0 || subprogram_id >= RARRAY_LEN(subprograms)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         VALUE descriptor = rb_ary_entry(subprograms, subprogram_id);
         VALUE entry = onibi_hash_value_id(descriptor, id_key_entry);
-        if (NIL_P(entry)) { depth--; continue; }
+        if (NIL_P(entry)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         OnibiCallFrame *call_frame = onibi_call_frame_push((OnibiSubprogramId)subprogram_id);
         call_frame->continuation = (OnibiStateId)frame->state_id;
         frame->waiting_call = 1;
@@ -4386,7 +4399,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         long call_reported_start = frame->reported_start;
         VALUE actions = RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new();
         if (!onibi_vm_actions_ok(actions, str, frame->pos, RSTRING_LEN(str), call_counters, call_captures)) {
-          onibi_call_frame_pop(); frame->waiting_call = 0; frame->call_status = -1; continue;
+          onibi_call_frame_pop(); ONIBI_CAPTURE_POP_FRAME(); continue;
         }
         onibi_vm_apply_counter_actions(actions, call_counters);
         call_tags = onibi_apply_capture_actions(actions, frame->pos, call_captures, call_tags, &call_reported_start);
@@ -4402,7 +4415,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
         VALUE called_captures = Qnil;
         if (!onibi_vm_call_subprogram(states, outgoing, subprograms, str, subprogram_id,
                                       frame->state_id, frame->pos, frame->captures, frame->tags,
-                                      &frame->pos, &called_captures)) { depth--; continue; }
+                                      &frame->pos, &called_captures)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         if (RB_TYPE_P(called_captures, T_HASH)) {
           frame->captures = rb_hash_dup(frame->captures);
           rb_hash_foreach(called_captures, onibi_hash_copy_i, frame->captures);
@@ -4410,24 +4423,24 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
           frame->tags = Qnil;
         }
       } else if (op == id_g_char || op == id_g_class || op == id_g_any || op == id_g_backref) {
-        if (frame->pos >= RSTRING_LEN(str)) { depth--; continue; }
+        if (frame->pos >= RSTRING_LEN(str)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
         if (op == id_g_backref) {
           VALUE payload = onibi_hash_value_id(state, id_key_payload);
           long capture = NUM2LONG(onibi_hash_value_id(payload, id_key_capture));
           VALUE begin = rb_hash_aref(frame->captures, LONG2NUM(2 * (capture - 1)));
           VALUE finish = rb_hash_aref(frame->captures, LONG2NUM(2 * (capture - 1) + 1));
-          if (NIL_P(begin) || NIL_P(finish)) { depth--; continue; }
+          if (NIL_P(begin) || NIL_P(finish)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
           long length = NUM2LONG(finish) - NUM2LONG(begin);
-          if (frame->pos + length > RSTRING_LEN(str)) { depth--; continue; }
+          if (frame->pos + length > RSTRING_LEN(str)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
           int fold = RTEST(onibi_hash_value_id(payload, id_key_ignorecase));
           if (!fold) {
-            if (memcmp(RSTRING_PTR(str) + frame->pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) { depth--; continue; }
+            if (memcmp(RSTRING_PTR(str) + frame->pos, RSTRING_PTR(str) + NUM2LONG(begin), (size_t)length) != 0) { ONIBI_CAPTURE_POP_FRAME(); continue; }
           } else {
             int equal = 1;
             for (long i = 0; i < length; i++) {
               if (tolower((unsigned char)RSTRING_PTR(str)[frame->pos + i]) != tolower((unsigned char)RSTRING_PTR(str)[NUM2LONG(begin) + i])) { equal = 0; break; }
             }
-            if (!equal) { depth--; continue; }
+            if (!equal) { ONIBI_CAPTURE_POP_FRAME(); continue; }
           }
           frame->pos += length;
         } else {
@@ -4439,13 +4452,13 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
               (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ?
                 tolower(byte) == tolower(NUM2INT(onibi_hash_value_id(payload, id_key_byte))) :
                 byte == NUM2INT(onibi_hash_value_id(payload, id_key_byte))) : onibi_vm_class_match(payload, str, frame->pos, byte, &consumed));
-          if (!hit) { depth--; continue; }
+          if (!hit) { ONIBI_CAPTURE_POP_FRAME(); continue; }
           frame->pos += consumed;
         }
       }
     }
     VALUE state_edges = rb_ary_entry(outgoing, frame->state_id);
-    if (frame->next_edge >= RARRAY_LEN(state_edges)) { depth--; continue; }
+    if (frame->next_edge >= RARRAY_LEN(state_edges)) { ONIBI_CAPTURE_POP_FRAME(); continue; }
     VALUE edge = rb_ary_entry(state_edges, frame->next_edge++);
     VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
     VALUE next_counters = rb_hash_dup(frame->counters);
@@ -4459,6 +4472,7 @@ static int onibi_vm_walk_captures(VALUE states, VALUE outgoing, VALUE subprogram
                                          next_reported_start, next_captures, next_counters,
                                          next_tags, Qnil, 0, -1, 0, 0, 0};
   }
+#undef ONIBI_CAPTURE_POP_FRAME
   return 0;
 }
 
