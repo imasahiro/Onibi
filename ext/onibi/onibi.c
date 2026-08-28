@@ -1793,7 +1793,14 @@ static VALUE onibi_pipeline_build(VALUE self) {
   rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) + 1 : 0)));
   rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
   VALUE captures = rb_ary_new();
-  if (strstr(RSTRING_PTR(src), "(") != NULL) {
+  int has_capture = 0;
+  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
+    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("group_start")) {
+      has_capture = 1;
+      break;
+    }
+  }
+  if (has_capture) {
     VALUE capture = rb_hash_new();
     rb_hash_aset(capture, ID2SYM(rb_intern("id")), INT2NUM(1));
     rb_hash_aset(capture, ID2SYM(rb_intern("use")), ID2SYM(rb_intern("CAPTURE_OUTPUT_ONLY")));
