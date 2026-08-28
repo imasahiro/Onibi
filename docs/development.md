@@ -339,6 +339,9 @@ The tagged counter map is a deliberate later boundary. A C replacement must
 copy counters when a frame branches, preserve values across subroutine calls,
 and keep capture/tag history independent. Converting only the entry map would
 leave edge branches on Ruby Hash and would not remove the repeated copy cost.
+The current audit finds counter Hash allocation at tagged call entry, atomic or
+absence entry, and every outgoing edge. These are one migration unit: replace
+the frame field, branch copy, call-frame seed, and action checks together.
 
 Capture and exit guard maps have the same constraint. Their keys are numeric
 state IDs, but their values are ordered, mutable action lists. Keep the Ruby
