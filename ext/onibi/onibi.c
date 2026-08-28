@@ -54,6 +54,7 @@ static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_name_id, id_key_ctype, id_key_ranges, id_key_children;
 static ID id_key_operands, id_key_negated, id_key_bitmap, id_key_preserve_if_set;
+static ID id_key_class_mode;
 static ID id_key_limit, id_key_positive, id_key_predicates;
 static ID id_key_inline_ignorecase;
 static ID id_key_body, id_key_options, id_key_negative_options, id_key_capturing;
@@ -356,6 +357,11 @@ typedef enum {
   ONIBI_AST_OPTION_GLOBAL, ONIBI_AST_BACKREF, ONIBI_AST_SUBROUTINE,
   ONIBI_AST_MATCH_RESET
 } OnibiAstKind;
+
+typedef enum {
+  ONIBI_CLASS_MODE_NORMAL = 0,
+  ONIBI_CLASS_MODE_INTERSECTION = 1
+} OnibiClassMatchMode;
 
 static inline OnibiAstKind onibi_ast_kind(VALUE node) {
   VALUE code = onibi_hash_value_id(node, id_key_type_code);
@@ -4626,6 +4632,9 @@ static int onibi_unicode_ctype_id(ID property) {
    this integer, so matching never compares property strings. */
 static VALUE onibi_class_payload_with_ctypes(VALUE payload) {
   VALUE copy = rb_hash_dup(payload);
+  OnibiClassMatchMode match_mode = onibi_ast_kind(copy) == ONIBI_AST_CLASS_INTERSECTION ?
+    ONIBI_CLASS_MODE_INTERSECTION : ONIBI_CLASS_MODE_NORMAL;
+  rb_hash_aset(copy, ID2SYM(id_key_class_mode), INT2NUM(match_mode));
   int fold = RTEST(onibi_hash_value_id(copy, id_key_ignorecase));
   VALUE name_id = onibi_hash_value_id(copy, id_key_name_id);
   ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
@@ -4696,7 +4705,8 @@ static int onibi_ctype_casefold_hit(VALUE str, long pos, OnigCodePoint code, int
 }
 
 static int onibi_vm_class_match(VALUE payload, VALUE str, long pos, unsigned char byte, long *width) {
-  if (onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION &&
+  VALUE class_mode = onibi_hash_value_id(payload, id_key_class_mode);
+  if (!NIL_P(class_mode) && NUM2INT(class_mode) == ONIBI_CLASS_MODE_INTERSECTION &&
       rb_enc_get_index(str) == rb_utf8_encindex()) {
     VALUE operands = onibi_hash_value_id(payload, id_key_operands);
     if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) == 0) return 0;

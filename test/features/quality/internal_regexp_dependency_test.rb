@@ -329,6 +329,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil matcher
     refute_includes matcher, "rb_str_new((const char[]){"
     assert_includes matcher, "code == (OnigCodePoint)NUM2INT(child_byte)"
+    assert_includes matcher, "id_key_class_mode"
+    refute_includes matcher, "onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION"
   end
 
   def test_tokenizer_preallocates_transient_adapter

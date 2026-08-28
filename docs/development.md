@@ -282,6 +282,8 @@ string again.
 AST nodes retain this numeric `name_id` for escape properties, so compiler
 validation and class bitmap construction can reuse the token ID without
 another string-to-ID conversion.
+Compiled class payloads also cache a numeric match mode for UTF-8
+intersections, so the VM does not inspect the AST kind on every character.
 
 GIR actions now carry a numeric `action_code` enum beside their diagnostic
 Symbol name. Position assertions also carry a numeric `assert_kind` subtype.
