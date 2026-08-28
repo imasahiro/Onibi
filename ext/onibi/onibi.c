@@ -70,7 +70,7 @@ static double onibi_timeout_value(VALUE value) {
   return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
+typedef struct { VALUE regexp; VALUE source; VALUE tokens; VALUE execution_class; VALUE execution_kind; VALUE parsed; VALUE compiled; VALUE rseq; VALUE pipeline; int options; long program_size; double timeout_seconds; int has_class_intersection; int has_nested_class; int has_large_repeat; int has_absence; int has_conditional; int has_atomic; int has_backref; int has_grapheme; int has_property_escape; int has_unicode_escape; int has_non_ascii_literal; int has_meta_escape; int has_subroutine; int has_dynamic; int has_tagged; } onibi_regexp_t;
 typedef struct { VALUE source; VALUE tokens; } onibi_lexer_t;
 
 static void onibi_free(void *ptr) { xfree(ptr); }
@@ -2127,6 +2127,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
   obj->has_absence = 0;
   obj->has_conditional = 0;
   obj->has_atomic = 0;
+  obj->has_backref = 0;
   obj->has_grapheme = 0;
   obj->has_property_escape = 0;
   obj->has_unicode_escape = 0;
@@ -2187,6 +2188,7 @@ static void onibi_token_features(VALUE tokens, onibi_regexp_t *obj) {
     } else if (kind == rb_intern("backref") || kind == rb_intern("atomic_start") ||
                kind == rb_intern("absence_start") || kind == rb_intern("conditional_start")) {
       obj->has_dynamic = 1;
+      if (kind == rb_intern("backref")) obj->has_backref = 1;
       if (kind == rb_intern("atomic_start")) obj->has_atomic = 1;
       if (kind == rb_intern("absence_start")) obj->has_absence = 1;
       if (kind == rb_intern("conditional_start")) obj->has_conditional = 1;
@@ -2322,6 +2324,10 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->program_size = NIL_P(obj->rseq) ? RSTRING_LEN(source) + 1 :
     RSTRING_LEN(onibi_hash_value(obj->rseq, "blob"));
   if (obj->has_subroutine && !NIL_P(obj->rseq)) obj->has_dynamic = 0;
+  if (obj->has_atomic && !obj->has_backref && !obj->has_subroutine &&
+      !obj->has_absence && !obj->has_conditional && !obj->has_grapheme &&
+      !obj->has_property_escape && !obj->has_meta_escape && !NIL_P(obj->rseq))
+    obj->has_dynamic = 0;
   obj->execution_class = rb_str_new_cstr("REGULAR_FAST");
   rb_obj_freeze(obj->execution_class);
   if (obj->has_dynamic) obj->execution_class = rb_str_new_cstr("DYNAMIC");
