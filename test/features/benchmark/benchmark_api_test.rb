@@ -390,6 +390,18 @@ class BenchmarkApiTest < Minitest::Test
     refute non_digit.vm_match?("7")
   end
 
+  def test_unsupported_subroutine_calls_are_classified_by_tokens
+    tokens = Onibi::Lexer.new("\\g<name>").tokens
+    assert_equal :subroutine, tokens.first[:kind]
+    assert_raises(RegexpError) { Onibi::Regexp.new("\\g<name>") }
+  end
+
+  def test_class_intersection_stays_out_of_ascii_rseq
+    regexp = Onibi::Regexp.new("[a&&b]")
+    refute regexp.program_cached?
+    assert_equal Onibi::Regexp.new("[a&&b]").match?("a"), regexp.match?("a")
+  end
+
   def test_shorthand_escapes_inside_classes_use_bitmap_predicates
     digit = Onibi::Regexp.new("[\\d]")
     assert digit.program_cached?
