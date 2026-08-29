@@ -5,6 +5,15 @@ require "test_helper"
 class InternalRegexpDependencyTest < Minitest::Test
   LIBRARY_PATH = File.join(PROJECT_ROOT, "lib")
   EXTENSION_SOURCE = File.join(PROJECT_ROOT, "ext", "onibi", "onibi.c")
+  EXTENSION_MODULES = %w[
+    onibi_common.c token.c ast.c parser.c nfa.c gir.c compiler.c rseq.c
+    rseq_verify.c exec_tagged.c exec_regular.c exec_dynamic.c match.c
+    onibi_init.c
+  ].map { |file| File.join(PROJECT_ROOT, "ext", "onibi", file) }.freeze
+
+  def extension_source
+    EXTENSION_MODULES.map { |file| File.read(file) }.join("\n")
+  end
 
   def test_library_matching_does_not_use_mri_regexp_operators
     source = Dir[File.join(LIBRARY_PATH, "**", "*.rb")].map { |file| File.read(file) }.join
@@ -39,20 +48,20 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_c_pipeline_does_not_use_repeated_string_comparisons
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
 
     refute_match(/\b(?:str|mem)?ncmp\s*\(/, source)
     refute_match(/\bstrcmp\s*\(/, source)
   end
 
   def test_c_pipeline_uses_cached_ids_for_hash_fields
-    source = File.read(EXTENSION_SOURCE).gsub(/#if 0.*?#endif/m, "")
+    source = extension_source.gsub(/#if 0.*?#endif/m, "")
 
     refute_match(/rb_hash_(?:aref|aset)\([^\n]*rb_intern\s*\(/, source)
   end
 
   def test_vm_position_assertions_use_numeric_subtype_codes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     vm = source[/static int onibi_vm_actions_ok\(.*?\n}\n/m]
 
     refute_nil vm
@@ -64,7 +73,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_search_origin_is_constant_across_candidate_starts
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regular = source[/static VALUE onibi_vm_regular_fast\(.*?\n}\n/m]
     tagged = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
     dynamic = source[/static VALUE onibi_vm_dynamic\(.*?\n}\n/m]
@@ -76,7 +85,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_fragment_connections_keep_state_ids_in_c_vectors
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     connector = source[/static void onibi_connect_fragment_actions\(.*?\n}\n/m]
 
     refute_nil connector
@@ -86,7 +95,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_accept_start_uses_c_vector
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
 
     refute_nil compiler
@@ -96,7 +105,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_materializes_start_edges_from_c_records
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static VALUE\nonibi_compiler_pass_publish.*?\n}\n/m]
 
     refute_nil compiler
@@ -106,7 +115,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_conditional_guards_use_c_action_vectors
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     conditional = source[/if \(type_code == ONIBI_AST_CONDITIONAL\).*?\n    onibi_add_exit_guard_fragment/m]
 
     refute_nil conditional
@@ -116,7 +125,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_empty_fragments_share_immutable_action_storage
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     fragment = source[/static onibi_fragment_t onibi_fragment_empty\(.*?\n}\n/m]
 
     refute_nil fragment
@@ -126,7 +135,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regexp_keeps_ast_analysis_as_one_bitset
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     refute_nil regexp_struct
@@ -137,7 +146,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_execution_features_use_numeric_bitset
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int execution_flags;"
@@ -147,7 +156,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_syntax_features_use_numeric_bitset
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int feature_flags;"
@@ -159,7 +168,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_features_use_numeric_bitset
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_includes regexp_struct, "unsigned int feature_flags;"
@@ -172,13 +181,13 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_active_regexp_state_has_no_boolean_feature_fields
-    source = File.read(EXTENSION_SOURCE).gsub(/#if 0.*?#endif/m, "")
+    source = extension_source.gsub(/#if 0.*?#endif/m, "")
 
     refute_match(/obj->has_(?:class_intersection|nested_class|large_repeat|absence|conditional|backref|subroutine|grapheme|wildcard|anchor|meta_escape|unicode_escape)/, source)
   end
 
   def test_regexp_state_keeps_only_public_values_as_ruby_references
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
 
     assert_equal 5, regexp_struct.scan(/\bVALUE\s+[a-z_]+;/).length
@@ -186,7 +195,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_feature_classification_does_not_reintern_token_names
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     classifier = source[/static void onibi_token_features\(.*?\n}\n/m]
 
     refute_nil classifier
@@ -196,7 +205,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_posix_classification_uses_cached_name_ids
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     classifier = source[/static OnibiPosixKind onibi_posix_kind_id\(.*?\n}\n/m]
 
     refute_nil classifier
@@ -205,7 +214,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_unicode_classification_accepts_cached_name_ids
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     classifier = source[/static int onibi_unicode_ctype_id\(.*?\n}\n/m]
 
     refute_nil classifier
@@ -214,7 +223,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_option_arrays_use_symbol_ids_directly
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     option_code = source[/static int onibi_option_mask\([^;]*?\) \{.*?\n}\n/m]
 
     refute_nil option_code
@@ -223,7 +232,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_guard_lookup_uses_c_vector_storage
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
@@ -233,7 +242,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_compile_indexes_use_c_value_maps
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
@@ -243,7 +252,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_c_compile_maps_keep_ruby_values_rooted
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
@@ -253,7 +262,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_large_regular_visited_sets_use_owned_c_storage
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static int onibi_gir_match\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -263,7 +272,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_fragments_store_state_ids_in_c_vectors
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     fragment = source[/typedef struct \{ OnibiIdVector starts;.*?\} onibi_fragment_t;/m]
 
     refute_nil fragment
@@ -274,7 +283,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_builder_materializes_states_and_edges_once
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     materializer = source[/static void onibi_materialize_gir\(.*?\n}\n/m]
 
     refute_nil materializer
@@ -285,7 +294,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_lowering_deduplicates_payloads_in_c_vectors
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -295,7 +304,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_edge_adapters_materialize_from_c_records
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -305,7 +314,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_actions_use_c_records_until_publication
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -315,7 +324,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_states_use_c_records_during_lowering
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -325,7 +334,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_physical_edges_use_c_records
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -335,7 +344,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_groups_physical_edges_by_source_with_stable_scatter
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     grouper = source[/static void onibi_gir_edge_vector_group_by_from\(.*?\n}\n/m]
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
@@ -348,7 +357,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_physical_actions_use_c_vector
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -365,7 +374,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_literal_payloads_cache_numeric_fields
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -375,7 +384,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_states_cache_payload_indexes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -385,7 +394,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_edge_records_cache_action_count
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     record = source[/typedef struct \{ long from; long to;.*?\} OnibiGirEdgeEntry;/m]
 
     refute_nil record
@@ -397,7 +406,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_guard_records_cache_action_count
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     record = source[/typedef struct \{ OnibiStateId state;.*?\} OnibiGuardEntry;/m]
     refute_nil record
     assert_includes record, "OnibiValueVector actions"
@@ -412,7 +421,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_guard_edge_actions_have_one_defined_order
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     composer = source[/static VALUE onibi_gir_compose_edge_actions\(.*?\n}\n/m]
 
     refute_nil composer
@@ -439,7 +448,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_fragment_transition_actions_are_preallocated
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "rb_ary_new_capa(RARRAY_LEN(result.pending_actions)"
     assert_includes source, "onibi_concat_action_values(repeat.pending_actions"
     refute_includes source, "rb_ary_dup(result.pending_actions)"
@@ -447,12 +456,12 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_start_edges_preallocate_fragment_actions
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "onibi_concat_action_values(fragment.start_actions, fragment.pending_actions)"
   end
 
   def test_rseq_subprograms_use_typed_records
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -462,7 +471,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_physical_graph_copies_cached_action_ranges
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "uint32_t action_count = action_offset == 0 ? 0"
     assert_includes source, "rb_ary_new_capa((long)action_count)"
     assert_includes source, "action_index + n"
@@ -471,7 +480,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_physical_graph_preallocates_outgoing_edge_indexes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     graph = source[/static VALUE onibi_rseq_physical_graph\(VALUE rseq\) \{.*?\n}\n/m]
 
     refute_nil graph
@@ -480,7 +489,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_property_paths_use_cached_name_ids
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_equal 0, source.scan(/NIL_P\([^)]*name_id\).*rb_intern_str/).length
     assert_equal 0, source.scan(/NIL_P\([^)]*child_name_id\).*rb_intern_str/).length
     assert_equal 0, source.scan(/NIL_P\([^)]*property_name_id\).*rb_intern_str/).length
@@ -489,7 +498,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_utf8_class_match_does_not_allocate_missing_literal_bytes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static int onibi_vm_class_match\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -500,14 +509,14 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_subprograms_use_c_vector_until_publication
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "OnibiValueVector subprograms"
     assert_includes source, "onibi_value_vector_push(&builder->subprograms"
     assert_includes source, "VALUE subprograms = rb_ary_new_capa"
   end
 
   def test_subprogram_entry_actions_share_frozen_fragment_storage
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static long onibi_compile_subprogram\(.*?\n}\n/m]
     named = source[/static long onibi_compile_named_subprogram\(.*?\n}\n/m]
 
@@ -520,7 +529,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regular_vm_uses_hash_visited_only_without_c_bitset
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static int onibi_gir_match\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -529,13 +538,13 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_vm_uses_shared_empty_actions_for_missing_entry_actions
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     refute_includes source, "RB_TYPE_P(entry_actions, T_ARRAY) ? entry_actions : rb_ary_new()"
     assert_operator source.scan("? entry_actions : onibi_empty_actions").length, :>=, 3
   end
 
   def test_absence_entry_action_failure_uses_numeric_rseq_opcode
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     walker = source[/static int onibi_vm_walk_captures\(.*?\n}\n/m]
 
     refute_nil walker
@@ -544,7 +553,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_rseq_uses_gir_capture_resource_count_not_action_occurrences
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
 
     refute_nil lowerer
@@ -554,7 +563,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_gir_validator_bounds_capture_test_ids_for_all_edge_kinds
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     validator = source[/static void onibi_gir_validate\(.*?\n}\n/m]
 
     refute_nil validator
@@ -563,7 +572,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_tagged_vm_reuses_cached_physical_graph_for_all_starts
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -572,7 +581,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regular_vm_reuses_physical_graph_lookup_for_all_starts
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static VALUE onibi_vm_regular_fast\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -581,7 +590,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regular_vm_reuses_one_rseq_view_for_all_starts
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static VALUE onibi_vm_regular_fast\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -591,7 +600,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_tagged_vm_reuses_one_rseq_view_for_simple_starts
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static VALUE onibi_vm_tagged_ordered\(.*?\n}\n/m]
 
     refute_nil matcher
@@ -600,14 +609,14 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_capture_seed_does_not_duplicate_empty_counter_state
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     refute_includes source, "rb_hash_dup(counters)"
     assert_includes source, "long *branch_counters = use_counters && counter_count > 0"
     refute_includes source, "VALUE branch_counters = use_counters ? rb_hash_new() : Qnil;"
   end
 
   def test_tagged_vm_keeps_counter_state_out_of_ruby_hashes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     walker = source[/static int onibi_vm_walk_captures\(.*?\n}\n/m]
 
     refute_nil walker
@@ -618,7 +627,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_sequence_transition_actions_reuse_empty_side
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static onibi_fragment_t onibi_compile_sequence\(.*?\n}\n/m]
 
     refute_nil compiler
@@ -628,13 +637,13 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_repeat_action_concat_reuses_empty_side
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "static VALUE onibi_concat_action_values(VALUE first, VALUE second)"
     assert_includes source, "onibi_concat_action_values(repeat.pending_actions"
   end
 
   def test_start_edges_reuse_fragment_action_arrays
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
 
     refute_nil compiler
@@ -643,7 +652,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_runtime_id_lookups_use_shared_accessor
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     runtime = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
 
     refute_nil runtime
@@ -652,7 +661,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_match_paths_cache_encoding_indexes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     initialize = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
     match = source[/static VALUE onibi_match\(.*?\n}\n/m]
     match_p = source[/static VALUE onibi_match_p\(.*?\n}\n/m]
@@ -677,7 +686,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_vm_matchers_do_not_reintern_property_names
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     matcher = source[/static int onibi_vm_class_match\(VALUE payload,.*?\n}\n/m]
 
     refute_nil matcher
@@ -690,7 +699,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_class_bitmap_caches_child_escape_byte
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     bitmap = source[/static VALUE onibi_class_bitmap\(VALUE payload, int fold\) \{.*?\n}\n/m]
 
     refute_nil bitmap
@@ -701,14 +710,14 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_value_maps_use_c_owned_growth
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "static void onibi_value_map_reserve"
     assert_includes source, "onibi_value_map_reserve(map, 1)"
     refute_includes source, "map->entries[i].value = value;\n      rb_ary_push(roots, key)"
   end
 
   def test_compiler_ascii_property_check_uses_name_id
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     assert_includes source, "static int onibi_ascii_property_name_p(ID name_id)"
     refute_includes source, "onibi_ascii_property_name_p(name)"
     assert_includes source, "ID escape_name_id = onibi_token_name_id(payload)"
@@ -734,7 +743,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_token_stream_uses_c_records_and_byte_storage
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     record = source[/typedef struct \{\n  OnibiTokenKind kind;.*?\n\} OnibiTokenRecord;/m]
     vector = source[/typedef struct \{\n  OnibiTokenRecord \*items;.*?\n\} OnibiTokenVector;/m]
 
@@ -747,7 +756,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_tokenizer_does_not_materialize_ruby_token_containers
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     tokenizer = source[/static void onibi_tokenize_internal\(.*?\n}\n/m]
 
     refute_nil tokenizer
@@ -758,7 +767,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_tokenizer_owns_cleanup_across_exceptions
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     initialize = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
 
     refute_nil initialize
@@ -768,7 +777,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_ast_uses_c_node_arena
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     node = source[/typedef struct \{\n  OnibiAstKind kind;.*?\n\} OnibiAstNode;/m]
     arena = source[/typedef struct \{\n  OnibiAstNode \*nodes;.*?\n\} OnibiAstArena;/m]
 
@@ -781,7 +790,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_parser_builds_only_c_ast_nodes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     parser = source[/static OnibiAstId onibi_c_parse_range\(.*?\n}\n/m]
     entry = source[/static VALUE onibi_parser_parse_internal\(.*?\n}\n/m]
 
@@ -795,7 +804,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_starts_from_c_ast_root
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     compiler = source[/static VALUE\s+onibi_compiler_compile\(.*?\n}\n/m]
 
     refute_nil compiler
@@ -808,7 +817,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_compiler_passes_have_one_directional_pipeline
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     init = source[/static void\nonibi_compiler_pass_init_builder.*?\n}\n/m]
     lower = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
     publish = source[/static VALUE\nonibi_compiler_pass_publish.*?\n}\n/m]
@@ -824,7 +833,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_ast_analysis_reads_c_nodes
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     nullable = source[/static int onibi_ast_nullable_scan\([^;]*?\) \{.*?\n}\n/m]
 
     refute_nil nullable
@@ -835,7 +844,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_ast_arena_is_released_after_program_build
-    source = File.read(EXTENSION_SOURCE)
+    source = extension_source
     builder = source[/static VALUE onibi_build_program\(.*?\n}\n/m]
 
     refute_nil builder

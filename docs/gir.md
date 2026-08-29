@@ -3589,16 +3589,20 @@ The gem PoC uses this top-level layout:
 ext/onibi/
     extconf.rb
     onibi.c
+    onibi_common.c
+    token.c
     ast.c
-    compile.c
+    parser.c
     nfa.c
     gir.c
+    compiler.c
     rseq.c
     rseq_verify.c
     exec_regular.c
     exec_tagged.c
     exec_dynamic.c
     match.c
+    onibi_init.c
 
 lib/
     onibi.rb
@@ -3609,7 +3613,9 @@ test/
     compatibility/
 ```
 
-The exact C file split can grow with the implementation.
+`onibi.c` is the small amalgamated translation unit. It includes the modules
+in pipeline order. Each module has one primary responsibility and can move to
+an independent translation unit when its private interfaces are stable.
 
 The later MRI integration can use these C files:
 

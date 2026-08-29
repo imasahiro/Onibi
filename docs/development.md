@@ -20,6 +20,12 @@ VM covers literals, alternation, character classes, wildcard sequences, wildcard
 repeats, bounded repeats, captures, boundary assertions, and match reset.
 Other syntax remains outside this subset.
 
+The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
+unit that includes `token.c`, `ast.c`, `parser.c`, `nfa.c`, `gir.c`,
+`compiler.c`, `rseq.c`, `rseq_verify.c`, the three execution modules, and
+`match.c`. The include order is the dependency order. No legacy `#if 0` code
+remains in these modules.
+
 ## Execution engines
 
 The compiler assigns one execution class to each compiled pattern.
