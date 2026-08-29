@@ -16,15 +16,6 @@ onibi_g_action_assert_kind(const OnibiGAction *action)
 }
 
 /* Debug validator adapter. Runtime lowering uses OnibiGAction enums. */
-static uint8_t
-onibi_rseq_action_flags(ID op)
-{
-    if (op == id_capture_close) return ONIBI_RA_CAPTURE_CLOSE;
-    if (op == id_a_test_capture) return ONIBI_RA_TEST_CAPTURE_SET;
-    if (op == id_a_test_counter_ge) return ONIBI_RA_COUNTER_GE;
-    return 0;
-}
-
 static OnibiRAssertKind
 onibi_rseq_assert_kind(ID op)
 {
@@ -183,36 +174,6 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 				copied_actions},
 	    action_roots);
     }
-    VALUE actions = rb_ary_new_capa((long)action_records.count);
-    for (size_t i = 0; i < action_records.count; i++)
-	rb_ary_push(actions, action_records.entries[i].value);
-    rb_obj_freeze(actions);
-    VALUE r_edges = rb_ary_new_capa((long)r_edge_records.count);
-    for (size_t i = 0; i < r_edge_records.count; i++) {
-	OnibiGirEdgeEntry *record = &r_edge_records.entries[i];
-	VALUE out = rb_hash_new();
-	rb_hash_aset(out, ID2SYM(id_key_from), LONG2NUM(record->from));
-	rb_hash_aset(out, ID2SYM(id_key_to), LONG2NUM(record->to));
-	rb_hash_aset(out, ID2SYM(id_key_action_offset),
-		     LONG2NUM(record->action_offset));
-	rb_hash_aset(out, ID2SYM(id_key_actions), record->actions);
-	rb_obj_freeze(out);
-	rb_ary_push(r_edges, out);
-    }
-    VALUE r_start_edges = rb_ary_new_capa((long)r_start_edge_records.count);
-    for (size_t i = 0; i < r_start_edge_records.count; i++) {
-	OnibiGirEdgeEntry *record = &r_start_edge_records.entries[i];
-	VALUE out = rb_hash_new();
-	rb_hash_aset(out, ID2SYM(id_key_to), LONG2NUM(record->to));
-	rb_hash_aset(out, ID2SYM(id_key_action_offset),
-		     LONG2NUM(record->action_offset));
-	rb_hash_aset(out, ID2SYM(id_key_actions), record->actions);
-	rb_obj_freeze(out);
-	rb_ary_push(r_start_edges, out);
-    }
-    rb_obj_freeze(r_edges);
-    rb_obj_freeze(r_start_edges);
-    VALUE header = rb_hash_new();
     int options = compiled_data->options;
     int ignorecase = (options & 1) != 0;
     int multiline = (options & 4) != 0;
@@ -240,6 +201,14 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	if (!found)
 	    onibi_rseq_literal_payload_vector_push(&literal_payloads, payload);
 	state_records.entries[i].payload_index = (uint32_t)payload_index;
+    }
+    for (size_t i = 0; i < state_records.count; i++) {
+	OnibiGirStateEntry *state = &state_records.entries[i];
+	if (state->opcode != ONIBI_G_BACKREF) continue;
+	VALUE capture = onibi_hash_value_id(state->payload, id_key_capture);
+	if (NIL_P(capture) || NUM2LONG(capture) <= 0)
+	    rb_raise(eRegexpError, "invalid GIR backreference capture");
+	state->payload_index = (uint32_t)(NUM2ULONG(capture) - 1U);
     }
     uint32_t literal_count = (uint32_t)literal_payloads.count;
     uint64_t class_section_size =
@@ -282,29 +251,6 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	if (code == ONIBI_GA_MATCH_RESET) features |= 8U;
 	if (code == ONIBI_GA_ASSERT_POSITION) features |= 16U;
     }
-    rb_hash_aset(header, ID2SYM(id_key_features), UINT2NUM(features));
-    rb_hash_aset(header, ID2SYM(id_key_class_count), UINT2NUM(class_count));
-    rb_hash_aset(header, ID2SYM(id_key_capture_count), UINT2NUM(capture_count));
-    rb_hash_aset(header, ID2SYM(id_key_semantic_capture_count),
-		 UINT2NUM(capture_count));
-    rb_hash_aset(header, ID2SYM(id_key_subprogram_count),
-		 UINT2NUM((uint32_t)subprogram_records.count));
-    rb_hash_aset(header, ID2SYM(id_key_counter_count), UINT2NUM(counter_count));
-    rb_hash_aset(header, ID2SYM(id_key_literal_count), UINT2NUM(literal_count));
-    rb_hash_aset(header, ID2SYM(id_key_version), INT2NUM(1));
-    rb_hash_aset(header, ID2SYM(id_key_ignorecase),
-		 ignorecase ? Qtrue : Qfalse);
-    rb_hash_aset(header, ID2SYM(id_key_multiline), multiline ? Qtrue : Qfalse);
-    rb_hash_aset(header, ID2SYM(id_key_state_count),
-		 LONG2NUM((long)state_records.count));
-    rb_hash_aset(header, ID2SYM(id_key_edge_count),
-		 LONG2NUM((long)r_edge_records.count));
-    rb_hash_aset(header, ID2SYM(id_key_action_count),
-		 LONG2NUM((long)action_records.count));
-    rb_hash_aset(header, ID2SYM(id_key_start_edge_base),
-		 LONG2NUM((long)r_edge_records.count));
-    rb_hash_aset(header, ID2SYM(id_key_start_edge_count),
-		 LONG2NUM((long)r_start_edge_records.count));
     OnibiRSeqHeader physical;
     memset(&physical, 0, sizeof(physical));
     physical.magic = ONIBI_RSEQ_MAGIC;
@@ -377,22 +323,6 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     physical.subprograms_offset = (uint32_t)offset;
     offset += subprogram_section_size;
     physical.blob_size = (uint32_t)offset;
-    rb_hash_aset(header, ID2SYM(id_key_states_offset),
-		 UINT2NUM(physical.states_offset));
-    rb_hash_aset(header, ID2SYM(id_key_edges_offset),
-		 UINT2NUM(physical.edges_offset));
-    rb_hash_aset(header, ID2SYM(id_key_actions_offset),
-		 UINT2NUM(physical.actions_offset));
-    rb_hash_aset(header, ID2SYM(id_key_classes_offset),
-		 UINT2NUM(physical.classes_offset));
-    rb_hash_aset(header, ID2SYM(id_key_literals_offset),
-		 UINT2NUM(physical.literals_offset));
-    rb_hash_aset(header, ID2SYM(id_key_descriptors_offset),
-		 UINT2NUM(physical.descriptors_offset));
-    rb_hash_aset(header, ID2SYM(id_key_subprograms_offset),
-		 UINT2NUM(physical.subprograms_offset));
-    rb_hash_aset(header, ID2SYM(id_key_blob_size),
-		 UINT2NUM(physical.blob_size));
     VALUE blob = rb_str_new(NULL, (long)offset);
     memset(RSTRING_PTR(blob), 0, (size_t)offset);
     memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
@@ -423,7 +353,8 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    rb_raise(eRegexpError, "RSeq state has too many outgoing edges");
 	physical_states[i].edge_base = (uint32_t)edge_base;
 	physical_states[i].edge_count = (uint16_t)edge_count;
-	if (opcode == ONIBI_G_CLASS || opcode == ONIBI_G_CHAR)
+	if (opcode == ONIBI_G_CLASS || opcode == ONIBI_G_CHAR ||
+	    opcode == ONIBI_G_BACKREF)
 	    physical_states[i].payload = state->payload_index;
     }
     if (physical_edge_index != r_edge_records.count)
@@ -517,25 +448,9 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	physical_subprograms[i].flags = record->flags;
     }
     rb_obj_freeze(blob);
-    /* Keep the Ruby mirror as a debug adapter. RSeq lowering above consumes
-       only the C GIR vectors stored in OnibiCompiled. */
-    VALUE graph = compiled_data->graph;
-    VALUE states = onibi_hash_value_id(graph, id_key_states);
-    VALUE result = rb_hash_new();
-    rb_hash_aset(result, ID2SYM(id_key_header), header);
-    rb_hash_aset(result, ID2SYM(id_key_states), states);
-    rb_hash_aset(result, ID2SYM(id_key_edges), r_edges);
-    rb_hash_aset(result, ID2SYM(id_key_start_edges), r_start_edges);
-    rb_hash_aset(result, ID2SYM(id_key_actions), actions);
-    rb_hash_aset(result, ID2SYM(id_key_subprograms), subprograms);
-    rb_hash_aset(result, ID2SYM(id_key_blob), blob);
-    rb_obj_freeze(header);
-    rb_obj_freeze(r_edges);
-    rb_obj_freeze(r_start_edges);
-    rb_obj_freeze(actions);
-    rb_obj_freeze(result);
-    /* Validate once, before publication.  Match calls use this immutable
-       validated representation without repeating structural scans. */
+    /* Validate once, then publish only the relocatable blob. Semantic Ruby
+	 mirrors are compile-time adapters and are not retained by the regexp.
+     */
     onibi_rseq_blob_validate(blob);
     onibi_rseq_class_payload_vector_free(&class_payloads);
     onibi_rseq_literal_payload_vector_free(&literal_payloads);
@@ -544,7 +459,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     onibi_gir_edge_vector_free(&r_start_edge_records);
     onibi_gir_state_vector_free(&state_records);
     onibi_rseq_subprogram_vector_free(&subprogram_records);
-    return result;
+    return blob;
 }
 
 static VALUE
@@ -1041,7 +956,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    parsed = obj->rseq = Qnil;
 	}
 	if (!NIL_P(obj->rseq)) {
-	    obj->rseq_blob = onibi_hash_value_id(obj->rseq, id_key_blob);
+	    obj->rseq_blob = obj->rseq;
 	    obj->rseq_view_valid =
 		onibi_rseq_view_init(obj->rseq_blob, &obj->rseq_view) ? 1 : 0;
 	}
@@ -1322,7 +1237,7 @@ onibi_regexp_linear_time_p(VALUE klass, VALUE pattern)
 	       : Qfalse;
 }
 
-static int
+static int __attribute__((unused))
 onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters)
 {
     if (!counters || !counters->values) return 1;
@@ -1349,7 +1264,7 @@ onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters)
     return 1;
 }
 
-static void
+static void __attribute__((unused))
 onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *counters)
 {
     if (!counters || !counters->values) return;
@@ -1370,7 +1285,7 @@ onibi_vm_apply_counter_actions_c(VALUE actions, OnibiCounterState *counters)
     }
 }
 
-static int
+static int __attribute__((unused))
 onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length,
 		    long search_origin, VALUE counters,
 		    const OnibiCounterState *counter_state, VALUE captures)

@@ -544,8 +544,17 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 							  decoded_length, 1};
 		}
 	    }
-	    if (escaped >= '1' && escaped <= '9' && i + 1 < RSTRING_LEN(src) &&
-		RSTRING_PTR(src)[i + 1] >= '0' &&
+	    /* Three octal digits form one byte.  Resolve this form before the
+	       numeric backreference rule.  The parser must not receive \101 as
+	       capture number 101. */
+	    int three_digit_octal =
+		escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
+		RSTRING_PTR(src)[i + 2] >= '0' &&
+		RSTRING_PTR(src)[i + 2] <= '7' && i + 3 < RSTRING_LEN(src) &&
+		RSTRING_PTR(src)[i + 3] >= '0' &&
+		RSTRING_PTR(src)[i + 3] <= '7';
+	    if (!three_digit_octal && escaped >= '1' && escaped <= '9' &&
+		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' &&
 		RSTRING_PTR(src)[i + 1] <= '9') {
 		long number = escaped - '0';
 		while (i + 1 < RSTRING_LEN(src) &&
@@ -767,5 +776,3 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	}
     }
 }
-
-

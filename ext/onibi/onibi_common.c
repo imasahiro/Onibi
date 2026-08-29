@@ -53,18 +53,11 @@ static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static VALUE onibi_empty_actions = Qnil;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-/* The call metadata is explicit VM state.  The graph walker still uses its
- * existing depth-first control flow, but subprogram recursion no longer
- * stores its semantic depth only in a C integer. */
-#define ONIBI_CALL_STACK_LIMIT 256U
-static _Thread_local OnibiCallFrame onibi_call_frames[ONIBI_CALL_STACK_LIMIT];
-static _Thread_local unsigned int onibi_call_stack_size = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options,
     id_inspect, id_to_s, id_new;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
-static VALUE onibi_rseq_execution_graph(VALUE rseq);
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);
 static ID id_scan, id_gsub, id_encoding, id_index;
@@ -129,7 +122,6 @@ static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
-static void onibi_rseq_validate(VALUE rseq) __attribute__((unused));
 static inline VALUE
 onibi_hash_value_id(VALUE hash, ID key)
 {
@@ -200,14 +192,6 @@ onibi_check_deadline(void)
 {
     if (onibi_deadline_ns != 0 && onibi_now_ns() >= onibi_deadline_ns)
 	rb_raise(eTimeoutError, "regexp match timeout");
-}
-
-static void onibi_vm_stack_overflow(void) __attribute__((noreturn));
-static void
-onibi_vm_stack_overflow(void)
-{
-    if (onibi_deadline_ns != 0) rb_raise(eTimeoutError, "regexp match timeout");
-    rb_raise(eRegexpError, "GIR graph is too deep");
 }
 
 static void
@@ -284,32 +268,6 @@ onibi_mri_compat_path_p(const onibi_regexp_t *obj)
 	     (obj->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0));
 }
 
-static void
-onibi_call_stack_reset(void)
-{
-    onibi_call_stack_size = 0;
-}
-
-static OnibiCallFrame *
-onibi_call_frame_push(OnibiSubprogramId subprogram_id)
-{
-    if (onibi_call_stack_size >= ONIBI_CALL_STACK_LIMIT)
-	rb_raise(eRegexpError, "subroutine call depth exceeded");
-    unsigned int index = onibi_call_stack_size++;
-    OnibiCallFrame *frame = &onibi_call_frames[index];
-    frame->subprogram_id = subprogram_id;
-    frame->continuation = ONIBI_ACCEPT_STATE;
-    frame->tag_history = 0;
-    frame->recursion_depth = index;
-    frame->parent = index == 0 ? ONIBI_CALL_STACK_LIMIT : index - 1;
-    return frame;
-}
-
-static void
-onibi_call_frame_pop(void)
-{
-    if (onibi_call_stack_size > 0) onibi_call_stack_size--;
-}
 static int
 onibi_encoded_literal_program_p(const onibi_regexp_t *obj)
 {

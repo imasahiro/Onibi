@@ -2,8 +2,6 @@ static VALUE
 onibi_vm_regular_fast(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 		      long search_origin)
 {
-    onibi_call_stack_reset();
-    VALUE graph = Qnil;
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
@@ -12,11 +10,7 @@ onibi_vm_regular_fast(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 	int simple = onibi_rseq_simple_match(rseq, view, str, start,
 					     search_origin, &end);
 	if (simple > 0) return Qtrue;
-	if (simple < 0) {
-	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
-	    if (onibi_gir_match(graph, str, start, search_origin, &end))
-		return Qtrue;
-	}
+	if (simple < 0) return Qundef;
     }
     return Qfalse;
 }
@@ -25,54 +19,34 @@ static VALUE
 onibi_vm_tagged_ordered(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 			long search_origin, int need_captures)
 {
-    onibi_call_stack_reset();
-    VALUE graph = Qnil;
+    (void)need_captures;
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
 	onibi_check_deadline();
 	long end = 0;
-	if (!need_captures) {
-	    int simple = onibi_rseq_simple_match(rseq, view, str, start,
-						 search_origin, &end);
-	    if (simple > 0) return Qtrue;
-	    if (simple == 0) continue;
-	}
-	if (need_captures) {
-	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
-	    long reported_start = start;
-	    VALUE captures = rb_hash_new();
-	    if (onibi_gir_match_captures(graph, str, start, search_origin, &end,
-					 &reported_start, &captures))
-		return Qtrue;
-	}
-	else {
-	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
-	    if (onibi_gir_match(graph, str, start, search_origin, &end))
-		return Qtrue;
-	}
+	int simple = onibi_rseq_simple_match(rseq, view, str, start,
+					     search_origin, &end);
+	if (simple > 0) return Qtrue;
+	if (simple == 0) continue;
+	if (simple < 0) return Qundef;
     }
     return Qfalse;
 }
 
 static VALUE
-onibi_vm_dynamic(VALUE rseq, VALUE str, long search_origin)
+onibi_vm_dynamic(VALUE rseq, const OnibiRSeqView *view, VALUE str,
+		 long search_origin)
 {
-    onibi_call_stack_reset();
-    /* Dynamic execution owns its dispatch loop.  The capture walker resolves
-       backreferences and counters; this loop adds the dynamic deadline and
-       interrupt boundary without routing through TAGGED_ORDERED. */
-    VALUE graph = onibi_rseq_execution_graph(rseq);
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
 	onibi_check_deadline();
 	long end = 0;
-	long reported_start = start;
-	VALUE captures = rb_hash_new();
-	if (onibi_gir_match_captures(graph, str, start, search_origin, &end,
-				     &reported_start, &captures))
-	    return Qtrue;
+	int native = onibi_rseq_simple_match(rseq, view, str, start,
+					     search_origin, &end);
+	if (native > 0) return Qtrue;
+	if (native < 0) return Qundef;
     }
     return Qfalse;
 }
@@ -84,7 +58,6 @@ onibi_vm_match_p(VALUE self, VALUE str)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     int str_encoding_index = rb_enc_get_index(str);
-    onibi_call_stack_reset();
     onibi_set_deadline(obj->timeout_seconds);
     if (!NIL_P(obj->rseq_blob))
 	obj->rseq_view_valid =
@@ -110,8 +83,10 @@ onibi_vm_match_p(VALUE self, VALUE str)
 			     ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL) ||
 				 ONIBI_FEATURE_P(obj, ONIBI_FEATURE_BACKREF) ||
 				 ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE))
-		       : onibi_vm_dynamic(obj->rseq, str, 0));
+		       : onibi_vm_dynamic(obj->rseq, &obj->rseq_view, str, 0));
 	onibi_deadline_ns = 0;
+	if (result == Qundef)
+	    return rb_funcall(obj->regexp, id_match_p, 1, str);
 	return result;
     }
     onibi_deadline_ns = 0;

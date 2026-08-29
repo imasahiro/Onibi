@@ -7,16 +7,29 @@ onibi_rseq_word_byte(unsigned char byte)
 static int
 onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   VALUE str, long pos, long search_origin,
-			   long *counters, uint32_t counter_count)
+			   long *counters, uint32_t counter_count,
+			   long *captures, uint32_t capture_slots)
 {
     if (edge->action_offset == 0) return 1;
     uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
     for (; index < view->header->action_count; index++) {
 	const OnibiRAction *action = &view->actions[index];
 	if (action->op == ONIBI_RA_END) return 1;
-	if (action->op == ONIBI_RA_CAPTURE ||
-	    action->op == ONIBI_RA_MATCH_RESET)
+	if (action->op == ONIBI_RA_CAPTURE) {
+	    if (!captures || action->arg16 >= capture_slots) return 0;
+	    captures[action->arg16] = pos;
 	    continue;
+	}
+	if (action->op == ONIBI_RA_TEST_CAPTURE) {
+	    uint32_t begin = (uint32_t)action->arg16 * 2U;
+	    int set = captures && begin + 1U < capture_slots &&
+		      captures[begin] >= 0 && captures[begin + 1U] >= 0;
+	    if ((action->flags == ONIBI_RA_TEST_CAPTURE_SET && !set) ||
+		(action->flags == ONIBI_RA_TEST_CAPTURE_UNSET && set))
+		return 0;
+	    continue;
+	}
+	if (action->op == ONIBI_RA_MATCH_RESET) continue;
 	if (action->op == ONIBI_RA_COUNTER_SET ||
 	    action->op == ONIBI_RA_COUNTER_ADD ||
 	    action->op == ONIBI_RA_COUNTER_TEST) {
@@ -74,7 +87,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
     if (!view) {
-	VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
+	VALUE blob = rseq;
 	if (!onibi_rseq_view_init(blob, &local_view)) return -1;
 	view = &local_view;
     }
@@ -89,6 +102,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 		view->actions[i].op != ONIBI_RA_CAPTURE &&
 		view->actions[i].op != ONIBI_RA_MATCH_RESET &&
 		view->actions[i].op != ONIBI_RA_ASSERT_POSITION &&
+		view->actions[i].op != ONIBI_RA_TEST_CAPTURE &&
 		view->actions[i].op != ONIBI_RA_COUNTER_SET &&
 		view->actions[i].op != ONIBI_RA_COUNTER_ADD &&
 		view->actions[i].op != ONIBI_RA_COUNTER_TEST)
@@ -107,7 +121,8 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	if (states[i].flags != 0) return -1;
 	if (states[i].op != 0 && states[i].op != ONIBI_RS_CHAR &&
 	    states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY &&
-	    states[i].op != ONIBI_RS_GRAPHEME)
+	    states[i].op != ONIBI_RS_GRAPHEME &&
+	    states[i].op != ONIBI_RS_BACKREF)
 	    return -1;
 	if (states[i].op == ONIBI_RS_CHAR) {
 	    if (view->literals[states[i].payload].flags != 0) return -1;
@@ -123,6 +138,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
     if (visited_size > SIZE_MAX / sizeof(onibi_simple_frame_t)) return -1;
     unsigned char *visited = (unsigned char *)alloca(visited_size);
     memset(visited, 0, visited_size);
+    int use_visited = header->counter_count == 0 && header->capture_count == 0;
     size_t stack_capacity = visited_size;
     onibi_simple_frame_t *stack =
 	(onibi_simple_frame_t *)alloca(stack_capacity * sizeof(*stack));
@@ -135,16 +151,32 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	    ? NULL
 	    : (long *)alloca(stack_capacity * header->counter_count *
 			     sizeof(long));
+    if (header->capture_count > UINT32_MAX / 2U) return -1;
+    uint32_t capture_slots = header->capture_count * 2U;
+    if (capture_slots != 0 &&
+	(stack_capacity > SIZE_MAX / capture_slots ||
+	 stack_capacity * capture_slots > SIZE_MAX / sizeof(long)))
+	return -1;
+    long *capture_pool =
+	capture_slots == 0
+	    ? NULL
+	    : (long *)alloca(stack_capacity * capture_slots * sizeof(long));
     size_t stack_size = 0;
     for (uint32_t i = header->start_edge_count; i > 0; i--) {
 	const OnibiREdge *edge = &edges[header->start_edge_base + (i - 1U)];
 	long *branch_counters =
 	    counter_pool ? counter_pool + stack_size * header->counter_count
 			 : NULL;
+	long *branch_captures =
+	    capture_pool ? capture_pool + stack_size * capture_slots : NULL;
 	if (branch_counters)
 	    memset(branch_counters, 0, header->counter_count * sizeof(long));
+	if (branch_captures)
+	    for (uint32_t slot = 0; slot < capture_slots; slot++)
+		branch_captures[slot] = -1;
 	if (!onibi_rseq_edge_actions_ok(view, edge, str, start, search_origin,
-					branch_counters, header->counter_count))
+					branch_counters, header->counter_count,
+					branch_captures, capture_slots))
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    *matched_end = start;
@@ -152,14 +184,16 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	}
 	if (edge->destination < header->state_count)
 	    stack[stack_size++] = (onibi_simple_frame_t){
-		edge->destination, start, branch_counters};
+		edge->destination, start, branch_counters, branch_captures};
     }
     while (stack_size > 0) {
 	onibi_simple_frame_t frame = stack[--stack_size];
 	if (frame.pos < 0 || frame.pos > RSTRING_LEN(str)) continue;
 	size_t mark = (size_t)frame.state * span + (size_t)frame.pos;
-	if (visited[mark]) continue;
-	visited[mark] = 1;
+	if (use_visited) {
+	    if (visited[mark]) continue;
+	    visited[mark] = 1;
+	}
 	const OnibiRState *state = &states[frame.state];
 	long next_pos = frame.pos;
 	int hit = 1;
@@ -173,6 +207,23 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 		hit = 0;
 	    else
 		next_pos += width;
+	}
+	else if (state->op == ONIBI_RS_BACKREF) {
+	    uint32_t begin = state->payload * 2U;
+	    if (!frame.captures || begin + 1U >= capture_slots ||
+		frame.captures[begin] < 0 || frame.captures[begin + 1U] < 0)
+		hit = 0;
+	    else {
+		long length =
+		    frame.captures[begin + 1U] - frame.captures[begin];
+		if (length < 0 || frame.pos + length > RSTRING_LEN(str) ||
+		    memcmp(RSTRING_PTR(str) + frame.pos,
+			   RSTRING_PTR(str) + frame.captures[begin],
+			   (size_t)length) != 0)
+		    hit = 0;
+		else
+		    next_pos += length;
+	    }
 	}
 	else if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
 		 state->op == ONIBI_RS_ANY) {
@@ -205,9 +256,14 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	    if (next_counters)
 		memcpy(next_counters, frame.counters,
 		       header->counter_count * sizeof(long));
-	    if (!onibi_rseq_edge_actions_ok(view, edge, str, next_pos,
-					    search_origin, next_counters,
-					    header->counter_count))
+	    long *next_captures =
+		capture_pool ? capture_pool + stack_size * capture_slots : NULL;
+	    if (next_captures)
+		memcpy(next_captures, frame.captures,
+		       capture_slots * sizeof(long));
+	    if (!onibi_rseq_edge_actions_ok(
+		    view, edge, str, next_pos, search_origin, next_counters,
+		    header->counter_count, next_captures, capture_slots))
 		continue;
 	    uint32_t destination = edge->destination;
 	    if (destination == ONIBI_ACCEPT_STATE) {
@@ -217,7 +273,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	    if (destination < header->state_count &&
 		stack_size < stack_capacity)
 		stack[stack_size++] = (onibi_simple_frame_t){
-		    destination, next_pos, next_counters};
+		    destination, next_pos, next_counters, next_captures};
 	}
     }
     return 0;

@@ -1179,39 +1179,6 @@ onibi_counter_action(ID op, long slot, VALUE limit)
     return action;
 }
 
-static void
-onibi_materialize_gir(onibi_gir_builder_t *builder, VALUE *states_out,
-		      VALUE *edges_out)
-{
-    VALUE states = rb_ary_new_capa((long)builder->states.count);
-    for (size_t i = 0; i < builder->states.count; i++) {
-	OnibiGirStateEntry *entry = &builder->states.entries[i];
-	VALUE state = rb_hash_new();
-	rb_hash_aset(state, ID2SYM(id_key_id), LONG2NUM(entry->id));
-	rb_hash_aset(state, ID2SYM(id_key_op), ID2SYM(entry->op));
-	if (entry->opcode >= ONIBI_G_ACCEPT)
-	    rb_hash_aset(state, ID2SYM(id_key_opcode), UINT2NUM(entry->opcode));
-	rb_hash_aset(state, ID2SYM(id_key_payload), entry->payload);
-	rb_obj_freeze(state);
-	rb_ary_push(states, state);
-    }
-    VALUE edges = rb_ary_new_capa((long)builder->edges.count);
-    for (size_t i = 0; i < builder->edges.count; i++) {
-	OnibiGirEdgeEntry *entry = &builder->edges.entries[i];
-	VALUE edge = rb_hash_new();
-	rb_hash_aset(edge, ID2SYM(id_key_from), LONG2NUM(entry->from));
-	rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(entry->to));
-	rb_obj_freeze(entry->actions);
-	rb_hash_aset(edge, ID2SYM(id_key_actions), entry->actions);
-	rb_obj_freeze(edge);
-	rb_ary_push(edges, edge);
-    }
-    rb_obj_freeze(states);
-    rb_obj_freeze(edges);
-    *states_out = states;
-    *edges_out = edges;
-}
-
 static VALUE
 onibi_gir_payload_from_ast_terminal(const OnibiAstArena *arena, OnibiAstId id,
 				    int semantic_class)
