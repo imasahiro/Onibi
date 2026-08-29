@@ -13,6 +13,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def extension_source
     EXTENSION_MODULES.map { |file| File.read(file) }.join("\n")
+      .gsub(/\bstatic\s+([A-Za-z_][A-Za-z0-9_ ]*)\n\s*/, 'static \\1 ')
   end
 
   def test_library_matching_does_not_use_mri_regexp_operators
