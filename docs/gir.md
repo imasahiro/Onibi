@@ -209,7 +209,7 @@ Tagged epsilon NFA (C intermediate representation)
 epsilon elimination (explicit C pass)
     |
     v
-G-IR (C vectors; Ruby adapter at publication only)
+G-IR (typed C state, edge, action, and subprogram vectors)
 Prioritized Glushkov IR
     |
     v
@@ -282,9 +282,9 @@ Inline options must be resolved before G-IR generation.
 
 G-IR is the canonical semantic representation.
 
-The production compiler stores G-IR opcodes as C enums. RSeq lowering reads
-the C state and edge vectors directly. Symbol names and Ruby Hash records are
-debug adapters and are not compiler-pass inputs.
+The production compiler stores G-IR operations as C enums. RSeq lowering reads
+the typed C vectors directly. Compiler passes do not publish or consume Ruby
+Hash records. Debug names are generated only when a diagnostic requests them.
 
 G-IR represents a prioritized tagged Glushkov automaton.
 
