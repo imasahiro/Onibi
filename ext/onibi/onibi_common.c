@@ -65,6 +65,7 @@ static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
 static VALUE onibi_rseq_execution_graph(VALUE rseq);
+static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call,
     id_g_char, id_g_class, id_g_any, id_g_backref;
@@ -240,8 +241,11 @@ typedef struct {
     VALUE regexp;
     VALUE source;
     VALUE rseq;
+    VALUE rseq_blob;
     VALUE names;
     VALUE named_captures;
+    OnibiRSeqView rseq_view;
+    unsigned char rseq_view_valid;
     /* Immutable compile-time decisions used by the C dispatcher. */
     OnibiExecutionKind execution_kind;
     int options;
@@ -422,6 +426,7 @@ onibi_mark(void *ptr)
     rb_gc_mark(obj->regexp);
     rb_gc_mark(obj->source);
     rb_gc_mark(obj->rseq);
+    rb_gc_mark(obj->rseq_blob);
     rb_gc_mark(obj->names);
     rb_gc_mark(obj->named_captures);
 }

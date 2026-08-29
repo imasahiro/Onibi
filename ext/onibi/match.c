@@ -1,19 +1,15 @@
 static VALUE
-onibi_vm_regular_fast(VALUE rseq, VALUE str, long search_origin)
+onibi_vm_regular_fast(VALUE rseq, const OnibiRSeqView *view, VALUE str,
+		      long search_origin)
 {
     onibi_call_stack_reset();
     VALUE graph = Qnil;
-    OnibiRSeqView view;
-    const OnibiRSeqView *cached_view = NULL;
-    VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
-    if (onibi_rseq_view_init(blob, &view)) cached_view = &view;
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
 	onibi_check_deadline();
 	long end = 0;
-	int simple =
-	    onibi_rseq_simple_match(rseq, cached_view, str, start, &end);
+	int simple = onibi_rseq_simple_match(rseq, view, str, start, &end);
 	if (simple > 0) return Qtrue;
 	if (simple < 0) {
 	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
@@ -25,23 +21,18 @@ onibi_vm_regular_fast(VALUE rseq, VALUE str, long search_origin)
 }
 
 static VALUE
-onibi_vm_tagged_ordered(VALUE rseq, VALUE str, long search_origin,
-			int need_captures)
+onibi_vm_tagged_ordered(VALUE rseq, const OnibiRSeqView *view, VALUE str,
+			long search_origin, int need_captures)
 {
     onibi_call_stack_reset();
     VALUE graph = Qnil;
-    OnibiRSeqView view;
-    const OnibiRSeqView *cached_view = NULL;
-    VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
-    if (onibi_rseq_view_init(blob, &view)) cached_view = &view;
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
 	onibi_check_deadline();
 	long end = 0;
 	if (!need_captures) {
-	    int simple =
-		onibi_rseq_simple_match(rseq, cached_view, str, start, &end);
+	    int simple = onibi_rseq_simple_match(rseq, view, str, start, &end);
 	    if (simple > 0) return Qtrue;
 	    if (simple == 0) continue;
 	}
@@ -95,7 +86,8 @@ onibi_vm_match_p(VALUE self, VALUE str)
     onibi_set_deadline(obj->timeout_seconds);
     if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) &&
 	(!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
-	!NIL_P(obj->rseq) && onibi_vm_input_eligible(obj, str) &&
+	!NIL_P(obj->rseq) && obj->rseq_view_valid &&
+	onibi_vm_input_eligible(obj, str) &&
 	(!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ASCII_PROPERTY) ||
 	 rb_enc_str_asciionly_p(str) ||
 	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_UNICODE_PROPERTY) &&
@@ -106,10 +98,10 @@ onibi_vm_match_p(VALUE self, VALUE str)
 	   built during initialize.  Do not rescan the program on each match. */
 	VALUE result =
 	    obj->execution_kind == ONIBI_EXEC_REGULAR
-		? onibi_vm_regular_fast(obj->rseq, str, 0)
+		? onibi_vm_regular_fast(obj->rseq, &obj->rseq_view, str, 0)
 		: (obj->execution_kind == ONIBI_EXEC_TAGGED
 		       ? onibi_vm_tagged_ordered(
-			     obj->rseq, str, 0,
+			     obj->rseq, &obj->rseq_view, str, 0,
 			     ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL) ||
 				 ONIBI_FEATURE_P(obj, ONIBI_FEATURE_BACKREF) ||
 				 ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE))

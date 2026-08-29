@@ -947,6 +947,8 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     obj->names = Qnil;
     obj->named_captures = Qnil;
     obj->rseq = Qnil;
+    obj->rseq_blob = Qnil;
+    obj->rseq_view_valid = 0;
     OnibiTokenVector tokens;
     onibi_token_vector_init(&tokens);
     OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0, &tokens};
@@ -1037,6 +1039,11 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
 	    ((opts & 16) && !encoded_literal_program) || (opts & 32)) {
 	    parsed = obj->rseq = Qnil;
+	}
+	if (!NIL_P(obj->rseq)) {
+	    obj->rseq_blob = onibi_hash_value_id(obj->rseq, id_key_blob);
+	    obj->rseq_view_valid =
+		onibi_rseq_view_init(obj->rseq_blob, &obj->rseq_view) ? 1 : 0;
 	}
     }
     else {

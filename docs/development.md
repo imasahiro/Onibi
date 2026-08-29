@@ -51,7 +51,8 @@ are diagnostic adapters and are not execution inputs.
 The compiler keeps the final GIR state and edge vectors in C. RSeq lowering
 reads these vectors directly. It does not rebuild GIR records from the Ruby
 debug mirror. Regular and action-free tagged execution read the relocatable
-RSeq blob through `OnibiRSeqView`.
+RSeq blob through `OnibiRSeqView`. `Onibi::Regexp` creates this native view
+once during initialization. Match calls reuse the sidecar.
 
 ## Milestones
 
@@ -243,7 +244,7 @@ semantic boundary.
 | GIR edge action counts | No | Cached `action_count` in `OnibiGirEdgeEntry` | Physical edge encoding needs only the count. It no longer queries the Ruby action array length for each edge. |
 | RSeq physical actions | No | Read the C action vector during blob construction | Feature detection and opcode encoding use the flattened C order directly. The Ruby action array is only the published semantic adapter. |
 | RSeq subprogram descriptors | No | `OnibiRSeqSubprogramVector` during lowering | Entry, accept, and flags are numeric execution fields. The Ruby descriptor array remains only as the semantic adapter. |
-| RSeq physical execution view | No | Pending: `OnibiRSeqView`-backed VM entry | `onibi_rseq_physical_graph` still creates a Ruby Hash adapter for tagged and dynamic walkers, but it now copies action ranges from cached edge lengths. Regular fast paths already read the blob directly; capture walkers still require a C view migration. |
+| RSeq physical execution view | No | Cached `OnibiRSeqView` sidecar | Regular and action-free tagged paths read blob offsets directly. Dynamic capture operations still require the native walker migration. |
 | fragment start/exit IDs | No | `OnibiIdVector` | IDs are numeric and ordered. Fragment composition, guard insertion, and GIR connections use C vectors directly; no transient Ruby Array is created for fragment state IDs. |
 | GIR start-edge construction | No | `OnibiGirEdgeVector` until publication | Compiler start edges are accumulated as typed records. Ruby edge Hashes are materialized once for the frozen GIR adapter. |
 | fragment action lists | No for shape; yes for payload values | Use typed action records with Ruby payload fields | Action order is semantic, but names and bitmaps still cross the GC boundary. Guard action lists now use C-owned VALUE vectors; fragment lists remain the next migration boundary. |
@@ -264,7 +265,7 @@ pipeline is excluded from this review) is:
 | `onibi_compile_node` / `onibi_compile_sequence` | GIR payload and action adapters | Read C AST references; keep Ruby values only at the GIR boundary |
 | `onibi_compiler_compile` | Frozen GIR semantic snapshot | Keep one publication adapter; builder records are C vectors |
 | `onibi_rseq_lower` | Semantic validation adapters | Keep at the RSeq publication boundary; physical records are C vectors |
-| `onibi_rseq_physical_graph` | Cached tagged/dynamic VM graph | Keep one immutable adapter until the C `OnibiRSeqView` walker is complete |
+| `onibi_rseq_execution_graph` | Dynamic compatibility graph | Remove after backreference, call, and conditional actions use the native blob walker |
 | `onibi_vm_walk_captures` / `onibi_gir_match_captures_entry` | Capture maps and tag events | Keep Ruby values for GC and MatchData; counters migrate with this walker |
 | `onibi_gir_match` | Visited fallback map | Keep only when the C bitset cannot represent counter-bearing identity |
 
