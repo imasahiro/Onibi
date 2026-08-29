@@ -53,7 +53,6 @@ typedef struct {
 typedef struct {
     VALUE value;
     OnibiGActionOp code;
-    ID op;
     uint8_t physical_op;
     uint8_t set;
     uint8_t positive;
@@ -63,12 +62,12 @@ typedef struct {
     uint16_t assert_kind;
     uint8_t has_arg32;
     uint32_t arg32;
-} OnibiRSeqActionEntry;
+} OnibiGAction;
 typedef struct {
-    OnibiRSeqActionEntry *entries;
+    OnibiGAction *entries;
     size_t count;
     size_t capacity;
-} OnibiRSeqActionVector;
+} OnibiGActionVector;
 typedef struct {
     VALUE payload;
     VALUE bitmap;
@@ -543,7 +542,7 @@ onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector)
 }
 
 static void
-onibi_rseq_action_vector_init(OnibiRSeqActionVector *vector)
+onibi_rseq_action_vector_init(OnibiGActionVector *vector)
 {
     vector->entries = NULL;
     vector->count = vector->capacity = 0;
@@ -565,14 +564,13 @@ onibi_rseq_physical_action_op(OnibiGActionOp code)
 		     : ONIBI_RA_END);
 }
 static void
-onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE value)
+onibi_rseq_action_vector_push(OnibiGActionVector *vector, VALUE value)
 {
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
 	if (next > SIZE_MAX / sizeof(*vector->entries))
 	    rb_raise(rb_eNoMemError, "RSeq action vector is too large");
-	vector->entries =
-	    REALLOC_N(vector->entries, OnibiRSeqActionEntry, next);
+	vector->entries = REALLOC_N(vector->entries, OnibiGAction, next);
 	vector->capacity = next;
     }
     VALUE slot = onibi_hash_value_id(value, id_key_slot);
@@ -583,10 +581,9 @@ onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE value)
     VALUE arg32 = !NIL_P(width) ? width : (!NIL_P(limit) ? limit : arg_value);
     OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
 	onibi_hash_value_id(value, id_key_action_code));
-    vector->entries[vector->count++] = (OnibiRSeqActionEntry){
+    vector->entries[vector->count++] = (OnibiGAction){
 	value,
 	code,
-	SYM2ID(onibi_hash_value_id(value, id_key_op)),
 	onibi_rseq_physical_action_op(code),
 	RTEST(onibi_hash_value_id(value, id_key_set)) ? 1 : 0,
 	RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0,
@@ -598,7 +595,7 @@ onibi_rseq_action_vector_push(OnibiRSeqActionVector *vector, VALUE value)
 	NIL_P(arg32) ? 0 : (uint32_t)NUM2ULONG(arg32)};
 }
 static void
-onibi_rseq_action_vector_free(OnibiRSeqActionVector *vector)
+onibi_rseq_action_vector_free(OnibiGActionVector *vector)
 {
     xfree(vector->entries);
     vector->entries = NULL;
@@ -1335,5 +1332,3 @@ onibi_c_ast_has_subroutine_name(const OnibiAstArena *arena, OnibiAstId id,
 	    return 1;
     return 0;
 }
-
-

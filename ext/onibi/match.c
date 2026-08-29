@@ -29,7 +29,7 @@ onibi_vm_tagged_ordered(VALUE rseq, VALUE str, long search_origin,
 			int need_captures)
 {
     onibi_call_stack_reset();
-    VALUE graph = onibi_rseq_execution_graph(rseq);
+    VALUE graph = Qnil;
     OnibiRSeqView view;
     const OnibiRSeqView *cached_view = NULL;
     VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
@@ -46,14 +46,17 @@ onibi_vm_tagged_ordered(VALUE rseq, VALUE str, long search_origin,
 	    if (simple == 0) continue;
 	}
 	if (need_captures) {
+	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
 	    long reported_start = start;
 	    VALUE captures = rb_hash_new();
 	    if (onibi_gir_match_captures(graph, str, start, search_origin, &end,
 					 &reported_start, &captures))
 		return Qtrue;
 	}
-	else if (onibi_gir_match(graph, str, start, search_origin, &end)) {
-	    return Qtrue;
+	else {
+	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
+	    if (onibi_gir_match(graph, str, start, search_origin, &end))
+		return Qtrue;
 	}
     }
     return Qfalse;

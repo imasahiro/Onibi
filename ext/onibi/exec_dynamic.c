@@ -23,19 +23,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	}
     }
     if (header->state_count == 0 || header->start_edge_count == 0) return -1;
-    VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
-    VALUE semantic_header = onibi_hash_value_id(rseq, id_key_header);
-    if (RTEST(onibi_hash_value_id(semantic_header, id_key_ignorecase)) ||
-	RTEST(onibi_hash_value_id(semantic_header, id_key_multiline)))
-	return -1;
-    for (long i = 0; i < RARRAY_LEN(semantic_states); i++) {
-	VALUE payload = onibi_hash_value_id(rb_ary_entry(semantic_states, i),
-					    id_key_payload);
-	if (RB_TYPE_P(payload, T_HASH) &&
-	    (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)) ||
-	     RTEST(onibi_hash_value_id(payload, id_key_multiline))))
-	    return -1;
-    }
+    if ((header->flags & 3U) != 0) return -1;
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
     const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
@@ -43,13 +31,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	rb_enc_get_index(str) != rb_ascii8bit_encindex())
 	return -1;
     for (uint32_t i = 0; i < header->state_count; i++) {
-	/* Keep branching and repeat cycles on the established ordered walker
-	   until their physical edge priority has a dedicated direct lowering.
-	 */
-	if (states[i].edge_count > 1) return -1;
 	if (states[i].flags != 0) return -1;
-	if (states[i].op == ONIBI_RS_CLASS || states[i].op == ONIBI_RS_ANY)
-	    return -1;
 	if (states[i].op != 0 && states[i].op != ONIBI_RS_CHAR &&
 	    states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY)
 	    return -1;
@@ -71,8 +53,8 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
     onibi_simple_frame_t *stack =
 	(onibi_simple_frame_t *)alloca(stack_capacity * sizeof(*stack));
     size_t stack_size = 0;
-    for (uint32_t i = 0; i < header->start_edge_count; i++) {
-	const OnibiREdge *edge = &edges[header->start_edge_base + i];
+    for (uint32_t i = header->start_edge_count; i > 0; i--) {
+	const OnibiREdge *edge = &edges[header->start_edge_base + (i - 1U)];
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    *matched_end = start;
 	    return 1;
@@ -117,8 +99,8 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	    hit = 0;
 	if (!hit) continue;
 	uint32_t begin = state->edge_base;
-	for (uint32_t e = 0; e < state->edge_count; e++) {
-	    uint32_t destination = edges[begin + e].destination;
+	for (uint32_t e = state->edge_count; e > 0; e--) {
+	    uint32_t destination = edges[begin + (e - 1U)].destination;
 	    if (destination == ONIBI_ACCEPT_STATE) {
 		*matched_end = next_pos;
 		return 1;
@@ -131,5 +113,3 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
     }
     return 0;
 }
-
-

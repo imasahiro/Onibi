@@ -282,6 +282,10 @@ Inline options must be resolved before G-IR generation.
 
 G-IR is the canonical semantic representation.
 
+The production compiler stores G-IR opcodes as C enums. RSeq lowering reads
+the C state and edge vectors directly. Symbol names and Ruby Hash records are
+debug adapters and are not compiler-pass inputs.
+
 G-IR represents a prioritized tagged Glushkov automaton.
 
 G-IR is mostly epsilon-free.

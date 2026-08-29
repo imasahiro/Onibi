@@ -48,6 +48,11 @@ stream. Match entry points consume the published immutable RSeq only. They
 MUST NOT inspect or rescan the regexp source. Compatibility pipeline views
 are diagnostic adapters and are not execution inputs.
 
+The compiler keeps the final GIR state and edge vectors in C. RSeq lowering
+reads these vectors directly. It does not rebuild GIR records from the Ruby
+debug mirror. Regular and action-free tagged execution read the relocatable
+RSeq blob through `OnibiRSeqView`.
+
 ## Milestones
 
 ### 1. C extension foundation

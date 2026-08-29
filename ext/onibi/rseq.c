@@ -1,4 +1,22 @@
 static uint8_t
+onibi_g_action_flags(const OnibiGAction *action)
+{
+    if (action->code == ONIBI_GA_CAPTURE_CLOSE) return ONIBI_RA_CAPTURE_CLOSE;
+    if (action->code == ONIBI_GA_TEST_CAPTURE)
+	return action->set ? ONIBI_RA_TEST_CAPTURE_SET
+			   : ONIBI_RA_TEST_CAPTURE_UNSET;
+    if (action->code == ONIBI_GA_TEST_COUNTER_GE) return ONIBI_RA_COUNTER_GE;
+    return 0;
+}
+
+static OnibiRAssertKind
+onibi_g_action_assert_kind(const OnibiGAction *action)
+{
+    return action->has_assert_kind ? (OnibiRAssertKind)action->assert_kind : 0;
+}
+
+/* Debug validator adapter. Runtime lowering uses OnibiGAction enums. */
+static uint8_t
 onibi_rseq_action_flags(ID op)
 {
     if (op == id_capture_close) return ONIBI_RA_CAPTURE_CLOSE;
@@ -28,62 +46,43 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 {
     (void)self;
     OnibiCompiled *compiled_data = onibi_compiled_get(compiled);
-    VALUE graph = compiled_data->graph;
-    if (NIL_P(graph))
+    if (compiled_data->states.count == 0)
 	rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
-    VALUE states = onibi_hash_value_id(graph, id_key_states);
-    VALUE edges = onibi_hash_value_id(graph, id_key_edges);
-    VALUE start_edges = onibi_hash_value_id(graph, id_key_start_edges);
-    VALUE subprograms = onibi_hash_value_id(graph, id_key_subprograms);
-    VALUE capture_count_value =
-	onibi_hash_value_id(graph, id_key_capture_count);
-    if (!RTEST(rb_obj_frozen_p(compiled)) || !RTEST(rb_obj_frozen_p(graph)) ||
-	!RTEST(rb_obj_frozen_p(states)) || !RTEST(rb_obj_frozen_p(edges)) ||
-	!RTEST(rb_obj_frozen_p(start_edges)) ||
-	!RB_TYPE_P(subprograms, T_ARRAY) ||
-	!RTEST(rb_obj_frozen_p(subprograms)))
+    if (!RTEST(rb_obj_frozen_p(compiled)) ||
+	!RB_TYPE_P(compiled_data->subprograms, T_ARRAY))
 	rb_raise(rb_eArgError, "RSeq lowering requires immutable GIR");
-    if (!RB_INTEGER_TYPE_P(capture_count_value))
-	rb_raise(rb_eArgError, "RSeq lowering requires a GIR capture count");
-    long gir_capture_count = NUM2LONG(capture_count_value);
+    long gir_capture_count = compiled_data->capture_count;
     if (gir_capture_count < 0 || (uint64_t)gir_capture_count > UINT32_MAX)
 	rb_raise(rb_eArgError, "RSeq capture count is out of range");
     uint32_t capture_count = (uint32_t)gir_capture_count;
-    long state_count = RARRAY_LEN(states);
+    size_t state_count = compiled_data->states.count;
     OnibiGirStateVector state_records;
     onibi_gir_state_vector_init(&state_records);
-    VALUE state_roots = rb_ary_new();
-    for (long i = 0; i < state_count; i++) {
-	VALUE state = rb_ary_entry(states, i);
-	OnibiGirStateEntry record = {
-	    NUM2LONG(onibi_hash_value_id(state, id_key_id)),
-	    /* The compiler already stores the numeric opcode.  Do not convert
-	       the debug symbol back to an ID during the RSeq pass. */
-	    0,
-	    (OnibiGStateOp)NUM2UINT(onibi_hash_value_id(state, id_key_opcode)),
-	    onibi_hash_value_id(state, id_key_payload), 0};
-	onibi_gir_state_vector_push(&state_records, record, state_roots);
+    if (state_count > 0) {
+	state_records.entries = ALLOC_N(OnibiGirStateEntry, state_count);
+	memcpy(state_records.entries, compiled_data->states.entries,
+	       state_count * sizeof(*state_records.entries));
+	state_records.count = state_records.capacity = state_count;
     }
+    VALUE subprograms = compiled_data->subprograms;
     OnibiRSeqSubprogramVector subprogram_records;
     onibi_rseq_subprogram_vector_init(&subprogram_records);
     for (long i = 0; i < RARRAY_LEN(subprograms); i++)
 	onibi_rseq_subprogram_vector_push(&subprogram_records,
 					  rb_ary_entry(subprograms, i));
-    long accept_state = NUM2LONG(onibi_hash_value_id(graph, id_key_accept));
-    if (accept_state < 0 || accept_state >= state_count)
+    long accept_state = compiled_data->accept;
+    if (accept_state < 0 || (size_t)accept_state >= state_count)
 	rb_raise(rb_eArgError,
 		 "RSeq lowering received an invalid accept state");
-    for (long i = 0; i < RARRAY_LEN(edges); i++) {
-	VALUE edge = rb_ary_entry(edges, i);
-	long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
-	long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
-	if (from < 0 || from >= state_count || to < 0 || to >= state_count)
+    for (size_t i = 0; i < compiled_data->edges.count; i++) {
+	const OnibiGirEdgeEntry *edge = &compiled_data->edges.entries[i];
+	if (edge->from < 0 || (size_t)edge->from >= state_count ||
+	    edge->to < 0 || (size_t)edge->to >= state_count)
 	    rb_raise(rb_eArgError, "RSeq lowering received an invalid edge");
     }
-    for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
-	long to = NUM2LONG(
-	    onibi_hash_value_id(rb_ary_entry(start_edges, i), id_key_to));
-	if (to < 0 || to >= state_count)
+    for (size_t i = 0; i < compiled_data->start_edges.count; i++) {
+	long to = compiled_data->start_edges.entries[i].to;
+	if (to < 0 || (size_t)to >= state_count)
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering received an invalid start edge");
     }
@@ -111,20 +110,19 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	state->payload_index = (uint32_t)payload_index;
     }
     uint32_t class_count = (uint32_t)class_payloads.count;
-    OnibiRSeqActionVector action_records;
+    OnibiGActionVector action_records;
     onibi_rseq_action_vector_init(&action_records);
     VALUE action_roots = rb_ary_new();
     OnibiGirEdgeVector r_edge_records;
     onibi_gir_edge_vector_init(&r_edge_records);
-    for (long i = 0; i < RARRAY_LEN(edges); i++) {
-	VALUE edge = rb_ary_entry(edges, i);
-	VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-	if (!RTEST(rb_obj_frozen_p(edge)) ||
-	    !RTEST(rb_obj_frozen_p(edge_actions)))
+    for (size_t i = 0; i < compiled_data->edges.count; i++) {
+	const OnibiGirEdgeEntry *edge = &compiled_data->edges.entries[i];
+	VALUE edge_actions = edge->actions;
+	if (!RTEST(rb_obj_frozen_p(edge_actions)))
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering requires immutable GIR edges");
-	long from = NUM2LONG(onibi_hash_value_id(edge, id_key_from));
-	long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
+	long from = edge->from;
+	long to = edge->to;
 	long action_offset =
 	    RARRAY_LEN(edge_actions) == 0 ? 0 : (long)action_records.count;
 	VALUE copied_actions = rb_ary_new();
@@ -153,14 +151,13 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count);
     OnibiGirEdgeVector r_start_edge_records;
     onibi_gir_edge_vector_init(&r_start_edge_records);
-    for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
-	VALUE edge = rb_ary_entry(start_edges, i);
-	VALUE edge_actions = onibi_hash_value_id(edge, id_key_actions);
-	if (!RTEST(rb_obj_frozen_p(edge)) ||
-	    !RTEST(rb_obj_frozen_p(edge_actions)))
+    for (size_t i = 0; i < compiled_data->start_edges.count; i++) {
+	const OnibiGirEdgeEntry *edge = &compiled_data->start_edges.entries[i];
+	VALUE edge_actions = edge->actions;
+	if (!RTEST(rb_obj_frozen_p(edge_actions)))
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering requires immutable GIR start edges");
-	long to = NUM2LONG(onibi_hash_value_id(edge, id_key_to));
+	long to = edge->to;
 	long action_offset =
 	    RARRAY_LEN(edge_actions) == 0 ? 0 : (long)action_records.count;
 	VALUE copied_actions = rb_ary_new();
@@ -269,9 +266,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     }
     for (size_t i = 0; i < action_records.count; i++) {
 	VALUE action = action_records.entries[i].value;
-	OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-	    onibi_hash_value_id(action, id_key_action_code));
-	ID op = SYM2ID(onibi_hash_value_id(action, id_key_op));
+	OnibiGActionOp code = action_records.entries[i].code;
 	if (code == ONIBI_GA_CAPTURE_OPEN) features |= 2U;
 	if (code == ONIBI_GA_COUNTER_INIT) features |= 4U;
 	if (code == ONIBI_GA_COUNTER_INIT ||
@@ -284,15 +279,8 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 		if (required > counter_count) counter_count = required;
 	    }
 	}
-	if (op == id_match_reset) features |= 8U;
-	if (op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer ||
-	    op == id_a_assert_begin_line || op == id_a_assert_end_line ||
-	    op == id_a_assert_semi_end_buffer ||
-	    op == id_a_assert_search_origin ||
-	    op == id_a_assert_word_boundary ||
-	    op == id_a_assert_nonword_boundary || op == id_a_assert_lookahead ||
-	    op == id_a_assert_lookbehind)
-	    features |= 16U;
+	if (code == ONIBI_GA_MATCH_RESET) features |= 8U;
+	if (code == ONIBI_GA_ASSERT_POSITION) features |= 16U;
     }
     rb_hash_aset(header, ID2SYM(id_key_features), UINT2NUM(features));
     rb_hash_aset(header, ID2SYM(id_key_class_count), UINT2NUM(class_count));
@@ -352,10 +340,10 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 		break;
 	    }
 	}
-	for (long i = 0; i < RARRAY_LEN(start_edges) && physical.exec_kind == 0;
+	for (size_t i = 0;
+	     i < compiled_data->start_edges.count && physical.exec_kind == 0;
 	     i++) {
-	    VALUE edge_actions = onibi_hash_value_id(
-		rb_ary_entry(start_edges, i), id_key_actions);
+	    VALUE edge_actions = compiled_data->start_edges.entries[i].actions;
 	    for (long j = 0; j < RARRAY_LEN(edge_actions); j++) {
 		OnibiGActionOp code =
 		    (OnibiGActionOp)NUM2UINT(onibi_hash_value_id(
@@ -468,19 +456,19 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     OnibiRAction *physical_actions =
 	(OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
     for (size_t i = 0; i < action_records.count; i++) {
-	ID op = action_records.entries[i].op;
+	const OnibiGAction *action = &action_records.entries[i];
 	physical_actions[i].op = action_records.entries[i].physical_op;
-	physical_actions[i].flags = onibi_rseq_action_flags(op);
-	if (op == id_a_test_capture && !action_records.entries[i].set)
-	    physical_actions[i].flags = ONIBI_RA_TEST_CAPTURE_UNSET;
+	physical_actions[i].flags = onibi_g_action_flags(action);
 	physical_actions[i].arg16 = action_records.entries[i].has_assert_kind
 					? action_records.entries[i].assert_kind
-					: onibi_rseq_assert_kind(op);
-	if (op == id_a_assert_lookahead || op == id_a_assert_lookbehind) {
+					: onibi_g_action_assert_kind(action);
+	if (action->code == ONIBI_GA_ASSERT_POSITION &&
+	    (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
+	     action->assert_kind == ONIBI_RAP_LOOKBEHIND)) {
 	    int positive = action_records.entries[i].positive;
-	    physical_actions[i].flags = op == id_a_assert_lookahead
-					    ? (positive ? 1 : 2)
-					    : (positive ? 5 : 6);
+	    physical_actions[i].flags =
+		action->assert_kind == ONIBI_RAP_LOOKAHEAD ? (positive ? 1 : 2)
+							   : (positive ? 5 : 6);
 	}
 	if (action_records.entries[i].has_slot)
 	    physical_actions[i].arg16 = action_records.entries[i].slot;
@@ -529,6 +517,10 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	physical_subprograms[i].flags = record->flags;
     }
     rb_obj_freeze(blob);
+    /* Keep the Ruby mirror as a debug adapter. RSeq lowering above consumes
+       only the C GIR vectors stored in OnibiCompiled. */
+    VALUE graph = compiled_data->graph;
+    VALUE states = onibi_hash_value_id(graph, id_key_states);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(id_key_header), header);
     rb_hash_aset(result, ID2SYM(id_key_states), states);

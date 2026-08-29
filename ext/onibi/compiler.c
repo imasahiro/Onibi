@@ -7,23 +7,49 @@ static int onibi_unicode_ctype_id(ID property);
 
 typedef struct {
     VALUE graph;
+    VALUE subprograms;
+    OnibiGirStateVector states;
+    OnibiGirEdgeVector edges;
+    OnibiGirEdgeVector start_edges;
+    long accept;
+    long capture_count;
+    long counter_count;
     int options;
 } OnibiCompiled;
 static void
 onibi_compiled_mark(void *ptr)
 {
     OnibiCompiled *compiled = (OnibiCompiled *)ptr;
-    if (compiled) rb_gc_mark(compiled->graph);
+    if (!compiled) return;
+    rb_gc_mark(compiled->graph);
+    rb_gc_mark(compiled->subprograms);
+    for (size_t i = 0; i < compiled->states.count; i++)
+	rb_gc_mark(compiled->states.entries[i].payload);
+    for (size_t i = 0; i < compiled->edges.count; i++)
+	rb_gc_mark(compiled->edges.entries[i].actions);
+    for (size_t i = 0; i < compiled->start_edges.count; i++)
+	rb_gc_mark(compiled->start_edges.entries[i].actions);
 }
 static void
 onibi_compiled_free(void *ptr)
 {
+    OnibiCompiled *compiled = (OnibiCompiled *)ptr;
+    if (!compiled) return;
+    onibi_gir_state_vector_free(&compiled->states);
+    onibi_gir_edge_vector_free(&compiled->edges);
+    onibi_gir_edge_vector_free(&compiled->start_edges);
     xfree(ptr);
 }
 static size_t
 onibi_compiled_memsize(const void *ptr)
 {
-    return ptr ? sizeof(OnibiCompiled) : 0;
+    const OnibiCompiled *compiled = (const OnibiCompiled *)ptr;
+    if (!compiled) return 0;
+    return sizeof(*compiled) +
+	   compiled->states.capacity * sizeof(*compiled->states.entries) +
+	   compiled->edges.capacity * sizeof(*compiled->edges.entries) +
+	   compiled->start_edges.capacity *
+	       sizeof(*compiled->start_edges.entries);
 }
 static const rb_data_type_t onibi_compiled_type = {"Onibi::Compiled",
 						   {onibi_compiled_mark,
@@ -1526,7 +1552,39 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
 					 &onibi_compiled_type, compiled_result);
+    memset(compiled_result, 0, sizeof(*compiled_result));
     compiled_result->graph = graph;
+    compiled_result->subprograms = subprograms;
+    onibi_gir_state_vector_init(&compiled_result->states);
+    onibi_gir_edge_vector_init(&compiled_result->edges);
+    onibi_gir_edge_vector_init(&compiled_result->start_edges);
+    if (builder->states.count > 0) {
+	compiled_result->states.entries =
+	    ALLOC_N(OnibiGirStateEntry, builder->states.count);
+	memcpy(compiled_result->states.entries, builder->states.entries,
+	       builder->states.count * sizeof(*builder->states.entries));
+	compiled_result->states.count = builder->states.count;
+	compiled_result->states.capacity = builder->states.count;
+    }
+    if (builder->edges.count > 0) {
+	compiled_result->edges.entries =
+	    ALLOC_N(OnibiGirEdgeEntry, builder->edges.count);
+	memcpy(compiled_result->edges.entries, builder->edges.entries,
+	       builder->edges.count * sizeof(*builder->edges.entries));
+	compiled_result->edges.count = builder->edges.count;
+	compiled_result->edges.capacity = builder->edges.count;
+    }
+    if (start_edges->count > 0) {
+	compiled_result->start_edges.entries =
+	    ALLOC_N(OnibiGirEdgeEntry, start_edges->count);
+	memcpy(compiled_result->start_edges.entries, start_edges->entries,
+	       start_edges->count * sizeof(*start_edges->entries));
+	compiled_result->start_edges.count = start_edges->count;
+	compiled_result->start_edges.capacity = start_edges->count;
+    }
+    compiled_result->accept = accept;
+    compiled_result->capture_count = builder->capture_count;
+    compiled_result->counter_count = counter_count;
     compiled_result->options = parsed_options;
     return result;
 }
