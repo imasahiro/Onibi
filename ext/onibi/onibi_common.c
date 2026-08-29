@@ -64,7 +64,7 @@ static ID id_initialize, id_match, id_match_p, id_source, id_options,
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
-static VALUE onibi_rseq_physical_graph(VALUE rseq);
+static VALUE onibi_rseq_execution_graph(VALUE rseq);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call,
     id_g_char, id_g_class, id_g_any, id_g_backref;
@@ -78,7 +78,7 @@ static ID id_a_assert_begin_line, id_a_assert_end_line,
 static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
 static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
-static ID id_a_end, id_key_physical_graph;
+static ID id_a_end;
 static ID id_insert;
 static ID id_timeout, id_encode, id_message, id_names, id_named_captures;
 static ID id_escape, id_union, id_to_regexp;
@@ -587,5 +587,3 @@ onibi_ast_kind(VALUE node)
     VALUE code = onibi_hash_value_id(node, id_key_type_code);
     return NIL_P(code) ? ONIBI_AST_UNKNOWN : (OnibiAstKind)NUM2UINT(code);
 }
-
-

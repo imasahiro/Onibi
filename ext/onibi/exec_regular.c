@@ -1,8 +1,6 @@
 static VALUE
-onibi_rseq_physical_graph(VALUE rseq)
+onibi_rseq_execution_graph(VALUE rseq)
 {
-    VALUE cached = onibi_hash_value_id(rseq, id_key_physical_graph);
-    if (!NIL_P(cached)) return cached;
     VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
     VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
     VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
@@ -153,4 +151,3 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
 /* Execute the action-free regular subset directly from the immutable RSeq
    blob.  This path does not materialize semantic states, edges, or visited
    Ruby objects for each candidate start. */
-

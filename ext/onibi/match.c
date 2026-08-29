@@ -16,7 +16,7 @@ onibi_vm_regular_fast(VALUE rseq, VALUE str, long search_origin)
 	    onibi_rseq_simple_match(rseq, cached_view, str, start, &end);
 	if (simple > 0) return Qtrue;
 	if (simple < 0) {
-	    if (NIL_P(graph)) graph = onibi_rseq_physical_graph(rseq);
+	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
 	    if (onibi_gir_match(graph, str, start, search_origin, &end))
 		return Qtrue;
 	}
@@ -29,7 +29,7 @@ onibi_vm_tagged_ordered(VALUE rseq, VALUE str, long search_origin,
 			int need_captures)
 {
     onibi_call_stack_reset();
-    VALUE graph = onibi_rseq_physical_graph(rseq);
+    VALUE graph = onibi_rseq_execution_graph(rseq);
     OnibiRSeqView view;
     const OnibiRSeqView *cached_view = NULL;
     VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
@@ -66,7 +66,7 @@ onibi_vm_dynamic(VALUE rseq, VALUE str, long search_origin)
     /* Dynamic execution owns its dispatch loop.  The capture walker resolves
        backreferences and counters; this loop adds the dynamic deadline and
        interrupt boundary without routing through TAGGED_ORDERED. */
-    VALUE graph = onibi_rseq_physical_graph(rseq);
+    VALUE graph = onibi_rseq_execution_graph(rseq);
     for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	if (!onibi_character_boundary(str, start)) continue;
 	rb_thread_check_ints();
@@ -168,4 +168,3 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 }
 
 void
-

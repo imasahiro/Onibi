@@ -879,7 +879,8 @@ static void
 onibi_rseq_validate(VALUE rseq)
 {
     VALUE blob = onibi_hash_value_id(rseq, id_key_blob);
-    VALUE physical_graph = onibi_hash_value_id(rseq, id_key_physical_graph);
+    VALUE legacy_graph = Qnil;
+#define physical_graph legacy_graph
     VALUE semantic = onibi_hash_value_id(rseq, id_key_header);
     VALUE semantic_states = onibi_hash_value_id(rseq, id_key_states);
     VALUE semantic_edges = onibi_hash_value_id(rseq, id_key_edges);
@@ -895,9 +896,9 @@ onibi_rseq_validate(VALUE rseq)
 	!RB_TYPE_P(semantic_subprograms, T_ARRAY) ||
 	!RTEST(rb_obj_frozen_p(semantic_subprograms)) ||
 	!RTEST(rb_obj_frozen_p(semantic_start_edges)) ||
-	(!NIL_P(physical_graph) && !RTEST(rb_obj_frozen_p(physical_graph))))
+	(!NIL_P(legacy_graph) && !RTEST(rb_obj_frozen_p(legacy_graph))))
 	rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
-    if (!NIL_P(physical_graph)) {
+    if (!NIL_P(legacy_graph)) {
 	VALUE cached_states =
 	    RB_TYPE_P(physical_graph, T_HASH)
 		? onibi_hash_value_id(physical_graph, id_key_states)
@@ -1426,4 +1427,3 @@ onibi_rseq_validate(VALUE rseq)
 /* Build the regular execution view from the published RSeq blob.  Semantic
    payloads remain Ruby values, but state operations and edge destinations
    come from the physical layout.  This keeps the VM on the RSeq contract. */
-

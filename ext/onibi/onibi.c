@@ -5,17 +5,19 @@
  * order is intentional: each module can use the C types and helpers that
  * earlier modules define, while the extension still builds as one unit.
  */
-#include "ast.c"
-#include "compiler.c"
-#include "exec_dynamic.c"
-#include "exec_regular.c"
-#include "exec_tagged.c"
-#include "gir.c"
-#include "match.c"
-#include "nfa.c"
+// clang-format off
 #include "onibi_common.c"
-#include "onibi_init.c"
+#include "token.c"
+#include "ast.c"
 #include "parser.c"
+#include "gir.c"
+#include "nfa.c"
+#include "compiler.c"
 #include "rseq.c"
 #include "rseq_verify.c"
-#include "token.c"
+#include "exec_tagged.c"
+#include "exec_regular.c"
+#include "exec_dynamic.c"
+#include "match.c"
+#include "onibi_init.c"
+// clang-format on

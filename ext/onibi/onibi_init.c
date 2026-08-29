@@ -52,7 +52,6 @@ Init_onibi(void)
     id_pred_bitmap = rb_intern("bitmap");
     id_pred_any = rb_intern("any");
     id_a_end = rb_intern("END");
-    id_key_physical_graph = rb_intern("physical_graph");
     id_opt_ignorecase = rb_intern("ignorecase");
     id_opt_multiline = rb_intern("multiline");
     id_opt_extended = rb_intern("extended");
@@ -211,4 +210,3 @@ Init_onibi(void)
     rb_define_const(cRegexp, "FIXEDENCODING", INT2NUM(16));
     rb_define_const(cRegexp, "NOENCODING", INT2NUM(32));
 }
-

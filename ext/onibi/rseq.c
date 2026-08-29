@@ -535,8 +535,6 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     rb_hash_aset(result, ID2SYM(id_key_actions), actions);
     rb_hash_aset(result, ID2SYM(id_key_subprograms), subprograms);
     rb_hash_aset(result, ID2SYM(id_key_blob), blob);
-    rb_hash_aset(result, ID2SYM(id_key_physical_graph),
-		 onibi_deep_freeze(onibi_rseq_physical_graph(result)));
     rb_obj_freeze(header);
     rb_obj_freeze(r_edges);
     rb_obj_freeze(r_start_edges);
@@ -1390,4 +1388,3 @@ onibi_vm_actions_ok(VALUE actions, VALUE subject, long pos, long length,
 		    VALUE event_action = rb_ary_entry(actions, event);
 		    if ((OnibiGActionOp)NUM2UINT(onibi_hash_value_id(
 			    event_action, id_key_action_code)) ==
-
