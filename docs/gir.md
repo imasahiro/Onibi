@@ -203,13 +203,13 @@ or later MRI parser adapter
 Onibi AST
     |
     v
-Tagged epsilon NFA
+Tagged epsilon NFA (C intermediate representation)
     |
     v
-epsilon elimination
+epsilon elimination (explicit C pass)
     |
     v
-G-IR
+G-IR (C vectors; Ruby adapter at publication only)
 Prioritized Glushkov IR
     |
     v

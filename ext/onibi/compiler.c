@@ -1347,8 +1347,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 /* Compiler pass 0: create one owner for all mutable lowering state. */
 static void
 onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
-					OnibiParsed *parsed, int ignorecase,
-					int multiline)
+				 OnibiParsed *parsed, int ignorecase,
+				 int multiline)
 {
     memset(builder, 0, sizeof(*builder));
     builder->ast = &parsed->arena;
@@ -1360,8 +1360,7 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     onibi_value_map_init(&builder->subprogram_ids);
     onibi_value_vector_init(&builder->subprograms);
     builder->map_roots = rb_ary_new();
-    onibi_value_vector_push(&builder->subprograms, Qnil,
-				    builder->map_roots);
+    onibi_value_vector_push(&builder->subprograms, Qnil, builder->map_roots);
     onibi_guard_vector_init(&builder->capture_guards);
     onibi_guard_vector_init(&builder->exit_guards);
     builder->ignorecase = ignorecase;
@@ -1371,9 +1370,11 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 /* Compiler pass 2: lower the C AST into mutable GIR state and edge records. */
 static void
 onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
-				  OnibiGirEdgeVector *start_edges, long *accept_out,
-				  long *root_entry_out)
+			  OnibiGirEdgeVector *start_edges, long *accept_out,
+			  long *root_entry_out)
 {
+    OnibiTaggedNfa nfa;
+    onibi_nfa_init(&nfa);
     VALUE root_reference = UINT2NUM(parsed->arena.root);
     onibi_fragment_t fragment = onibi_compile_node(root_reference, builder);
     long accept = builder->next_id++;
@@ -1382,18 +1383,18 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
     OnibiIdVector exit_ids = fragment.exits;
     onibi_connect_fragment_actions(builder, &exit_ids, &accept_starts,
-					   fragment.pending_actions, fragment.lazy);
+				   fragment.pending_actions, fragment.lazy);
     onibi_id_vector_free(&accept_starts);
     onibi_gir_edge_vector_init(start_edges);
-    long root_entry = fragment.starts.count > 0
-			  ? (long)fragment.starts.items[0] : accept;
+    long root_entry =
+	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
     if (fragment.nullable && fragment.lazy) {
 	VALUE actions = onibi_concat_action_values(fragment.start_actions,
 						   fragment.pending_actions);
 	onibi_gir_edge_vector_push(
 	    start_edges,
 	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-					 actions},
+				actions},
 	    builder->map_roots);
     }
     OnibiIdVector start_ids = fragment.starts;
@@ -1412,7 +1413,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 	onibi_gir_edge_vector_push(
 	    start_edges,
 	    (OnibiGirEdgeEntry){-1, destination, 0,
-					(uint32_t)RARRAY_LEN(actions), actions},
+				(uint32_t)RARRAY_LEN(actions), actions},
 	    builder->map_roots);
     }
     onibi_id_vector_free(&start_ids);
@@ -1423,9 +1424,18 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 	onibi_gir_edge_vector_push(
 	    start_edges,
 	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-					 actions},
+				actions},
 	    builder->map_roots);
     }
+    /* Lowering is complete.  Transfer the mutable graph to the tagged
+       epsilon-NFA owner, then run the explicit elimination pass. */
+    nfa.states = builder->states;
+    nfa.edges = builder->edges;
+    onibi_gir_state_vector_init(&builder->states);
+    onibi_gir_edge_vector_init(&builder->edges);
+    nfa.accept = accept;
+    onibi_epsilon_eliminate(&nfa, builder);
+    onibi_nfa_free(&nfa);
     *accept_out = accept;
     *root_entry_out = root_entry;
 }
@@ -1433,7 +1443,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 /* Compiler pass 3: derive the counter slot count from all published edges. */
 static long
 onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
-					   const OnibiGirEdgeVector *start_edges)
+				   const OnibiGirEdgeVector *start_edges)
 {
     long count = builder->counter_count;
     for (size_t i = 0; i < builder->edges.count; i++) {
@@ -1472,9 +1482,9 @@ onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
 /* Compiler pass 4: publish one immutable GIR graph for RSeq lowering. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
-				    OnibiGirEdgeVector *start_edges,
-				    long accept, long root_entry, long counter_count,
-				    int parsed_options)
+			    OnibiGirEdgeVector *start_edges, long accept,
+			    long root_entry, long counter_count,
+			    int parsed_options)
 {
     VALUE start_edges_value = rb_ary_new_capa((long)start_edges->count);
     for (size_t i = 0; i < start_edges->count; i++) {
@@ -1500,22 +1510,22 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));
     rb_obj_freeze(root_descriptor);
     onibi_value_vector_store(&builder->subprograms, 0, root_descriptor,
-				     builder->map_roots);
+			     builder->map_roots);
     VALUE subprograms = rb_ary_new_capa((long)builder->subprograms.count);
     for (size_t i = 0; i < builder->subprograms.count; i++)
 	rb_ary_push(subprograms, builder->subprograms.items[i]);
     rb_obj_freeze(subprograms);
     rb_hash_aset(graph, ID2SYM(id_key_subprograms), subprograms);
     rb_hash_aset(graph, ID2SYM(id_key_capture_count),
-			 LONG2NUM(builder->capture_count));
+		 LONG2NUM(builder->capture_count));
     rb_hash_aset(graph, ID2SYM(id_key_counter_count), LONG2NUM(counter_count));
     rb_hash_aset(graph, ID2SYM(id_key_subprogram_count),
-			 LONG2NUM((long)builder->subprograms.count));
+		 LONG2NUM((long)builder->subprograms.count));
     onibi_gir_validate(graph);
     rb_obj_freeze(graph);
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
-						 &onibi_compiled_type, compiled_result);
+					 &onibi_compiled_type, compiled_result);
     compiled_result->graph = graph;
     compiled_result->options = parsed_options;
     return result;
@@ -1533,21 +1543,21 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     int multiline = (parsed_options & 4) != 0;
     onibi_gir_builder_t builder;
     onibi_compiler_pass_init_builder(&builder, parsed_data, ignorecase,
-					     multiline);
+				     multiline);
     long prepass_capture_count = 0;
     onibi_compiler_pass_collect_captures(parsed_data->arena.root, &builder,
-						 &prepass_capture_count);
+					 &prepass_capture_count);
     builder.capture_count = prepass_capture_count;
     OnibiGirEdgeVector start_edge_records;
     long accept;
     long root_entry;
     onibi_compiler_pass_lower(parsed_data, &builder, &start_edge_records,
-				      &accept, &root_entry);
-    long counter_count = onibi_compiler_pass_count_counters(
-	&builder, &start_edge_records);
-    VALUE result = onibi_compiler_pass_publish(
-	&builder, &start_edge_records, accept, root_entry, counter_count,
-	parsed_options);
+			      &accept, &root_entry);
+    long counter_count =
+	onibi_compiler_pass_count_counters(&builder, &start_edge_records);
+    VALUE result =
+	onibi_compiler_pass_publish(&builder, &start_edge_records, accept,
+				    root_entry, counter_count, parsed_options);
     onibi_gir_edge_vector_free(&start_edge_records);
     onibi_guard_vector_free(&builder.capture_guards);
     onibi_guard_vector_free(&builder.exit_guards);
@@ -1562,5 +1572,3 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     rb_obj_freeze(result);
     return result;
 }
-
-

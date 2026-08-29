@@ -14,8 +14,9 @@ Ruby code loads the extension and provides small public wrappers when necessary.
 ZJIT work starts after the PoC.
 The PoC must not depend on ZJIT or MRI source-tree changes.
 
-The current C pipeline includes tokenization, parsing, ordered G-IR states and
-edges, RSeq lowering, and three VM entry points for a tested ASCII subset. The
+The current C pipeline includes tokenization, parsing, a tagged epsilon-NFA,
+epsilon elimination, ordered G-IR states and edges, RSeq lowering, and three VM
+entry points for a tested ASCII subset. The
 VM covers literals, alternation, character classes, wildcard sequences, wildcard
 repeats, bounded repeats, captures, boundary assertions, and match reset.
 Other syntax remains outside this subset.
@@ -23,8 +24,9 @@ Other syntax remains outside this subset.
 The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
 unit that includes `token.c`, `ast.c`, `parser.c`, `nfa.c`, `gir.c`,
 `compiler.c`, `rseq.c`, `rseq_verify.c`, the three execution modules, and
-`match.c`. The include order is the dependency order. No legacy `#if 0` code
-remains in these modules.
+`match.c`. The include order is the dependency order. Passes use C vectors;
+Ruby Hash and Array objects are created only by the final publication adapter.
+No legacy `#if 0` code remains in these modules.
 
 ## Execution engines
 
