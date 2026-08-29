@@ -50,7 +50,6 @@
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
 
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
-static VALUE onibi_empty_actions = Qnil;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 static ID id_initialize, id_match, id_match_p, id_source, id_options,
@@ -59,13 +58,9 @@ static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
+static void onibi_rseq_view_prepare(OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);
 static ID id_scan, id_gsub, id_encoding, id_index;
-static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call,
-    id_g_char, id_g_class, id_g_any, id_g_backref;
-static ID id_capture_open, id_capture_close, id_match_reset;
-static ID id_a_test_capture, id_a_test_counter_lt, id_a_test_counter_ge;
-static ID id_a_counter_init, id_a_counter_increment;
 static ID id_a_assert_begin_buffer, id_a_assert_search_origin,
     id_a_assert_end_buffer;
 static ID id_a_assert_begin_line, id_a_assert_end_line,
@@ -73,19 +68,16 @@ static ID id_a_assert_begin_line, id_a_assert_end_line,
 static ID id_a_assert_nonword_boundary, id_a_assert_semi_end_buffer;
 static ID id_a_assert_lookahead, id_a_assert_lookbehind;
 static ID id_pred_byte, id_pred_bitmap, id_pred_any;
-static ID id_a_end;
 static ID id_insert;
 static ID id_timeout, id_encode, id_message, id_names, id_named_captures;
 static ID id_escape, id_union, id_to_regexp;
 static ID id_opt_ignorecase, id_opt_multiline, id_opt_extended,
     id_opt_fixedencoding, id_opt_noencoding;
 static ID id_prop_ascii, id_prop_ascii_hex;
-static ID id_key_op, id_key_payload, id_key_actions, id_key_to,
-    id_key_multiline, id_key_ignorecase;
-static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry,
-    id_key_entry_actions;
-static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_action_code,
-    id_key_assert_kind, id_key_predicate_code;
+static ID id_key_op, id_key_multiline, id_key_ignorecase;
+static ID id_key_byte, id_key_capture, id_key_subprogram, id_key_entry;
+static ID id_key_kind, id_key_kind_code, id_key_opcode, id_key_assert_kind,
+    id_key_predicate_code;
 static ID id_key_start, id_key_end, id_key_captures;
 static ID id_key_slot, id_key_set, id_key_value;
 static ID id_key_type_code, id_key_name, id_key_name_id, id_key_ctype,
@@ -100,8 +92,6 @@ static ID id_key_body, id_key_options, id_key_negative_options,
 static ID id_key_condition, id_key_branches, id_key_yes, id_key_no, id_key_atom;
 static ID id_key_min, id_key_max, id_key_greedy, id_key_possessive;
 static ID id_key_width;
-static ID id_key_states, id_key_outgoing, id_key_start_edges,
-    id_key_subprograms;
 static ID id_key_bytes, id_key_blob, id_key_header, id_key_edges;
 static ID id_key_from, id_key_accept, id_key_action_offset;
 static ID id_key_flags;
@@ -127,8 +117,6 @@ onibi_hash_value_id(VALUE hash, ID key)
 {
     return rb_hash_aref(hash, ID2SYM(key));
 }
-static OnibiGActionOp onibi_gir_action_opcode(ID op);
-static void onibi_set_gir_action_opcode(VALUE action, ID op);
 static OnibiRAssertKind onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(ID name_id);

@@ -21,23 +21,6 @@ Init_onibi(void)
     id_gsub = rb_intern("gsub");
     id_encoding = rb_intern("encoding");
     id_index = rb_intern("index");
-    id_g_accept = rb_intern("G_ACCEPT");
-    id_g_grapheme = rb_intern("G_GRAPHEME");
-    id_g_atomic = rb_intern("G_ATOMIC");
-    id_g_absent = rb_intern("G_ABSENT");
-    id_g_call = rb_intern("G_CALL");
-    id_g_char = rb_intern("G_CHAR");
-    id_g_class = rb_intern("G_CLASS");
-    id_g_any = rb_intern("G_ANY");
-    id_g_backref = rb_intern("G_BACKREF");
-    id_capture_open = rb_intern("CAPTURE_OPEN");
-    id_capture_close = rb_intern("CAPTURE_CLOSE");
-    id_match_reset = rb_intern("MATCH_RESET");
-    id_a_test_capture = rb_intern("TEST_CAPTURE");
-    id_a_test_counter_lt = rb_intern("TEST_COUNTER_LT");
-    id_a_test_counter_ge = rb_intern("TEST_COUNTER_GE");
-    id_a_counter_init = rb_intern("COUNTER_INIT");
-    id_a_counter_increment = rb_intern("COUNTER_INCREMENT");
     id_a_assert_begin_buffer = rb_intern("ASSERT_BEGIN_BUFFER");
     id_a_assert_search_origin = rb_intern("ASSERT_SEARCH_ORIGIN");
     id_a_assert_end_buffer = rb_intern("ASSERT_END_BUFFER");
@@ -51,7 +34,6 @@ Init_onibi(void)
     id_pred_byte = rb_intern("byte");
     id_pred_bitmap = rb_intern("bitmap");
     id_pred_any = rb_intern("any");
-    id_a_end = rb_intern("END");
     id_opt_ignorecase = rb_intern("ignorecase");
     id_opt_multiline = rb_intern("multiline");
     id_opt_extended = rb_intern("extended");
@@ -60,15 +42,11 @@ Init_onibi(void)
     id_prop_ascii = rb_intern("ASCII");
     id_prop_ascii_hex = rb_intern("ASCII_Hex_Digit");
     id_key_op = rb_intern("op");
-    id_key_payload = rb_intern("payload");
-    id_key_actions = rb_intern("actions");
-    id_key_to = rb_intern("to");
     id_key_multiline = rb_intern("multiline");
     id_key_ignorecase = rb_intern("ignorecase");
     id_key_kind = rb_intern("kind");
     id_key_kind_code = rb_intern("kind_code");
     id_key_opcode = rb_intern("opcode");
-    id_key_action_code = rb_intern("action_code");
     id_key_assert_kind = rb_intern("assert_kind");
     id_key_predicate_code = rb_intern("predicate_code");
     id_key_byte = rb_intern("byte");
@@ -78,7 +56,6 @@ Init_onibi(void)
     id_key_captures = rb_intern("captures");
     id_key_subprogram = rb_intern("subprogram");
     id_key_entry = rb_intern("entry");
-    id_key_entry_actions = rb_intern("entry_actions");
     id_key_slot = rb_intern("slot");
     id_key_set = rb_intern("set");
     id_key_value = rb_intern("value");
@@ -110,10 +87,6 @@ Init_onibi(void)
     id_key_positive = rb_intern("positive");
     id_key_inline_ignorecase = rb_intern("inline_ignorecase");
     id_key_predicates = rb_intern("predicates");
-    id_key_states = rb_intern("states");
-    id_key_outgoing = rb_intern("outgoing");
-    id_key_start_edges = rb_intern("start_edges");
-    id_key_subprograms = rb_intern("subprograms");
     id_key_bytes = rb_intern("bytes");
     id_key_blob = rb_intern("blob");
     id_key_header = rb_intern("header");
@@ -161,9 +134,6 @@ Init_onibi(void)
     id_kind_literal = rb_intern("literal");
     id_recursive_marker = rb_intern("__onibi_recursive_call__");
     mOnibi = rb_define_module("Onibi");
-    onibi_empty_actions = rb_ary_new();
-    rb_obj_freeze(onibi_empty_actions);
-    rb_global_variable(&onibi_empty_actions);
     eRegexpError =
 	rb_define_class_under(mOnibi, "RegexpError", rb_eRegexpError);
     /* Lexer, parser, compiler, RSeq, and VM are implementation objects.

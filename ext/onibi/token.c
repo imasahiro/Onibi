@@ -56,16 +56,6 @@ onibi_quantifier_byte_p(unsigned char c)
 }
 
 typedef struct {
-    VALUE *items;
-    size_t count;
-    size_t capacity;
-} OnibiValueVector;
-static void onibi_value_vector_init(OnibiValueVector *vector);
-static void onibi_value_vector_push(OnibiValueVector *vector, VALUE value,
-				    VALUE roots);
-static void onibi_value_vector_free(OnibiValueVector *vector);
-
-typedef struct {
     OnibiTokenKind kind;
     unsigned char byte;
     long start;
@@ -557,6 +547,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' &&
 		RSTRING_PTR(src)[i + 1] <= '9') {
 		long number = escaped - '0';
+		i++;
 		while (i + 1 < RSTRING_LEN(src) &&
 		       RSTRING_PTR(src)[i + 1] >= '0' &&
 		       RSTRING_PTR(src)[i + 1] <= '9') {

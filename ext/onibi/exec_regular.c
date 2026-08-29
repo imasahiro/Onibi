@@ -3,6 +3,8 @@ typedef struct {
     long pos;
     long *counters;
     long *captures;
+    uint32_t *returns;
+    uint16_t return_depth;
 } onibi_simple_frame_t;
 
 static int
@@ -27,7 +29,39 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->literals =
 	(const OnibiLiteralDesc *)(view->blob +
 				   view->header->descriptors_offset);
+    view->subprograms =
+	(const OnibiSubprogramDesc *)(view->blob +
+				      view->header->subprograms_offset);
+    view->native_eligible = 0;
     return 1;
+}
+
+static void
+onibi_rseq_view_prepare(OnibiRSeqView *view)
+{
+    const OnibiRSeqHeader *header = view->header;
+    if ((header->features & 32U) != 0 || (header->flags & 3U) != 0 ||
+	header->state_count == 0 || header->start_edge_count == 0)
+	return;
+    for (uint32_t i = 0; i < header->state_count; i++) {
+	const OnibiRState *state = &view->states[i];
+	if (state->flags != 0) return;
+	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
+	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY &&
+	    state->op != ONIBI_RS_GRAPHEME && state->op != ONIBI_RS_BACKREF &&
+	    state->op != ONIBI_RS_CALL)
+	    return;
+	if (state->op == ONIBI_RS_CHAR &&
+	    view->literals[state->payload].flags != 0)
+	    return;
+	if (state->op == ONIBI_RS_CLASS &&
+	    view->classes[state->payload].flags != 0)
+	    return;
+	if (state->op == ONIBI_RS_CALL &&
+	    state->payload >= header->subprogram_count)
+	    return;
+    }
+    view->native_eligible = 1;
 }
 
 static void
@@ -104,6 +138,12 @@ onibi_rseq_blob_validate(VALUE blob)
     for (uint32_t i = 0; i < header->action_count; i++)
 	if (view.actions[i].op > ONIBI_RA_PROGRESS)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
+    for (uint32_t i = 0; i < header->subprogram_count; i++) {
+	const OnibiSubprogramDesc *subprogram = &view.subprograms[i];
+	if (subprogram->entry >= header->state_count ||
+	    subprogram->accept >= header->state_count)
+	    rb_raise(rb_eArgError, "invalid Onibi RSeq subprogram");
+    }
     for (uint32_t i = 0; i < header->class_count; i++) {
 	const OnibiClassDesc *klass = &view.classes[i];
 	if (klass->data_length != 32 || klass->kind != 0 ||

@@ -1,12 +1,12 @@
 static onibi_fragment_t onibi_compile_node(VALUE node_reference,
 					   onibi_gir_builder_t *builder);
-static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op,
-			    VALUE payload);
+static void onibi_gir_state(onibi_gir_builder_t *builder, long id,
+			    OnibiGStateOp opcode, VALUE payload);
 static VALUE onibi_class_payload_with_ctypes(VALUE payload);
 static int onibi_unicode_ctype_id(ID property);
 
 typedef struct {
-    VALUE subprograms;
+    OnibiRSeqSubprogramVector subprograms;
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
     OnibiGirEdgeVector start_edges;
@@ -18,15 +18,7 @@ typedef struct {
 static void
 onibi_compiled_mark(void *ptr)
 {
-    OnibiCompiled *compiled = (OnibiCompiled *)ptr;
-    if (!compiled) return;
-    rb_gc_mark(compiled->subprograms);
-    for (size_t i = 0; i < compiled->states.count; i++)
-	rb_gc_mark(compiled->states.entries[i].payload);
-    for (size_t i = 0; i < compiled->edges.count; i++)
-	rb_gc_mark(compiled->edges.entries[i].actions);
-    for (size_t i = 0; i < compiled->start_edges.count; i++)
-	rb_gc_mark(compiled->start_edges.entries[i].actions);
+    (void)ptr;
 }
 static void
 onibi_compiled_free(void *ptr)
@@ -36,6 +28,7 @@ onibi_compiled_free(void *ptr)
     onibi_gir_state_vector_free(&compiled->states);
     onibi_gir_edge_vector_free(&compiled->edges);
     onibi_gir_edge_vector_free(&compiled->start_edges);
+    onibi_rseq_subprogram_vector_free(&compiled->subprograms);
     xfree(ptr);
 }
 static size_t
@@ -47,7 +40,9 @@ onibi_compiled_memsize(const void *ptr)
 	   compiled->states.capacity * sizeof(*compiled->states.entries) +
 	   compiled->edges.capacity * sizeof(*compiled->edges.entries) +
 	   compiled->start_edges.capacity *
-	       sizeof(*compiled->start_edges.entries);
+	       sizeof(*compiled->start_edges.entries) +
+	   compiled->subprograms.capacity *
+	       sizeof(*compiled->subprograms.entries);
 }
 static const rb_data_type_t onibi_compiled_type = {"Onibi::Compiled",
 						   {onibi_compiled_mark,
@@ -72,26 +67,23 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
 {
     onibi_fragment_t fragment = onibi_compile_node(body, builder);
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, id_g_accept, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
     OnibiIdVector accept_starts;
     onibi_id_vector_init(&accept_starts);
     onibi_id_vector_push(&accept_starts, (OnibiStateId)accept);
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
-				   fragment.pending_actions, 0);
+				   &fragment.pending_actions, 0);
     long entry =
 	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
-    VALUE descriptor = rb_hash_new();
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
-    rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
-    rb_hash_aset(descriptor, ID2SYM(id_key_flags), UINT2NUM(flags));
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions),
-		 onibi_deep_freeze(fragment.start_actions));
-    rb_obj_freeze(descriptor);
-    onibi_value_vector_push(&builder->subprograms, descriptor,
-			    builder->map_roots);
+    onibi_rseq_subprogram_vector_push(
+	&builder->subprograms,
+	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
+				   flags});
     onibi_id_vector_free(&fragment.starts);
     onibi_id_vector_free(&fragment.exits);
     onibi_id_vector_free(&accept_starts);
+    onibi_g_action_vector_free(&fragment.start_actions);
+    onibi_g_action_vector_free(&fragment.pending_actions);
     return (long)builder->subprograms.count - 1;
 }
 
@@ -150,9 +142,9 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
 			       onibi_gir_builder_t *builder)
 {
     long id = (long)builder->subprograms.count;
-    onibi_value_vector_push(
-	&builder->subprograms, Qnil,
-	builder->map_roots); /* reserve the recursive target */
+    onibi_rseq_subprogram_vector_push(
+	&builder->subprograms,
+	(OnibiRSeqSubprogramEntry){0, 0, 0}); /* reserve recursive target */
     onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id),
 			builder->map_roots);
     onibi_value_map_set(&builder->active_subroutines, name, Qtrue,
@@ -163,79 +155,59 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
 	onibi_value_map_find(&builder->capture_names, name);
     if (!NIL_P(capture_id_value)) {
 	long capture_id = NUM2LONG(capture_id_value);
-	VALUE open = rb_hash_new(), close = rb_hash_new();
-	rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
-	onibi_set_gir_action_opcode(open, id_capture_open);
-	rb_hash_aset(open, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id));
-	rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
-	onibi_set_gir_action_opcode(close, id_capture_close);
-	rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
+	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
+			     0,
+			     0,
+			     1,
+			     (uint16_t)(2 * capture_id),
+			     0,
+			     0,
+			     0,
+			     0};
+	OnibiGAction close = {ONIBI_GA_CAPTURE_CLOSE,
+			      0,
+			      0,
+			      1,
+			      (uint16_t)(2 * capture_id + 1),
+			      0,
+			      0,
+			      0,
+			      0};
 	if (RB_INTEGER_TYPE_P(body) &&
 	    onibi_c_ast_has_subroutine_name(builder->ast,
 					    (OnibiAstId)NUM2UINT(body), name))
-	    rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
-	VALUE starts = rb_ary_new_from_args(1, open);
-	onibi_append_values(starts, fragment.start_actions);
+	    close.set = 1;
+	OnibiGActionVector starts;
+	onibi_g_action_vector_init(&starts);
+	onibi_g_action_vector_push(&starts, open);
+	onibi_g_action_vector_append(&starts, &fragment.start_actions);
+	onibi_g_action_vector_free(&fragment.start_actions);
 	fragment.start_actions = starts;
-	VALUE exits = rb_ary_new_from_args(1, close);
-	onibi_append_values(exits, fragment.pending_actions);
+	OnibiGActionVector exits;
+	onibi_g_action_vector_init(&exits);
+	onibi_g_action_vector_push(&exits, close);
+	onibi_g_action_vector_append(&exits, &fragment.pending_actions);
+	onibi_g_action_vector_free(&fragment.pending_actions);
 	fragment.pending_actions = exits;
     }
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, id_g_accept, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
     OnibiIdVector accept_starts;
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
-				   fragment.pending_actions, 0);
+				   &fragment.pending_actions, 0);
     long entry =
 	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
-    VALUE descriptor = rb_hash_new();
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry), LONG2NUM(entry));
-    rb_hash_aset(descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
-    rb_hash_aset(descriptor, ID2SYM(id_key_flags), INT2NUM(0));
-    rb_hash_aset(descriptor, ID2SYM(id_key_entry_actions),
-		 onibi_deep_freeze(fragment.start_actions));
-    rb_obj_freeze(descriptor);
-    onibi_value_vector_store(&builder->subprograms, (size_t)id, descriptor,
-			     builder->map_roots);
+    onibi_rseq_subprogram_vector_store(
+	&builder->subprograms, (size_t)id,
+	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
+				   0});
     onibi_id_vector_free(&fragment.starts);
     onibi_id_vector_free(&fragment.exits);
     onibi_id_vector_free(&accept_starts);
+    onibi_g_action_vector_free(&fragment.start_actions);
+    onibi_g_action_vector_free(&fragment.pending_actions);
     return id;
-}
-
-static OnibiGActionOp
-onibi_gir_action_opcode(ID op)
-{
-    if (op == id_a_end) return ONIBI_GA_END;
-    if (op == id_capture_open) return ONIBI_GA_CAPTURE_OPEN;
-    if (op == id_capture_close) return ONIBI_GA_CAPTURE_CLOSE;
-    if (op == id_match_reset) return ONIBI_GA_MATCH_RESET;
-    if (op == id_a_assert_begin_buffer || op == id_a_assert_end_buffer ||
-	op == id_a_assert_begin_line || op == id_a_assert_end_line ||
-	op == id_a_assert_semi_end_buffer || op == id_a_assert_search_origin ||
-	op == id_a_assert_word_boundary || op == id_a_assert_nonword_boundary ||
-	op == id_a_assert_lookahead || op == id_a_assert_lookbehind)
-	return ONIBI_GA_ASSERT_POSITION;
-    if (op == id_a_test_capture) return ONIBI_GA_TEST_CAPTURE;
-    if (op == id_a_counter_init) return ONIBI_GA_COUNTER_INIT;
-    if (op == id_a_counter_increment) return ONIBI_GA_COUNTER_INCREMENT;
-    if (op == id_a_test_counter_lt) return ONIBI_GA_TEST_COUNTER_LT;
-    if (op == id_a_test_counter_ge) return ONIBI_GA_TEST_COUNTER_GE;
-    return (OnibiGActionOp)UINT8_MAX;
-}
-
-static void
-onibi_set_gir_action_opcode(VALUE action, ID op)
-{
-    OnibiGActionOp code = onibi_gir_action_opcode(op);
-    rb_hash_aset(action, ID2SYM(id_key_action_code),
-		 UINT2NUM((unsigned int)code));
-    if (code == ONIBI_GA_ASSERT_POSITION) {
-	uint16_t subtype = onibi_rseq_assert_kind(op);
-	if (subtype != 0)
-	    rb_hash_aset(action, ID2SYM(id_key_assert_kind), UINT2NUM(subtype));
-    }
 }
 
 static onibi_fragment_t
@@ -250,26 +222,28 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	if (part.starts.count == 0) {
 	    if (have_consuming) {
 		onibi_fragment_append_actions(&result.pending_actions,
-					      part.start_actions);
+					      &part.start_actions);
 		onibi_fragment_append_actions(&result.pending_actions,
-					      part.pending_actions);
+					      &part.pending_actions);
 	    }
 	    else {
 		onibi_fragment_append_actions(&result.start_actions,
-					      part.start_actions);
+					      &part.start_actions);
 		onibi_fragment_append_actions(&result.start_actions,
-					      part.pending_actions);
+					      &part.pending_actions);
 	    }
 	    result.nullable = result.nullable && part.nullable;
 	    onibi_id_vector_free(&part.starts);
 	    onibi_id_vector_free(&part.exits);
+	    onibi_g_action_vector_free(&part.start_actions);
+	    onibi_g_action_vector_free(&part.pending_actions);
 	    continue;
 	}
 	if (!have_consuming) {
 	    onibi_id_vector_move(&result.starts, &part.starts);
 	    onibi_id_vector_move(&result.exits, &part.exits);
 	    onibi_fragment_append_actions(&result.start_actions,
-					  part.start_actions);
+					  &part.start_actions);
 	    result.lazy = part.lazy;
 	    have_consuming = 1;
 	}
@@ -288,33 +262,26 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 		else
 		    onibi_id_vector_append(&result.starts, &part.starts);
 	    }
-	    VALUE transition_actions;
-	    if (RARRAY_LEN(result.pending_actions) == 0) {
-		transition_actions = part.start_actions;
-	    }
-	    else if (RARRAY_LEN(part.start_actions) == 0) {
-		transition_actions = result.pending_actions;
-	    }
-	    else {
-		transition_actions =
-		    rb_ary_new_capa(RARRAY_LEN(result.pending_actions) +
-				    RARRAY_LEN(part.start_actions));
-		onibi_append_values(transition_actions, result.pending_actions);
-		onibi_append_values(transition_actions, part.start_actions);
-	    }
+	    OnibiGActionVector transition_actions =
+		onibi_g_action_vector_concat(&result.pending_actions,
+					     &part.start_actions);
 	    onibi_connect_fragment_actions(builder, &old_exits, &part.starts,
-					   transition_actions, result.lazy);
+					   &transition_actions, result.lazy);
+	    onibi_g_action_vector_free(&transition_actions);
 	    onibi_id_vector_move(&result.exits, &part.exits);
 	    /* A prior exit can bypass this part only when this part is
 	     * nullable. */
 	    if (part.nullable)
 		onibi_id_vector_append(&result.exits, &old_exits);
 	    onibi_id_vector_free(&old_exits);
-	    result.pending_actions = onibi_empty_actions;
+	    onibi_g_action_vector_free(&result.pending_actions);
+	    onibi_g_action_vector_init(&result.pending_actions);
 	    result.lazy = part.lazy;
 	}
 	onibi_fragment_append_actions(&result.pending_actions,
-				      part.pending_actions);
+				      &part.pending_actions);
+	onibi_g_action_vector_free(&part.start_actions);
+	onibi_g_action_vector_free(&part.pending_actions);
 	result.nullable = result.nullable && part.nullable;
     }
     return result;
@@ -534,15 +501,17 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    /* Preserve actions on each alternative edge.  A branch action
 	       cannot be lifted to the fragment because that would apply it to
 	       siblings. */
-	    if (RARRAY_LEN(branch.start_actions) > 0)
+	    if (branch.start_actions.count > 0)
 		onibi_add_capture_guard_fragment(builder, &branch.starts,
-						 branch.start_actions);
-	    if (RARRAY_LEN(branch.pending_actions) > 0)
+						 &branch.start_actions);
+	    if (branch.pending_actions.count > 0)
 		onibi_add_exit_guard_fragment(builder, &branch.exits,
-					      branch.pending_actions);
+					      &branch.pending_actions);
 	    result.nullable = result.nullable || branch.nullable;
 	    onibi_id_vector_free(&branch.starts);
 	    onibi_id_vector_free(&branch.exits);
+	    onibi_g_action_vector_free(&branch.start_actions);
+	    onibi_g_action_vector_free(&branch.pending_actions);
 	}
 	return result;
     }
@@ -609,14 +578,15 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	      tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) ==
 		  'x'));
 	long id = builder->next_id++;
-	ID op = type_code == ONIBI_AST_LITERAL
-		    ? id_g_char
-		    : ((type_code == ONIBI_AST_ANY)
-			   ? id_g_any
-			   : ((type_code == ONIBI_AST_BACKREF)
-				  ? id_g_backref
-				  : (grapheme_escape ? id_g_grapheme
-						     : id_g_class)));
+	OnibiGStateOp op =
+	    type_code == ONIBI_AST_LITERAL
+		? ONIBI_G_CHAR
+		: ((type_code == ONIBI_AST_ANY)
+		       ? ONIBI_G_ANY
+		       : ((type_code == ONIBI_AST_BACKREF)
+			      ? ONIBI_G_BACKREF
+			      : (grapheme_escape ? ONIBI_G_GRAPHEME
+						 : ONIBI_G_CLASS)));
 	if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_byte),
@@ -685,7 +655,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		     LONG2NUM(subprogram_id));
 	rb_obj_freeze(payload);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, id_g_call, payload);
+	onibi_gir_state(builder, id, ONIBI_G_CALL, payload);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -770,7 +740,6 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
     }
     if (type_code == ONIBI_AST_ANCHOR) {
 	onibi_fragment_t result = onibi_fragment_empty();
-	VALUE action = rb_hash_new();
 	long marker = NUM2LONG(onibi_compile_node_field(
 	    builder, c_node, semantic_node, id_key_byte));
 	ID op = id_a_assert_end_buffer;
@@ -790,19 +759,23 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    op = id_a_assert_search_origin;
 	else if (marker == 'Z')
 	    op = id_a_assert_semi_end_buffer;
-	rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
-	onibi_set_gir_action_opcode(action, op);
-	rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions),
-		    action);
+	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
+			       0,
+			       0,
+			       0,
+			       0,
+			       1,
+			       (uint16_t)onibi_rseq_assert_kind(op),
+			       0,
+			       0};
+	onibi_g_action_vector_push(&result.pending_actions, action);
 	return result;
     }
     if (type_code == ONIBI_AST_MATCH_RESET) {
 	onibi_fragment_t result = onibi_fragment_empty();
-	VALUE action = rb_hash_new();
-	rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_match_reset));
-	onibi_set_gir_action_opcode(action, id_match_reset);
-	rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions),
-		    action);
+	onibi_g_action_vector_push(
+	    &result.pending_actions,
+	    (OnibiGAction){ONIBI_GA_MATCH_RESET, 0, 0, 0, 0, 0, 0, 0, 0});
 	return result;
     }
     if (type_code == ONIBI_AST_CONDITIONAL) {
@@ -833,30 +806,27 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	onibi_fragment_t no = onibi_compile_node(
 	    onibi_compile_node_field(builder, c_node, semantic_node, id_key_no),
 	    builder);
-	OnibiValueVector yes_guard;
-	onibi_value_vector_init(&yes_guard);
-	onibi_value_vector_push(&yes_guard,
-				onibi_capture_test_action(capture_id, 1),
-				builder->map_roots);
-	onibi_value_vector_append_array(&yes_guard, yes.start_actions,
-					builder->map_roots);
-	OnibiValueVector no_guard;
-	onibi_value_vector_init(&no_guard);
-	onibi_value_vector_push(&no_guard,
-				onibi_capture_test_action(capture_id, 0),
-				builder->map_roots);
-	onibi_value_vector_append_array(&no_guard, no.start_actions,
-					builder->map_roots);
+	OnibiGActionVector yes_guard;
+	onibi_g_action_vector_init(&yes_guard);
+	onibi_g_action_vector_push(&yes_guard,
+				   onibi_capture_test_action(capture_id, 1));
+	onibi_g_action_vector_append(&yes_guard, &yes.start_actions);
+	OnibiGActionVector no_guard;
+	onibi_g_action_vector_init(&no_guard);
+	onibi_g_action_vector_push(&no_guard,
+				   onibi_capture_test_action(capture_id, 0));
+	onibi_g_action_vector_append(&no_guard, &no.start_actions);
 	for (size_t i = 0; i < yes.starts.count; i++)
-	    onibi_guard_vector_add_values(&builder->capture_guards,
-					  yes.starts.items[i], &yes_guard);
+	    onibi_guard_vector_add(&builder->capture_guards,
+				   yes.starts.items[i], &yes_guard);
 	for (size_t i = 0; i < no.starts.count; i++)
-	    onibi_guard_vector_add_values(&builder->capture_guards,
-					  no.starts.items[i], &no_guard);
-	onibi_value_vector_free(&yes_guard);
-	onibi_value_vector_free(&no_guard);
-	onibi_add_exit_guard_fragment(builder, &yes.exits, yes.pending_actions);
-	onibi_add_exit_guard_fragment(builder, &no.exits, no.pending_actions);
+	    onibi_guard_vector_add(&builder->capture_guards, no.starts.items[i],
+				   &no_guard);
+	onibi_g_action_vector_free(&yes_guard);
+	onibi_g_action_vector_free(&no_guard);
+	onibi_add_exit_guard_fragment(builder, &yes.exits,
+				      &yes.pending_actions);
+	onibi_add_exit_guard_fragment(builder, &no.exits, &no.pending_actions);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_append(&result.starts, &yes.starts);
 	onibi_id_vector_append(&result.starts, &no.starts);
@@ -866,6 +836,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	onibi_id_vector_free(&yes.exits);
 	onibi_id_vector_free(&no.starts);
 	onibi_id_vector_free(&no.exits);
+	onibi_g_action_vector_free(&yes.start_actions);
+	onibi_g_action_vector_free(&yes.pending_actions);
+	onibi_g_action_vector_free(&no.start_actions);
+	onibi_g_action_vector_free(&no.pending_actions);
 	result.nullable = yes.nullable || no.nullable;
 	result.lazy = yes.lazy;
 	return result;
@@ -880,7 +854,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		     LONG2NUM(subprogram_id));
 	rb_obj_freeze(payload);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, id_g_atomic, payload);
+	onibi_gir_state(builder, id, ONIBI_G_ATOMIC, payload);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -897,7 +871,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		     LONG2NUM(subprogram_id));
 	rb_obj_freeze(payload);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, id_g_absent, payload);
+	onibi_gir_state(builder, id, ONIBI_G_ABSENT, payload);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -990,24 +964,25 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	}
 	rb_obj_freeze(bytes);
 	rb_obj_freeze(predicates);
-	VALUE action = rb_hash_new();
 	ID assertion_op = type_code == ONIBI_AST_LOOKBEHIND
 			      ? id_a_assert_lookbehind
 			      : id_a_assert_lookahead;
-	rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
-	onibi_set_gir_action_opcode(action, assertion_op);
-	rb_hash_aset(action, ID2SYM(id_key_positive),
-		     onibi_compile_node_field(builder, c_node, semantic_node,
-					      id_key_positive));
-	rb_hash_aset(action, ID2SYM(id_key_bytes), bytes);
-	if (RARRAY_LEN(predicates) > 0)
-	    rb_hash_aset(action, ID2SYM(id_key_predicates), predicates);
-	rb_hash_aset(action, ID2SYM(id_key_width),
-		     LONG2NUM(RARRAY_LEN(predicates)));
+	OnibiGAction action = {
+	    ONIBI_GA_ASSERT_POSITION,
+	    0,
+	    RTEST(onibi_compile_node_field(builder, c_node, semantic_node,
+					   id_key_positive))
+		? 1
+		: 0,
+	    0,
+	    0,
+	    1,
+	    (uint16_t)onibi_rseq_assert_kind(assertion_op),
+	    1,
+	    (uint32_t)RARRAY_LEN(predicates)};
 	onibi_fragment_t result = onibi_fragment_empty();
 	result.nullable = 1;
-	rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions),
-		    action);
+	onibi_g_action_vector_push(&result.start_actions, action);
 	return result;
     }
     if (type_code == ONIBI_AST_CAPTURE) {
@@ -1026,19 +1001,30 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	VALUE capture_body = onibi_compile_node_field(
 	    builder, c_node, semantic_node, id_key_body);
 	onibi_fragment_t result = onibi_compile_node(capture_body, builder);
-	VALUE open = rb_hash_new(), close = rb_hash_new();
-	rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
-	onibi_set_gir_action_opcode(open, id_capture_open);
-	rb_hash_aset(open, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id));
-	rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
-	onibi_set_gir_action_opcode(close, id_capture_close);
-	rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
+	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
+			     0,
+			     0,
+			     1,
+			     (uint16_t)(2 * capture_id),
+			     0,
+			     0,
+			     0,
+			     0};
+	OnibiGAction close = {ONIBI_GA_CAPTURE_CLOSE,
+			      0,
+			      0,
+			      1,
+			      (uint16_t)(2 * capture_id + 1),
+			      0,
+			      0,
+			      0,
+			      0};
 	VALUE capture_name = onibi_compile_node_field(
 	    builder, c_node, semantic_node, id_key_name);
 	if (!NIL_P(capture_name) && RB_INTEGER_TYPE_P(capture_body) &&
 	    onibi_c_ast_has_subroutine_name(
 		builder->ast, (OnibiAstId)NUM2UINT(capture_body), capture_name))
-	    rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
+	    close.set = 1;
 	char capture_name_key[32];
 	snprintf(capture_name_key, sizeof(capture_name_key), "%ld",
 		 capture_id + 1);
@@ -1058,13 +1044,11 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 							 id_key_body),
 				builder->map_roots);
 	}
-	rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions),
-		    open);
-	rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions),
-		    close);
+	onibi_g_action_vector_push(&result.start_actions, open);
+	onibi_g_action_vector_push(&result.pending_actions, close);
 	if (result.nullable)
 	    onibi_fragment_append_actions(&result.start_actions,
-					  result.pending_actions);
+					  &result.pending_actions);
 	return result;
     }
     if (type_code == ONIBI_AST_GROUP)
@@ -1118,24 +1102,26 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (max >= 0 && max != min) {
 	    /* Counted repeats use one counter slot.  The first start edge
 	       initializes it.  Optional bodies use ordered test edges. */
-	    VALUE init =
-		onibi_counter_action(id_a_counter_init, counter_slot, Qnil);
-	    rb_hash_aset(init, ID2SYM(id_key_value), INT2NUM(min > 0 ? 1 : 0));
-	    rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions),
-			init);
+	    OnibiGAction init =
+		onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter_slot, Qnil);
+	    init.arg32 = (uint32_t)(min > 0 ? 1 : 0);
+	    onibi_g_action_vector_push(&result.start_actions, init);
 	}
 	for (long i = 0; i < min; i++) {
 	    onibi_fragment_t part = onibi_compile_node(atom, builder);
 	    if (i == 0)
 		onibi_id_vector_move(&result.starts, &part.starts);
 	    else {
-		VALUE actions = rb_ary_new();
+		OnibiGActionVector actions;
+		onibi_g_action_vector_init(&actions);
 		if (counter_slot >= 0)
-		    rb_ary_push(actions,
-				onibi_counter_action(id_a_counter_increment,
-						     counter_slot, Qnil));
+		    onibi_g_action_vector_push(
+			&actions,
+			onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
+					     counter_slot, Qnil));
 		onibi_connect_fragment_actions(builder, &result.exits,
-					       &part.starts, actions, 0);
+					       &part.starts, &actions, 0);
+		onibi_g_action_vector_free(&actions);
 	    }
 	    onibi_id_vector_move(&result.exits, &part.exits);
 	}
@@ -1145,24 +1131,29 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_fragment_t part = onibi_compile_node(atom, builder);
 		if (result.starts.count == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
-		VALUE repeat_actions = rb_ary_new();
-		rb_ary_push(repeat_actions,
-			    onibi_counter_action(id_a_test_counter_lt,
-						 counter_slot, LONG2NUM(max)));
-		rb_ary_push(repeat_actions,
-			    onibi_counter_action(id_a_counter_increment,
-						 counter_slot, Qnil));
+		OnibiGActionVector repeat_actions;
+		onibi_g_action_vector_init(&repeat_actions);
+		onibi_g_action_vector_push(
+		    &repeat_actions,
+		    onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter_slot,
+					 LONG2NUM(max)));
+		onibi_g_action_vector_push(
+		    &repeat_actions,
+		    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
+					 counter_slot, Qnil));
 		if (result.exits.count > 0)
 		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &part.starts, repeat_actions,
-						   0);
+						   &part.starts,
+						   &repeat_actions, 0);
+		onibi_g_action_vector_free(&repeat_actions);
 		onibi_id_vector_append(&result.exits, &part.exits);
 		onibi_id_vector_free(&part.starts);
 		onibi_id_vector_free(&part.exits);
 	    }
-	    rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions),
-			onibi_counter_action(id_a_test_counter_ge, counter_slot,
-					     LONG2NUM(min)));
+	    onibi_g_action_vector_push(
+		&result.pending_actions,
+		onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter_slot,
+				     LONG2NUM(min)));
 	}
 	else if (NIL_P(max_value)) {
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
@@ -1170,31 +1161,34 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_id_vector_append(&result.starts, &repeat.starts);
 	    if (!repeat.nullable)
 		onibi_fragment_append_actions(&result.start_actions,
-					      repeat.start_actions);
+					      &repeat.start_actions);
 	    if (result.exits.count > 0) {
 		if (repeat.nullable) {
 		    onibi_connect_fragment(builder, &result.exits,
 					   &repeat.starts);
 		}
 		else {
-		    VALUE next_actions = onibi_concat_action_values(
-			repeat.pending_actions, repeat.start_actions);
+		    OnibiGActionVector next_actions =
+			onibi_g_action_vector_concat(&repeat.pending_actions,
+						     &repeat.start_actions);
 		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &repeat.starts, next_actions,
-						   0);
+						   &repeat.starts,
+						   &next_actions, 0);
+		    onibi_g_action_vector_free(&next_actions);
 		}
 	    }
 	    if (repeat.nullable) {
 		onibi_connect_fragment(builder, &repeat.exits, &repeat.starts);
 	    }
 	    else {
-		VALUE loop_actions = onibi_concat_action_values(
-		    repeat.pending_actions, repeat.start_actions);
-		onibi_connect_fragment_actions(builder, &repeat.exits,
-					       &repeat.starts, loop_actions, 0);
+		OnibiGActionVector loop_actions = onibi_g_action_vector_concat(
+		    &repeat.pending_actions, &repeat.start_actions);
+		onibi_connect_fragment_actions(
+		    builder, &repeat.exits, &repeat.starts, &loop_actions, 0);
+		onibi_g_action_vector_free(&loop_actions);
 	    }
 	    onibi_fragment_append_actions(&result.pending_actions,
-					  repeat.pending_actions);
+					  &repeat.pending_actions);
 	    onibi_id_vector_append(&result.exits, &repeat.exits);
 	    onibi_id_vector_free(&repeat.starts);
 	    onibi_id_vector_free(&repeat.exits);
@@ -1221,9 +1215,10 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     onibi_value_map_init(&builder->capture_ids);
     onibi_value_map_init(&builder->active_subroutines);
     onibi_value_map_init(&builder->subprogram_ids);
-    onibi_value_vector_init(&builder->subprograms);
+    onibi_rseq_subprogram_vector_init(&builder->subprograms);
     builder->map_roots = rb_ary_new();
-    onibi_value_vector_push(&builder->subprograms, Qnil, builder->map_roots);
+    onibi_rseq_subprogram_vector_push(&builder->subprograms,
+				      (OnibiRSeqSubprogramEntry){0, 0, 0});
     onibi_guard_vector_init(&builder->capture_guards);
     onibi_guard_vector_init(&builder->exit_guards);
     builder->ignorecase = ignorecase;
@@ -1241,55 +1236,48 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     VALUE root_reference = UINT2NUM(parsed->arena.root);
     onibi_fragment_t fragment = onibi_compile_node(root_reference, builder);
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, id_g_accept, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
     OnibiIdVector accept_starts;
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
     OnibiIdVector exit_ids = fragment.exits;
     onibi_connect_fragment_actions(builder, &exit_ids, &accept_starts,
-				   fragment.pending_actions, fragment.lazy);
+				   &fragment.pending_actions, fragment.lazy);
     onibi_id_vector_free(&accept_starts);
     onibi_gir_edge_vector_init(start_edges);
     long root_entry =
 	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
     if (fragment.nullable && fragment.lazy) {
-	VALUE actions = onibi_concat_action_values(fragment.start_actions,
-						   fragment.pending_actions);
-	onibi_gir_edge_vector_push(
-	    start_edges,
-	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-				actions},
-	    builder->map_roots);
+	OnibiGActionVector actions = onibi_g_action_vector_concat(
+	    &fragment.start_actions, &fragment.pending_actions);
+	onibi_gir_edge_vector_push(start_edges,
+				   (OnibiGirEdgeEntry){-1, accept, 0, actions},
+				   builder->map_roots);
     }
     OnibiIdVector start_ids = fragment.starts;
     for (size_t i = 0; i < start_ids.count; i++) {
 	long destination = (long)start_ids.items[i];
 	const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
 	    &builder->capture_guards, (OnibiStateId)start_ids.items[i]);
-	VALUE actions = fragment.start_actions;
+	OnibiGActionVector actions =
+	    onibi_g_action_vector_copy(&fragment.start_actions);
 	if (capture_guard) {
-	    VALUE with_guard = rb_ary_new_capa(
-		RARRAY_LEN(actions) + (long)capture_guard->actions.count);
-	    onibi_append_values(with_guard, actions);
-	    onibi_append_vector_values(with_guard, &capture_guard->actions);
-	    actions = with_guard;
+	    onibi_g_action_vector_append(&actions, &capture_guard->actions);
 	}
 	onibi_gir_edge_vector_push(
-	    start_edges,
-	    (OnibiGirEdgeEntry){-1, destination, 0,
-				(uint32_t)RARRAY_LEN(actions), actions},
+	    start_edges, (OnibiGirEdgeEntry){-1, destination, 0, actions},
 	    builder->map_roots);
     }
     onibi_id_vector_free(&start_ids);
     onibi_id_vector_free(&exit_ids);
     if (fragment.nullable && !fragment.lazy) {
-	VALUE actions = onibi_concat_action_values(fragment.start_actions,
-						   fragment.pending_actions);
-	onibi_gir_edge_vector_push(
-	    start_edges,
-	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-				actions},
-	    builder->map_roots);
+	OnibiGActionVector actions = onibi_g_action_vector_concat(
+	    &fragment.start_actions, &fragment.pending_actions);
+	onibi_gir_edge_vector_push(start_edges,
+				   (OnibiGirEdgeEntry){-1, accept, 0, actions},
+				   builder->map_roots);
     }
+    onibi_g_action_vector_free(&fragment.start_actions);
+    onibi_g_action_vector_free(&fragment.pending_actions);
     /* Lowering is complete.  Transfer the mutable graph to the tagged
        epsilon-NFA owner, then run the explicit elimination pass. */
     nfa.states = builder->states;
@@ -1310,31 +1298,29 @@ onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
 {
     long count = builder->counter_count;
     for (size_t i = 0; i < builder->edges.count; i++) {
-	VALUE actions = builder->edges.entries[i].actions;
-	for (long j = 0; j < RARRAY_LEN(actions); j++) {
-	    VALUE action = rb_ary_entry(actions, j);
-	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-		onibi_hash_value_id(action, id_key_action_code));
+	const OnibiGActionVector *actions = &builder->edges.entries[i].actions;
+	for (size_t j = 0; j < actions->count; j++) {
+	    const OnibiGAction *action = &actions->entries[j];
+	    OnibiGActionOp code = action->code;
 	    if (code == ONIBI_GA_COUNTER_INIT ||
 		code == ONIBI_GA_COUNTER_INCREMENT ||
 		code == ONIBI_GA_TEST_COUNTER_LT ||
 		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
+		long slot = action->slot;
 		if (slot + 1 > count) count = slot + 1;
 	    }
 	}
     }
     for (size_t i = 0; i < start_edges->count; i++) {
-	VALUE actions = start_edges->entries[i].actions;
-	for (long j = 0; j < RARRAY_LEN(actions); j++) {
-	    VALUE action = rb_ary_entry(actions, j);
-	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-		onibi_hash_value_id(action, id_key_action_code));
+	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
+	for (size_t j = 0; j < actions->count; j++) {
+	    const OnibiGAction *action = &actions->entries[j];
+	    OnibiGActionOp code = action->code;
 	    if (code == ONIBI_GA_COUNTER_INIT ||
 		code == ONIBI_GA_COUNTER_INCREMENT ||
 		code == ONIBI_GA_TEST_COUNTER_LT ||
 		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
+		long slot = action->slot;
 		if (slot + 1 > count) count = slot + 1;
 	    }
 	}
@@ -1349,49 +1335,26 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			    long root_entry, long counter_count,
 			    int parsed_options)
 {
-    VALUE root_descriptor = rb_hash_new();
-    rb_hash_aset(root_descriptor, ID2SYM(id_key_entry), LONG2NUM(root_entry));
-    rb_hash_aset(root_descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
-    rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));
-    rb_obj_freeze(root_descriptor);
-    onibi_value_vector_store(&builder->subprograms, 0, root_descriptor,
-			     builder->map_roots);
-    VALUE subprograms = rb_ary_new_capa((long)builder->subprograms.count);
-    for (size_t i = 0; i < builder->subprograms.count; i++)
-	rb_ary_push(subprograms, builder->subprograms.items[i]);
-    rb_obj_freeze(subprograms);
+    onibi_rseq_subprogram_vector_store(
+	&builder->subprograms, 0,
+	(OnibiRSeqSubprogramEntry){(OnibiStateId)root_entry,
+				   (OnibiStateId)accept, 0});
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
 					 &onibi_compiled_type, compiled_result);
     memset(compiled_result, 0, sizeof(*compiled_result));
-    compiled_result->subprograms = subprograms;
+    onibi_rseq_subprogram_vector_init(&compiled_result->subprograms);
     onibi_gir_state_vector_init(&compiled_result->states);
     onibi_gir_edge_vector_init(&compiled_result->edges);
     onibi_gir_edge_vector_init(&compiled_result->start_edges);
-    if (builder->states.count > 0) {
-	compiled_result->states.entries =
-	    ALLOC_N(OnibiGirStateEntry, builder->states.count);
-	memcpy(compiled_result->states.entries, builder->states.entries,
-	       builder->states.count * sizeof(*builder->states.entries));
-	compiled_result->states.count = builder->states.count;
-	compiled_result->states.capacity = builder->states.count;
-    }
-    if (builder->edges.count > 0) {
-	compiled_result->edges.entries =
-	    ALLOC_N(OnibiGirEdgeEntry, builder->edges.count);
-	memcpy(compiled_result->edges.entries, builder->edges.entries,
-	       builder->edges.count * sizeof(*builder->edges.entries));
-	compiled_result->edges.count = builder->edges.count;
-	compiled_result->edges.capacity = builder->edges.count;
-    }
-    if (start_edges->count > 0) {
-	compiled_result->start_edges.entries =
-	    ALLOC_N(OnibiGirEdgeEntry, start_edges->count);
-	memcpy(compiled_result->start_edges.entries, start_edges->entries,
-	       start_edges->count * sizeof(*start_edges->entries));
-	compiled_result->start_edges.count = start_edges->count;
-	compiled_result->start_edges.capacity = start_edges->count;
-    }
+    compiled_result->states = builder->states;
+    compiled_result->edges = builder->edges;
+    compiled_result->start_edges = *start_edges;
+    compiled_result->subprograms = builder->subprograms;
+    onibi_gir_state_vector_init(&builder->states);
+    onibi_gir_edge_vector_init(&builder->edges);
+    onibi_gir_edge_vector_init(start_edges);
+    onibi_rseq_subprogram_vector_init(&builder->subprograms);
     compiled_result->accept = accept;
     compiled_result->capture_count = builder->capture_count;
     compiled_result->counter_count = counter_count;
@@ -1434,7 +1397,7 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     onibi_value_map_free(&builder.capture_ids);
     onibi_value_map_free(&builder.active_subroutines);
     onibi_value_map_free(&builder.subprogram_ids);
-    onibi_value_vector_free(&builder.subprograms);
+    onibi_rseq_subprogram_vector_free(&builder.subprograms);
     onibi_gir_state_vector_free(&builder.states);
     onibi_gir_edge_vector_free(&builder.edges);
     rb_obj_freeze(result);

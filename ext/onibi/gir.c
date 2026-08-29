@@ -1,16 +1,31 @@
 /* GIR builder, fragment records, and mutable graph construction. */
 typedef struct {
+    OnibiGActionOp code;
+    uint8_t set;
+    uint8_t positive;
+    uint8_t has_slot;
+    uint16_t slot;
+    uint8_t has_assert_kind;
+    uint16_t assert_kind;
+    uint8_t has_arg32;
+    uint32_t arg32;
+} OnibiGAction;
+typedef struct {
+    OnibiGAction *entries;
+    size_t count;
+    size_t capacity;
+} OnibiGActionVector;
+typedef struct {
     OnibiIdVector starts;
     OnibiIdVector exits;
-    VALUE start_actions;
-    VALUE pending_actions;
+    OnibiGActionVector start_actions;
+    OnibiGActionVector pending_actions;
     int nullable;
     int lazy;
 } onibi_fragment_t;
 typedef struct {
     OnibiStateId state;
-    OnibiValueVector actions;
-    uint32_t action_count;
+    OnibiGActionVector actions;
 } OnibiGuardEntry;
 typedef struct {
     OnibiGuardEntry *entries;
@@ -28,10 +43,11 @@ typedef struct {
 } OnibiValueMap;
 typedef struct {
     long id;
-    ID op;
     OnibiGStateOp opcode;
-    VALUE payload;
     uint32_t payload_index;
+    uint32_t value;
+    uint8_t flags;
+    unsigned char bitmap[32];
 } OnibiGirStateEntry;
 typedef struct {
     OnibiGirStateEntry *entries;
@@ -42,8 +58,7 @@ typedef struct {
     long from;
     long to;
     long action_offset;
-    uint32_t action_count;
-    VALUE actions;
+    OnibiGActionVector actions;
 } OnibiGirEdgeEntry;
 typedef struct {
     OnibiGirEdgeEntry *entries;
@@ -51,26 +66,7 @@ typedef struct {
     size_t capacity;
 } OnibiGirEdgeVector;
 typedef struct {
-    VALUE value;
-    OnibiGActionOp code;
-    uint8_t physical_op;
-    uint8_t set;
-    uint8_t positive;
-    uint8_t has_slot;
-    uint16_t slot;
-    uint8_t has_assert_kind;
-    uint16_t assert_kind;
-    uint8_t has_arg32;
-    uint32_t arg32;
-} OnibiGAction;
-typedef struct {
-    OnibiGAction *entries;
-    size_t count;
-    size_t capacity;
-} OnibiGActionVector;
-typedef struct {
-    VALUE payload;
-    VALUE bitmap;
+    unsigned char bitmap[32];
     int negated;
 } OnibiRSeqClassPayloadEntry;
 typedef struct {
@@ -79,7 +75,6 @@ typedef struct {
     size_t capacity;
 } OnibiRSeqClassPayloadVector;
 typedef struct {
-    VALUE payload;
     int byte;
     int ignorecase;
 } OnibiRSeqLiteralPayloadEntry;
@@ -89,7 +84,6 @@ typedef struct {
     size_t capacity;
 } OnibiRSeqLiteralPayloadVector;
 typedef struct {
-    VALUE descriptor;
     OnibiStateId entry;
     OnibiStateId accept;
     uint32_t flags;
@@ -111,7 +105,7 @@ typedef struct {
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
     OnibiValueMap active_subroutines;
-    OnibiValueVector subprograms;
+    OnibiRSeqSubprogramVector subprograms;
     OnibiValueMap subprogram_ids;
     VALUE map_roots;
     OnibiAstArena *ast;
@@ -119,8 +113,6 @@ typedef struct {
     int multiline;
     int optional_seen;
 } onibi_gir_builder_t;
-static void onibi_append_values(VALUE destination, VALUE values);
-
 static void
 onibi_id_vector_init(OnibiIdVector *vector)
 {
@@ -173,18 +165,17 @@ onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value)
 }
 
 static void
-onibi_value_vector_init(OnibiValueVector *vector)
+onibi_g_action_vector_init(OnibiGActionVector *vector)
 {
-    vector->items = NULL;
-    vector->count = 0;
-    vector->capacity = 0;
+    vector->entries = NULL;
+    vector->count = vector->capacity = 0;
 }
 
 static void
-onibi_value_vector_reserve(OnibiValueVector *vector, size_t additional)
+onibi_g_action_vector_reserve(OnibiGActionVector *vector, size_t additional)
 {
     if (additional > SIZE_MAX - vector->count)
-	rb_raise(rb_eNoMemError, "value vector is too large");
+	rb_raise(rb_eNoMemError, "GIR action vector is too large");
     size_t required = vector->count + additional;
     if (required <= vector->capacity) return;
     size_t next = vector->capacity == 0 ? 8 : vector->capacity;
@@ -195,53 +186,55 @@ onibi_value_vector_reserve(OnibiValueVector *vector, size_t additional)
 	}
 	next *= 2;
     }
-    if (next > SIZE_MAX / sizeof(*vector->items))
-	rb_raise(rb_eNoMemError, "value vector is too large");
-    vector->items = REALLOC_N(vector->items, VALUE, next);
+    if (next > SIZE_MAX / sizeof(*vector->entries))
+	rb_raise(rb_eNoMemError, "GIR action vector is too large");
+    vector->entries = REALLOC_N(vector->entries, OnibiGAction, next);
     vector->capacity = next;
 }
 
 static void
-onibi_value_vector_push(OnibiValueVector *vector, VALUE value, VALUE roots)
+onibi_g_action_vector_push(OnibiGActionVector *vector, OnibiGAction action)
 {
-    onibi_value_vector_reserve(vector, 1);
-    vector->items[vector->count++] = value;
-    rb_ary_push(roots, value);
+    onibi_g_action_vector_reserve(vector, 1);
+    vector->entries[vector->count++] = action;
 }
 
 static void
-onibi_value_vector_store(OnibiValueVector *vector, size_t index, VALUE value,
-			 VALUE roots)
+onibi_g_action_vector_append(OnibiGActionVector *destination,
+			     const OnibiGActionVector *source)
 {
-    if (index >= vector->count)
-	rb_raise(rb_eArgError, "value vector index is out of range");
-    vector->items[index] = value;
-    rb_ary_push(roots, value);
+    onibi_g_action_vector_reserve(destination, source->count);
+    memcpy(destination->entries + destination->count, source->entries,
+	   source->count * sizeof(*source->entries));
+    destination->count += source->count;
+}
+
+static OnibiGActionVector
+onibi_g_action_vector_concat(const OnibiGActionVector *first,
+			     const OnibiGActionVector *second)
+{
+    OnibiGActionVector result;
+    onibi_g_action_vector_init(&result);
+    onibi_g_action_vector_append(&result, first);
+    onibi_g_action_vector_append(&result, second);
+    return result;
+}
+
+static OnibiGActionVector
+onibi_g_action_vector_copy(const OnibiGActionVector *source)
+{
+    OnibiGActionVector result;
+    onibi_g_action_vector_init(&result);
+    onibi_g_action_vector_append(&result, source);
+    return result;
 }
 
 static void
-onibi_value_vector_free(OnibiValueVector *vector)
+onibi_g_action_vector_free(OnibiGActionVector *vector)
 {
-    xfree(vector->items);
-    vector->items = NULL;
+    xfree(vector->entries);
+    vector->entries = NULL;
     vector->count = vector->capacity = 0;
-}
-
-static void
-onibi_value_vector_append_array(OnibiValueVector *destination, VALUE source,
-				VALUE roots)
-{
-    long count = RARRAY_LEN(source);
-    onibi_value_vector_reserve(destination, (size_t)count);
-    for (long i = 0; i < count; i++)
-	onibi_value_vector_push(destination, rb_ary_entry(source, i), roots);
-}
-
-static void
-onibi_append_vector_values(VALUE destination, const OnibiValueVector *source)
-{
-    for (size_t i = 0; i < source->count; i++)
-	rb_ary_push(destination, source->items[i]);
 }
 
 static void
@@ -263,20 +256,11 @@ onibi_guard_vector_find_entry(const OnibiGuardVector *vector,
 
 static void
 onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
-		       VALUE actions, VALUE roots)
+		       const OnibiGActionVector *actions)
 {
-    long incoming = RARRAY_LEN(actions);
-    if ((uint64_t)incoming > UINT32_MAX)
-	rb_raise(rb_eArgError, "GIR guard action list is too large");
     for (size_t i = 0; i < vector->count; i++) {
 	if (vector->entries[i].state == state) {
-	    if (vector->entries[i].action_count >
-		UINT32_MAX - (uint32_t)incoming)
-		rb_raise(rb_eArgError, "GIR guard action list is too large");
-	    onibi_value_vector_append_array(&vector->entries[i].actions,
-					    actions, roots);
-	    vector->entries[i].action_count =
-		(uint32_t)vector->entries[i].actions.count;
+	    onibi_g_action_vector_append(&vector->entries[i].actions, actions);
 	    return;
 	}
     }
@@ -288,58 +272,16 @@ onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
 	vector->capacity = next;
     }
     vector->entries[vector->count].state = state;
-    onibi_value_vector_init(&vector->entries[vector->count].actions);
-    onibi_value_vector_append_array(&vector->entries[vector->count].actions,
-				    actions, roots);
-    vector->entries[vector->count].action_count =
-	(uint32_t)vector->entries[vector->count].actions.count;
+    vector->entries[vector->count].actions =
+	onibi_g_action_vector_copy(actions);
     vector->count++;
-}
-
-static void
-onibi_guard_vector_add_values(OnibiGuardVector *vector, OnibiStateId state,
-			      const OnibiValueVector *actions)
-{
-    if (actions->count > UINT32_MAX)
-	rb_raise(rb_eArgError, "GIR guard action list is too large");
-    for (size_t i = 0; i < vector->count; i++) {
-	if (vector->entries[i].state == state) {
-	    if (vector->entries[i].action_count >
-		UINT32_MAX - (uint32_t)actions->count)
-		rb_raise(rb_eArgError, "GIR guard action list is too large");
-	    onibi_value_vector_reserve(&vector->entries[i].actions,
-				       actions->count);
-	    memcpy(vector->entries[i].actions.items +
-		       vector->entries[i].actions.count,
-		   actions->items, sizeof(VALUE) * actions->count);
-	    vector->entries[i].actions.count += actions->count;
-	    vector->entries[i].action_count =
-		(uint32_t)vector->entries[i].actions.count;
-	    return;
-	}
-    }
-    if (vector->count == vector->capacity) {
-	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
-	if (next > SIZE_MAX / sizeof(*vector->entries))
-	    rb_raise(rb_eNoMemError, "GIR guard vector is too large");
-	vector->entries = REALLOC_N(vector->entries, OnibiGuardEntry, next);
-	vector->capacity = next;
-    }
-    OnibiGuardEntry *entry = &vector->entries[vector->count++];
-    entry->state = state;
-    onibi_value_vector_init(&entry->actions);
-    onibi_value_vector_reserve(&entry->actions, actions->count);
-    memcpy(entry->actions.items, actions->items,
-	   sizeof(VALUE) * actions->count);
-    entry->actions.count = actions->count;
-    entry->action_count = (uint32_t)actions->count;
 }
 
 static void
 onibi_guard_vector_free(OnibiGuardVector *vector)
 {
     for (size_t i = 0; i < vector->count; i++)
-	onibi_value_vector_free(&vector->entries[i].actions);
+	onibi_g_action_vector_free(&vector->entries[i].actions);
     xfree(vector->entries);
     vector->entries = NULL;
     vector->count = vector->capacity = 0;
@@ -438,6 +380,7 @@ static void
 onibi_gir_state_vector_push(OnibiGirStateVector *vector,
 			    OnibiGirStateEntry entry, VALUE roots)
 {
+    (void)roots;
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
 	if (next > SIZE_MAX / sizeof(*vector->entries))
@@ -446,7 +389,6 @@ onibi_gir_state_vector_push(OnibiGirStateVector *vector,
 	vector->capacity = next;
     }
     vector->entries[vector->count++] = entry;
-    rb_ary_push(roots, entry.payload);
 }
 
 static void
@@ -461,6 +403,7 @@ static void
 onibi_gir_edge_vector_push(OnibiGirEdgeVector *vector, OnibiGirEdgeEntry entry,
 			   VALUE roots)
 {
+    (void)roots;
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
 	if (next > SIZE_MAX / sizeof(*vector->entries))
@@ -469,13 +412,13 @@ onibi_gir_edge_vector_push(OnibiGirEdgeVector *vector, OnibiGirEdgeEntry entry,
 	vector->capacity = next;
     }
     vector->entries[vector->count++] = entry;
-    rb_ary_push(roots, entry.actions);
 }
 
 static void
 onibi_gir_edge_vector_insert(OnibiGirEdgeVector *vector, size_t index,
 			     OnibiGirEdgeEntry entry, VALUE roots)
 {
+    (void)roots;
     if (index > vector->count) index = vector->count;
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
@@ -488,7 +431,6 @@ onibi_gir_edge_vector_insert(OnibiGirEdgeVector *vector, size_t index,
 	    (vector->count - index) * sizeof(*vector->entries));
     vector->entries[index] = entry;
     vector->count++;
-    rb_ary_push(roots, entry.actions);
 }
 
 static void
@@ -536,17 +478,13 @@ onibi_gir_state_vector_free(OnibiGirStateVector *vector)
 static void
 onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector)
 {
+    for (size_t i = 0; i < vector->count; i++)
+	onibi_g_action_vector_free(&vector->entries[i].actions);
     xfree(vector->entries);
     vector->entries = NULL;
     vector->count = vector->capacity = 0;
 }
 
-static void
-onibi_rseq_action_vector_init(OnibiGActionVector *vector)
-{
-    vector->entries = NULL;
-    vector->count = vector->capacity = 0;
-}
 static uint8_t
 onibi_rseq_physical_action_op(OnibiGActionOp code)
 {
@@ -564,44 +502,6 @@ onibi_rseq_physical_action_op(OnibiGActionOp code)
 		     : ONIBI_RA_END);
 }
 static void
-onibi_rseq_action_vector_push(OnibiGActionVector *vector, VALUE value)
-{
-    if (vector->count == vector->capacity) {
-	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
-	if (next > SIZE_MAX / sizeof(*vector->entries))
-	    rb_raise(rb_eNoMemError, "RSeq action vector is too large");
-	vector->entries = REALLOC_N(vector->entries, OnibiGAction, next);
-	vector->capacity = next;
-    }
-    VALUE slot = onibi_hash_value_id(value, id_key_slot);
-    VALUE width = onibi_hash_value_id(value, id_key_width);
-    VALUE limit = onibi_hash_value_id(value, id_key_limit);
-    VALUE arg_value = onibi_hash_value_id(value, id_key_value);
-    VALUE assert_kind = onibi_hash_value_id(value, id_key_assert_kind);
-    VALUE arg32 = !NIL_P(width) ? width : (!NIL_P(limit) ? limit : arg_value);
-    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-	onibi_hash_value_id(value, id_key_action_code));
-    vector->entries[vector->count++] = (OnibiGAction){
-	value,
-	code,
-	onibi_rseq_physical_action_op(code),
-	RTEST(onibi_hash_value_id(value, id_key_set)) ? 1 : 0,
-	RTEST(onibi_hash_value_id(value, id_key_positive)) ? 1 : 0,
-	NIL_P(slot) ? 0 : 1,
-	NIL_P(slot) ? 0 : (uint16_t)NUM2ULONG(slot),
-	NIL_P(assert_kind) ? 0 : 1,
-	NIL_P(assert_kind) ? 0 : (uint16_t)NUM2ULONG(assert_kind),
-	NIL_P(arg32) ? 0 : 1,
-	NIL_P(arg32) ? 0 : (uint32_t)NUM2ULONG(arg32)};
-}
-static void
-onibi_rseq_action_vector_free(OnibiGActionVector *vector)
-{
-    xfree(vector->entries);
-    vector->entries = NULL;
-    vector->count = vector->capacity = 0;
-}
-static void
 onibi_rseq_class_payload_vector_init(OnibiRSeqClassPayloadVector *vector)
 {
     vector->entries = NULL;
@@ -609,7 +509,7 @@ onibi_rseq_class_payload_vector_init(OnibiRSeqClassPayloadVector *vector)
 }
 static void
 onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *vector,
-				     VALUE payload)
+				     const OnibiGirStateEntry *state)
 {
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
@@ -619,9 +519,9 @@ onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *vector,
 	    REALLOC_N(vector->entries, OnibiRSeqClassPayloadEntry, next);
 	vector->capacity = next;
     }
-    vector->entries[vector->count++] = (OnibiRSeqClassPayloadEntry){
-	payload, onibi_hash_value_id(payload, id_key_bitmap),
-	RTEST(onibi_hash_value_id(payload, id_key_negated))};
+    OnibiRSeqClassPayloadEntry *entry = &vector->entries[vector->count++];
+    memcpy(entry->bitmap, state->bitmap, sizeof(entry->bitmap));
+    entry->negated = (state->flags & 1U) != 0;
 }
 static void
 onibi_rseq_class_payload_vector_free(OnibiRSeqClassPayloadVector *vector)
@@ -638,7 +538,7 @@ onibi_rseq_literal_payload_vector_init(OnibiRSeqLiteralPayloadVector *vector)
 }
 static void
 onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector *vector,
-				       VALUE payload)
+				       const OnibiGirStateEntry *state)
 {
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 8 : vector->capacity * 2;
@@ -650,8 +550,7 @@ onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector *vector,
 	vector->capacity = next;
     }
     vector->entries[vector->count++] = (OnibiRSeqLiteralPayloadEntry){
-	payload, NUM2INT(onibi_hash_value_id(payload, id_key_byte)),
-	RTEST(onibi_hash_value_id(payload, id_key_ignorecase))};
+	(int)state->value, (state->flags & 1U) != 0};
 }
 static void
 onibi_rseq_literal_payload_vector_free(OnibiRSeqLiteralPayloadVector *vector)
@@ -668,7 +567,7 @@ onibi_rseq_subprogram_vector_init(OnibiRSeqSubprogramVector *vector)
 }
 static void
 onibi_rseq_subprogram_vector_push(OnibiRSeqSubprogramVector *vector,
-				  VALUE descriptor)
+				  OnibiRSeqSubprogramEntry descriptor)
 {
     if (vector->count == vector->capacity) {
 	size_t next = vector->capacity == 0 ? 4 : vector->capacity * 2;
@@ -678,11 +577,17 @@ onibi_rseq_subprogram_vector_push(OnibiRSeqSubprogramVector *vector,
 	    REALLOC_N(vector->entries, OnibiRSeqSubprogramEntry, next);
 	vector->capacity = next;
     }
-    vector->entries[vector->count++] = (OnibiRSeqSubprogramEntry){
-	descriptor,
-	(OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_entry)),
-	(OnibiStateId)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_accept)),
-	(uint32_t)NUM2ULONG(onibi_hash_value_id(descriptor, id_key_flags))};
+    vector->entries[vector->count++] = descriptor;
+}
+
+static void
+onibi_rseq_subprogram_vector_store(OnibiRSeqSubprogramVector *vector,
+				   size_t index,
+				   OnibiRSeqSubprogramEntry descriptor)
+{
+    if (index >= vector->count)
+	rb_raise(rb_eArgError, "subprogram index is out of range");
+    vector->entries[index] = descriptor;
 }
 static void
 onibi_rseq_subprogram_vector_free(OnibiRSeqSubprogramVector *vector)
@@ -940,104 +845,118 @@ onibi_posix_kind_id(ID property)
 }
 
 static void
-onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload)
+onibi_gir_state(onibi_gir_builder_t *builder, long id, OnibiGStateOp opcode,
+		VALUE payload)
 {
-    OnibiGStateOp opcode = op == id_g_accept	 ? ONIBI_G_ACCEPT
-			   : op == id_g_char	 ? ONIBI_G_CHAR
-			   : op == id_g_class	 ? ONIBI_G_CLASS
-			   : op == id_g_any	 ? ONIBI_G_ANY
-			   : op == id_g_grapheme ? ONIBI_G_GRAPHEME
-			   : op == id_g_backref	 ? ONIBI_G_BACKREF
-			   : op == id_g_call	 ? ONIBI_G_CALL
-			   : op == id_g_atomic	 ? ONIBI_G_ATOMIC
-			   : op == id_g_absent	 ? ONIBI_G_ABSENT
-						 : (OnibiGStateOp)-1;
-    onibi_gir_state_vector_push(
-	&builder->states, (OnibiGirStateEntry){id, op, opcode, payload, 0},
-	builder->map_roots);
+    OnibiGirStateEntry entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.id = id;
+    entry.opcode = opcode;
+    if (opcode == ONIBI_G_CHAR) {
+	entry.value =
+	    (uint32_t)NUM2UINT(onibi_hash_value_id(payload, id_key_byte));
+	if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))
+	    entry.flags |= 1U;
+    }
+    else if (opcode == ONIBI_G_CLASS) {
+	VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
+	if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
+	    rb_raise(eRegexpError, "GIR class requires a 256-bit bitmap");
+	memcpy(entry.bitmap, RSTRING_PTR(bitmap), sizeof(entry.bitmap));
+	if (RTEST(onibi_hash_value_id(payload, id_key_negated)))
+	    entry.flags |= 1U;
+    }
+    else if (opcode == ONIBI_G_BACKREF) {
+	VALUE capture = onibi_hash_value_id(payload, id_key_capture);
+	if (NIL_P(capture) || NUM2LONG(capture) <= 0)
+	    rb_raise(eRegexpError, "invalid GIR backreference capture");
+	entry.value = (uint32_t)(NUM2ULONG(capture) - 1U);
+	if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))
+	    entry.flags |= 1U;
+    }
+    else if (opcode == ONIBI_G_CALL || opcode == ONIBI_G_ATOMIC ||
+	     opcode == ONIBI_G_ABSENT) {
+	VALUE subprogram = onibi_hash_value_id(payload, id_key_subprogram);
+	if (NIL_P(subprogram))
+	    rb_raise(eRegexpError, "GIR state requires a subprogram");
+	entry.value = (uint32_t)NUM2ULONG(subprogram);
+    }
+    else if (opcode == ONIBI_G_ANY &&
+	     RTEST(onibi_hash_value_id(payload, id_key_multiline))) {
+	entry.flags |= 1U;
+    }
+    onibi_gir_state_vector_push(&builder->states, entry, builder->map_roots);
 }
 
-static VALUE
+static OnibiGActionVector
 onibi_gir_compose_edge_actions(onibi_gir_builder_t *builder, long from, long to,
-			       VALUE explicit_actions)
+			       const OnibiGActionVector *explicit_actions)
 {
     const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
 	&builder->capture_guards, (OnibiStateId)to);
     const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(
 	&builder->exit_guards, (OnibiStateId)from);
-    uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
-    uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
-    uint64_t action_count = (uint64_t)exit_count +
-			    (uint64_t)RARRAY_LEN(explicit_actions) +
-			    (uint64_t)capture_count;
-    if (action_count > LONG_MAX)
-	rb_raise(rb_eArgError, "GIR edge action list is too large");
-    if (action_count == 0) return onibi_empty_actions;
-    VALUE actions = rb_ary_new_capa((long)action_count);
-    if (exit_guard) onibi_append_vector_values(actions, &exit_guard->actions);
-    onibi_append_values(actions, explicit_actions);
+    OnibiGActionVector actions;
+    onibi_g_action_vector_init(&actions);
+    if (exit_guard)
+	onibi_g_action_vector_append(&actions, &exit_guard->actions);
+    onibi_g_action_vector_append(&actions, explicit_actions);
     if (capture_guard)
-	onibi_append_vector_values(actions, &capture_guard->actions);
+	onibi_g_action_vector_append(&actions, &capture_guard->actions);
     return actions;
 }
 
 static void
 onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to)
 {
-    VALUE actions =
-	onibi_gir_compose_edge_actions(builder, from, to, onibi_empty_actions);
-    onibi_gir_edge_vector_push(
-	&builder->edges,
-	(OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions),
-			    actions},
-	builder->map_roots);
+    OnibiGActionVector empty;
+    onibi_g_action_vector_init(&empty);
+    OnibiGActionVector actions =
+	onibi_gir_compose_edge_actions(builder, from, to, &empty);
+    onibi_gir_edge_vector_push(&builder->edges,
+			       (OnibiGirEdgeEntry){from, to, 0, actions},
+			       builder->map_roots);
 }
 
 static void
 onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to,
-		       VALUE actions)
+		       const OnibiGActionVector *actions)
 {
     const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
 	&builder->capture_guards, (OnibiStateId)to);
     const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(
 	&builder->exit_guards, (OnibiStateId)from);
-    uint32_t capture_count = capture_guard ? capture_guard->action_count : 0;
-    uint32_t exit_count = exit_guard ? exit_guard->action_count : 0;
+    size_t capture_count = capture_guard ? capture_guard->actions.count : 0;
+    size_t exit_count = exit_guard ? exit_guard->actions.count : 0;
     for (size_t i = 0; i < builder->edges.count; i++) {
 	OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
 	if (prior->from == from && prior->to == to) {
-	    VALUE prior_actions = prior->actions;
-	    uint64_t guard_count =
-		(uint64_t)exit_count + (uint64_t)capture_count;
-	    if ((uint64_t)prior->action_count < guard_count)
+	    size_t guard_count = exit_count + capture_count;
+	    if (prior->actions.count < guard_count)
 		rb_raise(rb_eArgError, "GIR edge guard layout is invalid");
-	    long prior_explicit_count =
-		(long)((uint64_t)prior->action_count - guard_count);
-	    uint64_t explicit_count =
-		(uint64_t)RARRAY_LEN(actions) + (uint64_t)prior_explicit_count;
-	    if (explicit_count > LONG_MAX)
-		rb_raise(rb_eArgError, "GIR edge action list is too large");
-	    VALUE explicit_actions =
-		explicit_count == 0 ? onibi_empty_actions
-				    : rb_ary_new_capa((long)explicit_count);
-	    onibi_append_values(explicit_actions, actions);
-	    for (long j = 0; j < prior_explicit_count; j++)
-		rb_ary_push(explicit_actions,
-			    rb_ary_entry(prior_actions, (long)exit_count + j));
-	    VALUE merged_actions = onibi_gir_compose_edge_actions(
-		builder, from, to, explicit_actions);
+	    size_t prior_explicit_count = prior->actions.count - guard_count;
+	    OnibiGActionVector explicit_actions;
+	    onibi_g_action_vector_init(&explicit_actions);
+	    onibi_g_action_vector_append(&explicit_actions, actions);
+	    onibi_g_action_vector_reserve(&explicit_actions,
+					  prior_explicit_count);
+	    memcpy(explicit_actions.entries + explicit_actions.count,
+		   prior->actions.entries + exit_count,
+		   prior_explicit_count * sizeof(*prior->actions.entries));
+	    explicit_actions.count += prior_explicit_count;
+	    OnibiGActionVector merged_actions = onibi_gir_compose_edge_actions(
+		builder, from, to, &explicit_actions);
+	    onibi_g_action_vector_free(&explicit_actions);
+	    onibi_g_action_vector_free(&prior->actions);
 	    prior->actions = merged_actions;
-	    prior->action_count = (uint32_t)RARRAY_LEN(merged_actions);
-	    rb_ary_push(builder->map_roots, merged_actions);
 	    return;
 	}
     }
-    actions = onibi_gir_compose_edge_actions(builder, from, to, actions);
-    onibi_gir_edge_vector_push(
-	&builder->edges,
-	(OnibiGirEdgeEntry){from, to, 0, (uint32_t)RARRAY_LEN(actions),
-			    actions},
-	builder->map_roots);
+    OnibiGActionVector composed =
+	onibi_gir_compose_edge_actions(builder, from, to, actions);
+    onibi_gir_edge_vector_push(&builder->edges,
+			       (OnibiGirEdgeEntry){from, to, 0, composed},
+			       builder->map_roots);
 }
 
 static onibi_fragment_t
@@ -1046,25 +965,18 @@ onibi_fragment_empty(void)
     onibi_fragment_t fragment;
     onibi_id_vector_init(&fragment.starts);
     onibi_id_vector_init(&fragment.exits);
-    fragment.start_actions = onibi_empty_actions;
-    fragment.pending_actions = onibi_empty_actions;
+    onibi_g_action_vector_init(&fragment.start_actions);
+    onibi_g_action_vector_init(&fragment.pending_actions);
     fragment.nullable = 1;
     fragment.lazy = 0;
     return fragment;
 }
 
-static VALUE
-onibi_fragment_actions_mutable(VALUE *actions)
-{
-    if (*actions == onibi_empty_actions) *actions = rb_ary_new();
-    return *actions;
-}
-
 static void
-onibi_fragment_append_actions(VALUE *destination, VALUE source)
+onibi_fragment_append_actions(OnibiGActionVector *destination,
+			      const OnibiGActionVector *source)
 {
-    if (RARRAY_LEN(source) == 0) return;
-    onibi_append_values(onibi_fragment_actions_mutable(destination), source);
+    onibi_g_action_vector_append(destination, source);
 }
 
 /* Fragment composition still stores Ruby arrays, but all numeric exit
@@ -1072,8 +984,8 @@ onibi_fragment_append_actions(VALUE *destination, VALUE source)
 static void
 onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
 			       const OnibiIdVector *exits,
-			       const OnibiIdVector *starts, VALUE actions,
-			       int prepend)
+			       const OnibiIdVector *starts,
+			       const OnibiGActionVector *actions, int prepend)
 {
     for (size_t i = 0; i < exits->count; i++) {
 	long from = (long)exits->items[i];
@@ -1087,13 +999,11 @@ onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
 			break;
 		    }
 		}
-		VALUE edge_actions =
+		OnibiGActionVector edge_actions =
 		    onibi_gir_compose_edge_actions(builder, from, to, actions);
 		onibi_gir_edge_vector_insert(
 		    &builder->edges, insert_at,
-		    (OnibiGirEdgeEntry){from, to, 0,
-					(uint32_t)RARRAY_LEN(edge_actions),
-					edge_actions},
+		    (OnibiGirEdgeEntry){from, to, 0, edge_actions},
 		    builder->map_roots);
 	    }
 	    else {
@@ -1114,69 +1024,40 @@ onibi_connect_fragment(onibi_gir_builder_t *builder, const OnibiIdVector *exits,
 }
 
 static void
-onibi_append_values(VALUE destination, VALUE values)
-{
-    VALUE *items = RARRAY_PTR(values);
-    long count = RARRAY_LEN(values);
-    for (long i = 0; i < count; i++)
-	rb_ary_push(destination, items[i]);
-}
-
-static VALUE
-onibi_concat_action_values(VALUE first, VALUE second)
-{
-    long first_count = RARRAY_LEN(first);
-    long second_count = RARRAY_LEN(second);
-    if (first_count == 0) return second;
-    if (second_count == 0) return first;
-    VALUE result = rb_ary_new_capa(first_count + second_count);
-    onibi_append_values(result, first);
-    onibi_append_values(result, second);
-    return result;
-}
-
-static void
 onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
-				 const OnibiIdVector *starts, VALUE guard)
+				 const OnibiIdVector *starts,
+				 const OnibiGActionVector *guard)
 {
     for (size_t i = 0; i < starts->count; i++) {
 	onibi_guard_vector_add(&builder->capture_guards, starts->items[i],
-			       guard, builder->map_roots);
+			       guard);
     }
 }
 
 static void
 onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
-			      const OnibiIdVector *exits, VALUE actions)
+			      const OnibiIdVector *exits,
+			      const OnibiGActionVector *actions)
 {
     for (size_t i = 0; i < exits->count; i++) {
-	onibi_guard_vector_add(&builder->exit_guards, exits->items[i], actions,
-			       builder->map_roots);
+	onibi_guard_vector_add(&builder->exit_guards, exits->items[i], actions);
     }
 }
 
-static VALUE
+static OnibiGAction
 onibi_capture_test_action(long slot, int set)
 {
-    VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(id_a_test_capture));
-    onibi_set_gir_action_opcode(action, id_a_test_capture);
-    rb_hash_aset(action, ID2SYM(id_key_slot), LONG2NUM(slot));
-    rb_hash_aset(action, ID2SYM(id_key_set), set ? Qtrue : Qfalse);
-    return action;
+    return (OnibiGAction){
+	ONIBI_GA_TEST_CAPTURE, set ? 1 : 0, 0, 1, (uint16_t)slot, 0, 0, 0, 0};
 }
 
-static VALUE
-onibi_counter_action(ID op, long slot, VALUE limit)
+static OnibiGAction
+onibi_counter_action(OnibiGActionOp code, long slot, VALUE limit)
 {
-    VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(op));
-    onibi_set_gir_action_opcode(action, op);
-    rb_hash_aset(action, ID2SYM(id_key_slot), LONG2NUM(slot));
-    if (!NIL_P(limit)) rb_hash_aset(action, ID2SYM(id_key_limit), limit);
-    if (op == id_a_counter_init)
-	rb_hash_aset(action, ID2SYM(id_key_value), INT2NUM(1));
-    return action;
+    uint32_t value = code == ONIBI_GA_COUNTER_INIT
+			 ? 1U
+			 : (NIL_P(limit) ? 0U : (uint32_t)NUM2ULONG(limit));
+    return (OnibiGAction){code, 0, 0, 1, (uint16_t)slot, 0, 0, 1, value};
 }
 
 static VALUE

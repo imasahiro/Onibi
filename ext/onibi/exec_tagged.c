@@ -1,4 +1,7 @@
 /* Unicode grapheme helpers used by the native RSeq walker. */
+static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint,
+			      long *width);
+
 static int
 onibi_grapheme_extend(OnigCodePoint code)
 {
@@ -115,4 +118,16 @@ onibi_grapheme_width(VALUE str, long pos)
 	break;
     }
     return end - pos;
+}
+static int
+onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint, long *width)
+{
+    const char *ptr = RSTRING_PTR(str) + pos;
+    const char *end = RSTRING_PTR(str) + RSTRING_LEN(str);
+    int length = rb_enc_mbclen(ptr, end, rb_enc_get(str));
+    if (length <= 0 || ptr + length > end) return 0;
+    *codepoint = ONIGENC_MBC_TO_CODE(rb_enc_get(str), (const OnigUChar *)ptr,
+				     (const OnigUChar *)end);
+    *width = length;
+    return 1;
 }
