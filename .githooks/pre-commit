@@ -7,15 +7,34 @@ while IFS= read -r -d '' ruby_file; do
   ruby_files+=("$ruby_file")
 done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.rb')
 
-if [ "${#ruby_files[@]}" -eq 0 ]; then
-  exit 0
+clang_files=()
+while IFS= read -r -d '' clang_file; do
+  clang_files+=("$clang_file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.c' '*.h')
+
+if [ "${#ruby_files[@]}" -gt 0 ]; then
+  bundle exec rubocop --force-exclusion -A "${ruby_files[@]}"
+
+  if ! git diff --quiet -- "${ruby_files[@]}"; then
+    echo "RuboCop formatted staged Ruby files; review and stage the changes before committing." >&2
+    exit 1
+  fi
+
+  bundle exec rubocop --force-exclusion "${ruby_files[@]}"
 fi
 
-bundle exec rubocop --force-exclusion -A "${ruby_files[@]}"
+if [ "${#clang_files[@]}" -gt 0 ]; then
+  if ! command -v clang-format >/dev/null 2>&1; then
+    echo "clang-format is required to commit staged C files." >&2
+    exit 1
+  fi
 
-if ! git diff --quiet -- "${ruby_files[@]}"; then
-  echo "RuboCop formatted staged Ruby files; review and stage the changes before committing." >&2
-  exit 1
+  clang-format -i "${clang_files[@]}"
+
+  if ! git diff --quiet -- "${clang_files[@]}"; then
+    echo "clang-format formatted staged C files; review and stage the changes before committing." >&2
+    exit 1
+  fi
+
+  clang-format --dry-run --Werror "${clang_files[@]}"
 fi
-
-bundle exec rubocop --force-exclusion "${ruby_files[@]}"
