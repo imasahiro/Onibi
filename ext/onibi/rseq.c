@@ -57,7 +57,9 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	VALUE state = rb_ary_entry(states, i);
 	OnibiGirStateEntry record = {
 	    NUM2LONG(onibi_hash_value_id(state, id_key_id)),
-	    SYM2ID(onibi_hash_value_id(state, id_key_op)),
+	    /* The compiler already stores the numeric opcode.  Do not convert
+	       the debug symbol back to an ID during the RSeq pass. */
+	    0,
 	    (OnibiGStateOp)NUM2UINT(onibi_hash_value_id(state, id_key_opcode)),
 	    onibi_hash_value_id(state, id_key_payload), 0};
 	onibi_gir_state_vector_push(&state_records, record, state_roots);
