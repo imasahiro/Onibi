@@ -1330,7 +1330,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	else if (NIL_P(max_value)) {
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
 	    if (result.starts.count == 0)
-		onibi_id_vector_move(&result.starts, &repeat.starts);
+		onibi_id_vector_append(&result.starts, &repeat.starts);
 	    if (!repeat.nullable)
 		onibi_fragment_append_actions(&result.start_actions,
 					      repeat.start_actions);

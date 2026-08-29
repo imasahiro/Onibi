@@ -58,6 +58,11 @@ RSeq publication validates section offsets, state ranges, edge destinations,
 action offsets, opcodes, and payload descriptors directly from the blob. The
 runtime validator does not compare the blob with the Ruby semantic mirror.
 
+The native blob walker executes ordered action-free cycles, classes,
+wildcards, graphemes, position assertions, captures that do not affect
+acceptance, and bounded-repeat counters. It keeps one counter vector for each
+native backtracking frame.
+
 ## Milestones
 
 ### 1. C extension foundation

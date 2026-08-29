@@ -121,6 +121,7 @@ onibi_rseq_execution_graph(VALUE rseq)
 typedef struct {
     uint32_t state;
     long pos;
+    long *counters;
 } onibi_simple_frame_t;
 
 static int

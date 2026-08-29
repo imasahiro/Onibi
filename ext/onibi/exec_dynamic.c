@@ -1,6 +1,75 @@
 static int
+onibi_rseq_word_byte(unsigned char byte)
+{
+    return isalnum(byte) || byte == '_';
+}
+
+static int
+onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
+			   VALUE str, long pos, long search_origin,
+			   long *counters, uint32_t counter_count)
+{
+    if (edge->action_offset == 0) return 1;
+    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+    for (; index < view->header->action_count; index++) {
+	const OnibiRAction *action = &view->actions[index];
+	if (action->op == ONIBI_RA_END) return 1;
+	if (action->op == ONIBI_RA_CAPTURE ||
+	    action->op == ONIBI_RA_MATCH_RESET)
+	    continue;
+	if (action->op == ONIBI_RA_COUNTER_SET ||
+	    action->op == ONIBI_RA_COUNTER_ADD ||
+	    action->op == ONIBI_RA_COUNTER_TEST) {
+	    if (!counters || action->arg16 >= counter_count) return 0;
+	    if (action->op == ONIBI_RA_COUNTER_SET)
+		counters[action->arg16] = (long)action->arg32;
+	    else if (action->op == ONIBI_RA_COUNTER_ADD)
+		counters[action->arg16]++;
+	    else {
+		int hit = action->flags == ONIBI_RA_COUNTER_GE
+			      ? counters[action->arg16] >= (long)action->arg32
+			      : counters[action->arg16] < (long)action->arg32;
+		if (!hit) return 0;
+	    }
+	    continue;
+	}
+	if (action->op != ONIBI_RA_ASSERT_POSITION) return 0;
+	int hit = 0;
+	switch ((OnibiRAssertKind)action->arg16) {
+	case ONIBI_RAP_BEGIN_BUFFER: hit = pos == 0; break;
+	case ONIBI_RAP_END_BUFFER: hit = pos == RSTRING_LEN(str); break;
+	case ONIBI_RAP_BEGIN_LINE:
+	    hit = pos == 0 || RSTRING_PTR(str)[pos - 1] == '\n';
+	    break;
+	case ONIBI_RAP_END_LINE:
+	    hit = pos == RSTRING_LEN(str) || RSTRING_PTR(str)[pos] == '\n';
+	    break;
+	case ONIBI_RAP_SEMI_END_BUFFER:
+	    hit = pos == RSTRING_LEN(str) || (pos + 1 == RSTRING_LEN(str) &&
+					      RSTRING_PTR(str)[pos] == '\n');
+	    break;
+	case ONIBI_RAP_SEARCH_ORIGIN: hit = pos == search_origin; break;
+	case ONIBI_RAP_WORD_BOUNDARY:
+	case ONIBI_RAP_NONWORD_BOUNDARY: {
+	    int left = pos > 0 && onibi_rseq_word_byte(
+				      (unsigned char)RSTRING_PTR(str)[pos - 1]);
+	    int right =
+		pos < RSTRING_LEN(str) &&
+		onibi_rseq_word_byte((unsigned char)RSTRING_PTR(str)[pos]);
+	    hit = left != right;
+	    if (action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY) hit = !hit;
+	    break;
+	}
+	default: return 0;
+	}
+	if (!hit) return 0;
+    }
+    return 0;
+}
+
+static int
 onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
-			long start, long *matched_end)
+			long start, long search_origin, long *matched_end)
 {
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
@@ -10,7 +79,7 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	view = &local_view;
     }
     const OnibiRSeqHeader *header = view->header;
-    if (header->counter_count != 0 || header->subprogram_count != 1) return -1;
+    if (header->subprogram_count != 1) return -1;
     if (header->action_count != 0) {
 	for (uint32_t i = 0; i < header->action_count; i++) {
 	    /* Capture boundaries and MATCH_RESET do not change match?
@@ -18,7 +87,11 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	     * require GIR. */
 	    if (view->actions[i].op != ONIBI_RA_END &&
 		view->actions[i].op != ONIBI_RA_CAPTURE &&
-		view->actions[i].op != ONIBI_RA_MATCH_RESET)
+		view->actions[i].op != ONIBI_RA_MATCH_RESET &&
+		view->actions[i].op != ONIBI_RA_ASSERT_POSITION &&
+		view->actions[i].op != ONIBI_RA_COUNTER_SET &&
+		view->actions[i].op != ONIBI_RA_COUNTER_ADD &&
+		view->actions[i].op != ONIBI_RA_COUNTER_TEST)
 		return -1;
 	}
     }
@@ -31,19 +104,10 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	rb_enc_get_index(str) != rb_ascii8bit_encindex())
 	return -1;
     for (uint32_t i = 0; i < header->state_count; i++) {
-	/* Ordered cycles need thread priority state. Keep them on the tagged
-	   walker until that state is encoded in the native frame. */
-	if (states[i].edge_count > 1) return -1;
-	for (uint32_t e = 0; e < states[i].edge_count; e++) {
-	    uint32_t destination = edges[states[i].edge_base + e].destination;
-	    if (destination != ONIBI_ACCEPT_STATE && destination <= i)
-		return -1;
-	}
 	if (states[i].flags != 0) return -1;
-	if (states[i].op == ONIBI_RS_CLASS || states[i].op == ONIBI_RS_ANY)
-	    return -1;
 	if (states[i].op != 0 && states[i].op != ONIBI_RS_CHAR &&
-	    states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY)
+	    states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY &&
+	    states[i].op != ONIBI_RS_GRAPHEME)
 	    return -1;
 	if (states[i].op == ONIBI_RS_CHAR) {
 	    if (view->literals[states[i].payload].flags != 0) return -1;
@@ -62,16 +126,33 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
     size_t stack_capacity = visited_size;
     onibi_simple_frame_t *stack =
 	(onibi_simple_frame_t *)alloca(stack_capacity * sizeof(*stack));
+    if (header->counter_count != 0 &&
+	(stack_capacity > SIZE_MAX / header->counter_count ||
+	 stack_capacity * header->counter_count > SIZE_MAX / sizeof(long)))
+	return -1;
+    long *counter_pool =
+	header->counter_count == 0
+	    ? NULL
+	    : (long *)alloca(stack_capacity * header->counter_count *
+			     sizeof(long));
     size_t stack_size = 0;
     for (uint32_t i = header->start_edge_count; i > 0; i--) {
 	const OnibiREdge *edge = &edges[header->start_edge_base + (i - 1U)];
+	long *branch_counters =
+	    counter_pool ? counter_pool + stack_size * header->counter_count
+			 : NULL;
+	if (branch_counters)
+	    memset(branch_counters, 0, header->counter_count * sizeof(long));
+	if (!onibi_rseq_edge_actions_ok(view, edge, str, start, search_origin,
+					branch_counters, header->counter_count))
+	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    *matched_end = start;
 	    return 1;
 	}
 	if (edge->destination < header->state_count)
-	    stack[stack_size++] =
-		(onibi_simple_frame_t){edge->destination, start};
+	    stack[stack_size++] = (onibi_simple_frame_t){
+		edge->destination, start, branch_counters};
     }
     while (stack_size > 0) {
 	onibi_simple_frame_t frame = stack[--stack_size];
@@ -86,8 +167,15 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	    *matched_end = frame.pos;
 	    return 1;
 	}
-	if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
-	    state->op == ONIBI_RS_ANY) {
+	if (state->op == ONIBI_RS_GRAPHEME) {
+	    long width = onibi_grapheme_width(str, frame.pos);
+	    if (width <= 0)
+		hit = 0;
+	    else
+		next_pos += width;
+	}
+	else if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
+		 state->op == ONIBI_RS_ANY) {
 	    if (frame.pos >= RSTRING_LEN(str))
 		hit = 0;
 	    else if (state->op == ONIBI_RS_CHAR) {
@@ -110,15 +198,26 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	if (!hit) continue;
 	uint32_t begin = state->edge_base;
 	for (uint32_t e = state->edge_count; e > 0; e--) {
-	    uint32_t destination = edges[begin + (e - 1U)].destination;
+	    const OnibiREdge *edge = &edges[begin + (e - 1U)];
+	    long *next_counters =
+		counter_pool ? counter_pool + stack_size * header->counter_count
+			     : NULL;
+	    if (next_counters)
+		memcpy(next_counters, frame.counters,
+		       header->counter_count * sizeof(long));
+	    if (!onibi_rseq_edge_actions_ok(view, edge, str, next_pos,
+					    search_origin, next_counters,
+					    header->counter_count))
+		continue;
+	    uint32_t destination = edge->destination;
 	    if (destination == ONIBI_ACCEPT_STATE) {
 		*matched_end = next_pos;
 		return 1;
 	    }
 	    if (destination < header->state_count &&
 		stack_size < stack_capacity)
-		stack[stack_size++] =
-		    (onibi_simple_frame_t){destination, next_pos};
+		stack[stack_size++] = (onibi_simple_frame_t){
+		    destination, next_pos, next_counters};
 	}
     }
     return 0;

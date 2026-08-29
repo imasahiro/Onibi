@@ -9,7 +9,8 @@ onibi_vm_regular_fast(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 	rb_thread_check_ints();
 	onibi_check_deadline();
 	long end = 0;
-	int simple = onibi_rseq_simple_match(rseq, view, str, start, &end);
+	int simple = onibi_rseq_simple_match(rseq, view, str, start,
+					     search_origin, &end);
 	if (simple > 0) return Qtrue;
 	if (simple < 0) {
 	    if (NIL_P(graph)) graph = onibi_rseq_execution_graph(rseq);
@@ -32,7 +33,8 @@ onibi_vm_tagged_ordered(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 	onibi_check_deadline();
 	long end = 0;
 	if (!need_captures) {
-	    int simple = onibi_rseq_simple_match(rseq, view, str, start, &end);
+	    int simple = onibi_rseq_simple_match(rseq, view, str, start,
+						 search_origin, &end);
 	    if (simple > 0) return Qtrue;
 	    if (simple == 0) continue;
 	}
