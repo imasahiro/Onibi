@@ -87,7 +87,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_compiler_accept_start_uses_c_vector
     source = File.read(EXTENSION_SOURCE)
-    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+    compiler = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
 
     refute_nil compiler
     assert_includes compiler, "OnibiIdVector accept_starts;"
@@ -97,12 +97,12 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_compiler_materializes_start_edges_from_c_records
     source = File.read(EXTENSION_SOURCE)
-    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+    compiler = source[/static VALUE\nonibi_compiler_pass_publish.*?\n}\n/m]
 
     refute_nil compiler
-    assert_includes compiler, "OnibiGirEdgeVector start_edge_records;"
-    assert_includes compiler, "onibi_gir_edge_vector_push(&start_edge_records"
-    assert_includes compiler, "onibi_gir_edge_vector_free(&start_edge_records)"
+    assert_includes compiler, "start_edges->count"
+    assert_includes compiler, "onibi_materialize_gir"
+    assert_includes source, "onibi_gir_edge_vector_free(&start_edge_records)"
   end
 
   def test_conditional_guards_use_c_action_vectors
@@ -635,10 +635,10 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_start_edges_reuse_fragment_action_arrays
     source = File.read(EXTENSION_SOURCE)
-    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+    compiler = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
 
     refute_nil compiler
-    assert_includes compiler, "onibi_concat_action_values(fragment.start_actions, fragment.pending_actions)"
+    assert_includes compiler, "onibi_concat_action_values(fragment.start_actions,"
     assert_includes compiler, "VALUE with_guard = rb_ary_new_capa"
   end
 
@@ -796,12 +796,31 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_compiler_starts_from_c_ast_root
     source = File.read(EXTENSION_SOURCE)
-    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+    compiler = source[/static VALUE\s+onibi_compiler_compile\(.*?\n}\n/m]
 
     refute_nil compiler
     assert_includes compiler, "parsed_data->arena.root"
-    assert_includes compiler, "builder.ast = &parsed_data->arena"
-    assert_includes compiler, "onibi_collect_captures(parsed_data->arena.root"
+    assert_includes compiler, "onibi_compiler_pass_init_builder"
+    assert_includes compiler, "onibi_compiler_pass_collect_captures"
+    assert_includes compiler, "onibi_compiler_pass_lower"
+    assert_includes compiler, "onibi_compiler_pass_count_counters"
+    assert_includes compiler, "onibi_compiler_pass_publish"
+  end
+
+  def test_compiler_passes_have_one_directional_pipeline
+    source = File.read(EXTENSION_SOURCE)
+    init = source[/static void\nonibi_compiler_pass_init_builder.*?\n}\n/m]
+    lower = source[/static void\nonibi_compiler_pass_lower.*?\n}\n/m]
+    publish = source[/static VALUE\nonibi_compiler_pass_publish.*?\n}\n/m]
+
+    refute_nil init
+    refute_nil lower
+    refute_nil publish
+    assert_includes init, "builder->ast = &parsed->arena"
+    assert_includes lower, "onibi_compile_node(root_reference, builder)"
+    refute_includes lower, "onibi_gir_validate"
+    assert_includes publish, "onibi_materialize_gir"
+    assert_includes publish, "onibi_gir_validate(graph)"
   end
 
   def test_ast_analysis_reads_c_nodes

@@ -277,6 +277,22 @@ The token and AST ownership boundaries are:
 3. The compiler reads AST node IDs. It materializes Ruby values only for the
    current GIR semantic payload and published action data.
 
+### Compiler pass boundaries
+
+The compiler uses explicit one-way passes:
+
+1. `onibi_compiler_pass_init_builder` creates the pass context and its owners.
+2. `onibi_compiler_pass_collect_captures` assigns capture and name IDs from the
+   immutable C AST.
+3. `onibi_compiler_pass_lower` converts AST nodes to mutable GIR records.
+4. `onibi_compiler_pass_count_counters` derives the final counter slot count.
+5. `onibi_compiler_pass_publish` validates and freezes the GIR graph.
+
+The public compiler entry point only orders these passes and releases their
+temporary vectors. Lowering does not validate or publish. Publication does not
+read the AST. This keeps each pass independent and makes the data ownership
+boundary visible in code.
+
 ### AST field audit
 
 The AST is not part of the `Regexp` public API. The compiler uses these fields:

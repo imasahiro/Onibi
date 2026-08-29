@@ -3304,9 +3304,13 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
     return (long)builder->subprograms.count - 1;
 }
 
+/* Compiler pass 1: collect immutable symbol information from the C AST.
+ * This pass runs before lowering.  Lowering can then resolve captures and
+ * subroutine names with numeric IDs instead of scanning the AST again. */
 static void
-onibi_collect_captures(OnibiAstId ast_id, onibi_gir_builder_t *builder,
-		       long *next_capture)
+onibi_compiler_pass_collect_captures(OnibiAstId ast_id,
+				     onibi_gir_builder_t *builder,
+				     long *next_capture)
 {
     OnibiAstNode *node = onibi_ast_node_at(builder->ast, ast_id);
     if (node->kind == ONIBI_AST_CAPTURE) {
@@ -3334,19 +3338,20 @@ onibi_collect_captures(OnibiAstId ast_id, onibi_gir_builder_t *builder,
 	    onibi_value_map_set(&builder->capture_bodies, name,
 				UINT2NUM(node->body), builder->map_roots);
 	}
-	onibi_collect_captures(node->body, builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->body, builder, next_capture);
 	return;
     }
     if (node->body != ONIBI_AST_NONE)
-	onibi_collect_captures(node->body, builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->body, builder, next_capture);
     if (node->atom != ONIBI_AST_NONE)
-	onibi_collect_captures(node->atom, builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->atom, builder, next_capture);
     if (node->yes != ONIBI_AST_NONE)
-	onibi_collect_captures(node->yes, builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->yes, builder, next_capture);
     if (node->no != ONIBI_AST_NONE)
-	onibi_collect_captures(node->no, builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->no, builder, next_capture);
     for (size_t i = 0; i < node->child_count; i++)
-	onibi_collect_captures(node->children[i], builder, next_capture);
+	onibi_compiler_pass_collect_captures(node->children[i], builder,
+					     next_capture);
 }
 
 static long
@@ -4572,72 +4577,63 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
     return onibi_fragment_empty();
 }
 
-static VALUE
-onibi_compiler_compile(VALUE self, VALUE parsed)
+/* Compiler pass 0: create one owner for all mutable lowering state. */
+static void
+onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
+					OnibiParsed *parsed, int ignorecase,
+					int multiline)
 {
-    (void)self;
-    OnibiParsed *parsed_data = onibi_parsed_get(parsed);
-    if (parsed_data->arena.root == ONIBI_AST_NONE)
-	rb_raise(rb_eArgError, "compiler requires parser output");
-    VALUE root_reference = UINT2NUM(parsed_data->arena.root);
-    int parsed_options = parsed_data->options;
-    int ignorecase = (parsed_options & 1) != 0;
-    int multiline = (parsed_options & 4) != 0;
-    OnibiValueVector subprogram_records;
-    onibi_value_vector_init(&subprogram_records);
-    onibi_gir_builder_t builder;
-    memset(&builder, 0, sizeof(builder));
-    builder.ast = &parsed_data->arena;
-    onibi_gir_edge_vector_init(&builder.edges);
-    builder.states.entries = NULL;
-    builder.states.count = builder.states.capacity = 0;
-    onibi_value_map_init(&builder.capture_names);
-    onibi_value_map_init(&builder.capture_bodies);
-    onibi_value_map_init(&builder.capture_ids);
-    onibi_value_map_init(&builder.active_subroutines);
-    builder.subprograms = subprogram_records;
-    onibi_value_map_init(&builder.subprogram_ids);
-    builder.map_roots = rb_ary_new();
-    onibi_value_vector_push(
-	&builder.subprograms, Qnil,
-	builder.map_roots); /* root descriptor is filled after compile */
-    onibi_guard_vector_init(&builder.capture_guards);
-    onibi_guard_vector_init(&builder.exit_guards);
-    builder.ignorecase = ignorecase;
-    builder.multiline = multiline;
-    long prepass_capture_count = 0;
-    onibi_collect_captures(parsed_data->arena.root, &builder,
-			   &prepass_capture_count);
-    builder.capture_count = prepass_capture_count;
-    onibi_fragment_t fragment = onibi_compile_node(root_reference, &builder);
-    long accept = builder.next_id++;
-    onibi_gir_state(&builder, accept, id_g_accept, Qnil);
+    memset(builder, 0, sizeof(*builder));
+    builder->ast = &parsed->arena;
+    onibi_gir_edge_vector_init(&builder->edges);
+    onibi_value_map_init(&builder->capture_names);
+    onibi_value_map_init(&builder->capture_bodies);
+    onibi_value_map_init(&builder->capture_ids);
+    onibi_value_map_init(&builder->active_subroutines);
+    onibi_value_map_init(&builder->subprogram_ids);
+    onibi_value_vector_init(&builder->subprograms);
+    builder->map_roots = rb_ary_new();
+    onibi_value_vector_push(&builder->subprograms, Qnil,
+				    builder->map_roots);
+    onibi_guard_vector_init(&builder->capture_guards);
+    onibi_guard_vector_init(&builder->exit_guards);
+    builder->ignorecase = ignorecase;
+    builder->multiline = multiline;
+}
+
+/* Compiler pass 2: lower the C AST into mutable GIR state and edge records. */
+static void
+onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
+				  OnibiGirEdgeVector *start_edges, long *accept_out,
+				  long *root_entry_out)
+{
+    VALUE root_reference = UINT2NUM(parsed->arena.root);
+    onibi_fragment_t fragment = onibi_compile_node(root_reference, builder);
+    long accept = builder->next_id++;
+    onibi_gir_state(builder, accept, id_g_accept, Qnil);
     OnibiIdVector accept_starts;
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
-    OnibiIdVector exit_ids;
-    exit_ids = fragment.exits;
-    onibi_connect_fragment_actions(&builder, &exit_ids, &accept_starts,
-				   fragment.pending_actions, fragment.lazy);
+    OnibiIdVector exit_ids = fragment.exits;
+    onibi_connect_fragment_actions(builder, &exit_ids, &accept_starts,
+					   fragment.pending_actions, fragment.lazy);
     onibi_id_vector_free(&accept_starts);
-    OnibiGirEdgeVector start_edge_records;
-    onibi_gir_edge_vector_init(&start_edge_records);
-    long root_entry =
-	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
+    onibi_gir_edge_vector_init(start_edges);
+    long root_entry = fragment.starts.count > 0
+			  ? (long)fragment.starts.items[0] : accept;
     if (fragment.nullable && fragment.lazy) {
 	VALUE actions = onibi_concat_action_values(fragment.start_actions,
 						   fragment.pending_actions);
 	onibi_gir_edge_vector_push(
-	    &start_edge_records,
+	    start_edges,
 	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-				actions},
-	    builder.map_roots);
+					 actions},
+	    builder->map_roots);
     }
-    OnibiIdVector start_ids;
-    start_ids = fragment.starts;
+    OnibiIdVector start_ids = fragment.starts;
     for (size_t i = 0; i < start_ids.count; i++) {
 	long destination = (long)start_ids.items[i];
 	const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
-	    &builder.capture_guards, (OnibiStateId)start_ids.items[i]);
+	    &builder->capture_guards, (OnibiStateId)start_ids.items[i]);
 	VALUE actions = fragment.start_actions;
 	if (capture_guard) {
 	    VALUE with_guard = rb_ary_new_capa(
@@ -4647,10 +4643,10 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
 	    actions = with_guard;
 	}
 	onibi_gir_edge_vector_push(
-	    &start_edge_records,
+	    start_edges,
 	    (OnibiGirEdgeEntry){-1, destination, 0,
-				(uint32_t)RARRAY_LEN(actions), actions},
-	    builder.map_roots);
+					(uint32_t)RARRAY_LEN(actions), actions},
+	    builder->map_roots);
     }
     onibi_id_vector_free(&start_ids);
     onibi_id_vector_free(&exit_ids);
@@ -4658,87 +4654,133 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
 	VALUE actions = onibi_concat_action_values(fragment.start_actions,
 						   fragment.pending_actions);
 	onibi_gir_edge_vector_push(
-	    &start_edge_records,
+	    start_edges,
 	    (OnibiGirEdgeEntry){-1, accept, 0, (uint32_t)RARRAY_LEN(actions),
-				actions},
-	    builder.map_roots);
+					 actions},
+	    builder->map_roots);
     }
-    VALUE start_edges = rb_ary_new_capa((long)start_edge_records.count);
-    for (size_t i = 0; i < start_edge_records.count; i++) {
-	OnibiGirEdgeEntry *record = &start_edge_records.entries[i];
+    *accept_out = accept;
+    *root_entry_out = root_entry;
+}
+
+/* Compiler pass 3: derive the counter slot count from all published edges. */
+static long
+onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
+					   const OnibiGirEdgeVector *start_edges)
+{
+    long count = builder->counter_count;
+    for (size_t i = 0; i < builder->edges.count; i++) {
+	VALUE actions = builder->edges.entries[i].actions;
+	for (long j = 0; j < RARRAY_LEN(actions); j++) {
+	    VALUE action = rb_ary_entry(actions, j);
+	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
+		onibi_hash_value_id(action, id_key_action_code));
+	    if (code == ONIBI_GA_COUNTER_INIT ||
+		code == ONIBI_GA_COUNTER_INCREMENT ||
+		code == ONIBI_GA_TEST_COUNTER_LT ||
+		code == ONIBI_GA_TEST_COUNTER_GE) {
+		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
+		if (slot + 1 > count) count = slot + 1;
+	    }
+	}
+    }
+    for (size_t i = 0; i < start_edges->count; i++) {
+	VALUE actions = start_edges->entries[i].actions;
+	for (long j = 0; j < RARRAY_LEN(actions); j++) {
+	    VALUE action = rb_ary_entry(actions, j);
+	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
+		onibi_hash_value_id(action, id_key_action_code));
+	    if (code == ONIBI_GA_COUNTER_INIT ||
+		code == ONIBI_GA_COUNTER_INCREMENT ||
+		code == ONIBI_GA_TEST_COUNTER_LT ||
+		code == ONIBI_GA_TEST_COUNTER_GE) {
+		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
+		if (slot + 1 > count) count = slot + 1;
+	    }
+	}
+    }
+    return count;
+}
+
+/* Compiler pass 4: publish one immutable GIR graph for RSeq lowering. */
+static VALUE
+onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
+				    OnibiGirEdgeVector *start_edges,
+				    long accept, long root_entry, long counter_count,
+				    int parsed_options)
+{
+    VALUE start_edges_value = rb_ary_new_capa((long)start_edges->count);
+    for (size_t i = 0; i < start_edges->count; i++) {
+	OnibiGirEdgeEntry *record = &start_edges->entries[i];
 	VALUE edge = rb_hash_new();
 	rb_hash_aset(edge, ID2SYM(id_key_to), LONG2NUM(record->to));
 	rb_obj_freeze(record->actions);
 	rb_hash_aset(edge, ID2SYM(id_key_actions), record->actions);
 	rb_obj_freeze(edge);
-	rb_ary_push(start_edges, edge);
+	rb_ary_push(start_edges_value, edge);
     }
-    rb_obj_freeze(start_edges);
+    rb_obj_freeze(start_edges_value);
     VALUE gir_states, gir_edges;
-    onibi_materialize_gir(&builder, &gir_states, &gir_edges);
+    onibi_materialize_gir(builder, &gir_states, &gir_edges);
     VALUE graph = rb_hash_new();
     rb_hash_aset(graph, ID2SYM(id_key_states), gir_states);
     rb_hash_aset(graph, ID2SYM(id_key_edges), gir_edges);
-    rb_hash_aset(graph, ID2SYM(id_key_start_edges), start_edges);
+    rb_hash_aset(graph, ID2SYM(id_key_start_edges), start_edges_value);
     rb_hash_aset(graph, ID2SYM(id_key_accept), LONG2NUM(accept));
-    /* Program zero is the root callable program.  Keep an explicit descriptor
-       even before nested dynamic constructs add their own entries. */
     VALUE root_descriptor = rb_hash_new();
     rb_hash_aset(root_descriptor, ID2SYM(id_key_entry), LONG2NUM(root_entry));
     rb_hash_aset(root_descriptor, ID2SYM(id_key_accept), LONG2NUM(accept));
     rb_hash_aset(root_descriptor, ID2SYM(id_key_flags), INT2NUM(0));
     rb_obj_freeze(root_descriptor);
-    onibi_value_vector_store(&builder.subprograms, 0, root_descriptor,
-			     builder.map_roots);
-    VALUE subprograms = rb_ary_new_capa((long)builder.subprograms.count);
-    for (size_t i = 0; i < builder.subprograms.count; i++)
-	rb_ary_push(subprograms, builder.subprograms.items[i]);
+    onibi_value_vector_store(&builder->subprograms, 0, root_descriptor,
+				     builder->map_roots);
+    VALUE subprograms = rb_ary_new_capa((long)builder->subprograms.count);
+    for (size_t i = 0; i < builder->subprograms.count; i++)
+	rb_ary_push(subprograms, builder->subprograms.items[i]);
     rb_obj_freeze(subprograms);
     rb_hash_aset(graph, ID2SYM(id_key_subprograms), subprograms);
     rb_hash_aset(graph, ID2SYM(id_key_capture_count),
-		 LONG2NUM(builder.capture_count));
-    long counter_count = builder.counter_count;
-    for (size_t i = 0; i < builder.edges.count; i++) {
-	VALUE actions = builder.edges.entries[i].actions;
-	for (long j = 0; j < RARRAY_LEN(actions); j++) {
-	    VALUE action = rb_ary_entry(actions, j);
-	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-		onibi_hash_value_id(action, id_key_action_code));
-	    if (code == ONIBI_GA_COUNTER_INIT ||
-		code == ONIBI_GA_COUNTER_INCREMENT ||
-		code == ONIBI_GA_TEST_COUNTER_LT ||
-		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
-		if (slot + 1 > counter_count) counter_count = slot + 1;
-	    }
-	}
-    }
-    for (long i = 0; i < RARRAY_LEN(start_edges); i++) {
-	VALUE actions =
-	    onibi_hash_value_id(rb_ary_entry(start_edges, i), id_key_actions);
-	for (long j = 0; j < RARRAY_LEN(actions); j++) {
-	    VALUE action = rb_ary_entry(actions, j);
-	    OnibiGActionOp code = (OnibiGActionOp)NUM2UINT(
-		onibi_hash_value_id(action, id_key_action_code));
-	    if (code == ONIBI_GA_COUNTER_INIT ||
-		code == ONIBI_GA_COUNTER_INCREMENT ||
-		code == ONIBI_GA_TEST_COUNTER_LT ||
-		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = NUM2LONG(onibi_hash_value_id(action, id_key_slot));
-		if (slot + 1 > counter_count) counter_count = slot + 1;
-	    }
-	}
-    }
+			 LONG2NUM(builder->capture_count));
     rb_hash_aset(graph, ID2SYM(id_key_counter_count), LONG2NUM(counter_count));
     rb_hash_aset(graph, ID2SYM(id_key_subprogram_count),
-		 LONG2NUM((long)builder.subprograms.count));
+			 LONG2NUM((long)builder->subprograms.count));
     onibi_gir_validate(graph);
     rb_obj_freeze(graph);
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
-					 &onibi_compiled_type, compiled_result);
+						 &onibi_compiled_type, compiled_result);
     compiled_result->graph = graph;
     compiled_result->options = parsed_options;
+    return result;
+}
+
+static VALUE
+onibi_compiler_compile(VALUE self, VALUE parsed)
+{
+    (void)self;
+    OnibiParsed *parsed_data = onibi_parsed_get(parsed);
+    if (parsed_data->arena.root == ONIBI_AST_NONE)
+	rb_raise(rb_eArgError, "compiler requires parser output");
+    int parsed_options = parsed_data->options;
+    int ignorecase = (parsed_options & 1) != 0;
+    int multiline = (parsed_options & 4) != 0;
+    onibi_gir_builder_t builder;
+    onibi_compiler_pass_init_builder(&builder, parsed_data, ignorecase,
+					     multiline);
+    long prepass_capture_count = 0;
+    onibi_compiler_pass_collect_captures(parsed_data->arena.root, &builder,
+						 &prepass_capture_count);
+    builder.capture_count = prepass_capture_count;
+    OnibiGirEdgeVector start_edge_records;
+    long accept;
+    long root_entry;
+    onibi_compiler_pass_lower(parsed_data, &builder, &start_edge_records,
+				      &accept, &root_entry);
+    long counter_count = onibi_compiler_pass_count_counters(
+	&builder, &start_edge_records);
+    VALUE result = onibi_compiler_pass_publish(
+	&builder, &start_edge_records, accept, root_entry, counter_count,
+	parsed_options);
     onibi_gir_edge_vector_free(&start_edge_records);
     onibi_guard_vector_free(&builder.capture_guards);
     onibi_guard_vector_free(&builder.exit_guards);
