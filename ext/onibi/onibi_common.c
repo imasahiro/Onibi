@@ -66,6 +66,7 @@ static ID id_bytebegin, id_byteend, id_length;
 static ID id_case_equal, id_last_match, id_tilde;
 static VALUE onibi_rseq_execution_graph(VALUE rseq);
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
+static void onibi_rseq_blob_validate(VALUE blob);
 static ID id_scan, id_gsub, id_encoding, id_index;
 static ID id_g_accept, id_g_grapheme, id_g_atomic, id_g_absent, id_g_call,
     id_g_char, id_g_class, id_g_any, id_g_backref;
@@ -128,7 +129,7 @@ static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
 static VALUE onibi_vm_match_p(VALUE self, VALUE str);
-static void onibi_rseq_validate(VALUE rseq);
+static void onibi_rseq_validate(VALUE rseq) __attribute__((unused));
 static inline VALUE
 onibi_hash_value_id(VALUE hash, ID key)
 {

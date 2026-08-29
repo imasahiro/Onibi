@@ -84,6 +84,9 @@ onibi_vm_match_p(VALUE self, VALUE str)
     int str_encoding_index = rb_enc_get_index(str);
     onibi_call_stack_reset();
     onibi_set_deadline(obj->timeout_seconds);
+    if (!NIL_P(obj->rseq_blob))
+	obj->rseq_view_valid =
+	    onibi_rseq_view_init(obj->rseq_blob, &obj->rseq_view) ? 1 : 0;
     if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) &&
 	(!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
 	!NIL_P(obj->rseq) && obj->rseq_view_valid &&

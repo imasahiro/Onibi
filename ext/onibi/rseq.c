@@ -536,7 +536,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     rb_obj_freeze(result);
     /* Validate once, before publication.  Match calls use this immutable
        validated representation without repeating structural scans. */
-    onibi_rseq_validate(result);
+    onibi_rseq_blob_validate(blob);
     onibi_rseq_class_payload_vector_free(&class_payloads);
     onibi_rseq_literal_payload_vector_free(&literal_payloads);
     onibi_rseq_action_vector_free(&action_records);

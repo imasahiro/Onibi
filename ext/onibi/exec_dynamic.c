@@ -31,7 +31,17 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	rb_enc_get_index(str) != rb_ascii8bit_encindex())
 	return -1;
     for (uint32_t i = 0; i < header->state_count; i++) {
+	/* Ordered cycles need thread priority state. Keep them on the tagged
+	   walker until that state is encoded in the native frame. */
+	if (states[i].edge_count > 1) return -1;
+	for (uint32_t e = 0; e < states[i].edge_count; e++) {
+	    uint32_t destination = edges[states[i].edge_base + e].destination;
+	    if (destination != ONIBI_ACCEPT_STATE && destination <= i)
+		return -1;
+	}
 	if (states[i].flags != 0) return -1;
+	if (states[i].op == ONIBI_RS_CLASS || states[i].op == ONIBI_RS_ANY)
+	    return -1;
 	if (states[i].op != 0 && states[i].op != ONIBI_RS_CHAR &&
 	    states[i].op != ONIBI_RS_CLASS && states[i].op != ONIBI_RS_ANY)
 	    return -1;

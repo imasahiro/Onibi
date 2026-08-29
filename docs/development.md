@@ -54,6 +54,10 @@ debug mirror. Regular and action-free tagged execution read the relocatable
 RSeq blob through `OnibiRSeqView`. `Onibi::Regexp` creates this native view
 once during initialization. Match calls reuse the sidecar.
 
+RSeq publication validates section offsets, state ranges, edge destinations,
+action offsets, opcodes, and payload descriptors directly from the blob. The
+runtime validator does not compare the blob with the Ruby semantic mirror.
+
 ## Milestones
 
 ### 1. C extension foundation
