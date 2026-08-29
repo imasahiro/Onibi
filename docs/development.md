@@ -148,7 +148,8 @@ The Ruby data decision is:
 | Data | Owner | Reason |
 | --- | --- | --- |
 | source, options, names, named captures | Ruby `VALUE` | Regexp public API and MRI encoding rules |
-| tokens, AST, GIR | C compiler scope | Compile-time only; token fixed fields use a temporary C view for feature classification |
+| tokens, AST | C compiler scope | Compile-time only; C vectors and arenas own all records and byte data |
+| GIR | Ruby semantic adapter | Immutable compiler output; RSeq lowering consumes it once |
 | RSeq blob, states, edges, descriptors | C structs | Immutable VM contract |
 | regular repeat counters | C array | Numeric VM slots; no Ruby identity |
 | regular VM visited set | C bitset | State/position pairs have no Ruby-visible identity |
@@ -157,10 +158,9 @@ The Ruby data decision is:
 | tagged captures and tag history | Ruby `VALUE` | GC safety and MatchData materialization |
 | execution class | C enum | Internal dispatcher choice |
 
-The parser result adapter contains only options and AST.
-The tokenizer array is passed directly to the parser and is not retained in
-that result. This avoids a second Ruby reference to the compile-time token
-stream.
+The parser result contains only options, cached analysis flags, and the C AST
+arena. The tokenizer vector is passed directly to the parser. The parser does
+not retain it. This gives each compile-time object one owner.
 
 Protected parser, compiler, and MRI-regexp callbacks receive a stack-owned
 `OnibiProgramArgs` structure. They do not allocate Ruby arrays to carry fixed
@@ -177,9 +177,9 @@ limited to immutable semantic adapter validation and initial record import.
 
 Public `Regexp` methods return Ruby values only at the API boundary. Match
 results, named-capture maps, and converted source/options values remain Ruby
-objects because callers can inspect them. Lexer tokens, AST nodes, GIR
-states, compiler fragments, and RSeq semantic records have no public method;
-their Ruby containers are adapters scheduled for C ownership.
+objects because callers can inspect them. Lexer tokens and AST nodes are C
+records. GIR and RSeq Ruby values are internal semantic adapters. Later work
+can replace those adapters without changing the token or AST ownership.
 
 The remaining compiler containers have three separate roles:
 
@@ -188,42 +188,36 @@ The remaining compiler containers have three separate roles:
 | fragment `starts`/`exits` | Ordered state-ID sets | Owned `OnibiIdVector` values with explicit move and append operations |
 | fragment action arrays | Ordered semantic actions | Next; typed action vector |
 | capture and exit guards | State-ID lookup during edge creation | C guard vectors with C-owned action values and cached counts; Ruby action arrays are materialized only while creating an edge adapter |
-| capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys are AST-owned values or names; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
+| capture names, bodies, and subprogram indexes | No | C value maps with Ruby payload references | These maps exist only during compilation. Keys use values made from C AST data; no Ruby API can inspect them. A temporary Ruby root array keeps malloc-backed entries visible to GC. |
 | GIR `states`/`edges` | Published semantic snapshot for RSeq lowering | C vectors during construction; materialize frozen Ruby adapters once at the GIR boundary |
 
 Detailed ownership review:
 
-The current source has 76 `rb_hash_new` calls and 38 `rb_ary_new` calls.
-These counts include public result objects, semantic payloads, and temporary
-compiler adapters. They are not all migration targets. The table below gives
-the required classification for each data family.
+Remaining `rb_hash_new` and `rb_ary_new` calls include public result objects,
+GIR payloads, RSeq adapters, and temporary compiler data. They are not token
+or AST storage. The table below gives the required classification for each
+data family.
 
 At function level, the remaining Ruby container constructors are classified as
-follows. `onibi_tokenize_internal` stores fixed token fields in
-`OnibiTokenRecord` values and creates the parser adapter once. The parser
-creates AST child adapters because the current compiler still reads their
-variable payloads. Sequence, alternative, character-class child links, and
-class-intersection operands now use C records during parsing and are
-materialized only in the AST adapter.
-Character-class ranges use C records
-during parsing and are materialized only in the AST adapter. `onibi_fragment_empty` creates mutable action lists;
-these are the next C-vector unit. `onibi_compiler_compile` and
+follows. `onibi_tokenize_internal` stores tokens and byte slices in C.
+`onibi_c_parse_range` and related functions store all AST nodes, child links,
+and ranges in C. `onibi_fragment_empty` creates mutable GIR action lists;
+these are a later C-vector unit. `onibi_compiler_compile` and
 `onibi_rseq_lower` materialize frozen GIR/RSeq adapters. VM capture maps and
 visited keys remain runtime values where their identity includes capture or tag
 history. Public wrappers such as `Regexp.union` return caller-visible arrays.
 
 The migration boundary is incremental. C vectors are used first where the
-consumer needs only ordered numeric IDs or fixed token fields. Ruby adapters
-remain where the parser must retain variable payloads such as names, ranges,
-and nested children. The next boundary is the parser input view; it will carry
-fixed token fields in C and keep only payload references at the adapter edge.
+consumer needs only ordered numeric IDs or fixed token fields. The tokenizer
+and parser now use C-owned records and arenas. Ruby objects start at the GIR
+semantic boundary.
 
 | Container | Ruby API required | C-struct decision | Reason |
 | --- | --- | --- | --- |
-| token stream (`Array<Hash>`) | No | C `OnibiTokenRecord` vector until adapter publication | The tokenizer stores fixed kind, byte span, and payload references in C records. It roots payloads during the scan and materializes one Ruby token array only when it returns the parser adapter. The parser is the only consumer. |
-| AST (`Hash`/`Array`) | No | Pending: typed C node arena; analysis flags are cached as an enum bitset in `OnibiParsed` | Node kinds and links are fixed. Required fields are `type_code`, `start`, `end`, `children`, `branches`, `body`, `atom`, `yes`, `no`, and typed scalar payloads. Initialization now computes AST safety flags once. |
+| token stream | No | C `OnibiTokenVector` with C byte storage | Tokens contain enum kinds, spans, bytes, IDs, flags, and byte slices. The tokenizer does not create a Ruby Array or Hash. |
+| AST | No | C `OnibiAstArena` with typed nodes, links, ranges, and byte slices | The parser creates node IDs directly. It does not create Ruby Hash or Array nodes. Analysis and compilation read the arena. |
 | AST anchor/nullability analysis | No | One typed analysis walk | Anchor-repeat, capture-nullability, and absence-nullability flags are collected together. This avoids a second recursive AST scan. |
-| AST lifetime after initialization | No | Release the Ruby adapter; skip deep-freeze | Runtime matching uses published GIR/RSeq data. `onibi_build_program` releases the AST immediately after compiler and RSeq publication; the parsed AST is no longer retained. Internal AST generation does not deep-freeze or rescan the tree. |
+| AST lifetime after initialization | No | Release the C arena after GIR/RSeq publication | Runtime matching uses published GIR/RSeq data. `onibi_build_program` releases all AST nodes, child vectors, ranges, and byte storage. |
 | parser result | No | Converted to `OnibiParsed` | It contains only AST and option bits. |
 | GIR builder state and edge arrays | No | C state/edge vectors with one Ruby snapshot | The builder mutates records during compilation. RSeq and validation need one stable frozen adapter only. |
 | empty GIR action lists | No | Shared immutable Ruby Array singleton | Empty lists have no payload and are never mutated; one GC-rooted adapter is reused by all edges. |
@@ -251,9 +245,10 @@ pipeline is excluded from this review) is:
 
 | Function | Hash/Array role | Decision |
 | --- | --- | --- |
-| `onibi_tokenize_internal` | Token adapter items | Keep until the parser input view uses C token records; release after compilation |
-| `onibi_ast_node` | One node adapter | Replace with the planned C AST arena |
-| `onibi_compile_node` / `onibi_compile_sequence` | Temporary payload and action adapters | Next structural migration; payload `VALUE`s still need GC roots |
+| `onibi_tokenize_internal` | None | Build C token records and C byte slices |
+| `onibi_c_parse_range` / `onibi_c_parse_atom` | None | Build typed C AST nodes and node-ID links |
+| `onibi_gir_payload_from_ast_terminal` | GIR payload adapter | Materialize only terminal compiler/GIR values; do not retain an AST adapter |
+| `onibi_compile_node` / `onibi_compile_sequence` | GIR payload and action adapters | Read C AST references; keep Ruby values only at the GIR boundary |
 | `onibi_compiler_compile` | Frozen GIR semantic snapshot | Keep one publication adapter; builder records are C vectors |
 | `onibi_rseq_lower` | Semantic validation adapters | Keep at the RSeq publication boundary; physical records are C vectors |
 | `onibi_rseq_physical_graph` | Cached tagged/dynamic VM graph | Keep one immutable adapter until the C `OnibiRSeqView` walker is complete |
@@ -273,24 +268,14 @@ identity with capture frames. Migrate that map only with the capture walker.
 The cached physical graph is also an internal adapter, built once and reused;
 it is not a public pipeline object.
 
-The two largest remaining migrations are staged at explicit ownership
-boundaries:
+The token and AST ownership boundaries are:
 
-1. The token stream will use a C record for kind, byte, span, numeric name
-   ID, and option flags. Name strings, capture names, and multibyte literal
-   bytes remain Ruby payload references until the parser no longer needs the
-   adapter. This keeps the parser order stable while removing fixed-field
-   Hash lookups first.
-2. The AST will use a C node arena after the token view is complete. Each node
-   will store numeric type and span fields plus C child indexes. Ruby values
-   will remain only for variable payloads that cross the compiler boundary.
-   The arena will own node lifetime; the published GIR adapter will be the
-   only Ruby snapshot.
-
-These migrations are not combined. The token view must preserve exact source
-spans before AST links can replace Ruby array indexes. The AST arena must keep
-all Ruby payloads rooted until GIR publication, so its owner and release path
-are verified separately.
+1. `OnibiTokenVector` owns token records and copied byte slices. It has no
+   Ruby `VALUE` fields.
+2. `OnibiAstArena` owns typed nodes, child IDs, ranges, and copied byte slices.
+   It has no Ruby `VALUE` fields.
+3. The compiler reads AST node IDs. It materializes Ruby values only for the
+   current GIR semantic payload and published action data.
 
 ### AST field audit
 
@@ -303,11 +288,13 @@ The AST is not part of the `Regexp` public API. The compiler uses these fields:
 | `children`, `branches` | ordered node lists | C vectors of node IDs |
 | `body`, `atom`, `yes`, `no` | optional node links | node IDs, with `-1` for absent |
 | `byte`, `min`, `max`, `slot`, `capture`, `subprogram` | integer scalars | fixed integer members |
-| `name`, `name_id`, `bytes`, `ranges`, `predicates` | Ruby or encoded payloads | owned VALUE payload fields until GIR publication |
+| `name`, `bytes` | byte slices | offsets and lengths in the C byte arena |
+| `name_id` | Ruby ID scalar | numeric `ID` member; no Ruby object ownership |
+| `ranges` | typed endpoints | C `OnibiAstRange` vector |
 
-The first AST migration unit is the node arena and its ordered child vectors.
-Payload VALUE fields stay GC-rooted in the arena. No Ruby AST adapter is
-created by the `Regexp` public API; diagnostics use the C analysis fields.
+The AST migration is complete. The arena owns ordered child vectors and
+payload bytes. No AST node contains a Ruby `VALUE`. Diagnostics use cached C
+analysis fields.
 
 The tagged VM counter migration is separate from capture maps. Capture maps
 can become public match data, but counter slots never cross the `Regexp` API.
@@ -315,16 +302,12 @@ Every tagged frame now uses fixed C counter storage, and visited identity
 includes the counter bytes without allocating a counter Hash.
 | captures and tag history | Yes at MatchData boundary | Keep Ruby `VALUE` | Ruby owns the result objects and GC must see them. |
 
-The first conversion is complete for parser and compiler result adapters. The
-remaining token, AST, fragment, GIR, and RSeq conversions stay separate so
-each change can preserve ordering and GC tests.
+The token and AST conversions are complete. Fragment, GIR, and RSeq
+conversions stay separate so each change can preserve ordering and GC tests.
 
-Feature classification now copies the fixed token fields into an immutable
-`OnibiFeatureTokenVector` owned by each compiled regexp. The scanner compares
+Feature classification reads `OnibiTokenVector` directly. The scanner compares
 enum kinds, numeric bytes, source spans, and precomputed property IDs, property
-kinds, and flags from this C view. The vector has no Ruby `VALUE` fields; source
-token Hashes remain only the parser adapter. Byte, span, name ID, and
-inline-ignorecase fields use dedicated C accessors. POSIX class dispatch also consumes the cached token
+kinds, and flags. No token Hash or adapter exists. POSIX class dispatch also consumes the cached token
 `name_id`; class bitmap construction, including child escapes, does not
 intern a class name during compilation.
 The tokenizer records each optional name as `name_id` once, so later feature
@@ -361,8 +344,8 @@ Capture and exit guard maps have the same constraint. Their keys are numeric
 state IDs, but their values are ordered, mutable action lists. Keep the Ruby
 adapter until a C map has an explicit exception-safe owner for those lists.
 
-The tokenizer publishes frozen semantic tokens with byte spans. The parser
-publishes a frozen regular-core AST. The compiler consumes only that AST and
+The tokenizer produces a C token vector with byte spans. The parser consumes
+that vector and produces a C AST arena. The compiler consumes AST node IDs and
 publishes a frozen G-IR graph with ordered start edges and edge actions.
 
 Parser and compiler opcode checks use initialization-time ID values. They do

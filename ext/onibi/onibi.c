@@ -343,13 +343,6 @@ typedef enum {
   ONIBI_TOKEN_WILDCARD
 } OnibiTokenKind;
 
-static inline OnibiTokenKind onibi_token_kind_code(VALUE token);
-static inline long onibi_token_byte(VALUE token);
-static inline long onibi_token_start(VALUE token);
-static inline long onibi_token_end(VALUE token);
-static inline ID onibi_token_name_id(VALUE token);
-static inline unsigned char onibi_token_inline_ignorecase(VALUE token);
-
 typedef enum {
   ONIBI_ASCII_PROP_UNKNOWN = -1, ONIBI_ASCII_PROP_ASCII = 0,
   ONIBI_ASCII_PROP_HEX, ONIBI_ASCII_PROP_DIGIT, ONIBI_ASCII_PROP_ALPHA,
@@ -361,36 +354,11 @@ typedef enum {
 
 static OnibiAsciiProperty onibi_ascii_property_kind_id(ID property);
 
-typedef struct OnibiFeatureToken {
-  OnibiTokenKind kind;
-  long byte;
-  long start;
-  long end;
-  ID name_id;
-  OnibiAsciiProperty property_kind;
-  unsigned char inline_ignorecase;
-} OnibiFeatureToken;
-
 typedef struct {
-  OnibiFeatureToken *items;
-  size_t count;
-} OnibiFeatureTokenVector;
-
-static OnibiFeatureTokenVector onibi_feature_tokens(VALUE tokens, OnibiFeatureToken *items) {
-  OnibiFeatureTokenVector vector = { items, (size_t)RARRAY_LEN(tokens) };
-  for (size_t i = 0; i < vector.count; i++) {
-    VALUE token = rb_ary_entry(tokens, (long)i);
-    vector.items[i].kind = onibi_token_kind_code(token);
-    vector.items[i].byte = onibi_token_byte(token);
-    vector.items[i].start = onibi_token_start(token);
-    vector.items[i].end = onibi_token_end(token);
-    vector.items[i].name_id = onibi_token_name_id(token);
-    vector.items[i].property_kind = vector.items[i].name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN :
-      onibi_ascii_property_kind_id(vector.items[i].name_id);
-    vector.items[i].inline_ignorecase = onibi_token_inline_ignorecase(token);
-  }
-  return vector;
-}
+  size_t offset;
+  size_t length;
+  unsigned char present;
+} OnibiTokenSlice;
 
 typedef enum {
   ONIBI_AST_UNKNOWN = 0,
@@ -402,6 +370,64 @@ typedef enum {
   ONIBI_AST_OPTION_GLOBAL, ONIBI_AST_BACKREF, ONIBI_AST_SUBROUTINE,
   ONIBI_AST_MATCH_RESET
 } OnibiAstKind;
+
+typedef uint32_t OnibiAstId;
+#define ONIBI_AST_NONE UINT32_MAX
+
+enum {
+  ONIBI_AST_NODE_NEGATED = 1U << 0,
+  ONIBI_AST_NODE_NEGATIVE = 1U << 1,
+  ONIBI_AST_NODE_POSITIVE = 1U << 2,
+  ONIBI_AST_NODE_CAPTURING = 1U << 3,
+  ONIBI_AST_NODE_GREEDY = 1U << 4,
+  ONIBI_AST_NODE_POSSESSIVE = 1U << 5,
+  ONIBI_AST_NODE_HAS_MAX = 1U << 6
+};
+
+typedef struct {
+  OnibiTokenSlice first;
+  OnibiTokenSlice last;
+  unsigned char first_byte;
+  unsigned char last_byte;
+  unsigned char first_has_bytes;
+  unsigned char last_has_bytes;
+} OnibiAstRange;
+
+typedef struct {
+  OnibiAstKind kind;
+  OnibiTokenKind token_kind;
+  long start;
+  long end;
+  long byte;
+  long capture;
+  long min;
+  long max;
+  ID name_id;
+  unsigned int flags;
+  OnibiTokenSlice name;
+  OnibiTokenSlice negative_options;
+  OnibiTokenSlice bytes;
+  OnibiAstId body;
+  OnibiAstId atom;
+  OnibiAstId yes;
+  OnibiAstId no;
+  OnibiAstId *children;
+  size_t child_count;
+  size_t child_capacity;
+  OnibiAstRange *ranges;
+  size_t range_count;
+  size_t range_capacity;
+} OnibiAstNode;
+
+typedef struct {
+  OnibiAstNode *nodes;
+  size_t count;
+  size_t capacity;
+  unsigned char *bytes;
+  size_t bytes_count;
+  size_t bytes_capacity;
+  OnibiAstId root;
+} OnibiAstArena;
 
 typedef enum {
   ONIBI_CLASS_MODE_NORMAL = 0,
@@ -455,44 +481,188 @@ typedef struct {
   unsigned char byte;
   long start;
   long end;
-  VALUE name;
-  VALUE capture;
-  VALUE negative_name;
-  VALUE name_id;
-  VALUE inline_ignorecase;
-  VALUE bytes;
+  OnibiTokenSlice name;
+  OnibiTokenSlice negative_name;
+  OnibiTokenSlice bytes;
+  long capture;
+  ID name_id;
+  OnibiAsciiProperty property_kind;
+  unsigned char has_capture;
+  unsigned char inline_ignorecase;
   unsigned char negative;
 } OnibiTokenRecord;
 
-static void onibi_token_record_root_values(const OnibiTokenRecord *record, VALUE roots) {
-  const VALUE values[] = {
-    record->name,
-    record->capture,
-    record->negative_name,
-    record->name_id,
-    record->inline_ignorecase,
-    record->bytes
-  };
-  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
-    if (!NIL_P(values[i])) rb_ary_push(roots, values[i]);
-  }
+typedef struct {
+  OnibiTokenRecord *items;
+  size_t count;
+  size_t capacity;
+  unsigned char *bytes;
+  size_t bytes_count;
+  size_t bytes_capacity;
+} OnibiTokenVector;
+
+static void onibi_token_vector_init(OnibiTokenVector *vector) {
+  memset(vector, 0, sizeof(*vector));
 }
 
-static void onibi_token_record_push(OnibiTokenRecord **records, size_t *count,
-                                    size_t *capacity, OnibiTokenRecord record) {
-  if (*count == *capacity) {
-    size_t next = *capacity == 0 ? 16 : *capacity * 2;
-    if (next < *capacity || next > SIZE_MAX / sizeof(**records)) rb_raise(rb_eNoMemError, "token vector is too large");
-    *records = REALLOC_N(*records, OnibiTokenRecord, next);
-    *capacity = next;
-  }
-  (*records)[(*count)++] = record;
+static void onibi_token_vector_free(OnibiTokenVector *vector) {
+  xfree(vector->items);
+  xfree(vector->bytes);
+  memset(vector, 0, sizeof(*vector));
 }
 
-static VALUE onibi_tokenize_internal(VALUE src, int extended) {
-  OnibiTokenRecord *token_records = NULL;
-  size_t token_count = 0, token_capacity = 0;
-  VALUE token_roots = rb_ary_new_capa(RSTRING_LEN(src));
+static OnibiTokenSlice onibi_token_vector_copy(OnibiTokenVector *vector,
+                                               const char *bytes, size_t length) {
+  OnibiTokenSlice slice = {0, 0, 1};
+  if (length == 0) return slice;
+  if (vector->bytes_count > SIZE_MAX - length)
+    rb_raise(rb_eNoMemError, "token byte storage is too large");
+  size_t required = vector->bytes_count + length;
+  if (required > vector->bytes_capacity) {
+    size_t next = vector->bytes_capacity == 0 ? 64 : vector->bytes_capacity;
+    while (next < required) {
+      if (next > SIZE_MAX / 2) { next = required; break; }
+      next *= 2;
+    }
+    vector->bytes = REALLOC_N(vector->bytes, unsigned char, next);
+    vector->bytes_capacity = next;
+  }
+  slice.offset = vector->bytes_count;
+  slice.length = length;
+  memcpy(vector->bytes + vector->bytes_count, bytes, length);
+  vector->bytes_count = required;
+  return slice;
+}
+
+static inline const OnibiTokenRecord *onibi_token_at(const OnibiTokenVector *vector, long index) {
+  if (index < 0 || (size_t)index >= vector->count)
+    rb_raise(rb_eIndexError, "token index is outside the token vector");
+  return &vector->items[index];
+}
+
+static void onibi_ast_arena_init(OnibiAstArena *arena, const OnibiTokenVector *tokens) {
+  memset(arena, 0, sizeof(*arena));
+  arena->root = ONIBI_AST_NONE;
+  if (tokens->bytes_count == 0) return;
+  arena->bytes = ALLOC_N(unsigned char, tokens->bytes_count);
+  memcpy(arena->bytes, tokens->bytes, tokens->bytes_count);
+  arena->bytes_count = arena->bytes_capacity = tokens->bytes_count;
+}
+
+static void onibi_ast_arena_free(OnibiAstArena *arena) {
+  for (size_t i = 0; i < arena->count; i++) {
+    xfree(arena->nodes[i].children);
+    xfree(arena->nodes[i].ranges);
+  }
+  xfree(arena->nodes);
+  xfree(arena->bytes);
+  memset(arena, 0, sizeof(*arena));
+  arena->root = ONIBI_AST_NONE;
+}
+
+static OnibiAstId onibi_ast_arena_add(OnibiAstArena *arena, OnibiAstKind kind,
+                                      const OnibiTokenRecord *token) {
+  if (arena->count == arena->capacity) {
+    size_t next = arena->capacity == 0 ? 32 : arena->capacity * 2;
+    if (next < arena->capacity || next > UINT32_MAX ||
+        next > SIZE_MAX / sizeof(*arena->nodes))
+      rb_raise(rb_eNoMemError, "AST node arena is too large");
+    arena->nodes = REALLOC_N(arena->nodes, OnibiAstNode, next);
+    arena->capacity = next;
+  }
+  OnibiAstId id = (OnibiAstId)arena->count++;
+  OnibiAstNode *node = &arena->nodes[id];
+  memset(node, 0, sizeof(*node));
+  node->kind = kind;
+  node->token_kind = token == NULL ? (OnibiTokenKind)-1 : token->kind;
+  node->start = token == NULL ? -1 : token->start;
+  node->end = token == NULL ? -1 : token->end;
+  node->byte = token == NULL ? 0 : token->byte;
+  node->capture = token != NULL && token->has_capture ? token->capture : -1;
+  node->name_id = token == NULL ? 0 : token->name_id;
+  node->name = token == NULL ? (OnibiTokenSlice){0, 0, 0} : token->name;
+  node->negative_options = token == NULL ? (OnibiTokenSlice){0, 0, 0} : token->negative_name;
+  node->bytes = token == NULL ? (OnibiTokenSlice){0, 0, 0} : token->bytes;
+  node->body = node->atom = node->yes = node->no = ONIBI_AST_NONE;
+  return id;
+}
+
+static OnibiAstNode *onibi_ast_node_at(OnibiAstArena *arena, OnibiAstId id) {
+  if (id == ONIBI_AST_NONE || (size_t)id >= arena->count)
+    rb_raise(rb_eIndexError, "AST node ID is outside the arena");
+  return &arena->nodes[id];
+}
+
+static const OnibiAstNode *onibi_ast_node_const(const OnibiAstArena *arena, OnibiAstId id) {
+  if (id == ONIBI_AST_NONE || (size_t)id >= arena->count)
+    rb_raise(rb_eIndexError, "AST node ID is outside the arena");
+  return &arena->nodes[id];
+}
+
+static void onibi_ast_add_child(OnibiAstArena *arena, OnibiAstId parent, OnibiAstId child) {
+  OnibiAstNode *node = onibi_ast_node_at(arena, parent);
+  if (node->child_count == node->child_capacity) {
+    size_t next = node->child_capacity == 0 ? 4 : node->child_capacity * 2;
+    if (next < node->child_capacity || next > SIZE_MAX / sizeof(*node->children))
+      rb_raise(rb_eNoMemError, "AST child vector is too large");
+    node->children = REALLOC_N(node->children, OnibiAstId, next);
+    node->child_capacity = next;
+  }
+  node->children[node->child_count++] = child;
+}
+
+static void onibi_ast_add_range(OnibiAstArena *arena, OnibiAstId parent,
+                                OnibiAstRange range) {
+  OnibiAstNode *node = onibi_ast_node_at(arena, parent);
+  if (node->range_count == node->range_capacity) {
+    size_t next = node->range_capacity == 0 ? 4 : node->range_capacity * 2;
+    if (next < node->range_capacity || next > SIZE_MAX / sizeof(*node->ranges))
+      rb_raise(rb_eNoMemError, "AST range vector is too large");
+    node->ranges = REALLOC_N(node->ranges, OnibiAstRange, next);
+    node->range_capacity = next;
+  }
+  node->ranges[node->range_count++] = range;
+}
+
+static VALUE onibi_ast_slice_string(const OnibiAstArena *arena, OnibiTokenSlice slice) {
+  if (!slice.present) return Qnil;
+  return rb_str_new((const char *)arena->bytes + slice.offset, (long)slice.length);
+}
+
+static OnibiTokenSlice onibi_ast_arena_copy_bytes(OnibiAstArena *arena,
+                                                  const unsigned char *bytes,
+                                                  size_t length) {
+  if (arena->bytes_count > SIZE_MAX - length)
+    rb_raise(rb_eNoMemError, "AST byte arena is too large");
+  size_t required = arena->bytes_count + length;
+  if (required > arena->bytes_capacity) {
+    size_t next = arena->bytes_capacity == 0 ? 64 : arena->bytes_capacity;
+    while (next < required) {
+      if (next > SIZE_MAX / 2) { next = required; break; }
+      next *= 2;
+    }
+    arena->bytes = REALLOC_N(arena->bytes, unsigned char, next);
+    arena->bytes_capacity = next;
+  }
+  OnibiTokenSlice slice = {arena->bytes_count, length, 1};
+  memcpy(arena->bytes + arena->bytes_count, bytes, length);
+  arena->bytes_count = required;
+  return slice;
+}
+
+static void onibi_token_record_push(OnibiTokenVector *vector, OnibiTokenRecord record) {
+  if (vector->count == vector->capacity) {
+    size_t next = vector->capacity == 0 ? 16 : vector->capacity * 2;
+    if (next < vector->capacity || next > SIZE_MAX / sizeof(*vector->items))
+      rb_raise(rb_eNoMemError, "token vector is too large");
+    vector->items = REALLOC_N(vector->items, OnibiTokenRecord, next);
+    vector->capacity = next;
+  }
+  vector->items[vector->count++] = record;
+}
+
+static void onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens) {
+  onibi_token_vector_init(tokens);
   /* One escape is one semantic token.  Do not let an escaped metacharacter
      enter the AST as syntax. */
   int in_class = 0;
@@ -510,13 +680,13 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       continue;
     }
     if (extended && !in_class && (byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n')) continue;
-    VALUE backref_name = Qnil;
-    VALUE backref_number = Qnil;
-    VALUE group_name = Qnil;
-    VALUE posix_name = Qnil;
-    VALUE literal_bytes = Qnil;
-    VALUE option_negative_name = Qnil;
-    VALUE escape_name = Qnil;
+    long name_start = -1;
+    long name_length = 0;
+    long capture_number = 0;
+    int has_capture_number = 0;
+    OnibiTokenSlice literal_slice = {0, 0, 0};
+    long negative_name_start = -1;
+    long negative_name_length = 0;
     int option_negative = 0;
     int option_scope_x = -1;
     if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
@@ -556,12 +726,14 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         byte = global_modifier ? ')' : ':';
         i = option_end;
         long name_end = negative_start >= 0 ? positive_end : option_end;
-        group_name = rb_str_substr(src, option_count, name_end - option_count);
+        name_start = option_count;
+        name_length = name_end - option_count;
         if (option_negative) option_scope_x = 0;
         else option_scope_x = memchr(RSTRING_PTR(src) + option_count, 'x',
                                      (size_t)(negative_start >= 0 ? negative_start - option_count : option_end - option_count)) != NULL;
         if (negative_start >= 0) {
-          option_negative_name = rb_str_substr(src, negative_start, option_end - negative_start);
+          negative_name_start = negative_start;
+          negative_name_length = option_end - negative_start;
         }
       }
     } else if (!in_class && byte == '(' && i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' &&
@@ -586,7 +758,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       if (close < RSTRING_LEN(src)) {
         kind = ONIBI_TOKEN_CONDITIONAL_START;
         byte = '(';
-        group_name = rb_str_substr(src, i + 3, close - (i + 3));
+        name_start = i + 3;
+        name_length = close - (i + 3);
         i = close;
       }
     } else if (!in_class && byte == '(' && i + 3 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '?' && RSTRING_PTR(src)[i + 2] == '<') {
@@ -594,7 +767,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>') close++;
       if (close < RSTRING_LEN(src)) {
         kind = ONIBI_TOKEN_GROUP_START;
-        group_name = rb_str_substr(src, i + 3, close - (i + 3));
+        name_start = i + 3;
+        name_length = close - (i + 3);
         i = close;
       }
     }
@@ -603,7 +777,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       while (close + 1 < RSTRING_LEN(src) && !(RSTRING_PTR(src)[close] == ':' && RSTRING_PTR(src)[close + 1] == ']')) close++;
       if (close + 1 < RSTRING_LEN(src)) {
         kind = ONIBI_TOKEN_POSIX_CLASS;
-        posix_name = rb_str_substr(src, i + 2, close - (i + 2));
+        name_start = i + 2;
+        name_length = close - (i + 2);
         i = close + 1;
       }
     }
@@ -613,7 +788,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       if (close < RSTRING_LEN(src)) {
         kind = ONIBI_TOKEN_BACKREF;
         byte = 'k';
-        backref_name = rb_str_substr(src, i + 3, close - (i + 3));
+        name_start = i + 3;
+        name_length = close - (i + 3);
         i = close;
         }
     }
@@ -624,7 +800,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
       if (close < RSTRING_LEN(src)) {
         kind = ONIBI_TOKEN_SUBROUTINE;
         byte = 'g';
-        backref_name = rb_str_substr(src, i + 3, close - (i + 3));
+        name_start = i + 3;
+        name_length = close - (i + 3);
         i = close;
       }
     }
@@ -654,21 +831,23 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         int hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 2]);
         int lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
         if (hi >= 0 && lo >= 0) {
-          VALUE decoded = rb_str_new((const char[]){(char)((hi << 4) | lo)}, 1);
-          byte = (unsigned char)RSTRING_PTR(decoded)[0]; i += 3; hex_literal = 1;
+          unsigned char decoded_byte = (unsigned char)((hi << 4) | lo);
+          size_t decoded_offset = tokens->bytes_count;
+          size_t decoded_length = 1;
+          (void)onibi_token_vector_copy(tokens, (const char *)&decoded_byte, 1);
+          byte = decoded_byte; i += 3; hex_literal = 1;
           while (i + 4 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '\\' &&
                  RSTRING_PTR(src)[i + 2] == 'x') {
             int next_hi = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
             int next_lo = onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 4]);
             if (next_hi < 0 || next_lo < 0) break;
-            char next_byte = (char)((next_hi << 4) | next_lo);
-            rb_str_cat(decoded, &next_byte, 1);
+            unsigned char next_byte = (unsigned char)((next_hi << 4) | next_lo);
+            (void)onibi_token_vector_copy(tokens, (const char *)&next_byte, 1);
+            decoded_length++;
             i += 4;
           }
-          if (RSTRING_LEN(decoded) > 1) {
-            rb_enc_associate(decoded, rb_enc_get(src));
-            literal_bytes = decoded;
-          }
+          if (decoded_length > 1)
+            literal_slice = (OnibiTokenSlice){decoded_offset, decoded_length, 1};
         }
       }
       if (escaped >= '1' && escaped <= '9' && i + 1 < RSTRING_LEN(src) &&
@@ -678,11 +857,13 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
           number = number * 10 + (RSTRING_PTR(src)[++i] - '0');
         }
         kind = ONIBI_TOKEN_BACKREF;
-        backref_number = LONG2NUM(number);
+        capture_number = number;
+        has_capture_number = 1;
       }
-      if (NIL_P(backref_number) && escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
+      if (!has_capture_number && escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
           RSTRING_PTR(src)[i + 2] >= '0' && RSTRING_PTR(src)[i + 2] <= '7') {
-        VALUE decoded = rb_str_new(NULL, 0);
+        size_t decoded_offset = tokens->bytes_count;
+        size_t decoded_length = 0;
         int value = 0;
         int digits = 0;
         while (digits < 3 && i + 1 < RSTRING_LEN(src) &&
@@ -690,8 +871,9 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
           value = (value << 3) | (RSTRING_PTR(src)[i + 1] - '0');
           i++; digits++;
         }
-        char first_byte = (char)value;
-        rb_str_cat(decoded, &first_byte, 1);
+        unsigned char first_byte = (unsigned char)value;
+        (void)onibi_token_vector_copy(tokens, (const char *)&first_byte, 1);
+        decoded_length++;
         while (i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '\\' &&
                RSTRING_PTR(src)[i + 2] >= '0' && RSTRING_PTR(src)[i + 2] <= '7') {
           long cursor = i + 2;
@@ -702,16 +884,15 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
             next_value = (next_value << 3) | (RSTRING_PTR(src)[cursor] - '0');
             cursor++; next_digits++;
           }
-          char next_byte = (char)next_value;
-          rb_str_cat(decoded, &next_byte, 1);
+          unsigned char next_byte = (unsigned char)next_value;
+          (void)onibi_token_vector_copy(tokens, (const char *)&next_byte, 1);
+          decoded_length++;
           i = cursor - 1;
         }
-        byte = (unsigned char)RSTRING_PTR(decoded)[0];
+        byte = first_byte;
         octal_literal = 1;
-        if (RSTRING_LEN(decoded) > 1) {
-          rb_enc_associate(decoded, rb_enc_get(src));
-          literal_bytes = decoded;
-        }
+        if (decoded_length > 1)
+          literal_slice = (OnibiTokenSlice){decoded_offset, decoded_length, 1};
       }
       if (escaped == '0') {
         int value = 0, digits = 0;
@@ -740,7 +921,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         long close = i + 2;
         while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '}') close++;
         if (close < RSTRING_LEN(src)) {
-          escape_name = rb_str_substr(src, i + 2, close - (i + 2));
+          name_start = i + 2;
+          name_length = close - (i + 2);
           i = close;
         }
       }
@@ -781,8 +963,8 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
         /* rb_str_substr uses character offsets.  `start` and `char_len`
            are byte offsets from the encoding callback, so copy bytes
            directly and keep the complete encoded character only. */
-        literal_bytes = rb_str_new(RSTRING_PTR(src) + start, char_len);
-        rb_enc_associate(literal_bytes, rb_enc_get(src));
+        literal_slice = onibi_token_vector_copy(tokens, RSTRING_PTR(src) + start,
+                                                (size_t)char_len);
         i += char_len - 1;
         byte = (unsigned char)RSTRING_PTR(src)[start];
       }
@@ -800,81 +982,36 @@ static VALUE onibi_tokenize_internal(VALUE src, int extended) {
     }
     if (kind == ONIBI_TOKEN_OPTION_GLOBAL && option_scope_x >= 0)
       extended = option_scope_x;
-    VALUE token_name = !NIL_P(backref_name) ? backref_name :
-      (!NIL_P(group_name) ? group_name :
-       (!NIL_P(posix_name) ? posix_name : escape_name));
-    VALUE name_id = NIL_P(token_name) ? Qnil : ULONG2NUM(rb_intern_str(token_name));
-    VALUE inline_ignorecase = NIL_P(token_name) ? Qnil :
-      (memchr(RSTRING_PTR(token_name), 'i', (size_t)RSTRING_LEN(token_name)) ? Qtrue : Qfalse);
-    if (!NIL_P(token_name)) rb_obj_freeze(token_name);
-    if (!NIL_P(option_negative_name)) rb_obj_freeze(option_negative_name);
-    if (!NIL_P(literal_bytes)) rb_obj_freeze(literal_bytes);
-    OnibiTokenRecord record = { kind, byte, start, i + 1, token_name, backref_number,
-                                option_negative_name, name_id, inline_ignorecase, literal_bytes,
-                                (unsigned char)(option_negative ? 1 : 0) };
-    onibi_token_record_root_values(&record, token_roots);
-    onibi_token_record_push(&token_records, &token_count, &token_capacity, record);
+    OnibiTokenSlice name_slice = name_start < 0 ? (OnibiTokenSlice){0, 0, 0} :
+      onibi_token_vector_copy(tokens, RSTRING_PTR(src) + name_start, (size_t)name_length);
+    OnibiTokenSlice negative_name_slice = negative_name_start < 0 ?
+      (OnibiTokenSlice){0, 0, 0} :
+      onibi_token_vector_copy(tokens, RSTRING_PTR(src) + negative_name_start,
+                              (size_t)negative_name_length);
+    ID name_id = name_start < 0 ? 0 :
+      rb_intern2(RSTRING_PTR(src) + name_start, name_length);
+    OnibiTokenRecord record = {
+      kind, byte, start, i + 1, name_slice, negative_name_slice, literal_slice,
+      capture_number, name_id,
+      name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN : onibi_ascii_property_kind_id(name_id),
+      (unsigned char)has_capture_number,
+      (unsigned char)(name_start >= 0 &&
+        memchr(RSTRING_PTR(src) + name_start, 'i', (size_t)name_length) != NULL),
+      (unsigned char)(option_negative ? 1 : 0)
+    };
+    onibi_token_record_push(tokens, record);
     if (kind == ONIBI_TOKEN_GROUP_END && extended_depth > 0) {
       int prior_extended = extended_stack[--extended_depth];
       if (prior_extended >= 0) extended = prior_extended;
     }
   }
-  VALUE tokens = rb_ary_new_capa((long)token_count);
-  for (size_t i = 0; i < token_count; i++) {
-    OnibiTokenRecord *record = &token_records[i];
-    VALUE token = rb_hash_new();
-    rb_hash_aset(token, ID2SYM(id_key_kind_code), UINT2NUM((unsigned int)record->kind));
-    rb_hash_aset(token, ID2SYM(id_key_byte), INT2NUM(record->byte));
-    rb_hash_aset(token, ID2SYM(id_key_start), LONG2NUM(record->start));
-    rb_hash_aset(token, ID2SYM(id_key_end), LONG2NUM(record->end));
-    if (!NIL_P(record->name)) rb_hash_aset(token, ID2SYM(id_key_name), record->name);
-    if (!NIL_P(record->capture)) rb_hash_aset(token, ID2SYM(id_key_capture), record->capture);
-    if (!NIL_P(record->negative_name)) rb_hash_aset(token, ID2SYM(id_key_negative_name), record->negative_name);
-    if (!NIL_P(record->name_id)) rb_hash_aset(token, ID2SYM(id_key_name_id), record->name_id);
-    if (!NIL_P(record->inline_ignorecase)) rb_hash_aset(token, ID2SYM(id_key_inline_ignorecase), record->inline_ignorecase);
-    if (!NIL_P(record->bytes)) rb_hash_aset(token, ID2SYM(id_key_bytes), record->bytes);
-    if (record->kind == ONIBI_TOKEN_OPTION_SCOPE_START || record->kind == ONIBI_TOKEN_OPTION_GLOBAL)
-      rb_hash_aset(token, ID2SYM(id_key_negative), record->negative ? Qtrue : Qfalse);
-    rb_obj_freeze(token);
-    rb_ary_push(tokens, token);
-  }
-  xfree(token_records);
-  rb_ary_clear(token_roots);
-  rb_obj_freeze(tokens);
-  return tokens;
 }
 
-static int onibi_extended_option_p(VALUE options) {
-  if (NIL_P(options) || options == Qfalse) return 0;
-  if (options == Qtrue) return 0;
-  if (RB_TYPE_P(options, T_STRING))
-    return memchr(RSTRING_PTR(options), 'x', (size_t)RSTRING_LEN(options)) != NULL;
-  if (RB_TYPE_P(options, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(options); i++) {
-      VALUE item = rb_ary_entry(options, i);
-      ID option_id = SYMBOL_P(item) ? SYM2ID(item) : rb_intern_str(StringValue(item));
-      if (option_id == id_opt_extended) return 1;
-    }
-    return 0;
-  }
-  return (NUM2INT(options) & 2) != 0;
-}
-
+/* GIR payloads remain Ruby objects.  These accessors are only for that
+ * semantic boundary.  The tokenizer and parser use OnibiTokenRecord. */
 static inline OnibiTokenKind onibi_token_kind_code(VALUE token) {
   VALUE kind = onibi_hash_value_id(token, id_key_kind_code);
   return NIL_P(kind) ? (OnibiTokenKind)-1 : (OnibiTokenKind)NUM2UINT(kind);
-}
-
-static inline long onibi_token_byte(VALUE token) {
-  return NUM2LONG(onibi_hash_value_id(token, id_key_byte));
-}
-
-static inline long onibi_token_start(VALUE token) {
-  return NUM2LONG(onibi_hash_value_id(token, id_key_start));
-}
-
-static inline long onibi_token_end(VALUE token) {
-  return NUM2LONG(onibi_hash_value_id(token, id_key_end));
 }
 
 static inline ID onibi_token_name_id(VALUE token) {
@@ -882,26 +1019,6 @@ static inline ID onibi_token_name_id(VALUE token) {
   return NIL_P(name_id) ? (ID)0 : (ID)NUM2ULONG(name_id);
 }
 
-static inline unsigned char onibi_token_inline_ignorecase(VALUE token) {
-  return RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase)) ? 1 : 0;
-}
-
-static VALUE onibi_ast_node(OnibiAstKind kind, VALUE token) {
-  VALUE node = rb_hash_new();
-  rb_hash_aset(node, ID2SYM(id_key_type_code),
-               UINT2NUM((unsigned int)kind));
-  if (!NIL_P(token)) {
-    rb_hash_aset(node, ID2SYM(id_key_start),
-                 onibi_hash_value_id(token, id_key_start));
-    rb_hash_aset(node, ID2SYM(id_key_end),
-                 onibi_hash_value_id(token, id_key_end));
-    VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
-    if (!NIL_P(name_id)) rb_hash_aset(node, ID2SYM(id_key_name_id), name_id);
-  }
-  return node;
-}
-
-static VALUE onibi_parse_range(VALUE tokens, long begin, long end);
 static VALUE onibi_deep_freeze(VALUE value);
 
 static int onibi_deep_freeze_hash_entry(VALUE key, VALUE value, VALUE unused) {
@@ -923,320 +1040,213 @@ static VALUE onibi_deep_freeze(VALUE value) {
   return value;
 }
 
-static long onibi_find_close(VALUE tokens, long begin, long end, OnibiTokenKind open, OnibiTokenKind close) {
+static long onibi_c_find_close(const OnibiTokenVector *tokens, long begin, long end,
+                               OnibiTokenKind open, OnibiTokenKind close) {
   long depth = 0;
   for (long i = begin; i < end; i++) {
-    OnibiTokenKind kind = onibi_token_kind_code(rb_ary_entry(tokens, i));
-    if (kind == open || kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
-        kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
-        kind == ONIBI_TOKEN_LOOKBEHIND_START || kind == ONIBI_TOKEN_OPTION_SCOPE_START ||
-        kind == ONIBI_TOKEN_ABSENCE_START || kind == ONIBI_TOKEN_CONDITIONAL_START) depth++;
+    OnibiTokenKind kind = onibi_token_at(tokens, i)->kind;
+    if (kind == open || kind == ONIBI_TOKEN_GROUP_START ||
+        kind == ONIBI_TOKEN_NONCAPTURE_START || kind == ONIBI_TOKEN_ATOMIC_START ||
+        kind == ONIBI_TOKEN_LOOKAHEAD_START || kind == ONIBI_TOKEN_LOOKBEHIND_START ||
+        kind == ONIBI_TOKEN_OPTION_SCOPE_START || kind == ONIBI_TOKEN_ABSENCE_START ||
+        kind == ONIBI_TOKEN_CONDITIONAL_START) depth++;
     else if (kind == close && --depth == 0) return i;
   }
   return -1;
 }
 
-static VALUE onibi_parse_class(VALUE tokens, long begin, long close) {
-  typedef struct { VALUE first; VALUE last; } OnibiRangeRecord;
-  VALUE node = onibi_ast_node(ONIBI_AST_CHARACTER_CLASS, rb_ary_entry(tokens, begin));
-  long class_capacity = close > begin ? close - begin : 0;
-  OnibiValueVector child_records;
-  onibi_value_vector_init(&child_records);
-  VALUE child_roots = rb_ary_new_capa(class_capacity);
-  VALUE ranges = rb_ary_new_capa(class_capacity);
-  VALUE range_roots = rb_ary_new_capa(class_capacity * 2);
-  OnibiRangeRecord *range_records = class_capacity > 0 ? ALLOC_N(OnibiRangeRecord, class_capacity) : NULL;
-  long range_count = 0;
-  int negated = 0;
-  long intersection = -1;
+static OnibiAstId onibi_c_parse_range(const OnibiTokenVector *tokens,
+                                      OnibiAstArena *arena, long begin, long end);
+
+static OnibiAstId onibi_c_parse_class_part(const OnibiTokenVector *tokens,
+                                           OnibiAstArena *arena,
+                                           const OnibiTokenRecord *anchor,
+                                           long begin, long end) {
   long depth = 0;
-  for (long i = begin + 1; i + 1 < close; i++) {
-    OnibiTokenKind kind = onibi_token_kind_code(rb_ary_entry(tokens, i));
-    if (kind == ONIBI_TOKEN_CLASS_START) { depth++; continue; }
-    if (kind == ONIBI_TOKEN_CLASS_END) { if (depth > 0) depth--; continue; }
-    if (depth == 0 && kind == ONIBI_TOKEN_LITERAL && onibi_token_byte(rb_ary_entry(tokens, i)) == '&' &&
-        onibi_token_kind_code(rb_ary_entry(tokens, i + 1)) == ONIBI_TOKEN_LITERAL &&
-        onibi_token_byte(rb_ary_entry(tokens, i + 1)) == '&') { intersection = i; break; }
+  long intersection = -1;
+  for (long i = begin; i + 1 < end; i++) {
+    const OnibiTokenRecord *token = onibi_token_at(tokens, i);
+    if (token->kind == ONIBI_TOKEN_CLASS_START) { depth++; continue; }
+    if (token->kind == ONIBI_TOKEN_CLASS_END) { if (depth > 0) depth--; continue; }
+    if (depth == 0 && token->kind == ONIBI_TOKEN_LITERAL && token->byte == '&' &&
+        onibi_token_at(tokens, i + 1)->kind == ONIBI_TOKEN_LITERAL &&
+        onibi_token_at(tokens, i + 1)->byte == '&') {
+      intersection = i;
+      break;
+    }
   }
   if (intersection >= 0) {
-    VALUE result = onibi_ast_node(ONIBI_AST_CLASS_INTERSECTION, rb_ary_entry(tokens, begin));
-    OnibiValueVector operand_records;
-    onibi_value_vector_init(&operand_records);
-    VALUE operand_roots = rb_ary_new_capa(2);
-    for (int side = 0; side < 2; side++) {
-      long part_begin = side == 0 ? begin + 1 : intersection + 2;
-      long part_end = side == 0 ? intersection : close;
-      VALUE slice = rb_ary_new_capa(part_end - part_begin + 2);
-      VALUE open = rb_hash_dup(rb_ary_entry(tokens, part_begin));
-      VALUE finish = rb_hash_dup(rb_ary_entry(tokens, part_end - 1));
-      rb_hash_aset(open, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_START));
-      rb_hash_aset(open, ID2SYM(id_key_byte), INT2NUM('['));
-      rb_hash_aset(finish, ID2SYM(id_key_kind_code), UINT2NUM(ONIBI_TOKEN_CLASS_END));
-      rb_hash_aset(finish, ID2SYM(id_key_byte), INT2NUM(']'));
-      rb_ary_push(slice, open);
-      for (long i = part_begin; i < part_end; i++) rb_ary_push(slice, rb_ary_entry(tokens, i));
-      rb_ary_push(slice, finish);
-      onibi_value_vector_push(&operand_records, onibi_parse_class(slice, 0, RARRAY_LEN(slice) - 1), operand_roots);
-    }
-    VALUE operands = rb_ary_new_capa((long)operand_records.count);
-    for (size_t i = 0; i < operand_records.count; i++) rb_ary_push(operands, operand_records.items[i]);
-    onibi_value_vector_free(&operand_records);
-    rb_ary_clear(operand_roots);
-    rb_hash_aset(result, ID2SYM(id_key_operands), operands);
-    rb_obj_freeze(operands);
-    onibi_value_vector_free(&child_records);
-    rb_ary_clear(child_roots);
-    xfree(range_records);
-    return result;
+    OnibiAstId id = onibi_ast_arena_add(arena, ONIBI_AST_CLASS_INTERSECTION, anchor);
+    onibi_ast_add_child(arena, id,
+                        onibi_c_parse_class_part(tokens, arena, anchor, begin, intersection));
+    onibi_ast_add_child(arena, id,
+                        onibi_c_parse_class_part(tokens, arena, anchor, intersection + 2, end));
+    return id;
   }
-  for (long i = begin + 1; i < close; i++) {
-    VALUE token = rb_ary_entry(tokens, i);
-      OnibiTokenKind kind = onibi_token_kind_code(token);
-    if (kind == ONIBI_TOKEN_CLASS_START) {
-      long nested_close = onibi_find_close(tokens, i, close, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
-      if (nested_close < 0) rb_raise(eRegexpError, "unterminated nested character class");
-      VALUE nested = onibi_parse_class(tokens, i, nested_close);
-      rb_hash_aset(nested, ID2SYM(id_key_end),
-                   onibi_hash_value_id(rb_ary_entry(tokens, nested_close), id_key_end));
-      rb_obj_freeze(nested);
-      onibi_value_vector_push(&child_records, nested, child_roots);
-      i = nested_close;
+
+  OnibiAstId id = onibi_ast_arena_add(arena, ONIBI_AST_CHARACTER_CLASS, anchor);
+  for (long i = begin; i < end; i++) {
+    const OnibiTokenRecord *token = onibi_token_at(tokens, i);
+    if (token->kind == ONIBI_TOKEN_CLASS_NEGATE && i == begin) {
+      onibi_ast_node_at(arena, id)->flags |= ONIBI_AST_NODE_NEGATED;
       continue;
     }
-    if (kind == ONIBI_TOKEN_CLASS_NEGATE) { negated = 1; continue; }
-    if (kind == ONIBI_TOKEN_POSIX_CLASS) {
-      VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
-      ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
-      if (onibi_posix_kind_id(property) == ONIBI_POSIX_UNKNOWN)
-        rb_raise(eRegexpError, "unknown POSIX character class");
-      onibi_value_vector_push(&child_records, token, child_roots);
+    if (token->kind == ONIBI_TOKEN_CLASS_START) {
+      long close = onibi_c_find_close(tokens, i, end, ONIBI_TOKEN_CLASS_START,
+                                      ONIBI_TOKEN_CLASS_END);
+      if (close < 0) rb_raise(eRegexpError, "unterminated nested character class");
+      OnibiAstId nested = onibi_c_parse_class_part(tokens, arena, token, i + 1, close);
+      onibi_ast_node_at(arena, nested)->end = onibi_token_at(tokens, close)->end;
+      onibi_ast_add_child(arena, id, nested);
+      i = close;
       continue;
     }
-    if (kind == ONIBI_TOKEN_CLASS_RANGE && i > begin + 1 && i + 1 < close) {
-      OnibiTokenKind first_kind = onibi_token_kind_code(rb_ary_entry(tokens, i - 1));
-      OnibiTokenKind last_kind = onibi_token_kind_code(rb_ary_entry(tokens, i + 1));
-      if (first_kind != ONIBI_TOKEN_LITERAL || last_kind != ONIBI_TOKEN_LITERAL)
+    if (token->kind == ONIBI_TOKEN_CLASS_RANGE && i > begin && i + 1 < end) {
+      const OnibiTokenRecord *first = onibi_token_at(tokens, i - 1);
+      const OnibiTokenRecord *last = onibi_token_at(tokens, i + 1);
+      if (first->kind != ONIBI_TOKEN_LITERAL || last->kind != ONIBI_TOKEN_LITERAL)
         rb_raise(eRegexpError, "invalid range endpoint in character class");
-      VALUE first_token = rb_ary_entry(tokens, i - 1);
-      VALUE last_token = rb_ary_entry(tokens, i + 1);
-      VALUE first_bytes = onibi_hash_value_id(first_token, id_key_bytes);
-      VALUE last_bytes = onibi_hash_value_id(last_token, id_key_bytes);
-      if (NIL_P(first_bytes) != NIL_P(last_bytes)) {
-        if (NIL_P(first_bytes)) first_bytes = rb_str_new((const char[]){(char)onibi_token_byte(first_token)}, 1);
-        if (NIL_P(last_bytes)) last_bytes = rb_str_new((const char[]){(char)onibi_token_byte(last_token)}, 1);
+      OnibiTokenSlice first_slice = first->bytes;
+      OnibiTokenSlice last_slice = last->bytes;
+      if (first_slice.present != last_slice.present) {
+        if (!first_slice.present)
+          first_slice = onibi_ast_arena_copy_bytes(arena, &first->byte, 1);
+        if (!last_slice.present)
+          last_slice = onibi_ast_arena_copy_bytes(arena, &last->byte, 1);
       }
-      if ((!NIL_P(first_bytes) && !NIL_P(last_bytes) && rb_str_cmp(first_bytes, last_bytes) > 0) ||
-          (NIL_P(first_bytes) && NIL_P(last_bytes) &&
-           onibi_token_byte(first_token) > onibi_token_byte(last_token)))
+      if (first_slice.present && last_slice.present) {
+        size_t common = first_slice.length < last_slice.length ? first_slice.length : last_slice.length;
+        int order = memcmp(arena->bytes + first_slice.offset,
+                           arena->bytes + last_slice.offset, common);
+        if (order == 0)
+          order = first_slice.length < last_slice.length ? -1 :
+            (first_slice.length > last_slice.length ? 1 : 0);
+        if (order > 0)
+          rb_raise(eRegexpError, "empty range in character class");
+      } else if (first->byte > last->byte) {
         rb_raise(eRegexpError, "empty range in character class");
-      if (range_count >= class_capacity) rb_raise(rb_eNoMemError, "character class range vector is too large");
-      range_records[range_count].first = NIL_P(first_bytes) ? LONG2NUM(onibi_token_byte(first_token)) : first_bytes;
-      range_records[range_count].last = NIL_P(last_bytes) ? LONG2NUM(onibi_token_byte(last_token)) : last_bytes;
-      rb_ary_push(range_roots, range_records[range_count].first);
-      rb_ary_push(range_roots, range_records[range_count].last);
-      range_count++;
+      }
+      OnibiAstRange range = {
+        first_slice, last_slice, first->byte, last->byte,
+        first_slice.present, last_slice.present
+      };
+      onibi_ast_add_range(arena, id, range);
       i++;
       continue;
     }
-    onibi_value_vector_push(&child_records, token, child_roots);
+    if (token->kind == ONIBI_TOKEN_CLASS_END || token->kind == ONIBI_TOKEN_CLASS_RANGE)
+      continue;
+    OnibiAstKind kind = token->kind == ONIBI_TOKEN_LITERAL ? ONIBI_AST_LITERAL :
+      ((token->kind == ONIBI_TOKEN_ESCAPE || token->kind == ONIBI_TOKEN_META_ESCAPE) ?
+       ONIBI_AST_ESCAPE : ONIBI_AST_UNKNOWN);
+    if (kind == ONIBI_AST_UNKNOWN && token->kind != ONIBI_TOKEN_POSIX_CLASS)
+      rb_raise(eRegexpError, "unsupported character class token");
+    if (token->kind == ONIBI_TOKEN_POSIX_CLASS &&
+        onibi_posix_kind_id(token->name_id) == ONIBI_POSIX_UNKNOWN)
+      rb_raise(eRegexpError, "unknown POSIX character class");
+    OnibiAstId child = onibi_ast_arena_add(arena, kind, token);
+    onibi_ast_add_child(arena, id, child);
   }
-  for (long i = 0; i < range_count; i++) {
-    VALUE range = rb_ary_new_capa(2);
-    rb_ary_push(range, range_records[i].first);
-    rb_ary_push(range, range_records[i].last);
-    rb_obj_freeze(range);
-    rb_ary_push(ranges, range);
-  }
-  xfree(range_records);
-  rb_ary_clear(range_roots);
-  VALUE children = rb_ary_new_capa((long)child_records.count);
-  for (size_t i = 0; i < child_records.count; i++) rb_ary_push(children, child_records.items[i]);
-  onibi_value_vector_free(&child_records);
-  rb_ary_clear(child_roots);
-  rb_hash_aset(node, ID2SYM(id_key_children), children);
-  rb_hash_aset(node, ID2SYM(id_key_ranges), ranges);
-  rb_hash_aset(node, ID2SYM(id_key_negated), negated ? Qtrue : Qfalse);
-  rb_obj_freeze(children); rb_obj_freeze(ranges);
-  return node;
+  return id;
 }
 
-static VALUE onibi_parse_atom(VALUE tokens, long *index, long end) {
-  VALUE token = rb_ary_entry(tokens, *index);
-  OnibiTokenKind kind_code = onibi_token_kind_code(token);
-  if (kind_code == ONIBI_TOKEN_LOOKAHEAD_START || kind_code == ONIBI_TOKEN_LOOKBEHIND_START) {
-    long close = onibi_find_close(tokens, *index, end, kind_code, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated lookaround");
-    int behind = kind_code == ONIBI_TOKEN_LOOKBEHIND_START;
-    VALUE node = onibi_ast_node(behind ? ONIBI_AST_LOOKBEHIND : ONIBI_AST_LOOKAHEAD, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_positive), onibi_token_byte(token) == '=' ? Qtrue : Qfalse);
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_OPTION_SCOPE_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_OPTION_SCOPE_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated option scope");
-    VALUE node = onibi_ast_node(ONIBI_AST_OPTION_SCOPE, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_options), onibi_hash_value_id(token, id_key_name));
-    VALUE negative_options = onibi_hash_value_id(token, id_key_negative_name);
-    if (!NIL_P(negative_options))
-      rb_hash_aset(node, ID2SYM(id_key_negative_options), negative_options);
-    rb_hash_aset(node, ID2SYM(id_key_negative), onibi_hash_value_id(token, id_key_negative));
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_OPTION_GLOBAL) {
-    VALUE node = onibi_ast_node(ONIBI_AST_OPTION_GLOBAL, token);
-    rb_hash_aset(node, ID2SYM(id_key_options), onibi_hash_value_id(token, id_key_name));
-    VALUE negative_options = onibi_hash_value_id(token, id_key_negative_name);
-    if (!NIL_P(negative_options))
-      rb_hash_aset(node, ID2SYM(id_key_negative_options), negative_options);
-    rb_hash_aset(node, ID2SYM(id_key_negative), onibi_hash_value_id(token, id_key_negative));
-    rb_obj_freeze(node);
-    *index = *index + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_NONCAPTURE_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_NONCAPTURE_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated group");
-    VALUE node = onibi_ast_node(ONIBI_AST_GROUP, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_capturing), Qfalse);
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_ATOMIC_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_ATOMIC_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated atomic group");
-    VALUE node = onibi_ast_node(ONIBI_AST_ATOMIC, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_ABSENCE_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_ABSENCE_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated absence operator");
-    VALUE node = onibi_ast_node(ONIBI_AST_ABSENCE, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_CONDITIONAL_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_CONDITIONAL_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated conditional group");
-    VALUE node = onibi_ast_node(ONIBI_AST_CONDITIONAL, token);
-    VALUE condition = onibi_hash_value_id(token, id_key_name);
-    if (!NIL_P(condition)) rb_hash_aset(node, ID2SYM(id_key_condition), condition);
-    VALUE body = onibi_parse_range(tokens, *index + 1, close);
-    VALUE branches = onibi_hash_value_id(body, id_key_branches);
-    if (RB_TYPE_P(branches, T_ARRAY) && RARRAY_LEN(branches) == 2) {
-      rb_hash_aset(node, ID2SYM(id_key_yes), rb_ary_entry(branches, 0));
-      rb_hash_aset(node, ID2SYM(id_key_no), rb_ary_entry(branches, 1));
+static OnibiAstId onibi_c_parse_atom(const OnibiTokenVector *tokens,
+                                     OnibiAstArena *arena, long *index, long end) {
+  const OnibiTokenRecord *token = onibi_token_at(tokens, *index);
+  OnibiTokenKind token_kind = token->kind;
+  OnibiAstKind group_kind = ONIBI_AST_UNKNOWN;
+  if (token_kind == ONIBI_TOKEN_LOOKAHEAD_START) group_kind = ONIBI_AST_LOOKAHEAD;
+  else if (token_kind == ONIBI_TOKEN_LOOKBEHIND_START) group_kind = ONIBI_AST_LOOKBEHIND;
+  else if (token_kind == ONIBI_TOKEN_OPTION_SCOPE_START) group_kind = ONIBI_AST_OPTION_SCOPE;
+  else if (token_kind == ONIBI_TOKEN_NONCAPTURE_START) group_kind = ONIBI_AST_GROUP;
+  else if (token_kind == ONIBI_TOKEN_ATOMIC_START) group_kind = ONIBI_AST_ATOMIC;
+  else if (token_kind == ONIBI_TOKEN_ABSENCE_START) group_kind = ONIBI_AST_ABSENCE;
+  else if (token_kind == ONIBI_TOKEN_CONDITIONAL_START) group_kind = ONIBI_AST_CONDITIONAL;
+  else if (token_kind == ONIBI_TOKEN_GROUP_START) group_kind = ONIBI_AST_CAPTURE;
+
+  if (group_kind != ONIBI_AST_UNKNOWN) {
+    long close = onibi_c_find_close(tokens, *index, end, token_kind, ONIBI_TOKEN_GROUP_END);
+    if (close < 0) rb_raise(eRegexpError, "unterminated regexp group");
+    OnibiAstId id = onibi_ast_arena_add(arena, group_kind, token);
+    OnibiAstNode *node = onibi_ast_node_at(arena, id);
+    node->end = onibi_token_at(tokens, close)->end;
+    if (group_kind == ONIBI_AST_CONDITIONAL) {
+      OnibiAstId body = onibi_c_parse_range(tokens, arena, *index + 1, close);
+      const OnibiAstNode *body_node = onibi_ast_node_const(arena, body);
+      if (body_node->kind == ONIBI_AST_ALTERNATIVE && body_node->child_count == 2) {
+        node = onibi_ast_node_at(arena, id);
+        node->yes = body_node->children[0];
+        node->no = body_node->children[1];
+      } else {
+        node = onibi_ast_node_at(arena, id);
+        node->yes = body;
+        node->no = onibi_c_parse_range(tokens, arena, close, close);
+      }
     } else {
-      rb_hash_aset(node, ID2SYM(id_key_yes), body);
-      rb_hash_aset(node, ID2SYM(id_key_no), onibi_parse_range(tokens, close, close));
+      node->body = onibi_c_parse_range(tokens, arena, *index + 1, close);
+      node = onibi_ast_node_at(arena, id);
     }
-    rb_hash_aset(node, ID2SYM(id_key_end), onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
-    *index = close + 1;
-    return node;
-  }
-  if (kind_code == ONIBI_TOKEN_GROUP_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_GROUP_START, ONIBI_TOKEN_GROUP_END);
-    if (close < 0) rb_raise(eRegexpError, "unterminated group");
-    VALUE node = onibi_ast_node(ONIBI_AST_CAPTURE, token);
-    rb_hash_aset(node, ID2SYM(id_key_body), onibi_parse_range(tokens, *index + 1, close));
-    rb_hash_aset(node, ID2SYM(id_key_capturing), Qtrue);
-    VALUE name = onibi_hash_value_id(token, id_key_name);
-    if (!NIL_P(name)) {
-      if (RSTRING_LEN(name) == 0 || !isalpha((unsigned char)RSTRING_PTR(name)[0]))
-        rb_raise(eRegexpError, "invalid capture name");
-      for (long n = 1; n < RSTRING_LEN(name); n++)
-        if (!isalnum((unsigned char)RSTRING_PTR(name)[n]) && RSTRING_PTR(name)[n] != '_')
+    if (group_kind == ONIBI_AST_LOOKAHEAD || group_kind == ONIBI_AST_LOOKBEHIND) {
+      if (token->byte == '=') node->flags |= ONIBI_AST_NODE_POSITIVE;
+    }
+    if (group_kind == ONIBI_AST_CAPTURE) {
+      node->flags |= ONIBI_AST_NODE_CAPTURING;
+      if (node->name.present) {
+        const unsigned char *name = arena->bytes + node->name.offset;
+        if (node->name.length == 0 || !isalpha(name[0]))
           rb_raise(eRegexpError, "invalid capture name");
-      rb_hash_aset(node, ID2SYM(id_key_name), name);
+        for (size_t i = 1; i < node->name.length; i++)
+          if (!isalnum(name[i]) && name[i] != '_')
+            rb_raise(eRegexpError, "invalid capture name");
+      }
     }
-    rb_hash_aset(node, ID2SYM(id_key_end),
-                 onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
+    if (group_kind == ONIBI_AST_OPTION_SCOPE && token->negative)
+      node->flags |= ONIBI_AST_NODE_NEGATIVE;
     *index = close + 1;
-    return node;
+    return id;
   }
-  if (kind_code == ONIBI_TOKEN_CLASS_START) {
-    long close = onibi_find_close(tokens, *index, end, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
+
+  if (token_kind == ONIBI_TOKEN_OPTION_GLOBAL) {
+    OnibiAstId id = onibi_ast_arena_add(arena, ONIBI_AST_OPTION_GLOBAL, token);
+    if (token->negative) onibi_ast_node_at(arena, id)->flags |= ONIBI_AST_NODE_NEGATIVE;
+    (*index)++;
+    return id;
+  }
+  if (token_kind == ONIBI_TOKEN_CLASS_START) {
+    long close = onibi_c_find_close(tokens, *index, end, ONIBI_TOKEN_CLASS_START,
+                                    ONIBI_TOKEN_CLASS_END);
     if (close < 0) rb_raise(eRegexpError, "unterminated character class");
-    VALUE node = onibi_parse_class(tokens, *index, close);
-    rb_hash_aset(node, ID2SYM(id_key_end),
-                 onibi_hash_value_id(rb_ary_entry(tokens, close), id_key_end));
-    rb_obj_freeze(node);
+    OnibiAstId id = onibi_c_parse_class_part(tokens, arena, token, *index + 1, close);
+    onibi_ast_node_at(arena, id)->end = onibi_token_at(tokens, close)->end;
     *index = close + 1;
-    return node;
+    return id;
   }
-  if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
-    VALUE node = onibi_ast_node(ONIBI_AST_SUBROUTINE, token);
-    VALUE name = onibi_hash_value_id(token, id_key_name);
-    if (!NIL_P(name)) rb_hash_aset(node, ID2SYM(id_key_name), name);
-    rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
-    rb_obj_freeze(node);
-    *index = *index + 1;
-    return node;
-  }
-  VALUE node = NIL_P(token) ? Qnil :
-    (kind_code == ONIBI_TOKEN_WILDCARD ? onibi_ast_node(ONIBI_AST_ANY, token) :
-     (kind_code == ONIBI_TOKEN_ANCHOR ? onibi_ast_node(ONIBI_AST_ANCHOR, token) :
-     (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE ? onibi_ast_node(ONIBI_AST_ESCAPE, token) :
-       (kind_code == ONIBI_TOKEN_MATCH_RESET ? onibi_ast_node(ONIBI_AST_MATCH_RESET, token) :
-       (kind_code == ONIBI_TOKEN_BACKREF ? onibi_ast_node(ONIBI_AST_BACKREF, token) :
-       (kind_code == ONIBI_TOKEN_LITERAL ? onibi_ast_node(ONIBI_AST_LITERAL, token) : Qnil))))));
-  if (NIL_P(node)) rb_raise(eRegexpError, "unexpected token in expression");
-  rb_hash_aset(node, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(token)));
-  VALUE token_bytes = onibi_hash_value_id(token, id_key_bytes);
-  if (!NIL_P(token_bytes)) rb_hash_aset(node, ID2SYM(id_key_bytes), token_bytes);
-  if (kind_code == ONIBI_TOKEN_ANCHOR) {
-    long marker = onibi_token_byte(token);
-    const char *anchor = (marker == '^' || marker == 'A' || marker == 'G') ?
-      "anchor_start" : ((marker == '$' || marker == 'z' || marker == 'Z') ?
-      "anchor_end" : "anchor");
-    ID anchor_id = (anchor[7] == 's') ? id_anchor_start :
-      ((anchor[7] == 'e') ? id_anchor_end : id_anchor);
-    rb_hash_aset(node, ID2SYM(id_key_kind), ID2SYM(anchor_id));
-  }
-  if (kind_code == ONIBI_TOKEN_ESCAPE || kind_code == ONIBI_TOKEN_META_ESCAPE) {
-    VALUE token_name = onibi_hash_value_id(token, id_key_name);
-    rb_hash_aset(node, ID2SYM(id_key_name), NIL_P(token_name) ?
-                rb_str_new((const char[]){(char)onibi_token_byte(token)}, 1) : token_name);
-  }
-  if (kind_code == ONIBI_TOKEN_BACKREF) {
-    VALUE name = onibi_hash_value_id(token, id_key_name);
-    VALUE capture_number = onibi_hash_value_id(token, id_key_capture);
-    if (NIL_P(name)) rb_hash_aset(node, ID2SYM(id_key_capture),
-                                  NIL_P(capture_number) ? LONG2NUM(onibi_token_byte(token) - '0') : capture_number);
-    else rb_hash_aset(node, ID2SYM(id_key_name), name);
-  }
-  rb_obj_freeze(node);
-  *index = *index + 1;
-  return node;
+
+  OnibiAstKind kind = token_kind == ONIBI_TOKEN_WILDCARD ? ONIBI_AST_ANY :
+    (token_kind == ONIBI_TOKEN_ANCHOR ? ONIBI_AST_ANCHOR :
+     ((token_kind == ONIBI_TOKEN_ESCAPE || token_kind == ONIBI_TOKEN_META_ESCAPE) ? ONIBI_AST_ESCAPE :
+      (token_kind == ONIBI_TOKEN_MATCH_RESET ? ONIBI_AST_MATCH_RESET :
+       (token_kind == ONIBI_TOKEN_BACKREF ? ONIBI_AST_BACKREF :
+        (token_kind == ONIBI_TOKEN_SUBROUTINE ? ONIBI_AST_SUBROUTINE :
+         (token_kind == ONIBI_TOKEN_LITERAL ? ONIBI_AST_LITERAL : ONIBI_AST_UNKNOWN))))));
+  if (kind == ONIBI_AST_UNKNOWN) rb_raise(eRegexpError, "unexpected token in expression");
+  OnibiAstId id = onibi_ast_arena_add(arena, kind, token);
+  OnibiAstNode *node = onibi_ast_node_at(arena, id);
+  if (kind == ONIBI_AST_ESCAPE && !node->name.present)
+    node->name_id = rb_intern2((const char *)&token->byte, 1);
+  if (kind == ONIBI_AST_BACKREF && !node->name.present && !token->has_capture)
+    node->capture = token->byte - '0';
+  (*index)++;
+  return id;
 }
 
-static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
-  OnibiValueVector branch_records;
-  onibi_value_vector_init(&branch_records);
-  VALUE branch_roots = rb_ary_new_capa(end > begin ? end - begin : 0);
-  long part = begin, depth = 0;
+static OnibiAstId onibi_c_parse_range(const OnibiTokenVector *tokens,
+                                      OnibiAstArena *arena, long begin, long end) {
+  long part = begin;
+  long depth = 0;
+  OnibiAstId alternative = ONIBI_AST_NONE;
   for (long i = begin; i < end; i++) {
-    VALUE token = rb_ary_entry(tokens, i);
-    OnibiTokenKind kind = onibi_token_kind_code(token);
+    OnibiTokenKind kind = onibi_token_at(tokens, i)->kind;
     if (kind == ONIBI_TOKEN_GROUP_START || kind == ONIBI_TOKEN_NONCAPTURE_START ||
         kind == ONIBI_TOKEN_ATOMIC_START || kind == ONIBI_TOKEN_ABSENCE_START ||
         kind == ONIBI_TOKEN_CONDITIONAL_START || kind == ONIBI_TOKEN_LOOKAHEAD_START ||
@@ -1244,141 +1254,105 @@ static VALUE onibi_parse_range(VALUE tokens, long begin, long end) {
         kind == ONIBI_TOKEN_CLASS_START) depth++;
     else if (kind == ONIBI_TOKEN_GROUP_END || kind == ONIBI_TOKEN_CLASS_END) depth--;
     else if (kind == ONIBI_TOKEN_ALTERNATION && depth == 0) {
-      onibi_value_vector_push(&branch_records, onibi_parse_range(tokens, part, i), branch_roots);
+      if (alternative == ONIBI_AST_NONE)
+        alternative = onibi_ast_arena_add(arena, ONIBI_AST_ALTERNATIVE, NULL);
+      onibi_ast_add_child(arena, alternative,
+                          onibi_c_parse_range(tokens, arena, part, i));
       part = i + 1;
     }
   }
-  if (branch_records.count > 0) {
-    onibi_value_vector_push(&branch_records, onibi_parse_range(tokens, part, end), branch_roots);
-    VALUE branches = rb_ary_new_capa((long)branch_records.count);
-    for (size_t i = 0; i < branch_records.count; i++) rb_ary_push(branches, branch_records.items[i]);
-    onibi_value_vector_free(&branch_records);
-    rb_ary_clear(branch_roots);
-    VALUE node = onibi_ast_node(ONIBI_AST_ALTERNATIVE, Qnil);
-    rb_hash_aset(node, ID2SYM(id_key_branches), branches);
-    rb_obj_freeze(branches); rb_obj_freeze(node);
-    return node;
+  if (alternative != ONIBI_AST_NONE) {
+    onibi_ast_add_child(arena, alternative,
+                        onibi_c_parse_range(tokens, arena, part, end));
+    return alternative;
   }
 
-  OnibiValueVector child_records;
-  onibi_value_vector_init(&child_records);
-  VALUE child_roots = rb_ary_new_capa(end > begin ? end - begin : 0);
+  OnibiAstId sequence = onibi_ast_arena_add(arena, ONIBI_AST_SEQUENCE, NULL);
   for (long i = begin; i < end;) {
-    VALUE node = onibi_parse_atom(tokens, &i, end);
-    if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
-      VALUE modifier = rb_ary_entry(tokens, i);
-      long marker = onibi_token_byte(modifier);
+    OnibiAstId atom = onibi_c_parse_atom(tokens, arena, &i, end);
+    if (i < end && onibi_token_at(tokens, i)->kind == ONIBI_TOKEN_QUANTIFIER) {
+      const OnibiTokenRecord *modifier = onibi_token_at(tokens, i);
+      long marker = modifier->byte;
+      long min = 0, max = 0;
+      int has_max = 0;
+      int valid = 1;
+      long close = i;
       if (marker == '*' || marker == '+' || marker == '?') {
-        if (onibi_ast_kind(node) == ONIBI_AST_QUANTIFIER)
-          rb_raise(eRegexpError, "nested quantifier");
-        long min = marker == '+' ? 1 : 0;
-        VALUE max = marker == '?' ? LONG2NUM(1) : Qnil;
+        min = marker == '+' ? 1 : 0;
+        if (marker == '?') { max = 1; has_max = 1; }
         i++;
-        int greedy = 1, possessive = 0;
-        if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
-          long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
-          if (suffix == '?') { greedy = 0; i++; }
-          else if (suffix == '+') { possessive = 1; i++; }
-        }
-        VALUE quantifier = onibi_ast_node(ONIBI_AST_QUANTIFIER, modifier);
-        rb_hash_aset(quantifier, ID2SYM(id_key_atom), node);
-        rb_hash_aset(quantifier, ID2SYM(id_key_min), LONG2NUM(min));
-        rb_hash_aset(quantifier, ID2SYM(id_key_max), max);
-        rb_hash_aset(quantifier, ID2SYM(id_key_greedy), greedy ? Qtrue : Qfalse);
-        rb_hash_aset(quantifier, ID2SYM(id_key_possessive), possessive ? Qtrue : Qfalse);
-        rb_obj_freeze(quantifier); node = quantifier;
       } else if (marker == '{') {
-        if (onibi_ast_kind(node) == ONIBI_AST_QUANTIFIER)
-          rb_raise(eRegexpError, "nested quantifier");
-        long close = i + 1;
-        while (close < end && onibi_token_byte(rb_ary_entry(tokens, close)) != '}') close++;
+        close = i + 1;
+        while (close < end && onibi_token_at(tokens, close)->byte != '}') close++;
         if (close >= end) rb_raise(eRegexpError, "unterminated quantifier");
-        char spec_buf[128];
-        size_t spec_len = 0;
-        for (long spec_i = i + 1; spec_i < close; spec_i++) {
-          VALUE spec_token = rb_ary_entry(tokens, spec_i);
-          if (spec_len + 1 >= sizeof(spec_buf)) rb_raise(eRegexpError, "quantifier is too large");
-          spec_buf[spec_len++] = (char)onibi_token_byte(spec_token);
+        char spec[128];
+        size_t length = 0;
+        for (long j = i + 1; j < close; j++) {
+          if (length + 1 >= sizeof(spec)) rb_raise(eRegexpError, "quantifier is too large");
+          spec[length++] = (char)onibi_token_at(tokens, j)->byte;
         }
-        spec_buf[spec_len] = '\0';
-        int valid_spec = spec_len > 0;
-        long comma_count = 0, comma_at = -1;
-        for (size_t spec_i = 0; valid_spec && spec_i < spec_len; spec_i++) {
-          if (spec_buf[spec_i] == ',') {
-            comma_count++; comma_at = (long)spec_i;
-          } else if (spec_buf[spec_i] < '0' || spec_buf[spec_i] > '9') valid_spec = 0;
+        spec[length] = '\0';
+        char *comma = memchr(spec, ',', length);
+        char *endptr = NULL;
+        if (length == 0 || (comma != NULL && memchr(comma + 1, ',',
+                                                    length - (size_t)(comma + 1 - spec)) != NULL)) valid = 0;
+        if (valid && comma != NULL) {
+          if (comma == spec) min = 0;
+          else { min = onibi_parse_count(spec, &endptr); if (endptr != comma) valid = 0; }
+          if (comma + 1 < spec + length) {
+            max = onibi_parse_count(comma + 1, &endptr);
+            if (endptr != spec + length) valid = 0;
+            has_max = 1;
+          }
+        } else if (valid) {
+          min = onibi_parse_count(spec, &endptr);
+          if (endptr != spec + length) valid = 0;
+          max = min;
+          has_max = 1;
         }
-        if (comma_count > 1 || (comma_count == 1 &&
-            (comma_at == 0 && comma_at + 1 == (long)spec_len))) valid_spec = 0;
-        if (comma_count == 1 && comma_at > 0 && comma_at + 1 < (long)spec_len) {
-          /* both sides contain digits */
-        } else if (comma_count == 1 && comma_at == 0 && spec_len == 1) valid_spec = 0;
-        if (!valid_spec) {
-          if (memchr(spec_buf, '-', spec_len) != NULL)
-            rb_raise(eRegexpError, "invalid quantifier");
-          onibi_value_vector_push(&child_records, node, child_roots);
-          for (long literal_i = i; literal_i <= close; literal_i++) {
-            VALUE literal_token = rb_ary_entry(tokens, literal_i);
-            VALUE literal = onibi_ast_node(ONIBI_AST_LITERAL, literal_token);
-            rb_hash_aset(literal, ID2SYM(id_key_byte), LONG2NUM(onibi_token_byte(literal_token)));
-            rb_obj_freeze(literal);
-            onibi_value_vector_push(&child_records, literal, child_roots);
+        if (valid && has_max && max < min) rb_raise(eRegexpError, "invalid quantifier range");
+        if (!valid) {
+          onibi_ast_add_child(arena, sequence, atom);
+          for (long j = i; j <= close; j++) {
+            OnibiAstId literal = onibi_ast_arena_add(arena, ONIBI_AST_LITERAL,
+                                                     onibi_token_at(tokens, j));
+            onibi_ast_add_child(arena, sequence, literal);
           }
           i = close + 1;
           continue;
         }
-        long min = 0, max_value = 0;
-        const char *body = spec_buf;
-        char *comma = strchr(body, ',');
-        int has_max = 1;
-        if (comma != NULL) {
-          char *endptr = NULL;
-          min = onibi_parse_count(body, &endptr);
-          if (endptr != comma) rb_raise(eRegexpError, "invalid quantifier");
-          if (comma[1] == '\0') has_max = 0;
-          else {
-            char *max_end = NULL;
-            max_value = onibi_parse_count(comma + 1, &max_end);
-            if (*max_end != '\0') rb_raise(eRegexpError, "invalid quantifier");
-          }
-        } else {
-          char *endptr = NULL;
-          min = onibi_parse_count(body, &endptr);
-          if (*endptr != '\0') rb_raise(eRegexpError, "invalid quantifier");
-          max_value = min;
-        }
-        if (min < 0 || (has_max && max_value < 0)) rb_raise(eRegexpError, "invalid quantifier");
-        if (has_max && max_value < min) rb_raise(eRegexpError, "invalid quantifier range");
-        VALUE quantifier = onibi_ast_node(ONIBI_AST_QUANTIFIER, modifier);
-        rb_hash_aset(quantifier, ID2SYM(id_key_atom), node);
-        rb_hash_aset(quantifier, ID2SYM(id_key_min), LONG2NUM(min));
-        rb_hash_aset(quantifier, ID2SYM(id_key_max), has_max ? LONG2NUM(max_value) : Qnil);
         i = close + 1;
-        int greedy = 1, possessive = 0;
-        if (i < end && onibi_token_kind_code(rb_ary_entry(tokens, i)) == ONIBI_TOKEN_QUANTIFIER) {
-          long suffix = onibi_token_byte(rb_ary_entry(tokens, i));
-          if (suffix == '?') { greedy = 0; i++; }
-          else if (suffix == '+') { possessive = 1; i++; }
-        }
-        rb_hash_aset(quantifier, ID2SYM(id_key_greedy), greedy ? Qtrue : Qfalse);
-        rb_hash_aset(quantifier, ID2SYM(id_key_possessive), possessive ? Qtrue : Qfalse);
-        rb_obj_freeze(quantifier); node = quantifier;
+      } else {
+        onibi_ast_add_child(arena, sequence, atom);
+        continue;
       }
+      if (onibi_ast_node_const(arena, atom)->kind == ONIBI_AST_QUANTIFIER)
+        rb_raise(eRegexpError, "nested quantifier");
+      OnibiAstId quantifier = onibi_ast_arena_add(arena, ONIBI_AST_QUANTIFIER, modifier);
+      OnibiAstNode *node = onibi_ast_node_at(arena, quantifier);
+      node->atom = atom;
+      node->min = min;
+      node->max = max;
+      node->flags |= ONIBI_AST_NODE_GREEDY;
+      if (has_max) node->flags |= ONIBI_AST_NODE_HAS_MAX;
+      if (i < end && onibi_token_at(tokens, i)->kind == ONIBI_TOKEN_QUANTIFIER) {
+        if (onibi_token_at(tokens, i)->byte == '?') {
+          node->flags &= ~ONIBI_AST_NODE_GREEDY;
+          i++;
+        } else if (onibi_token_at(tokens, i)->byte == '+') {
+          node->flags |= ONIBI_AST_NODE_POSSESSIVE;
+          i++;
+        }
+      }
+      atom = quantifier;
     }
-    onibi_value_vector_push(&child_records, node, child_roots);
+    onibi_ast_add_child(arena, sequence, atom);
   }
-  VALUE children = rb_ary_new_capa((long)child_records.count);
-  for (size_t i = 0; i < child_records.count; i++) rb_ary_push(children, child_records.items[i]);
-  onibi_value_vector_free(&child_records);
-  rb_ary_clear(child_roots);
-  VALUE sequence = onibi_ast_node(ONIBI_AST_SEQUENCE, Qnil);
-  rb_hash_aset(sequence, ID2SYM(id_key_children), children);
-  rb_obj_freeze(children); rb_obj_freeze(sequence);
   return sequence;
 }
 
 typedef struct {
-  VALUE ast;
+  OnibiAstArena arena;
   int options;
   unsigned int ast_flags;
 } OnibiParsed;
@@ -1387,11 +1361,24 @@ typedef struct {
 } OnibiAstAnalysis;
 
 static void onibi_parsed_mark(void *ptr) {
-  OnibiParsed *parsed = (OnibiParsed *)ptr;
-  if (parsed) rb_gc_mark(parsed->ast);
+  (void)ptr;
 }
-static void onibi_parsed_free(void *ptr) { xfree(ptr); }
-static size_t onibi_parsed_memsize(const void *ptr) { return ptr ? sizeof(OnibiParsed) : 0; }
+static void onibi_parsed_free(void *ptr) {
+  OnibiParsed *parsed = (OnibiParsed *)ptr;
+  if (parsed != NULL) onibi_ast_arena_free(&parsed->arena);
+  xfree(parsed);
+}
+static size_t onibi_parsed_memsize(const void *ptr) {
+  const OnibiParsed *parsed = (const OnibiParsed *)ptr;
+  if (parsed == NULL) return 0;
+  size_t size = sizeof(*parsed) + parsed->arena.capacity * sizeof(OnibiAstNode) +
+    parsed->arena.bytes_count;
+  for (size_t i = 0; i < parsed->arena.count; i++) {
+    size += parsed->arena.nodes[i].child_capacity * sizeof(OnibiAstId);
+    size += parsed->arena.nodes[i].range_capacity * sizeof(OnibiAstRange);
+  }
+  return size;
+}
 static const rb_data_type_t onibi_parsed_type = {
   "Onibi::Parsed", { onibi_parsed_mark, onibi_parsed_free, onibi_parsed_memsize, NULL, { NULL } },
   0, 0, RUBY_TYPED_FREE_IMMEDIATELY
@@ -1402,26 +1389,25 @@ static inline OnibiParsed *onibi_parsed_get(VALUE value) {
   return parsed;
 }
 
-static int onibi_ast_safe_multibyte_class(VALUE ast);
-static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis);
+static int onibi_ast_safe_multibyte_class(const OnibiAstArena *arena, OnibiAstId id);
+static int onibi_ast_nullable_scan(const OnibiAstArena *arena, OnibiAstId id,
+                                   OnibiAstAnalysis *analysis);
 
-static VALUE onibi_parser_parse_internal(VALUE source, VALUE options, VALUE supplied_tokens) {
+static VALUE onibi_parser_parse_internal(VALUE source, VALUE options,
+                                         const OnibiTokenVector *tokens) {
   source = StringValue(source);
-  VALUE tokens = supplied_tokens;
-  if (NIL_P(tokens)) {
-    tokens = onibi_tokenize_internal(source, onibi_extended_option_p(options));
-  }
+  (void)source;
+  if (tokens == NULL) rb_raise(rb_eArgError, "parser requires a token vector");
   OnibiParsed *parsed;
   VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed, &onibi_parsed_type, parsed);
-  parsed->ast = Qnil;
+  onibi_ast_arena_init(&parsed->arena, tokens);
   parsed->ast_flags = 0;
   parsed->options = onibi_option_mask(options);
-  /* The AST is an internal compiler value.  Do not deep-freeze it here: it is
-     never exposed through the Regexp API and freezing would rescan the tree. */
-  parsed->ast = onibi_parse_range(tokens, 0, RARRAY_LEN(tokens));
-  if (onibi_ast_safe_multibyte_class(parsed->ast)) parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
+  parsed->arena.root = onibi_c_parse_range(tokens, &parsed->arena, 0, (long)tokens->count);
+  if (onibi_ast_safe_multibyte_class(&parsed->arena, parsed->arena.root))
+    parsed->ast_flags |= ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS;
   OnibiAstAnalysis analysis = {0};
-  (void)onibi_ast_nullable_scan(parsed->ast, &analysis);
+  (void)onibi_ast_nullable_scan(&parsed->arena, parsed->arena.root, &analysis);
   if (analysis.flags & ONIBI_AST_ANALYSIS_ANCHOR_REPEAT) parsed->ast_flags |= ONIBI_AST_FLAG_ANCHOR_REPEAT;
   if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_ABSENCE;
   if (analysis.flags & ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE) parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
@@ -1445,7 +1431,26 @@ typedef struct { VALUE payload; int byte; int ignorecase; } OnibiRSeqLiteralPayl
 typedef struct { OnibiRSeqLiteralPayloadEntry *entries; size_t count; size_t capacity; } OnibiRSeqLiteralPayloadVector;
 typedef struct { VALUE descriptor; OnibiStateId entry; OnibiStateId accept; uint32_t flags; } OnibiRSeqSubprogramEntry;
 typedef struct { OnibiRSeqSubprogramEntry *entries; size_t count; size_t capacity; } OnibiRSeqSubprogramVector;
-typedef struct { OnibiGirStateVector states; OnibiGirEdgeVector edges; long next_id; long capture_count; long counter_count; OnibiValueMap capture_names; OnibiValueMap capture_bodies; OnibiValueMap capture_ids; OnibiGuardVector capture_guards; OnibiGuardVector exit_guards; OnibiValueMap active_subroutines; OnibiValueVector subprograms; OnibiValueMap subprogram_ids; VALUE map_roots; int ignorecase; int multiline; int optional_seen; } onibi_gir_builder_t;
+typedef struct {
+  OnibiGirStateVector states;
+  OnibiGirEdgeVector edges;
+  long next_id;
+  long capture_count;
+  long counter_count;
+  OnibiValueMap capture_names;
+  OnibiValueMap capture_bodies;
+  OnibiValueMap capture_ids;
+  OnibiGuardVector capture_guards;
+  OnibiGuardVector exit_guards;
+  OnibiValueMap active_subroutines;
+  OnibiValueVector subprograms;
+  OnibiValueMap subprogram_ids;
+  VALUE map_roots;
+  OnibiAstArena *ast;
+  int ignorecase;
+  int multiline;
+  int optional_seen;
+} onibi_gir_builder_t;
 static void onibi_append_values(VALUE destination, VALUE values);
 
 static void onibi_id_vector_init(OnibiIdVector *vector) {
@@ -1994,37 +1999,6 @@ class_children:
   return bitmap;
 }
 
-static int onibi_ast_has_capture(VALUE ast) {
-  if (NIL_P(ast)) return 0;
-  if (RB_TYPE_P(ast, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(ast); i++)
-      if (onibi_ast_has_capture(rb_ary_entry(ast, i))) return 1;
-    return 0;
-  }
-  if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_ast_kind(ast) == ONIBI_AST_CAPTURE) return 1;
-  const ID keys[] = { id_key_body, id_key_children, id_key_branches, id_key_atom };
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_has_capture(onibi_hash_value_id(ast, keys[i]))) return 1;
-  return 0;
-}
-
-static int onibi_ast_has_subroutine_name(VALUE ast, VALUE name) {
-  if (NIL_P(ast)) return 0;
-  if (RB_TYPE_P(ast, T_ARRAY)) {
-    for (long i = 0; i < RARRAY_LEN(ast); i++)
-      if (onibi_ast_has_subroutine_name(rb_ary_entry(ast, i), name)) return 1;
-    return 0;
-  }
-  if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  if (onibi_ast_kind(ast) == ONIBI_AST_SUBROUTINE &&
-      rb_equal(onibi_hash_value_id(ast, id_key_name), name)) return 1;
-  const ID keys[] = {id_key_body, id_key_children, id_key_branches, id_key_atom};
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-    if (onibi_ast_has_subroutine_name(onibi_hash_value_id(ast, keys[i]), name)) return 1;
-  return 0;
-}
-
 static OnibiPosixKind onibi_posix_kind_id(ID property) {
   static ID ids[9]; static int ready = 0;
   if (!ready) { const char *names[] = {"alpha", "digit", "alnum", "space", "blank", "lower", "upper", "word", "xdigit"}; for (size_t i = 0; i < 9; i++) ids[i] = rb_intern(names[i]); ready = 1; }
@@ -2220,7 +2194,95 @@ static void onibi_materialize_gir(onibi_gir_builder_t *builder, VALUE *states_ou
   *states_out = states; *edges_out = edges;
 }
 
-static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder);
+static VALUE onibi_gir_payload_from_ast_terminal(const OnibiAstArena *arena,
+                                                 OnibiAstId id, int semantic_class) {
+  const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+  if (node->kind != ONIBI_AST_LITERAL && node->kind != ONIBI_AST_ESCAPE &&
+      node->kind != ONIBI_AST_ANY && node->kind != ONIBI_AST_BACKREF &&
+      node->kind != ONIBI_AST_CHARACTER_CLASS &&
+      node->kind != ONIBI_AST_CLASS_INTERSECTION &&
+      !(node->kind == ONIBI_AST_UNKNOWN && node->token_kind == ONIBI_TOKEN_POSIX_CLASS))
+    rb_raise(rb_eArgError, "GIR payload requires a terminal AST node");
+  VALUE value = rb_hash_new();
+  rb_hash_aset(value, ID2SYM(id_key_type_code), UINT2NUM(node->kind));
+  if (node->token_kind >= ONIBI_TOKEN_LITERAL)
+    rb_hash_aset(value, ID2SYM(id_key_kind_code), UINT2NUM(node->token_kind));
+  if (node->start >= 0) rb_hash_aset(value, ID2SYM(id_key_start), LONG2NUM(node->start));
+  if (node->end >= 0) rb_hash_aset(value, ID2SYM(id_key_end), LONG2NUM(node->end));
+  rb_hash_aset(value, ID2SYM(id_key_byte), LONG2NUM(node->byte));
+  if (node->name_id != 0)
+    rb_hash_aset(value, ID2SYM(id_key_name_id), ULONG2NUM(node->name_id));
+  VALUE name = onibi_ast_slice_string(arena, node->name);
+  if (NIL_P(name) && node->kind == ONIBI_AST_ESCAPE)
+    name = rb_str_new((const char[]){(char)node->byte}, 1);
+  if (!NIL_P(name)) rb_hash_aset(value, ID2SYM(id_key_name), name);
+  VALUE bytes = onibi_ast_slice_string(arena, node->bytes);
+  if (!NIL_P(bytes)) rb_hash_aset(value, ID2SYM(id_key_bytes), bytes);
+
+  if (node->kind == ONIBI_AST_CHARACTER_CLASS) {
+    VALUE children = rb_ary_new_capa((long)node->child_count);
+    for (size_t i = 0; i < node->child_count; i++) {
+      VALUE child = semantic_class ?
+        onibi_gir_payload_from_ast_terminal(arena, node->children[i], 1) : UINT2NUM(node->children[i]);
+      rb_ary_push(children, child);
+    }
+    VALUE ranges = rb_ary_new_capa((long)node->range_count);
+    for (size_t i = 0; i < node->range_count; i++) {
+      const OnibiAstRange *range = &node->ranges[i];
+      VALUE first = range->first_has_bytes ? onibi_ast_slice_string(arena, range->first) :
+        INT2NUM(range->first_byte);
+      VALUE last = range->last_has_bytes ? onibi_ast_slice_string(arena, range->last) :
+        INT2NUM(range->last_byte);
+      rb_ary_push(ranges, rb_ary_new_from_args(2, first, last));
+    }
+    rb_hash_aset(value, ID2SYM(id_key_children), children);
+    rb_hash_aset(value, ID2SYM(id_key_ranges), ranges);
+  }
+  if (node->kind == ONIBI_AST_CLASS_INTERSECTION && semantic_class) {
+    VALUE operands = rb_ary_new_capa((long)node->child_count);
+    for (size_t i = 0; i < node->child_count; i++)
+      rb_ary_push(operands, onibi_gir_payload_from_ast_terminal(arena, node->children[i], 1));
+    rb_hash_aset(value, ID2SYM(id_key_operands), operands);
+  }
+  if (node->flags & ONIBI_AST_NODE_NEGATED)
+    rb_hash_aset(value, ID2SYM(id_key_negated), Qtrue);
+  else if (node->kind == ONIBI_AST_CHARACTER_CLASS)
+    rb_hash_aset(value, ID2SYM(id_key_negated), Qfalse);
+  if (node->kind == ONIBI_AST_BACKREF) {
+    if (NIL_P(name)) rb_hash_aset(value, ID2SYM(id_key_capture), LONG2NUM(node->capture));
+  }
+  return value;
+}
+
+static int onibi_c_ast_has_capture(const OnibiAstArena *arena, OnibiAstId id) {
+  const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+  if (node->kind == ONIBI_AST_CAPTURE) return 1;
+  if (node->body != ONIBI_AST_NONE && onibi_c_ast_has_capture(arena, node->body)) return 1;
+  if (node->atom != ONIBI_AST_NONE && onibi_c_ast_has_capture(arena, node->atom)) return 1;
+  if (node->yes != ONIBI_AST_NONE && onibi_c_ast_has_capture(arena, node->yes)) return 1;
+  if (node->no != ONIBI_AST_NONE && onibi_c_ast_has_capture(arena, node->no)) return 1;
+  for (size_t i = 0; i < node->child_count; i++)
+    if (onibi_c_ast_has_capture(arena, node->children[i])) return 1;
+  return 0;
+}
+
+static int onibi_c_ast_has_subroutine_name(const OnibiAstArena *arena,
+                                           OnibiAstId id, VALUE name) {
+  const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+  if (node->kind == ONIBI_AST_SUBROUTINE && node->name.present &&
+      node->name.length == (size_t)RSTRING_LEN(name) &&
+      memcmp(arena->bytes + node->name.offset, RSTRING_PTR(name), node->name.length) == 0)
+    return 1;
+  if (node->body != ONIBI_AST_NONE && onibi_c_ast_has_subroutine_name(arena, node->body, name)) return 1;
+  if (node->atom != ONIBI_AST_NONE && onibi_c_ast_has_subroutine_name(arena, node->atom, name)) return 1;
+  if (node->yes != ONIBI_AST_NONE && onibi_c_ast_has_subroutine_name(arena, node->yes, name)) return 1;
+  if (node->no != ONIBI_AST_NONE && onibi_c_ast_has_subroutine_name(arena, node->no, name)) return 1;
+  for (size_t i = 0; i < node->child_count; i++)
+    if (onibi_c_ast_has_subroutine_name(arena, node->children[i], name)) return 1;
+  return 0;
+}
+
+static onibi_fragment_t onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder);
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id, ID op, VALUE payload);
 static VALUE onibi_class_payload_with_ctypes(VALUE payload);
 static int onibi_unicode_ctype_id(ID property);
@@ -2264,41 +2326,40 @@ static long onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder, u
   return (long)builder->subprograms.count - 1;
 }
 
-static void onibi_collect_captures(VALUE ast, onibi_gir_builder_t *builder, long *next_capture) {
-  if (!RB_TYPE_P(ast, T_HASH)) return;
-  OnibiAstKind type = onibi_ast_kind(ast);
-  if (type == ONIBI_AST_CAPTURE) {
-    VALUE start = onibi_hash_value_id(ast, id_key_start);
-    VALUE id_value = onibi_value_map_find(&builder->capture_ids, start);
-    long id;
-    if (NIL_P(id_value)) {
-      id = (*next_capture)++;
-      onibi_value_map_set(&builder->capture_ids, start, LONG2NUM(id), builder->map_roots);
-    } else id = NUM2LONG(id_value);
+static void onibi_collect_captures(OnibiAstId ast_id, onibi_gir_builder_t *builder,
+                                   long *next_capture) {
+  OnibiAstNode *node = onibi_ast_node_at(builder->ast, ast_id);
+  if (node->kind == ONIBI_AST_CAPTURE) {
+    long id = (*next_capture)++;
+    node->capture = id;
+    onibi_value_map_set(&builder->capture_ids, LONG2NUM(node->start), LONG2NUM(id), builder->map_roots);
     VALUE key = rb_str_new_cstr("");
     char number[32];
     snprintf(number, sizeof(number), "%ld", id + 1);
     key = rb_str_new_cstr(number);
-    onibi_value_map_set(&builder->capture_bodies, key, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
-    VALUE name = onibi_hash_value_id(ast, id_key_name);
+    onibi_value_map_set(&builder->capture_bodies, key, UINT2NUM(node->body), builder->map_roots);
+    VALUE name = onibi_ast_slice_string(builder->ast, node->name);
     if (!NIL_P(name)) {
       if (!NIL_P(onibi_value_map_find(&builder->capture_names, name)))
         rb_raise(eRegexpError, "duplicate named capture requires compatibility execution");
       /* MRI resolves a duplicate named backreference to the first matching
          group definition.  Keep the earliest slot in the compile index. */
       onibi_value_map_set(&builder->capture_names, name, LONG2NUM(id), builder->map_roots);
-      onibi_value_map_set(&builder->capture_bodies, name, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
+      onibi_value_map_set(&builder->capture_bodies, name, UINT2NUM(node->body), builder->map_roots);
     }
-    onibi_collect_captures(onibi_hash_value_id(ast, id_key_body), builder, next_capture);
+    onibi_collect_captures(node->body, builder, next_capture);
     return;
   }
-  const ID keys[] = { id_key_body, id_key_children, id_key_branches, id_key_atom, id_key_yes, id_key_no };
-  for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
-    VALUE child = onibi_hash_value_id(ast, keys[i]);
-    if (RB_TYPE_P(child, T_ARRAY))
-      for (long j = 0; j < RARRAY_LEN(child); j++) onibi_collect_captures(rb_ary_entry(child, j), builder, next_capture);
-    else onibi_collect_captures(child, builder, next_capture);
-  }
+  if (node->body != ONIBI_AST_NONE)
+    onibi_collect_captures(node->body, builder, next_capture);
+  if (node->atom != ONIBI_AST_NONE)
+    onibi_collect_captures(node->atom, builder, next_capture);
+  if (node->yes != ONIBI_AST_NONE)
+    onibi_collect_captures(node->yes, builder, next_capture);
+  if (node->no != ONIBI_AST_NONE)
+    onibi_collect_captures(node->no, builder, next_capture);
+  for (size_t i = 0; i < node->child_count; i++)
+    onibi_collect_captures(node->children[i], builder, next_capture);
 }
 
 static long onibi_compile_named_subprogram(VALUE name, VALUE body,
@@ -2319,7 +2380,8 @@ static long onibi_compile_named_subprogram(VALUE name, VALUE body,
     rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
     rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
-    if (onibi_ast_has_subroutine_name(body, name))
+    if (RB_INTEGER_TYPE_P(body) &&
+        onibi_c_ast_has_subroutine_name(builder->ast, (OnibiAstId)NUM2UINT(body), name))
       rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     VALUE starts = rb_ary_new_from_args(1, open);
     onibi_append_values(starts, fragment.start_actions);
@@ -2507,11 +2569,12 @@ static void onibi_gir_validate(VALUE graph) {
   }
 }
 
-static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder_t *builder) {
+static onibi_fragment_t onibi_compile_sequence(const OnibiAstNode *sequence,
+                                               onibi_gir_builder_t *builder) {
   onibi_fragment_t result = onibi_fragment_empty();
   int have_consuming = 0;
-  for (long i = 0; i < RARRAY_LEN(children); i++) {
-    onibi_fragment_t part = onibi_compile_node(rb_ary_entry(children, i), builder);
+  for (size_t i = 0; i < sequence->child_count; i++) {
+    onibi_fragment_t part = onibi_compile_node(UINT2NUM(sequence->children[i]), builder);
     if (part.starts.count == 0) {
       if (have_consuming) {
         onibi_fragment_append_actions(&result.pending_actions, part.start_actions);
@@ -2569,12 +2632,64 @@ static onibi_fragment_t onibi_compile_sequence(VALUE children, onibi_gir_builder
   return result;
 }
 
-static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *builder) {
-  OnibiAstKind type_code = onibi_ast_kind(ast);
+static VALUE onibi_compile_node_field(const onibi_gir_builder_t *builder,
+                                      const OnibiAstNode *node,
+                                      VALUE semantic_node, ID key) {
+  if (node == NULL) return onibi_hash_value_id(semantic_node, key);
+  if (key == id_key_start) return node->start < 0 ? Qnil : LONG2NUM(node->start);
+  if (key == id_key_end) return node->end < 0 ? Qnil : LONG2NUM(node->end);
+  if (key == id_key_byte) return LONG2NUM(node->byte);
+  if (key == id_key_name || key == id_key_options || key == id_key_condition) {
+    VALUE name = onibi_ast_slice_string(builder->ast, node->name);
+    if (NIL_P(name) && key == id_key_name && node->kind == ONIBI_AST_ESCAPE)
+      return rb_str_new((const char[]){(char)node->byte}, 1);
+    return name;
+  }
+  if (key == id_key_name_id) return node->name_id == 0 ? Qnil : ULONG2NUM(node->name_id);
+  if (key == id_key_bytes) return onibi_ast_slice_string(builder->ast, node->bytes);
+  if (key == id_key_negative_options)
+    return onibi_ast_slice_string(builder->ast, node->negative_options);
+  if (key == id_key_body) return node->body == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->body);
+  if (key == id_key_atom) return node->atom == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->atom);
+  if (key == id_key_yes) return node->yes == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->yes);
+  if (key == id_key_no) return node->no == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->no);
+  if (key == id_key_capture) return node->capture < 0 ? Qnil : LONG2NUM(node->capture);
+  if (key == id_key_min) return LONG2NUM(node->min);
+  if (key == id_key_max)
+    return (node->flags & ONIBI_AST_NODE_HAS_MAX) ? LONG2NUM(node->max) : Qnil;
+  if (key == id_key_negated)
+    return (node->flags & ONIBI_AST_NODE_NEGATED) ? Qtrue : Qfalse;
+  if (key == id_key_negative)
+    return (node->flags & ONIBI_AST_NODE_NEGATIVE) ? Qtrue : Qfalse;
+  if (key == id_key_positive)
+    return (node->flags & ONIBI_AST_NODE_POSITIVE) ? Qtrue : Qfalse;
+  if (key == id_key_greedy)
+    return (node->flags & ONIBI_AST_NODE_GREEDY) ? Qtrue : Qfalse;
+  if (key == id_key_possessive)
+    return (node->flags & ONIBI_AST_NODE_POSSESSIVE) ? Qtrue : Qfalse;
+  return Qnil;
+}
+
+static onibi_fragment_t onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder) {
+  VALUE semantic_node = RB_INTEGER_TYPE_P(node_reference) ? Qnil : node_reference;
+  const OnibiAstNode *c_node = NULL;
+  OnibiAstKind type_code;
+  if (RB_INTEGER_TYPE_P(node_reference)) {
+    OnibiAstId id = (OnibiAstId)NUM2UINT(node_reference);
+    c_node = onibi_ast_node_const(builder->ast, id);
+    type_code = c_node->kind;
+    if (type_code == ONIBI_AST_CHARACTER_CLASS || type_code == ONIBI_AST_CLASS_INTERSECTION)
+      semantic_node = onibi_gir_payload_from_ast_terminal(builder->ast, id, 1);
+    else if (type_code == ONIBI_AST_LITERAL || type_code == ONIBI_AST_ESCAPE ||
+             type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_ANY)
+      semantic_node = onibi_gir_payload_from_ast_terminal(builder->ast, id, 0);
+  } else {
+    type_code = onibi_ast_kind(semantic_node);
+  }
   if (type_code == ONIBI_AST_CHARACTER_CLASS) {
-    VALUE children = onibi_hash_value_id(ast, id_key_children);
-    VALUE ranges = onibi_hash_value_id(ast, id_key_ranges);
-    if (!RTEST(onibi_hash_value_id(ast, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
+    VALUE children = onibi_hash_value_id(semantic_node, id_key_children);
+    VALUE ranges = onibi_hash_value_id(semantic_node, id_key_ranges);
+    if (!RTEST(onibi_hash_value_id(semantic_node, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
         RARRAY_LEN(ranges) == 0 && RARRAY_LEN(children) > 0) {
       int literal_only = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++) {
@@ -2605,7 +2720,7 @@ static onibi_fragment_t onibi_compile_node(VALUE ast, onibi_gir_builder_t *build
         return result;
       }
     }
-    if (!RTEST(onibi_hash_value_id(ast, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
+    if (!RTEST(onibi_hash_value_id(semantic_node, id_key_negated)) && RB_TYPE_P(children, T_ARRAY) &&
         RB_TYPE_P(ranges, T_ARRAY) && RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
       int literal_children = 1;
       for (long i = 0; i < RARRAY_LEN(children); i++)
@@ -2653,12 +2768,12 @@ skip_utf8_range_expansion:
      bytes as a short sequence of G_CHAR states.  The VM still reports byte
      offsets, and the encoding gate below limits this path to valid UTF-8. */
   if (type_code == ONIBI_AST_LITERAL) {
-    VALUE literal_bytes = onibi_hash_value_id(ast, id_key_bytes);
+    VALUE literal_bytes = onibi_compile_node_field(builder, c_node, semantic_node, id_key_bytes);
     if (!NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) > 1) {
       onibi_fragment_t result = onibi_fragment_empty();
       result.nullable = 0;
       for (long i = 0; i < RSTRING_LEN(literal_bytes); i++) {
-        VALUE byte_ast = rb_hash_dup(ast);
+        VALUE byte_ast = rb_hash_dup(semantic_node);
         rb_hash_aset(byte_ast, ID2SYM(id_key_byte),
                      INT2NUM((unsigned char)RSTRING_PTR(literal_bytes)[i]));
         rb_hash_aset(byte_ast, ID2SYM(id_key_bytes),
@@ -2673,13 +2788,12 @@ skip_utf8_range_expansion:
     }
   }
   if (type_code == ONIBI_AST_SEQUENCE)
-    return onibi_compile_sequence(onibi_hash_value_id(ast, id_key_children), builder);
+    return onibi_compile_sequence(c_node, builder);
   if (type_code == ONIBI_AST_ALTERNATIVE) {
     onibi_fragment_t result = onibi_fragment_empty();
     result.nullable = 0;
-    VALUE branches = onibi_hash_value_id(ast, id_key_branches);
-    for (long i = 0; i < RARRAY_LEN(branches); i++) {
-      onibi_fragment_t branch = onibi_compile_node(rb_ary_entry(branches, i), builder);
+    for (size_t i = 0; i < c_node->child_count; i++) {
+      onibi_fragment_t branch = onibi_compile_node(UINT2NUM(c_node->children[i]), builder);
       onibi_id_vector_append(&result.starts, &branch.starts);
       onibi_id_vector_append(&result.exits, &branch.exits);
       /* Preserve actions on each alternative edge.  A branch action cannot
@@ -2696,12 +2810,12 @@ skip_utf8_range_expansion:
   if (type_code == ONIBI_AST_LITERAL || type_code == ONIBI_AST_ESCAPE ||
       type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_CHARACTER_CLASS ||
       type_code == ONIBI_AST_CLASS_INTERSECTION || type_code == ONIBI_AST_ANY) {
-    VALUE literal_bytes = onibi_hash_value_id(ast, id_key_bytes);
+    VALUE literal_bytes = onibi_compile_node_field(builder, c_node, semantic_node, id_key_bytes);
     if (type_code == ONIBI_AST_LITERAL && !NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) != 1)
       rb_raise(eRegexpError, "multibyte literals require encoded GIR states");
     if (type_code == ONIBI_AST_ESCAPE) {
-      VALUE name = onibi_hash_value_id(ast, id_key_name);
-      VALUE name_id = onibi_hash_value_id(ast, id_key_name_id);
+      VALUE name = onibi_compile_node_field(builder, c_node, semantic_node, id_key_name);
+      VALUE name_id = onibi_compile_node_field(builder, c_node, semantic_node, id_key_name_id);
       int is_property = !NIL_P(name_id) &&
         onibi_ascii_property_name_p((ID)NUM2ULONG(name_id));
       if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !is_property)
@@ -2712,11 +2826,11 @@ skip_utf8_range_expansion:
           (code == 'r' || code == 'p' || code == 'u'))
         rb_raise(eRegexpError, "escape is not supported in RSeq");
     }
-    VALUE payload = ast;
-    if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_hash_value_id(ast, id_key_name))) {
-      VALUE id_value = onibi_value_map_find(&builder->capture_names, onibi_hash_value_id(ast, id_key_name));
+    VALUE payload = semantic_node;
+    if (type_code == ONIBI_AST_BACKREF && !NIL_P(onibi_compile_node_field(builder, c_node, semantic_node, id_key_name))) {
+      VALUE id_value = onibi_value_map_find(&builder->capture_names, onibi_compile_node_field(builder, c_node, semantic_node, id_key_name));
       if (NIL_P(id_value)) rb_raise(eRegexpError, "undefined named backreference");
-      payload = rb_hash_dup(ast);
+      payload = rb_hash_dup(semantic_node);
       rb_hash_aset(payload, ID2SYM(id_key_capture), LONG2NUM(NUM2LONG(id_value) + 1));
       rb_obj_freeze(payload);
     }
@@ -2725,9 +2839,9 @@ skip_utf8_range_expansion:
       rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
       rb_obj_freeze(payload);
     }
-    VALUE escape_name_for_op = onibi_hash_value_id(ast, id_key_name);
+    VALUE escape_name_for_op = onibi_compile_node_field(builder, c_node, semantic_node, id_key_name);
     int grapheme_escape = type_code == ONIBI_AST_ESCAPE &&
-      ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_hash_value_id(ast, id_key_byte))) == 'x') ||
+      ((NIL_P(escape_name_for_op) && tolower((unsigned char)NUM2INT(onibi_compile_node_field(builder, c_node, semantic_node, id_key_byte))) == 'x') ||
        (!NIL_P(escape_name_for_op) && RSTRING_LEN(escape_name_for_op) == 1 &&
         tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
     long id = builder->next_id++;
@@ -2781,7 +2895,7 @@ skip_utf8_range_expansion:
   }
   if (type_code == ONIBI_AST_SUBROUTINE)
   {
-    VALUE name = onibi_hash_value_id(ast, id_key_name);
+    VALUE name = onibi_compile_node_field(builder, c_node, semantic_node, id_key_name);
     VALUE body = NIL_P(name) ? Qnil : onibi_value_map_find(&builder->capture_bodies, name);
     if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
     VALUE existing = onibi_value_map_find(&builder->subprogram_ids, name);
@@ -2800,8 +2914,8 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_OPTION_GLOBAL) {
-    VALUE option_names = onibi_hash_value_id(ast, id_key_options);
-    int negative = RTEST(onibi_hash_value_id(ast, id_key_negative));
+    VALUE option_names = onibi_compile_node_field(builder, c_node, semantic_node, id_key_options);
+    int negative = RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_negative));
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "global option modifier has no flags");
     for (long i = 0; i < RSTRING_LEN(option_names); i++) {
@@ -2811,7 +2925,7 @@ skip_utf8_range_expansion:
       else if (RSTRING_PTR(option_names)[i] == 'x') continue;
       else rb_raise(eRegexpError, "unknown global option flag");
     }
-    VALUE negative_options = onibi_hash_value_id(ast, id_key_negative_options);
+    VALUE negative_options = onibi_compile_node_field(builder, c_node, semantic_node, id_key_negative_options);
     if (!NIL_P(negative_options)) {
       for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
         if (RSTRING_PTR(negative_options)[i] == 'i') builder->ignorecase = 0;
@@ -2823,12 +2937,12 @@ skip_utf8_range_expansion:
     return onibi_fragment_empty();
   }
   if (type_code == ONIBI_AST_OPTION_SCOPE) {
-    VALUE option_names = onibi_hash_value_id(ast, id_key_options);
+    VALUE option_names = onibi_compile_node_field(builder, c_node, semantic_node, id_key_options);
     if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
       rb_raise(eRegexpError, "option scope has no flags");
     int saved_ignorecase = builder->ignorecase;
     int saved_multiline = builder->multiline;
-    int negative = RTEST(onibi_hash_value_id(ast, id_key_negative));
+    int negative = RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_negative));
     for (long i = 0; i < RSTRING_LEN(option_names); i++) {
       int enabled = negative ? 0 : 1;
       if (RSTRING_PTR(option_names)[i] == 'i') builder->ignorecase = enabled;
@@ -2836,7 +2950,7 @@ skip_utf8_range_expansion:
       else if (RSTRING_PTR(option_names)[i] == 'x') continue;
       else rb_raise(eRegexpError, "unknown option scope flag");
     }
-    VALUE negative_options = onibi_hash_value_id(ast, id_key_negative_options);
+    VALUE negative_options = onibi_compile_node_field(builder, c_node, semantic_node, id_key_negative_options);
     if (!NIL_P(negative_options)) {
       for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
         if (RSTRING_PTR(negative_options)[i] == 'i') builder->ignorecase = 0;
@@ -2845,7 +2959,7 @@ skip_utf8_range_expansion:
         else rb_raise(eRegexpError, "unknown option scope flag");
       }
     }
-  onibi_fragment_t result = onibi_compile_node(onibi_hash_value_id(ast, id_key_body), builder);
+  onibi_fragment_t result = onibi_compile_node(onibi_compile_node_field(builder, c_node, semantic_node, id_key_body), builder);
     builder->ignorecase = saved_ignorecase;
     builder->multiline = saved_multiline;
     return result;
@@ -2854,7 +2968,7 @@ skip_utf8_range_expansion:
   {
     onibi_fragment_t result = onibi_fragment_empty();
     VALUE action = rb_hash_new();
-    long marker = NUM2LONG(onibi_hash_value_id(ast, id_key_byte));
+    long marker = NUM2LONG(onibi_compile_node_field(builder, c_node, semantic_node, id_key_byte));
     ID op = id_a_assert_end_buffer;
     /* Ruby keeps ^ and $ line anchors independent of the m option.  The
        option changes dot-newline matching only. */
@@ -2879,7 +2993,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_CONDITIONAL) {
-    VALUE condition = onibi_hash_value_id(ast, id_key_condition);
+    VALUE condition = onibi_compile_node_field(builder, c_node, semantic_node, id_key_condition);
     char *endptr = NULL;
     const char *condition_text = StringValueCStr(condition);
     long capture_id = strtol(condition_text, &endptr, 10) - 1;
@@ -2893,8 +3007,8 @@ skip_utf8_range_expansion:
       capture_id = NUM2LONG(named);
     }
     if (capture_id < 0) rb_raise(eRegexpError, "conditional capture is invalid");
-    onibi_fragment_t yes = onibi_compile_node(onibi_hash_value_id(ast, id_key_yes), builder);
-    onibi_fragment_t no = onibi_compile_node(onibi_hash_value_id(ast, id_key_no), builder);
+    onibi_fragment_t yes = onibi_compile_node(onibi_compile_node_field(builder, c_node, semantic_node, id_key_yes), builder);
+    onibi_fragment_t no = onibi_compile_node(onibi_compile_node_field(builder, c_node, semantic_node, id_key_no), builder);
     OnibiValueVector yes_guard;
     onibi_value_vector_init(&yes_guard);
     onibi_value_vector_push(&yes_guard, onibi_capture_test_action(capture_id, 1), builder->map_roots);
@@ -2923,7 +3037,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_ATOMIC) {
-    VALUE body = onibi_hash_value_id(ast, id_key_body);
+    VALUE body = onibi_compile_node_field(builder, c_node, semantic_node, id_key_body);
     long subprogram_id = onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(id_key_subprogram), LONG2NUM(subprogram_id));
@@ -2937,7 +3051,7 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_ABSENCE) {
-    long subprogram_id = onibi_compile_subprogram(onibi_hash_value_id(ast, id_key_body), builder,
+    long subprogram_id = onibi_compile_subprogram(onibi_compile_node_field(builder, c_node, semantic_node, id_key_body), builder,
                                                    ONIBI_SUBPROGRAM_ABSENT);
     VALUE payload = rb_hash_new();
     rb_hash_aset(payload, ID2SYM(id_key_subprogram), LONG2NUM(subprogram_id));
@@ -2951,17 +3065,18 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_LOOKAHEAD || type_code == ONIBI_AST_LOOKBEHIND) {
-    VALUE body = onibi_hash_value_id(ast, id_key_body);
-    if (!RB_TYPE_P(body, T_HASH))
+    if (c_node == NULL || c_node->body == ONIBI_AST_NONE)
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
-    VALUE children = onibi_hash_value_id(body, id_key_children);
-    if (!RB_TYPE_P(children, T_ARRAY))
+    const OnibiAstNode *body = onibi_ast_node_const(builder->ast, c_node->body);
+    if (body->kind != ONIBI_AST_SEQUENCE)
       rb_raise(eRegexpError, "lookaround body has no literal sequence");
     VALUE bytes = rb_str_new(NULL, 0);
     VALUE predicates = rb_ary_new();
-    for (long i = 0; i < RARRAY_LEN(children); i++) {
-      VALUE child = rb_ary_entry(children, i);
-      OnibiAstKind child_type = onibi_ast_kind(child);
+    for (size_t i = 0; i < body->child_count; i++) {
+      OnibiAstId child_id = body->children[i];
+      OnibiAstKind child_type = onibi_ast_node_const(builder->ast, child_id)->kind;
+      VALUE child = onibi_gir_payload_from_ast_terminal(builder->ast, child_id,
+        child_type == ONIBI_AST_CHARACTER_CLASS || child_type == ONIBI_AST_CLASS_INTERSECTION);
       if (child_type == ONIBI_AST_CHARACTER_CLASS ||
           child_type == ONIBI_AST_CLASS_INTERSECTION) {
         VALUE predicate = rb_hash_new();
@@ -3014,7 +3129,7 @@ skip_utf8_range_expansion:
       id_a_assert_lookbehind : id_a_assert_lookahead;
     rb_hash_aset(action, ID2SYM(id_key_op), ID2SYM(assertion_op));
     onibi_set_gir_action_opcode(action, assertion_op);
-    rb_hash_aset(action, ID2SYM(id_key_positive), onibi_hash_value_id(ast, id_key_positive));
+    rb_hash_aset(action, ID2SYM(id_key_positive), onibi_compile_node_field(builder, c_node, semantic_node, id_key_positive));
     rb_hash_aset(action, ID2SYM(id_key_bytes), bytes);
     if (RARRAY_LEN(predicates) > 0) rb_hash_aset(action, ID2SYM(id_key_predicates), predicates);
     rb_hash_aset(action, ID2SYM(id_key_width), LONG2NUM(RARRAY_LEN(predicates)));
@@ -3024,14 +3139,14 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_CAPTURE) {
-    VALUE capture_ast_key = onibi_hash_value_id(ast, id_key_start);
+    VALUE capture_ast_key = onibi_compile_node_field(builder, c_node, semantic_node, id_key_start);
     VALUE capture_id_value = onibi_value_map_find(&builder->capture_ids, capture_ast_key);
     long capture_id;
     if (NIL_P(capture_id_value)) {
       capture_id = builder->capture_count++;
       onibi_value_map_set(&builder->capture_ids, capture_ast_key, LONG2NUM(capture_id), builder->map_roots);
     } else capture_id = NUM2LONG(capture_id_value);
-    VALUE capture_body = onibi_hash_value_id(ast, id_key_body);
+    VALUE capture_body = onibi_compile_node_field(builder, c_node, semantic_node, id_key_body);
     onibi_fragment_t result = onibi_compile_node(capture_body, builder);
     VALUE open = rb_hash_new(), close = rb_hash_new();
     rb_hash_aset(open, ID2SYM(id_key_op), ID2SYM(id_capture_open));
@@ -3040,16 +3155,18 @@ skip_utf8_range_expansion:
     rb_hash_aset(close, ID2SYM(id_key_op), ID2SYM(id_capture_close));
     onibi_set_gir_action_opcode(close, id_capture_close);
     rb_hash_aset(close, ID2SYM(id_key_slot), LONG2NUM(2 * capture_id + 1));
-    VALUE capture_name = onibi_hash_value_id(ast, id_key_name);
-    if (!NIL_P(capture_name) && onibi_ast_has_subroutine_name(capture_body, capture_name))
+    VALUE capture_name = onibi_compile_node_field(builder, c_node, semantic_node, id_key_name);
+    if (!NIL_P(capture_name) && RB_INTEGER_TYPE_P(capture_body) &&
+        onibi_c_ast_has_subroutine_name(builder->ast,
+                                        (OnibiAstId)NUM2UINT(capture_body), capture_name))
       rb_hash_aset(close, ID2SYM(id_key_preserve_if_set), Qtrue);
     char capture_name_key[32];
     snprintf(capture_name_key, sizeof(capture_name_key), "%ld", capture_id + 1);
-    onibi_value_map_set(&builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_hash_value_id(ast, id_key_body), builder->map_roots);
+    onibi_value_map_set(&builder->capture_bodies, rb_str_new_cstr(capture_name_key), onibi_compile_node_field(builder, c_node, semantic_node, id_key_body), builder->map_roots);
     if (!NIL_P(capture_name)) {
       if (NIL_P(onibi_value_map_find(&builder->capture_names, capture_name)))
         onibi_value_map_set(&builder->capture_names, capture_name, LONG2NUM(capture_id), builder->map_roots);
-      onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_hash_value_id(ast, id_key_body), builder->map_roots);
+      onibi_value_map_set(&builder->capture_bodies, capture_name, onibi_compile_node_field(builder, c_node, semantic_node, id_key_body), builder->map_roots);
     }
     rb_ary_push(onibi_fragment_actions_mutable(&result.start_actions), open);
     rb_ary_push(onibi_fragment_actions_mutable(&result.pending_actions), close);
@@ -3057,23 +3174,24 @@ skip_utf8_range_expansion:
     return result;
   }
   if (type_code == ONIBI_AST_GROUP)
-    return onibi_compile_node(onibi_hash_value_id(ast, id_key_body), builder);
+    return onibi_compile_node(onibi_compile_node_field(builder, c_node, semantic_node, id_key_body), builder);
   if (type_code == ONIBI_AST_QUANTIFIER) {
-    VALUE min_value = onibi_hash_value_id(ast, id_key_min), max_value = onibi_hash_value_id(ast, id_key_max);
+    VALUE min_value = onibi_compile_node_field(builder, c_node, semantic_node, id_key_min), max_value = onibi_compile_node_field(builder, c_node, semantic_node, id_key_max);
     long min = NUM2LONG(min_value);
-    VALUE atom = onibi_hash_value_id(ast, id_key_atom);
+    VALUE atom = onibi_compile_node_field(builder, c_node, semantic_node, id_key_atom);
     if (min == 0) builder->optional_seen = 1;
-    if (RTEST(onibi_hash_value_id(ast, id_key_possessive)) &&
+    if (RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_possessive)) &&
         (NIL_P(max_value) || NUM2LONG(max_value) != min))
       rb_raise(eRegexpError, "variable possessive quantifier is not supported in RSeq");
-    if (RTEST(onibi_hash_value_id(ast, id_key_possessive)) && onibi_ast_has_capture(atom))
+    if (RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_possessive)) && RB_INTEGER_TYPE_P(atom) &&
+        onibi_c_ast_has_capture(builder->ast, (OnibiAstId)NUM2UINT(atom)))
       rb_raise(eRegexpError, "possessive capture repeat is not supported in RSeq");
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
       return onibi_fragment_empty();
     if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
-      onibi_fragment_t result = onibi_compile_node(onibi_hash_value_id(ast, id_key_atom), builder);
+      onibi_fragment_t result = onibi_compile_node(onibi_compile_node_field(builder, c_node, semantic_node, id_key_atom), builder);
       result.nullable = 1;
-      result.lazy = !RTEST(onibi_hash_value_id(ast, id_key_greedy));
+      result.lazy = !RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_greedy));
       return result;
     }
     long counter_slot = -1;
@@ -3142,7 +3260,7 @@ skip_utf8_range_expansion:
       onibi_id_vector_append(&result.exits, &repeat.exits);
       onibi_id_vector_free(&repeat.starts); onibi_id_vector_free(&repeat.exits);
     }
-    result.lazy = !RTEST(onibi_hash_value_id(ast, id_key_greedy));
+    result.lazy = !RTEST(onibi_compile_node_field(builder, c_node, semantic_node, id_key_greedy));
     return result;
   }
   rb_raise(eRegexpError, "unsupported AST node");
@@ -3152,8 +3270,9 @@ skip_utf8_range_expansion:
 static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   (void)self;
   OnibiParsed *parsed_data = onibi_parsed_get(parsed);
-  VALUE ast = parsed_data->ast;
-  if (NIL_P(ast)) rb_raise(rb_eArgError, "compiler requires parser output");
+  if (parsed_data->arena.root == ONIBI_AST_NONE)
+    rb_raise(rb_eArgError, "compiler requires parser output");
+  VALUE root_reference = UINT2NUM(parsed_data->arena.root);
   int parsed_options = parsed_data->options;
   int ignorecase = (parsed_options & 1) != 0;
   int multiline = (parsed_options & 4) != 0;
@@ -3161,6 +3280,7 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   onibi_value_vector_init(&subprogram_records);
   onibi_gir_builder_t builder;
   memset(&builder, 0, sizeof(builder));
+  builder.ast = &parsed_data->arena;
   onibi_gir_edge_vector_init(&builder.edges);
   builder.states.entries = NULL; builder.states.count = builder.states.capacity = 0;
   onibi_value_map_init(&builder.capture_names);
@@ -3176,9 +3296,9 @@ static VALUE onibi_compiler_compile(VALUE self, VALUE parsed) {
   builder.ignorecase = ignorecase;
   builder.multiline = multiline;
   long prepass_capture_count = 0;
-  onibi_collect_captures(ast, &builder, &prepass_capture_count);
+  onibi_collect_captures(parsed_data->arena.root, &builder, &prepass_capture_count);
   builder.capture_count = prepass_capture_count;
-  onibi_fragment_t fragment = onibi_compile_node(ast, &builder);
+  onibi_fragment_t fragment = onibi_compile_node(root_reference, &builder);
   long accept = builder.next_id++;
   onibi_gir_state(&builder, accept, id_g_accept, Qnil);
   OnibiIdVector accept_starts;
@@ -3756,18 +3876,30 @@ static VALUE onibi_alloc(VALUE klass) {
 typedef struct {
   VALUE source;
   VALUE options;
-  VALUE tokens;
+  const OnibiTokenVector *tokens;
 } OnibiProgramArgs;
+
+typedef struct {
+  VALUE source;
+  int extended;
+  OnibiTokenVector *tokens;
+} OnibiTokenizeArgs;
+
+static VALUE onibi_tokenize_protected(VALUE argument) {
+  OnibiTokenizeArgs *args = (OnibiTokenizeArgs *)(uintptr_t)argument;
+  onibi_tokenize_internal(args->source, args->extended, args->tokens);
+  return Qnil;
+}
 
 static VALUE onibi_build_program(VALUE argument) {
   OnibiProgramArgs *args = (OnibiProgramArgs *)(uintptr_t)argument;
   VALUE source = args->source;
   VALUE options = args->options;
-  VALUE tokens = args->tokens;
+  const OnibiTokenVector *tokens = args->tokens;
   VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
   VALUE compiled = onibi_compiler_compile(Qnil, parsed);
   VALUE rseq = onibi_rseq_lower(Qnil, compiled);
-  onibi_parsed_get(parsed)->ast = Qnil;
+  onibi_ast_arena_free(&onibi_parsed_get(parsed)->arena);
   return rb_ary_new_from_args(2, parsed, rseq);
 }
 
@@ -3775,7 +3907,7 @@ static VALUE onibi_parse_program(VALUE argument) {
   OnibiProgramArgs *args = (OnibiProgramArgs *)(uintptr_t)argument;
   VALUE source = args->source;
   VALUE options = args->options;
-  VALUE tokens = args->tokens;
+  const OnibiTokenVector *tokens = args->tokens;
   return onibi_parser_parse_internal(source, options, tokens);
 }
 
@@ -3788,14 +3920,14 @@ static VALUE onibi_make_mri_regexp(VALUE argument) {
 
 /* Compute all dispatch/compiler feature bits in one pass over the immutable
    token stream.  Runtime entry points use these bits and never rescan source. */
-static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, onibi_regexp_t *obj) {
+static void onibi_token_features(const OnibiTokenVector *feature_tokens, onibi_regexp_t *obj) {
   int in_class = 0;
   long class_depth = 0;
   int repeat_active = 0;
   uint64_t repeat_value = 0;
   int repeat_have_digit = 0;
   int repeat_over_limit = 0;
-  OnibiFeatureToken *previous = NULL;
+  const OnibiTokenRecord *previous = NULL;
   obj->feature_flags &= ~(ONIBI_FEATURE_CLASS_INTERSECTION | ONIBI_FEATURE_NESTED_CLASS |
                           ONIBI_FEATURE_LARGE_REPEAT | ONIBI_FEATURE_ABSENCE |
                           ONIBI_FEATURE_CONDITIONAL | ONIBI_FEATURE_BACKREF |
@@ -3808,7 +3940,7 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   obj->feature_flags = 0;
   obj->execution_flags = 0;
   for (size_t i = 0; i < feature_tokens->count; i++) {
-    OnibiFeatureToken *token = &feature_tokens->items[i];
+    const OnibiTokenRecord *token = &feature_tokens->items[i];
     OnibiTokenKind kind_code = token->kind;
     if (kind_code == ONIBI_TOKEN_LITERAL && token->byte > 127) {
       obj->feature_flags |= ONIBI_FEATURE_NON_ASCII_LITERAL;
@@ -3899,107 +4031,73 @@ static void onibi_token_features(const OnibiFeatureTokenVector *feature_tokens, 
   }
 }
 
-static int onibi_ast_safe_multibyte_class(VALUE ast) {
-  if (!RB_TYPE_P(ast, T_HASH)) return 0;
-  OnibiAstKind type = onibi_ast_kind(ast);
-  if (type == ONIBI_AST_CHARACTER_CLASS) {
-    VALUE children = onibi_hash_value_id(ast, id_key_children);
-    VALUE ranges = onibi_hash_value_id(ast, id_key_ranges);
-    if (RTEST(onibi_hash_value_id(ast, id_key_negated)) || !RB_TYPE_P(children, T_ARRAY) ||
-        !RB_TYPE_P(ranges, T_ARRAY) || RARRAY_LEN(children) == 0) return 0;
-    for (long i = 0; i < RARRAY_LEN(children); i++) {
-      VALUE child = rb_ary_entry(children, i);
-      VALUE kind_code = onibi_hash_value_id(child, id_key_kind_code);
-      OnibiAstKind child_type = onibi_ast_kind(child);
-      if ((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_LITERAL) || child_type == ONIBI_AST_LITERAL) continue;
-      VALUE child_name = onibi_hash_value_id(child, id_key_name);
-      VALUE child_name_id = onibi_hash_value_id(child, id_key_name_id);
-      ID property = NIL_P(child_name_id) ? 0 : (ID)NUM2ULONG(child_name_id);
-      if (((!NIL_P(kind_code) && NUM2UINT(kind_code) == ONIBI_TOKEN_ESCAPE) || child_type == ONIBI_AST_ESCAPE) && !NIL_P(child_name) &&
-          onibi_unicode_ctype_id(property) >= 0) continue;
+static int onibi_ast_safe_multibyte_class(const OnibiAstArena *arena, OnibiAstId id) {
+  const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+  if (node->kind == ONIBI_AST_CHARACTER_CLASS) {
+    if ((node->flags & ONIBI_AST_NODE_NEGATED) || node->child_count == 0) return 0;
+    for (size_t i = 0; i < node->child_count; i++) {
+      const OnibiAstNode *child = onibi_ast_node_const(arena, node->children[i]);
+      if (child->kind == ONIBI_AST_LITERAL) continue;
+      if (child->kind == ONIBI_AST_ESCAPE && child->name.present &&
+          onibi_unicode_ctype_id(child->name_id) >= 0) continue;
       return 0;
     }
-    for (long i = 0; i < RARRAY_LEN(ranges); i++) {
-      VALUE range = rb_ary_entry(ranges, i);
-      if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2) return 0;
-      VALUE first = rb_ary_entry(range, 0), last = rb_ary_entry(range, 1);
-      if ((!RB_INTEGER_TYPE_P(first) && !RB_TYPE_P(first, T_STRING)) ||
-          (!RB_INTEGER_TYPE_P(last) && !RB_TYPE_P(last, T_STRING))) return 0;
-    }
     return 1;
   }
-  if (type == ONIBI_AST_SEQUENCE) {
-    VALUE children = onibi_hash_value_id(ast, id_key_children);
-    if (!RB_TYPE_P(children, T_ARRAY)) return 0;
-    for (long i = 0; i < RARRAY_LEN(children); i++)
-      if (!onibi_ast_safe_multibyte_class(rb_ary_entry(children, i))) return 0;
+  if (node->kind == ONIBI_AST_SEQUENCE) {
+    for (size_t i = 0; i < node->child_count; i++)
+      if (!onibi_ast_safe_multibyte_class(arena, node->children[i])) return 0;
     return 1;
   }
-  if (type == ONIBI_AST_LITERAL || type == ONIBI_AST_ANCHOR) return 1;
-  return 0;
+  return node->kind == ONIBI_AST_LITERAL || node->kind == ONIBI_AST_ANCHOR;
 }
 
-static int onibi_ast_nullable_scan(VALUE ast, OnibiAstAnalysis *analysis) {
-  if (NIL_P(ast)) return 1;
-  if (RB_TYPE_P(ast, T_ARRAY)) {
-    int result = 1;
-    for (long i = 0; i < RARRAY_LEN(ast); i++)
-      if (!onibi_ast_nullable_scan(rb_ary_entry(ast, i), analysis)) result = 0;
-    return result;
-  }
-  if (!RB_TYPE_P(ast, T_HASH)) return 1;
-  OnibiAstKind type = onibi_ast_kind(ast);
+static int onibi_ast_nullable_scan(const OnibiAstArena *arena, OnibiAstId id,
+                                   OnibiAstAnalysis *analysis) {
+  const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+  OnibiAstKind type = node->kind;
   if (type == ONIBI_AST_ANCHOR) analysis->flags |= ONIBI_AST_ANALYSIS_HAS_ANCHOR;
-  if (type == ONIBI_AST_CAPTURE) analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
   if (type == ONIBI_AST_CAPTURE) {
-    int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), analysis);
-    if (body_nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE;
-    return body_nullable;
+    analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
+    int nullable = onibi_ast_nullable_scan(arena, node->body, analysis);
+    if (nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE;
+    return nullable;
   }
   if (type == ONIBI_AST_QUANTIFIER) {
-    VALUE atom = onibi_hash_value_id(ast, id_key_atom);
     OnibiAstAnalysis atom_analysis = {0};
-    int atom_nullable = onibi_ast_nullable_scan(atom, &atom_analysis);
+    int nullable = onibi_ast_nullable_scan(arena, node->atom, &atom_analysis);
     analysis->flags |= atom_analysis.flags &
       (ONIBI_AST_ANALYSIS_HAS_ANCHOR | ONIBI_AST_ANALYSIS_ANCHOR_REPEAT);
     if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_ANCHOR)
       analysis->flags |= ONIBI_AST_ANALYSIS_ANCHOR_REPEAT;
     if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_CAPTURE)
       analysis->flags |= ONIBI_AST_ANALYSIS_HAS_CAPTURE;
-    VALUE min = onibi_hash_value_id(ast, id_key_min);
-    if (!NIL_P(min) && NUM2LONG(min) == 0) {
+    if (node->min == 0) {
       if (atom_analysis.flags & ONIBI_AST_ANALYSIS_HAS_CAPTURE)
         analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE;
       return 1;
     }
-    return atom_nullable;
+    return nullable;
   }
   if (type == ONIBI_AST_ABSENCE) {
     OnibiAstAnalysis body_analysis = {0};
-    int body_nullable = onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), &body_analysis);
+    int nullable = onibi_ast_nullable_scan(arena, node->body, &body_analysis);
     analysis->flags |= body_analysis.flags &
       (ONIBI_AST_ANALYSIS_HAS_ANCHOR | ONIBI_AST_ANALYSIS_ANCHOR_REPEAT);
-    if (body_nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE;
+    if (nullable) analysis->flags |= ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE;
     return 0;
   }
-  if (type == ONIBI_AST_SEQUENCE) {
-    int result = 1;
-    VALUE children = onibi_hash_value_id(ast, id_key_children);
-    if (!RB_TYPE_P(children, T_ARRAY)) return 0;
-    for (long i = 0; i < RARRAY_LEN(children); i++)
-      if (!onibi_ast_nullable_scan(rb_ary_entry(children, i), analysis)) result = 0;
-    return result;
-  }
-  if (type == ONIBI_AST_ALTERNATIVE) {
-    int result = 0;
-    VALUE branches = onibi_hash_value_id(ast, id_key_branches);
-    if (!RB_TYPE_P(branches, T_ARRAY)) return 0;
-    for (long i = 0; i < RARRAY_LEN(branches); i++)
-      if (onibi_ast_nullable_scan(rb_ary_entry(branches, i), analysis)) result = 1;
+  if (type == ONIBI_AST_SEQUENCE || type == ONIBI_AST_ALTERNATIVE) {
+    int result = type == ONIBI_AST_SEQUENCE;
+    for (size_t i = 0; i < node->child_count; i++) {
+      int nullable = onibi_ast_nullable_scan(arena, node->children[i], analysis);
+      if (type == ONIBI_AST_SEQUENCE && !nullable) result = 0;
+      if (type == ONIBI_AST_ALTERNATIVE && nullable) result = 1;
+    }
     return result;
   }
   if (type == ONIBI_AST_GROUP || type == ONIBI_AST_OPTION_SCOPE || type == ONIBI_AST_ATOMIC)
-    return onibi_ast_nullable_scan(onibi_hash_value_id(ast, id_key_body), analysis);
+    return onibi_ast_nullable_scan(arena, node->body, analysis);
   if (type == ONIBI_AST_LOOKAHEAD || type == ONIBI_AST_LOOKBEHIND ||
       type == ONIBI_AST_ANCHOR || type == ONIBI_AST_MATCH_RESET) return 1;
   return 0;
@@ -4079,16 +4177,16 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
   obj->names = Qnil;
   obj->named_captures = Qnil;
   obj->rseq = Qnil;
-  VALUE tokens = onibi_tokenize_internal(source, (opts & 2) != 0);
-  size_t feature_count = (size_t)RARRAY_LEN(tokens);
-  if (feature_count > SIZE_MAX / sizeof(OnibiFeatureToken))
-    rb_raise(rb_eNoMemError, "token feature vector is too large");
-  int feature_heap = feature_count > 256;
-  OnibiFeatureToken *feature_storage = feature_count == 0 ? NULL :
-    (feature_heap ? ALLOC_N(OnibiFeatureToken, feature_count) : ALLOCA_N(OnibiFeatureToken, feature_count));
-  OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens, feature_storage);
-  onibi_token_features(&feature_tokens, obj);
-  if (feature_heap) xfree(feature_tokens.items);
+  OnibiTokenVector tokens;
+  onibi_token_vector_init(&tokens);
+  OnibiTokenizeArgs tokenize_args = {source, (opts & 2) != 0, &tokens};
+  int tokenize_state = 0;
+  rb_protect(onibi_tokenize_protected, (VALUE)(uintptr_t)&tokenize_args, &tokenize_state);
+  if (tokenize_state) {
+    onibi_token_vector_free(&tokens);
+    rb_jump_tag(tokenize_state);
+  }
+  onibi_token_features(&tokens, obj);
   if (!(opts & 32) && source_encoding_index == rb_utf8_encindex() &&
       ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE)) opts |= 16;
     if (((opts & 32) && source_ascii_only &&
@@ -4103,20 +4201,21 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     opts |= 16;
     obj->options = opts;
   }
-  OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), Qnil};
+  OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), NULL};
   int regexp_state = 0;
   obj->regexp = rb_protect(onibi_make_mri_regexp, (VALUE)(uintptr_t)&regexp_args, &regexp_state);
   if (regexp_state) {
     VALUE error = rb_errinfo();
     VALUE message = rb_funcall(error, id_message, 0);
     rb_set_errinfo(Qnil);
+    onibi_token_vector_free(&tokens);
     rb_raise(eRegexpError, "%s", StringValueCStr(message));
   }
   obj->names = rb_funcall(obj->regexp, id_names, 0);
   obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
   rb_obj_freeze(obj->names);
   rb_obj_freeze(obj->named_captures);
-  OnibiProgramArgs program_args = {source, INT2NUM(opts), tokens};
+  OnibiProgramArgs program_args = {source, INT2NUM(opts), &tokens};
   int program_state = 0;
   VALUE parsed = Qnil;
   VALUE program = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
@@ -4132,8 +4231,9 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
       OnibiParsed *parsed_data = onibi_parsed_get(parsed);
       obj->ast_flags = parsed_data->ast_flags;
       /* The AST is an initialization artifact.  The published RSeq/GIR
-         objects carry all runtime data, so release the Ruby adapter now. */
-      parsed_data->ast = Qnil;
+         objects carry all runtime data. */
+      if (parsed_data->arena.root != ONIBI_AST_NONE)
+        onibi_ast_arena_free(&parsed_data->arena);
     }
     /* Keep constructs without a complete GIR lowering on MRI.  This test
        runs once during compilation.  Match calls do not inspect source. */
@@ -4152,6 +4252,7 @@ static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self) {
     /* Keep a failed lowering on the dynamic MRI boundary. */
     obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
   }
+  onibi_token_vector_free(&tokens);
   if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) && !NIL_P(obj->rseq)) obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
   obj->execution_kind = (obj->execution_flags & ONIBI_FEATURE_DYNAMIC) ? ONIBI_EXEC_DYNAMIC :
     ((obj->execution_flags & ONIBI_FEATURE_TAGGED) ? ONIBI_EXEC_TAGGED : ONIBI_EXEC_REGULAR);
@@ -4324,355 +4425,6 @@ static VALUE onibi_regexp_linear_time_p(VALUE klass, VALUE pattern) {
           !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ABSENCE) && !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL)) ? Qtrue : Qfalse;
 }
 
-#if 0 /* Private diagnostic pipeline; kept only as historical reference. */
-static VALUE onibi_pipeline_token_slice(VALUE source, VALUE token) {
-  long start = NUM2LONG(onibi_hash_value(token, "start"));
-  long finish = NUM2LONG(onibi_hash_value(token, "end"));
-  VALUE slice = rb_str_substr(source, start, finish - start);
-  return NIL_P(slice) ? rb_str_new_cstr("") : slice;
-}
-
-static VALUE onibi_pipeline_build(VALUE self) {
-  onibi_regexp_t *obj; TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-  VALUE out = rb_hash_new();
-  VALUE parsed = obj->parsed;
-  VALUE src = NIL_P(parsed) ? obj->source : onibi_hash_value(parsed, "source");
-  VALUE tokens = obj->tokens;
-  rb_hash_aset(out, ID2SYM(rb_intern("tokens")), tokens);
-  VALUE ast = rb_hash_new();
-  int is_quant = RARRAY_LEN(tokens) >= 2 &&
-    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("quantifier");
-  int is_alt = 0, is_anchor = 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    ID kind = onibi_token_kind(rb_ary_entry(tokens, i));
-    if (kind == rb_intern("alternation")) is_alt = 1;
-    if (kind == rb_intern("anchor")) is_anchor = 1;
-  }
-  int is_class = RARRAY_LEN(tokens) >= 2 &&
-    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("class_start") &&
-    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("class_end");
-  rb_hash_aset(ast, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(is_quant ? "quantifier" : (is_alt ? "alternation" : (is_class ? "character_class" : (is_anchor ? "anchor" : "sequence"))))));
-  VALUE children = rb_ary_new();
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    VALUE token = rb_ary_entry(tokens, i), node = rb_hash_new();
-    ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
-    const char *type = "character_class";
-    if (kind == rb_intern("literal")) type = "literal";
-    else if (kind == rb_intern("escape")) type = "escape";
-    else if (kind == rb_intern("wildcard")) type = "any";
-    else if (kind == rb_intern("anchor")) type = "anchor";
-    else if (kind == rb_intern("alternation")) type = "alternative";
-    else if (kind == rb_intern("group_start") || kind == rb_intern("group_end")) type = "capture";
-    else if (kind == rb_intern("quantifier")) type = "quantifier";
-    rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern(type)));
-    rb_hash_aset(node, ID2SYM(rb_intern("byte")), rb_hash_aref(token, ID2SYM(rb_intern("byte"))));
-    rb_ary_push(children, node);
-  }
-  rb_hash_aset(ast, ID2SYM(rb_intern("children")), children);
-  if (is_class) {
-    VALUE ranges = rb_ary_new();
-    for (long i = 1; i + 2 < RARRAY_LEN(tokens); i++) {
-      VALUE left = rb_ary_entry(tokens, i), marker = rb_ary_entry(tokens, i + 1), right = rb_ary_entry(tokens, i + 2);
-      if (onibi_token_kind(marker) == rb_intern("class_range") &&
-          onibi_token_kind(left) == rb_intern("literal") && onibi_token_kind(right) == rb_intern("literal")) {
-        VALUE range = rb_ary_new();
-        rb_ary_push(range, LONG2NUM(onibi_token_byte(left)));
-        rb_ary_push(range, LONG2NUM(onibi_token_byte(right)));
-        rb_ary_push(ranges, range);
-      }
-    }
-    rb_hash_aset(ast, ID2SYM(rb_intern("ranges")), ranges);
-    rb_hash_aset(ast, ID2SYM(rb_intern("negated")),
-                 RARRAY_LEN(tokens) > 1 && onibi_token_kind(rb_ary_entry(tokens, 1)) == rb_intern("class_negate") ? Qtrue : Qfalse);
-  }
-  if (is_quant) {
-    VALUE quantifier = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1);
-    VALUE atom = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 2);
-    VALUE quantifier_source = onibi_pipeline_token_slice(src, quantifier);
-    rb_hash_aset(ast, ID2SYM(rb_intern("atom")), onibi_pipeline_token_slice(src, atom));
-    rb_hash_aset(ast, ID2SYM(rb_intern("quantifier")), quantifier_source);
-    long qlen = RSTRING_LEN(quantifier_source);
-    unsigned char tail = qlen > 0 ? (unsigned char)RSTRING_PTR(quantifier_source)[qlen - 1] : 0;
-    rb_hash_aset(ast, ID2SYM(rb_intern("greedy")), tail == '?' ? Qfalse : Qtrue);
-    rb_hash_aset(ast, ID2SYM(rb_intern("possessive")), tail == '+' ? Qtrue : Qfalse);
-    if (!NIL_P(parsed)) {
-      VALUE parsed_ast = onibi_hash_value(parsed, "ast");
-      VALUE parsed_children = onibi_hash_value(parsed_ast, "children");
-      if (!NIL_P(parsed_children) && RARRAY_LEN(parsed_children) == 1)
-        parsed_ast = rb_ary_entry(parsed_children, 0);
-      if (onibi_symbol_value(parsed_ast, "type") == ID2SYM(rb_intern("quantifier"))) {
-        VALUE min = onibi_hash_value(parsed_ast, "min");
-        VALUE max = onibi_hash_value(parsed_ast, "max");
-        if (!NIL_P(min)) rb_hash_aset(ast, ID2SYM(rb_intern("min")), min);
-        if (!NIL_P(max)) rb_hash_aset(ast, ID2SYM(rb_intern("max")), max);
-      }
-    }
-  }
-  int braced_quantifier = RARRAY_LEN(tokens) >= 5 &&
-    onibi_token_byte(rb_ary_entry(tokens, 1)) == '{' &&
-    onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '}';
-  int class_expression = RARRAY_LEN(tokens) >= 2 &&
-    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("class_start") &&
-    (onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("class_end") ||
-     (RARRAY_LEN(tokens) >= 2 && onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 2)) == rb_intern("class_end") &&
-      onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '+'));
-  int any_expression = RARRAY_LEN(tokens) == 1 && onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("wildcard");
-  int capture_expression = RARRAY_LEN(tokens) >= 2 &&
-    onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("group_start") &&
-    onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("group_end");
-  if (is_alt) {
-    VALUE branches = rb_ary_new(); long begin = 0;
-    for (long i = 0; i <= RARRAY_LEN(tokens); i++) if (i == RARRAY_LEN(tokens) ||
-        onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) {
-      VALUE branch = rb_hash_new(), branch_children = rb_ary_new();
-      rb_hash_aset(branch, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("sequence")));
-      if (begin < i) {
-        VALUE first = rb_ary_entry(tokens, begin), last = rb_ary_entry(tokens, i - 1);
-        long start = NUM2LONG(onibi_hash_value(first, "start"));
-        long finish = NUM2LONG(onibi_hash_value(last, "end"));
-        rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_substr(src, start, finish - start));
-      } else rb_hash_aset(branch, ID2SYM(rb_intern("source")), rb_str_new_cstr(""));
-      for (long j = begin; j < i; j++) {
-        VALUE token = rb_ary_entry(tokens, j);
-        if (onibi_token_kind(token) != rb_intern("literal")) continue;
-        VALUE node = rb_hash_new();
-        rb_hash_aset(node, ID2SYM(rb_intern("type")), ID2SYM(rb_intern("literal")));
-        rb_hash_aset(node, ID2SYM(rb_intern("byte")), LONG2NUM(onibi_token_byte(token)));
-        rb_ary_push(branch_children, node);
-      }
-      rb_hash_aset(branch, ID2SYM(rb_intern("children")), branch_children);
-      rb_ary_push(branches, branch); begin = i + 1;
-    }
-    rb_hash_aset(ast, ID2SYM(rb_intern("branches")), branches);
-  }
-  rb_hash_aset(out, ID2SYM(rb_intern("ast")), (obj->has_subroutine || obj->has_class_intersection || obj->has_nested_class || NIL_P(obj->compiled)) && !NIL_P(parsed) ?
-               onibi_hash_value(parsed, "ast") : ast);
-  VALUE gir = rb_ary_new();
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    VALUE op = rb_hash_new();
-    VALUE tk = rb_ary_entry(tokens, i);
-    ID kindid = SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind"))));
-    ID opid = kindid == rb_intern("class_start") ? rb_intern("CLASS") :
-              (kindid == rb_intern("alternation") ? rb_intern("ALT") :
-               (kindid == rb_intern("quantifier") ? rb_intern("REPEAT") :
-               (kindid == rb_intern("wildcard") ? rb_intern("ANY") :
-                (kindid == rb_intern("anchor") ? rb_intern("ASSERT") : rb_intern("CHAR")))));
-    if (kindid == rb_intern("escape")) opid = rb_intern("ESCAPE");
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(opid));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), tk);
-    rb_ary_push(gir, op);
-  }
-  rb_hash_aset(out, ID2SYM(rb_intern("gir")), gir);
-  VALUE graph = rb_hash_new(), states = rb_ary_new(), edges = rb_ary_new();
-  for (long i = 0; i < RARRAY_LEN(gir); i++) {
-    VALUE state = rb_hash_new();
-    rb_hash_aset(state, ID2SYM(rb_intern("id")), LONG2NUM(i));
-    rb_hash_aset(state, ID2SYM(rb_intern("op")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("op"))));
-    VALUE op = rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("op")));
-    rb_hash_aset(state, ID2SYM(rb_intern("gir_op")), rb_equal(op, ID2SYM(rb_intern("CHAR"))) ? ID2SYM(rb_intern("G_CHAR")) : op);
-    rb_hash_aset(state, ID2SYM(rb_intern("arg")), rb_hash_aref(rb_ary_entry(gir, i), ID2SYM(rb_intern("arg"))));
-    rb_ary_push(states, state);
-    VALUE edge = rb_hash_new();
-    rb_hash_aset(edge, ID2SYM(rb_intern("from")), LONG2NUM(i));
-    rb_hash_aset(edge, ID2SYM(rb_intern("to")), LONG2NUM(i + 1));
-    rb_hash_aset(edge, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_ary_push(edges, edge);
-  }
-  VALUE accept = rb_hash_new();
-  rb_hash_aset(accept, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir)));
-  rb_hash_aset(accept, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ACCEPT")));
-  rb_hash_aset(accept, ID2SYM(rb_intern("gir_op")), ID2SYM(rb_intern("G_ACCEPT")));
-  rb_ary_push(states, accept);
-  long pipe = -1;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    VALUE tk = rb_ary_entry(tokens, i);
-    if (SYM2ID(rb_hash_aref(tk, ID2SYM(rb_intern("kind")))) == rb_intern("alternation")) { pipe = i; break; }
-  }
-  if (pipe >= 0) {
-    edges = rb_ary_new();
-    VALUE start = rb_hash_new();
-    rb_hash_aset(start, ID2SYM(rb_intern("id")), LONG2NUM(RARRAY_LEN(gir) + 1));
-    rb_hash_aset(start, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("START")));
-    rb_ary_push(states, start);
-    VALUE left = rb_hash_new(), right = rb_hash_new();
-    rb_hash_aset(left, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir) + 1));
-    rb_hash_aset(left, ID2SYM(rb_intern("to")), LONG2NUM(0));
-    rb_hash_aset(left, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_hash_aset(right, ID2SYM(rb_intern("from")), LONG2NUM(RARRAY_LEN(gir) + 1));
-    rb_hash_aset(right, ID2SYM(rb_intern("to")), LONG2NUM(pipe + 1));
-    rb_hash_aset(right, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_ary_push(edges, left); rb_ary_push(edges, right);
-  } else if (RARRAY_LEN(tokens) == 2 && onibi_token_kind(rb_ary_entry(tokens, 1)) == rb_intern("quantifier") &&
-             (onibi_token_byte(rb_ary_entry(tokens, 1)) == '*' ||
-              onibi_token_byte(rb_ary_entry(tokens, 1)) == '+' ||
-              onibi_token_byte(rb_ary_entry(tokens, 1)) == '?')) {
-    edges = rb_ary_new();
-    VALUE first = rb_hash_new();
-    rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
-    rb_hash_aset(first, ID2SYM(rb_intern("to")), LONG2NUM(1));
-    rb_hash_aset(first, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_ary_push(edges, first);
-    VALUE repeat = rb_hash_new(), exit = rb_hash_new();
-    rb_hash_aset(repeat, ID2SYM(rb_intern("from")), LONG2NUM(1));
-    rb_hash_aset(repeat, ID2SYM(rb_intern("to")), LONG2NUM(0));
-    rb_hash_aset(repeat, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_hash_aset(exit, ID2SYM(rb_intern("from")), LONG2NUM(1));
-    rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2));
-    rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
-  } else if (braced_quantifier) {
-    edges = rb_ary_new();
-    VALUE first = rb_hash_new();
-    rb_hash_aset(first, ID2SYM(rb_intern("from")), LONG2NUM(0));
-    rb_hash_aset(first, ID2SYM(rb_intern("to")), LONG2NUM(1));
-    VALUE init = rb_hash_new(); rb_hash_aset(init, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("COUNTER_INIT"))); rb_hash_aset(init, ID2SYM(rb_intern("slot")), INT2NUM(0));
-    VALUE actions = rb_ary_new(); rb_ary_push(actions, init); rb_hash_aset(first, ID2SYM(rb_intern("actions")), actions); rb_ary_push(edges, first);
-    VALUE repeat = rb_hash_new(), exit = rb_hash_new();
-    rb_hash_aset(repeat, ID2SYM(rb_intern("from")), LONG2NUM(1)); rb_hash_aset(repeat, ID2SYM(rb_intern("to")), LONG2NUM(0));
-    VALUE repeat_actions = rb_ary_new(), increment = rb_hash_new(); rb_hash_aset(increment, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("COUNTER_INCREMENT"))); rb_hash_aset(increment, ID2SYM(rb_intern("slot")), INT2NUM(0)); rb_ary_push(repeat_actions, increment); rb_hash_aset(repeat, ID2SYM(rb_intern("actions")), repeat_actions);
-    rb_hash_aset(exit, ID2SYM(rb_intern("from")), LONG2NUM(1)); rb_hash_aset(exit, ID2SYM(rb_intern("to")), LONG2NUM(2)); rb_hash_aset(exit, ID2SYM(rb_intern("actions")), rb_ary_new());
-    rb_ary_push(edges, repeat); rb_ary_push(edges, exit);
-  }
-  if (RARRAY_LEN(tokens) > 0 && onibi_token_kind(rb_ary_entry(tokens, 0)) == rb_intern("anchor") &&
-      onibi_token_byte(rb_ary_entry(tokens, 0)) == '^' && RARRAY_LEN(edges) > 0) {
-    VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_BEGIN_BUFFER")));
-    rb_ary_push(rb_hash_aref(rb_ary_entry(edges, 0), ID2SYM(rb_intern("actions"))), action);
-  }
-  if (RARRAY_LEN(tokens) > 0 && onibi_token_kind(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == rb_intern("anchor") &&
-      onibi_token_byte(rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1)) == '$' && RARRAY_LEN(edges) > 0) {
-    VALUE action = rb_hash_new();
-    rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ASSERT_END_BUFFER")));
-    rb_ary_push(rb_hash_aref(rb_ary_entry(edges, RARRAY_LEN(edges) - 1), ID2SYM(rb_intern("actions"))), action);
-  }
-  for (long i = 0; i < RARRAY_LEN(tokens) && i < RARRAY_LEN(edges); i++) {
-    VALUE token = rb_ary_entry(tokens, i);
-    ID kind = SYM2ID(rb_hash_aref(token, ID2SYM(rb_intern("kind"))));
-    if (kind == rb_intern("group_start") || kind == rb_intern("group_end")) {
-      VALUE action = rb_hash_new();
-      const char *capture_op = kind == rb_intern("group_start") ? "CAPTURE_OPEN" : "CAPTURE_CLOSE";
-      rb_hash_aset(action, ID2SYM(rb_intern("op")), ID2SYM(rb_intern(capture_op)));
-      rb_hash_aset(action, ID2SYM(rb_intern("slot")), INT2NUM(kind == rb_intern("group_start") ? 2 : 3));
-      rb_ary_push(rb_hash_aref(rb_ary_entry(edges, i), ID2SYM(rb_intern("actions"))), action);
-    }
-  }
-  rb_hash_aset(graph, ID2SYM(rb_intern("states")), states);
-  rb_hash_aset(graph, ID2SYM(rb_intern("edges")), edges);
-  rb_hash_aset(graph, ID2SYM(rb_intern("start")), LONG2NUM(RARRAY_LEN(gir) == 0 ? 0 : (pipe >= 0 ? RARRAY_LEN(gir) + 1 : 0)));
-  rb_hash_aset(out, ID2SYM(rb_intern("gir_graph")), graph);
-  VALUE captures = rb_ary_new();
-  int has_capture = 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("group_start")) {
-      has_capture = 1;
-      break;
-    }
-  }
-  int class_repeat = 0;
-  for (long i = 0; i + 1 < RARRAY_LEN(tokens); i++) {
-    if (onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("class_end") &&
-        onibi_token_kind(rb_ary_entry(tokens, i + 1)) == rb_intern("quantifier") &&
-        onibi_token_byte(rb_ary_entry(tokens, i + 1)) == '+') {
-      class_repeat = 1;
-      break;
-    }
-  }
-  if (has_capture) {
-    VALUE capture = rb_hash_new();
-    rb_hash_aset(capture, ID2SYM(rb_intern("id")), INT2NUM(1));
-    rb_hash_aset(capture, ID2SYM(rb_intern("use")), ID2SYM(rb_intern("CAPTURE_OUTPUT_ONLY")));
-    VALUE slots = rb_ary_new(); rb_ary_push(slots, INT2NUM(2)); rb_ary_push(slots, INT2NUM(3));
-    rb_hash_aset(capture, ID2SYM(rb_intern("slots")), slots); rb_ary_push(captures, capture);
-  }
-  rb_hash_aset(out, ID2SYM(rb_intern("captures")), captures);
-  rb_hash_aset(out, ID2SYM(rb_intern("rseq")), gir);
-  VALUE compact = rb_ary_new();
-  int literal_only = RARRAY_LEN(tokens) > 0;
-  for (long i = 0; i < RARRAY_LEN(tokens); i++) {
-    VALUE token = rb_ary_entry(tokens, i);
-    if (onibi_token_kind(token) != rb_intern("literal") ||
-        NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("end")))) -
-        NUM2LONG(rb_hash_aref(token, ID2SYM(rb_intern("start")))) != 1) {
-      literal_only = 0;
-      break;
-    }
-  }
-  if (literal_only) {
-    VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
-    rb_ary_push(compact, op);
-  } else if (braced_quantifier) {
-    VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("REPEAT")));
-    rb_hash_aset(op, ID2SYM(rb_intern("atom")), rb_str_substr(src, 0, 1));
-    rb_hash_aset(op, ID2SYM(rb_intern("bounds")), rb_str_substr(src, 2, RSTRING_LEN(src) - 3));
-    rb_ary_push(compact, op);
-  } else if (class_repeat) {
-    VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
-    rb_ary_push(compact, op);
-  } else if (class_expression) {
-    VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_CLASS")));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), src);
-    rb_ary_push(compact, op);
-  } else if (any_expression) {
-    VALUE op = rb_hash_new();
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("RUN_ANY")));
-    rb_hash_aset(op, ID2SYM(rb_intern("arg")), INT2NUM(1));
-    rb_ary_push(compact, op);
-  } else if (is_alt) {
-    VALUE op = rb_hash_new(), branches = rb_ary_new(); long begin = 0;
-    for (long i = 0; i <= RARRAY_LEN(tokens); i++) if (i == RARRAY_LEN(tokens) ||
-        onibi_token_kind(rb_ary_entry(tokens, i)) == rb_intern("alternation")) {
-      if (begin < i) {
-        VALUE first = rb_ary_entry(tokens, begin), last = rb_ary_entry(tokens, i - 1);
-        long start = NUM2LONG(onibi_hash_value(first, "start"));
-        long finish = NUM2LONG(onibi_hash_value(last, "end"));
-        rb_ary_push(branches, rb_str_substr(src, start, finish - start));
-      } else rb_ary_push(branches, rb_str_new_cstr(""));
-      begin = i + 1;
-    }
-    rb_hash_aset(op, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("ALT")));
-    rb_hash_aset(op, ID2SYM(rb_intern("branches")), branches);
-    rb_ary_push(compact, op);
-  } else if (capture_expression) {
-    VALUE open = rb_hash_new(), string = rb_hash_new(), close = rb_hash_new();
-    rb_hash_aset(open, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_OPEN")));
-    rb_hash_aset(open, ID2SYM(rb_intern("slot")), INT2NUM(2));
-    rb_hash_aset(string, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("STRING")));
-    VALUE first = rb_ary_entry(tokens, 0), last = rb_ary_entry(tokens, RARRAY_LEN(tokens) - 1);
-    long body_start = NUM2LONG(onibi_hash_value(first, "end"));
-    long body_end = NUM2LONG(onibi_hash_value(last, "start"));
-    rb_hash_aset(string, ID2SYM(rb_intern("arg")), rb_str_substr(src, body_start, body_end - body_start));
-    rb_hash_aset(close, ID2SYM(rb_intern("op")), ID2SYM(rb_intern("CAPTURE_CLOSE")));
-    rb_hash_aset(close, ID2SYM(rb_intern("slot")), INT2NUM(3));
-    rb_ary_push(compact, open); rb_ary_push(compact, string); rb_ary_push(compact, close);
-  } else compact = gir;
-  rb_hash_aset(out, ID2SYM(rb_intern("rseq_compact")), compact);
-  /* Dispatch follows the canonical compiler result. */
-  int simple = !NIL_P(obj->rseq);
-  rb_hash_aset(out, ID2SYM(rb_intern("vm")), ID2SYM(rb_intern(simple ? "RSEQ" : "MRI")));
-  rb_hash_aset(out, ID2SYM(rb_intern("interpreter")), obj->execution_kind);
-  /* Expose the immutable canonical stages built at initialize time.  The
-     legacy display fields above remain for compatibility with old callers. */
-  if (!NIL_P(obj->parsed) && !NIL_P(obj->compiled) && !NIL_P(obj->rseq)) {
-    rb_hash_aset(out, ID2SYM(rb_intern("parsed")), obj->parsed);
-    rb_hash_aset(out, ID2SYM(rb_intern("compiled")), obj->compiled);
-    rb_hash_aset(out, ID2SYM(rb_intern("rseq_program")), obj->rseq);
-    VALUE canonical = rb_hash_new();
-    rb_hash_aset(canonical, ID2SYM(rb_intern("ast")), onibi_hash_value(obj->parsed, "ast"));
-    rb_hash_aset(canonical, ID2SYM(rb_intern("gir")), onibi_hash_value(obj->compiled, "graph"));
-    rb_hash_aset(canonical, ID2SYM(rb_intern("rseq")), obj->rseq);
-    rb_hash_aset(canonical, ID2SYM(rb_intern("options")), onibi_hash_value(obj->compiled, "options"));
-    rb_obj_freeze(canonical);
-    rb_hash_aset(out, ID2SYM(rb_intern("canonical")), canonical);
-  }
-  return out;
-}
-#endif
 
 static int onibi_vm_counter_actions_ok(VALUE actions, const OnibiCounterState *counters) {
   if (!counters || !counters->values) return 1;

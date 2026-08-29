@@ -38,27 +38,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     end
   end
 
-  def test_ast_anchor_analysis_shares_nullability_scan
-    source = File.read(EXTENSION_SOURCE)
-    scan = source[/static int onibi_ast_nullable_scan\(VALUE ast, OnibiAstAnalysis \*analysis\) \{.*?\n}\n/m]
-
-    refute_nil scan
-    assert_includes scan, "ONIBI_AST_ANALYSIS_HAS_ANCHOR"
-    assert_includes scan, "ONIBI_AST_ANALYSIS_ANCHOR_REPEAT"
-    refute_includes source, "static int onibi_ast_anchor_scan"
-  end
-
-  def test_ast_nullability_flags_share_one_scan
-    source = File.read(EXTENSION_SOURCE)
-    scan = source[/static int onibi_ast_nullable_scan\(VALUE ast,.*?\n}\n/m]
-
-    refute_nil scan
-    assert_includes scan, "OnibiAstAnalysis *analysis"
-    assert_includes source, "unsigned int flags;"
-    refute_includes source, "onibi_ast_nullable_absence"
-    refute_includes source, "static int onibi_ast_nullable(VALUE ast"
-  end
-
   def test_c_pipeline_does_not_use_repeated_string_comparisons
     source = File.read(EXTENSION_SOURCE)
 
@@ -94,26 +73,6 @@ class InternalRegexpDependencyTest < Minitest::Test
       refute_nil executor
       assert_includes executor, "for (long start = search_origin;"
     end
-  end
-
-  def test_compiled_token_view_has_explicit_c_owner
-    source = File.read(EXTENSION_SOURCE)
-
-    assert_includes source, "OnibiFeatureTokenVector feature_tokens = onibi_feature_tokens(tokens, feature_storage);"
-    assert_includes source, "onibi_token_features(&feature_tokens, obj);"
-    assert_includes source, "xfree(feature_tokens.items);"
-    refute_includes source, "obj->feature_tokens"
-    refute_includes source, "obj->feature_token_count"
-  end
-
-  def test_feature_vector_helper_does_not_allocate_storage
-    source = File.read(EXTENSION_SOURCE)
-    helper = source[/static OnibiFeatureTokenVector onibi_feature_tokens\(.*?\n}\n/m]
-
-    refute_nil helper
-    refute_includes helper, "ALLOC_N"
-    refute_includes helper, "REALLOC_N"
-    refute_includes helper, "rb_ary_new"
   end
 
   def test_fragment_connections_keep_state_ids_in_c_vectors
@@ -256,7 +215,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_option_arrays_use_symbol_ids_directly
     source = File.read(EXTENSION_SOURCE)
-    option_code = source[/static int onibi_extended_option_p\(.*?\n}\n/m]
+    option_code = source[/static int onibi_option_mask\([^;]*?\) \{.*?\n}\n/m]
 
     refute_nil option_code
     assert_includes option_code, "SYMBOL_P(item) ? SYM2ID(item)"
@@ -265,7 +224,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_gir_guard_lookup_uses_c_vector_storage
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "OnibiGuardVector capture_guards"
@@ -275,7 +234,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_gir_compile_indexes_use_c_value_maps
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "OnibiValueMap capture_names"
@@ -285,7 +244,7 @@ class InternalRegexpDependencyTest < Minitest::Test
 
   def test_c_compile_maps_keep_ruby_values_rooted
     source = File.read(EXTENSION_SOURCE)
-    builder = source[/typedef struct \{ OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
+    builder = source[/typedef struct \{\n  OnibiGirStateVector states;.*?onibi_gir_builder_t;/m]
 
     refute_nil builder
     assert_includes builder, "VALUE map_roots"
@@ -467,20 +426,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_operator composer.index(explicit), :<, composer.index(capture_guard)
   end
 
-  def test_token_record_roots_each_ruby_value_before_storage
-    source = File.read(EXTENSION_SOURCE)
-    rooter = source[/static void onibi_token_record_root_values\(.*?\n}\n/m]
-    tokenizer = source[/static VALUE onibi_tokenize_internal\(.*?\n}\n/m]
-
-    refute_nil rooter
-    %w[name capture negative_name name_id inline_ignorecase bytes].each do |field|
-      assert_includes rooter, "record->#{field}"
-    end
-    root_index = tokenizer.index("onibi_token_record_root_values(&record, token_roots)")
-    push_index = tokenizer.index("onibi_token_record_push(&token_records")
-    assert_operator root_index, :<, push_index
-  end
-
   def test_negative_option_payload_survives_gc_stress_during_token_materialization
     previous_stress = GC.stress
     GC.stress = true
@@ -554,19 +499,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes matcher, "onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION"
   end
 
-  def test_tokenizer_preallocates_transient_adapter
-    source = File.read(EXTENSION_SOURCE)
-    tokenizer = source[/static VALUE onibi_tokenize_internal\(.*?\n}\n/m]
-
-    refute_nil tokenizer
-    assert_includes tokenizer, "OnibiTokenRecord *token_records"
-    assert_includes tokenizer, "onibi_token_record_push(&token_records"
-    assert_includes tokenizer, "VALUE tokens = rb_ary_new_capa((long)token_count)"
-    refute_includes tokenizer, "VALUE tokens = rb_ary_new();"
-    assert_operator tokenizer.index("VALUE token = rb_hash_new();"), :>,
-      tokenizer.index("if (extended && !in_class && (byte == ' ' ||")
-  end
-
   def test_compiler_subprograms_use_c_vector_until_publication
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "OnibiValueVector subprograms"
@@ -611,17 +543,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes walker, "if (op == ONIBI_RS_ABSENT) { frame->waiting_call = 0; continue; }"
   end
 
-  def test_escape_property_check_does_not_convert_nil_name_id
-    source = File.read(EXTENSION_SOURCE)
-    compiler = source[/static onibi_fragment_t onibi_compile_node\(VALUE ast, onibi_gir_builder_t \*builder\) \{.*?\n}\n/m]
-    property_check = compiler[/VALUE name_id = onibi_hash_value_id\(ast, id_key_name_id\);\n\s+int is_property = [^\n]+\n\s+[^\n]+;\n/]
-
-    refute_nil compiler
-    refute_nil property_check
-    assert_includes property_check, "int is_property = !NIL_P(name_id) &&"
-    refute_includes property_check, "?"
-  end
-
   def test_rseq_uses_gir_capture_resource_count_not_action_occurrences
     source = File.read(EXTENSION_SOURCE)
     lowerer = source[/static VALUE onibi_rseq_lower\(.*?\n}\n/m]
@@ -639,14 +560,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil validator
     assert_equal 2, validator.scan("code == ONIBI_GA_TEST_CAPTURE && NUM2LONG(slot) >= capture_count").length
     assert_includes source, 'rb_raise(eRegexpError, "invalid GIR capture test id")'
-  end
-
-  def test_protected_compile_callbacks_use_stack_arguments
-    source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "typedef struct {\n  VALUE source;\n  VALUE options;\n  VALUE tokens;\n} OnibiProgramArgs;"
-    refute_includes source, "VALUE regexp_args = rb_ary_new_from_args"
-    refute_includes source, "VALUE program_args = rb_ary_new_from_args"
-    assert_includes source, "(VALUE)(uintptr_t)&program_args"
   end
 
   def test_tagged_vm_reuses_cached_physical_graph_for_all_starts
@@ -704,69 +617,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes walker, "rb_hash_dup(frame->counters)"
   end
 
-  def test_parser_class_and_range_adapters_preallocate_known_sizes
-    source = File.read(EXTENSION_SOURCE)
-    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
-    parser_range = source[/static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
-
-    refute_nil parser_class
-    refute_nil parser_range
-    assert_includes parser_class, "rb_ary_new_capa(class_capacity)"
-    assert_includes parser_class, "rb_ary_new_capa(part_end - part_begin + 2)"
-    assert_includes parser_range, "rb_ary_new_capa(end > begin ? end - begin : 0)"
-    assert_includes parser_range, "OnibiTokenKind kind = onibi_token_kind_code(token);"
-  end
-
-  def test_parser_ranges_use_c_records_before_ast_materialization
-    source = File.read(EXTENSION_SOURCE)
-    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
-
-    refute_nil parser_class
-    assert_includes parser_class, "OnibiRangeRecord"
-    assert_includes parser_class, "range_records[range_count].first"
-    assert_includes parser_class, "rb_ary_new_capa(2)"
-  end
-
-  def test_parser_sequence_children_use_c_records_before_ast_materialization
-    source = File.read(EXTENSION_SOURCE)
-    parser_range = source[/static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
-
-    refute_nil parser_range
-    assert_includes parser_range, "OnibiValueVector child_records"
-    assert_includes parser_range, "onibi_value_vector_push(&child_records"
-    assert_includes parser_range, "VALUE children = rb_ary_new_capa((long)child_records.count)"
-  end
-
-  def test_parser_alternative_branches_use_c_records_before_ast_materialization
-    source = File.read(EXTENSION_SOURCE)
-    parser_range = source[/static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
-
-    refute_nil parser_range
-    assert_includes parser_range, "OnibiValueVector branch_records"
-    assert_includes parser_range, "onibi_value_vector_push(&branch_records"
-    assert_includes parser_range, "VALUE branches = rb_ary_new_capa((long)branch_records.count)"
-  end
-
-  def test_parser_class_children_use_c_records_before_ast_materialization
-    source = File.read(EXTENSION_SOURCE)
-    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
-
-    refute_nil parser_class
-    assert_includes parser_class, "OnibiValueVector child_records"
-    assert_includes parser_class, "onibi_value_vector_push(&child_records"
-    assert_includes parser_class, "VALUE children = rb_ary_new_capa((long)child_records.count)"
-  end
-
-  def test_parser_class_intersection_operands_use_c_records
-    source = File.read(EXTENSION_SOURCE)
-    parser_class = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
-
-    refute_nil parser_class
-    assert_includes parser_class, "OnibiValueVector operand_records"
-    assert_includes parser_class, "onibi_value_vector_push(&operand_records"
-    assert_includes parser_class, "VALUE operands = rb_ary_new_capa((long)operand_records.count)"
-  end
-
   def test_sequence_transition_actions_reuse_empty_side
     source = File.read(EXTENSION_SOURCE)
     compiler = source[/static onibi_fragment_t onibi_compile_sequence\(.*?\n}\n/m]
@@ -790,24 +640,6 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_nil compiler
     assert_includes compiler, "onibi_concat_action_values(fragment.start_actions, fragment.pending_actions)"
     assert_includes compiler, "VALUE with_guard = rb_ary_new_capa"
-  end
-
-  def test_parser_uses_cached_id_accessor_for_token_fields
-    source = File.read(EXTENSION_SOURCE)
-    parser = source[/static long onibi_find_close\(.*?static VALUE onibi_parse_range\(VALUE tokens, long begin, long end\) \{.*?\n}\n/m]
-
-    refute_nil parser
-    refute_match(/rb_hash_aref\([^\n]*ID2SYM\(id_key_(kind_code|start|end|name|capture|bytes)/, parser)
-    refute_includes parser, "NUM2UINT(onibi_hash_value_id(token, id_key_kind_code))"
-    assert_includes source, "return NIL_P(kind) ? (OnibiTokenKind)-1"
-  end
-
-  def test_parser_range_adapter_uses_fixed_pair_capacity
-    source = File.read(EXTENSION_SOURCE)
-    parser = source[/static VALUE onibi_parse_class\(VALUE tokens, long begin, long close\) \{.*?\n}\n/m]
-
-    refute_nil parser
-    assert_includes parser, "VALUE range = rb_ary_new_capa(2);"
   end
 
   def test_runtime_id_lookups_use_shared_accessor
@@ -875,51 +707,11 @@ class InternalRegexpDependencyTest < Minitest::Test
     refute_includes source, "map->entries[i].value = value;\n      rb_ary_push(roots, key)"
   end
 
-  def test_feature_tokens_read_cached_inline_option_flag
-    source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "id_key_inline_ignorecase"
-    assert_includes source, "RTEST(onibi_hash_value_id(token, id_key_inline_ignorecase))"
-  end
-
   def test_compiler_ascii_property_check_uses_name_id
     source = File.read(EXTENSION_SOURCE)
     assert_includes source, "static int onibi_ascii_property_name_p(ID name_id)"
     refute_includes source, "onibi_ascii_property_name_p(name)"
     assert_includes source, "ID escape_name_id = onibi_token_name_id(payload)"
-  end
-
-  def test_ast_audit_defines_typed_node_migration_boundary
-    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
-    assert_includes document, "Pending: typed C node arena"
-    assert_includes document, "The first AST migration unit is the node arena"
-    assert_includes document, "OnibiAstKind"
-  end
-
-  def test_parsed_ast_analysis_is_cached_in_c_fields
-    source = File.read(EXTENSION_SOURCE)
-    parsed = source[/typedef struct \{\n  VALUE ast;\n  int options;.*?\n\} OnibiParsed;/m]
-
-    refute_nil parsed
-    assert_includes parsed, "unsigned int ast_flags"
-    assert_includes source, "ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS"
-    assert_includes source, "ONIBI_AST_FLAG_NULLABLE_CAPTURE"
-    assert_includes source, "parsed_data->ast_flags"
-  end
-
-  def test_ast_adapter_is_released_after_initialization
-    source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "parsed_data->ast = Qnil"
-    assert_includes source, "The AST is an initialization artifact"
-    assert_includes source, "onibi_parsed_get(parsed)->ast = Qnil"
-  end
-
-  def test_internal_ast_is_not_deep_frozen_during_parse
-    source = File.read(EXTENSION_SOURCE)
-    parser = source[/static VALUE onibi_parser_parse_internal\(.*?\n}\n/m]
-
-    refute_nil parser
-    assert_includes parser, "parsed->ast = onibi_parse_range"
-    refute_match(/parsed->ast = onibi_deep_freeze/, parser)
   end
 
   def test_tagged_counter_state_uses_c_snapshots
@@ -935,50 +727,100 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes document, "capture walkers still require a C view migration"
   end
 
-  def test_container_audit_counts_match_current_source
-    source = File.read(EXTENSION_SOURCE)
-    document = File.read(File.expand_path("../../../docs/development.md", __dir__))
-    hash_count = source.scan(/rb_hash_new\(/).length
-    array_count = source.scan(/rb_ary_new\(/).length
-    assert_includes document, "The current source has #{hash_count} `rb_hash_new` calls and #{array_count} `rb_ary_new` calls."
-  end
-
-
-  def test_ast_nodes_retain_numeric_name_ids
-    source = File.read(EXTENSION_SOURCE)
-    ast_node = source[/static VALUE onibi_ast_node\(.*?\n}\n/m]
-
-    refute_nil ast_node
-    assert_includes ast_node, "id_key_name_id"
-    assert_includes ast_node, "name_id"
-  end
-
   def test_numeric_assertion_dispatch_preserves_public_matching
     assert Onibi::Regexp.new("^a$").match?("a")
     assert Onibi::Regexp.new("(?=a)a").match?("a")
     assert Onibi::Regexp.new("(?<=a)b").match?("ab")
   end
 
-  def test_feature_token_record_has_no_ruby_value_fields
+  def test_token_stream_uses_c_records_and_byte_storage
     source = File.read(EXTENSION_SOURCE)
-    record = source[/typedef struct(?: OnibiFeatureToken)? \{\s*OnibiTokenKind kind;.*?\} OnibiFeatureToken;/m]
+    record = source[/typedef struct \{\n  OnibiTokenKind kind;.*?\n\} OnibiTokenRecord;/m]
+    vector = source[/typedef struct \{\n  OnibiTokenRecord \*items;.*?\n\} OnibiTokenVector;/m]
 
     refute_nil record
+    refute_nil vector
     refute_match(/\bVALUE\b/, record)
-    assert_includes record, "long start;"
-    assert_includes record, "long end;"
-    assert_includes record, "OnibiAsciiProperty property_kind"
+    assert_includes record, "OnibiTokenSlice name"
+    assert_includes record, "ID name_id"
+    assert_includes vector, "unsigned char *bytes"
   end
 
-  def test_token_fixed_fields_have_dedicated_accessors
+  def test_tokenizer_does_not_materialize_ruby_token_containers
     source = File.read(EXTENSION_SOURCE)
-    assert_includes source, "static inline long onibi_token_byte(VALUE token)"
-    assert_includes source, "static inline long onibi_token_start(VALUE token)"
-    assert_includes source, "static inline long onibi_token_end(VALUE token)"
-    assert_includes source, "vector.items[i].start = onibi_token_start(token)"
-    assert_includes source, "vector.items[i].end = onibi_token_end(token)"
-    assert_includes source, "vector.items[i].name_id = onibi_token_name_id(token)"
-    assert_includes source, "static inline unsigned char onibi_token_inline_ignorecase(VALUE token)"
-    assert_includes source, "vector.items[i].inline_ignorecase = onibi_token_inline_ignorecase(token)"
+    tokenizer = source[/static void onibi_tokenize_internal\(.*?\n}\n/m]
+
+    refute_nil tokenizer
+    refute_includes tokenizer, "rb_hash_new"
+    refute_includes tokenizer, "rb_ary_new"
+    refute_includes tokenizer, "rb_str_substr("
+    assert_includes tokenizer, "onibi_token_record_push(tokens, record)"
+  end
+
+  def test_tokenizer_owns_cleanup_across_exceptions
+    source = File.read(EXTENSION_SOURCE)
+    initialize = source[/static VALUE onibi_initialize\(.*?\n}\n/m]
+
+    refute_nil initialize
+    assert_includes initialize, "rb_protect(onibi_tokenize_protected"
+    assert_includes initialize, "onibi_token_vector_free(&tokens)"
+    assert_includes initialize, "rb_jump_tag(tokenize_state)"
+  end
+
+  def test_ast_uses_c_node_arena
+    source = File.read(EXTENSION_SOURCE)
+    node = source[/typedef struct \{\n  OnibiAstKind kind;.*?\n\} OnibiAstNode;/m]
+    arena = source[/typedef struct \{\n  OnibiAstNode \*nodes;.*?\n\} OnibiAstArena;/m]
+
+    refute_nil node
+    refute_nil arena
+    refute_match(/\bVALUE\b/, node)
+    assert_includes node, "OnibiAstId *children"
+    assert_includes node, "OnibiAstRange *ranges"
+    assert_includes arena, "OnibiAstId root"
+  end
+
+  def test_parser_builds_only_c_ast_nodes
+    source = File.read(EXTENSION_SOURCE)
+    parser = source[/static OnibiAstId onibi_c_parse_range\(.*?\n}\n/m]
+    entry = source[/static VALUE onibi_parser_parse_internal\(.*?\n}\n/m]
+
+    refute_nil parser
+    refute_nil entry
+    refute_includes parser, "rb_hash_new"
+    refute_includes parser, "rb_ary_new"
+    assert_includes parser, "onibi_ast_arena_add"
+    assert_includes entry, "parsed->arena.root = onibi_c_parse_range"
+    refute_includes source, "static VALUE onibi_parse_range"
+  end
+
+  def test_compiler_starts_from_c_ast_root
+    source = File.read(EXTENSION_SOURCE)
+    compiler = source[/static VALUE onibi_compiler_compile\(.*?\n}\n/m]
+
+    refute_nil compiler
+    assert_includes compiler, "parsed_data->arena.root"
+    assert_includes compiler, "builder.ast = &parsed_data->arena"
+    assert_includes compiler, "onibi_collect_captures(parsed_data->arena.root"
+  end
+
+  def test_ast_analysis_reads_c_nodes
+    source = File.read(EXTENSION_SOURCE)
+    nullable = source[/static int onibi_ast_nullable_scan\([^;]*?\) \{.*?\n}\n/m]
+
+    refute_nil nullable
+    assert_includes nullable, "const OnibiAstArena *arena"
+    assert_includes nullable, "onibi_ast_node_const(arena, id)"
+    assert_includes nullable, "ONIBI_AST_ANALYSIS_ANCHOR_REPEAT"
+    refute_includes nullable, "onibi_hash_value_id"
+  end
+
+  def test_ast_arena_is_released_after_program_build
+    source = File.read(EXTENSION_SOURCE)
+    builder = source[/static VALUE onibi_build_program\(.*?\n}\n/m]
+
+    refute_nil builder
+    assert_includes builder, "onibi_ast_arena_free(&onibi_parsed_get(parsed)->arena)"
+    assert_includes source, "The AST is an initialization artifact"
   end
 end
