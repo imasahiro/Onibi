@@ -5,11 +5,20 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
+    OnibiExecCtx exec_ctx;
+    memset(&exec_ctx, 0, sizeof(exec_ctx));
+    exec_ctx.regexp = self;
+    exec_ctx.subject = str;
+    exec_ctx.search_origin = search_origin < 0 ? 0 : search_origin;
+    exec_ctx.reported_start = exec_ctx.search_origin;
     int str_encoding_index = rb_enc_get_index(str);
     onibi_set_deadline(obj->timeout_seconds);
+    exec_ctx.timeout_deadline = onibi_deadline_ns;
+    onibi_active_exec_ctx = &exec_ctx;
     if (search_origin < 0) search_origin = 0;
     if (search_origin > RSTRING_LEN(str)) {
 	onibi_deadline_ns = 0;
+	onibi_active_exec_ctx = NULL;
 	return 0;
     }
     if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) &&
@@ -25,6 +34,9 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	/* The immutable RSeq was validated and its physical execution view was
 	   built during initialize.  Do not rescan the program on each match. */
 	for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
+	    exec_ctx.attempt_start = start;
+	    exec_ctx.current_position = start;
+	    exec_ctx.program = obj->rseq_view.header;
 	    if (!onibi_character_boundary(str, start)) continue;
 	    rb_thread_check_ints();
 	    onibi_check_deadline();
@@ -35,17 +47,21 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 		if (match_start) *match_start = start;
 		if (match_end) *match_end = end;
 		onibi_deadline_ns = 0;
+		onibi_active_exec_ctx = NULL;
 		return 1;
 	    }
 	    if (result < 0) {
 		onibi_deadline_ns = 0;
+		onibi_active_exec_ctx = NULL;
 		return 0;
 	    }
 	}
 	onibi_deadline_ns = 0;
+	onibi_active_exec_ctx = NULL;
 	return 0;
     }
     onibi_deadline_ns = 0;
+    onibi_active_exec_ctx = NULL;
     return -1;
 }
 

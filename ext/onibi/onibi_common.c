@@ -52,6 +52,51 @@
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
+
+/* Match-local execution ABI.  The interpreter owns this object for the
+ * complete search.  The pointer fields are storage owned by the context or
+ * by its frontier arenas; they are never borrowed from Ruby objects. */
+typedef struct {
+    uint32_t *states;
+    unsigned char *membership;
+    size_t count;
+    size_t capacity;
+} OnibiFrontier;
+typedef struct {
+    unsigned char *data;
+    size_t count, capacity;
+} OnibiTagArena;
+typedef struct {
+    long *values;
+    size_t count;
+} OnibiSemanticCaptureFile;
+typedef struct {
+    long *values;
+    size_t count;
+} OnibiCounterFile;
+typedef struct {
+    uint32_t *frames;
+    size_t count, capacity;
+} OnibiCallStack;
+typedef struct {
+    VALUE regexp;
+    VALUE subject;
+    const OnibiRSeqHeader *program;
+    OnigPosition search_origin;
+    OnigPosition attempt_start;
+    OnigPosition reported_start;
+    OnigPosition current_position;
+    OnibiFrontier current;
+    OnibiFrontier next;
+    OnibiTagArena tags;
+    OnibiSemanticCaptureFile semantic_captures;
+    OnibiCounterFile counters;
+    OnibiCallStack calls;
+    uint64_t work_before_poll;
+    /* Ruby's private rb_hrtime_t is not public in this MRI release. */
+    uint64_t timeout_deadline;
+} OnibiExecCtx;
+static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
