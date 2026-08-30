@@ -39,7 +39,7 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	    }
 	    if (result < 0) {
 		onibi_deadline_ns = 0;
-		return -1;
+		return 0;
 	    }
 	}
 	onibi_deadline_ns = 0;
@@ -54,10 +54,7 @@ onibi_vm_match_p(VALUE self, VALUE str)
 {
     long start = 0, end = 0;
     int result = onibi_vm_search(self, str, 0, &start, &end);
-    if (result >= 0) return result ? Qtrue : Qfalse;
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return rb_funcall(obj->regexp, id_match_p, 1, str);
+    return result > 0 ? Qtrue : Qfalse;
 }
 
 static VALUE
@@ -66,7 +63,22 @@ onibi_scan(VALUE self, VALUE str)
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
-    return rb_funcall(str, id_scan, 1, obj->regexp);
+    VALUE result = rb_ary_new();
+    long origin = 0;
+    for (;;) {
+	long start = 0, end = 0;
+	if (!onibi_vm_search(self, str, origin, &start, &end)) break;
+	rb_ary_push(result, rb_str_substr(str, start, end - start));
+	if (end > start)
+	    origin = end;
+	else {
+	    if (origin >= RSTRING_LEN(str)) break;
+	    origin += rb_enc_mbclen(RSTRING_PTR(str) + origin,
+				    RSTRING_PTR(str) + RSTRING_LEN(str),
+				    rb_enc_get(str));
+	}
+    }
+    return result;
 }
 static VALUE
 onibi_case_equal(VALUE self, VALUE other)
@@ -77,22 +89,19 @@ onibi_case_equal(VALUE self, VALUE other)
 static VALUE
 onibi_last_match(int argc, VALUE *argv, VALUE klass)
 {
-    return rb_funcallv(rb_cRegexp, id_last_match, argc, argv);
+    (void)argc;
+    (void)argv;
+    (void)klass;
+    return Qnil;
 }
 static VALUE
 onibi_tilde(VALUE self)
 {
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return rb_funcall(obj->regexp, id_tilde, 0);
-}
-static VALUE
-onibi_gsub_yield(VALUE value, VALUE data, int argc, const VALUE *argv,
-		 VALUE blockarg)
-{
-    (void)data;
-    (void)blockarg;
-    return argc == 0 ? rb_yield(value) : rb_yield_values2(argc, argv);
+    VALUE input = rb_gv_get("$_");
+    if (!RB_TYPE_P(input, T_STRING)) return Qnil;
+    long start = 0, end = 0;
+    return onibi_vm_search(self, input, 0, &start, &end) ? LONG2NUM(start)
+							 : Qnil;
 }
 static VALUE
 onibi_gsub(int argc, VALUE *argv, VALUE self)
@@ -102,11 +111,34 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
-    if (rb_block_given_p()) {
-	VALUE regexp = obj->regexp;
-	return rb_block_call(str, id_gsub, 1, &regexp, onibi_gsub_yield, Qnil);
+    if (!rb_block_given_p()) StringValue(replacement);
+    VALUE result = rb_str_buf_new(RSTRING_LEN(str));
+    rb_enc_associate(result, rb_enc_get(str));
+    long origin = 0, copied = 0;
+    for (;;) {
+	long start = 0, end = 0;
+	if (!onibi_vm_search(self, str, origin, &start, &end)) break;
+	rb_str_buf_cat(result, RSTRING_PTR(str) + copied, start - copied);
+	VALUE replacement_value =
+	    rb_block_given_p()
+		? rb_yield(rb_str_substr(str, start, end - start))
+		: replacement;
+	StringValue(replacement_value);
+	rb_str_buf_cat(result, RSTRING_PTR(replacement_value),
+		       RSTRING_LEN(replacement_value));
+	copied = end;
+	if (end > start)
+	    origin = end;
+	else {
+	    if (origin >= RSTRING_LEN(str)) break;
+	    origin += rb_enc_mbclen(RSTRING_PTR(str) + origin,
+				    RSTRING_PTR(str) + RSTRING_LEN(str),
+				    rb_enc_get(str));
+	}
     }
-    return rb_funcall(str, id_gsub, 2, obj->regexp, replacement);
+    rb_str_buf_cat(result, RSTRING_PTR(str) + copied,
+		   RSTRING_LEN(str) - copied);
+    return result;
 }
 
 void

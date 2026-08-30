@@ -954,35 +954,20 @@ onibi_match(int argc, VALUE *argv, VALUE self)
     if (argc == 2 && RB_TYPE_P(pos, T_STRING))
 	rb_raise(rb_eTypeError,
 		 "no implicit conversion of String into Integer");
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    int str_encoding_index =
-	RB_TYPE_P(str, T_STRING) ? rb_enc_get_index(str) : -1;
-    int str_ascii_only =
-	RB_TYPE_P(str, T_STRING) && rb_enc_str_asciionly_p(str);
-    /* Run the compiled C interpreter before MatchData materialization.  The
-       MRI call below remains only the final host-side MatchData constructor. */
-    if (NIL_P(pos) && RB_TYPE_P(str, T_STRING) && !NIL_P(obj->rseq) &&
-	!onibi_mri_compat_path_p(obj) && !(obj->options & 32) &&
-	(!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
-	onibi_vm_input_eligible(obj, str) &&
-	(!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ASCII_PROPERTY) ||
-	 str_ascii_only ||
-	 (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_UNICODE_PROPERTY) &&
-	  (str_encoding_index == rb_utf8_encindex() ||
-	   str_encoding_index == obj->source_encoding_index))) &&
-	(str_ascii_only || onibi_valid_encoding(str))) {
-	if (!RTEST(onibi_vm_match_p(self, str))) {
-	    rb_backref_set(Qnil);
-	    return Qnil;
-	}
+    if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
+    long origin = 0;
+    if (!NIL_P(pos)) {
+	origin = NUM2LONG(pos);
+	if (origin < 0) origin += RSTRING_LEN(str);
+	if (origin < 0) return Qnil;
     }
-    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
-			     : rb_funcall(obj->regexp, id_match, 2, str, pos);
-    if (NIL_P(match)) {
+    long start = 0, end = 0;
+    if (!onibi_vm_search(self, str, origin, &start, &end)) {
 	rb_backref_set(Qnil);
 	return Qnil;
     }
+    VALUE match = rb_str_substr(str, start, end - start);
+    rb_backref_set(Qnil);
     return rb_block_given_p() ? rb_yield(match) : match;
 }
 
@@ -991,8 +976,6 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 {
     VALUE str, pos = Qnil;
     rb_scan_args(argc, argv, "11", &str, &pos);
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     if (RB_TYPE_P(str, T_STRING)) {
 	long origin = 0;
 	if (!NIL_P(pos)) {
@@ -1004,8 +987,7 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	int result = onibi_vm_search(self, str, origin, &start, &end);
 	if (result >= 0) return result ? Qtrue : Qfalse;
     }
-    return NIL_P(pos) ? rb_funcall(obj->regexp, id_match_p, 1, str)
-		      : rb_funcall(obj->regexp, id_match_p, 2, str, pos);
+    return Qfalse;
 }
 
 /* The parser and compiler decide support at initialize time.  Keep this

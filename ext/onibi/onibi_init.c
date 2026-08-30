@@ -1,7 +1,6 @@
 Init_onibi(void)
 {
     id_initialize = rb_intern("initialize");
-    id_match = rb_intern("match");
     id_new = rb_intern("new");
     id_instance_method = rb_intern("instance_method");
     id_bind = rb_intern("bind");
@@ -9,16 +8,10 @@ Init_onibi(void)
     id_bytebegin = rb_intern("bytebegin");
     id_byteend = rb_intern("byteend");
     id_length = rb_intern("length");
-    id_case_equal = rb_intern("===");
-    id_last_match = rb_intern("last_match");
-    id_tilde = rb_intern("~");
-    id_match_p = rb_intern("match?");
     id_source = rb_intern("source");
     id_options = rb_intern("options");
     id_inspect = rb_intern("inspect");
     id_to_s = rb_intern("to_s");
-    id_scan = rb_intern("scan");
-    id_gsub = rb_intern("gsub");
     id_encoding = rb_intern("encoding");
     id_index = rb_intern("index");
     id_a_assert_begin_buffer = rb_intern("ASSERT_BEGIN_BUFFER");

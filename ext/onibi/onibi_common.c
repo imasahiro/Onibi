@@ -52,15 +52,13 @@
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-static ID id_initialize, id_match, id_match_p, id_source, id_options,
-    id_inspect, id_to_s, id_new;
+static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
-static ID id_case_equal, id_last_match, id_tilde;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static void onibi_rseq_view_prepare(OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);
-static ID id_scan, id_gsub, id_encoding, id_index;
+static ID id_encoding, id_index;
 static ID id_a_assert_begin_buffer, id_a_assert_search_origin,
     id_a_assert_end_buffer;
 static ID id_a_assert_begin_line, id_a_assert_end_line,
