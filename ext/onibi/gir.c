@@ -671,6 +671,26 @@ onibi_gir_state(onibi_gir_builder_t *builder, long id, OnibiGStateOp opcode,
     onibi_gir_state_vector_push(&builder->states, entry);
 }
 
+/* Typed terminal path.  This bypasses Ruby Hash payloads for literals while
+ * the remaining compatibility-only composite nodes are migrated. */
+static void
+onibi_gir_state_literal(onibi_gir_builder_t *builder, long id,
+			const unsigned char *bytes, size_t length,
+			int ignorecase)
+{
+    OnibiGirStateEntry entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.id = id;
+    entry.opcode = ONIBI_G_CHAR;
+    if (length == 0 || length > sizeof(entry.literal))
+	rb_raise(eRegexpError, "literal descriptor has invalid length");
+    entry.literal_length = (uint8_t)length;
+    memcpy(entry.literal, bytes, length);
+    entry.value = bytes[0];
+    if (ignorecase) entry.flags |= 1U;
+    onibi_gir_state_vector_push(&builder->states, entry);
+}
+
 static OnibiGActionVector
 onibi_gir_compose_edge_actions(onibi_gir_builder_t *builder, long from, long to,
 			       const OnibiGActionVector *explicit_actions)

@@ -387,8 +387,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    type_code == ONIBI_AST_CLASS_INTERSECTION)
 	    semantic_node =
 		onibi_gir_payload_from_ast_terminal(builder->ast, id, 1);
-	else if (type_code == ONIBI_AST_LITERAL ||
-		 type_code == ONIBI_AST_ESCAPE ||
+	else if (type_code == ONIBI_AST_ESCAPE ||
 		 type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_ANY)
 	    semantic_node =
 		onibi_gir_payload_from_ast_terminal(builder->ast, id, 0);
@@ -589,7 +588,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 			      ? ONIBI_G_BACKREF
 			      : (grapheme_escape ? ONIBI_G_GRAPHEME
 						 : ONIBI_G_CLASS)));
-	if (builder->ignorecase && type_code == ONIBI_AST_LITERAL) {
+	if (builder->ignorecase && type_code == ONIBI_AST_LITERAL &&
+	    !RB_INTEGER_TYPE_P(node_reference)) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_byte),
 			 INT2NUM(tolower(NUM2INT(
@@ -632,7 +632,19 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    rb_hash_aset(payload, ID2SYM(id_key_multiline), Qtrue);
 	    rb_obj_freeze(payload);
 	}
-	onibi_gir_state(builder, id, op, payload);
+	if (type_code == ONIBI_AST_LITERAL && c_node != NULL) {
+	    const unsigned char *bytes =
+		c_node->bytes.length == 0
+		    ? (const unsigned char *)&c_node->byte
+		    : builder->ast->bytes + c_node->bytes.offset;
+	    size_t length =
+		c_node->bytes.length == 0 ? 1 : c_node->bytes.length;
+	    onibi_gir_state_literal(builder, id, bytes, length,
+				    builder->ignorecase);
+	}
+	else {
+	    onibi_gir_state(builder, id, op, payload);
+	}
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
