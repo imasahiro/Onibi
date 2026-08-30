@@ -81,8 +81,9 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 }
 
 static int
-onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
-			long start, long search_origin, long *matched_end)
+onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
+			      VALUE str, long start, long search_origin,
+			      long *matched_end)
 {
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
@@ -334,4 +335,122 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	}
     }
     return 0;
+}
+
+/* Regular execution uses ordered frontiers.  It has no DFS stack and keeps
+ * one membership bitset for each frontier.  Dynamic programs stay in the
+ * isolated compatibility walker above. */
+static int
+onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
+			long start, long search_origin, long *matched_end)
+{
+    OnibiRSeqView local_view;
+    const OnibiRSeqView *view = cached_view;
+    if (!view) {
+	if (!onibi_rseq_view_init(rseq, &local_view)) return -1;
+	onibi_rseq_view_prepare(&local_view);
+	view = &local_view;
+    }
+    const OnibiRSeqHeader *header = view->header;
+    if (!view->native_eligible) return -1;
+    if (header->counter_count != 0 || header->capture_count != 0 ||
+	header->subprogram_count != 1) {
+	return onibi_rseq_backtracking_match(rseq, cached_view, str, start,
+					     search_origin, matched_end);
+    }
+    if (!rb_enc_str_asciionly_p(str) &&
+	rb_enc_get_index(str) != rb_ascii8bit_encindex())
+	return -1;
+    uint32_t count = header->state_count;
+    if (count == 0) return 0;
+    size_t bits_size = ((size_t)count + 7U) / 8U;
+    uint32_t *current = ALLOCA_N(uint32_t, count);
+    uint32_t *next = ALLOCA_N(uint32_t, count);
+    unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
+    unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
+    size_t current_count = 0;
+    memset(current_bits, 0, bits_size);
+    for (uint32_t i = 0; i < header->start_edge_count; i++) {
+	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
+	if (edge->action_offset != 0) continue;
+	if (edge->destination == ONIBI_ACCEPT_STATE) {
+	    *matched_end = start;
+	    return 1;
+	}
+	if (edge->destination >= count) continue;
+	uint32_t state = edge->destination;
+	if ((current_bits[state >> 3] & (1U << (state & 7))) == 0) {
+	    current_bits[state >> 3] |= (unsigned char)(1U << (state & 7));
+	    current[current_count++] = state;
+	}
+    }
+    long position = start;
+    for (;;) {
+	size_t next_count = 0;
+	memset(next_bits, 0, bits_size);
+	int have_fallback = 0;
+	long fallback_end = 0;
+	for (size_t i = 0; i < current_count; i++) {
+	    uint32_t state_id = current[i];
+	    const OnibiRState *state = &view->states[state_id];
+	    if (state->op == 0) {
+		if (!next_count) {
+		    *matched_end = position;
+		    return 1;
+		}
+		have_fallback = 1;
+		fallback_end = position;
+		continue;
+	    }
+	    if (position >= RSTRING_LEN(str)) continue;
+	    int hit = state->op == ONIBI_RS_ANY;
+	    if (state->op == ONIBI_RS_CHAR)
+		hit = view->blob[view->literals[state->payload].data_offset] ==
+		      (unsigned char)RSTRING_PTR(str)[position];
+	    else if (state->op == ONIBI_RS_CLASS) {
+		const unsigned char *bitmap =
+		    view->blob + view->classes[state->payload].data_offset;
+		hit =
+		    (bitmap[(unsigned char)RSTRING_PTR(str)[position] >> 3] &
+		     (1U << ((unsigned char)RSTRING_PTR(str)[position] & 7))) !=
+		    0;
+	    }
+	    if (!hit) continue;
+	    uint32_t base = state->edge_base;
+	    for (uint32_t e = 0; e < state->edge_count; e++) {
+		const OnibiREdge *edge = &view->edges[base + e];
+		if (edge->action_offset != 0) continue;
+		if (edge->destination == ONIBI_ACCEPT_STATE) {
+		    /* Keep scanning this state's edges. A later continuation
+		     * can still win at the next position. */
+		    have_fallback = 1;
+		    fallback_end = position + 1;
+		    continue;
+		}
+		if (edge->destination >= count) continue;
+		uint32_t destination = edge->destination;
+		if ((next_bits[destination >> 3] & (1U << (destination & 7))) ==
+		    0) {
+		    next_bits[destination >> 3] |=
+			(unsigned char)(1U << (destination & 7));
+		    next[next_count++] = destination;
+		}
+	    }
+	}
+	if (!next_count) {
+	    if (have_fallback) {
+		*matched_end = fallback_end;
+		return 1;
+	    }
+	    return 0;
+	}
+	uint32_t *states_tmp = current;
+	current = next;
+	next = states_tmp;
+	unsigned char *bits_tmp = current_bits;
+	current_bits = next_bits;
+	next_bits = bits_tmp;
+	current_count = next_count;
+	position++;
+    }
 }

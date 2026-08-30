@@ -690,38 +690,21 @@ static void
 onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to,
 		       const OnibiGActionVector *actions)
 {
-    const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
-	&builder->capture_guards, (OnibiStateId)to);
-    const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(
-	&builder->exit_guards, (OnibiStateId)from);
-    size_t capture_count = capture_guard ? capture_guard->actions.count : 0;
-    size_t exit_count = exit_guard ? exit_guard->actions.count : 0;
+    OnibiGActionVector composed =
+	onibi_gir_compose_edge_actions(builder, from, to, actions);
+    /* Action programs are part of edge identity.  Keep the first identical
+     * edge for priority, but never merge different paths into one program. */
     for (size_t i = 0; i < builder->edges.count; i++) {
-	OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
-	if (prior->from == from && prior->to == to) {
-	    size_t guard_count = exit_count + capture_count;
-	    if (prior->actions.count < guard_count)
-		rb_raise(rb_eArgError, "GIR edge guard layout is invalid");
-	    size_t prior_explicit_count = prior->actions.count - guard_count;
-	    OnibiGActionVector explicit_actions;
-	    onibi_g_action_vector_init(&explicit_actions);
-	    onibi_g_action_vector_append(&explicit_actions, actions);
-	    onibi_g_action_vector_reserve(&explicit_actions,
-					  prior_explicit_count);
-	    memcpy(explicit_actions.entries + explicit_actions.count,
-		   prior->actions.entries + exit_count,
-		   prior_explicit_count * sizeof(*prior->actions.entries));
-	    explicit_actions.count += prior_explicit_count;
-	    OnibiGActionVector merged_actions = onibi_gir_compose_edge_actions(
-		builder, from, to, &explicit_actions);
-	    onibi_g_action_vector_free(&explicit_actions);
-	    onibi_g_action_vector_free(&prior->actions);
-	    prior->actions = merged_actions;
+	const OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
+	if (prior->from == from && prior->to == to &&
+	    prior->actions.count == composed.count &&
+	    (composed.count == 0 ||
+	     memcmp(prior->actions.entries, composed.entries,
+		    composed.count * sizeof(*composed.entries)) == 0)) {
+	    onibi_g_action_vector_free(&composed);
 	    return;
 	}
     }
-    OnibiGActionVector composed =
-	onibi_gir_compose_edge_actions(builder, from, to, actions);
     onibi_gir_edge_vector_push(&builder->edges,
 			       (OnibiGirEdgeEntry){from, to, 0, composed});
 }
