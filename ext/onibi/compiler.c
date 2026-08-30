@@ -34,6 +34,9 @@ typedef struct {
     OnibiParsed *parsed;
     onibi_gir_builder_t *builder;
     long capture_count;
+    int nullable;
+    long min_width;
+    long max_width;
 } OnibiAnalyzeOutput;
 typedef struct {
     onibi_gir_builder_t *builder;
@@ -1400,6 +1403,20 @@ onibi_compiler_pass_optimize(onibi_gir_builder_t *builder)
     (void)builder;
 }
 
+/* Analyze pass.  This pass reads only the immutable AST.  Lowering must not
+ * perform these queries while it walks nodes. */
+static OnibiAnalyzeOutput
+onibi_compiler_pass_analyze(OnibiParsed *parsed, onibi_gir_builder_t *builder)
+{
+    long captures = 0;
+    onibi_compiler_pass_collect_captures(parsed->arena.root, builder,
+					 &captures);
+    OnibiAstAnalysis ast_analysis = {0};
+    int nullable = onibi_ast_nullable_scan(&parsed->arena, parsed->arena.root,
+					   &ast_analysis);
+    return (OnibiAnalyzeOutput){parsed, builder, captures, nullable, 0, -1};
+}
+
 /* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
@@ -1453,13 +1470,9 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     onibi_gir_builder_t builder;
     onibi_compiler_pass_init_builder(&builder, parsed_data, ignorecase,
 				     multiline);
-    long prepass_capture_count = 0;
-    onibi_compiler_pass_collect_captures(parsed_data->arena.root, &builder,
-					 &prepass_capture_count);
-    builder.capture_count = prepass_capture_count;
-    OnibiAnalyzeOutput analyze = {normalize.parsed, &builder,
-				  prepass_capture_count};
-    (void)analyze;
+    OnibiAnalyzeOutput analyze =
+	onibi_compiler_pass_analyze(normalize.parsed, &builder);
+    builder.capture_count = analyze.capture_count;
     OnibiGirEdgeVector start_edge_records;
     long accept;
     long root_entry;
