@@ -37,20 +37,20 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	    exec_ctx.attempt_start = start;
 	    exec_ctx.current_position = start;
 	    exec_ctx.program = obj->rseq_view.header;
+	    exec_ctx.rseq = obj->rseq;
+	    exec_ctx.view = &obj->rseq_view;
 	    if (!onibi_character_boundary(str, start)) continue;
 	    rb_thread_check_ints();
 	    onibi_check_deadline();
-	    long end = 0;
-	    int result = onibi_rseq_simple_match(
-		obj->rseq, &obj->rseq_view, str, start, search_origin, &end);
-	    if (result > 0) {
+	    OnibiExecStatus result = onibi_execute(&exec_ctx);
+	    if (result == ONIBI_EXEC_STATUS_MATCH) {
 		if (match_start) *match_start = start;
-		if (match_end) *match_end = end;
+		if (match_end) *match_end = exec_ctx.matched_end;
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
 		return 1;
 	    }
-	    if (result < 0) {
+	    if (result == ONIBI_EXEC_STATUS_INTERNAL_ERROR) {
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
 		return 0;

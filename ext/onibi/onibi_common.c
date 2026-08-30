@@ -96,7 +96,22 @@ typedef struct {
     uint64_t work_before_poll;
     /* Ruby's private rb_hrtime_t is not public in this MRI release. */
     uint64_t timeout_deadline;
+    VALUE rseq;
+    const OnibiRSeqView *view;
+    long matched_end;
 } OnibiExecCtx;
+typedef enum {
+    ONIBI_EXEC_STATUS_NO_MATCH = 0,
+    ONIBI_EXEC_STATUS_MATCH = 1,
+    ONIBI_EXEC_STATUS_INTERNAL_ERROR = -1
+} OnibiExecStatus;
+static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
+static int onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *view,
+				    VALUE subject, long start,
+				    long search_origin, long *matched_end);
+static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
+static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
+static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new;
 static ID id_instance_method, id_bind, id_call;

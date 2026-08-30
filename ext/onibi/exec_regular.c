@@ -159,6 +159,17 @@ onibi_rseq_blob_validate(VALUE blob)
     }
 }
 
+static OnibiExecStatus
+onibi_exec_regular(OnibiExecCtx *ctx)
+{
+    int result = onibi_rseq_regular_match(
+	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
+	ctx->search_origin, &ctx->matched_end);
+    return result > 0	? ONIBI_EXEC_STATUS_MATCH
+	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
+			: ONIBI_EXEC_STATUS_NO_MATCH;
+}
+
 /* Execute the action-free regular subset directly from the immutable RSeq
    blob.  This path does not materialize semantic states, edges, or visited
    Ruby objects for each candidate start. */

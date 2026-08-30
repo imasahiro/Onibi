@@ -341,8 +341,9 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
  * one membership bitset for each frontier.  Dynamic programs stay in the
  * isolated compatibility walker above. */
 static int
-onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
-			long start, long search_origin, long *matched_end)
+onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
+			 VALUE str, long start, long search_origin,
+			 long *matched_end)
 {
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
@@ -452,5 +453,33 @@ onibi_rseq_simple_match(VALUE rseq, const OnibiRSeqView *cached_view, VALUE str,
 	next_bits = bits_tmp;
 	current_count = next_count;
 	position++;
+    }
+}
+
+static OnibiExecStatus
+onibi_exec_dynamic(OnibiExecCtx *ctx)
+{
+    int result = onibi_rseq_backtracking_match(
+	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
+	ctx->search_origin, &ctx->matched_end);
+    return result > 0	? ONIBI_EXEC_STATUS_MATCH
+	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
+			: ONIBI_EXEC_STATUS_NO_MATCH;
+}
+
+static OnibiExecStatus
+onibi_exec_tagged(OnibiExecCtx *ctx)
+{
+    return onibi_exec_dynamic(ctx);
+}
+
+static OnibiExecStatus
+onibi_execute(OnibiExecCtx *ctx)
+{
+    switch ((OnibiExecutionKind)ctx->program->exec_kind) {
+    case ONIBI_EXEC_REGULAR: return onibi_exec_regular(ctx);
+    case ONIBI_EXEC_TAGGED: return onibi_exec_tagged(ctx);
+    case ONIBI_EXEC_DYNAMIC: return onibi_exec_dynamic(ctx);
+    default: return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
 }
