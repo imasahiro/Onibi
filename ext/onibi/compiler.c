@@ -1278,7 +1278,20 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     /* Lowering is complete.  Transfer the mutable graph to the tagged
        epsilon-NFA owner, then run the explicit elimination pass. */
     nfa.states = builder->states;
-    nfa.edges = builder->edges;
+    /* Convert mutable GIR edges to explicit NFA transitions.  The current
+       lowering emits consuming-position edges; future zero-width lowering
+       can append ONIBI_NFA_EPSILON edges without changing this pass. */
+    for (size_t i = 0; i < builder->edges.count; i++) {
+	OnibiGirEdgeEntry *source = &builder->edges.entries[i];
+	OnibiNfaEdge edge = {source->from, source->to, ONIBI_NFA_CONSUME,
+			     source->actions};
+	onibi_nfa_edge_vector_push(&nfa.edges, edge);
+	onibi_g_action_vector_init(&source->actions);
+    }
+    xfree(builder->edges.entries);
+    builder->edges.entries = NULL;
+    builder->edges.count = 0;
+    builder->edges.capacity = 0;
     onibi_gir_state_vector_init(&builder->states);
     onibi_gir_edge_vector_init(&builder->edges);
     nfa.accept = accept;
