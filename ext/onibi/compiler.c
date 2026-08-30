@@ -1465,8 +1465,8 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     OnibiResolveOutput resolve = {parse.parsed, parse.options};
     OnibiNormalizeOutput normalize = {resolve.parsed, resolve.options};
     int parsed_options = normalize.options;
-    int ignorecase = (parsed_options & 1) != 0;
-    int multiline = (parsed_options & 4) != 0;
+    int ignorecase = (parsed_options & ONIBI_OPT_IGNORECASE) != 0;
+    int multiline = (parsed_options & ONIBI_OPT_MULTILINE) != 0;
     onibi_gir_builder_t builder;
     onibi_compiler_pass_init_builder(&builder, parsed_data, ignorecase,
 				     multiline);

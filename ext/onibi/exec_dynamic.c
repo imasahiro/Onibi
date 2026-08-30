@@ -291,6 +291,7 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		const unsigned char *bitmap = view->blob + klass->data_offset;
 		hit = (bitmap[bytes[frame.pos] >> 3] &
 		       (1U << (bytes[frame.pos] & 7))) != 0;
+		if (klass->flags & ONIBI_RSEQ_CLASS_FLAG_NEGATED) hit = !hit;
 	    }
 	    else
 		hit = bytes[frame.pos] != '\n';
@@ -368,13 +369,16 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
     unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
     unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
     size_t current_count = 0;
+    long best_end = -1;
     memset(current_bits, 0, bits_size);
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
 	if (edge->action_offset != 0) continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
-	    *matched_end = start;
-	    return 1;
+	    /* An empty alternative is a fallback.  A consuming branch at this
+	     * same start has higher priority when it can match. */
+	    best_end = start;
+	    continue;
 	}
 	if (edge->destination >= count) continue;
 	uint32_t state = edge->destination;
@@ -420,6 +424,9 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		    (bitmap[(unsigned char)RSTRING_PTR(str)[position] >> 3] &
 		     (1U << ((unsigned char)RSTRING_PTR(str)[position] & 7))) !=
 		    0;
+		if (view->classes[state->payload].flags &
+		    ONIBI_RSEQ_CLASS_FLAG_NEGATED)
+		    hit = !hit;
 	    }
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;
@@ -431,6 +438,7 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		     * can still win at the next position. */
 		    have_fallback = 1;
 		    fallback_end = position + 1;
+		    best_end = fallback_end;
 		    continue;
 		}
 		if (edge->destination >= count) continue;
@@ -446,6 +454,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	if (!next_count) {
 	    if (have_fallback) {
 		*matched_end = fallback_end;
+		return 1;
+	    }
+	    if (best_end >= 0) {
+		*matched_end = best_end;
 		return 1;
 	    }
 	    return 0;

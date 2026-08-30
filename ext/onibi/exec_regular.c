@@ -40,7 +40,9 @@ static void
 onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
     const OnibiRSeqHeader *header = view->header;
-    if ((header->features & 32U) != 0 || (header->flags & 3U) != 0 ||
+    if ((header->features & ONIBI_RSEQ_FEATURE_LOOKAROUND) != 0 ||
+	(header->flags & (ONIBI_RSEQ_HEADER_FLAG_IGNORECASE |
+			  ONIBI_RSEQ_HEADER_FLAG_MULTILINE)) != 0 ||
 	header->state_count == 0 || header->start_edge_count == 0)
 	return;
     for (uint32_t i = 0; i < header->state_count; i++) {

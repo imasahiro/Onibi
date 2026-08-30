@@ -15,28 +15,6 @@
 #define ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE (1U << 2)
 #define ONIBI_AST_ANALYSIS_HAS_ANCHOR (1U << 3)
 #define ONIBI_AST_ANALYSIS_ANCHOR_REPEAT (1U << 4)
-#define ONIBI_FEATURE_DYNAMIC (1U << 0)
-#define ONIBI_FEATURE_TAGGED (1U << 1)
-#define ONIBI_FEATURE_ATOMIC (1U << 2)
-#define ONIBI_FEATURE_GRAPHEME (1U << 3)
-#define ONIBI_FEATURE_WILDCARD (1U << 4)
-#define ONIBI_FEATURE_ANCHOR (1U << 5)
-#define ONIBI_FEATURE_META_ESCAPE (1U << 6)
-#define ONIBI_FEATURE_UNICODE_ESCAPE (1U << 7)
-#define ONIBI_FEATURE_CLASS_INTERSECTION (1U << 8)
-#define ONIBI_FEATURE_NESTED_CLASS (1U << 9)
-#define ONIBI_FEATURE_LARGE_REPEAT (1U << 10)
-#define ONIBI_FEATURE_ABSENCE (1U << 11)
-#define ONIBI_FEATURE_CONDITIONAL (1U << 12)
-#define ONIBI_FEATURE_BACKREF (1U << 13)
-#define ONIBI_FEATURE_SUBROUTINE (1U << 14)
-#define ONIBI_FEATURE_ASCII_PROPERTY (1U << 15)
-#define ONIBI_FEATURE_UNICODE_PROPERTY (1U << 16)
-#define ONIBI_FEATURE_UNICODE_PROPERTY_CLASS (1U << 17)
-#define ONIBI_FEATURE_PROPERTY_ESCAPE (1U << 18)
-#define ONIBI_FEATURE_NON_ASCII_LITERAL (1U << 19)
-#define ONIBI_FEATURE_NON_ASCII_CLASS (1U << 20)
-#define ONIBI_FEATURE_INLINE_IGNORECASE (1U << 21)
 #define ONIBI_FEATURE_P(obj, flag) (((obj)->feature_flags & (flag)) != 0)
 #include <alloca.h>
 #include <ctype.h>
@@ -113,7 +91,8 @@ static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
-static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new;
+static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
+    id_match;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
@@ -301,33 +280,16 @@ typedef struct {
 static int
 onibi_regexp_fixed_p(const onibi_regexp_t *obj)
 {
-    return (obj->options & 16) ||
+    return (obj->options & ONIBI_OPT_FIXEDENCODING) ||
 	   (obj->source_ascii_only &&
 	    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL));
-}
-
-/* Some Unicode/POSIX property rules are not representable by the compact
- * ctype payload yet.  The MRI regexp is compiled once during initialize, so
- * this compatibility path does not rescan source text during a match. */
-static int
-onibi_mri_compat_path_p(const onibi_regexp_t *obj)
-{
-    return (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CLASS_INTERSECTION) &&
-	    (obj->options & 1)) ||
-	   ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ASCII_PROPERTY) ||
-	   (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) &&
-	    ((obj->options & 1) ||
-	     ONIBI_FEATURE_P(obj, ONIBI_FEATURE_INLINE_IGNORECASE))) ||
-	   (obj->ast_flags & ONIBI_AST_FLAG_ANCHOR_REPEAT) != 0 ||
-	   (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ABSENCE) &&
-	    (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL) ||
-	     (obj->ast_flags & ONIBI_AST_FLAG_NULLABLE_ABSENCE) != 0));
 }
 
 static int
 onibi_encoded_literal_program_p(const onibi_regexp_t *obj)
 {
-    return (obj->options & 16) && !(obj->options & (1 | 32)) &&
+    return (obj->options & ONIBI_OPT_FIXEDENCODING) &&
+	   !(obj->options & (ONIBI_OPT_IGNORECASE | ONIBI_OPT_NOENCODING)) &&
 	   obj->source_encoding_index != rb_ascii8bit_encindex() &&
 	   !obj->source_ascii_only &&
 	   ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) &&

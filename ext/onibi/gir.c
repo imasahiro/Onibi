@@ -325,7 +325,7 @@ onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *vector,
 {
     OnibiRSeqClassPayloadEntry entry;
     memcpy(entry.bitmap, state->bitmap, sizeof(entry.bitmap));
-    entry.negated = (state->flags & 1U) != 0;
+    entry.negated = (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0;
     ONIBI_VECTOR_PUSH(vector->entries, vector->count, vector->capacity,
 		      OnibiRSeqClassPayloadEntry, entry, 8,
 		      "RSeq class payload vector is too large");
@@ -350,7 +350,7 @@ onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector *vector,
     memcpy(entry.bytes, state->literal, state->literal_length);
     if (state->literal_length == 0)
 	entry.bytes[0] = (unsigned char)state->value;
-    entry.ignorecase = (state->flags & 1U) != 0;
+    entry.ignorecase = (state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0;
     ONIBI_VECTOR_PUSH(vector->entries, vector->count, vector->capacity,
 		      OnibiRSeqLiteralPayloadEntry, entry, 8,
 		      "RSeq literal payload vector is too large");

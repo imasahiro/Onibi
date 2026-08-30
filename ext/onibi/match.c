@@ -21,7 +21,8 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	onibi_active_exec_ctx = NULL;
 	return 0;
     }
-    if (!onibi_mri_compat_path_p(obj) && !(obj->options & 32) &&
+
+    if (!(obj->options & ONIBI_OPT_NOENCODING) &&
 	(!onibi_regexp_fixed_p(obj) || onibi_encoded_literal_program_p(obj)) &&
 	!NIL_P(obj->rseq) && obj->rseq_view_valid &&
 	onibi_vm_input_eligible(obj, str) &&
@@ -62,6 +63,7 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
     }
     onibi_deadline_ns = 0;
     onibi_active_exec_ctx = NULL;
+    /* No RSeq program is available for this input or feature set. */
     return -1;
 }
 

@@ -87,7 +87,8 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
 	    if (memcmp(prior->bitmap, state->bitmap, sizeof(prior->bitmap)) ==
 		    0 &&
-		prior->negated == ((state->flags & 1U) != 0)) {
+		prior->negated ==
+		    ((state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0)) {
 		found = 1;
 		payload_index = j;
 		break;
@@ -141,8 +142,8 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions});
     }
     int options = compiled_data->options;
-    int ignorecase = (options & 1) != 0;
-    int multiline = (options & 4) != 0;
+    int ignorecase = (options & ONIBI_OPT_IGNORECASE) != 0;
+    int multiline = (options & ONIBI_OPT_MULTILINE) != 0;
     uint64_t physical_edge_count =
 	(uint64_t)r_edge_records.count + (uint64_t)r_start_edge_records.count;
     OnibiRSeqLiteralPayloadVector literal_payloads;
@@ -160,7 +161,9 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 		memcmp(prior->bytes, state->literal,
 		       state->literal_length ? state->literal_length : 1) ==
 		    0 &&
-		prior->ignorecase == ((state->flags & 1U) != 0)) {
+		prior->ignorecase ==
+		    ((state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) !=
+		     0)) {
 		found = 1;
 		payload_index = j;
 		break;
@@ -199,13 +202,16 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     uint32_t features = capture_count > 0 ? 2U : 0U;
     uint32_t counter_count = 0;
     for (size_t i = 0; i < state_records.count; i++) {
-	if (state_records.entries[i].opcode == ONIBI_G_BACKREF) features |= 1U;
+	if (state_records.entries[i].opcode == ONIBI_G_BACKREF)
+	    features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }
     for (size_t i = 0; i < action_records.count; i++) {
 	const OnibiGAction *action = &action_records.entries[i];
 	OnibiGActionOp code = action->code;
-	if (code == ONIBI_GA_CAPTURE_OPEN) features |= 2U;
-	if (code == ONIBI_GA_COUNTER_INIT) features |= 4U;
+	if (code == ONIBI_GA_CAPTURE_OPEN)
+	    features |= ONIBI_RSEQ_FEATURE_CAPTURE;
+	if (code == ONIBI_GA_COUNTER_INIT)
+	    features |= ONIBI_RSEQ_FEATURE_COUNTER;
 	if (code == ONIBI_GA_COUNTER_INIT ||
 	    code == ONIBI_GA_COUNTER_INCREMENT ||
 	    code == ONIBI_GA_TEST_COUNTER_LT ||
@@ -215,25 +221,30 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 		if (required > counter_count) counter_count = required;
 	    }
 	}
-	if (code == ONIBI_GA_MATCH_RESET) features |= 8U;
+	if (code == ONIBI_GA_MATCH_RESET)
+	    features |= ONIBI_RSEQ_FEATURE_MATCH_RESET;
 	if (code == ONIBI_GA_ASSERT_POSITION) {
-	    features |= 16U;
+	    features |= ONIBI_RSEQ_FEATURE_ASSERTION;
 	    if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
 		action->assert_kind == ONIBI_RAP_LOOKBEHIND)
-		features |= 32U;
+		features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
 	}
     }
     OnibiRSeqHeader physical;
     memset(&physical, 0, sizeof(physical));
     physical.magic = ONIBI_RSEQ_MAGIC;
     physical.version = ONIBI_RSEQ_VERSION;
-    physical.flags = (ignorecase ? 1 : 0) | (multiline ? 2 : 0);
+    physical.flags = (ignorecase ? ONIBI_RSEQ_HEADER_FLAG_IGNORECASE : 0) |
+		     (multiline ? ONIBI_RSEQ_HEADER_FLAG_MULTILINE : 0);
     physical.features = features;
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
     physical.capture_count = capture_count;
     physical.semantic_capture_count = capture_count;
     physical.counter_count = counter_count;
+    for (size_t i = 0; i < action_records.count; i++)
+	if (action_records.entries[i].code == ONIBI_GA_ASSERT_POSITION)
+	    physical.exec_kind = 1;
     physical.start_edge_base = (uint32_t)r_edge_records.count;
     for (size_t i = 0; i < state_records.count; i++) {
 	unsigned int opcode = state_records.entries[i].opcode;
@@ -977,8 +988,14 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	rb_backref_set(Qnil);
 	return Qnil;
     }
-    VALUE match = rb_str_substr(str, start, end - start);
-    rb_backref_set(Qnil);
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    /* VM execution selects the match.  MRI materializes MatchData and
+     * capture offsets from the same source regexp for API compatibility. */
+    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
+			     : rb_funcall(obj->regexp, id_match, 2, str,
+					  LONG2NUM(origin));
+    if (NIL_P(match)) return Qnil;
     return rb_block_given_p() ? rb_yield(match) : match;
 }
 
@@ -1029,7 +1046,7 @@ onibi_casefold_p(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return (obj->options & 1) ? Qtrue : Qfalse;
+    return (obj->options & ONIBI_OPT_IGNORECASE) ? Qtrue : Qfalse;
 }
 static VALUE
 onibi_hash(VALUE self)
@@ -1067,7 +1084,7 @@ onibi_fixed_encoding_p(VALUE self)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     /* MRI fixes NOENCODING only when syntax forces a binary property mode. */
     return onibi_regexp_fixed_p(obj) ||
-		   ((obj->options & 32) &&
+		   ((obj->options & ONIBI_OPT_NOENCODING) &&
 		    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ASCII_PROPERTY)) ||
 		   (obj->source_ascii_only &&
 		    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL))
@@ -1079,7 +1096,7 @@ onibi_no_encoding_p(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return (obj->options & 32) ? Qtrue : Qfalse;
+    return (obj->options & ONIBI_OPT_NOENCODING) ? Qtrue : Qfalse;
 }
 static VALUE
 onibi_inspect(VALUE self)
