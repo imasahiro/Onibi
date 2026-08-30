@@ -55,6 +55,16 @@ onibi_quantifier_byte_p(unsigned char c)
     return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
 }
 
+/* Append one decimal digit without ever evaluating a signed overflowing
+ * multiply.  Numeric backreferences use this helper for every digit. */
+static long
+onibi_checked_decimal_append(long value, unsigned char digit)
+{
+    if (digit > 9 || value > (LONG_MAX - (long)digit) / 10)
+	rb_raise(eRegexpError, "numeric backreference is too large");
+    return value * 10 + (long)digit;
+}
+
 typedef struct {
     OnibiTokenKind kind;
     unsigned char byte;
@@ -507,7 +517,8 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		while (i + 1 < RSTRING_LEN(src) &&
 		       RSTRING_PTR(src)[i + 1] >= '0' &&
 		       RSTRING_PTR(src)[i + 1] <= '9') {
-		    number = number * 10 + (RSTRING_PTR(src)[++i] - '0');
+		    number = onibi_checked_decimal_append(
+			number, (unsigned char)(RSTRING_PTR(src)[++i] - '0'));
 		}
 		kind = ONIBI_TOKEN_BACKREF;
 		capture_number = number;
