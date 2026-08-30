@@ -500,3 +500,4 @@ onibi_execute(OnibiExecCtx *ctx)
     default: return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
 }
+/* DYNAMIC interpreter and its isolated compatibility traversal. */

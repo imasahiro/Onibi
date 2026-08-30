@@ -90,3 +90,5 @@ onibi_class_payload_with_ctypes(VALUE payload)
     }
     return copy;
 }
+/* Diagnostic and compatibility payload adapters.  Ruby Hash records created
+ * here are never canonical compiler or runtime state. */

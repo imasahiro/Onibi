@@ -175,3 +175,6 @@ onibi_exec_regular(OnibiExecCtx *ctx)
 /* Execute the action-free regular subset directly from the immutable RSeq
    blob.  This path does not materialize semantic states, edges, or visited
    Ruby objects for each candidate start. */
+/* RSeq runtime representation: view construction, validation, and the
+ * REGULAR_FAST entry.  Interpreter policy lives in this module, not in the
+ * Unicode or diagnostic modules. */

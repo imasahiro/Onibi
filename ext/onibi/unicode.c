@@ -1,4 +1,5 @@
-/* Unicode grapheme helpers used by the native RSeq walker. */
+/* Unicode predicates and grapheme-width helpers.  This module has no
+ * interpreter entry point and does not own RSeq validation. */
 static int onibi_codepoint_at(VALUE str, long pos, OnigCodePoint *codepoint,
 			      long *width);
 
