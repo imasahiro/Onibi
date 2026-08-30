@@ -89,9 +89,9 @@ onibi_token_vector_init(OnibiTokenVector *vector)
 static void
 onibi_token_vector_free(OnibiTokenVector *vector)
 {
-    xfree(vector->items);
-    xfree(vector->bytes);
-    memset(vector, 0, sizeof(*vector));
+    ONIBI_VECTOR_RELEASE(vector->items, vector->count, vector->capacity);
+    ONIBI_VECTOR_RELEASE(vector->bytes, vector->bytes_count,
+			 vector->bytes_capacity);
 }
 
 static OnibiTokenSlice
@@ -100,21 +100,10 @@ onibi_token_vector_copy(OnibiTokenVector *vector, const char *bytes,
 {
     OnibiTokenSlice slice = {0, 0, 1};
     if (length == 0) return slice;
-    if (vector->bytes_count > SIZE_MAX - length)
-	rb_raise(rb_eNoMemError, "token byte storage is too large");
+    ONIBI_VECTOR_RESERVE(vector->bytes, vector->bytes_count,
+			 vector->bytes_capacity, unsigned char, length, 64,
+			 "token byte storage is too large");
     size_t required = vector->bytes_count + length;
-    if (required > vector->bytes_capacity) {
-	size_t next = vector->bytes_capacity == 0 ? 64 : vector->bytes_capacity;
-	while (next < required) {
-	    if (next > SIZE_MAX / 2) {
-		next = required;
-		break;
-	    }
-	    next *= 2;
-	}
-	vector->bytes = REALLOC_N(vector->bytes, unsigned char, next);
-	vector->bytes_capacity = next;
-    }
     slice.offset = vector->bytes_count;
     slice.length = length;
     memcpy(vector->bytes + vector->bytes_count, bytes, length);
@@ -148,9 +137,9 @@ onibi_ast_arena_free(OnibiAstArena *arena)
 	xfree(arena->nodes[i].children);
 	xfree(arena->nodes[i].ranges);
     }
-    xfree(arena->nodes);
-    xfree(arena->bytes);
-    memset(arena, 0, sizeof(*arena));
+    ONIBI_VECTOR_RELEASE(arena->nodes, arena->count, arena->capacity);
+    ONIBI_VECTOR_RELEASE(arena->bytes, arena->bytes_count,
+			 arena->bytes_capacity);
     arena->root = ONIBI_AST_NONE;
 }
 
@@ -158,14 +147,11 @@ static OnibiAstId
 onibi_ast_arena_add(OnibiAstArena *arena, OnibiAstKind kind,
 		    const OnibiTokenRecord *token)
 {
-    if (arena->count == arena->capacity) {
-	size_t next = arena->capacity == 0 ? 32 : arena->capacity * 2;
-	if (next < arena->capacity || next > UINT32_MAX ||
-	    next > SIZE_MAX / sizeof(*arena->nodes))
-	    rb_raise(rb_eNoMemError, "AST node arena is too large");
-	arena->nodes = REALLOC_N(arena->nodes, OnibiAstNode, next);
-	arena->capacity = next;
-    }
+    if (arena->count >= UINT32_MAX ||
+	(arena->count == arena->capacity && arena->capacity > UINT32_MAX / 2U))
+	rb_raise(rb_eNoMemError, "AST node arena is too large");
+    ONIBI_VECTOR_RESERVE(arena->nodes, arena->count, arena->capacity,
+			 OnibiAstNode, 1, 32, "AST node arena is too large");
     OnibiAstId id = (OnibiAstId)arena->count++;
     OnibiAstNode *node = &arena->nodes[id];
     memset(node, 0, sizeof(*node));
@@ -204,15 +190,8 @@ static void
 onibi_ast_add_child(OnibiAstArena *arena, OnibiAstId parent, OnibiAstId child)
 {
     OnibiAstNode *node = onibi_ast_node_at(arena, parent);
-    if (node->child_count == node->child_capacity) {
-	size_t next = node->child_capacity == 0 ? 4 : node->child_capacity * 2;
-	if (next < node->child_capacity ||
-	    next > SIZE_MAX / sizeof(*node->children))
-	    rb_raise(rb_eNoMemError, "AST child vector is too large");
-	node->children = REALLOC_N(node->children, OnibiAstId, next);
-	node->child_capacity = next;
-    }
-    node->children[node->child_count++] = child;
+    ONIBI_VECTOR_PUSH(node->children, node->child_count, node->child_capacity,
+		      OnibiAstId, child, 4, "AST child vector is too large");
 }
 
 static void
@@ -220,15 +199,8 @@ onibi_ast_add_range(OnibiAstArena *arena, OnibiAstId parent,
 		    OnibiAstRange range)
 {
     OnibiAstNode *node = onibi_ast_node_at(arena, parent);
-    if (node->range_count == node->range_capacity) {
-	size_t next = node->range_capacity == 0 ? 4 : node->range_capacity * 2;
-	if (next < node->range_capacity ||
-	    next > SIZE_MAX / sizeof(*node->ranges))
-	    rb_raise(rb_eNoMemError, "AST range vector is too large");
-	node->ranges = REALLOC_N(node->ranges, OnibiAstRange, next);
-	node->range_capacity = next;
-    }
-    node->ranges[node->range_count++] = range;
+    ONIBI_VECTOR_PUSH(node->ranges, node->range_count, node->range_capacity,
+		      OnibiAstRange, range, 4, "AST range vector is too large");
 }
 
 static VALUE
@@ -243,21 +215,10 @@ static OnibiTokenSlice
 onibi_ast_arena_copy_bytes(OnibiAstArena *arena, const unsigned char *bytes,
 			   size_t length)
 {
-    if (arena->bytes_count > SIZE_MAX - length)
-	rb_raise(rb_eNoMemError, "AST byte arena is too large");
+    ONIBI_VECTOR_RESERVE(arena->bytes, arena->bytes_count,
+			 arena->bytes_capacity, unsigned char, length, 64,
+			 "AST byte arena is too large");
     size_t required = arena->bytes_count + length;
-    if (required > arena->bytes_capacity) {
-	size_t next = arena->bytes_capacity == 0 ? 64 : arena->bytes_capacity;
-	while (next < required) {
-	    if (next > SIZE_MAX / 2) {
-		next = required;
-		break;
-	    }
-	    next *= 2;
-	}
-	arena->bytes = REALLOC_N(arena->bytes, unsigned char, next);
-	arena->bytes_capacity = next;
-    }
     OnibiTokenSlice slice = {arena->bytes_count, length, 1};
     memcpy(arena->bytes + arena->bytes_count, bytes, length);
     arena->bytes_count = required;
@@ -267,14 +228,9 @@ onibi_ast_arena_copy_bytes(OnibiAstArena *arena, const unsigned char *bytes,
 static void
 onibi_token_record_push(OnibiTokenVector *vector, OnibiTokenRecord record)
 {
-    if (vector->count == vector->capacity) {
-	size_t next = vector->capacity == 0 ? 16 : vector->capacity * 2;
-	if (next < vector->capacity || next > SIZE_MAX / sizeof(*vector->items))
-	    rb_raise(rb_eNoMemError, "token vector is too large");
-	vector->items = REALLOC_N(vector->items, OnibiTokenRecord, next);
-	vector->capacity = next;
-    }
-    vector->items[vector->count++] = record;
+    ONIBI_VECTOR_PUSH(vector->items, vector->count, vector->capacity,
+		      OnibiTokenRecord, record, 16,
+		      "token vector is too large");
 }
 
 static void

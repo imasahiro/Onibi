@@ -118,7 +118,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_g_action_vector_copy(edge_actions);
 	onibi_gir_edge_vector_push(
 	    &r_edge_records,
-	    (OnibiGirEdgeEntry){from, to, action_offset, copied_actions}, Qnil);
+	    (OnibiGirEdgeEntry){from, to, action_offset, copied_actions});
     }
     onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count);
     OnibiGirEdgeVector r_start_edge_records;
@@ -138,7 +138,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_g_action_vector_copy(edge_actions);
 	onibi_gir_edge_vector_push(
 	    &r_start_edge_records,
-	    (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions}, Qnil);
+	    (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions});
     }
     int options = compiled_data->options;
     int ignorecase = (options & 1) != 0;

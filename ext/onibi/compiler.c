@@ -74,7 +74,7 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
 				   &fragment.pending_actions, 0);
     long entry =
-	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
+	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
     onibi_rseq_subprogram_vector_push(
 	&builder->subprograms,
 	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
@@ -197,7 +197,7 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
 				   &fragment.pending_actions, 0);
     long entry =
-	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
+	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
     onibi_rseq_subprogram_vector_store(
 	&builder->subprograms, (size_t)id,
 	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
@@ -818,10 +818,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	onibi_g_action_vector_append(&no_guard, &no.start_actions);
 	for (size_t i = 0; i < yes.starts.count; i++)
 	    onibi_guard_vector_add(&builder->capture_guards,
-				   yes.starts.items[i], &yes_guard);
+				   yes.starts.entries[i], &yes_guard);
 	for (size_t i = 0; i < no.starts.count; i++)
-	    onibi_guard_vector_add(&builder->capture_guards, no.starts.items[i],
-				   &no_guard);
+	    onibi_guard_vector_add(&builder->capture_guards,
+				   no.starts.entries[i], &no_guard);
 	onibi_g_action_vector_free(&yes_guard);
 	onibi_g_action_vector_free(&no_guard);
 	onibi_add_exit_guard_fragment(builder, &yes.exits,
@@ -1245,27 +1245,25 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     onibi_id_vector_free(&accept_starts);
     onibi_gir_edge_vector_init(start_edges);
     long root_entry =
-	fragment.starts.count > 0 ? (long)fragment.starts.items[0] : accept;
+	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
     if (fragment.nullable && fragment.lazy) {
 	OnibiGActionVector actions = onibi_g_action_vector_concat(
 	    &fragment.start_actions, &fragment.pending_actions);
 	onibi_gir_edge_vector_push(start_edges,
-				   (OnibiGirEdgeEntry){-1, accept, 0, actions},
-				   builder->map_roots);
+				   (OnibiGirEdgeEntry){-1, accept, 0, actions});
     }
     OnibiIdVector start_ids = fragment.starts;
     for (size_t i = 0; i < start_ids.count; i++) {
-	long destination = (long)start_ids.items[i];
+	long destination = (long)start_ids.entries[i];
 	const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
-	    &builder->capture_guards, (OnibiStateId)start_ids.items[i]);
+	    &builder->capture_guards, (OnibiStateId)start_ids.entries[i]);
 	OnibiGActionVector actions =
 	    onibi_g_action_vector_copy(&fragment.start_actions);
 	if (capture_guard) {
 	    onibi_g_action_vector_append(&actions, &capture_guard->actions);
 	}
 	onibi_gir_edge_vector_push(
-	    start_edges, (OnibiGirEdgeEntry){-1, destination, 0, actions},
-	    builder->map_roots);
+	    start_edges, (OnibiGirEdgeEntry){-1, destination, 0, actions});
     }
     onibi_id_vector_free(&start_ids);
     onibi_id_vector_free(&exit_ids);
@@ -1273,8 +1271,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 	OnibiGActionVector actions = onibi_g_action_vector_concat(
 	    &fragment.start_actions, &fragment.pending_actions);
 	onibi_gir_edge_vector_push(start_edges,
-				   (OnibiGirEdgeEntry){-1, accept, 0, actions},
-				   builder->map_roots);
+				   (OnibiGirEdgeEntry){-1, accept, 0, actions});
     }
     onibi_g_action_vector_free(&fragment.start_actions);
     onibi_g_action_vector_free(&fragment.pending_actions);

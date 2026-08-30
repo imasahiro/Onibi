@@ -1,6 +1,8 @@
 #ifndef ONIBI_IR_H
 #define ONIBI_IR_H
 
+#include "onibi_vector.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -35,11 +37,7 @@ typedef struct {
     uint32_t count;
 } OnibiCounterState;
 
-typedef struct {
-    OnibiStateId *items;
-    size_t count;
-    size_t capacity;
-} OnibiIdVector;
+typedef ONIBI_VECTOR(OnibiStateId) OnibiIdVector;
 
 typedef enum {
     ONIBI_EXEC_REGULAR = 0,
