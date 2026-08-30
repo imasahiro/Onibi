@@ -223,6 +223,13 @@ onibi_now_ns(void)
 static void
 onibi_check_deadline(void)
 {
+    if (onibi_active_exec_ctx) {
+	if (onibi_active_exec_ctx->work_before_poll > 0)
+	    onibi_active_exec_ctx->work_before_poll--;
+	if (onibi_active_exec_ctx->timeout_deadline != 0 &&
+	    onibi_now_ns() >= onibi_active_exec_ctx->timeout_deadline)
+	    rb_raise(eTimeoutError, "regexp match timeout");
+    }
     if (onibi_deadline_ns != 0 && onibi_now_ns() >= onibi_deadline_ns)
 	rb_raise(eTimeoutError, "regexp match timeout");
 }
