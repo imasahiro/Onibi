@@ -53,6 +53,22 @@ typedef struct {
 typedef struct {
     VALUE rseq;
 } OnibiSearchMetadataOutput;
+typedef struct {
+    unsigned char bitmap[32];
+    unsigned char negated;
+} OnibiNormalizedClass;
+
+static OnibiNormalizedClass
+onibi_compiler_normalize_class(VALUE payload, int fold)
+{
+    VALUE bitmap = onibi_class_bitmap(payload, fold);
+    OnibiNormalizedClass normalized;
+    if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
+	rb_raise(eRegexpError, "class normalization produced invalid bitmap");
+    memcpy(normalized.bitmap, RSTRING_PTR(bitmap), 32);
+    normalized.negated = RTEST(onibi_hash_value_id(payload, id_key_negated));
+    return normalized;
+}
 static void
 onibi_compiled_mark(void *ptr)
 {
@@ -643,12 +659,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 				    builder->ignorecase);
 	}
 	else if (op == ONIBI_G_CLASS) {
-	    VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
-	    if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
-		rb_raise(eRegexpError, "class descriptor has invalid bitmap");
-	    onibi_gir_state_class(
-		builder, id, (const unsigned char *)RSTRING_PTR(bitmap),
-		RTEST(onibi_hash_value_id(payload, id_key_negated)));
+	    OnibiNormalizedClass normalized =
+		onibi_compiler_normalize_class(payload, builder->ignorecase);
+	    onibi_gir_state_class(builder, id, normalized.bitmap,
+				  normalized.negated);
 	}
 	else {
 	    onibi_gir_state(builder, id, op, payload);

@@ -373,15 +373,33 @@ onibi_rseq_subprogram_vector_store(OnibiRSeqSubprogramVector *vector,
 	rb_raise(rb_eArgError, "subprogram index is out of range");
     vector->entries[index] = descriptor;
 }
+typedef struct {
+    unsigned char values[3];
+    uint8_t count;
+} OnibiCaseFoldExpansion;
+
+/* Small fold DAG node.  The vector form supports 1:1 and 1:N folds without
+ * making the class normalizer call tolower for each semantic edge. */
+static OnibiCaseFoldExpansion
+onibi_casefold_expand(unsigned char value)
+{
+    OnibiCaseFoldExpansion expansion = {{value, 0, 0}, 1};
+    unsigned char lower = (unsigned char)tolower(value);
+    unsigned char upper = (unsigned char)toupper(value);
+    if (lower != value) expansion.values[expansion.count++] = lower;
+    if (upper != value && upper != lower && expansion.count < 3)
+	expansion.values[expansion.count++] = upper;
+    return expansion;
+}
+
 static void
 onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
 {
-    bits[value >> 3] |= (unsigned char)(1U << (value & 7));
-    if (fold) {
-	unsigned char lower = (unsigned char)tolower(value);
-	unsigned char upper = (unsigned char)toupper(value);
-	bits[lower >> 3] |= (unsigned char)(1U << (lower & 7));
-	bits[upper >> 3] |= (unsigned char)(1U << (upper & 7));
+    OnibiCaseFoldExpansion expansion = onibi_casefold_expand(value);
+    uint8_t count = fold ? expansion.count : 1;
+    for (uint8_t i = 0; i < count; i++) {
+	unsigned char folded = expansion.values[i];
+	bits[folded >> 3] |= (unsigned char)(1U << (folded & 7));
     }
 }
 
