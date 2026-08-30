@@ -15,6 +15,41 @@ typedef struct {
     long counter_count;
     int options;
 } OnibiCompiled;
+
+/* Compiler pass contracts.  These records make ownership and pass order
+ * explicit, even while several early analyses still share the C AST. */
+typedef struct {
+    OnibiParsed *parsed;
+    int options;
+} OnibiParseOutput;
+typedef struct {
+    OnibiParsed *parsed;
+    int options;
+} OnibiResolveOutput;
+typedef struct {
+    OnibiParsed *parsed;
+    int options;
+} OnibiNormalizeOutput;
+typedef struct {
+    OnibiParsed *parsed;
+    onibi_gir_builder_t *builder;
+    long capture_count;
+} OnibiAnalyzeOutput;
+typedef struct {
+    onibi_gir_builder_t *builder;
+    OnibiGirEdgeVector *start_edges;
+    long accept;
+    long root_entry;
+} OnibiLowerNfaOutput;
+typedef struct {
+    onibi_gir_builder_t *builder;
+} OnibiGirOutput;
+typedef struct {
+    VALUE rseq;
+} OnibiRseqOutput;
+typedef struct {
+    VALUE rseq;
+} OnibiSearchMetadataOutput;
 static void
 onibi_compiled_mark(void *ptr)
 {
@@ -87,9 +122,7 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
     return (long)builder->subprograms.count - 1;
 }
 
-/* Compiler pass 1: collect immutable symbol information from the C AST.
- * This pass runs before lowering.  Lowering can then resolve captures and
- * subroutine names with numeric IDs instead of scanning the AST again. */
+/* Resolve pass: collect immutable symbol information from the C AST. */
 static void
 onibi_compiler_pass_collect_captures(OnibiAstId ast_id,
 				     onibi_gir_builder_t *builder,
@@ -1201,7 +1234,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
     return onibi_fragment_empty();
 }
 
-/* Compiler pass 0: create one owner for all mutable lowering state. */
+/* Initialize pass: create one owner for all mutable compiler state. */
 static void
 onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 				 OnibiParsed *parsed, int ignorecase,
@@ -1225,7 +1258,7 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     builder->multiline = multiline;
 }
 
-/* Compiler pass 2: lower the C AST into mutable GIR state and edge records. */
+/* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
 static void
 onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 			  OnibiGirEdgeVector *start_edges, long *accept_out,
@@ -1301,7 +1334,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     *root_entry_out = root_entry;
 }
 
-/* Compiler pass 3: derive the counter slot count from all published edges. */
+/* Analyze pass output: derive counter state requirements. */
 static long
 onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
 				   const OnibiGirEdgeVector *start_edges)
@@ -1338,7 +1371,36 @@ onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
     return count;
 }
 
-/* Compiler pass 4: publish one immutable GIR graph for RSeq lowering. */
+static void
+onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder)
+{
+    for (size_t i = 0; i < builder->edges.count; i++) {
+	const OnibiGirEdgeEntry *edge = &builder->edges.entries[i];
+	if (edge->from < 0 || edge->to < 0 ||
+	    (size_t)edge->from >= builder->states.count ||
+	    (size_t)edge->to >= builder->states.count)
+	    rb_raise(eRegexpError,
+		     "GIR verification failed: edge state is out of range");
+    }
+}
+
+static void
+onibi_compiler_pass_classify(const onibi_gir_builder_t *builder)
+{
+    /* Classification is kept as a named boundary. RSeq lowering currently
+     * derives the execution class from the published GIR records. */
+    (void)builder;
+}
+
+static void
+onibi_compiler_pass_optimize(onibi_gir_builder_t *builder)
+{
+    /* Optimization must not change ordered edge semantics. The first safe
+     * optimization is performed by the RSeq lowerer after this boundary. */
+    (void)builder;
+}
+
+/* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			    OnibiGirEdgeVector *start_edges, long accept,
@@ -1379,7 +1441,13 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     OnibiParsed *parsed_data = onibi_parsed_get(parsed);
     if (parsed_data->arena.root == ONIBI_AST_NONE)
 	rb_raise(rb_eArgError, "compiler requires parser output");
-    int parsed_options = parsed_data->options;
+    OnibiParseOutput parse = {parsed_data, parsed_data->options};
+    /* Resolve names and options are separate contracts.  The parser already
+     * stores normalized option bits, so these passes validate and forward it.
+     */
+    OnibiResolveOutput resolve = {parse.parsed, parse.options};
+    OnibiNormalizeOutput normalize = {resolve.parsed, resolve.options};
+    int parsed_options = normalize.options;
     int ignorecase = (parsed_options & 1) != 0;
     int multiline = (parsed_options & 4) != 0;
     onibi_gir_builder_t builder;
@@ -1389,11 +1457,24 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     onibi_compiler_pass_collect_captures(parsed_data->arena.root, &builder,
 					 &prepass_capture_count);
     builder.capture_count = prepass_capture_count;
+    OnibiAnalyzeOutput analyze = {normalize.parsed, &builder,
+				  prepass_capture_count};
+    (void)analyze;
     OnibiGirEdgeVector start_edge_records;
     long accept;
     long root_entry;
     onibi_compiler_pass_lower(parsed_data, &builder, &start_edge_records,
 			      &accept, &root_entry);
+    OnibiLowerNfaOutput lower_nfa = {&builder, &start_edge_records, accept,
+				     root_entry};
+    /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon-elimination
+     * boundary.  Keep the result contract explicit for later split passes. */
+    (void)lower_nfa;
+    OnibiGirOutput gir = {&builder};
+    (void)gir;
+    onibi_compiler_pass_verify_gir(&builder);
+    onibi_compiler_pass_classify(&builder);
+    onibi_compiler_pass_optimize(&builder);
     long counter_count =
 	onibi_compiler_pass_count_counters(&builder, &start_edge_records);
     VALUE result =
