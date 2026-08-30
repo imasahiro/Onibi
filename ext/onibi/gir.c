@@ -691,6 +691,19 @@ onibi_gir_state_literal(onibi_gir_builder_t *builder, long id,
     onibi_gir_state_vector_push(&builder->states, entry);
 }
 
+static void
+onibi_gir_state_class(onibi_gir_builder_t *builder, long id,
+		      const unsigned char bitmap[32], int negated)
+{
+    OnibiGirStateEntry entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.id = id;
+    entry.opcode = ONIBI_G_CLASS;
+    memcpy(entry.bitmap, bitmap, sizeof(entry.bitmap));
+    if (negated) entry.flags |= 1U;
+    onibi_gir_state_vector_push(&builder->states, entry);
+}
+
 static OnibiGActionVector
 onibi_gir_compose_edge_actions(onibi_gir_builder_t *builder, long from, long to,
 			       const OnibiGActionVector *explicit_actions)

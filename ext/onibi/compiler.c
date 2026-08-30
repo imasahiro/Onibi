@@ -642,6 +642,14 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    onibi_gir_state_literal(builder, id, bytes, length,
 				    builder->ignorecase);
 	}
+	else if (op == ONIBI_G_CLASS) {
+	    VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
+	    if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
+		rb_raise(eRegexpError, "class descriptor has invalid bitmap");
+	    onibi_gir_state_class(
+		builder, id, (const unsigned char *)RSTRING_PTR(bitmap),
+		RTEST(onibi_hash_value_id(payload, id_key_negated)));
+	}
 	else {
 	    onibi_gir_state(builder, id, op, payload);
 	}

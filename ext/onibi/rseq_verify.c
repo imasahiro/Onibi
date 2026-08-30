@@ -30,9 +30,8 @@ onibi_unicode_ctype_id(ID property)
     return -1;
 }
 
-/* Property names are resolved while the AST is
-   compiled.  VM payloads carry this integer, so
-   matching never compares property strings. */
+/* Diagnostic compatibility adapter.  This Ruby Hash view is not consumed by
+ * canonical GIR lowering; it exists only for verification/debug metadata. */
 static VALUE
 onibi_class_payload_with_ctypes(VALUE payload)
 {
