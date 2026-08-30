@@ -155,7 +155,11 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	size_t payload_index = literal_payloads.count;
 	for (size_t j = 0; j < literal_payloads.count; j++) {
 	    OnibiRSeqLiteralPayloadEntry *prior = &literal_payloads.entries[j];
-	    if (prior->byte == (int)state->value &&
+	    if (prior->length ==
+		    (state->literal_length ? state->literal_length : 1) &&
+		memcmp(prior->bytes, state->literal,
+		       state->literal_length ? state->literal_length : 1) ==
+		    0 &&
 		prior->ignorecase == ((state->flags & 1U) != 0)) {
 		found = 1;
 		payload_index = j;
@@ -176,7 +180,10 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	(uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
     uint64_t literal_desc_size =
 	(uint64_t)literal_count * sizeof(OnibiLiteralDesc);
-    uint64_t literal_data_size = ((uint64_t)literal_count + 3U) & ~UINT64_C(3);
+    uint64_t literal_data_size = 0;
+    for (size_t i = 0; i < literal_payloads.count; i++)
+	literal_data_size += literal_payloads.entries[i].length;
+    literal_data_size = (literal_data_size + 3U) & ~UINT64_C(3);
     uint64_t subprogram_section_size =
 	(uint64_t)subprogram_records.count * sizeof(OnibiSubprogramDesc);
     uint64_t physical_size =
@@ -396,11 +403,15 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     literal_index = 0;
     for (size_t i = 0; i < literal_payloads.count; i++) {
 	OnibiRSeqLiteralPayloadEntry *entry = &literal_payloads.entries[i];
-	literal_descs[literal_index].data_offset =
-	    physical.literals_offset + literal_index;
-	literal_descs[literal_index].data_length = 1;
+	literal_descs[literal_index].data_offset = physical.literals_offset;
+	for (size_t prior = 0; prior < literal_index; prior++)
+	    literal_descs[literal_index].data_offset +=
+		literal_payloads.entries[prior].length;
+	literal_descs[literal_index].data_length = entry->length;
 	literal_descs[literal_index].flags = entry->ignorecase ? 1 : 0;
-	literal_data[literal_index] = (unsigned char)entry->byte;
+	memcpy(literal_data + literal_descs[literal_index].data_offset -
+		   physical.literals_offset,
+	       entry->bytes, entry->length);
 	literal_index++;
     }
     OnibiSubprogramDesc *physical_subprograms =

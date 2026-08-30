@@ -496,34 +496,6 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	}
     skip_utf8_range_expansion:;
     }
-    /* A tokenizer literal can contain one encoded UTF-8 character.  Lower its
-       bytes as a short sequence of G_CHAR states.  The VM still reports byte
-       offsets, and the encoding gate below limits this path to valid UTF-8. */
-    if (type_code == ONIBI_AST_LITERAL) {
-	VALUE literal_bytes = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_bytes);
-	if (!NIL_P(literal_bytes) && RSTRING_LEN(literal_bytes) > 1) {
-	    onibi_fragment_t result = onibi_fragment_empty();
-	    result.nullable = 0;
-	    for (long i = 0; i < RSTRING_LEN(literal_bytes); i++) {
-		VALUE byte_ast = rb_hash_dup(semantic_node);
-		rb_hash_aset(
-		    byte_ast, ID2SYM(id_key_byte),
-		    INT2NUM((unsigned char)RSTRING_PTR(literal_bytes)[i]));
-		rb_hash_aset(byte_ast, ID2SYM(id_key_bytes),
-			     rb_str_new(RSTRING_PTR(literal_bytes) + i, 1));
-		onibi_fragment_t part = onibi_compile_node(byte_ast, builder);
-		if (i == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		else
-		    onibi_connect_fragment(builder, &result.exits,
-					   &part.starts);
-		if (i != 0) onibi_id_vector_free(&part.starts);
-		onibi_id_vector_move(&result.exits, &part.exits);
-	    }
-	    return result;
-	}
-    }
     if (type_code == ONIBI_AST_SEQUENCE)
 	return onibi_compile_sequence(c_node, builder);
     if (type_code == ONIBI_AST_ALTERNATIVE) {
@@ -556,12 +528,6 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	type_code == ONIBI_AST_CHARACTER_CLASS ||
 	type_code == ONIBI_AST_CLASS_INTERSECTION ||
 	type_code == ONIBI_AST_ANY) {
-	VALUE literal_bytes = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_bytes);
-	if (type_code == ONIBI_AST_LITERAL && !NIL_P(literal_bytes) &&
-	    RSTRING_LEN(literal_bytes) != 1)
-	    rb_raise(eRegexpError,
-		     "multibyte literals require encoded GIR states");
 	if (type_code == ONIBI_AST_ESCAPE) {
 	    VALUE name = onibi_compile_node_field(builder, c_node,
 						  semantic_node, id_key_name);

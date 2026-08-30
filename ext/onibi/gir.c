@@ -36,6 +36,8 @@ typedef struct {
     uint32_t value;
     uint8_t flags;
     unsigned char bitmap[32];
+    unsigned char literal[4];
+    uint8_t literal_length;
 } OnibiGirStateEntry;
 typedef ONIBI_VECTOR(OnibiGirStateEntry) OnibiGirStateVector;
 typedef struct {
@@ -51,7 +53,8 @@ typedef struct {
 } OnibiRSeqClassPayloadEntry;
 typedef ONIBI_VECTOR(OnibiRSeqClassPayloadEntry) OnibiRSeqClassPayloadVector;
 typedef struct {
-    int byte;
+    unsigned char bytes[4];
+    uint8_t length;
     int ignorecase;
 } OnibiRSeqLiteralPayloadEntry;
 typedef ONIBI_VECTOR(OnibiRSeqLiteralPayloadEntry)
@@ -341,8 +344,13 @@ static void
 onibi_rseq_literal_payload_vector_push(OnibiRSeqLiteralPayloadVector *vector,
 				       const OnibiGirStateEntry *state)
 {
-    OnibiRSeqLiteralPayloadEntry entry = {(int)state->value,
-					  (state->flags & 1U) != 0};
+    OnibiRSeqLiteralPayloadEntry entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.length = state->literal_length ? state->literal_length : 1;
+    memcpy(entry.bytes, state->literal, state->literal_length);
+    if (state->literal_length == 0)
+	entry.bytes[0] = (unsigned char)state->value;
+    entry.ignorecase = (state->flags & 1U) != 0;
     ONIBI_VECTOR_PUSH(vector->entries, vector->count, vector->capacity,
 		      OnibiRSeqLiteralPayloadEntry, entry, 8,
 		      "RSeq literal payload vector is too large");
@@ -622,6 +630,12 @@ onibi_gir_state(onibi_gir_builder_t *builder, long id, OnibiGStateOp opcode,
     entry.id = id;
     entry.opcode = opcode;
     if (opcode == ONIBI_G_CHAR) {
+	VALUE encoded = onibi_hash_value_id(payload, id_key_bytes);
+	if (RB_TYPE_P(encoded, T_STRING) && RSTRING_LEN(encoded) > 0 &&
+	    RSTRING_LEN(encoded) <= 4) {
+	    entry.literal_length = (uint8_t)RSTRING_LEN(encoded);
+	    memcpy(entry.literal, RSTRING_PTR(encoded), entry.literal_length);
+	}
 	entry.value =
 	    (uint32_t)NUM2UINT(onibi_hash_value_id(payload, id_key_byte));
 	if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))

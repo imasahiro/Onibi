@@ -98,9 +98,6 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
     const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
-    if (!rb_enc_str_asciionly_p(str) &&
-	rb_enc_get_index(str) != rb_ascii8bit_encindex())
-	return -1;
     size_t span = (size_t)RSTRING_LEN(str) + 1U;
     if ((size_t)header->state_count > SIZE_MAX / span) return -1;
     size_t visited_size = (size_t)header->state_count * span;
@@ -283,7 +280,11 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    else if (state->op == ONIBI_RS_CHAR) {
 		const OnibiLiteralDesc *literal =
 		    &view->literals[state->payload];
-		hit = bytes[frame.pos] == view->blob[literal->data_offset];
+		hit =
+		    frame.pos + literal->data_length <= RSTRING_LEN(str) &&
+		    memcmp(bytes + frame.pos, view->blob + literal->data_offset,
+			   literal->data_length) == 0;
+		if (hit) next_pos += literal->data_length - 1;
 	    }
 	    else if (state->op == ONIBI_RS_CLASS) {
 		const OnibiClassDesc *klass = &view->classes[state->payload];
@@ -359,9 +360,6 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	return onibi_rseq_backtracking_match(rseq, cached_view, str, start,
 					     search_origin, matched_end);
     }
-    if (!rb_enc_str_asciionly_p(str) &&
-	rb_enc_get_index(str) != rb_ascii8bit_encindex())
-	return -1;
     uint32_t count = header->state_count;
     if (count == 0) return 0;
     size_t bits_size = ((size_t)count + 7U) / 8U;
@@ -387,6 +385,7 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
     }
     long position = start;
     for (;;) {
+	long step_width = 1;
 	size_t next_count = 0;
 	memset(next_bits, 0, bits_size);
 	int have_fallback = 0;
@@ -405,9 +404,15 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
 	    int hit = state->op == ONIBI_RS_ANY;
-	    if (state->op == ONIBI_RS_CHAR)
-		hit = view->blob[view->literals[state->payload].data_offset] ==
-		      (unsigned char)RSTRING_PTR(str)[position];
+	    if (state->op == ONIBI_RS_CHAR) {
+		const OnibiLiteralDesc *literal =
+		    &view->literals[state->payload];
+		step_width = literal->data_length;
+		hit =
+		    position + step_width <= RSTRING_LEN(str) &&
+		    memcmp(RSTRING_PTR(str) + position,
+			   view->blob + literal->data_offset, step_width) == 0;
+	    }
 	    else if (state->op == ONIBI_RS_CLASS) {
 		const unsigned char *bitmap =
 		    view->blob + view->classes[state->payload].data_offset;
@@ -452,7 +457,7 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	current_bits = next_bits;
 	next_bits = bits_tmp;
 	current_count = next_count;
-	position++;
+	position += step_width;
     }
 }
 
