@@ -146,9 +146,9 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     if (capture_result)
 	for (uint32_t i = 0; i < capture_slots; i++) capture_result[i] = -1;
     long start = 0, finish = 0;
-    int status = NIL_P(obj->rseq)
-		     ? -1
-		     : onibi_diagnostic_search(self, subject, &start, &finish,
+	int status = NIL_P(obj->rseq)
+			     ? ONIBI_EXEC_STATUS_FALLBACK
+			     : onibi_diagnostic_search(self, subject, &start, &finish,
 					       capture_result);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("rseq")),
@@ -239,9 +239,9 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
     long start = 0, finish = 0;
-    int status = NIL_P(obj->rseq)
-		     ? -1
-		     : onibi_diagnostic_search(self, subject, &start, &finish,
+	int status = NIL_P(obj->rseq)
+			     ? ONIBI_EXEC_STATUS_FALLBACK
+			     : onibi_diagnostic_search(self, subject, &start, &finish,
 					       NULL);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
