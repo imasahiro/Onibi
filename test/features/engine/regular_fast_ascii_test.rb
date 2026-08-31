@@ -53,4 +53,36 @@ class RegularFastAsciiTest < Minitest::Test
     _regexp, info = diagnostics("(a)?b", "b")
     assert_equal [[-1, -1]], info[:captures]
   end
+
+  def test_ascii_feature_matrix_stays_regular_and_matches_mri
+    cases = [
+      ["", "x"], ["abc", "xxabcxx"], ["\\.", "x.x"],
+      ["(?:ab|cd)", "zcd"], ["[abc]", "z b"], ["[a-z]", "z"],
+      ["[^a]", "z"], ["\\d", "7"], ["\\D", "A"],
+      ["\\w", "_"], ["\\W", "-"], ["\\s", " "], ["\\S", "x"],
+      ["\\h", "A"], ["\\H", "x"], ["[[:digit:]]+", "x123y"],
+      ["[[:alpha:]]+", "xAbY"], ["[[:alnum:]]+", "xA7"],
+      ["[[:space:]]+", "x \ty"], ["[[:word:]]+", "x_a7"],
+      ["a{0}", "aaa"], ["a{1}", "aaa"], ["a{2,4}", "aaaa"]
+    ]
+    cases.each do |pattern, subject|
+      regexp, info = diagnostics(pattern, subject)
+      expected = Regexp.new(pattern).match(subject)
+      expected_range = expected ? [expected.begin(0), expected.end(0)] : nil
+      assert info[:rseq], pattern
+      assert_equal 0, info[:exec_kind], pattern
+      assert_equal 0, info[:dfs], pattern
+      assert_equal 0, info[:fallback], pattern
+      assert_equal expected_range, [info[:match_start], info[:match_end]], pattern
+      assert_equal !expected.nil?, regexp.match?(subject), pattern
+    end
+  end
+
+  def test_ignorecase_ascii_stays_regular
+    regexp, info = diagnostics("abc", "xxABC", Onibi::Regexp::IGNORECASE)
+    assert_equal 0, info[:exec_kind]
+    assert_equal 0, info[:dfs]
+    assert_equal [2, 5], [info[:match_start], info[:match_end]]
+    assert regexp.match?("xxABC")
+  end
 end
