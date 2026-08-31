@@ -36,6 +36,7 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	   built during initialize.  Do not rescan the program on each match. */
 	for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	    exec_ctx.attempt_start = start;
+	    exec_ctx.reported_start = start;
 	    exec_ctx.current_position = start;
 	    exec_ctx.program = obj->rseq_view.header;
 	    exec_ctx.rseq = obj->rseq;
