@@ -8,6 +8,20 @@ class RegularFastAsciiTest < Minitest::Test
     [regexp, regexp.send(:__onibi_diagnostics__, subject)]
   end
 
+  def assert_regular_case(pattern, subject, options = nil)
+    regexp, info = diagnostics(pattern, subject, options)
+    expected = Regexp.new(pattern, options || 0).match(subject)
+    expected_range = expected ? [expected.begin(0), expected.end(0)] : nil
+
+    assert info[:rseq], pattern
+    assert info[:regular_capable], pattern
+    assert_equal 0, info[:exec_kind], pattern
+    assert_equal 0, info[:dfs], pattern
+    assert_equal 0, info[:fallback], pattern
+    assert_equal expected_range, [info[:match_start], info[:match_end]], pattern
+    assert_equal !expected.nil?, regexp.match?(subject), pattern
+  end
+
   def test_regular_literal_uses_ordered_frontier
     regexp, info = diagnostics("a", "ba")
     assert info[:rseq]
@@ -55,29 +69,67 @@ class RegularFastAsciiTest < Minitest::Test
     assert_equal [[-1, -1]], info[:captures]
   end
 
-  def test_ascii_feature_matrix_stays_regular_and_matches_mri
-    cases = [
-      ["", "x"], ["abc", "xxabcxx"], ["\\.", "x.x"],
-      ["(?:ab|cd)", "zcd"], ["[abc]", "z b"], ["[a-z]", "z"],
-      ["[^a]", "z"], ["\\d", "7"], ["\\D", "A"],
-      ["\\w", "_"], ["\\W", "-"], ["\\s", " "], ["\\S", "x"],
-      ["\\h", "A"], ["\\H", "x"], ["[[:digit:]]+", "x123y"],
-      ["[[:alpha:]]+", "xAbY"], ["[[:alnum:]]+", "xA7"],
-      ["[[:space:]]+", "x \ty"], ["[[:word:]]+", "x_a7"],
-      ["a{0}", "aaa"], ["a{1}", "aaa"], ["a{2,4}", "aaaa"]
-    ]
-    cases.each do |pattern, subject|
-      regexp, info = diagnostics(pattern, subject)
-      expected = Regexp.new(pattern).match(subject)
-      expected_range = expected ? [expected.begin(0), expected.end(0)] : nil
-      assert info[:rseq], pattern
-      assert info[:regular_capable], pattern
-      assert_equal 0, info[:exec_kind], pattern
-      assert_equal 0, info[:dfs], pattern
-      assert_equal 0, info[:fallback], pattern
-      assert_equal expected_range, [info[:match_start], info[:match_end]], pattern
-      assert_equal !expected.nil?, regexp.match?(subject), pattern
-    end
+  def test_empty_and_literal_features_stay_regular
+    assert_regular_case("", "x")
+    assert_regular_case("a", "ba")
+    assert_regular_case("abc", "xxabcxx")
+    assert_regular_case("\\.", "x.x")
+  end
+
+  def test_alternation_and_non_capture_features_stay_regular
+    assert_regular_case("a|b", "zb")
+    assert_regular_case("a|ab", "ab")
+    assert_regular_case("ab|a", "ab")
+    assert_regular_case("(?:ab|cd)", "zcd")
+  end
+
+  def test_quantifier_features_stay_regular
+    assert_regular_case("a?", "")
+    assert_regular_case("a*", "aaa")
+    assert_regular_case("a+", "aaa")
+    assert_regular_case("a*?", "aaa")
+    assert_regular_case("a+?", "aaa")
+  end
+
+  def test_small_bounded_repeats_stay_regular
+    assert_regular_case("a{0}", "aaa")
+    assert_regular_case("a{1}", "aaa")
+    assert_regular_case("a{2,4}", "aaaa")
+    assert_regular_case("a{0,8}", "aaaa")
+  end
+
+  def test_class_features_stay_regular
+    assert_regular_case("[abc]", "z b")
+    assert_regular_case("[a-z]", "z")
+    assert_regular_case("[^a]", "z")
+    assert_regular_case("[a-z&&[^aeiou]]", "z")
+  end
+
+  def test_shorthand_features_stay_regular
+    assert_regular_case("\\d", "7")
+    assert_regular_case("\\D", "A")
+    assert_regular_case("\\w", "_")
+    assert_regular_case("\\W", "-")
+    assert_regular_case("\\s", " ")
+    assert_regular_case("\\S", "x")
+    assert_regular_case("\\h", "A")
+    assert_regular_case("\\H", "x")
+  end
+
+  def test_posix_ascii_features_stay_regular
+    assert_regular_case("[[:digit:]]+", "x123y")
+    assert_regular_case("[[:alpha:]]+", "xAbY")
+    assert_regular_case("[[:alnum:]]+", "xA7")
+    assert_regular_case("[[:space:]]+", "x \ty")
+    assert_regular_case("[[:word:]]+", "x_a7")
+  end
+
+  def test_pathological_regular_repeat_stays_off_dfs
+    assert_regular_case("(a|aa)*b", "#{"a" * 50}b")
+    _regexp, info = diagnostics("(a|aa)*b", "a" * 50)
+    assert_equal 0, info[:status]
+    assert_equal 0, info[:dfs]
+    assert_equal 0, info[:fallback]
   end
 
   def test_ignorecase_ascii_stays_regular
