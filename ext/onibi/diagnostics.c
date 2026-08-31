@@ -146,6 +146,15 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	}
     }
     rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
+    VALUE edges = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->edge_count; i++) {
+	    const OnibiREdge *e = &obj->rseq_view.edges[i];
+	    rb_ary_push(edges, rb_ary_new_from_args(2, UINT2NUM(e->destination),
+							UINT2NUM(e->action_offset)));
+	}
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("edges")), edges);
     rb_hash_aset(result, ID2SYM(rb_intern("regular")),
 		 ULONG2NUM(onibi_diagnostics.regular));
     rb_hash_aset(result, ID2SYM(rb_intern("tagged")),

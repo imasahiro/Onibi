@@ -465,10 +465,23 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    const OnibiRState *state = &view->states[state_id];
 	    if (state->op == 0) {
 		if (!next_count) {
-		    if (onibi_regular_capture_result && capture_slots != 0)
+		    if (onibi_regular_capture_result && capture_slots != 0) {
 			memcpy(onibi_regular_capture_result,
 			       current_caps + i * capture_slots,
 			       capture_slots * sizeof(long));
+			for (uint32_t ae = 0; ae < state->edge_count; ae++) {
+			    const OnibiREdge *accept_edge =
+				&view->edges[state->edge_base + ae];
+			    if (accept_edge->destination == ONIBI_ACCEPT_STATE &&
+				accept_edge->action_offset != 0) {
+				onibi_rseq_edge_actions_ok(
+				    view, accept_edge, str, position,
+				    search_origin, NULL, 0,
+				    onibi_regular_capture_result, capture_slots);
+				break;
+			    }
+			}
+		    }
 		    *matched_end = position;
 		    return 1;
 		}
