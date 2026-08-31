@@ -150,14 +150,11 @@ onibi_scan(VALUE self, VALUE str)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     VALUE result = rb_ary_new();
-    if (!NIL_P(obj->rseq) && obj->rseq_view_valid &&
-	obj->rseq_view.header->capture_count > 0) {
-	/* Raw ranges come from the VM diagnostics path.  MRI scan remains a
-	 * temporary MatchData materializer until direct RMatch construction is
-	 * available on the supported MRI version. */
-	VALUE plain = rb_str_dup(str);
-	return rb_funcall(plain, id_scan, 1, obj->regexp);
-    }
+    uint32_t capture_count =
+	(!NIL_P(obj->rseq) && obj->rseq_view_valid)
+	    ? obj->rseq_view.header->capture_count
+	    : 0;
+    VALUE plain_subject = capture_count > 0 ? rb_str_dup(str) : str;
     long origin = 0;
     for (;;) {
 	long start = 0, end = 0;
@@ -171,7 +168,21 @@ onibi_scan(VALUE self, VALUE str)
 		return rb_funcall(plain, id_scan, 1, obj->regexp);
 	}
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
-	rb_ary_push(result, rb_str_substr(str, start, end - start));
+	if (capture_count == 0) {
+	    rb_ary_push(result, rb_str_substr(str, start, end - start));
+	}
+	else {
+	    /* VM selects the candidate.  MRI only materializes its capture
+	     * values until direct RMatch construction is available. */
+	    VALUE match = rb_funcall(obj->regexp, id_match, 2, plain_subject,
+				      LONG2NUM(start));
+	    VALUE captures = rb_ary_new_capa(capture_count);
+	    for (uint32_t i = 0; i < capture_count; i++)
+		rb_ary_push(captures,
+			    rb_funcall(match, id_aref, 1, UINT2NUM(i + 1U)));
+	    rb_ary_push(result, capture_count == 1 ? rb_ary_entry(captures, 0)
+						 : captures);
+	}
 	if (end > start)
 	    origin = end;
 	else {
