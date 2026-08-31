@@ -93,6 +93,46 @@ onibi_class_payload_with_ctypes(VALUE payload)
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
+typedef struct {
+    VALUE self;
+    VALUE subject;
+    long *start;
+    long *finish;
+    long *previous_capture_result;
+} OnibiDiagnosticSearch;
+
+static VALUE
+onibi_diagnostic_search_call(VALUE opaque)
+{
+    OnibiDiagnosticSearch *call =
+	(OnibiDiagnosticSearch *)(uintptr_t)opaque;
+    return INT2NUM(onibi_vm_search(call->self, call->subject, 0, call->start,
+				   call->finish));
+}
+
+static VALUE
+onibi_diagnostic_search_cleanup(VALUE opaque)
+{
+    OnibiDiagnosticSearch *call =
+	(OnibiDiagnosticSearch *)(uintptr_t)opaque;
+    onibi_regular_capture_result = call->previous_capture_result;
+    return Qnil;
+}
+
+static int
+onibi_diagnostic_search(VALUE self, VALUE subject, long *start, long *finish,
+			long *capture_result)
+{
+    OnibiDiagnosticSearch call = {self, subject, start, finish,
+				  onibi_regular_capture_result};
+    onibi_regular_capture_result = capture_result;
+    VALUE status = rb_ensure(onibi_diagnostic_search_call,
+			     (VALUE)(uintptr_t)&call,
+			     onibi_diagnostic_search_cleanup,
+			     (VALUE)(uintptr_t)&call);
+    return NUM2INT(status);
+}
+
 static VALUE
 onibi_diagnostics_for(VALUE self, VALUE subject)
 {
@@ -105,13 +145,11 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     long *capture_result = capture_slots == 0 ? NULL : ALLOCA_N(long, capture_slots);
     if (capture_result)
 	for (uint32_t i = 0; i < capture_slots; i++) capture_result[i] = -1;
-    onibi_regular_capture_result = capture_result;
-    onibi_regular_capture_slots = capture_slots;
     long start = 0, finish = 0;
-    int status = NIL_P(obj->rseq) ? -1
-				      : onibi_vm_search(self, subject, 0, &start, &finish);
-    onibi_regular_capture_result = NULL;
-    onibi_regular_capture_slots = 0;
+    int status = NIL_P(obj->rseq)
+		     ? -1
+		     : onibi_diagnostic_search(self, subject, &start, &finish,
+					       capture_result);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("rseq")),
 		 NIL_P(obj->rseq) ? Qfalse : Qtrue);
@@ -198,8 +236,10 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
     long start = 0, finish = 0;
-    int status = NIL_P(obj->rseq) ? -1
-				      : onibi_vm_search(self, subject, 0, &start, &finish);
+    int status = NIL_P(obj->rseq)
+		     ? -1
+		     : onibi_diagnostic_search(self, subject, &start, &finish,
+					       NULL);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),

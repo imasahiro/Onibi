@@ -70,7 +70,6 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 	if (action->op == ONIBI_RA_CAPTURE) {
 	    if (!captures || action->arg16 >= capture_slots) return 0;
 	    captures[action->arg16] = pos;
-	    if (onibi_regular_capture_result) onibi_diagnostics.tag_events++;
 	    continue;
 	}
 	if (action->op == ONIBI_RA_TEST_CAPTURE) {
@@ -398,37 +397,85 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
  * isolated compatibility walker above. */
 typedef struct {
     uint32_t parent;
-    uint16_t slot;
+    uint32_t slot;
     long position;
 } onibi_regular_tag_event_t;
 
-static uint32_t
-onibi_regular_record_tags(const OnibiRSeqView *view, const OnibiREdge *edge,
-			  long position, uint32_t parent,
-			  onibi_regular_tag_event_t *events, uint32_t *event_count,
-			  uint32_t event_capacity)
+typedef struct {
+    size_t checkpoint;
+    uint32_t history;
+} onibi_regular_action_transaction_t;
+
+static onibi_regular_tag_event_t *
+onibi_regular_tag_events(OnibiTagArena *arena)
 {
-    if (edge->action_offset == 0) return parent;
-    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-    for (; index < view->header->action_count; index++) {
-	const OnibiRAction *action = &view->actions[index];
-	if (action->op == ONIBI_RA_END) break;
-	if (action->op != ONIBI_RA_CAPTURE) continue;
-	if (*event_count >= event_capacity) return UINT32_MAX;
-	events[*event_count] = (onibi_regular_tag_event_t){parent, action->arg16,
-						 position};
-	parent = (*event_count)++;
-    }
-    return parent;
+    return (onibi_regular_tag_event_t *)arena->data;
 }
 
 static void
-onibi_regular_materialize_tags(const onibi_regular_tag_event_t *events,
-			       uint32_t history, uint32_t event_count,
+onibi_regular_tag_arena_grow(OnibiTagArena *arena)
+{
+    size_t capacity = arena->capacity == 0 ? 256U : arena->capacity * 2U;
+    if (capacity < arena->capacity ||
+	capacity > SIZE_MAX / sizeof(onibi_regular_tag_event_t))
+	rb_memerror();
+    arena->data = ruby_xrealloc(
+	arena->data, capacity * sizeof(onibi_regular_tag_event_t));
+    arena->capacity = capacity;
+}
+
+static uint32_t
+onibi_regular_tag_append(OnibiTagArena *arena, uint32_t parent, uint32_t slot,
+			 long position)
+{
+    if (arena->count >= UINT32_MAX) rb_memerror();
+    if (arena->count == arena->capacity) onibi_regular_tag_arena_grow(arena);
+    uint32_t id = (uint32_t)arena->count++;
+    onibi_regular_tag_events(arena)[id] =
+	(onibi_regular_tag_event_t){parent, slot, position};
+    onibi_diagnostics.tag_events++;
+    return id;
+}
+
+static int
+onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
+			    long position, uint32_t parent,
+			    uint32_t capture_slots, int capture_mode,
+			    OnibiTagArena *arena, uint32_t *history)
+{
+    onibi_regular_action_transaction_t transaction = {arena->count, parent};
+    if (edge->action_offset == 0) {
+	*history = parent;
+	return 1;
+    }
+    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+    for (; index < view->header->action_count; index++) {
+	const OnibiRAction *action = &view->actions[index];
+	if (action->op == ONIBI_RA_END) {
+	    *history = transaction.history;
+	    return 1;
+	}
+	if (action->op != ONIBI_RA_CAPTURE ||
+	    action->arg16 >= capture_slots) {
+	    arena->count = transaction.checkpoint;
+	    return 0;
+	}
+	if (capture_mode)
+	    transaction.history = onibi_regular_tag_append(
+		arena, transaction.history, action->arg16, position);
+    }
+    arena->count = transaction.checkpoint;
+    return 0;
+}
+
+static void
+onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
 			       long *captures, uint32_t capture_slots)
 {
+    const onibi_regular_tag_event_t *events =
+	(const onibi_regular_tag_event_t *)arena->data;
     for (uint32_t i = 0; i < capture_slots; i++) captures[i] = -1;
-    while (history != UINT32_MAX && history < event_count) {
+    while (history != UINT32_MAX && history < arena->count) {
 	const onibi_regular_tag_event_t *event = &events[history];
 	if (event->slot < capture_slots && captures[event->slot] < 0)
 	    captures[event->slot] = event->position;
@@ -437,141 +484,113 @@ onibi_regular_materialize_tags(const onibi_regular_tag_event_t *events,
 }
 
 static int
-onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
-			 VALUE str, long start, long search_origin,
-			 long *matched_end)
+onibi_regular_accept_history(const OnibiRSeqView *view,
+			     const OnibiRState *state, long position,
+			     uint32_t parent, uint32_t capture_slots,
+			     int capture_mode, OnibiTagArena *arena,
+			     uint32_t *history)
 {
-    OnibiRSeqView local_view;
-    const OnibiRSeqView *view = cached_view;
-    if (!view) {
-	if (!onibi_rseq_view_init(rseq, &local_view)) return -1;
-	onibi_rseq_view_prepare(&local_view);
-	view = &local_view;
+    for (uint32_t i = 0; i < state->edge_count; i++) {
+	const OnibiREdge *edge = &view->edges[state->edge_base + i];
+	if (edge->destination != ONIBI_ACCEPT_STATE) continue;
+	return onibi_regular_apply_actions(
+	    view, edge, position, parent, capture_slots, capture_mode, arena,
+	    history);
     }
+    *history = parent;
+    return 1;
+}
+
+static int
+onibi_rseq_regular_match(OnibiExecCtx *ctx)
+{
+    const OnibiRSeqView *view = ctx->view;
     const OnibiRSeqHeader *header = view->header;
     if (!view->native_eligible) return -2;
 
-    if (header->counter_count != 0 || header->subprogram_count != 1) {
+    if (header->counter_count != 0 || header->subprogram_count != 1)
 	return -2;
-    }
     uint32_t count = header->state_count;
     if (count == 0) return 0;
+    VALUE str = ctx->subject;
+    long start = ctx->attempt_start;
     uint32_t capture_slots = header->capture_count * 2U;
+    int capture_mode =
+	onibi_regular_capture_result != NULL && capture_slots != 0;
+    ctx->tags.count = 0;
     size_t bits_size = ((size_t)count + 7U) / 8U;
     uint32_t *current = ALLOCA_N(uint32_t, count);
     uint32_t *next = ALLOCA_N(uint32_t, count);
+    uint32_t *current_histories =
+	capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
+    uint32_t *next_histories =
+	capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
     unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
     unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
-    long *current_caps = capture_slots == 0
-			     ? NULL
-			     : ALLOCA_N(long, (size_t)count *capture_slots);
-    long *next_caps = capture_slots == 0
-			  ? NULL
-			  : ALLOCA_N(long, (size_t)count *capture_slots);
-    uint32_t tag_capacity = capture_slots == 0 ? 1U : count * capture_slots + 1U;
-    onibi_regular_tag_event_t *tag_events =
-	ALLOCA_N(onibi_regular_tag_event_t, tag_capacity);
-    uint32_t *current_tags = ALLOCA_N(uint32_t, count);
-    uint32_t *next_tags = ALLOCA_N(uint32_t, count);
-    uint32_t tag_event_count = 0;
-    for (uint32_t i = 0; i < count; i++) current_tags[i] = UINT32_MAX;
     size_t current_count = 0;
     long best_end = -1;
+    uint32_t best_history = UINT32_MAX;
     memset(current_bits, 0, bits_size);
-    if (capture_slots != 0)
-	for (size_t i = 0; i < (size_t)count * capture_slots; i++)
-	    current_caps[i] = -1;
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
-	/* Output-only capture actions do not change the regular state key.  The
-	 * capture-producing frontier will materialize them in a later pass; for
-	 * boolean matching they are non-failing actions. */
-	if (edge->action_offset != 0) {
-	    uint32_t ai =
-		edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-	    if (ai >= header->action_count ||
-		(view->actions[ai].op != ONIBI_RA_CAPTURE &&
-		 view->actions[ai].op != ONIBI_RA_END))
-		continue;
-	}
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
-	    /* An empty alternative is a fallback.  A consuming branch at this
-	     * same start has higher priority when it can match. */
+	    if (!onibi_regular_apply_actions(
+		    view, edge, start, UINT32_MAX, capture_slots,
+		    capture_mode, &ctx->tags, &best_history))
+		continue;
 	    best_end = start;
-	    continue;
+	    break;
 	}
 	if (edge->destination >= count) continue;
 	uint32_t state = edge->destination;
 	if ((current_bits[state >> 3] & (1U << (state & 7))) == 0) {
-	    if (capture_slots != 0) {
-		long *caps =
-		    current_caps + (size_t)current_count * capture_slots;
-		for (uint32_t slot = 0; slot < capture_slots; slot++)
-		    caps[slot] = -1;
-		if (edge->action_offset != 0 &&
-		    !onibi_rseq_edge_actions_ok(view, edge, str, start,
-						search_origin, NULL, 0, caps,
-						capture_slots))
-		    continue;
-	    }
-	    uint32_t history = onibi_regular_record_tags(
-		view, edge, start, UINT32_MAX, tag_events, &tag_event_count,
-		tag_capacity);
-	    if (history == UINT32_MAX && edge->action_offset != 0) continue;
+	    uint32_t history;
+	    if (!onibi_regular_apply_actions(
+		    view, edge, start, UINT32_MAX, capture_slots, capture_mode,
+		    &ctx->tags, &history))
+		continue;
 	    current_bits[state >> 3] |= (unsigned char)(1U << (state & 7));
-	    current[current_count++] = state;
-	    current_tags[current_count - 1] = history;
+	    current[current_count] = state;
+	    if (capture_mode) current_histories[current_count] = history;
+	    current_count++;
 	}
     }
     long position = start;
-    long *fallback_caps =
-	capture_slots == 0 ? NULL : ALLOCA_N(long, capture_slots);
-    if (fallback_caps)
-	for (uint32_t i = 0; i < capture_slots; i++)
-	    fallback_caps[i] = -1;
     for (;;) {
 	long step_width = 1;
 	size_t next_count = 0;
 	memset(next_bits, 0, bits_size);
 	int have_fallback = 0;
 	long fallback_end = 0;
+	uint32_t fallback_history = UINT32_MAX;
 	for (size_t i = 0; i < current_count; i++) {
 	    uint32_t state_id = current[i];
+	    uint32_t thread_history =
+		capture_mode ? current_histories[i] : UINT32_MAX;
 	    const OnibiRState *state = &view->states[state_id];
 	    if (state->op == 0) {
+		uint32_t accept_history;
+		if (!onibi_regular_accept_history(
+			view, state, position, thread_history,
+			capture_slots, capture_mode, &ctx->tags,
+			&accept_history))
+		    continue;
 		if (!next_count) {
-		    if (onibi_regular_capture_result && capture_slots != 0) {
-			onibi_regular_materialize_tags(tag_events, current_tags[i],
-						      tag_event_count,
-						      onibi_regular_capture_result,
-						      capture_slots);
-			for (uint32_t ae = 0; ae < state->edge_count; ae++) {
-			    const OnibiREdge *accept_edge =
-				&view->edges[state->edge_base + ae];
-			    if (accept_edge->destination ==
-				    ONIBI_ACCEPT_STATE &&
-				accept_edge->action_offset != 0) {
-				onibi_rseq_edge_actions_ok(
-				    view, accept_edge, str, position,
-				    search_origin, NULL, 0,
-				    onibi_regular_capture_result,
-				    capture_slots);
-				uint32_t accept_history = onibi_regular_record_tags(
-				    view, accept_edge, position, current_tags[i], tag_events,
-				    &tag_event_count, tag_capacity);
-				onibi_regular_materialize_tags(
-				    tag_events, accept_history, tag_event_count,
-				    onibi_regular_capture_result, capture_slots);
-				break;
-			    }
-			}
-		    }
-		    *matched_end = position;
+		    if (capture_mode)
+			onibi_regular_materialize_tags(
+			    &ctx->tags, accept_history,
+			    onibi_regular_capture_result, capture_slots);
+		    ctx->matched_end = position;
 		    return 1;
 		}
-		have_fallback = 1;
-		fallback_end = position;
-		continue;
+		if (!have_fallback) {
+		    have_fallback = 1;
+		    fallback_end = position;
+		    fallback_history = accept_history;
+		    best_end = fallback_end;
+		    best_history = fallback_history;
+		}
+		goto frontier_complete;
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
 	    long next_position = position;
@@ -582,95 +601,65 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    uint32_t base = state->edge_base;
 	    for (uint32_t e = 0; e < state->edge_count; e++) {
 		const OnibiREdge *edge = &view->edges[base + e];
-		if (edge->action_offset != 0) {
-		    uint32_t ai =
-			edge->action_offset / (uint32_t)sizeof(OnibiRAction) -
-			1U;
-		    if (ai >= header->action_count ||
-			(view->actions[ai].op != ONIBI_RA_CAPTURE &&
-			 view->actions[ai].op != ONIBI_RA_END))
-			continue;
-		}
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
+		    uint32_t accept_history;
+		    if (!onibi_regular_apply_actions(
+			    view, edge, next_position, thread_history,
+			    capture_slots, capture_mode, &ctx->tags,
+			    &accept_history))
+			continue;
 		    /* Keep scanning this state's edges. A later continuation
 		     * can still win at the next position. */
 		    if (next_count == 0) {
-			if (onibi_regular_capture_result &&
-			    capture_slots != 0) {
-			    onibi_regular_materialize_tags(tag_events, current_tags[i],
-							 tag_event_count,
-							 onibi_regular_capture_result,
-							 capture_slots);
-			    if (edge->action_offset != 0)
-				onibi_rseq_edge_actions_ok(
-				    view, edge, str, position + step_width,
-				    search_origin, NULL, 0,
-				    onibi_regular_capture_result,
-				    capture_slots);
-			    uint32_t accept_history = onibi_regular_record_tags(
-				view, edge, position + step_width, current_tags[i], tag_events,
-				&tag_event_count, tag_capacity);
+			if (capture_mode)
 			    onibi_regular_materialize_tags(
-				 tag_events, accept_history, tag_event_count,
-				 onibi_regular_capture_result, capture_slots);
-			}
-			*matched_end = position + step_width;
+				&ctx->tags, accept_history,
+				onibi_regular_capture_result, capture_slots);
+			ctx->matched_end = next_position;
 			return 1;
 		    }
-		    have_fallback = 1;
-		    fallback_end = position + 1;
-		    if (fallback_caps)
-			memcpy(fallback_caps, current_caps + i * capture_slots,
-			       capture_slots * sizeof(long));
-		    if (fallback_caps && edge->action_offset != 0)
-			onibi_rseq_edge_actions_ok(
-			    view, edge, str, position + step_width,
-			    search_origin, NULL, 0, fallback_caps,
-			    capture_slots);
-		    best_end = fallback_end;
-		    continue;
+		    if (!have_fallback) {
+			have_fallback = 1;
+			fallback_end = next_position;
+			fallback_history = accept_history;
+			best_end = fallback_end;
+			best_history = fallback_history;
+		    }
+		    goto frontier_complete;
 		}
 		if (edge->destination >= count) continue;
 		uint32_t destination = edge->destination;
 		if ((next_bits[destination >> 3] & (1U << (destination & 7))) ==
 		    0) {
-		    if (capture_slots != 0) {
-			long *dst =
-			    next_caps + (size_t)next_count * capture_slots;
-			memcpy(dst, current_caps + i * capture_slots,
-			       capture_slots * sizeof(long));
-			if (edge->action_offset != 0 &&
-			    !onibi_rseq_edge_actions_ok(
-				view, edge, str, position + step_width,
-				search_origin, NULL, 0, dst, capture_slots))
-				continue;
-		    }
-		    uint32_t history = onibi_regular_record_tags(
-			view, edge, position + step_width, current_tags[i],
-			tag_events, &tag_event_count, tag_capacity);
-		    if (history == UINT32_MAX && edge->action_offset != 0) continue;
-	    next_bits[destination >> 3] |=
-		(unsigned char)(1U << (destination & 7));
-	    next[next_count++] = destination;
-	    next_tags[next_count - 1] = history;
+		    uint32_t history;
+		    if (!onibi_regular_apply_actions(
+			    view, edge, next_position, thread_history,
+			    capture_slots, capture_mode, &ctx->tags, &history))
+			continue;
+		    next_bits[destination >> 3] |=
+			(unsigned char)(1U << (destination & 7));
+		    next[next_count] = destination;
+		    if (capture_mode) next_histories[next_count] = history;
+		    next_count++;
 		}
 	    }
 	}
+    frontier_complete:
 	if (!next_count) {
 	    if (have_fallback) {
-		if (onibi_regular_capture_result && capture_slots != 0 &&
-		    fallback_caps)
-		    memcpy(onibi_regular_capture_result, fallback_caps,
-			   capture_slots * sizeof(long));
-		*matched_end = fallback_end;
+		if (capture_mode)
+		    onibi_regular_materialize_tags(
+			&ctx->tags, fallback_history,
+			onibi_regular_capture_result, capture_slots);
+		ctx->matched_end = fallback_end;
 		return 1;
 	    }
 	    if (best_end >= 0) {
-		if (onibi_regular_capture_result && capture_slots != 0 &&
-		    fallback_caps)
-		    memcpy(onibi_regular_capture_result, fallback_caps,
-			   capture_slots * sizeof(long));
-		*matched_end = best_end;
+		if (capture_mode)
+		    onibi_regular_materialize_tags(
+			&ctx->tags, best_history, onibi_regular_capture_result,
+			capture_slots);
+		ctx->matched_end = best_end;
 		return 1;
 	    }
 	    return 0;
@@ -681,12 +670,11 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	unsigned char *bits_tmp = current_bits;
 	current_bits = next_bits;
 	next_bits = bits_tmp;
-	long *caps_tmp = current_caps;
-	current_caps = next_caps;
-	next_caps = caps_tmp;
-	uint32_t *tags_tmp = current_tags;
-	current_tags = next_tags;
-	next_tags = tags_tmp;
+	if (capture_mode) {
+	    uint32_t *histories_tmp = current_histories;
+	    current_histories = next_histories;
+	    next_histories = histories_tmp;
+	}
 	current_count = next_count;
 	position += step_width;
     }

@@ -93,11 +93,8 @@ typedef struct {
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
 static _Thread_local long *onibi_regular_capture_result = NULL;
-static _Thread_local uint32_t onibi_regular_capture_slots = 0;
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
-static int onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *view,
-				    VALUE subject, long start,
-				    long search_origin, long *matched_end);
+static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
 static int onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *view,
 					 VALUE subject, long start,
 					 long search_origin, long *matched_end);

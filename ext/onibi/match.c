@@ -1,3 +1,12 @@
+static void
+onibi_exec_ctx_release(OnibiExecCtx *ctx)
+{
+    ruby_xfree(ctx->tags.data);
+    ctx->tags.data = NULL;
+    ctx->tags.count = 0;
+    ctx->tags.capacity = 0;
+}
+
 static int
 onibi_vm_search_body(VALUE self, VALUE str, long search_origin, long *match_start,
 		long *match_end)
@@ -17,6 +26,7 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin, long *match_star
     onibi_active_exec_ctx = &exec_ctx;
     if (search_origin < 0) search_origin = 0;
     if (search_origin > RSTRING_LEN(str)) {
+	onibi_exec_ctx_release(&exec_ctx);
 	onibi_deadline_ns = 0;
 	onibi_active_exec_ctx = NULL;
 	return 0;
@@ -61,25 +71,31 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin, long *match_star
 	    if (result == ONIBI_EXEC_STATUS_MATCH) {
 		if (match_start) *match_start = exec_ctx.reported_start;
 		if (match_end) *match_end = exec_ctx.matched_end;
+		onibi_exec_ctx_release(&exec_ctx);
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
 		return 1;
 	    }
 	    if (result == ONIBI_EXEC_STATUS_INTERNAL_ERROR) {
+		onibi_exec_ctx_release(&exec_ctx);
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
 		return -2;
 	    }
 	    if (result == ONIBI_EXEC_STATUS_FALLBACK) {
+		onibi_exec_ctx_release(&exec_ctx);
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
 		return -1;
 	    }
 	}
+	onibi_exec_ctx_release(&exec_ctx);
 	onibi_deadline_ns = 0;
 	onibi_active_exec_ctx = NULL;
 	return 0;
     }
+
+    onibi_exec_ctx_release(&exec_ctx);
     onibi_deadline_ns = 0;
     onibi_active_exec_ctx = NULL;
     /* No RSeq program is available for this input or feature set. */
@@ -107,6 +123,8 @@ static VALUE
 onibi_vm_search_ensure_cleanup(VALUE opaque)
 {
     OnibiSearchEnsure *call = (OnibiSearchEnsure *)(uintptr_t)opaque;
+    if (onibi_active_exec_ctx && onibi_active_exec_ctx != call->previous_ctx)
+	onibi_exec_ctx_release(onibi_active_exec_ctx);
     onibi_active_exec_ctx = call->previous_ctx;
     onibi_deadline_ns = call->previous_deadline;
     return Qnil;

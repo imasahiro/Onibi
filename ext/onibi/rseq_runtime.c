@@ -177,9 +177,7 @@ static OnibiExecStatus
 onibi_exec_regular(OnibiExecCtx *ctx)
 {
     onibi_diagnostics.regular++;
-    int result = onibi_rseq_regular_match(
-	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
-	ctx->search_origin, &ctx->matched_end);
+    int result = onibi_rseq_regular_match(ctx);
     if (result == -2) {
 	onibi_diagnostics.fallback++;
 	return ONIBI_EXEC_STATUS_FALLBACK;
