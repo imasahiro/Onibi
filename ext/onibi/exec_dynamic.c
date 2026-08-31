@@ -400,14 +400,22 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
     }
     uint32_t count = header->state_count;
     if (count == 0) return 0;
+    uint32_t capture_slots = header->capture_count * 2U;
     size_t bits_size = ((size_t)count + 7U) / 8U;
     uint32_t *current = ALLOCA_N(uint32_t, count);
     uint32_t *next = ALLOCA_N(uint32_t, count);
     unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
     unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
+    long *current_caps = capture_slots == 0 ? NULL
+	: ALLOCA_N(long, (size_t)count * capture_slots);
+    long *next_caps = capture_slots == 0 ? NULL
+	: ALLOCA_N(long, (size_t)count * capture_slots);
     size_t current_count = 0;
     long best_end = -1;
     memset(current_bits, 0, bits_size);
+    if (capture_slots != 0)
+	for (size_t i = 0; i < (size_t)count * capture_slots; i++)
+	    current_caps[i] = -1;
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
 	/* Output-only capture actions do not change the regular state key.  The
@@ -430,6 +438,15 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	if (edge->destination >= count) continue;
 	uint32_t state = edge->destination;
 	if ((current_bits[state >> 3] & (1U << (state & 7))) == 0) {
+	    if (capture_slots != 0) {
+		long *caps = current_caps + (size_t)current_count * capture_slots;
+		for (uint32_t slot = 0; slot < capture_slots; slot++) caps[slot] = -1;
+		if (edge->action_offset != 0 &&
+		    !onibi_rseq_edge_actions_ok(view, edge, str, start,
+						search_origin, NULL, 0, caps,
+						capture_slots))
+		    continue;
+	    }
 	    current_bits[state >> 3] |= (unsigned char)(1U << (state & 7));
 	    current[current_count++] = state;
 	}
@@ -441,11 +458,17 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	memset(next_bits, 0, bits_size);
 	int have_fallback = 0;
 	long fallback_end = 0;
+	long *fallback_caps = capture_slots == 0 ? NULL
+	    : ALLOCA_N(long, capture_slots);
 	for (size_t i = 0; i < current_count; i++) {
 	    uint32_t state_id = current[i];
 	    const OnibiRState *state = &view->states[state_id];
 	    if (state->op == 0) {
 		if (!next_count) {
+		    if (onibi_regular_capture_result && capture_slots != 0)
+			memcpy(onibi_regular_capture_result,
+			       current_caps + i * capture_slots,
+			       capture_slots * sizeof(long));
 		    *matched_end = position;
 		    return 1;
 		}
@@ -494,11 +517,30 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		    /* Keep scanning this state's edges. A later continuation
 		     * can still win at the next position. */
 		    if (next_count == 0) {
+			if (onibi_regular_capture_result && capture_slots != 0) {
+			    memcpy(onibi_regular_capture_result,
+				   current_caps + i * capture_slots,
+				   capture_slots * sizeof(long));
+			    if (edge->action_offset != 0)
+				onibi_rseq_edge_actions_ok(view, edge, str,
+							position + step_width,
+							search_origin, NULL, 0,
+							onibi_regular_capture_result,
+							capture_slots);
+			}
 			*matched_end = position + step_width;
 			return 1;
 		    }
 		    have_fallback = 1;
 		    fallback_end = position + 1;
+		    if (fallback_caps)
+			memcpy(fallback_caps, current_caps + i * capture_slots,
+			       capture_slots * sizeof(long));
+		    if (fallback_caps && edge->action_offset != 0)
+			onibi_rseq_edge_actions_ok(view, edge, str,
+						    position + step_width,
+						    search_origin, NULL, 0,
+						    fallback_caps, capture_slots);
 		    best_end = fallback_end;
 		    continue;
 		}
@@ -506,6 +548,17 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		uint32_t destination = edge->destination;
 		if ((next_bits[destination >> 3] & (1U << (destination & 7))) ==
 		    0) {
+		    if (capture_slots != 0) {
+			long *dst = next_caps + (size_t)next_count * capture_slots;
+			memcpy(dst, current_caps + i * capture_slots,
+			       capture_slots * sizeof(long));
+			if (edge->action_offset != 0 &&
+			    !onibi_rseq_edge_actions_ok(view, edge, str,
+						    position + step_width,
+						    search_origin, NULL, 0, dst,
+						    capture_slots))
+			    continue;
+		    }
 		    next_bits[destination >> 3] |=
 			(unsigned char)(1U << (destination & 7));
 		    next[next_count++] = destination;
@@ -514,6 +567,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	}
 	if (!next_count) {
 	    if (have_fallback) {
+		if (onibi_regular_capture_result && capture_slots != 0 &&
+		    fallback_caps)
+		    memcpy(onibi_regular_capture_result, fallback_caps,
+			   capture_slots * sizeof(long));
 		*matched_end = fallback_end;
 		return 1;
 	    }
@@ -529,6 +586,9 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	unsigned char *bits_tmp = current_bits;
 	current_bits = next_bits;
 	next_bits = bits_tmp;
+	long *caps_tmp = current_caps;
+	current_caps = next_caps;
+	next_caps = caps_tmp;
 	current_count = next_count;
 	position += step_width;
     }

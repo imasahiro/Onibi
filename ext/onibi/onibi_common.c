@@ -92,6 +92,8 @@ typedef struct {
     unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
+static _Thread_local long *onibi_regular_capture_result = NULL;
+static _Thread_local uint32_t onibi_regular_capture_slots = 0;
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *view,
 				    VALUE subject, long start,

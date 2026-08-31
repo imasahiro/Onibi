@@ -100,8 +100,17 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
+    uint32_t capture_slots = !NIL_P(obj->rseq) ?
+	obj->rseq_view.header->capture_count * 2U : 0;
+    long *capture_result = capture_slots == 0 ? NULL : ALLOCA_N(long, capture_slots);
+    if (capture_result)
+	for (uint32_t i = 0; i < capture_slots; i++) capture_result[i] = -1;
+    onibi_regular_capture_result = capture_result;
+    onibi_regular_capture_slots = capture_slots;
     long start = 0, finish = 0;
     int status = onibi_vm_search(self, subject, 0, &start, &finish);
+    onibi_regular_capture_result = NULL;
+    onibi_regular_capture_slots = 0;
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("rseq")),
 		 NIL_P(obj->rseq) ? Qfalse : Qtrue);
@@ -117,6 +126,13 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
     rb_hash_aset(result, ID2SYM(rb_intern("match_end")), LONG2NUM(finish));
+    VALUE captures = rb_ary_new_capa(obj->rseq ? obj->rseq_view.header->capture_count : 0);
+    for (uint32_t i = 0; i < capture_slots / 2U; i++) {
+	VALUE range = rb_ary_new_from_args(2, LONG2NUM(capture_result[2U * i]),
+					   LONG2NUM(capture_result[2U * i + 1U]));
+	rb_ary_push(captures, range);
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
     rb_hash_aset(result, ID2SYM(rb_intern("regular")),
 		 ULONG2NUM(onibi_diagnostics.regular));
     rb_hash_aset(result, ID2SYM(rb_intern("tagged")),

@@ -24,6 +24,7 @@ class RegularFastAsciiTest < Minitest::Test
     assert_equal 0, info[:dfs]
     assert_equal 0, info[:fallback]
     assert_equal 0, info[:semantic_capture_count]
+    assert_equal [[0, 1]], info[:captures]
   end
 
   def test_any_respects_multiline_option
