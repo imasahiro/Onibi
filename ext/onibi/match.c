@@ -1,5 +1,5 @@
 static int
-onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
+onibi_vm_search_body(VALUE self, VALUE str, long search_origin, long *match_start,
 		long *match_end)
 {
     onibi_regexp_t *obj;
@@ -84,6 +84,45 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
     onibi_active_exec_ctx = NULL;
     /* No RSeq program is available for this input or feature set. */
     return -1;
+}
+
+typedef struct {
+    VALUE self, subject;
+    long origin;
+    long *match_start, *match_end;
+    OnibiExecCtx *previous_ctx;
+    uint64_t previous_deadline;
+} OnibiSearchEnsure;
+
+static VALUE
+onibi_vm_search_ensure_call(VALUE opaque)
+{
+    OnibiSearchEnsure *call = (OnibiSearchEnsure *)(uintptr_t)opaque;
+    return INT2NUM(onibi_vm_search_body(call->self, call->subject,
+					call->origin, call->match_start,
+					call->match_end));
+}
+
+static VALUE
+onibi_vm_search_ensure_cleanup(VALUE opaque)
+{
+    OnibiSearchEnsure *call = (OnibiSearchEnsure *)(uintptr_t)opaque;
+    onibi_active_exec_ctx = call->previous_ctx;
+    onibi_deadline_ns = call->previous_deadline;
+    return Qnil;
+}
+
+static int
+onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
+		long *match_end)
+{
+    OnibiSearchEnsure call = {self, str, search_origin, match_start, match_end,
+				      onibi_active_exec_ctx, onibi_deadline_ns};
+    VALUE result = rb_ensure(onibi_vm_search_ensure_call,
+				     (VALUE)(uintptr_t)&call,
+				     onibi_vm_search_ensure_cleanup,
+				     (VALUE)(uintptr_t)&call);
+    return NUM2INT(result);
 }
 
 static VALUE
