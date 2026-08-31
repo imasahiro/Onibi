@@ -185,5 +185,22 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		 ULONG2NUM(onibi_diagnostics.tag_events));
     return result;
 }
+
+static VALUE
+onibi_match_p_diagnostics(VALUE self, VALUE subject)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    StringValue(subject);
+    memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
+    long start = 0, finish = 0;
+    int status = NIL_P(obj->rseq) ? -1
+				      : onibi_vm_search(self, subject, 0, &start, &finish);
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
+    rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
+			 ULONG2NUM(onibi_diagnostics.tag_events));
+    return result;
+}
 /* Diagnostic and compatibility payload adapters.  Ruby Hash records created
  * here are never canonical compiler or runtime state. */

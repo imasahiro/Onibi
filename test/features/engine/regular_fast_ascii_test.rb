@@ -19,12 +19,13 @@ class RegularFastAsciiTest < Minitest::Test
   end
 
   def test_regular_capture_does_not_enter_dfs
-    _regexp, info = diagnostics("(a)", "a")
+    regexp, info = diagnostics("(a)", "a")
     assert_equal 0, info[:exec_kind]
     assert_equal 0, info[:dfs]
     assert_equal 0, info[:fallback]
     assert_equal 0, info[:semantic_capture_count]
     assert_equal [[0, 1]], info[:captures]
+    assert_equal 0, regexp.send(:__onibi_match_p_diagnostics__, "a")[:tag_events]
   end
 
   def test_any_respects_multiline_option
