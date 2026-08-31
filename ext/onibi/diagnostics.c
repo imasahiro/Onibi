@@ -135,8 +135,12 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 					 ? 0
 					 : obj->rseq_view.header->capture_count);
     for (uint32_t i = 0; i < capture_slots / 2U; i++) {
-	if (capture_result[2U * i] >= 0 && capture_result[2U * i + 1U] < 0)
+	if ((capture_result[2U * i] >= 0 && capture_result[2U * i + 1U] < 0) ||
+	    (capture_result[2U * i] < 0 && capture_result[2U * i + 1U] >= 0))
+	{
 	    capture_result[2U * i] = -1;
+	    capture_result[2U * i + 1U] = -1;
+	}
 	VALUE range = rb_ary_new_from_args(2, LONG2NUM(capture_result[2U * i]),
 					   LONG2NUM(capture_result[2U * i + 1U]));
 	rb_ary_push(captures, range);
