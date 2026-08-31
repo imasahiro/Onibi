@@ -1014,7 +1014,10 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
     VALUE str, pos = Qnil;
     rb_scan_args(argc, argv, "11", &str, &pos);
     if (SYMBOL_P(str)) str = rb_sym2str(str);
-    if (RB_TYPE_P(str, T_STRING)) {
+	if (NIL_P(str))
+	    rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
+	if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
+	{
 	long origin = 0;
 	if (!NIL_P(pos)) {
 	    origin = NUM2LONG(pos);
