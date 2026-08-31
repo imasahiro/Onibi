@@ -39,28 +39,43 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
 static void
 onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
+    view->native_eligible = onibi_rseq_regular_capable(view);
+}
+
+static int
+onibi_rseq_regular_capable(const OnibiRSeqView *view)
+{
     const OnibiRSeqHeader *header = view->header;
     if ((header->features & ONIBI_RSEQ_FEATURE_LOOKAROUND) != 0 ||
-	header->state_count == 0 || header->start_edge_count == 0)
-	return;
+	header->state_count == 0 || header->start_edge_count == 0 ||
+	header->counter_count != 0 || header->subprogram_count != 1)
+	return 0;
     for (uint32_t i = 0; i < header->state_count; i++) {
 	const OnibiRState *state = &view->states[i];
 	if (state->flags != 0 &&
 	    !(state->op == ONIBI_RS_CLASS &&
 	      state->flags == ONIBI_RSEQ_STATE_FLAG_NEGATED))
-	    return;
+	    return 0;
 	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
 	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY)
-	    return;
+	    return 0;
 	if (state->op == ONIBI_RS_CLASS &&
 	    (view->classes[state->payload].flags &
 	     ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0)
-	    return;
-	if (state->op == ONIBI_RS_CALL &&
-	    state->payload >= header->subprogram_count)
-	    return;
+	    return 0;
+	if (state->op == ONIBI_RS_CALL) return 0;
+	for (uint32_t e = 0; e < state->edge_count; e++) {
+	    const OnibiREdge *edge = &view->edges[state->edge_base + e];
+	    if (edge->action_offset == 0) continue;
+	    uint32_t ai =
+		edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	    if (ai >= header->action_count ||
+		(view->actions[ai].op != ONIBI_RA_CAPTURE &&
+		 view->actions[ai].op != ONIBI_RA_END))
+		return 0;
+	}
     }
-    view->native_eligible = 1;
+    return 1;
 }
 
 static void

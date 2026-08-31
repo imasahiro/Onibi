@@ -112,6 +112,7 @@ static ID id_bytebegin, id_byteend, id_length;
 static ID id_scan, id_gsub;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static void onibi_rseq_view_prepare(OnibiRSeqView *view);
+static int onibi_rseq_regular_capable(const OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);
 static ID id_encoding, id_index;
 static ID id_a_assert_begin_buffer, id_a_assert_search_origin,
