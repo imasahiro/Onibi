@@ -323,9 +323,14 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 		else
 		    onibi_id_vector_append(&result.starts, &part.starts);
 	    }
+	    /* Actions pending at the prior fragment are exit actions.  Store
+	     * them on the old exits so nullable continuations and the direct
+	     * bypass path both retain the same capture boundaries. */
+	    if (result.pending_actions.count > 0)
+		onibi_add_exit_guard_fragment(builder, &old_exits,
+					       &result.pending_actions);
 	    OnibiGActionVector transition_actions =
-		onibi_g_action_vector_concat(&result.pending_actions,
-					     &part.start_actions);
+		onibi_g_action_vector_copy(&part.start_actions);
 	    onibi_connect_fragment_actions(builder, &old_exits, &part.starts,
 					   &transition_actions, result.lazy);
 	    onibi_g_action_vector_free(&transition_actions);
@@ -1135,6 +1140,18 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_compile_node_field(builder, c_node, semantic_node,
 					 id_key_atom),
 		builder);
+	    /* The atom is one ordered branch of the optional.  Keep its tag
+	     * actions on that branch only.  Fragment-level start actions also
+	     * apply to the nullable bypass edge, which would incorrectly turn
+	     * an unset capture into an empty capture. */
+	    onibi_add_capture_guard_fragment(builder, &result.starts,
+					      &result.start_actions);
+	    onibi_add_exit_guard_fragment(builder, &result.exits,
+					   &result.pending_actions);
+	    onibi_g_action_vector_free(&result.start_actions);
+	    onibi_g_action_vector_free(&result.pending_actions);
+	    onibi_g_action_vector_init(&result.start_actions);
+	    onibi_g_action_vector_init(&result.pending_actions);
 	    result.nullable = 1;
 	    result.lazy = !RTEST(onibi_compile_node_field(
 		builder, c_node, semantic_node, id_key_greedy));
@@ -1258,6 +1275,18 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
 	    long progress_slot =
 		repeat.nullable ? builder->counter_count++ : -1;
+	    if (min == 0 && !repeat.nullable) {
+		/* The repeated body is optional.  Its actions belong only to
+		 * body and loop edges, never to the zero-iteration accept edge. */
+		onibi_add_capture_guard_fragment(builder, &repeat.starts,
+						  &repeat.start_actions);
+		onibi_add_exit_guard_fragment(builder, &repeat.exits,
+						 &repeat.pending_actions);
+		onibi_g_action_vector_free(&repeat.start_actions);
+		onibi_g_action_vector_free(&repeat.pending_actions);
+		onibi_g_action_vector_init(&repeat.start_actions);
+		onibi_g_action_vector_init(&repeat.pending_actions);
+	    }
 	    if (result.starts.count == 0)
 		onibi_id_vector_append(&result.starts, &repeat.starts);
 	    if (!repeat.nullable)

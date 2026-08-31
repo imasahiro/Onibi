@@ -60,6 +60,8 @@ class RegularFastCaptureTest < Minitest::Test
 
   def test_c6_greedy_capture
     assert_regular_capture("(a*)", "aaa")
+    assert_regular_capture("(a*)", "")
+    assert_regular_capture("(a*)", "b")
   end
 
   def test_c7_lazy_capture
