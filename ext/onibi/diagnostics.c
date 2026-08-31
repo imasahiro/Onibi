@@ -108,7 +108,8 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     onibi_regular_capture_result = capture_result;
     onibi_regular_capture_slots = capture_slots;
     long start = 0, finish = 0;
-    int status = onibi_vm_search(self, subject, 0, &start, &finish);
+    int status = NIL_P(obj->rseq) ? -1
+				      : onibi_vm_search(self, subject, 0, &start, &finish);
     onibi_regular_capture_result = NULL;
     onibi_regular_capture_slots = 0;
     VALUE result = rb_hash_new();
@@ -126,7 +127,9 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
     rb_hash_aset(result, ID2SYM(rb_intern("match_end")), LONG2NUM(finish));
-    VALUE captures = rb_ary_new_capa(obj->rseq ? obj->rseq_view.header->capture_count : 0);
+    VALUE captures = rb_ary_new_capa(NIL_P(obj->rseq)
+					 ? 0
+					 : obj->rseq_view.header->capture_count);
     for (uint32_t i = 0; i < capture_slots / 2U; i++) {
 	VALUE range = rb_ary_new_from_args(2, LONG2NUM(capture_result[2U * i]),
 					   LONG2NUM(capture_result[2U * i + 1U]));

@@ -601,9 +601,9 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
     int result = onibi_rseq_backtracking_match(
 	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
 	ctx->search_origin, &ctx->matched_end);
-    return result > 0	? ONIBI_EXEC_STATUS_MATCH
-	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
-			: ONIBI_EXEC_STATUS_NO_MATCH;
+	return result > 0	? ONIBI_EXEC_STATUS_MATCH
+	   : result < 0 ? ONIBI_EXEC_STATUS_FALLBACK
+			 : ONIBI_EXEC_STATUS_NO_MATCH;
 }
 
 static OnibiExecStatus

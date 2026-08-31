@@ -50,9 +50,7 @@ onibi_rseq_view_prepare(OnibiRSeqView *view)
 	      state->flags == ONIBI_RSEQ_STATE_FLAG_NEGATED))
 	    return;
 	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
-	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY &&
-	    state->op != ONIBI_RS_GRAPHEME && state->op != ONIBI_RS_BACKREF &&
-	    state->op != ONIBI_RS_CALL)
+	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY)
 	    return;
 	if (state->op == ONIBI_RS_CLASS &&
 	    (view->classes[state->payload].flags &
