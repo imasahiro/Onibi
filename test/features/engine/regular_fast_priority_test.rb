@@ -4,8 +4,7 @@ require "test_helper"
 
 class RegularFastPriorityTest < Minitest::Test
   CASES = [["a|ab", "ab"], ["ab|a", "ab"], ["a*", "aaa"],
-           ["a+", "aaa"], ["a*?a", "aaa"], ["a+?a", "aaa"],
-           ["a{2,4}", "aaaa"], ["a{0,8}", "aaaa"]].freeze
+           ["a+", "aaa"], ["a*?a", "aaa"], ["a+?a", "aaa"]].freeze
 
   def test_ordered_frontier_matches_mri_ranges
     CASES.each do |pattern, subject|

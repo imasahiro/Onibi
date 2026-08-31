@@ -1148,33 +1148,6 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
 	    rb_raise(eRegexpError,
 		     "quantifier exceeds RSeq representation limit");
-	if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
-	    /* Small finite repeats are structurally unrolled.  This keeps the
-	     * action-free subset on REGULAR_FAST and reserves counters for larger
-	     * repeats.  Fragment order preserves greedy/lazy edge priority. */
-	    for (long i = 0; i < min; i++) {
-		onibi_fragment_t part = onibi_compile_node(atom, builder);
-		if (i == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		else
-		    onibi_connect_fragment(builder, &result.exits, &part.starts);
-		onibi_id_vector_move(&result.exits, &part.exits);
-	    }
-	    for (long i = min; i < max; i++) {
-		onibi_fragment_t part = onibi_compile_node(atom, builder);
-		if (result.starts.count == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		if (result.exits.count > 0)
-		    onibi_connect_fragment(builder, &result.exits, &part.starts);
-		onibi_id_vector_append(&result.exits, &part.exits);
-		onibi_id_vector_free(&part.starts);
-		onibi_id_vector_free(&part.exits);
-	    }
-	    result.nullable = min == 0;
-	    result.lazy = !RTEST(onibi_compile_node_field(
-		builder, c_node, semantic_node, id_key_greedy));
-	    return result;
-	}
 	if (max >= 0 && max != min) {
 	    /* Counted repeats use one counter slot.  The first start edge
 	       initializes it.  Optional bodies use ordered test edges. */
