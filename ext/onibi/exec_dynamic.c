@@ -164,7 +164,6 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
     if (!view->native_eligible) return -1;
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
-    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
     size_t span = (size_t)RSTRING_LEN(str) + 1U;
     if ((size_t)header->state_count > SIZE_MAX / span) return -1;
     size_t visited_size = (size_t)header->state_count * span;
@@ -349,28 +348,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	}
 	else if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
 		 state->op == ONIBI_RS_ANY) {
-	    if (frame.pos >= RSTRING_LEN(str))
-		hit = 0;
-	    else if (state->op == ONIBI_RS_CHAR) {
-		const OnibiLiteralDesc *literal =
-		    &view->literals[state->payload];
-		hit = frame.pos + literal->data_length <= RSTRING_LEN(str) &&
-		      onibi_ascii_literal_equal(
-			  bytes + frame.pos, view->blob + literal->data_offset,
-			  literal->data_length,
-			  (literal->flags &
-			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
-		if (hit) next_pos += literal->data_length - 1;
-	    }
-	    else if (state->op == ONIBI_RS_CLASS) {
-		const OnibiClassDesc *klass = &view->classes[state->payload];
-		const unsigned char *bitmap = view->blob + klass->data_offset;
-		hit = (bitmap[bytes[frame.pos] >> 3] &
-		       (1U << (bytes[frame.pos] & 7))) != 0;
-	    }
-	    else
-		hit = bytes[frame.pos] != '\n';
-	    if (hit) next_pos++;
+	    hit = onibi_rseq_consume_ascii(view, state, str, frame.pos,
+					   &next_pos);
 	}
 	else
 	    hit = 0;
