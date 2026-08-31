@@ -108,6 +108,12 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("exec_kind")),
 		 UINT2NUM(NIL_P(obj->rseq) ? obj->execution_kind
 					   : obj->rseq_view.header->exec_kind));
+    if (!NIL_P(obj->rseq)) {
+	rb_hash_aset(result, ID2SYM(rb_intern("capture_count")),
+		     UINT2NUM(obj->rseq_view.header->capture_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("semantic_capture_count")),
+		     UINT2NUM(obj->rseq_view.header->semantic_capture_count));
+    }
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
     rb_hash_aset(result, ID2SYM(rb_intern("match_end")), LONG2NUM(finish));

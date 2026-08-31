@@ -8,6 +8,7 @@ static int onibi_unicode_ctype_id(ID property);
 typedef struct {
     uint32_t rseq_features;
     uint32_t capture_count;
+    uint32_t semantic_capture_count;
     uint32_t counter_count;
     OnibiExecutionKind execution_kind;
 } VerifiedGIRAnalysis;
@@ -1378,7 +1379,7 @@ static VerifiedGIRAnalysis
 onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 			     const OnibiGirEdgeVector *start_edges)
 {
-    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0,
+    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
 				  ONIBI_EXEC_REGULAR};
     if (result.capture_count > 0)
 	result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
@@ -1388,6 +1389,8 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    state->opcode == ONIBI_G_BACKREF || state->opcode == ONIBI_G_CALL ||
 	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
 	    result.execution_kind = ONIBI_EXEC_DYNAMIC;
+	if (state->opcode == ONIBI_G_BACKREF)
+	    result.semantic_capture_count = result.capture_count;
 	if (state->opcode == ONIBI_G_BACKREF)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }

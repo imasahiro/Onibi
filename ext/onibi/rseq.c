@@ -212,7 +212,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
     physical.capture_count = capture_count;
-    physical.semantic_capture_count = capture_count;
+    physical.semantic_capture_count = analysis.semantic_capture_count;
     physical.counter_count = counter_count;
     physical.exec_kind = (uint8_t)analysis.execution_kind;
     physical.start_edge_base = (uint32_t)r_edge_records.count;
