@@ -279,6 +279,9 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 		onibi_regexp_t *obj;
 		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 		VALUE plain = rb_str_dup(str);
+		if (rb_block_given_p())
+		    return rb_block_call(plain, id_gsub, 1, &obj->regexp,
+					 rb_yield_block, Qnil);
 		return rb_funcall(plain, id_gsub, 2, obj->regexp, replacement);
 	}
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
