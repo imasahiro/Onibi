@@ -11,6 +11,7 @@ class RegularFastAsciiTest < Minitest::Test
   def test_regular_literal_uses_ordered_frontier
     regexp, info = diagnostics("a", "ba")
     assert info[:rseq]
+    assert info[:regular_capable]
     assert_equal 0, info[:exec_kind]
     assert_equal 0, info[:dfs]
     assert_equal 1, info[:match_start]
@@ -70,6 +71,7 @@ class RegularFastAsciiTest < Minitest::Test
       expected = Regexp.new(pattern).match(subject)
       expected_range = expected ? [expected.begin(0), expected.end(0)] : nil
       assert info[:rseq], pattern
+      assert info[:regular_capable], pattern
       assert_equal 0, info[:exec_kind], pattern
       assert_equal 0, info[:dfs], pattern
       assert_equal 0, info[:fallback], pattern

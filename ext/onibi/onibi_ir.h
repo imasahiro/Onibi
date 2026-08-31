@@ -274,7 +274,7 @@ typedef struct {
     const OnibiClassDesc *classes;
     const OnibiLiteralDesc *literals;
     const OnibiSubprogramDesc *subprograms;
-    uint8_t native_eligible;
+    uint8_t regular_capable;
 } OnibiRSeqView;
 
 typedef char onibi_rstate_size_must_be_12[(sizeof(OnibiRState) == 12) ? 1 : -1];

@@ -153,6 +153,9 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("rseq")),
 		 NIL_P(obj->rseq) ? Qfalse : Qtrue);
+    rb_hash_aset(result, ID2SYM(rb_intern("regular_capable")),
+		 NIL_P(obj->rseq) ? Qfalse :
+		 (obj->rseq_view.regular_capable ? Qtrue : Qfalse));
     rb_hash_aset(result, ID2SYM(rb_intern("exec_kind")),
 		 UINT2NUM(NIL_P(obj->rseq) ? obj->execution_kind
 					   : obj->rseq_view.header->exec_kind));

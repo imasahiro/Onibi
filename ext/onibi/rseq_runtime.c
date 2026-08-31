@@ -32,14 +32,29 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->subprograms =
 	(const OnibiSubprogramDesc *)(view->blob +
 				      view->header->subprograms_offset);
-    view->native_eligible = 0;
+    view->regular_capable = 0;
     return 1;
 }
 
 static void
 onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
-    view->native_eligible = onibi_rseq_regular_capable(view);
+    view->regular_capable = onibi_rseq_regular_capable(view);
+}
+
+static int
+onibi_rseq_regular_edge_capable(const OnibiRSeqView *view,
+				const OnibiREdge *edge)
+{
+    if (edge->action_offset == 0) return 1;
+    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+    if (index >= view->header->action_count) return 0;
+    for (; index < view->header->action_count; index++) {
+	const OnibiRAction *action = &view->actions[index];
+	if (action->op == ONIBI_RA_END) return 1;
+	if (action->op != ONIBI_RA_CAPTURE) return 0;
+    }
+    return 0;
 }
 
 static int
@@ -66,15 +81,13 @@ onibi_rseq_regular_capable(const OnibiRSeqView *view)
 	if (state->op == ONIBI_RS_CALL) return 0;
 	for (uint32_t e = 0; e < state->edge_count; e++) {
 	    const OnibiREdge *edge = &view->edges[state->edge_base + e];
-	    if (edge->action_offset == 0) continue;
-	    uint32_t ai =
-		edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-	    if (ai >= header->action_count ||
-		(view->actions[ai].op != ONIBI_RA_CAPTURE &&
-		 view->actions[ai].op != ONIBI_RA_END))
-		return 0;
+	    if (!onibi_rseq_regular_edge_capable(view, edge)) return 0;
 	}
     }
+    for (uint32_t i = 0; i < header->start_edge_count; i++)
+	if (!onibi_rseq_regular_edge_capable(
+		view, &view->edges[header->start_edge_base + i]))
+	    return 0;
     return 1;
 }
 

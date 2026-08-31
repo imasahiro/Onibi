@@ -160,7 +160,7 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	view = &local_view;
     }
     const OnibiRSeqHeader *header = view->header;
-    if (!view->native_eligible) return -1;
+    if (!view->regular_capable) return -1;
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
     size_t span = (size_t)RSTRING_LEN(str) + 1U;
@@ -506,10 +506,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 {
     const OnibiRSeqView *view = ctx->view;
     const OnibiRSeqHeader *header = view->header;
-    if (!view->native_eligible) return -2;
-
-    if (header->counter_count != 0 || header->subprogram_count != 1)
-	return -2;
+    if (!view->regular_capable) return -2;
     uint32_t count = header->state_count;
     if (count == 0) return 0;
     VALUE str = ctx->subject;

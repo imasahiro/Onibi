@@ -7,6 +7,7 @@ class ExecutorDispatchTest < Minitest::Test
     regexp = Onibi::Regexp.new("(a)\\1")
     info = regexp.send(:__onibi_diagnostics__, "aa")
     assert_equal 2, info[:exec_kind]
+    refute info[:regular_capable]
     assert_equal 1, info[:dynamic]
     assert_equal 1, info[:dfs]
     assert_equal 1, info[:fallback]
@@ -16,6 +17,7 @@ class ExecutorDispatchTest < Minitest::Test
     regexp = Onibi::Regexp.new("(a)")
     info = regexp.send(:__onibi_diagnostics__, "a")
     assert_equal 0, info[:exec_kind]
+    assert info[:regular_capable]
     assert_equal 0, info[:dfs]
     assert_equal 0, info[:fallback]
   end
@@ -24,6 +26,7 @@ class ExecutorDispatchTest < Minitest::Test
     regexp = Onibi::Regexp.new("a{9}")
     info = regexp.send(:__onibi_diagnostics__, "aaaaaaaaa")
     refute info[:rseq]
+    refute info[:regular_capable]
     refute_equal 0, info[:exec_kind]
     assert_equal 0, info[:dfs]
   end
@@ -32,6 +35,7 @@ class ExecutorDispatchTest < Minitest::Test
     regexp = Onibi::Regexp.new("^a")
     info = regexp.send(:__onibi_diagnostics__, "a")
     assert_equal 1, info[:exec_kind]
+    refute info[:regular_capable]
     assert_equal 1, info[:tagged]
     assert_equal 1, info[:dfs]
   end
