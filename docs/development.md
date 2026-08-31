@@ -42,6 +42,16 @@ Each class has one C interpreter.
 All interpreters execute RSeq and return one common raw match result.
 The public API converts that result to `Onibi` objects.
 
+### MatchData migration debt
+
+The native matcher produces raw byte ranges before any Ruby `MatchData`
+materialization. MRI 4.0.6 does not provide a supported extension API to create
+an `RMatch` from external `re_registers`; its public header also prohibits
+manual construction. Until such an API is available, `match` and capture-aware
+`scan` use MRI only as a temporary materialization adapter. Native diagnostics
+and capture tests compare the raw Onibi ranges with MRI before this adapter is
+used. The adapter must not decide match existence or match priority.
+
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token
 stream. Match entry points consume the published immutable RSeq only. They
