@@ -133,6 +133,16 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	rb_ary_push(captures, range);
     }
     rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+    VALUE actions = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->action_count; i++) {
+	    const OnibiRAction *a = &obj->rseq_view.actions[i];
+	    rb_ary_push(actions, rb_ary_new_from_args(3, INT2NUM(a->op),
+							INT2NUM(a->flags),
+							UINT2NUM(a->arg16)));
+	}
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
     rb_hash_aset(result, ID2SYM(rb_intern("regular")),
 		 ULONG2NUM(onibi_diagnostics.regular));
     rb_hash_aset(result, ID2SYM(rb_intern("tagged")),
