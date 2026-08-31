@@ -204,6 +204,8 @@ onibi_tilde(VALUE self)
 	return Qnil;
 	}
 	if (status < 0) {
+	    if (status == -2)
+		rb_raise(eRegexpError, "Onibi execution failed");
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	    VALUE match = rb_funcall(obj->regexp, id_match, 1, input);
