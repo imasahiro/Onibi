@@ -417,21 +417,12 @@ static OnibiCaseFoldExpansion
 onibi_casefold_expand(unsigned char value)
 {
     OnibiCaseFoldExpansion expansion = {{value, 0, 0}, 1};
-    if (onibi_compile_encoding && value >= 0x80) {
-	OnigCaseFoldCodeItem items[3];
-	OnigUChar input[1] = {value};
-	int count = ONIGENC_GET_CASE_FOLD_CODES_BY_STR(
-	    (OnigEncoding)onibi_compile_encoding, ONIGENC_CASE_FOLD_MIN, input,
-	    input + 1, items);
-	for (int i = 0; i < count && expansion.count < 3; i++)
-	    if (items[i].byte_len == 1)
-		expansion.values[expansion.count++] = items[i].code[0];
-    }
     unsigned char lower = onibi_ascii_fold(value);
     unsigned char upper = (value >= 'a' && value <= 'z')
 			      ? (unsigned char)(value - ('a' - 'A'))
 			      : value;
-    if (lower != value) expansion.values[expansion.count++] = lower;
+    if (lower != value && expansion.count < 3)
+	expansion.values[expansion.count++] = lower;
     if (upper != value && upper != lower && expansion.count < 3)
 	expansion.values[expansion.count++] = upper;
     return expansion;
@@ -560,13 +551,16 @@ onibi_class_bitmap(VALUE payload, int fold)
 	    int hit = onibi_ascii_property_hit_kind(property_kind, c);
 	    if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
 	}
-	if (NUM2INT(onibi_hash_value_id(payload, id_key_byte)) == 'P')
+	VALUE payload_byte = onibi_hash_value_id(payload, id_key_byte);
+	if (RB_INTEGER_TYPE_P(payload_byte) && NUM2INT(payload_byte) == 'P')
 	    for (long i = 0; i < 32; i++)
 		bits[i] = (unsigned char)~bits[i];
     }
 class_children:
+    if (!RB_TYPE_P(ranges, T_ARRAY)) ranges = rb_ary_new();
     for (long i = 0; i < RARRAY_LEN(ranges); i++) {
 	VALUE range = rb_ary_entry(ranges, i);
+	if (!RB_TYPE_P(range, T_ARRAY)) continue;
 	if (RARRAY_LEN(range) != 2) continue;
 	if (!RB_INTEGER_TYPE_P(rb_ary_entry(range, 0)) ||
 	    !RB_INTEGER_TYPE_P(rb_ary_entry(range, 1)))
@@ -579,8 +573,10 @@ class_children:
 	    onibi_bitmap_set(bits, (unsigned char)c, fold);
     }
     VALUE children = onibi_hash_value_id(payload, id_key_children);
+    if (!RB_TYPE_P(children, T_ARRAY)) children = rb_ary_new();
     for (long i = 0; i < RARRAY_LEN(children); i++) {
 	VALUE child = rb_ary_entry(children, i);
+	if (!RB_TYPE_P(child, T_HASH)) continue;
 	OnibiTokenKind token_kind = onibi_token_kind_code(child);
 	OnibiAstKind ast_kind = onibi_ast_kind(child);
 	if (token_kind == ONIBI_TOKEN_LITERAL ||
@@ -611,17 +607,20 @@ class_children:
 		continue;
 	    }
 	    int escape_code =
-		NIL_P(name)
-		    ? onibi_ascii_fold((unsigned char)NUM2INT(child_byte_value))
-		    : (RSTRING_LEN(name) == 1
-			   ? onibi_ascii_fold(
-				 (unsigned char)RSTRING_PTR(name)[0])
-			   : 0);
+		NIL_P(name) ? (RB_INTEGER_TYPE_P(child_byte_value)
+				   ? onibi_ascii_fold((unsigned char)NUM2INT(
+					 child_byte_value))
+				   : 0)
+			    : (RSTRING_LEN(name) == 1
+				   ? onibi_ascii_fold(
+					 (unsigned char)RSTRING_PTR(name)[0])
+				   : 0);
 	    if (escape_code == 'r' || escape_code == 'p' ||
 		escape_code == 'x' || escape_code == 'u')
 		rb_raise(eRegexpError, "escape is not supported in RSeq class");
 	    int upper = NIL_P(name)
-			    ? (NUM2INT(child_byte_value) >= 'A' &&
+			    ? (RB_INTEGER_TYPE_P(child_byte_value) &&
+			       NUM2INT(child_byte_value) >= 'A' &&
 			       NUM2INT(child_byte_value) <= 'Z')
 			    : (RSTRING_LEN(name) == 1 &&
 			       ((unsigned char)RSTRING_PTR(name)[0] >= 'A' &&

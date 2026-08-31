@@ -424,8 +424,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	VALUE children = onibi_hash_value_id(semantic_node, id_key_children);
 	VALUE ranges = onibi_hash_value_id(semantic_node, id_key_ranges);
 	if (!RTEST(onibi_hash_value_id(semantic_node, id_key_negated)) &&
-	    RB_TYPE_P(children, T_ARRAY) && RARRAY_LEN(ranges) == 0 &&
-	    RARRAY_LEN(children) > 0) {
+	    RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY) &&
+	    RARRAY_LEN(ranges) == 0 && RARRAY_LEN(children) > 0) {
 	    int literal_only = 1;
 	    for (long i = 0; i < RARRAY_LEN(children); i++) {
 		VALUE child = rb_ary_entry(children, i);
@@ -559,17 +559,18 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		builder, c_node, semantic_node, id_key_name_id);
 	    int is_property = !NIL_P(name_id) && onibi_ascii_property_name_p(
 						     (ID)NUM2ULONG(name_id));
-	    if (!NIL_P(name) && RSTRING_LEN(name) > 1 && !is_property)
+	    if (RB_TYPE_P(name, T_STRING) && RSTRING_LEN(name) > 1 &&
+		!is_property)
 		rb_raise(
 		    eRegexpError,
 		    "Unicode property escapes require encoded GIR classes");
-	    int code = NIL_P(name)
+	    int code = !RB_TYPE_P(name, T_STRING)
 			   ? 0
 			   : (RSTRING_LEN(name) == 1
 				  ? onibi_ascii_fold(
 					(unsigned char)RSTRING_PTR(name)[0])
 				  : 0);
-	    if ((NIL_P(name) || RSTRING_LEN(name) <= 1) &&
+	    if ((!RB_TYPE_P(name, T_STRING) || RSTRING_LEN(name) <= 1) &&
 		(code == 'r' || code == 'p' || code == 'u'))
 		rb_raise(eRegexpError, "escape is not supported in RSeq");
 	}
@@ -598,6 +599,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	int grapheme_escape =
 	    type_code == ONIBI_AST_ESCAPE &&
 	    ((NIL_P(escape_name_for_op) &&
+	      RB_INTEGER_TYPE_P(onibi_compile_node_field(
+		  builder, c_node, semantic_node, id_key_byte)) &&
 	      onibi_ascii_fold((unsigned char)NUM2INT(onibi_compile_node_field(
 		  builder, c_node, semantic_node, id_key_byte))) == 'x') ||
 	     (!NIL_P(escape_name_for_op) &&
@@ -1148,18 +1151,18 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
 	    rb_raise(eRegexpError,
 		     "quantifier exceeds RSeq representation limit");
-    if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
+	if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
 	    /* Small finite repeats are structurally unrolled.  This keeps the
-	     * action-free subset on REGULAR_FAST and reserves counters for larger
-	     * repeats.  Fragment order preserves greedy/lazy edge priority. */
-    for (long i = 0; i < min; i++) {
+	     * action-free subset on REGULAR_FAST and reserves counters for
+	     * larger repeats.  Fragment order preserves greedy/lazy edge
+	     * priority. */
+	    for (long i = 0; i < min; i++) {
 		onibi_fragment_t part = onibi_compile_node(atom, builder);
 		if (i == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		else {
-		    OnibiGActionVector actions =
-			onibi_g_action_vector_concat(&result.pending_actions,
-						     &part.start_actions);
+		    OnibiGActionVector actions = onibi_g_action_vector_concat(
+			&result.pending_actions, &part.start_actions);
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &part.starts, &actions, 0);
 		    onibi_g_action_vector_free(&actions);
@@ -1167,20 +1170,19 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_id_vector_move(&result.exits, &part.exits);
 		onibi_fragment_append_actions(&result.pending_actions,
 					      &part.pending_actions);
-		onibi_fragment_append_actions(&result.start_actions,
-					      i == 0 ? &part.start_actions :
-					      &(OnibiGActionVector){0});
+		onibi_fragment_append_actions(
+		    &result.start_actions,
+		    i == 0 ? &part.start_actions : &(OnibiGActionVector){0});
 		onibi_g_action_vector_free(&part.start_actions);
 		onibi_g_action_vector_free(&part.pending_actions);
-    }
+	    }
 	    for (long i = min; i < max; i++) {
 		onibi_fragment_t part = onibi_compile_node(atom, builder);
 		if (result.starts.count == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		if (result.exits.count > 0) {
-		    OnibiGActionVector actions =
-			onibi_g_action_vector_concat(&result.pending_actions,
-						     &part.start_actions);
+		    OnibiGActionVector actions = onibi_g_action_vector_concat(
+			&result.pending_actions, &part.start_actions);
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &part.starts, &actions, 0);
 		    onibi_g_action_vector_free(&actions);
