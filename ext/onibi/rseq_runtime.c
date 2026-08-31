@@ -41,7 +41,6 @@ onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
     const OnibiRSeqHeader *header = view->header;
     if ((header->features & ONIBI_RSEQ_FEATURE_LOOKAROUND) != 0 ||
-	(header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
 	header->state_count == 0 || header->start_edge_count == 0)
 	return;
     for (uint32_t i = 0; i < header->state_count; i++) {
@@ -164,13 +163,14 @@ onibi_rseq_blob_validate(VALUE blob)
 static OnibiExecStatus
 onibi_exec_regular(OnibiExecCtx *ctx)
 {
+    onibi_diagnostics.regular++;
     int result = onibi_rseq_regular_match(
 	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
 	ctx->search_origin, &ctx->matched_end);
-    if (result < 0)
-	result = onibi_rseq_backtracking_match(
-	    ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
-	    ctx->search_origin, &ctx->matched_end);
+    if (result == -2) {
+	onibi_diagnostics.fallback++;
+	return ONIBI_EXEC_STATUS_FALLBACK;
+    }
     return result > 0	? ONIBI_EXEC_STATUS_MATCH
 	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
 			: ONIBI_EXEC_STATUS_NO_MATCH;

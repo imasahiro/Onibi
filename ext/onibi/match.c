@@ -69,6 +69,11 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 		onibi_active_exec_ctx = NULL;
 		return 0;
 	    }
+	    if (result == ONIBI_EXEC_STATUS_FALLBACK) {
+		onibi_deadline_ns = 0;
+		onibi_active_exec_ctx = NULL;
+		return -1;
+	    }
 	}
 	onibi_deadline_ns = 0;
 	onibi_active_exec_ctx = NULL;

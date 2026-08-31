@@ -114,6 +114,7 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 			      VALUE str, long start, long search_origin,
 			      long *matched_end)
 {
+    onibi_diagnostics.dfs++;
     OnibiRSeqView local_view;
     const OnibiRSeqView *view = cached_view;
     if (!view) {
@@ -392,11 +393,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	view = &local_view;
     }
     const OnibiRSeqHeader *header = view->header;
-    if (!view->native_eligible) return -1;
-    if (header->counter_count != 0 || header->capture_count != 0 ||
-	header->subprogram_count != 1) {
-	return onibi_rseq_backtracking_match(rseq, cached_view, str, start,
-					     search_origin, matched_end);
+    if (!view->native_eligible) return -2;
+
+    if (header->counter_count != 0 || header->subprogram_count != 1) {
+	return -2;
     }
     uint32_t count = header->state_count;
     if (count == 0) return 0;
@@ -410,7 +410,17 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
     memset(current_bits, 0, bits_size);
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
-	if (edge->action_offset != 0) continue;
+	/* Output-only capture actions do not change the regular state key.  The
+	 * capture-producing frontier will materialize them in a later pass; for
+	 * boolean matching they are non-failing actions. */
+	if (edge->action_offset != 0) {
+	    uint32_t ai =
+		edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	    if (ai >= header->action_count ||
+		(view->actions[ai].op != ONIBI_RA_CAPTURE &&
+		 view->actions[ai].op != ONIBI_RA_END))
+		continue;
+	}
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    /* An empty alternative is a fallback.  A consuming branch at this
 	     * same start has higher priority when it can match. */
@@ -444,7 +454,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		continue;
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
-	    int hit = state->op == ONIBI_RS_ANY;
+	    int hit =
+		state->op == ONIBI_RS_ANY &&
+		((header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
+		 (unsigned char)RSTRING_PTR(str)[position] != '\n');
 	    if (state->op == ONIBI_RS_CHAR) {
 		const OnibiLiteralDesc *literal =
 		    &view->literals[state->payload];
@@ -468,7 +481,15 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    uint32_t base = state->edge_base;
 	    for (uint32_t e = 0; e < state->edge_count; e++) {
 		const OnibiREdge *edge = &view->edges[base + e];
-		if (edge->action_offset != 0) continue;
+		if (edge->action_offset != 0) {
+		    uint32_t ai =
+			edge->action_offset / (uint32_t)sizeof(OnibiRAction) -
+			1U;
+		    if (ai >= header->action_count ||
+			(view->actions[ai].op != ONIBI_RA_CAPTURE &&
+			 view->actions[ai].op != ONIBI_RA_END))
+			continue;
+		}
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    /* Keep scanning this state's edges. A later continuation
 		     * can still win at the next position. */
@@ -512,6 +533,7 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 static OnibiExecStatus
 onibi_exec_dynamic(OnibiExecCtx *ctx)
 {
+    onibi_diagnostics.dynamic++;
     int result = onibi_rseq_backtracking_match(
 	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
 	ctx->search_origin, &ctx->matched_end);
@@ -523,6 +545,7 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
 static OnibiExecStatus
 onibi_exec_tagged(OnibiExecCtx *ctx)
 {
+    onibi_diagnostics.tagged++;
     return onibi_exec_dynamic(ctx);
 }
 

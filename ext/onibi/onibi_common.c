@@ -82,8 +82,16 @@ typedef struct {
 typedef enum {
     ONIBI_EXEC_STATUS_NO_MATCH = 0,
     ONIBI_EXEC_STATUS_MATCH = 1,
-    ONIBI_EXEC_STATUS_INTERNAL_ERROR = -1
+    ONIBI_EXEC_STATUS_INTERNAL_ERROR = -1,
+    ONIBI_EXEC_STATUS_FALLBACK = 2
 } OnibiExecStatus;
+
+/* Test-only execution telemetry.  These counters are reset for each search
+ * by the diagnostic entry point and are never used for matching decisions. */
+typedef struct {
+    unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
+} OnibiDiagnostics;
+static _Thread_local OnibiDiagnostics onibi_diagnostics;
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *view,
 				    VALUE subject, long start,

@@ -983,7 +983,8 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	if (origin < 0) return Qnil;
     }
     long start = 0, end = 0;
-    if (!onibi_vm_search(self, str, origin, &start, &end)) {
+    int search_status = onibi_vm_search(self, str, origin, &start, &end);
+    if (search_status == 0) {
 	rb_backref_set(Qnil);
 	return Qnil;
     }
@@ -1013,6 +1014,14 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	long start = 0, end = 0;
 	int result = onibi_vm_search(self, str, origin, &start, &end);
 	if (result >= 0) return result ? Qtrue : Qfalse;
+	if (result < 0) {
+	    onibi_regexp_t *obj;
+	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+	    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
+				     : rb_funcall(obj->regexp, id_match, 2, str,
+						  LONG2NUM(origin));
+	    return NIL_P(match) ? Qfalse : Qtrue;
+	}
     }
     return Qfalse;
 }
