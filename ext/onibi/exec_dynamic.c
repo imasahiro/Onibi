@@ -396,6 +396,32 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 /* Regular execution uses ordered frontiers.  It has no DFS stack and keeps
  * one membership bitset for each frontier.  Dynamic programs stay in the
  * isolated compatibility walker above. */
+typedef struct {
+    uint32_t parent;
+    uint16_t slot;
+    long position;
+} onibi_regular_tag_event_t;
+
+static uint32_t
+onibi_regular_record_tags(const OnibiRSeqView *view, const OnibiREdge *edge,
+			  long position, uint32_t parent,
+			  onibi_regular_tag_event_t *events, uint32_t *event_count,
+			  uint32_t event_capacity)
+{
+    if (edge->action_offset == 0) return parent;
+    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+    for (; index < view->header->action_count; index++) {
+	const OnibiRAction *action = &view->actions[index];
+	if (action->op == ONIBI_RA_END) break;
+	if (action->op != ONIBI_RA_CAPTURE) continue;
+	if (*event_count >= event_capacity) return UINT32_MAX;
+	events[*event_count] = (onibi_regular_tag_event_t){parent, action->arg16,
+						 position};
+	parent = (*event_count)++;
+    }
+    return parent;
+}
+
 static int
 onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 			 VALUE str, long start, long search_origin,
@@ -428,6 +454,13 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
     long *next_caps = capture_slots == 0
 			  ? NULL
 			  : ALLOCA_N(long, (size_t)count *capture_slots);
+    uint32_t tag_capacity = capture_slots == 0 ? 1U : count * capture_slots + 1U;
+    onibi_regular_tag_event_t *tag_events =
+	ALLOCA_N(onibi_regular_tag_event_t, tag_capacity);
+    uint32_t *current_tags = ALLOCA_N(uint32_t, count);
+    uint32_t *next_tags = ALLOCA_N(uint32_t, count);
+    uint32_t tag_event_count = 0;
+    for (uint32_t i = 0; i < count; i++) current_tags[i] = UINT32_MAX;
     size_t current_count = 0;
     long best_end = -1;
     memset(current_bits, 0, bits_size);
@@ -467,8 +500,13 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 						capture_slots))
 		    continue;
 	    }
+	    uint32_t history = onibi_regular_record_tags(
+		view, edge, start, UINT32_MAX, tag_events, &tag_event_count,
+		tag_capacity);
+	    if (history == UINT32_MAX && edge->action_offset != 0) continue;
 	    current_bits[state >> 3] |= (unsigned char)(1U << (state & 7));
 	    current[current_count++] = state;
+	    current_tags[current_count - 1] = history;
 	}
     }
     long position = start;
@@ -577,11 +615,16 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 			    !onibi_rseq_edge_actions_ok(
 				view, edge, str, position + step_width,
 				search_origin, NULL, 0, dst, capture_slots))
-			    continue;
+				continue;
 		    }
-		    next_bits[destination >> 3] |=
-			(unsigned char)(1U << (destination & 7));
-		    next[next_count++] = destination;
+		    uint32_t history = onibi_regular_record_tags(
+			view, edge, position + step_width, current_tags[i],
+			tag_events, &tag_event_count, tag_capacity);
+		    if (history == UINT32_MAX && edge->action_offset != 0) continue;
+	    next_bits[destination >> 3] |=
+		(unsigned char)(1U << (destination & 7));
+	    next[next_count++] = destination;
+	    next_tags[next_count - 1] = history;
 		}
 	    }
 	}
@@ -613,6 +656,9 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	long *caps_tmp = current_caps;
 	current_caps = next_caps;
 	next_caps = caps_tmp;
+	uint32_t *tags_tmp = current_tags;
+	current_tags = next_tags;
+	next_tags = tags_tmp;
 	current_count = next_count;
 	position += step_width;
     }
