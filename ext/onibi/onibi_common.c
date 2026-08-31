@@ -107,6 +107,7 @@ static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
     id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
+static ID id_scan, id_gsub;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
 static void onibi_rseq_view_prepare(OnibiRSeqView *view);
 static void onibi_rseq_blob_validate(VALUE blob);

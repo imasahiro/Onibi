@@ -68,7 +68,7 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	    if (result == ONIBI_EXEC_STATUS_INTERNAL_ERROR) {
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
-		return 0;
+		return -2;
 	    }
 	    if (result == ONIBI_EXEC_STATUS_FALLBACK) {
 		onibi_deadline_ns = 0;
@@ -96,7 +96,16 @@ onibi_scan(VALUE self, VALUE str)
     long origin = 0;
     for (;;) {
 	long start = 0, end = 0;
-	if (!onibi_vm_search(self, str, origin, &start, &end)) break;
+	int status = onibi_vm_search(self, str, origin, &start, &end);
+	if (status < 0) {
+	    if (status == -1) {
+		onibi_regexp_t *obj;
+		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+		return rb_funcall(obj->regexp, id_scan, 1, str);
+	    }
+	    rb_raise(eRegexpError, "Onibi execution failed");
+	}
+	if (status == 0) break;
 	rb_ary_push(result, rb_str_substr(str, start, end - start));
 	if (end > start)
 	    origin = end;
@@ -114,10 +123,16 @@ onibi_case_equal(VALUE self, VALUE other)
 {
     if (!RB_TYPE_P(other, T_STRING)) return Qfalse;
     long start = 0, end = 0;
-    if (!onibi_vm_search(self, other, 0, &start, &end)) {
+	int status = onibi_vm_search(self, other, 0, &start, &end);
+	if (status == 0) {
 	rb_backref_set(Qnil);
 	return Qfalse;
-    }
+	}
+	if (status < 0) {
+	    onibi_regexp_t *obj;
+	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+	    return RTEST(rb_funcall(obj->regexp, id_match, 1, other)) ? Qtrue : Qfalse;
+	}
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     rb_funcall(obj->regexp, id_match, 1, other);
@@ -140,10 +155,17 @@ onibi_tilde(VALUE self)
     VALUE input = rb_gv_get("$_");
     if (!RB_TYPE_P(input, T_STRING)) return Qnil;
     long start = 0, end = 0;
-    if (!onibi_vm_search(self, input, 0, &start, &end)) {
+	int status = onibi_vm_search(self, input, 0, &start, &end);
+	if (status == 0) {
 	rb_backref_set(Qnil);
 	return Qnil;
-    }
+	}
+	if (status < 0) {
+	    onibi_regexp_t *obj;
+	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+	    VALUE match = rb_funcall(obj->regexp, id_match, 1, input);
+	    return NIL_P(match) ? Qnil : rb_funcall(match, id_bytebegin, 1, INT2NUM(0));
+	}
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     rb_funcall(obj->regexp, id_match, 1, input);
@@ -163,7 +185,16 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     long origin = 0, copied = 0;
     for (;;) {
 	long start = 0, end = 0;
-	if (!onibi_vm_search(self, str, origin, &start, &end)) break;
+	int status = onibi_vm_search(self, str, origin, &start, &end);
+	if (status < 0) {
+	    if (status == -1) {
+		onibi_regexp_t *obj;
+		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+		return rb_funcall(obj->regexp, id_gsub, argc, argv);
+	    }
+	    rb_raise(eRegexpError, "Onibi execution failed");
+	}
+	if (status == 0) break;
 	rb_str_buf_cat(result, RSTRING_PTR(str) + copied, start - copied);
 	VALUE replacement_value =
 	    rb_block_given_p()

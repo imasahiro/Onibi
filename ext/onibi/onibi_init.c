@@ -10,6 +10,8 @@ Init_onibi(void)
     id_bytebegin = rb_intern("bytebegin");
     id_byteend = rb_intern("byteend");
     id_length = rb_intern("length");
+    id_scan = rb_intern("scan");
+    id_gsub = rb_intern("gsub");
     id_source = rb_intern("source");
     id_options = rb_intern("options");
     id_inspect = rb_intern("inspect");
