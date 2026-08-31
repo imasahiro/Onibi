@@ -1148,27 +1148,48 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
 	    rb_raise(eRegexpError,
 		     "quantifier exceeds RSeq representation limit");
-	if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
+    if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
 	    /* Small finite repeats are structurally unrolled.  This keeps the
 	     * action-free subset on REGULAR_FAST and reserves counters for larger
 	     * repeats.  Fragment order preserves greedy/lazy edge priority. */
-	    for (long i = 0; i < min; i++) {
+    for (long i = 0; i < min; i++) {
 		onibi_fragment_t part = onibi_compile_node(atom, builder);
 		if (i == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
-		else
-		    onibi_connect_fragment(builder, &result.exits, &part.starts);
+		else {
+		    OnibiGActionVector actions =
+			onibi_g_action_vector_concat(&result.pending_actions,
+						     &part.start_actions);
+		    onibi_connect_fragment_actions(builder, &result.exits,
+						   &part.starts, &actions, 0);
+		    onibi_g_action_vector_free(&actions);
+		}
 		onibi_id_vector_move(&result.exits, &part.exits);
-	    }
+		onibi_fragment_append_actions(&result.pending_actions,
+					      &part.pending_actions);
+		onibi_fragment_append_actions(&result.start_actions,
+					      i == 0 ? &part.start_actions :
+					      &(OnibiGActionVector){0});
+		onibi_g_action_vector_free(&part.start_actions);
+		onibi_g_action_vector_free(&part.pending_actions);
+    }
 	    for (long i = min; i < max; i++) {
 		onibi_fragment_t part = onibi_compile_node(atom, builder);
 		if (result.starts.count == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
-		if (result.exits.count > 0)
-		    onibi_connect_fragment(builder, &result.exits, &part.starts);
+		if (result.exits.count > 0) {
+		    OnibiGActionVector actions =
+			onibi_g_action_vector_concat(&result.pending_actions,
+						     &part.start_actions);
+		    onibi_connect_fragment_actions(builder, &result.exits,
+						   &part.starts, &actions, 0);
+		    onibi_g_action_vector_free(&actions);
+		}
 		onibi_id_vector_append(&result.exits, &part.exits);
-		onibi_id_vector_free(&part.starts);
-		onibi_id_vector_free(&part.exits);
+		onibi_fragment_append_actions(&result.pending_actions,
+					      &part.pending_actions);
+		onibi_g_action_vector_free(&part.start_actions);
+		onibi_g_action_vector_free(&part.pending_actions);
 	    }
 	    result.nullable = min == 0;
 	    result.lazy = !RTEST(onibi_compile_node_field(
