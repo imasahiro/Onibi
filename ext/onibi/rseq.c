@@ -197,93 +197,25 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	class_section_size + literal_desc_size + literal_data_size +
 	subprogram_section_size;
     if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
-	action_records.count > UINT32_MAX || physical_size > UINT32_MAX)
+	action_records.count > UINT32_MAX || physical_size > UINT32_MAX) {
 	rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
-    uint32_t features = capture_count > 0 ? 2U : 0U;
-    uint32_t counter_count = 0;
-    for (size_t i = 0; i < state_records.count; i++) {
-	if (state_records.entries[i].opcode == ONIBI_G_BACKREF)
-	    features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }
-    for (size_t i = 0; i < action_records.count; i++) {
-	const OnibiGAction *action = &action_records.entries[i];
-	OnibiGActionOp code = action->code;
-	if (code == ONIBI_GA_CAPTURE_OPEN)
-	    features |= ONIBI_RSEQ_FEATURE_CAPTURE;
-	if (code == ONIBI_GA_COUNTER_INIT)
-	    features |= ONIBI_RSEQ_FEATURE_COUNTER;
-	if (code == ONIBI_GA_COUNTER_INIT ||
-	    code == ONIBI_GA_COUNTER_INCREMENT ||
-	    code == ONIBI_GA_TEST_COUNTER_LT ||
-	    code == ONIBI_GA_TEST_COUNTER_GE) {
-	    if (action->has_slot) {
-		uint32_t required = (uint32_t)action->slot + 1U;
-		if (required > counter_count) counter_count = required;
-	    }
-	}
-	if (code == ONIBI_GA_MATCH_RESET)
-	    features |= ONIBI_RSEQ_FEATURE_MATCH_RESET;
-	if (code == ONIBI_GA_ASSERT_POSITION) {
-	    features |= ONIBI_RSEQ_FEATURE_ASSERTION;
-	    if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
-		action->assert_kind == ONIBI_RAP_LOOKBEHIND)
-		features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
-	}
-    }
+    VerifiedGIRAnalysis analysis = compiled_data->analysis;
+    uint32_t features = analysis.rseq_features;
+    uint32_t counter_count = analysis.counter_count;
     OnibiRSeqHeader physical;
     memset(&physical, 0, sizeof(physical));
     physical.magic = ONIBI_RSEQ_MAGIC;
     physical.version = ONIBI_RSEQ_VERSION;
     physical.flags = (ignorecase ? ONIBI_RSEQ_HEADER_FLAG_IGNORECASE : 0) |
 		     (multiline ? ONIBI_RSEQ_HEADER_FLAG_MULTILINE : 0);
-    physical.features = features;
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
     physical.capture_count = capture_count;
     physical.semantic_capture_count = capture_count;
     physical.counter_count = counter_count;
-    for (size_t i = 0; i < action_records.count; i++)
-	if (action_records.entries[i].code == ONIBI_GA_ASSERT_POSITION)
-	    physical.exec_kind = 1;
+    physical.exec_kind = (uint8_t)analysis.execution_kind;
     physical.start_edge_base = (uint32_t)r_edge_records.count;
-    for (size_t i = 0; i < state_records.count; i++) {
-	unsigned int opcode = state_records.entries[i].opcode;
-	if (opcode == ONIBI_G_GRAPHEME || opcode == ONIBI_G_BACKREF ||
-	    opcode == ONIBI_G_CALL || opcode == ONIBI_G_ATOMIC ||
-	    opcode == ONIBI_G_ABSENT) {
-	    physical.exec_kind = 2;
-	    break;
-	}
-	if (opcode == ONIBI_G_ACCEPT) continue;
-    }
-    if (physical.exec_kind == 0) {
-	for (size_t i = 0; i < action_records.count; i++) {
-	    OnibiGActionOp code = action_records.entries[i].code;
-	    if (code == ONIBI_GA_CAPTURE_OPEN ||
-		code == ONIBI_GA_CAPTURE_CLOSE ||
-		code == ONIBI_GA_COUNTER_INIT ||
-		code == ONIBI_GA_COUNTER_INCREMENT ||
-		code == ONIBI_GA_TEST_COUNTER_LT ||
-		code == ONIBI_GA_TEST_COUNTER_GE) {
-		physical.exec_kind = 1;
-		break;
-	    }
-	}
-	for (size_t i = 0;
-	     i < compiled_data->start_edges.count && physical.exec_kind == 0;
-	     i++) {
-	    const OnibiGActionVector *edge_actions =
-		&compiled_data->start_edges.entries[i].actions;
-	    for (size_t j = 0; j < edge_actions->count; j++) {
-		OnibiGActionOp code = edge_actions->entries[j].code;
-		if (code == ONIBI_GA_CAPTURE_OPEN ||
-		    code == ONIBI_GA_COUNTER_INIT) {
-		    physical.exec_kind = 1;
-		    break;
-		}
-	    }
-	}
-    }
     physical.state_count = (uint32_t)state_records.count;
     physical.edge_count =
 	(uint32_t)(r_edge_records.count + r_start_edge_records.count);
@@ -305,6 +237,73 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     physical.subprograms_offset = (uint32_t)offset;
     offset += subprogram_section_size;
     physical.blob_size = (uint32_t)offset;
+    int bitmap_valid = 1;
+    int bitmap_have = 0;
+    memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
+    for (size_t i = 0; i < r_start_edge_records.count; i++) {
+	OnibiGirEdgeEntry *edge = &r_start_edge_records.entries[i];
+	if (edge->to < 0 || (size_t)edge->to >= state_records.count) {
+	    bitmap_valid = 0;
+	    continue;
+	}
+	OnibiGirStateEntry *state = &state_records.entries[edge->to];
+	if (edge->actions.count != 0 || state->opcode == ONIBI_G_ACCEPT ||
+	    state->opcode == ONIBI_G_ANY) {
+	    bitmap_valid = 0;
+	    continue;
+	}
+	if (state->opcode == ONIBI_G_CHAR && state->literal_length == 1 &&
+	    (state->flags & 1U) == 0) {
+	    physical.first_bitmap[state->literal[0] >> 3] |=
+		(unsigned char)(1U << (state->literal[0] & 7));
+	    bitmap_have = 1;
+	}
+	else {
+	    bitmap_valid = 0;
+	}
+    }
+    if (bitmap_valid && bitmap_have)
+	features |= ONIBI_RSEQ_FEATURE_FIRST_BITMAP;
+    else
+	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
+    physical.features = features;
+    physical.prefix_length = 0;
+    memset(physical.prefix, 0, sizeof(physical.prefix));
+    if (!ignorecase && r_start_edge_records.count == 1 &&
+	r_start_edge_records.entries[0].actions.count == 0) {
+	long current = r_start_edge_records.entries[0].to;
+	while (current >= 0 && (size_t)current < state_records.count &&
+	       physical.prefix_length < sizeof(physical.prefix)) {
+	    OnibiGirStateEntry *state = &state_records.entries[current];
+	    if (state->opcode != ONIBI_G_CHAR || state->literal_length == 0 ||
+		state->literal_length >
+		    sizeof(physical.prefix) - physical.prefix_length)
+		break;
+	    memcpy(physical.prefix + physical.prefix_length, state->literal,
+		   state->literal_length);
+	    physical.prefix_length += state->literal_length;
+	    size_t outgoing = 0;
+	    for (size_t e = 0; e < r_edge_records.count; e++)
+		if (r_edge_records.entries[e].from == current) outgoing++;
+	    if (outgoing != 1) break;
+	    OnibiGirEdgeEntry *next = NULL;
+	    for (size_t e = 0; e < r_edge_records.count; e++)
+		if (r_edge_records.entries[e].from == current) {
+		    if (r_edge_records.entries[e].actions.count != 0)
+			next = NULL;
+		    else
+			next = &r_edge_records.entries[e];
+		    break;
+		}
+	    if (!next || next->to < 0 ||
+		(size_t)next->to >= state_records.count)
+		break;
+	    current = next->to;
+	}
+    }
+    if (physical.prefix_length == 0)
+	memset(physical.prefix, 0, sizeof(physical.prefix));
+    physical.features = features;
     VALUE blob = rb_str_new(NULL, (long)offset);
     memset(RSTRING_PTR(blob), 0, (size_t)offset);
     memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));

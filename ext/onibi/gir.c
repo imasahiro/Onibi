@@ -312,7 +312,8 @@ onibi_rseq_physical_action_op(OnibiGActionOp code)
 		 : code == ONIBI_GA_TEST_COUNTER_LT ||
 			 code == ONIBI_GA_TEST_COUNTER_GE
 		     ? ONIBI_RA_COUNTER_TEST
-		     : ONIBI_RA_END);
+		 : code == ONIBI_GA_PROGRESS ? ONIBI_RA_PROGRESS
+					     : ONIBI_RA_END);
 }
 static void
 onibi_rseq_class_payload_vector_init(OnibiRSeqClassPayloadVector *vector)
@@ -378,14 +379,58 @@ typedef struct {
     uint8_t count;
 } OnibiCaseFoldExpansion;
 
-/* Small fold DAG node.  The vector form supports 1:1 and 1:N folds without
- * making the class normalizer call tolower for each semantic edge. */
+static unsigned char
+onibi_ascii_fold(unsigned char value)
+{
+    return (value >= 'A' && value <= 'Z') ? (unsigned char)(value + ('a' - 'A'))
+					  : value;
+}
+static int
+onibi_ascii_alpha(int c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
+static int
+onibi_ascii_digit(int c)
+{
+    return c >= '0' && c <= '9';
+}
+static int
+onibi_ascii_space(int c)
+{
+    return c == ' ' || (c >= '\t' && c <= '\r');
+}
+static int
+onibi_ascii_xdigit(int c)
+{
+    return onibi_ascii_digit(c) || (c >= 'A' && c <= 'F') ||
+	   (c >= 'a' && c <= 'f');
+}
+static int
+onibi_ascii_alnum(int c)
+{
+    return onibi_ascii_alpha(c) || onibi_ascii_digit(c);
+}
+
+/* Small fold DAG node for ASCII-compatible patterns. */
 static OnibiCaseFoldExpansion
 onibi_casefold_expand(unsigned char value)
 {
     OnibiCaseFoldExpansion expansion = {{value, 0, 0}, 1};
-    unsigned char lower = (unsigned char)tolower(value);
-    unsigned char upper = (unsigned char)toupper(value);
+    if (onibi_compile_encoding && value >= 0x80) {
+	OnigCaseFoldCodeItem items[3];
+	OnigUChar input[1] = {value};
+	int count = ONIGENC_GET_CASE_FOLD_CODES_BY_STR(
+	    (OnigEncoding)onibi_compile_encoding, ONIGENC_CASE_FOLD_MIN, input,
+	    input + 1, items);
+	for (int i = 0; i < count && expansion.count < 3; i++)
+	    if (items[i].byte_len == 1)
+		expansion.values[expansion.count++] = items[i].code[0];
+    }
+    unsigned char lower = onibi_ascii_fold(value);
+    unsigned char upper = (value >= 'a' && value <= 'z')
+			      ? (unsigned char)(value - ('a' - 'A'))
+			      : value;
     if (lower != value) expansion.values[expansion.count++] = lower;
     if (upper != value && upper != lower && expansion.count < 3)
 	expansion.values[expansion.count++] = upper;
@@ -490,16 +535,18 @@ onibi_class_bitmap(VALUE payload, int fold)
     VALUE escape_name = onibi_hash_value_id(payload, id_key_name);
     ID escape_name_id = onibi_token_name_id(payload);
     if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
-	int upper = isupper((unsigned char)RSTRING_PTR(escape_name)[0]);
-	int code = tolower((unsigned char)RSTRING_PTR(escape_name)[0]);
+	int upper = ((unsigned char)RSTRING_PTR(escape_name)[0] >= 'A' &&
+		     (unsigned char)RSTRING_PTR(escape_name)[0] <= 'Z');
+	int code = onibi_ascii_fold((unsigned char)RSTRING_PTR(escape_name)[0]);
 	for (int c = 0; c < 256; c++) {
 	    int hit =
 		code == 'd'
-		    ? isdigit(c)
+		    ? onibi_ascii_digit(c)
 		    : (code == 's'
-			   ? isspace(c)
-			   : (code == 'w' ? (isalnum(c) || c == '_')
-					  : (code == 'h' ? isxdigit(c) : 0)));
+			   ? onibi_ascii_space(c)
+			   : (code == 'w'
+				  ? (onibi_ascii_alnum(c) || c == '_')
+				  : (code == 'h' ? onibi_ascii_xdigit(c) : 0)));
 	    if (upper ? !hit : hit)
 		onibi_bitmap_set(bits, (unsigned char)c, fold);
 	}
@@ -565,26 +612,31 @@ class_children:
 	    }
 	    int escape_code =
 		NIL_P(name)
-		    ? tolower((unsigned char)NUM2INT(child_byte_value))
+		    ? onibi_ascii_fold((unsigned char)NUM2INT(child_byte_value))
 		    : (RSTRING_LEN(name) == 1
-			   ? tolower((unsigned char)RSTRING_PTR(name)[0])
+			   ? onibi_ascii_fold(
+				 (unsigned char)RSTRING_PTR(name)[0])
 			   : 0);
 	    if (escape_code == 'r' || escape_code == 'p' ||
 		escape_code == 'x' || escape_code == 'u')
 		rb_raise(eRegexpError, "escape is not supported in RSeq class");
 	    int upper = NIL_P(name)
-			    ? isupper((unsigned char)NUM2INT(child_byte_value))
+			    ? (NUM2INT(child_byte_value) >= 'A' &&
+			       NUM2INT(child_byte_value) <= 'Z')
 			    : (RSTRING_LEN(name) == 1 &&
-			       isupper((unsigned char)RSTRING_PTR(name)[0]));
+			       ((unsigned char)RSTRING_PTR(name)[0] >= 'A' &&
+				(unsigned char)RSTRING_PTR(name)[0] <= 'Z'));
 	    int code = escape_code;
 	    for (int c = 0; c < 256; c++) {
-		int hit = code == 'd'
-			      ? isdigit(c)
-			      : (code == 's'
-				     ? isspace(c)
-				     : (code == 'w'
-					    ? (isalnum(c) || c == '_')
-					    : (code == 'h' ? isxdigit(c) : 0)));
+		int hit =
+		    code == 'd'
+			? onibi_ascii_digit(c)
+			: (code == 's'
+			       ? onibi_ascii_space(c)
+			       : (code == 'w'
+				      ? (onibi_ascii_alnum(c) || c == '_')
+				      : (code == 'h' ? onibi_ascii_xdigit(c)
+						     : 0)));
 		if (upper ? !hit : hit)
 		    onibi_bitmap_set(bits, (unsigned char)c, fold);
 	    }
@@ -594,15 +646,16 @@ class_children:
 	    ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
 	    OnibiPosixKind posix = onibi_posix_kind_id(property);
 	    for (int c = 0; c < 256; c++) {
-		int hit = posix == ONIBI_POSIX_ALPHA   ? isalpha(c)
-			  : posix == ONIBI_POSIX_DIGIT ? isdigit(c)
-			  : posix == ONIBI_POSIX_ALNUM ? isalnum(c)
-			  : posix == ONIBI_POSIX_SPACE ? isspace(c)
+		int hit = posix == ONIBI_POSIX_ALPHA   ? onibi_ascii_alpha(c)
+			  : posix == ONIBI_POSIX_DIGIT ? onibi_ascii_digit(c)
+			  : posix == ONIBI_POSIX_ALNUM ? onibi_ascii_alnum(c)
+			  : posix == ONIBI_POSIX_SPACE ? onibi_ascii_space(c)
 			  : posix == ONIBI_POSIX_BLANK ? (c == ' ' || c == '\t')
-			  : posix == ONIBI_POSIX_LOWER ? islower(c)
-			  : posix == ONIBI_POSIX_UPPER ? isupper(c)
-			  : posix == ONIBI_POSIX_WORD ? (isalnum(c) || c == '_')
-			  : posix == ONIBI_POSIX_XDIGIT ? isxdigit(c)
+			  : posix == ONIBI_POSIX_LOWER ? (c >= 'a' && c <= 'z')
+			  : posix == ONIBI_POSIX_UPPER ? (c >= 'A' && c <= 'Z')
+			  : posix == ONIBI_POSIX_WORD
+			      ? (onibi_ascii_alnum(c) || c == '_')
+			  : posix == ONIBI_POSIX_XDIGIT ? onibi_ascii_xdigit(c)
 							: 0;
 		if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
 	    }

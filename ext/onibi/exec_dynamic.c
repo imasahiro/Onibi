@@ -1,7 +1,23 @@
 static int
 onibi_rseq_word_byte(unsigned char byte)
 {
-    return isalnum(byte) || byte == '_';
+    return ((byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') ||
+	    (byte >= '0' && byte <= '9') || byte == '_');
+}
+
+static int
+onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
+			  size_t length, int fold)
+{
+    for (size_t i = 0; i < length; i++) {
+	unsigned char a = left[i], b = right[i];
+	if (fold) {
+	    if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + ('a' - 'A'));
+	    if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + ('a' - 'A'));
+	}
+	if (a != b) return 0;
+    }
+    return 1;
 }
 
 static int
@@ -29,7 +45,20 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 		return 0;
 	    continue;
 	}
-	if (action->op == ONIBI_RA_MATCH_RESET) continue;
+	if (action->op == ONIBI_RA_MATCH_RESET) {
+	    /* MATCH_RESET changes the reported start, not the VM attempt start.
+	     */
+	    if (onibi_active_exec_ctx)
+		onibi_active_exec_ctx->reported_start = pos;
+	    continue;
+	}
+	if (action->op == ONIBI_RA_PROGRESS) {
+	    if (!counters || action->arg16 >= counter_count) return 0;
+	    long marker = pos + 1;
+	    if (counters[action->arg16] == marker) return 0;
+	    counters[action->arg16] = marker;
+	    continue;
+	}
 	if (action->op == ONIBI_RA_COUNTER_SET ||
 	    action->op == ONIBI_RA_COUNTER_ADD ||
 	    action->op == ONIBI_RA_COUNTER_TEST) {
@@ -105,9 +134,12 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
     if (visited_size > SIZE_MAX / sizeof(onibi_simple_frame_t)) return -1;
     unsigned char *visited = (unsigned char *)alloca(visited_size);
     memset(visited, 0, visited_size);
-    int use_visited = header->counter_count == 0 &&
-		      header->capture_count == 0 &&
-		      header->subprogram_count == 1;
+    /* A state/position revisit is a zero-progress cycle.  Keep the guard
+     * active even when captures exist; capture actions do not consume input
+     * and must not permit an unbounded nullable repetition. */
+    /* Progress slot equivalent for the PoC: one bit per state/position.
+     * A second visit means the nullable iteration made no input progress. */
+    int progress_guard = 1;
     size_t stack_capacity = visited_size;
     onibi_simple_frame_t *stack =
 	(onibi_simple_frame_t *)alloca(stack_capacity * sizeof(*stack));
@@ -138,6 +170,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    stack_capacity * ONIBI_NATIVE_CALL_LIMIT * sizeof(uint32_t));
     }
     size_t stack_size = 0;
+    /* Start edges use the same checked push invariant as successor edges. */
+    if ((size_t)header->start_edge_count > stack_capacity) return -1;
     for (uint32_t i = header->start_edge_count; i > 0; i--) {
 	const OnibiREdge *edge = &edges[header->start_edge_base + (i - 1U)];
 	long *branch_counters =
@@ -161,16 +195,18 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    *matched_end = start;
 	    return 1;
 	}
-	if (edge->destination < header->state_count)
+	if (edge->destination < header->state_count) {
+	    if (stack_size >= stack_capacity) return -1;
 	    stack[stack_size++] = (onibi_simple_frame_t){
 		edge->destination, start,	   branch_counters,
 		branch_captures,   branch_returns, 0};
+	}
     }
     while (stack_size > 0) {
 	onibi_simple_frame_t frame = stack[--stack_size];
 	if (frame.pos < 0 || frame.pos > RSTRING_LEN(str)) continue;
 	size_t mark = (size_t)frame.state * span + (size_t)frame.pos;
-	if (use_visited) {
+	if (progress_guard) {
 	    if (visited[mark]) continue;
 	    visited[mark] = 1;
 	}
@@ -280,10 +316,12 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	    else if (state->op == ONIBI_RS_CHAR) {
 		const OnibiLiteralDesc *literal =
 		    &view->literals[state->payload];
-		hit =
-		    frame.pos + literal->data_length <= RSTRING_LEN(str) &&
-		    memcmp(bytes + frame.pos, view->blob + literal->data_offset,
-			   literal->data_length) == 0;
+		hit = frame.pos + literal->data_length <= RSTRING_LEN(str) &&
+		      onibi_ascii_literal_equal(
+			  bytes + frame.pos, view->blob + literal->data_offset,
+			  literal->data_length,
+			  (literal->flags &
+			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
 		if (hit) next_pos += literal->data_length - 1;
 	    }
 	    else if (state->op == ONIBI_RS_CLASS) {
@@ -291,7 +329,6 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		const unsigned char *bitmap = view->blob + klass->data_offset;
 		hit = (bitmap[bytes[frame.pos] >> 3] &
 		       (1U << (bytes[frame.pos] & 7))) != 0;
-		if (klass->flags & ONIBI_RSEQ_CLASS_FLAG_NEGATED) hit = !hit;
 	    }
 	    else
 		hit = bytes[frame.pos] != '\n';
@@ -412,10 +449,12 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		const OnibiLiteralDesc *literal =
 		    &view->literals[state->payload];
 		step_width = literal->data_length;
-		hit =
-		    position + step_width <= RSTRING_LEN(str) &&
-		    memcmp(RSTRING_PTR(str) + position,
-			   view->blob + literal->data_offset, step_width) == 0;
+		hit = position + step_width <= RSTRING_LEN(str) &&
+		      onibi_ascii_literal_equal(
+			  (const unsigned char *)RSTRING_PTR(str) + position,
+			  view->blob + literal->data_offset, step_width,
+			  (literal->flags &
+			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
 	    }
 	    else if (state->op == ONIBI_RS_CLASS) {
 		const unsigned char *bitmap =
@@ -424,9 +463,6 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		    (bitmap[(unsigned char)RSTRING_PTR(str)[position] >> 3] &
 		     (1U << ((unsigned char)RSTRING_PTR(str)[position] & 7))) !=
 		    0;
-		if (view->classes[state->payload].flags &
-		    ONIBI_RSEQ_CLASS_FLAG_NEGATED)
-		    hit = !hit;
 	    }
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;

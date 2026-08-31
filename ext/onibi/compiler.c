@@ -6,6 +6,13 @@ static VALUE onibi_class_payload_with_ctypes(VALUE payload);
 static int onibi_unicode_ctype_id(ID property);
 
 typedef struct {
+    uint32_t rseq_features;
+    uint32_t capture_count;
+    uint32_t counter_count;
+    OnibiExecutionKind execution_kind;
+} VerifiedGIRAnalysis;
+
+typedef struct {
     OnibiRSeqSubprogramVector subprograms;
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
@@ -14,6 +21,7 @@ typedef struct {
     long capture_count;
     long counter_count;
     int options;
+    VerifiedGIRAnalysis analysis;
 } OnibiCompiled;
 
 /* Compiler pass contracts.  These records make ownership and pass order
@@ -557,7 +565,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    int code = NIL_P(name)
 			   ? 0
 			   : (RSTRING_LEN(name) == 1
-				  ? tolower((unsigned char)RSTRING_PTR(name)[0])
+				  ? onibi_ascii_fold(
+					(unsigned char)RSTRING_PTR(name)[0])
 				  : 0);
 	    if ((NIL_P(name) || RSTRING_LEN(name) <= 1) &&
 		(code == 'r' || code == 'p' || code == 'u'))
@@ -588,12 +597,15 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	int grapheme_escape =
 	    type_code == ONIBI_AST_ESCAPE &&
 	    ((NIL_P(escape_name_for_op) &&
-	      tolower((unsigned char)NUM2INT(onibi_compile_node_field(
+	      onibi_ascii_fold((unsigned char)NUM2INT(onibi_compile_node_field(
 		  builder, c_node, semantic_node, id_key_byte))) == 'x') ||
 	     (!NIL_P(escape_name_for_op) &&
 	      RSTRING_LEN(escape_name_for_op) == 1 &&
-	      tolower((unsigned char)RSTRING_PTR(escape_name_for_op)[0]) ==
-		  'x'));
+	      onibi_ascii_fold(
+		  (unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
+	if (grapheme_escape)
+	    rb_raise(eRegexpError,
+		     "grapheme matching is not available in this PoC");
 	long id = builder->next_id++;
 	OnibiGStateOp op =
 	    type_code == ONIBI_AST_LITERAL
@@ -608,7 +620,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    !RB_INTEGER_TYPE_P(node_reference)) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_byte),
-			 INT2NUM(tolower(NUM2INT(
+			 INT2NUM(onibi_ascii_fold((unsigned char)NUM2INT(
 			     onibi_hash_value_id(payload, id_key_byte)))));
 	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
 	    rb_obj_freeze(payload);
@@ -1193,6 +1205,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	}
 	else if (NIL_P(max_value)) {
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
+	    long progress_slot =
+		repeat.nullable ? builder->counter_count++ : -1;
 	    if (result.starts.count == 0)
 		onibi_id_vector_append(&result.starts, &repeat.starts);
 	    if (!repeat.nullable)
@@ -1214,7 +1228,17 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		}
 	    }
 	    if (repeat.nullable) {
-		onibi_connect_fragment(builder, &repeat.exits, &repeat.starts);
+		OnibiGActionVector progress_actions;
+		onibi_g_action_vector_init(&progress_actions);
+		if (progress_slot >= 0)
+		    onibi_g_action_vector_push(
+			&progress_actions,
+			onibi_counter_action(ONIBI_GA_PROGRESS, progress_slot,
+					     Qnil));
+		onibi_connect_fragment_actions(builder, &repeat.exits,
+					       &repeat.starts,
+					       &progress_actions, 0);
+		onibi_g_action_vector_free(&progress_actions);
 	    }
 	    else {
 		OnibiGActionVector loop_actions = onibi_g_action_vector_concat(
@@ -1337,43 +1361,6 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
     *root_entry_out = root_entry;
 }
 
-/* Analyze pass output: derive counter state requirements. */
-static long
-onibi_compiler_pass_count_counters(const onibi_gir_builder_t *builder,
-				   const OnibiGirEdgeVector *start_edges)
-{
-    long count = builder->counter_count;
-    for (size_t i = 0; i < builder->edges.count; i++) {
-	const OnibiGActionVector *actions = &builder->edges.entries[i].actions;
-	for (size_t j = 0; j < actions->count; j++) {
-	    const OnibiGAction *action = &actions->entries[j];
-	    OnibiGActionOp code = action->code;
-	    if (code == ONIBI_GA_COUNTER_INIT ||
-		code == ONIBI_GA_COUNTER_INCREMENT ||
-		code == ONIBI_GA_TEST_COUNTER_LT ||
-		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = action->slot;
-		if (slot + 1 > count) count = slot + 1;
-	    }
-	}
-    }
-    for (size_t i = 0; i < start_edges->count; i++) {
-	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
-	for (size_t j = 0; j < actions->count; j++) {
-	    const OnibiGAction *action = &actions->entries[j];
-	    OnibiGActionOp code = action->code;
-	    if (code == ONIBI_GA_COUNTER_INIT ||
-		code == ONIBI_GA_COUNTER_INCREMENT ||
-		code == ONIBI_GA_TEST_COUNTER_LT ||
-		code == ONIBI_GA_TEST_COUNTER_GE) {
-		long slot = action->slot;
-		if (slot + 1 > count) count = slot + 1;
-	    }
-	}
-    }
-    return count;
-}
-
 static void
 onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder)
 {
@@ -1387,12 +1374,77 @@ onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder)
     }
 }
 
-static void
-onibi_compiler_pass_classify(const onibi_gir_builder_t *builder)
+static VerifiedGIRAnalysis
+onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
+			     const OnibiGirEdgeVector *start_edges)
 {
-    /* Classification is kept as a named boundary. RSeq lowering currently
-     * derives the execution class from the published GIR records. */
-    (void)builder;
+    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0,
+				  ONIBI_EXEC_REGULAR};
+    if (result.capture_count > 0)
+	result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
+    for (size_t i = 0; i < builder->states.count; i++) {
+	const OnibiGirStateEntry *state = &builder->states.entries[i];
+	if (state->opcode == ONIBI_G_GRAPHEME ||
+	    state->opcode == ONIBI_G_BACKREF || state->opcode == ONIBI_G_CALL ||
+	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
+	    result.execution_kind = ONIBI_EXEC_DYNAMIC;
+	if (state->opcode == ONIBI_G_BACKREF)
+	    result.rseq_features |= ONIBI_RSEQ_FEATURE_BACKREF;
+    }
+    for (size_t i = 0; i < builder->edges.count; i++) {
+	const OnibiGActionVector *actions = &builder->edges.entries[i].actions;
+	for (size_t j = 0; j < actions->count; j++) {
+	    const OnibiGAction *action = &actions->entries[j];
+	    switch (action->code) {
+	    case ONIBI_GA_ASSERT_POSITION:
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
+		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
+		    action->assert_kind == ONIBI_RAP_LOOKBEHIND)
+		    result.rseq_features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
+		if (result.execution_kind == ONIBI_EXEC_REGULAR)
+		    result.execution_kind = ONIBI_EXEC_TAGGED;
+		break;
+	    case ONIBI_GA_MATCH_RESET:
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_MATCH_RESET;
+		if (result.execution_kind == ONIBI_EXEC_REGULAR)
+		    result.execution_kind = ONIBI_EXEC_TAGGED;
+		break;
+	    case ONIBI_GA_COUNTER_INIT:
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_COUNTER;
+		break;
+	    case ONIBI_GA_CAPTURE_OPEN:
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
+		break;
+	    default: break;
+	    }
+	    if (action->code == ONIBI_GA_PROGRESS ||
+		action->code == ONIBI_GA_COUNTER_INIT ||
+		action->code == ONIBI_GA_COUNTER_INCREMENT ||
+		action->code == ONIBI_GA_TEST_COUNTER_LT ||
+		action->code == ONIBI_GA_TEST_COUNTER_GE) {
+		if (action->has_slot &&
+		    (uint32_t)action->slot + 1U > result.counter_count)
+		    result.counter_count = (uint32_t)action->slot + 1U;
+		if (result.execution_kind == ONIBI_EXEC_REGULAR)
+		    result.execution_kind = ONIBI_EXEC_TAGGED;
+	    }
+	}
+    }
+    for (size_t i = 0; i < start_edges->count; i++) {
+	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
+	for (size_t j = 0; j < actions->count; j++) {
+	    const OnibiGAction *action = &actions->entries[j];
+	    if (action->code == ONIBI_GA_ASSERT_POSITION) {
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
+		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
+		    action->assert_kind == ONIBI_RAP_LOOKBEHIND)
+		    result.rseq_features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
+		if (result.execution_kind == ONIBI_EXEC_REGULAR)
+		    result.execution_kind = ONIBI_EXEC_TAGGED;
+	    }
+	}
+    }
+    return result;
 }
 
 static void
@@ -1422,7 +1474,7 @@ static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			    OnibiGirEdgeVector *start_edges, long accept,
 			    long root_entry, long counter_count,
-			    int parsed_options)
+			    int parsed_options, VerifiedGIRAnalysis analysis)
 {
     onibi_rseq_subprogram_vector_store(
 	&builder->subprograms, 0,
@@ -1446,7 +1498,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
     compiled_result->accept = accept;
     compiled_result->capture_count = builder->capture_count;
-    compiled_result->counter_count = counter_count;
+    compiled_result->counter_count = analysis.counter_count;
+    compiled_result->analysis = analysis;
     compiled_result->options = parsed_options;
     return result;
 }
@@ -1456,6 +1509,7 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
 {
     (void)self;
     OnibiParsed *parsed_data = onibi_parsed_get(parsed);
+    onibi_compile_encoding = rb_enc_from_index(parsed_data->encoding_index);
     if (parsed_data->arena.root == ONIBI_AST_NONE)
 	rb_raise(rb_eArgError, "compiler requires parser output");
     OnibiParseOutput parse = {parsed_data, parsed_data->options};
@@ -1486,13 +1540,12 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     OnibiGirOutput gir = {&builder};
     (void)gir;
     onibi_compiler_pass_verify_gir(&builder);
-    onibi_compiler_pass_classify(&builder);
+    VerifiedGIRAnalysis analysis =
+	onibi_compiler_pass_classify(&builder, &start_edge_records);
     onibi_compiler_pass_optimize(&builder);
-    long counter_count =
-	onibi_compiler_pass_count_counters(&builder, &start_edge_records);
-    VALUE result =
-	onibi_compiler_pass_publish(&builder, &start_edge_records, accept,
-				    root_entry, counter_count, parsed_options);
+    VALUE result = onibi_compiler_pass_publish(
+	&builder, &start_edge_records, accept, root_entry,
+	analysis.counter_count, parsed_options, analysis);
     onibi_gir_edge_vector_free(&start_edge_records);
     onibi_guard_vector_free(&builder.capture_guards);
     onibi_guard_vector_free(&builder.exit_guards);

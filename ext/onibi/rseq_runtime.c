@@ -41,23 +41,23 @@ onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
     const OnibiRSeqHeader *header = view->header;
     if ((header->features & ONIBI_RSEQ_FEATURE_LOOKAROUND) != 0 ||
-	(header->flags & (ONIBI_RSEQ_HEADER_FLAG_IGNORECASE |
-			  ONIBI_RSEQ_HEADER_FLAG_MULTILINE)) != 0 ||
+	(header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
 	header->state_count == 0 || header->start_edge_count == 0)
 	return;
     for (uint32_t i = 0; i < header->state_count; i++) {
 	const OnibiRState *state = &view->states[i];
-	if (state->flags != 0) return;
+	if (state->flags != 0 &&
+	    !(state->op == ONIBI_RS_CLASS &&
+	      state->flags == ONIBI_RSEQ_STATE_FLAG_NEGATED))
+	    return;
 	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
 	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY &&
 	    state->op != ONIBI_RS_GRAPHEME && state->op != ONIBI_RS_BACKREF &&
 	    state->op != ONIBI_RS_CALL)
 	    return;
-	if (state->op == ONIBI_RS_CHAR &&
-	    view->literals[state->payload].flags != 0)
-	    return;
 	if (state->op == ONIBI_RS_CLASS &&
-	    view->classes[state->payload].flags != 0)
+	    (view->classes[state->payload].flags &
+	     ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0)
 	    return;
 	if (state->op == ONIBI_RS_CALL &&
 	    state->payload >= header->subprogram_count)
@@ -167,6 +167,10 @@ onibi_exec_regular(OnibiExecCtx *ctx)
     int result = onibi_rseq_regular_match(
 	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
 	ctx->search_origin, &ctx->matched_end);
+    if (result < 0)
+	result = onibi_rseq_backtracking_match(
+	    ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
+	    ctx->search_origin, &ctx->matched_end);
     return result > 0	? ONIBI_EXEC_STATUS_MATCH
 	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
 			: ONIBI_EXEC_STATUS_NO_MATCH;

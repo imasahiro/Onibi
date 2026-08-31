@@ -2,6 +2,8 @@ Init_onibi(void)
 {
     id_initialize = rb_intern("initialize");
     id_new = rb_intern("new");
+    id_match = rb_intern("match");
+    id_aref = rb_intern("[]");
     id_instance_method = rb_intern("instance_method");
     id_bind = rb_intern("bind");
     id_call = rb_intern("call");

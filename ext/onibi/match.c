@@ -41,11 +41,24 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
 	    exec_ctx.rseq = obj->rseq;
 	    exec_ctx.view = &obj->rseq_view;
 	    if (!onibi_character_boundary(str, start)) continue;
+	    if ((exec_ctx.program->features &
+		 ONIBI_RSEQ_FEATURE_FIRST_BITMAP) != 0 &&
+		start < RSTRING_LEN(str) &&
+		(exec_ctx.program
+		     ->first_bitmap[(unsigned char)RSTRING_PTR(str)[start] >>
+				    3] &
+		 (1U << ((unsigned char)RSTRING_PTR(str)[start] & 7))) == 0)
+		continue;
+	    if (exec_ctx.program->prefix_length > 0 &&
+		(start + exec_ctx.program->prefix_length > RSTRING_LEN(str) ||
+		 memcmp(RSTRING_PTR(str) + start, exec_ctx.program->prefix,
+			exec_ctx.program->prefix_length) != 0))
+		continue;
 	    rb_thread_check_ints();
 	    onibi_check_deadline();
 	    OnibiExecStatus result = onibi_execute(&exec_ctx);
 	    if (result == ONIBI_EXEC_STATUS_MATCH) {
-		if (match_start) *match_start = start;
+		if (match_start) *match_start = exec_ctx.reported_start;
 		if (match_end) *match_end = exec_ctx.matched_end;
 		onibi_deadline_ns = 0;
 		onibi_active_exec_ctx = NULL;
@@ -65,14 +78,6 @@ onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
     onibi_active_exec_ctx = NULL;
     /* No RSeq program is available for this input or feature set. */
     return -1;
-}
-
-static VALUE
-onibi_vm_match_p(VALUE self, VALUE str)
-{
-    long start = 0, end = 0;
-    int result = onibi_vm_search(self, str, 0, &start, &end);
-    return result > 0 ? Qtrue : Qfalse;
 }
 
 static VALUE
@@ -102,15 +107,26 @@ static VALUE
 onibi_case_equal(VALUE self, VALUE other)
 {
     if (!RB_TYPE_P(other, T_STRING)) return Qfalse;
-    return onibi_vm_match_p(self, other);
+    long start = 0, end = 0;
+    if (!onibi_vm_search(self, other, 0, &start, &end)) {
+	rb_backref_set(Qnil);
+	return Qfalse;
+    }
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    rb_funcall(obj->regexp, id_match, 1, other);
+    return Qtrue;
 }
 static VALUE
 onibi_last_match(int argc, VALUE *argv, VALUE klass)
 {
-    (void)argc;
-    (void)argv;
     (void)klass;
-    return Qnil;
+    VALUE match = rb_backref_get();
+    if (argc == 0) return match;
+    if (argc != 1)
+	rb_raise(rb_eArgError,
+		 "wrong number of arguments (given %d, expected 0..1)", argc);
+    return NIL_P(match) ? Qnil : rb_funcallv(match, id_aref, 1, argv);
 }
 static VALUE
 onibi_tilde(VALUE self)
@@ -118,8 +134,14 @@ onibi_tilde(VALUE self)
     VALUE input = rb_gv_get("$_");
     if (!RB_TYPE_P(input, T_STRING)) return Qnil;
     long start = 0, end = 0;
-    return onibi_vm_search(self, input, 0, &start, &end) ? LONG2NUM(start)
-							 : Qnil;
+    if (!onibi_vm_search(self, input, 0, &start, &end)) {
+	rb_backref_set(Qnil);
+	return Qnil;
+    }
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    rb_funcall(obj->regexp, id_match, 1, input);
+    return LONG2NUM(start);
 }
 static VALUE
 onibi_gsub(int argc, VALUE *argv, VALUE self)

@@ -181,10 +181,14 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    node->flags |= ONIBI_AST_NODE_CAPTURING;
 	    if (node->name.present) {
 		const unsigned char *name = arena->bytes + node->name.offset;
-		if (node->name.length == 0 || !isalpha(name[0]))
+		if (node->name.length == 0 ||
+		    !((name[0] >= 'A' && name[0] <= 'Z') ||
+		      (name[0] >= 'a' && name[0] <= 'z')))
 		    rb_raise(eRegexpError, "invalid capture name");
 		for (size_t i = 1; i < node->name.length; i++)
-		    if (!isalnum(name[i]) && name[i] != '_')
+		    if (!((name[i] >= 'A' && name[i] <= 'Z') ||
+			  (name[i] >= 'a' && name[i] <= 'z') ||
+			  (name[i] >= '0' && name[i] <= '9') || name[i] == '_'))
 			rb_raise(eRegexpError, "invalid capture name");
 	    }
 	}
@@ -392,7 +396,6 @@ onibi_parser_parse_internal(VALUE source, VALUE options,
 			    const OnibiTokenVector *tokens)
 {
     source = StringValue(source);
-    (void)source;
     if (tokens == NULL)
 	rb_raise(rb_eArgError, "parser requires a token vector");
     OnibiParsed *parsed;
@@ -400,6 +403,7 @@ onibi_parser_parse_internal(VALUE source, VALUE options,
 					 &onibi_parsed_type, parsed);
     onibi_ast_arena_init(&parsed->arena, tokens);
     parsed->ast_flags = 0;
+    parsed->encoding_index = rb_enc_get_index(source);
     parsed->options = onibi_option_mask(options);
     parsed->arena.root =
 	onibi_c_parse_range(tokens, &parsed->arena, 0, (long)tokens->count);
@@ -416,5 +420,3 @@ onibi_parser_parse_internal(VALUE source, VALUE options,
 	parsed->ast_flags |= ONIBI_AST_FLAG_NULLABLE_CAPTURE;
     return result;
 }
-
-

@@ -66,6 +66,7 @@ onibi_c_find_close(const OnibiTokenVector *tokens, long begin, long end,
 typedef struct {
     OnibiAstArena arena;
     int options;
+    int encoding_index;
     unsigned int ast_flags;
 } OnibiParsed;
 typedef struct {
@@ -116,5 +117,3 @@ static int onibi_ast_safe_multibyte_class(const OnibiAstArena *arena,
 					  OnibiAstId id);
 static int onibi_ast_nullable_scan(const OnibiAstArena *arena, OnibiAstId id,
 				   OnibiAstAnalysis *analysis);
-
-

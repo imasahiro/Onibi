@@ -91,7 +91,8 @@ enum {
     ONIBI_RSEQ_FEATURE_COUNTER = 1u << 2,
     ONIBI_RSEQ_FEATURE_MATCH_RESET = 1u << 3,
     ONIBI_RSEQ_FEATURE_ASSERTION = 1u << 4,
-    ONIBI_RSEQ_FEATURE_LOOKAROUND = 1u << 5
+    ONIBI_RSEQ_FEATURE_LOOKAROUND = 1u << 5,
+    ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6
 };
 
 typedef enum {
@@ -117,7 +118,8 @@ typedef enum {
     ONIBI_GA_COUNTER_INIT,
     ONIBI_GA_COUNTER_INCREMENT,
     ONIBI_GA_TEST_COUNTER_LT,
-    ONIBI_GA_TEST_COUNTER_GE
+    ONIBI_GA_TEST_COUNTER_GE,
+    ONIBI_GA_PROGRESS
 } OnibiGActionOp;
 
 typedef enum {
@@ -255,6 +257,9 @@ typedef struct {
     uint32_t descriptors_offset;
     uint32_t subprograms_offset;
     uint32_t blob_size;
+    uint8_t first_bitmap[32];
+    uint8_t prefix_length;
+    uint8_t prefix[31];
 } OnibiRSeqHeader;
 
 /* Read-only view over a published RSeq blob.  The VM uses this view for

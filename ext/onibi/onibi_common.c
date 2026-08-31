@@ -31,6 +31,7 @@
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
+static _Thread_local rb_encoding *onibi_compile_encoding = NULL;
 
 /* Match-local execution ABI.  The interpreter owns this object for the
  * complete search.  The pointer fields are storage owned by the context or
@@ -87,12 +88,15 @@ static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *view,
 				    VALUE subject, long start,
 				    long search_origin, long *matched_end);
+static int onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *view,
+					 VALUE subject, long start,
+					 long search_origin, long *matched_end);
 static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
-    id_match;
+    id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;
 static ID id_bytebegin, id_byteend, id_length;
 static int onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view);
@@ -149,7 +153,6 @@ static ID id_key_negative_name, id_key_negative;
 static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
-static VALUE onibi_vm_match_p(VALUE self, VALUE str);
 static int onibi_vm_search(VALUE self, VALUE str, long search_origin,
 			   long *match_start, long *match_end);
 static inline VALUE
