@@ -1431,6 +1431,19 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 {
     VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
 				  ONIBI_EXEC_REGULAR};
+    unsigned char *semantic = NULL;
+    if (builder->capture_count > 0) {
+	semantic = ALLOC_N(unsigned char, (size_t)builder->capture_count);
+	memset(semantic, 0, (size_t)builder->capture_count);
+    }
+#define MARK_SEMANTIC_CAPTURE(slot) \
+    do { \
+	uint32_t _slot = (uint32_t)(slot); \
+	if (semantic && _slot < result.capture_count && !semantic[_slot]) { \
+	    semantic[_slot] = 1; \
+	    result.semantic_capture_count++; \
+	} \
+    } while (0)
     if (result.capture_count > 0)
 	result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
     for (size_t i = 0; i < builder->states.count; i++) {
@@ -1440,7 +1453,7 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
 	    result.execution_kind = ONIBI_EXEC_DYNAMIC;
 	if (state->opcode == ONIBI_G_BACKREF)
-	    result.semantic_capture_count = result.capture_count;
+	    MARK_SEMANTIC_CAPTURE(state->value);
 	if (state->opcode == ONIBI_G_BACKREF)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }
@@ -1449,6 +1462,10 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	for (size_t j = 0; j < actions->count; j++) {
 	    const OnibiGAction *action = &actions->entries[j];
 	    switch (action->code) {
+	    case ONIBI_GA_TEST_CAPTURE:
+		MARK_SEMANTIC_CAPTURE(action->slot);
+		result.execution_kind = ONIBI_EXEC_DYNAMIC;
+		break;
 	    case ONIBI_GA_ASSERT_POSITION:
 		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
 		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
@@ -1483,10 +1500,14 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    }
 	}
     }
-    for (size_t i = 0; i < start_edges->count; i++) {
+	for (size_t i = 0; i < start_edges->count; i++) {
 	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
 	for (size_t j = 0; j < actions->count; j++) {
 	    const OnibiGAction *action = &actions->entries[j];
+	    if (action->code == ONIBI_GA_TEST_CAPTURE) {
+		MARK_SEMANTIC_CAPTURE(action->slot);
+		result.execution_kind = ONIBI_EXEC_DYNAMIC;
+	    }
 	    if (action->code == ONIBI_GA_ASSERT_POSITION) {
 		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
 		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
@@ -1497,6 +1518,8 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    }
 	}
     }
+#undef MARK_SEMANTIC_CAPTURE
+    if (semantic) xfree(semantic);
     return result;
 }
 

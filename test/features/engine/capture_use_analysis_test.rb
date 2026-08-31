@@ -21,4 +21,18 @@ class CaptureUseAnalysisTest < Minitest::Test
     assert_equal 1, info[:semantic_capture_count]
     assert_equal 2, info[:exec_kind]
   end
+
+  def test_only_backreference_target_is_semantic
+    info = Onibi::Regexp.new("(a)(b)\\1").send(:__onibi_diagnostics__, "aba")
+    assert_equal 2, info[:capture_count]
+    assert_equal 1, info[:semantic_capture_count]
+    assert_equal 2, info[:exec_kind]
+  end
+
+  def test_conditional_capture_test_is_semantic
+    info = Onibi::Regexp.new("(a)?(?(1)b|c)").send(:__onibi_diagnostics__, "c")
+    assert_equal 1, info[:capture_count]
+    assert_equal 1, info[:semantic_capture_count]
+    assert_equal 2, info[:exec_kind]
+  end
 end
