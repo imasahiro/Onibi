@@ -701,6 +701,10 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
 static OnibiExecStatus
 onibi_execute(OnibiExecCtx *ctx)
 {
+    if (onibi_inject_internal_error) {
+	onibi_inject_internal_error = 0;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
     switch ((OnibiExecutionKind)ctx->program->exec_kind) {
     case ONIBI_EXEC_REGULAR: return onibi_exec_regular(ctx);
     case ONIBI_EXEC_TAGGED: return onibi_exec_tagged(ctx);

@@ -175,6 +175,8 @@ Init_onibi(void)
 			     onibi_diagnostics_for, 1);
     rb_define_private_method(cRegexp, "__onibi_match_p_diagnostics__",
 			     onibi_match_p_diagnostics, 1);
+    rb_define_private_method(cRegexp, "__onibi_internal_error_diagnostics__",
+			     onibi_internal_error_diagnostics, 1);
     rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
     rb_define_const(cRegexp, "EXTENDED", INT2NUM(2));
     rb_define_const(cRegexp, "MULTILINE", INT2NUM(4));

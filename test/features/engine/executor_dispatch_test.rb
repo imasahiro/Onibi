@@ -41,4 +41,12 @@ class ExecutorDispatchTest < Minitest::Test
     assert_equal 1, info[:tagged]
     assert_equal 1, info[:dfs]
   end
+
+  def test_injected_executor_error_is_not_no_match
+    info = Onibi::Regexp.new("a").send(
+      :__onibi_internal_error_diagnostics__, "a"
+    )
+    assert_equal(-1, info[:status])
+    assert_equal 0, info[:regular]
+  end
 end

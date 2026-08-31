@@ -102,6 +102,7 @@ static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
+static _Thread_local int onibi_inject_internal_error = 0;
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
     id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;

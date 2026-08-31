@@ -249,5 +249,12 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
 			 ULONG2NUM(onibi_diagnostics.tag_events));
     return result;
 }
+
+static VALUE
+onibi_internal_error_diagnostics(VALUE self, VALUE subject)
+{
+    onibi_inject_internal_error = 1;
+    return onibi_diagnostics_for(self, subject);
+}
 /* Diagnostic and compatibility payload adapters.  Ruby Hash records created
  * here are never canonical compiler or runtime state. */
