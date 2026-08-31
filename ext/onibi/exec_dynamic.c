@@ -20,6 +20,44 @@ onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
     return 1;
 }
 
+typedef struct {
+    int matched;
+    long width;
+} OnibiConsumeResult;
+
+static OnibiConsumeResult
+onibi_rseq_consume(const OnibiRSeqView *view, const OnibiRState *state,
+			   VALUE str, long position)
+{
+    OnibiConsumeResult result = {0, 0};
+    if (position >= RSTRING_LEN(str)) return result;
+    if (state->op == ONIBI_RS_ANY) {
+	result.matched = (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
+			 bytes[position] != '\n';
+	result.width = 1;
+	return result;
+    }
+    if (state->op == ONIBI_RS_CLASS) {
+	const OnibiClassDesc *klass = &view->classes[state->payload];
+	const unsigned char *bitmap = view->blob + klass->data_offset;
+	result.matched = (bitmap[bytes[position] >> 3] &
+				 (1U << (bytes[position] & 7))) != 0;
+	result.width = 1;
+	return result;
+    }
+    if (state->op == ONIBI_RS_CHAR) {
+	const OnibiLiteralDesc *literal = &view->literals[state->payload];
+	result.width = literal->data_length;
+	result.matched = position + result.width <= RSTRING_LEN(str) &&
+		onibi_ascii_literal_equal(bytes + position,
+					   view->blob + literal->data_offset,
+					   result.width,
+					   (literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
+	return result;
+    }
+    return result;
+}
+
 static int
 onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   VALUE str, long pos, long search_origin,
@@ -313,28 +351,10 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	}
 	else if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
 		 state->op == ONIBI_RS_ANY) {
-	    if (frame.pos >= RSTRING_LEN(str))
-		hit = 0;
-	    else if (state->op == ONIBI_RS_CHAR) {
-		const OnibiLiteralDesc *literal =
-		    &view->literals[state->payload];
-		hit = frame.pos + literal->data_length <= RSTRING_LEN(str) &&
-		      onibi_ascii_literal_equal(
-			  bytes + frame.pos, view->blob + literal->data_offset,
-			  literal->data_length,
-			  (literal->flags &
-			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
-		if (hit) next_pos += literal->data_length - 1;
-	    }
-	    else if (state->op == ONIBI_RS_CLASS) {
-		const OnibiClassDesc *klass = &view->classes[state->payload];
-		const unsigned char *bitmap = view->blob + klass->data_offset;
-		hit = (bitmap[bytes[frame.pos] >> 3] &
-		       (1U << (bytes[frame.pos] & 7))) != 0;
-	    }
-	    else
-		hit = bytes[frame.pos] != '\n';
-	    if (hit) next_pos++;
+	    OnibiConsumeResult consumed =
+		onibi_rseq_consume(view, state, str, frame.pos);
+	    hit = consumed.matched;
+	    if (hit) next_pos += consumed.width;
 	}
 	else
 	    hit = 0;
@@ -493,29 +513,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		continue;
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
-	    int hit =
-		state->op == ONIBI_RS_ANY &&
-		((header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
-		 (unsigned char)RSTRING_PTR(str)[position] != '\n');
-	    if (state->op == ONIBI_RS_CHAR) {
-		const OnibiLiteralDesc *literal =
-		    &view->literals[state->payload];
-		step_width = literal->data_length;
-		hit = position + step_width <= RSTRING_LEN(str) &&
-		      onibi_ascii_literal_equal(
-			  (const unsigned char *)RSTRING_PTR(str) + position,
-			  view->blob + literal->data_offset, step_width,
-			  (literal->flags &
-			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
-	    }
-	    else if (state->op == ONIBI_RS_CLASS) {
-		const unsigned char *bitmap =
-		    view->blob + view->classes[state->payload].data_offset;
-		hit =
-		    (bitmap[(unsigned char)RSTRING_PTR(str)[position] >> 3] &
-		     (1U << ((unsigned char)RSTRING_PTR(str)[position] & 7))) !=
-		    0;
-	    }
+	    OnibiConsumeResult consumed =
+		onibi_rseq_consume(view, state, str, position);
+	    int hit = consumed.matched;
+	    step_width = consumed.width > 0 ? consumed.width : 1;
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;
 	    for (uint32_t e = 0; e < state->edge_count; e++) {
