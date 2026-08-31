@@ -41,4 +41,14 @@ class RegularFastAsciiTest < Minitest::Test
     assert_equal [0, 1], [info[:match_start], info[:match_end]]
     assert_equal 0, info[:dfs]
   end
+
+  def test_repeated_capture_matches_mri_range
+    _regexp, info = diagnostics("(a)+", "aaa")
+    assert_equal [[2, 3]], info[:captures]
+  end
+
+  def test_optional_capture_can_be_unset
+    _regexp, info = diagnostics("(a)?b", "b")
+    assert_equal [[-1, -1]], info[:captures]
+  end
 end

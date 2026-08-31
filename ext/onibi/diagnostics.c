@@ -122,7 +122,11 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	rb_hash_aset(result, ID2SYM(rb_intern("capture_count")),
 		     UINT2NUM(obj->rseq_view.header->capture_count));
 	rb_hash_aset(result, ID2SYM(rb_intern("semantic_capture_count")),
-		     UINT2NUM(obj->rseq_view.header->semantic_capture_count));
+			     UINT2NUM(obj->rseq_view.header->semantic_capture_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("start_edge_base")),
+			     UINT2NUM(obj->rseq_view.header->start_edge_base));
+	rb_hash_aset(result, ID2SYM(rb_intern("start_edge_count")),
+			     UINT2NUM(obj->rseq_view.header->start_edge_count));
     }
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
@@ -131,6 +135,8 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 					 ? 0
 					 : obj->rseq_view.header->capture_count);
     for (uint32_t i = 0; i < capture_slots / 2U; i++) {
+	if (capture_result[2U * i] >= 0 && capture_result[2U * i + 1U] < 0)
+	    capture_result[2U * i] = -1;
 	VALUE range = rb_ary_new_from_args(2, LONG2NUM(capture_result[2U * i]),
 					   LONG2NUM(capture_result[2U * i + 1U]));
 	rb_ary_push(captures, range);

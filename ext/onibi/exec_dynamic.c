@@ -452,14 +452,16 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	}
     }
     long position = start;
+    long *fallback_caps = capture_slots == 0 ? NULL
+	: ALLOCA_N(long, capture_slots);
+    if (fallback_caps)
+	for (uint32_t i = 0; i < capture_slots; i++) fallback_caps[i] = -1;
     for (;;) {
 	long step_width = 1;
 	size_t next_count = 0;
 	memset(next_bits, 0, bits_size);
 	int have_fallback = 0;
 	long fallback_end = 0;
-	long *fallback_caps = capture_slots == 0 ? NULL
-	    : ALLOCA_N(long, capture_slots);
 	for (size_t i = 0; i < current_count; i++) {
 	    uint32_t state_id = current[i];
 	    const OnibiRState *state = &view->states[state_id];
@@ -588,6 +590,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		return 1;
 	    }
 	    if (best_end >= 0) {
+		if (onibi_regular_capture_result && capture_slots != 0 &&
+		    fallback_caps)
+		    memcpy(onibi_regular_capture_result, fallback_caps,
+			   capture_slots * sizeof(long));
 		*matched_end = best_end;
 		return 1;
 	    }
