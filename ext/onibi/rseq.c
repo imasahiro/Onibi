@@ -984,6 +984,8 @@ onibi_match(int argc, VALUE *argv, VALUE self)
     }
     long start = 0, end = 0;
     int search_status = onibi_vm_search(self, str, origin, &start, &end);
+    if (search_status == -2)
+	rb_raise(eRegexpError, "Onibi execution failed");
     if (search_status == 0) {
 	rb_backref_set(Qnil);
 	return Qnil;
@@ -1015,6 +1017,8 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	int result = onibi_vm_search(self, str, origin, &start, &end);
 	if (result >= 0) return result ? Qtrue : Qfalse;
 	if (result < 0) {
+	    if (result == -2)
+		rb_raise(eRegexpError, "Onibi execution failed");
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)

@@ -98,6 +98,8 @@ onibi_scan(VALUE self, VALUE str)
 	long start = 0, end = 0;
 	int status = onibi_vm_search(self, str, origin, &start, &end);
 	if (status < 0) {
+	    if (status == -2)
+		rb_raise(eRegexpError, "Onibi execution failed");
 	    if (status == -1) {
 		onibi_regexp_t *obj;
 		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -129,6 +131,8 @@ onibi_case_equal(VALUE self, VALUE other)
 	return Qfalse;
 	}
 	if (status < 0) {
+	    if (status == -2)
+		rb_raise(eRegexpError, "Onibi execution failed");
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	    return RTEST(rb_funcall(obj->regexp, id_match, 1, other)) ? Qtrue : Qfalse;
@@ -187,6 +191,8 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	long start = 0, end = 0;
 	int status = onibi_vm_search(self, str, origin, &start, &end);
 	if (status < 0) {
+	    if (status == -2)
+		rb_raise(eRegexpError, "Onibi execution failed");
 	    if (status == -1) {
 		onibi_regexp_t *obj;
 		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
