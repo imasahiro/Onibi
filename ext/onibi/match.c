@@ -99,7 +99,7 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin, long *match_star
     onibi_deadline_ns = 0;
     onibi_active_exec_ctx = NULL;
     /* No RSeq program is available for this input or feature set. */
-    return -1;
+    return ONIBI_EXEC_STATUS_FALLBACK;
 }
 
 typedef struct {
