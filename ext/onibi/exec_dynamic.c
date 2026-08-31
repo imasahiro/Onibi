@@ -493,6 +493,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    /* Keep scanning this state's edges. A later continuation
 		     * can still win at the next position. */
+		    if (next_count == 0) {
+			*matched_end = position + step_width;
+			return 1;
+		    }
 		    have_fallback = 1;
 		    fallback_end = position + 1;
 		    best_end = fallback_end;
