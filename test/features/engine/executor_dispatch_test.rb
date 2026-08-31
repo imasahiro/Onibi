@@ -11,6 +11,7 @@ class ExecutorDispatchTest < Minitest::Test
     assert_equal 1, info[:dynamic]
     assert_equal 1, info[:dfs]
     assert_equal 1, info[:fallback]
+    assert_equal 2, info[:status]
   end
 
   def test_regular_unsupported_path_never_enters_dfs
@@ -29,6 +30,7 @@ class ExecutorDispatchTest < Minitest::Test
     refute info[:regular_capable]
     refute_equal 0, info[:exec_kind]
     assert_equal 0, info[:dfs]
+    assert_equal 2, info[:status]
   end
 
   def test_assertion_uses_tagged_executor
