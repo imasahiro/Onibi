@@ -20,6 +20,42 @@ onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
     return 1;
 }
 
+/* One semantic consume operation for the ASCII RSeq primitives. */
+static int
+onibi_rseq_consume_ascii(const OnibiRSeqView *view, const OnibiRState *state,
+			 VALUE str, long position, long *next_position)
+{
+    if (position < 0 || position >= RSTRING_LEN(str)) return 0;
+    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
+    if (state->op == ONIBI_RS_CHAR) {
+	const OnibiLiteralDesc *literal = &view->literals[state->payload];
+	if (position + literal->data_length > RSTRING_LEN(str) ||
+	    !onibi_ascii_literal_equal(
+		bytes + position, view->blob + literal->data_offset,
+		literal->data_length,
+		(literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0))
+	    return 0;
+	*next_position = position + literal->data_length;
+	return 1;
+    }
+    if (state->op == ONIBI_RS_CLASS) {
+	const OnibiClassDesc *klass = &view->classes[state->payload];
+	const unsigned char *bitmap = view->blob + klass->data_offset;
+	if ((bitmap[bytes[position] >> 3] & (1U << (bytes[position] & 7))) == 0)
+	    return 0;
+	*next_position = position + 1;
+	return 1;
+    }
+    if (state->op == ONIBI_RS_ANY) {
+	if (bytes[position] == '\n' &&
+	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) == 0)
+	    return 0;
+	*next_position = position + 1;
+	return 1;
+    }
+    return 0;
+}
+
 static int
 onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   VALUE str, long pos, long search_origin,
@@ -500,29 +536,10 @@ onibi_rseq_regular_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		continue;
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
-	    int hit =
-		state->op == ONIBI_RS_ANY &&
-		((header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
-		 (unsigned char)RSTRING_PTR(str)[position] != '\n');
-	    if (state->op == ONIBI_RS_CHAR) {
-		const OnibiLiteralDesc *literal =
-		    &view->literals[state->payload];
-		step_width = literal->data_length;
-		hit = position + step_width <= RSTRING_LEN(str) &&
-		      onibi_ascii_literal_equal(
-			  (const unsigned char *)RSTRING_PTR(str) + position,
-			  view->blob + literal->data_offset, step_width,
-			  (literal->flags &
-			   ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0);
-	    }
-	    else if (state->op == ONIBI_RS_CLASS) {
-		const unsigned char *bitmap =
-		    view->blob + view->classes[state->payload].data_offset;
-		hit =
-		    (bitmap[(unsigned char)RSTRING_PTR(str)[position] >> 3] &
-		     (1U << ((unsigned char)RSTRING_PTR(str)[position] & 7))) !=
-		    0;
-	    }
+	    long next_position = position;
+	    int hit = onibi_rseq_consume_ascii(view, state, str, position,
+					       &next_position);
+	    if (hit) step_width = next_position - position;
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;
 	    for (uint32_t e = 0; e < state->edge_count; e++) {
