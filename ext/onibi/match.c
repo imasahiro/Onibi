@@ -150,6 +150,14 @@ onibi_scan(VALUE self, VALUE str)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     VALUE result = rb_ary_new();
+    if (!NIL_P(obj->rseq) && obj->rseq_view_valid &&
+	obj->rseq_view.header->capture_count > 0) {
+	/* Raw ranges come from the VM diagnostics path.  MRI scan remains a
+	 * temporary MatchData materializer until direct RMatch construction is
+	 * available on the supported MRI version. */
+	VALUE plain = rb_str_dup(str);
+	return rb_funcall(plain, id_scan, 1, obj->regexp);
+    }
     long origin = 0;
     for (;;) {
 	long start = 0, end = 0;
@@ -157,10 +165,11 @@ onibi_scan(VALUE self, VALUE str)
 	if (status < 0) {
 	    if (status == -2)
 		rb_raise(eRegexpError, "Onibi execution failed");
-	    if (status == -1) {
+	if (status == -1) {
 		onibi_regexp_t *obj;
 		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-		return rb_funcall(obj->regexp, id_scan, 1, str);
+		VALUE plain = rb_str_dup(str);
+		return rb_funcall(plain, id_scan, 1, obj->regexp);
 	    }
 	    rb_raise(eRegexpError, "Onibi execution failed");
 	}
@@ -243,6 +252,13 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(str);
     if (!rb_block_given_p()) StringValue(replacement);
+    if (!rb_block_given_p() && RB_TYPE_P(replacement, T_STRING) &&
+	memchr(RSTRING_PTR(replacement), '\\', RSTRING_LEN(replacement)) != NULL) {
+	/* MRI expands numbered and named replacement references.  Keep this
+	 * compatibility boundary explicit until Onibi owns MatchData. */
+	VALUE plain = rb_str_dup(str);
+	return rb_funcall(plain, id_gsub, 2, obj->regexp, replacement);
+    }
     VALUE result = rb_str_buf_new(RSTRING_LEN(str));
     rb_enc_associate(result, rb_enc_get(str));
     long origin = 0, copied = 0;
@@ -255,7 +271,8 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	    if (status == -1) {
 		onibi_regexp_t *obj;
 		TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-		return rb_funcall(obj->regexp, id_gsub, argc, argv);
+		VALUE plain = rb_str_dup(str);
+		return rb_funcall(plain, id_gsub, 2, obj->regexp, replacement);
 	    }
 	    rb_raise(eRegexpError, "Onibi execution failed");
 	}
