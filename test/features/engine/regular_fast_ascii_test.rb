@@ -25,6 +25,7 @@ class RegularFastAsciiTest < Minitest::Test
     assert_equal 0, info[:fallback]
     assert_equal 0, info[:semantic_capture_count]
     assert_equal [[0, 1]], info[:captures]
+    assert_operator info[:tag_events], :>, 0
     assert_equal 0, regexp.send(:__onibi_match_p_diagnostics__, "a")[:tag_events]
   end
 

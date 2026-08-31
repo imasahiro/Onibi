@@ -34,6 +34,7 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 	if (action->op == ONIBI_RA_CAPTURE) {
 	    if (!captures || action->arg16 >= capture_slots) return 0;
 	    captures[action->arg16] = pos;
+	    if (onibi_regular_capture_result) onibi_diagnostics.tag_events++;
 	    continue;
 	}
 	if (action->op == ONIBI_RA_TEST_CAPTURE) {
