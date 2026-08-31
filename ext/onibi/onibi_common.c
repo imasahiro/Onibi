@@ -162,8 +162,9 @@ static ID id_key_negative_name, id_key_negative;
 static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
-static int onibi_vm_search(VALUE self, VALUE str, long search_origin,
-			   long *match_start, long *match_end);
+static OnibiExecStatus onibi_vm_search(VALUE self, VALUE str,
+				       long search_origin, long *match_start,
+				       long *match_end);
 static inline VALUE
 onibi_hash_value_id(VALUE hash, ID key)
 {

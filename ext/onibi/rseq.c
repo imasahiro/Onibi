@@ -983,10 +983,10 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	if (origin < 0) return Qnil;
     }
     long start = 0, end = 0;
-    int search_status = onibi_vm_search(self, str, origin, &start, &end);
-    if (search_status == -2)
+	OnibiExecStatus search_status = onibi_vm_search(self, str, origin, &start, &end);
+	if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
 	rb_raise(eRegexpError, "Onibi execution failed");
-    if (search_status == 0) {
+	if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
     }
@@ -1014,11 +1014,13 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	    if (origin < 0) return Qfalse;
 	}
 	long start = 0, end = 0;
-	int result = onibi_vm_search(self, str, origin, &start, &end);
-	if (result >= 0) return result ? Qtrue : Qfalse;
-	if (result < 0) {
-	    if (result == -2)
-		rb_raise(eRegexpError, "Onibi execution failed");
+	OnibiExecStatus result = onibi_vm_search(self, str, origin, &start, &end);
+	if (result == ONIBI_EXEC_STATUS_MATCH ||
+	    result == ONIBI_EXEC_STATUS_NO_MATCH)
+	    return result == ONIBI_EXEC_STATUS_MATCH ? Qtrue : Qfalse;
+	if (result == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+	rb_raise(eRegexpError, "Onibi execution failed");
+	if (result == ONIBI_EXEC_STATUS_FALLBACK) {
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
 	    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
