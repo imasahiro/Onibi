@@ -975,12 +975,19 @@ onibi_match(int argc, VALUE *argv, VALUE self)
     if (argc == 2 && RB_TYPE_P(pos, T_STRING))
 	rb_raise(rb_eTypeError,
 		 "no implicit conversion of String into Integer");
+    if (NIL_P(str)) {
+	if (!NIL_P(pos))
+	    rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
+	return Qnil;
+    }
+    if (SYMBOL_P(str)) str = rb_sym2str(str);
     if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
     long origin = 0;
-    if (!NIL_P(pos)) {
+	if (!NIL_P(pos)) {
 	origin = NUM2LONG(pos);
 	if (origin < 0) origin += RSTRING_LEN(str);
 	if (origin < 0) return Qnil;
+	if (origin > RSTRING_LEN(str)) origin = RSTRING_LEN(str);
     }
     long start = 0, end = 0;
 	OnibiExecStatus search_status = onibi_vm_search(self, str, origin, &start, &end);
@@ -1006,6 +1013,7 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 {
     VALUE str, pos = Qnil;
     rb_scan_args(argc, argv, "11", &str, &pos);
+    if (SYMBOL_P(str)) str = rb_sym2str(str);
     if (RB_TYPE_P(str, T_STRING)) {
 	long origin = 0;
 	if (!NIL_P(pos)) {
