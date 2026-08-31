@@ -31,6 +31,7 @@ onibi_rseq_consume(const OnibiRSeqView *view, const OnibiRState *state,
 {
     OnibiConsumeResult result = {0, 0};
     if (position >= RSTRING_LEN(str)) return result;
+    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
     if (state->op == ONIBI_RS_ANY) {
 	result.matched = (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0 ||
 			 bytes[position] != '\n';
@@ -166,7 +167,6 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
     if (!view->native_eligible) return -1;
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
-    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
     size_t span = (size_t)RSTRING_LEN(str) + 1U;
     if ((size_t)header->state_count > SIZE_MAX / span) return -1;
     size_t visited_size = (size_t)header->state_count * span;
