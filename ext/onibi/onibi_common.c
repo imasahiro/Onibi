@@ -26,7 +26,7 @@
 #include <string.h>
 #include <time.h>
 
-#define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 4096L
+#define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 8L
 
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
