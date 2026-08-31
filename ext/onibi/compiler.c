@@ -329,6 +329,18 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	    if (result.pending_actions.count > 0)
 		onibi_add_exit_guard_fragment(builder, &old_exits,
 					       &result.pending_actions);
+	    if (part.nullable &&
+		(part.start_actions.count > 0 || part.pending_actions.count > 0)) {
+		/* A nullable continuation can also be bypassed from old_exits.
+		 * Preserve its empty-path actions on that bypass while retaining
+		 * the normal actions on the transition into the continuation. */
+		OnibiGActionVector bypass_actions =
+		    onibi_g_action_vector_concat(&part.start_actions,
+						 &part.pending_actions);
+		onibi_add_exit_guard_fragment(builder, &old_exits,
+					       &bypass_actions);
+		onibi_g_action_vector_free(&bypass_actions);
+	    }
 	    OnibiGActionVector transition_actions =
 		onibi_g_action_vector_copy(&part.start_actions);
 	    onibi_connect_fragment_actions(builder, &old_exits, &part.starts,

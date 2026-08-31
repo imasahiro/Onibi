@@ -85,6 +85,11 @@ class RegularFastCaptureTest < Minitest::Test
     assert_regular_capture("([a-z]+)-[0-9]+", "xx item-2026 yy")
   end
 
+  def test_nullable_capture_after_a_consuming_capture
+    assert_regular_capture("([ab]+)(b?)", "a")
+    assert_regular_capture("([ab]+)(b?)", "ab")
+  end
+
   def test_tag_history_grows_for_long_repeated_capture
     subject = "a" * 1000
     info = assert_regular_capture("(a)+", subject)
