@@ -24,6 +24,36 @@ typedef struct {
     VerifiedGIRAnalysis analysis;
 } OnibiCompiled;
 
+/* A compile owner contains every mutable allocation that can outlive one
+ * pass.  The owner is stack scoped and is released by rb_ensure. */
+typedef struct {
+    onibi_allocation_owner_t allocations;
+    onibi_gir_builder_t builder;
+    OnibiGirEdgeVector start_edges;
+    OnibiTaggedNfa nfa;
+    onibi_fragment_t root_fragment;
+    OnibiIdVector accept_starts;
+    OnibiGActionVector pending_actions;
+    int nfa_active;
+    int root_fragment_active;
+    int gir_transferred;
+    int failure_phase;
+    int *failure_fired;
+} OnibiCompilerOwner;
+typedef struct {
+    OnibiCompilerOwner *owner;
+    VALUE parsed;
+} OnibiCompilerCall;
+
+static void
+onibi_compiler_fail_if(OnibiCompilerOwner *owner, int phase)
+{
+    if (owner->failure_phase == phase) {
+	if (owner->failure_fired) *owner->failure_fired = 1;
+	rb_raise(eRegexpError, "injected compiler failure at pass %d", phase);
+    }
+}
+
 /* Compiler pass contracts.  These records make ownership and pass order
  * explicit, even while several early analyses still share the C AST. */
 typedef struct {
@@ -81,6 +111,44 @@ static void
 onibi_compiled_mark(void *ptr)
 {
     (void)ptr;
+}
+
+static void
+onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
+{
+    if (owner->nfa_active) {
+	onibi_nfa_free(&owner->nfa);
+	owner->nfa_active = 0;
+    }
+    onibi_id_vector_free(&owner->accept_starts);
+    onibi_g_action_vector_free(&owner->pending_actions);
+    if (owner->root_fragment_active) {
+	onibi_id_vector_free(&owner->root_fragment.starts);
+	onibi_id_vector_free(&owner->root_fragment.exits);
+	onibi_g_action_vector_free(&owner->root_fragment.start_actions);
+	onibi_g_action_vector_free(&owner->root_fragment.pending_actions);
+	owner->root_fragment_active = 0;
+    }
+    /* Publication reinitializes every transferred vector.  Keep the flag
+     * explicit so a later publication path cannot free published storage. */
+    onibi_guard_vector_free(&owner->builder.capture_guards);
+    onibi_guard_vector_free(&owner->builder.exit_guards);
+    if (!owner->gir_transferred) {
+	onibi_gir_edge_vector_free(&owner->start_edges);
+	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
+	onibi_gir_state_vector_free(&owner->builder.states);
+	onibi_gir_edge_vector_free(&owner->builder.edges);
+    }
+    onibi_owned_free(&owner->allocations, owner->builder.subprogram_status);
+    owner->builder.subprogram_status = NULL;
+    onibi_allocation_owner_cleanup(&owner->allocations);
+}
+
+static VALUE
+onibi_compiler_owner_ensure(VALUE opaque)
+{
+    onibi_compiler_owner_cleanup((OnibiCompilerOwner *)(uintptr_t)opaque);
+    return Qnil;
 }
 static void
 onibi_compiled_free(void *ptr)
@@ -429,11 +497,12 @@ onibi_assign_lookaround_subprograms(OnibiParsed *parsed,
 }
 
 static OnibiResolveOutput
-onibi_compiler_pass_resolve(OnibiParseOutput parse)
+onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
 {
     OnibiParsed *parsed = parse.parsed;
     onibi_resolved_indexes_free(&parsed->semantics);
     xfree(parsed->semantics.nodes);
+    parsed->semantics.nodes = NULL;
     parsed->semantics.count = parsed->arena.count;
     parsed->semantics.nodes =
 	ALLOC_N(OnibiResolvedNode, parsed->semantics.count);
@@ -481,6 +550,7 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse)
     parsed->semantics.lowered_subprogram_count = subprograms;
     onibi_assign_lookaround_subprograms(parsed, &subprograms);
     parsed->semantics.subprogram_count = subprograms;
+    onibi_compiler_fail_if(owner, 1);
     return (OnibiResolveOutput){parsed, &parsed->semantics};
 }
 
@@ -503,7 +573,8 @@ onibi_normalized_assertion(const OnibiAstNode *node)
 }
 
 static OnibiNormalizeOutput
-onibi_compiler_pass_normalize(OnibiResolveOutput resolve)
+onibi_compiler_pass_normalize(OnibiResolveOutput resolve,
+			      OnibiCompilerOwner *owner)
 {
     OnibiParsed *parsed = resolve.parsed;
     for (size_t i = 0; i < resolve.semantics->count; i++) {
@@ -530,6 +601,7 @@ onibi_compiler_pass_normalize(OnibiResolveOutput resolve)
 	}
 	node->flags |= ONIBI_SEMANTIC_NORMALIZED;
     }
+    onibi_compiler_fail_if(owner, 2);
     return (OnibiNormalizeOutput){parsed, resolve.semantics};
 }
 
@@ -698,6 +770,7 @@ onibi_compile_resolved_body_subprogram(OnibiAstId body,
     onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
     OnibiIdVector accept_starts;
     onibi_id_vector_init(&accept_starts);
+    onibi_id_vector_bind(&accept_starts, builder->allocation_owner);
     onibi_id_vector_push(&accept_starts, (OnibiStateId)accept);
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
 				   &fragment.pending_actions, 0);
@@ -784,12 +857,14 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 	    close.set = 1;
 	OnibiGActionVector starts;
 	onibi_g_action_vector_init(&starts);
+	onibi_g_action_vector_bind(&starts, builder->allocation_owner);
 	onibi_g_action_vector_push(&starts, open);
 	onibi_g_action_vector_append(&starts, &fragment.start_actions);
 	onibi_g_action_vector_free(&fragment.start_actions);
 	fragment.start_actions = starts;
 	OnibiGActionVector exits;
 	onibi_g_action_vector_init(&exits);
+	onibi_g_action_vector_bind(&exits, builder->allocation_owner);
 	onibi_g_action_vector_push(&exits, close);
 	onibi_g_action_vector_append(&exits, &fragment.pending_actions);
 	onibi_g_action_vector_free(&fragment.pending_actions);
@@ -798,7 +873,8 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
     long accept = builder->next_id++;
     onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
     OnibiIdVector accept_starts;
-    onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
+    onibi_id_vector_single(&accept_starts, (OnibiStateId)accept,
+			   builder->allocation_owner);
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
 				   &fragment.pending_actions, 0);
     long entry =
@@ -820,7 +896,7 @@ static onibi_fragment_t
 onibi_compile_sequence(const OnibiAstNode *sequence,
 		       onibi_gir_builder_t *builder)
 {
-    onibi_fragment_t result = onibi_fragment_empty();
+    onibi_fragment_t result = onibi_fragment_empty(builder);
     int have_consuming = 0;
     for (size_t i = 0; i < sequence->child_count; i++) {
 	onibi_fragment_t part =
@@ -856,10 +932,12 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	else {
 	    OnibiIdVector old_exits = result.exits;
 	    onibi_id_vector_init(&result.exits);
+	    onibi_id_vector_bind(&result.exits, builder->allocation_owner);
 	    if (result.nullable) {
 		if (result.lazy) {
 		    OnibiIdVector reordered;
 		    onibi_id_vector_init(&reordered);
+		    onibi_id_vector_bind(&reordered, builder->allocation_owner);
 		    onibi_id_vector_append(&reordered, &part.starts);
 		    onibi_id_vector_append(&reordered, &result.starts);
 		    onibi_id_vector_free(&result.starts);
@@ -882,13 +960,14 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 		 * continuation. */
 		OnibiGActionVector bypass_actions =
 		    onibi_g_action_vector_concat(&part.start_actions,
-						 &part.pending_actions);
+						 &part.pending_actions,
+						 builder->allocation_owner);
 		onibi_add_exit_guard_fragment(builder, &old_exits,
 					      &bypass_actions);
 		onibi_g_action_vector_free(&bypass_actions);
 	    }
-	    OnibiGActionVector transition_actions =
-		onibi_g_action_vector_copy(&part.start_actions);
+	    OnibiGActionVector transition_actions = onibi_g_action_vector_copy(
+		&part.start_actions, builder->allocation_owner);
 	    onibi_connect_fragment_actions(builder, &old_exits, &part.starts,
 					   &transition_actions, result.lazy);
 	    onibi_g_action_vector_free(&transition_actions);
@@ -900,6 +979,8 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	    onibi_id_vector_free(&old_exits);
 	    onibi_g_action_vector_free(&result.pending_actions);
 	    onibi_g_action_vector_init(&result.pending_actions);
+	    onibi_g_action_vector_bind(&result.pending_actions,
+				       builder->allocation_owner);
 	    result.lazy = part.lazy;
 	}
 	onibi_fragment_append_actions(&result.pending_actions,
@@ -973,9 +1054,11 @@ onibi_compile_literal_bytes(const unsigned char *bytes, size_t length,
 {
     long id = builder->next_id++;
     onibi_gir_state_literal(builder, id, bytes, length, ignorecase);
-    onibi_fragment_t result = onibi_fragment_empty();
-    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+    onibi_fragment_t result = onibi_fragment_empty(builder);
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			   builder->allocation_owner);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			   builder->allocation_owner);
     result.nullable = 0;
     return result;
 }
@@ -1030,7 +1113,7 @@ onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
     }
     if (!(node->flags & ONIBI_AST_NODE_NEGATED) && literal_children &&
 	((node->range_count == 0 && has_multibyte) || expand_ranges)) {
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = 0;
 	for (size_t i = 0; i < node->child_count; i++) {
 	    const OnibiAstNode *child =
@@ -1069,9 +1152,11 @@ onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
     OnibiNormalizedClass normalized =
 	onibi_compiler_normalize_class(builder->ast, node_id, ignorecase);
     onibi_gir_state_class(builder, id, normalized.bitmap, normalized.negated);
-    onibi_fragment_t result = onibi_fragment_empty();
-    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+    onibi_fragment_t result = onibi_fragment_empty(builder);
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			   builder->allocation_owner);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			   builder->allocation_owner);
     result.nullable = 0;
     return result;
 }
@@ -1092,7 +1177,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
     if (type_code == ONIBI_AST_SEQUENCE)
 	return onibi_compile_sequence(c_node, builder);
     if (type_code == ONIBI_AST_ALTERNATIVE) {
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = 0;
 	for (size_t i = 0; i < c_node->child_count; i++) {
 	    onibi_fragment_t branch =
@@ -1142,9 +1227,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	onibi_class_bitmap_ast(builder->ast, node_id, ignorecase, bitmap);
 	long id = builder->next_id++;
 	onibi_gir_state_class(builder, id, bitmap, 0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 0;
 	return result;
     }
@@ -1156,9 +1243,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		(unsigned char)~(1U << ((unsigned char)'\n' & 7));
 	long id = builder->next_id++;
 	onibi_gir_state_class(builder, id, bitmap, 0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 0;
 	return result;
     }
@@ -1169,9 +1258,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	onibi_gir_state(builder, id, ONIBI_G_BACKREF,
 			(uint32_t)resolved_node->capture_id,
 			ignorecase ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE : 0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 0;
 	return result;
     }
@@ -1185,21 +1276,23 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    builder);
 	long id = builder->next_id++;
 	onibi_gir_state(builder, id, ONIBI_G_CALL, (uint32_t)subprogram_id, 0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 0;
 	return result;
     }
     if (type_code == ONIBI_AST_OPTION_GLOBAL) {
 	/* Resolve applies this option to later semantic nodes. */
-	return onibi_fragment_empty();
+	return onibi_fragment_empty(builder);
     }
     if (type_code == ONIBI_AST_OPTION_SCOPE) {
 	return onibi_compile_node(c_node->body, builder);
     }
     if (type_code == ONIBI_AST_ANCHOR) {
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
 	    rb_raise(eRegexpError, "unnormalized assertion");
 	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
@@ -1215,7 +1308,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_MATCH_RESET) {
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_g_action_vector_push(
 	    &result.pending_actions,
 	    (OnibiGAction){ONIBI_GA_MATCH_RESET, 0, 0, 0, 0, 0, 0, 0, 0});
@@ -1229,11 +1322,13 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	onibi_fragment_t no = onibi_compile_node(c_node->no, builder);
 	OnibiGActionVector yes_guard;
 	onibi_g_action_vector_init(&yes_guard);
+	onibi_g_action_vector_bind(&yes_guard, builder->allocation_owner);
 	onibi_g_action_vector_push(&yes_guard,
 				   onibi_capture_test_action(capture_id, 1));
 	onibi_g_action_vector_append(&yes_guard, &yes.start_actions);
 	OnibiGActionVector no_guard;
 	onibi_g_action_vector_init(&no_guard);
+	onibi_g_action_vector_bind(&no_guard, builder->allocation_owner);
 	onibi_g_action_vector_push(&no_guard,
 				   onibi_capture_test_action(capture_id, 0));
 	onibi_g_action_vector_append(&no_guard, &no.start_actions);
@@ -1248,7 +1343,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	onibi_add_exit_guard_fragment(builder, &yes.exits,
 				      &yes.pending_actions);
 	onibi_add_exit_guard_fragment(builder, &no.exits, &no.pending_actions);
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_append(&result.starts, &yes.starts);
 	onibi_id_vector_append(&result.starts, &no.starts);
 	onibi_id_vector_append(&result.exits, &yes.exits);
@@ -1274,9 +1369,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	long id = builder->next_id++;
 	onibi_gir_state(builder, id, ONIBI_G_ATOMIC, (uint32_t)subprogram_id,
 			0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 0;
 	return result;
     }
@@ -1289,9 +1386,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	long id = builder->next_id++;
 	onibi_gir_state(builder, id, ONIBI_G_ABSENT, (uint32_t)subprogram_id,
 			0);
-	onibi_fragment_t result = onibi_fragment_empty();
-	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
-	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
+			       builder->allocation_owner);
 	result.nullable = 1;
 	return result;
     }
@@ -1359,7 +1458,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			       (uint16_t)resolved_node->assertion_kind,
 			       1,
 			       predicate_count};
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = 1;
 	onibi_g_action_vector_push(&result.start_actions, action);
 	return result;
@@ -1418,7 +1517,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    rb_raise(eRegexpError,
 		     "possessive capture repeat is not supported in RSeq");
 	if (normalized_max >= 0 && min == 0 && normalized_max == 0)
-	    return onibi_fragment_empty();
+	    return onibi_fragment_empty(builder);
 	if (normalized_max >= 0 && min == 0 && normalized_max == 1) {
 	    onibi_fragment_t result = onibi_compile_node(atom, builder);
 	    /* The atom is one ordered branch of the optional.  Keep its tag
@@ -1432,7 +1531,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    onibi_g_action_vector_free(&result.start_actions);
 	    onibi_g_action_vector_free(&result.pending_actions);
 	    onibi_g_action_vector_init(&result.start_actions);
+	    onibi_g_action_vector_bind(&result.start_actions,
+				       builder->allocation_owner);
 	    onibi_g_action_vector_init(&result.pending_actions);
+	    onibi_g_action_vector_bind(&result.pending_actions,
+				       builder->allocation_owner);
 	    result.nullable = 1;
 	    result.lazy = !greedy;
 	    return result;
@@ -1440,7 +1543,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	long counter_slot = -1;
 	if (normalized_max >= 0 && normalized_max != min)
 	    counter_slot = builder->counter_count++;
-	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = min == 0;
 	if (normalized_max >= 0 && normalized_max < min)
 	    rb_raise(eRegexpError, "invalid quantifier range");
@@ -1459,7 +1562,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		else {
 		    OnibiGActionVector actions = onibi_g_action_vector_concat(
-			&result.pending_actions, &part.start_actions);
+			&result.pending_actions, &part.start_actions,
+			builder->allocation_owner);
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &part.starts, &actions, 0);
 		    onibi_g_action_vector_free(&actions);
@@ -1479,7 +1583,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		if (result.exits.count > 0) {
 		    OnibiGActionVector actions = onibi_g_action_vector_concat(
-			&result.pending_actions, &part.start_actions);
+			&result.pending_actions, &part.start_actions,
+			builder->allocation_owner);
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &part.starts, &actions, 0);
 		    onibi_g_action_vector_free(&actions);
@@ -1509,6 +1614,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    else {
 		OnibiGActionVector actions;
 		onibi_g_action_vector_init(&actions);
+		onibi_g_action_vector_bind(&actions, builder->allocation_owner);
 		if (counter_slot >= 0)
 		    onibi_g_action_vector_push(
 			&actions,
@@ -1528,6 +1634,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		OnibiGActionVector repeat_actions;
 		onibi_g_action_vector_init(&repeat_actions);
+		onibi_g_action_vector_bind(&repeat_actions,
+					   builder->allocation_owner);
 		onibi_g_action_vector_push(
 		    &repeat_actions,
 		    onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter_slot,
@@ -1565,7 +1673,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		onibi_g_action_vector_free(&repeat.start_actions);
 		onibi_g_action_vector_free(&repeat.pending_actions);
 		onibi_g_action_vector_init(&repeat.start_actions);
+		onibi_g_action_vector_bind(&repeat.start_actions,
+					   builder->allocation_owner);
 		onibi_g_action_vector_init(&repeat.pending_actions);
+		onibi_g_action_vector_bind(&repeat.pending_actions,
+					   builder->allocation_owner);
 	    }
 	    if (result.starts.count == 0)
 		onibi_id_vector_append(&result.starts, &repeat.starts);
@@ -1580,7 +1692,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		else {
 		    OnibiGActionVector next_actions =
 			onibi_g_action_vector_concat(&repeat.pending_actions,
-						     &repeat.start_actions);
+						     &repeat.start_actions,
+						     builder->allocation_owner);
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &repeat.starts,
 						   &next_actions, 0);
@@ -1590,6 +1703,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    if (repeat.nullable) {
 		OnibiGActionVector progress_actions;
 		onibi_g_action_vector_init(&progress_actions);
+		onibi_g_action_vector_bind(&progress_actions,
+					   builder->allocation_owner);
 		if (progress_slot >= 0)
 		    onibi_g_action_vector_push(
 			&progress_actions,
@@ -1602,7 +1717,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    }
 	    else {
 		OnibiGActionVector loop_actions = onibi_g_action_vector_concat(
-		    &repeat.pending_actions, &repeat.start_actions);
+		    &repeat.pending_actions, &repeat.start_actions,
+		    builder->allocation_owner);
 		onibi_connect_fragment_actions(
 		    builder, &repeat.exits, &repeat.starts, &loop_actions, 0);
 		onibi_g_action_vector_free(&loop_actions);
@@ -1617,86 +1733,118 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     rb_raise(eRegexpError, "unsupported AST node");
-    return onibi_fragment_empty();
+    return onibi_fragment_empty(builder);
 }
 
 /* Initialize pass: create one owner for all mutable compiler state. */
 static void
 onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 				 OnibiParsed *parsed,
-				 const OnibiResolvedArena *semantics)
+				 const OnibiResolvedArena *semantics,
+				 onibi_allocation_owner_t *allocation_owner)
 {
     memset(builder, 0, sizeof(*builder));
     builder->ast = &parsed->arena;
     builder->semantics = semantics;
+    builder->allocation_owner = allocation_owner;
+    onibi_gir_state_vector_init(&builder->states);
+    onibi_gir_state_vector_bind(&builder->states, allocation_owner);
     onibi_gir_edge_vector_init(&builder->edges);
+    onibi_gir_edge_vector_bind(&builder->edges, builder->allocation_owner);
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
+    onibi_rseq_subprogram_vector_bind(&builder->subprograms,
+				      builder->allocation_owner);
     onibi_rseq_subprogram_vector_push(&builder->subprograms,
 				      (OnibiRSeqSubprogramEntry){0, 0, 0});
     for (size_t i = 1; i < semantics->lowered_subprogram_count; i++)
 	onibi_rseq_subprogram_vector_push(&builder->subprograms,
 					  (OnibiRSeqSubprogramEntry){0, 0, 0});
     builder->resolved_subprogram_count = semantics->lowered_subprogram_count;
-    builder->subprogram_status =
-	ALLOC_N(unsigned char, builder->resolved_subprogram_count);
+    builder->subprogram_status = onibi_owned_realloc(
+	builder->allocation_owner, NULL, builder->resolved_subprogram_count);
     memset(builder->subprogram_status, 0,
 	   builder->resolved_subprogram_count * sizeof(unsigned char));
     onibi_guard_vector_init(&builder->capture_guards);
+    onibi_guard_vector_bind(&builder->capture_guards,
+			    builder->allocation_owner);
     onibi_guard_vector_init(&builder->exit_guards);
+    onibi_guard_vector_bind(&builder->exit_guards, builder->allocation_owner);
 }
 
 /* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
 static void
-onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
+onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 			  OnibiGirEdgeVector *start_edges, long *accept_out,
 			  long *root_entry_out)
 {
-    OnibiTaggedNfa nfa;
-    onibi_nfa_init(&nfa);
-    onibi_fragment_t fragment = onibi_compile_node(parsed->arena.root, builder);
+    onibi_gir_builder_t *builder = &owner->builder;
+    OnibiTaggedNfa *nfa = &owner->nfa;
+    onibi_nfa_init(nfa, builder->allocation_owner);
+    owner->nfa_active = 1;
+    owner->root_fragment = onibi_compile_node(parsed->arena.root, builder);
+    owner->root_fragment_active = 1;
+    onibi_fragment_t *fragment = &owner->root_fragment;
     long accept = builder->next_id++;
     onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
-    OnibiIdVector accept_starts;
-    onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
-    OnibiIdVector exit_ids = fragment.exits;
-    onibi_connect_fragment_actions(builder, &exit_ids, &accept_starts,
-				   &fragment.pending_actions, fragment.lazy);
-    onibi_id_vector_free(&accept_starts);
+    onibi_id_vector_single(&owner->accept_starts, (OnibiStateId)accept,
+			   builder->allocation_owner);
+    OnibiIdVector exit_ids = fragment->exits;
+    onibi_connect_fragment_actions(builder, &exit_ids, &owner->accept_starts,
+				   &fragment->pending_actions, fragment->lazy);
+    onibi_id_vector_free(&owner->accept_starts);
+    onibi_id_vector_init(&fragment->exits);
     onibi_gir_edge_vector_init(start_edges);
+    onibi_gir_edge_vector_bind(start_edges, builder->allocation_owner);
     long root_entry =
-	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
-    if (fragment.nullable && fragment.lazy) {
-	OnibiGActionVector actions = onibi_g_action_vector_concat(
-	    &fragment.start_actions, &fragment.pending_actions);
-	onibi_gir_edge_vector_push(start_edges,
-				   (OnibiGirEdgeEntry){-1, accept, 0, actions});
+	fragment->starts.count > 0 ? (long)fragment->starts.entries[0] : accept;
+    if (fragment->nullable && fragment->lazy) {
+	owner->pending_actions = onibi_g_action_vector_concat(
+	    &fragment->start_actions, &fragment->pending_actions,
+	    builder->allocation_owner);
+	onibi_gir_edge_vector_push(
+	    start_edges,
+	    (OnibiGirEdgeEntry){-1, accept, 0, owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
     }
-    OnibiIdVector start_ids = fragment.starts;
+    OnibiIdVector start_ids = fragment->starts;
     for (size_t i = 0; i < start_ids.count; i++) {
 	long destination = (long)start_ids.entries[i];
 	const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
 	    &builder->capture_guards, (OnibiStateId)start_ids.entries[i]);
-	OnibiGActionVector actions =
-	    onibi_g_action_vector_copy(&fragment.start_actions);
+	owner->pending_actions = onibi_g_action_vector_copy(
+	    &fragment->start_actions, builder->allocation_owner);
 	if (capture_guard) {
-	    onibi_g_action_vector_append(&actions, &capture_guard->actions);
+	    onibi_g_action_vector_append(&owner->pending_actions,
+					 &capture_guard->actions);
 	}
 	onibi_gir_edge_vector_push(
-	    start_edges, (OnibiGirEdgeEntry){-1, destination, 0, actions});
+	    start_edges,
+	    (OnibiGirEdgeEntry){-1, destination, 0, owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
     }
     onibi_id_vector_free(&start_ids);
     onibi_id_vector_free(&exit_ids);
-    if (fragment.nullable && !fragment.lazy) {
-	OnibiGActionVector actions = onibi_g_action_vector_concat(
-	    &fragment.start_actions, &fragment.pending_actions);
-	onibi_gir_edge_vector_push(start_edges,
-				   (OnibiGirEdgeEntry){-1, accept, 0, actions});
+    onibi_id_vector_init(&fragment->starts);
+    if (fragment->nullable && !fragment->lazy) {
+	owner->pending_actions = onibi_g_action_vector_concat(
+	    &fragment->start_actions, &fragment->pending_actions,
+	    builder->allocation_owner);
+	onibi_gir_edge_vector_push(
+	    start_edges,
+	    (OnibiGirEdgeEntry){-1, accept, 0, owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
     }
-    onibi_g_action_vector_free(&fragment.start_actions);
-    onibi_g_action_vector_free(&fragment.pending_actions);
+    onibi_g_action_vector_free(&fragment->start_actions);
+    onibi_g_action_vector_free(&fragment->pending_actions);
+    onibi_fragment_t empty_fragment;
+    memset(&empty_fragment, 0, sizeof(empty_fragment));
+    *fragment = empty_fragment;
+    owner->root_fragment_active = 0;
     /* Lowering is complete.  Transfer the mutable graph to the tagged
        epsilon-NFA owner, then run the explicit elimination pass. */
-    nfa.states = builder->states;
+    nfa->states = builder->states;
+    onibi_gir_state_vector_init(&builder->states);
+    onibi_gir_state_vector_bind(&builder->states, builder->allocation_owner);
     /* Convert mutable GIR edges to explicit NFA transitions.  The current
        lowering emits consuming-position edges; future zero-width lowering
        can append ONIBI_NFA_EPSILON edges without changing this pass. */
@@ -1704,24 +1852,26 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 	OnibiGirEdgeEntry *source = &builder->edges.entries[i];
 	OnibiNfaEdge edge = {source->from, source->to, ONIBI_NFA_CONSUME,
 			     source->actions};
-	onibi_nfa_edge_vector_push(&nfa.edges, edge);
+	onibi_nfa_edge_vector_push(&nfa->edges, edge);
 	onibi_g_action_vector_init(&source->actions);
     }
-    xfree(builder->edges.entries);
+    onibi_owned_free(builder->allocation_owner, builder->edges.entries);
     builder->edges.entries = NULL;
     builder->edges.count = 0;
     builder->edges.capacity = 0;
-    onibi_gir_state_vector_init(&builder->states);
     onibi_gir_edge_vector_init(&builder->edges);
-    nfa.accept = accept;
-    onibi_epsilon_eliminate(&nfa, builder);
-    onibi_nfa_free(&nfa);
+    onibi_gir_edge_vector_bind(&builder->edges, builder->allocation_owner);
+    nfa->accept = accept;
+    onibi_epsilon_eliminate(nfa, builder);
+    onibi_nfa_free(nfa);
+    owner->nfa_active = 0;
     *accept_out = accept;
     *root_entry_out = root_entry;
 }
 
 static void
-onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder)
+onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
+			       OnibiCompilerOwner *owner)
 {
     for (size_t i = 0; i < builder->edges.count; i++) {
 	const OnibiGirEdgeEntry *edge = &builder->edges.entries[i];
@@ -1731,17 +1881,20 @@ onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder)
 	    rb_raise(eRegexpError,
 		     "GIR verification failed: edge state is out of range");
     }
+    onibi_compiler_fail_if(owner, 5);
 }
 
 static VerifiedGIRAnalysis
 onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
-			     const OnibiGirEdgeVector *start_edges)
+			     const OnibiGirEdgeVector *start_edges,
+			     OnibiCompilerOwner *owner)
 {
     VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
 				  ONIBI_EXEC_REGULAR};
     unsigned char *semantic = NULL;
     if (builder->capture_count > 0) {
-	semantic = ALLOC_N(unsigned char, (size_t)builder->capture_count);
+	semantic = onibi_owned_realloc(builder->allocation_owner, NULL,
+				       (size_t)builder->capture_count);
 	memset(semantic, 0, (size_t)builder->capture_count);
     }
 #define MARK_SEMANTIC_CAPTURE(slot)                                            \
@@ -1827,23 +1980,27 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	}
     }
 #undef MARK_SEMANTIC_CAPTURE
-    if (semantic) xfree(semantic);
+    onibi_compiler_fail_if(owner, 6);
+    onibi_owned_free(builder->allocation_owner, semantic);
     return result;
 }
 
 static void
-onibi_compiler_pass_optimize(onibi_gir_builder_t *builder)
+onibi_compiler_pass_optimize(onibi_gir_builder_t *builder,
+			     OnibiCompilerOwner *owner)
 {
     /* Optimization must not change ordered edge semantics. The first safe
      * optimization is performed by the RSeq lowerer after this boundary. */
     (void)builder;
+    onibi_compiler_fail_if(owner, 7);
 }
 
 /* Analyze pass.  This pass reads only the immutable AST.  Lowering must not
  * perform these queries while it walks nodes. */
 static OnibiAnalyzeOutput
 onibi_compiler_pass_analyze(OnibiNormalizeOutput normalize,
-			    onibi_gir_builder_t *builder)
+			    onibi_gir_builder_t *builder,
+			    OnibiCompilerOwner *owner)
 {
     OnibiParsed *parsed = normalize.parsed;
     onibi_analyze_semantic_node(parsed, parsed->arena.root);
@@ -1871,6 +2028,7 @@ onibi_compiler_pass_analyze(OnibiNormalizeOutput normalize,
 	    node->subprogram_id == UINT32_MAX)
 	    rb_raise(eRegexpError, "semantic subprogram invariant failed");
     }
+    onibi_compiler_fail_if(owner, 3);
     return (OnibiAnalyzeOutput){parsed,
 				normalize.semantics,
 				builder,
@@ -1885,12 +2043,14 @@ static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			    OnibiGirEdgeVector *start_edges, long accept,
 			    long root_entry, long counter_count,
-			    int parsed_options, VerifiedGIRAnalysis analysis)
+			    int parsed_options, VerifiedGIRAnalysis analysis,
+			    OnibiCompilerOwner *owner)
 {
     onibi_rseq_subprogram_vector_store(
 	&builder->subprograms, 0,
 	(OnibiRSeqSubprogramEntry){(OnibiStateId)root_entry,
 				   (OnibiStateId)accept, 0});
+    onibi_compiler_fail_if(owner, 8);
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
 					 &onibi_compiled_type, compiled_result);
@@ -1899,6 +2059,46 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_gir_state_vector_init(&compiled_result->states);
     onibi_gir_edge_vector_init(&compiled_result->edges);
     onibi_gir_edge_vector_init(&compiled_result->start_edges);
+
+    for (size_t i = 0; i < builder->edges.count; i++)
+	if (!onibi_owned_pointer_p(builder->allocation_owner,
+				   builder->edges.entries[i].actions.entries))
+	    rb_raise(eRegexpError,
+		     "GIR edge action publication owner is invalid");
+    for (size_t i = 0; i < start_edges->count; i++)
+	if (!onibi_owned_pointer_p(builder->allocation_owner,
+				   start_edges->entries[i].actions.entries))
+	    rb_raise(eRegexpError,
+		     "GIR start action publication owner is invalid");
+    if (!onibi_owned_pointer_p(builder->allocation_owner,
+			       builder->states.entries) ||
+	!onibi_owned_pointer_p(builder->allocation_owner,
+			       builder->edges.entries) ||
+	!onibi_owned_pointer_p(builder->allocation_owner,
+			       start_edges->entries) ||
+	!onibi_owned_pointer_p(builder->allocation_owner,
+			       builder->subprograms.entries))
+	rb_raise(eRegexpError, "GIR publication owner is invalid");
+
+    for (size_t i = 0; i < builder->edges.count; i++) {
+	onibi_owned_transfer(builder->allocation_owner,
+			     builder->edges.entries[i].actions.entries);
+	builder->edges.entries[i].actions.allocation_owner = NULL;
+    }
+    for (size_t i = 0; i < start_edges->count; i++) {
+	onibi_owned_transfer(builder->allocation_owner,
+			     start_edges->entries[i].actions.entries);
+	start_edges->entries[i].actions.allocation_owner = NULL;
+    }
+    onibi_owned_transfer(builder->allocation_owner, builder->states.entries);
+    onibi_owned_transfer(builder->allocation_owner, builder->edges.entries);
+    onibi_owned_transfer(builder->allocation_owner, start_edges->entries);
+    onibi_owned_transfer(builder->allocation_owner,
+			 builder->subprograms.entries);
+    builder->states.allocation_owner = NULL;
+    builder->edges.allocation_owner = NULL;
+    start_edges->allocation_owner = NULL;
+    builder->subprograms.allocation_owner = NULL;
     compiled_result->states = builder->states;
     compiled_result->edges = builder->edges;
     compiled_result->start_edges = *start_edges;
@@ -1916,49 +2116,80 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 }
 
 static VALUE
-onibi_compiler_compile(VALUE self, VALUE parsed)
+onibi_compiler_compile_body(VALUE opaque)
 {
-    (void)self;
+    OnibiCompilerCall *call = (OnibiCompilerCall *)(uintptr_t)opaque;
+    OnibiCompilerOwner *owner = call->owner;
+    VALUE parsed = call->parsed;
     OnibiParsed *parsed_data = onibi_parsed_get(parsed);
-    onibi_compile_encoding = rb_enc_from_index(parsed_data->encoding_index);
     if (parsed_data->arena.root == ONIBI_AST_NONE)
 	rb_raise(rb_eArgError, "compiler requires parser output");
     OnibiParseOutput parse = {parsed_data, parsed_data->options};
-    OnibiResolveOutput resolve = onibi_compiler_pass_resolve(parse);
-    OnibiNormalizeOutput normalize = onibi_compiler_pass_normalize(resolve);
+    onibi_allocation_owner_set_phase(&owner->allocations, 1);
+    OnibiResolveOutput resolve = onibi_compiler_pass_resolve(parse, owner);
+    onibi_allocation_owner_set_phase(&owner->allocations, 2);
+    OnibiNormalizeOutput normalize =
+	onibi_compiler_pass_normalize(resolve, owner);
     int parsed_options = parse.options;
-    onibi_gir_builder_t builder;
-    onibi_compiler_pass_init_builder(&builder, parsed_data,
-				     normalize.semantics);
+
+    onibi_compiler_pass_init_builder(&owner->builder, parsed_data,
+				     normalize.semantics, &owner->allocations);
+    onibi_allocation_owner_set_phase(&owner->allocations, 3);
     OnibiAnalyzeOutput analyze =
-	onibi_compiler_pass_analyze(normalize, &builder);
-    builder.capture_count = analyze.capture_count;
-    OnibiGirEdgeVector start_edge_records;
+	onibi_compiler_pass_analyze(normalize, &owner->builder, owner);
+    owner->builder.capture_count = analyze.capture_count;
     long accept;
     long root_entry;
-    onibi_compiler_pass_lower(parsed_data, &builder, &start_edge_records,
-			      &accept, &root_entry);
-    OnibiLowerNfaOutput lower_nfa = {&builder, &start_edge_records, accept,
-				     root_entry};
+
+    onibi_allocation_owner_set_phase(&owner->allocations, 4);
+    onibi_compiler_pass_lower(parsed_data, owner, &owner->start_edges, &accept,
+			      &root_entry);
+
+    OnibiLowerNfaOutput lower_nfa = {&owner->builder, &owner->start_edges,
+				     accept, root_entry};
     /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon-elimination
      * boundary.  Keep the result contract explicit for later split passes. */
     (void)lower_nfa;
-    OnibiGirOutput gir = {&builder};
+    OnibiGirOutput gir = {&owner->builder};
     (void)gir;
-    onibi_compiler_pass_verify_gir(&builder);
-    VerifiedGIRAnalysis analysis =
-	onibi_compiler_pass_classify(&builder, &start_edge_records);
-    onibi_compiler_pass_optimize(&builder);
+    onibi_allocation_owner_set_phase(&owner->allocations, 5);
+    onibi_compiler_pass_verify_gir(&owner->builder, owner);
+    onibi_allocation_owner_set_phase(&owner->allocations, 6);
+    VerifiedGIRAnalysis analysis = onibi_compiler_pass_classify(
+	&owner->builder, &owner->start_edges, owner);
+    onibi_allocation_owner_set_phase(&owner->allocations, 7);
+    onibi_compiler_pass_optimize(&owner->builder, owner);
+    onibi_allocation_owner_set_phase(&owner->allocations, 8);
     VALUE result = onibi_compiler_pass_publish(
-	&builder, &start_edge_records, accept, root_entry,
-	analysis.counter_count, parsed_options, analysis);
-    onibi_gir_edge_vector_free(&start_edge_records);
-    onibi_guard_vector_free(&builder.capture_guards);
-    onibi_guard_vector_free(&builder.exit_guards);
-    onibi_rseq_subprogram_vector_free(&builder.subprograms);
-    onibi_gir_state_vector_free(&builder.states);
-    onibi_gir_edge_vector_free(&builder.edges);
-    xfree(builder.subprogram_status);
+	&owner->builder, &owner->start_edges, accept, root_entry,
+	analysis.counter_count, parsed_options, analysis, owner);
+    owner->gir_transferred = 1;
     rb_obj_freeze(result);
     return result;
+}
+
+static VALUE
+onibi_compiler_compile_with_failure(VALUE parsed, int failure_phase,
+				    int *failure_fired,
+				    OnibiAllocationAccounting *accounting)
+{
+    OnibiCompilerOwner owner;
+    memset(&owner, 0, sizeof(owner));
+    onibi_allocation_owner_init(&owner.allocations, accounting);
+    owner.failure_phase = failure_phase;
+    owner.failure_fired = failure_fired;
+    owner.allocations.failure_phase = failure_phase;
+    owner.allocations.failure_fired = failure_fired;
+    onibi_gir_edge_vector_init(&owner.start_edges);
+    onibi_gir_edge_vector_bind(&owner.start_edges, &owner.allocations);
+    OnibiCompilerCall call = {&owner, parsed};
+    return rb_ensure(onibi_compiler_compile_body, (VALUE)(uintptr_t)&call,
+		     onibi_compiler_owner_ensure, (VALUE)(uintptr_t)&owner);
+}
+
+static VALUE
+onibi_compiler_compile(VALUE self, VALUE parsed)
+{
+    (void)self;
+    return onibi_compiler_compile_with_failure(parsed, 0, NULL, NULL);
 }

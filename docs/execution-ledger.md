@@ -6,7 +6,7 @@
 | TASK-12 | P-11, P-12 | TASK-10 | luna/medium | accepted | ext/onibi/ast.c, compiler.c, onibi_common.c, parser.c, token.c; resolved semantic index tests | Ruby 4 clean build; 33 runs/170 assertions passed with zero skips |
 | TASK-13 | A-04, P-09 | TASK-10, TASK-11 | sol/high | pending | — | — |
 | TASK-14 | A-04, P-09 | TASK-13 | sol/high | pending | — | — |
-| TASK-15 | M-01, M-04 | TASK-10 | luna/high | pending | — | — |
+| TASK-15 | M-01, M-04 | TASK-10 | sol/xhigh | accepted | compiler.c, diagnostics.c, gir.c, nfa.c, onibi_common.c, onibi_init.c, onibi_vector.h, rseq.c; exception-safety tests | Ruby 4 clean build; 35 runs/484 assertions passed with zero skips |
 | TASK-20 | R-03, R-04 | TASK-14 | sol/high | pending | — | — |
 | TASK-21 | R-04, A-08 | TASK-20 | sol/high | pending | — | — |
 | TASK-22 | R-07, E-01, E-02, E-05 | TASK-10, TASK-20 | sol/high | pending | — | — |
@@ -28,3 +28,5 @@
 | TASK-53 | C-01, C-02, C-03, C-04, C-05, C-06, C-07, C-08 | TASK-25 | luna/medium | pending | — | — |
 | TASK-54 | C-03, C-04, C-05 | none | luna/medium | pending | — | — |
 | TASK-55 | RC-01, M-04 | TASK-42, TASK-53 | sol/high | pending | — | — |
+
+TASK-15 route change: two root audit rejections found unowned allocations during non-local exits.

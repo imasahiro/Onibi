@@ -28,10 +28,156 @@
 
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 8L
 
+typedef struct onibi_owned_allocation {
+    struct onibi_owned_allocation *next;
+    struct onibi_owned_allocation *previous;
+    void *pointer;
+    size_t size;
+} onibi_owned_allocation_t;
+
+typedef struct {
+    size_t live_count;
+} OnibiAllocationAccounting;
+
+struct onibi_allocation_owner {
+    onibi_owned_allocation_t *first;
+    size_t allocation_count;
+    size_t byte_count;
+    int failure_phase;
+    int active_phase;
+    int failure_raised;
+    int *failure_fired;
+    OnibiAllocationAccounting *accounting;
+};
+
+static void
+onibi_allocation_owner_init(onibi_allocation_owner_t *owner,
+			    OnibiAllocationAccounting *accounting)
+{
+    memset(owner, 0, sizeof(*owner));
+    owner->accounting = accounting;
+}
+
+static void
+onibi_allocation_owner_set_phase(onibi_allocation_owner_t *owner, int phase)
+{
+    owner->active_phase = phase;
+}
+
+static void
+onibi_allocation_owner_fail_if_armed(onibi_allocation_owner_t *owner)
+{
+    if (owner->failure_phase == owner->active_phase && !owner->failure_raised) {
+	owner->failure_raised = 1;
+	if (owner->failure_fired) *owner->failure_fired = 1;
+	rb_raise(rb_eRegexpError,
+		 "injected failure during owned allocation in pass %d",
+		 owner->active_phase);
+    }
+}
+
+static onibi_owned_allocation_t *
+onibi_owned_allocation_find(onibi_allocation_owner_t *owner, void *pointer)
+{
+    if (!owner || !pointer) return NULL;
+    for (onibi_owned_allocation_t *allocation = owner->first; allocation;
+	 allocation = allocation->next)
+	if (allocation->pointer == pointer) return allocation;
+    return NULL;
+}
+
+static void
+onibi_owned_allocation_unlink(onibi_allocation_owner_t *owner,
+			      onibi_owned_allocation_t *allocation)
+{
+    if (allocation->previous)
+	allocation->previous->next = allocation->next;
+    else
+	owner->first = allocation->next;
+    if (allocation->next) allocation->next->previous = allocation->previous;
+    owner->allocation_count--;
+    owner->byte_count -= allocation->size;
+    if (owner->accounting) owner->accounting->live_count--;
+}
+
+static void *
+onibi_owned_realloc(onibi_allocation_owner_t *owner, void *pointer, size_t size)
+{
+    if (!owner) return ruby_xrealloc(pointer, size);
+    if (!pointer) {
+	onibi_owned_allocation_t *allocation = ALLOC(onibi_owned_allocation_t);
+	memset(allocation, 0, sizeof(*allocation));
+	allocation->next = owner->first;
+	if (owner->first) owner->first->previous = allocation;
+	owner->first = allocation;
+	owner->allocation_count++;
+	if (owner->accounting) owner->accounting->live_count++;
+	allocation->pointer = ruby_xmalloc(size);
+	allocation->size = size;
+	owner->byte_count += size;
+	onibi_allocation_owner_fail_if_armed(owner);
+	return allocation->pointer;
+    }
+    onibi_owned_allocation_t *allocation =
+	onibi_owned_allocation_find(owner, pointer);
+    if (!allocation)
+	rb_raise(rb_eRuntimeError, "allocation owner invariant failed");
+    void *replacement = ruby_xrealloc(pointer, size);
+    owner->byte_count -= allocation->size;
+    owner->byte_count += size;
+    allocation->pointer = replacement;
+    allocation->size = size;
+    onibi_allocation_owner_fail_if_armed(owner);
+    return replacement;
+}
+
+static void
+onibi_owned_free(onibi_allocation_owner_t *owner, void *pointer)
+{
+    if (!pointer) return;
+    if (!owner) {
+	xfree(pointer);
+	return;
+    }
+    onibi_owned_allocation_t *allocation =
+	onibi_owned_allocation_find(owner, pointer);
+    if (!allocation) return;
+    onibi_owned_allocation_unlink(owner, allocation);
+    xfree(allocation->pointer);
+    xfree(allocation);
+}
+
+static int
+onibi_owned_pointer_p(onibi_allocation_owner_t *owner, void *pointer)
+{
+    return !pointer || onibi_owned_allocation_find(owner, pointer) != NULL;
+}
+
+static void
+onibi_owned_transfer(onibi_allocation_owner_t *owner, void *pointer)
+{
+    if (!owner || !pointer) return;
+    onibi_owned_allocation_t *allocation =
+	onibi_owned_allocation_find(owner, pointer);
+    if (!allocation) return;
+    onibi_owned_allocation_unlink(owner, allocation);
+    xfree(allocation);
+}
+
+static void
+onibi_allocation_owner_cleanup(onibi_allocation_owner_t *owner)
+{
+    while (owner->first) {
+	onibi_owned_allocation_t *allocation = owner->first;
+	onibi_owned_allocation_unlink(owner, allocation);
+	xfree(allocation->pointer);
+	xfree(allocation);
+    }
+}
+
 static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
-static _Thread_local rb_encoding *onibi_compile_encoding = NULL;
 
 /* Match-local execution ABI.  The interpreter owns this object for the
  * complete search.  The pointer fields are storage owned by the context or

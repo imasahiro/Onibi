@@ -15,10 +15,72 @@ onibi_g_action_assert_kind(const OnibiGAction *action)
     return action->has_assert_kind ? (OnibiRAssertKind)action->assert_kind : 0;
 }
 
-static VALUE
-onibi_rseq_lower(VALUE self, VALUE compiled)
+/* RSeq lowering uses one scoped owner for all mutable lowering records.  The
+ * owner remains active until the protected body publishes or discards them. */
+typedef struct {
+    onibi_allocation_owner_t allocations;
+    OnibiGirStateVector states;
+    OnibiRSeqSubprogramVector subprograms;
+    OnibiRSeqClassPayloadVector class_payloads;
+    OnibiRSeqLiteralPayloadVector literal_payloads;
+    OnibiGActionVector actions;
+    OnibiGActionVector pending_actions;
+    OnibiGirEdgeVector edges;
+    OnibiGirEdgeVector start_edges;
+    int failure_phase;
+    int *failure_fired;
+} OnibiRSeqLowerOwner;
+typedef struct {
+    OnibiRSeqLowerOwner *owner;
+    VALUE compiled;
+} OnibiRSeqLowerCall;
+
+static void
+onibi_rseq_lower_fail_if(OnibiRSeqLowerOwner *owner, int phase)
 {
-    (void)self;
+    if (owner->failure_phase == phase) {
+	if (owner->failure_fired) *owner->failure_fired = 1;
+	rb_raise(eRegexpError, "injected RSeq lowering failure at pass %d",
+		 phase);
+    }
+}
+
+static void
+onibi_rseq_lower_owner_cleanup(OnibiRSeqLowerOwner *owner)
+{
+    onibi_rseq_class_payload_vector_free(&owner->class_payloads);
+    onibi_rseq_literal_payload_vector_free(&owner->literal_payloads);
+    onibi_g_action_vector_free(&owner->actions);
+    onibi_g_action_vector_free(&owner->pending_actions);
+    onibi_gir_edge_vector_free(&owner->edges);
+    onibi_gir_edge_vector_free(&owner->start_edges);
+    onibi_gir_state_vector_free(&owner->states);
+    onibi_rseq_subprogram_vector_free(&owner->subprograms);
+    onibi_allocation_owner_cleanup(&owner->allocations);
+}
+
+static VALUE
+onibi_rseq_lower_owner_ensure(VALUE opaque)
+{
+    onibi_rseq_lower_owner_cleanup((OnibiRSeqLowerOwner *)(uintptr_t)opaque);
+    return Qnil;
+}
+
+static VALUE
+onibi_rseq_lower_body(VALUE opaque)
+{
+    OnibiRSeqLowerCall *call = (OnibiRSeqLowerCall *)(uintptr_t)opaque;
+    OnibiRSeqLowerOwner *owner = call->owner;
+    VALUE compiled = call->compiled;
+#define state_records (owner->states)
+#define subprogram_records (owner->subprograms)
+#define class_payloads (owner->class_payloads)
+#define literal_payloads (owner->literal_payloads)
+#define action_records (owner->actions)
+#define r_edge_records (owner->edges)
+#define r_start_edge_records (owner->start_edges)
+    onibi_g_action_vector_init(&owner->pending_actions);
+    onibi_g_action_vector_bind(&owner->pending_actions, &owner->allocations);
     OnibiCompiled *compiled_data = onibi_compiled_get(compiled);
     if (compiled_data->states.count == 0)
 	rb_raise(rb_eArgError, "RSeq lowering requires compiler output");
@@ -30,19 +92,25 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	rb_raise(rb_eArgError, "RSeq capture count is out of range");
     uint32_t capture_count = (uint32_t)gir_capture_count;
     size_t state_count = compiled_data->states.count;
-    OnibiGirStateVector state_records;
+    onibi_allocation_owner_set_phase(&owner->allocations, 1);
     onibi_gir_state_vector_init(&state_records);
+    onibi_gir_state_vector_bind(&state_records, &owner->allocations);
     if (state_count > 0) {
-	state_records.entries = ALLOC_N(OnibiGirStateEntry, state_count);
+	state_records.entries =
+	    onibi_owned_realloc(&owner->allocations, NULL,
+				state_count * sizeof(OnibiGirStateEntry));
 	memcpy(state_records.entries, compiled_data->states.entries,
 	       state_count * sizeof(*state_records.entries));
 	state_records.count = state_records.capacity = state_count;
     }
-    OnibiRSeqSubprogramVector subprogram_records;
+    onibi_rseq_lower_fail_if(owner, 1);
+    onibi_allocation_owner_set_phase(&owner->allocations, 2);
     onibi_rseq_subprogram_vector_init(&subprogram_records);
+    onibi_rseq_subprogram_vector_bind(&subprogram_records, &owner->allocations);
     for (size_t i = 0; i < compiled_data->subprograms.count; i++)
 	onibi_rseq_subprogram_vector_push(
 	    &subprogram_records, compiled_data->subprograms.entries[i]);
+    onibi_rseq_lower_fail_if(owner, 2);
     long accept_state = compiled_data->accept;
     if (accept_state < 0 || (size_t)accept_state >= state_count)
 	rb_raise(rb_eArgError,
@@ -59,8 +127,9 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering received an invalid start edge");
     }
-    OnibiRSeqClassPayloadVector class_payloads;
+    onibi_allocation_owner_set_phase(&owner->allocations, 3);
     onibi_rseq_class_payload_vector_init(&class_payloads);
+    onibi_rseq_class_payload_vector_bind(&class_payloads, &owner->allocations);
     for (size_t i = 0; i < state_records.count; i++) {
 	OnibiGirStateEntry *state = &state_records.entries[i];
 	if (state->opcode != ONIBI_G_CLASS) continue;
@@ -81,11 +150,13 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_rseq_class_payload_vector_push(&class_payloads, state);
 	state->payload_index = (uint32_t)payload_index;
     }
+    onibi_rseq_lower_fail_if(owner, 3);
     uint32_t class_count = (uint32_t)class_payloads.count;
-    OnibiGActionVector action_records;
+    onibi_allocation_owner_set_phase(&owner->allocations, 4);
     onibi_g_action_vector_init(&action_records);
-    OnibiGirEdgeVector r_edge_records;
+    onibi_g_action_vector_bind(&action_records, &owner->allocations);
     onibi_gir_edge_vector_init(&r_edge_records);
+    onibi_gir_edge_vector_bind(&r_edge_records, &owner->allocations);
     for (size_t i = 0; i < compiled_data->edges.count; i++) {
 	const OnibiGirEdgeEntry *edge = &compiled_data->edges.entries[i];
 	const OnibiGActionVector *edge_actions = &edge->actions;
@@ -98,15 +169,18 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_g_action_vector_push(
 		&action_records,
 		(OnibiGAction){ONIBI_GA_END, 0, 0, 0, 0, 0, 0, 0, 0});
-	OnibiGActionVector copied_actions =
-	    onibi_g_action_vector_copy(edge_actions);
-	onibi_gir_edge_vector_push(
-	    &r_edge_records,
-	    (OnibiGirEdgeEntry){from, to, action_offset, copied_actions});
+	owner->pending_actions =
+	    onibi_g_action_vector_copy(edge_actions, &owner->allocations);
+	onibi_gir_edge_vector_push(&r_edge_records,
+				   (OnibiGirEdgeEntry){from, to, action_offset,
+						       owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
     }
     onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count);
-    OnibiGirEdgeVector r_start_edge_records;
+    onibi_rseq_lower_fail_if(owner, 4);
+    onibi_allocation_owner_set_phase(&owner->allocations, 5);
     onibi_gir_edge_vector_init(&r_start_edge_records);
+    onibi_gir_edge_vector_bind(&r_start_edge_records, &owner->allocations);
     for (size_t i = 0; i < compiled_data->start_edges.count; i++) {
 	const OnibiGirEdgeEntry *edge = &compiled_data->start_edges.entries[i];
 	const OnibiGActionVector *edge_actions = &edge->actions;
@@ -118,19 +192,23 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_g_action_vector_push(
 		&action_records,
 		(OnibiGAction){ONIBI_GA_END, 0, 0, 0, 0, 0, 0, 0, 0});
-	OnibiGActionVector copied_actions =
-	    onibi_g_action_vector_copy(edge_actions);
+	owner->pending_actions =
+	    onibi_g_action_vector_copy(edge_actions, &owner->allocations);
 	onibi_gir_edge_vector_push(
 	    &r_start_edge_records,
-	    (OnibiGirEdgeEntry){-1, to, action_offset, copied_actions});
+	    (OnibiGirEdgeEntry){-1, to, action_offset, owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
     }
+    onibi_rseq_lower_fail_if(owner, 5);
     int options = compiled_data->options;
     int ignorecase = (options & ONIBI_OPT_IGNORECASE) != 0;
     int multiline = (options & ONIBI_OPT_MULTILINE) != 0;
     uint64_t physical_edge_count =
 	(uint64_t)r_edge_records.count + (uint64_t)r_start_edge_records.count;
-    OnibiRSeqLiteralPayloadVector literal_payloads;
+    onibi_allocation_owner_set_phase(&owner->allocations, 6);
     onibi_rseq_literal_payload_vector_init(&literal_payloads);
+    onibi_rseq_literal_payload_vector_bind(&literal_payloads,
+					   &owner->allocations);
     for (size_t i = 0; i < state_records.count; i++) {
 	unsigned int opcode = state_records.entries[i].opcode;
 	if (opcode != ONIBI_G_CHAR) continue;
@@ -156,6 +234,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	    onibi_rseq_literal_payload_vector_push(&literal_payloads, state);
 	state_records.entries[i].payload_index = (uint32_t)payload_index;
     }
+    onibi_rseq_lower_fail_if(owner, 6);
     for (size_t i = 0; i < state_records.count; i++) {
 	OnibiGirStateEntry *state = &state_records.entries[i];
 	if (state->opcode != ONIBI_G_BACKREF) continue;
@@ -289,6 +368,7 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     if (physical.prefix_length == 0)
 	memset(physical.prefix, 0, sizeof(physical.prefix));
     physical.features = features;
+    onibi_allocation_owner_set_phase(&owner->allocations, 7);
     VALUE blob = rb_str_new(NULL, (long)offset);
     memset(RSTRING_PTR(blob), 0, (size_t)offset);
     memcpy(RSTRING_PTR(blob), &physical, sizeof(physical));
@@ -422,14 +502,47 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
     /* Validate once. Publish only the relocatable blob. The typed GIR vectors
 	 remain compiler-owned and are released after lowering. */
     onibi_rseq_blob_validate(blob);
+    onibi_rseq_lower_fail_if(owner, 7);
     onibi_rseq_class_payload_vector_free(&class_payloads);
     onibi_rseq_literal_payload_vector_free(&literal_payloads);
     onibi_g_action_vector_free(&action_records);
+    onibi_g_action_vector_free(&owner->pending_actions);
     onibi_gir_edge_vector_free(&r_edge_records);
     onibi_gir_edge_vector_free(&r_start_edge_records);
     onibi_gir_state_vector_free(&state_records);
     onibi_rseq_subprogram_vector_free(&subprogram_records);
+#undef state_records
+#undef subprogram_records
+#undef class_payloads
+#undef literal_payloads
+#undef action_records
+#undef r_edge_records
+#undef r_start_edge_records
     return blob;
+}
+
+static VALUE
+onibi_rseq_lower_with_failure(VALUE compiled, int failure_phase,
+			      int *failure_fired,
+			      OnibiAllocationAccounting *accounting)
+{
+    OnibiRSeqLowerOwner owner;
+    memset(&owner, 0, sizeof(owner));
+    onibi_allocation_owner_init(&owner.allocations, accounting);
+    owner.failure_phase = failure_phase;
+    owner.failure_fired = failure_fired;
+    owner.allocations.failure_phase = failure_phase;
+    owner.allocations.failure_fired = failure_fired;
+    OnibiRSeqLowerCall call = {&owner, compiled};
+    return rb_ensure(onibi_rseq_lower_body, (VALUE)(uintptr_t)&call,
+		     onibi_rseq_lower_owner_ensure, (VALUE)(uintptr_t)&owner);
+}
+
+static VALUE
+onibi_rseq_lower(VALUE self, VALUE compiled)
+{
+    (void)self;
+    return onibi_rseq_lower_with_failure(compiled, 0, NULL, NULL);
 }
 
 static VALUE

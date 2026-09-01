@@ -25,12 +25,15 @@ ONIBI_VECTOR_DEFINE(onibi_nfa_edge_vector, OnibiNfaEdgeVector, OnibiNfaEdge, 8,
 		    "NFA edge vector is too large")
 
 static void
-onibi_nfa_init(OnibiTaggedNfa *nfa)
+onibi_nfa_init(OnibiTaggedNfa *nfa, onibi_allocation_owner_t *owner)
 {
     memset(nfa, 0, sizeof(*nfa));
     onibi_gir_state_vector_init(&nfa->states);
+    onibi_gir_state_vector_bind(&nfa->states, owner);
     onibi_nfa_edge_vector_init(&nfa->edges);
+    onibi_nfa_edge_vector_bind(&nfa->edges, owner);
     onibi_id_vector_init(&nfa->starts);
+    onibi_id_vector_bind(&nfa->starts, owner);
     nfa->accept = -1;
 }
 
@@ -40,8 +43,7 @@ onibi_nfa_free(OnibiTaggedNfa *nfa)
     onibi_gir_state_vector_free(&nfa->states);
     for (size_t i = 0; i < nfa->edges.count; i++)
 	onibi_g_action_vector_free(&nfa->edges.entries[i].actions);
-    ONIBI_VECTOR_RELEASE(nfa->edges.entries, nfa->edges.count,
-			 nfa->edges.capacity);
+    ONIBI_OWNED_VECTOR_RELEASE(&nfa->edges);
     onibi_id_vector_free(&nfa->starts);
     nfa->accept = -1;
 }
@@ -76,6 +78,60 @@ typedef struct {
     long state_count;
 } onibi_nfa_closure_t;
 
+static void onibi_nfa_emit_closure(onibi_nfa_closure_t *closure, long origin,
+				   long state,
+				   const OnibiGActionVector *actions);
+
+typedef struct {
+    onibi_nfa_closure_t *closure;
+    long origin;
+    long state;
+    OnibiGActionVector actions;
+} OnibiNfaClosureCall;
+
+static VALUE
+onibi_nfa_closure_call_body(VALUE opaque)
+{
+    OnibiNfaClosureCall *call = (OnibiNfaClosureCall *)(uintptr_t)opaque;
+    onibi_nfa_emit_closure(call->closure, call->origin, call->state,
+			   &call->actions);
+    return Qnil;
+}
+
+static VALUE
+onibi_nfa_closure_call_ensure(VALUE opaque)
+{
+    OnibiNfaClosureCall *call = (OnibiNfaClosureCall *)(uintptr_t)opaque;
+    onibi_g_action_vector_free(&call->actions);
+    return Qnil;
+}
+
+typedef struct {
+    OnibiGirEdgeVector *out;
+    long from;
+    long to;
+    OnibiGActionVector actions;
+    int transferred;
+} OnibiNfaEdgeCall;
+
+static VALUE
+onibi_nfa_edge_call_body(VALUE opaque)
+{
+    OnibiNfaEdgeCall *call = (OnibiNfaEdgeCall *)(uintptr_t)opaque;
+    onibi_gir_edge_vector_push(
+	call->out, (OnibiGirEdgeEntry){call->from, call->to, 0, call->actions});
+    call->transferred = 1;
+    return Qnil;
+}
+
+static VALUE
+onibi_nfa_edge_call_ensure(VALUE opaque)
+{
+    OnibiNfaEdgeCall *call = (OnibiNfaEdgeCall *)(uintptr_t)opaque;
+    if (!call->transferred) onibi_g_action_vector_free(&call->actions);
+    return Qnil;
+}
+
 /* Traverse ordered epsilon paths and emit the first consuming edge. */
 static void
 onibi_nfa_emit_closure(onibi_nfa_closure_t *closure, long origin, long state,
@@ -89,61 +145,112 @@ onibi_nfa_emit_closure(onibi_nfa_closure_t *closure, long origin, long state,
 	if (closure->visiting[edge->to])
 	    rb_raise(eRegexpError, "epsilon transition cycle");
 	closure->visiting[edge->to] = 1;
-	OnibiGActionVector next =
-	    onibi_g_action_vector_concat(actions, &edge->actions);
-	onibi_nfa_emit_closure(closure, origin, edge->to, &next);
-	onibi_g_action_vector_free(&next);
+	OnibiNfaClosureCall call = {
+	    closure, origin, edge->to,
+	    onibi_g_action_vector_concat(actions, &edge->actions,
+					 closure->out->allocation_owner)};
+	(void)rb_ensure(onibi_nfa_closure_call_body, (VALUE)(uintptr_t)&call,
+			onibi_nfa_closure_call_ensure, (VALUE)(uintptr_t)&call);
 	closure->visiting[edge->to] = 0;
     }
     for (size_t i = 0; i < closure->nfa->edges.count; i++) {
 	const OnibiNfaEdge *edge = &closure->nfa->edges.entries[i];
 	if (edge->from != state || edge->kind != ONIBI_NFA_CONSUME) continue;
-	OnibiGActionVector combined =
-	    onibi_g_action_vector_concat(actions, &edge->actions);
-	if (!onibi_nfa_edge_seen(closure->out, origin, edge->to, &combined))
-	    onibi_gir_edge_vector_push(
-		closure->out,
-		(OnibiGirEdgeEntry){origin, edge->to, 0, combined});
+	OnibiGActionVector combined = onibi_g_action_vector_concat(
+	    actions, &edge->actions, closure->out->allocation_owner);
+	if (!onibi_nfa_edge_seen(closure->out, origin, edge->to, &combined)) {
+	    OnibiNfaEdgeCall call = {closure->out, origin, edge->to, combined,
+				     0};
+	    (void)rb_ensure(onibi_nfa_edge_call_body, (VALUE)(uintptr_t)&call,
+			    onibi_nfa_edge_call_ensure,
+			    (VALUE)(uintptr_t)&call);
+	}
 	else
 	    onibi_g_action_vector_free(&combined);
     }
 }
 
 /* Publish GIR after ordered epsilon closure. */
-static void
-onibi_epsilon_eliminate(OnibiTaggedNfa *nfa, onibi_gir_builder_t *gir)
-{
+typedef struct {
+    OnibiTaggedNfa *nfa;
+    onibi_gir_builder_t *gir;
     OnibiGirEdgeVector result;
-    onibi_gir_edge_vector_init(&result);
+    unsigned char *visiting;
+} OnibiNfaEliminateOwner;
+
+static void
+onibi_nfa_eliminate_owner_cleanup(OnibiNfaEliminateOwner *owner)
+{
+    onibi_gir_edge_vector_free(&owner->result);
+    onibi_owned_free(owner->gir->allocation_owner, owner->visiting);
+    owner->visiting = NULL;
+}
+
+static VALUE
+onibi_nfa_eliminate_ensure(VALUE opaque)
+{
+    onibi_nfa_eliminate_owner_cleanup(
+	(OnibiNfaEliminateOwner *)(uintptr_t)opaque);
+    return Qnil;
+}
+
+static VALUE
+onibi_epsilon_eliminate_body(VALUE opaque)
+{
+    OnibiNfaEliminateOwner *owner = (OnibiNfaEliminateOwner *)(uintptr_t)opaque;
+    OnibiTaggedNfa *nfa = owner->nfa;
+    onibi_gir_builder_t *gir = owner->gir;
     long state_count = (long)nfa->states.count;
-    unsigned char *visiting =
-	state_count ? ALLOC_N(unsigned char, state_count) : NULL;
-    if (visiting) memset(visiting, 0, (size_t)state_count);
-    onibi_nfa_closure_t closure = {nfa, &result, visiting, state_count};
+    owner->visiting = state_count
+			  ? onibi_owned_realloc(gir->allocation_owner, NULL,
+						(size_t)state_count)
+			  : NULL;
+    if (owner->visiting) memset(owner->visiting, 0, (size_t)state_count);
+    onibi_nfa_closure_t closure = {nfa, &owner->result, owner->visiting,
+				   state_count};
     for (size_t i = 0; i < nfa->edges.count; i++) {
 	const OnibiNfaEdge *edge = &nfa->edges.entries[i];
 	if (edge->kind == ONIBI_NFA_CONSUME) {
-	    if (!onibi_nfa_edge_seen(&result, edge->from, edge->to,
-				     &edge->actions))
-		onibi_gir_edge_vector_push(
-		    &result, (OnibiGirEdgeEntry){
-				 edge->from, edge->to, 0,
-				 onibi_g_action_vector_copy(&edge->actions)});
+	    if (!onibi_nfa_edge_seen(&owner->result, edge->from, edge->to,
+				     &edge->actions)) {
+		OnibiNfaEdgeCall call = {
+		    &owner->result, edge->from, edge->to,
+		    onibi_g_action_vector_copy(&edge->actions,
+					       owner->result.allocation_owner),
+		    0};
+		(void)rb_ensure(
+		    onibi_nfa_edge_call_body, (VALUE)(uintptr_t)&call,
+		    onibi_nfa_edge_call_ensure, (VALUE)(uintptr_t)&call);
+	    }
 	}
 	else {
 	    if (edge->to < 0 || edge->to >= state_count)
 		rb_raise(rb_eArgError,
 			 "NFA epsilon destination is out of range");
-	    visiting[edge->to] = 1;
+	    owner->visiting[edge->to] = 1;
 	    onibi_nfa_emit_closure(&closure, edge->from, edge->to,
 				   &edge->actions);
-	    visiting[edge->to] = 0;
+	    owner->visiting[edge->to] = 0;
 	}
     }
-    if (visiting) xfree(visiting);
     onibi_gir_state_vector_free(&gir->states);
     onibi_gir_edge_vector_free(&gir->edges);
     gir->states = nfa->states;
-    gir->edges = result;
+    gir->edges = owner->result;
+    onibi_gir_edge_vector_init(&owner->result);
     onibi_gir_state_vector_init(&nfa->states);
+    return Qnil;
+}
+
+static void
+onibi_epsilon_eliminate(OnibiTaggedNfa *nfa, onibi_gir_builder_t *gir)
+{
+    OnibiNfaEliminateOwner owner;
+    memset(&owner, 0, sizeof(owner));
+    owner.nfa = nfa;
+    owner.gir = gir;
+    onibi_gir_edge_vector_init(&owner.result);
+    onibi_gir_edge_vector_bind(&owner.result, gir->allocation_owner);
+    (void)rb_ensure(onibi_epsilon_eliminate_body, (VALUE)(uintptr_t)&owner,
+		    onibi_nfa_eliminate_ensure, (VALUE)(uintptr_t)&owner);
 }

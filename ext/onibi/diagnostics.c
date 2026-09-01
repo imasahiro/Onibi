@@ -189,6 +189,80 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     return result;
 }
 
+typedef struct {
+    VALUE source;
+    VALUE options;
+    int phase;
+    OnibiTokenVector tokens;
+    VALUE parsed;
+    int failure_fired;
+    OnibiAllocationAccounting accounting;
+} OnibiCompileFailureDiagnostic;
+
+static VALUE
+onibi_compile_failure_diagnostic_call(VALUE opaque)
+{
+    OnibiCompileFailureDiagnostic *call =
+	(OnibiCompileFailureDiagnostic *)(uintptr_t)opaque;
+    int options = NUM2INT(call->options);
+    onibi_token_vector_init(&call->tokens);
+    onibi_tokenize_internal(call->source, (options & ONIBI_OPT_EXTENDED) != 0,
+			    &call->tokens);
+    call->parsed =
+	onibi_parser_parse_internal(call->source, call->options, &call->tokens);
+    int compiler_phase = call->phase <= 8 ? call->phase : 0;
+    VALUE compiled = onibi_compiler_compile_with_failure(
+	call->parsed, compiler_phase, &call->failure_fired, &call->accounting);
+    if (call->phase >= 9)
+	(void)onibi_rseq_lower_with_failure(
+	    compiled, call->phase - 8, &call->failure_fired, &call->accounting);
+    return Qtrue;
+}
+
+static VALUE
+onibi_compile_failure_diagnostic_cleanup(VALUE opaque)
+{
+    OnibiCompileFailureDiagnostic *call =
+	(OnibiCompileFailureDiagnostic *)(uintptr_t)opaque;
+    onibi_token_vector_free(&call->tokens);
+    return Qnil;
+}
+
+static VALUE
+onibi_compile_failure_diagnostics(VALUE self, VALUE phase_value)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    int phase = NUM2INT(phase_value);
+    if (phase < 1 || phase > 15)
+	rb_raise(rb_eArgError, "compiler failure phase is out of range");
+    OnibiCompileFailureDiagnostic call = {
+	obj->source, INT2NUM(obj->options), phase, {0}, Qnil, 0, {0}};
+    size_t allocations_before = call.accounting.live_count;
+    if (allocations_before != 0)
+	rb_raise(eRegexpError,
+		 "stale compiler allocation exists before injected failure");
+    int state = 0;
+    rb_protect(onibi_compile_failure_diagnostic_call, (VALUE)(uintptr_t)&call,
+	       &state);
+    onibi_compile_failure_diagnostic_cleanup((VALUE)(uintptr_t)&call);
+    if (!state) rb_raise(eRegexpError, "injected failure did not raise");
+    rb_set_errinfo(Qnil);
+    size_t allocations_after = call.accounting.live_count;
+    if (allocations_after != allocations_before)
+	rb_raise(eRegexpError,
+		 "compiler allocation count changed after injected failure");
+    if (!call.failure_fired)
+	rb_raise(eRegexpError, "compiler failed before the injection point");
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("raised")), Qtrue);
+    rb_hash_aset(result, ID2SYM(rb_intern("allocations_before")),
+		 SIZET2NUM(allocations_before));
+    rb_hash_aset(result, ID2SYM(rb_intern("allocations_after")),
+		 SIZET2NUM(allocations_after));
+    return result;
+}
+
 static VALUE
 onibi_internal_error_diagnostics(VALUE self, VALUE subject)
 {
