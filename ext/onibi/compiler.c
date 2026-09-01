@@ -1837,6 +1837,9 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     nfa->accept = accept;
     if (nfa_diagnostics_out) *nfa_diagnostics_out = onibi_nfa_diagnostics(nfa);
     onibi_epsilon_eliminate(nfa, builder, start_edges, &accept, &root_entry);
+    if (nfa_diagnostics_out)
+	onibi_nfa_add_elimination_diagnostics(*nfa_diagnostics_out, builder,
+					      start_edges);
     onibi_nfa_free(nfa);
     owner->nfa_active = 0;
     builder->nfa = NULL;

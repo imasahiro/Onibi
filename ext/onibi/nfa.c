@@ -148,10 +148,18 @@ static int
 onibi_nfa_actions_equal(const OnibiGActionVector *left,
 			const OnibiGActionVector *right)
 {
-    return left->count == right->count &&
-	   (left->count == 0 ||
-	    memcmp(left->entries, right->entries,
-		   left->count * sizeof(*left->entries)) == 0);
+    if (left->count != right->count) return 0;
+    for (size_t i = 0; i < left->count; i++) {
+	const OnibiGAction *a = &left->entries[i];
+	const OnibiGAction *b = &right->entries[i];
+	if (a->code != b->code || a->set != b->set ||
+	    a->positive != b->positive || a->has_slot != b->has_slot ||
+	    a->slot != b->slot || a->has_assert_kind != b->has_assert_kind ||
+	    a->assert_kind != b->assert_kind || a->has_arg32 != b->has_arg32 ||
+	    a->arg32 != b->arg32)
+	    return 0;
+    }
+    return 1;
 }
 
 static OnibiGActionVector
@@ -266,24 +274,35 @@ onibi_nfa_add_start(onibi_gir_builder_t *builder, long destination,
     onibi_nfa_add_connection(builder, -1, destination, actions, 0);
 }
 
-static int
-onibi_nfa_edge_seen(const OnibiGirEdgeVector *edges, long from, long to,
-		    const OnibiGActionVector *actions)
-{
-    for (size_t i = 0; i < edges->count; i++) {
-	const OnibiGirEdgeEntry *edge = &edges->entries[i];
-	if (edge->from == from && edge->to == to &&
-	    onibi_nfa_actions_equal(&edge->actions, actions))
-	    return 1;
-    }
-    return 0;
-}
+typedef struct {
+    size_t offset;
+    size_t count;
+} OnibiNfaAdjacencyRange;
+
+typedef struct {
+    OnibiNfaAdjacencyRange *ranges;
+    size_t *edge_indices;
+} OnibiNfaAdjacency;
+
+typedef struct {
+    uint64_t hash;
+    size_t output_index;
+    unsigned char used;
+} OnibiNfaDedupSlot;
+
+typedef struct {
+    OnibiNfaDedupSlot *slots;
+    size_t capacity;
+    size_t count;
+} OnibiNfaDedup;
 
 typedef struct {
     const OnibiTaggedNfa *nfa;
+    const OnibiNfaAdjacency *adjacency;
     OnibiGirEdgeVector *out;
     const long *state_map;
-    unsigned char *visiting;
+    size_t *visiting_action_bases;
+    OnibiNfaDedup *dedup;
     long state_count;
 } OnibiNfaClosure;
 
@@ -341,6 +360,101 @@ onibi_nfa_output_edge_ensure(VALUE opaque)
     return Qnil;
 }
 
+static uint64_t
+onibi_nfa_hash_bytes(uint64_t hash, const void *data, size_t length)
+{
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < length; i++) {
+	hash ^= bytes[i];
+	hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static uint64_t
+onibi_nfa_edge_key_hash(long destination, const OnibiGActionVector *actions)
+{
+    uint64_t hash = UINT64_C(1469598103934665603);
+    hash = onibi_nfa_hash_bytes(hash, &destination, sizeof(destination));
+    hash = onibi_nfa_hash_bytes(hash, &actions->count, sizeof(actions->count));
+    for (size_t i = 0; i < actions->count; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	hash = onibi_nfa_hash_bytes(hash, &action->code, sizeof(action->code));
+	hash = onibi_nfa_hash_bytes(hash, &action->set, sizeof(action->set));
+	hash = onibi_nfa_hash_bytes(hash, &action->positive,
+				    sizeof(action->positive));
+	hash = onibi_nfa_hash_bytes(hash, &action->has_slot,
+				    sizeof(action->has_slot));
+	hash = onibi_nfa_hash_bytes(hash, &action->slot, sizeof(action->slot));
+	hash = onibi_nfa_hash_bytes(hash, &action->has_assert_kind,
+				    sizeof(action->has_assert_kind));
+	hash = onibi_nfa_hash_bytes(hash, &action->assert_kind,
+				    sizeof(action->assert_kind));
+	hash = onibi_nfa_hash_bytes(hash, &action->has_arg32,
+				    sizeof(action->has_arg32));
+	hash =
+	    onibi_nfa_hash_bytes(hash, &action->arg32, sizeof(action->arg32));
+    }
+    return hash;
+}
+
+static void
+onibi_nfa_dedup_reset(OnibiNfaDedup *dedup)
+{
+    if (dedup->slots)
+	memset(dedup->slots, 0, dedup->capacity * sizeof(*dedup->slots));
+    dedup->count = 0;
+}
+
+static void
+onibi_nfa_dedup_insert_slot(OnibiNfaDedupSlot *slots, size_t capacity,
+			    uint64_t hash, size_t output_index)
+{
+    size_t slot = (size_t)hash & (capacity - 1);
+    while (slots[slot].used)
+	slot = (slot + 1) & (capacity - 1);
+    slots[slot] = (OnibiNfaDedupSlot){hash, output_index, 1};
+}
+
+static void
+onibi_nfa_dedup_reserve(OnibiNfaDedup *dedup, onibi_allocation_owner_t *owner)
+{
+    if (dedup->capacity != 0 && dedup->count + 1 <= dedup->capacity / 2) return;
+    if (dedup->capacity > SIZE_MAX / 2 / sizeof(*dedup->slots))
+	rb_raise(rb_eNoMemError, "NFA edge dedup index is too large");
+    size_t capacity = dedup->capacity == 0 ? 16 : dedup->capacity * 2;
+    OnibiNfaDedupSlot *slots =
+	onibi_owned_realloc(owner, NULL, capacity * sizeof(*slots));
+    memset(slots, 0, capacity * sizeof(*slots));
+    for (size_t i = 0; i < dedup->capacity; i++) {
+	const OnibiNfaDedupSlot *prior = &dedup->slots[i];
+	if (prior->used)
+	    onibi_nfa_dedup_insert_slot(slots, capacity, prior->hash,
+					prior->output_index);
+    }
+    onibi_owned_free(owner, dedup->slots);
+    dedup->slots = slots;
+    dedup->capacity = capacity;
+}
+
+static int
+onibi_nfa_dedup_find(const OnibiNfaDedup *dedup, const OnibiGirEdgeVector *out,
+		     long destination, const OnibiGActionVector *actions,
+		     uint64_t hash, size_t *slot_out)
+{
+    size_t slot = (size_t)hash & (dedup->capacity - 1);
+    while (dedup->slots[slot].used) {
+	const OnibiNfaDedupSlot *candidate = &dedup->slots[slot];
+	const OnibiGirEdgeEntry *edge = &out->entries[candidate->output_index];
+	if (candidate->hash == hash && edge->to == destination &&
+	    onibi_nfa_actions_equal(&edge->actions, actions))
+	    return 1;
+	slot = (slot + 1) & (dedup->capacity - 1);
+    }
+    *slot_out = slot;
+    return 0;
+}
+
 static void
 onibi_nfa_emit_edge(OnibiNfaClosure *closure, long origin, long destination,
 		    OnibiGActionVector actions)
@@ -348,13 +462,28 @@ onibi_nfa_emit_edge(OnibiNfaClosure *closure, long origin, long destination,
     long mapped = closure->state_map[destination];
     if (mapped < 0)
 	rb_raise(eRegexpError, "NFA closure reached an epsilon state");
-    if (onibi_nfa_edge_seen(closure->out, origin, mapped, &actions)) {
+    onibi_nfa_dedup_reserve(closure->dedup, closure->out->allocation_owner);
+    uint64_t hash = onibi_nfa_edge_key_hash(mapped, &actions);
+    size_t slot;
+    if (onibi_nfa_dedup_find(closure->dedup, closure->out, mapped, &actions,
+			     hash, &slot)) {
 	onibi_g_action_vector_free(&actions);
 	return;
     }
     OnibiNfaOutputEdgeCall call = {closure->out, origin, mapped, actions, 0};
     (void)rb_ensure(onibi_nfa_output_edge_body, (VALUE)(uintptr_t)&call,
 		    onibi_nfa_output_edge_ensure, (VALUE)(uintptr_t)&call);
+    closure->dedup->slots[slot] =
+	(OnibiNfaDedupSlot){hash, closure->out->count - 1, 1};
+    closure->dedup->count++;
+}
+
+static int
+onibi_nfa_cycle_has_progress(const OnibiGActionVector *actions, size_t base)
+{
+    for (size_t i = base; i < actions->count; i++)
+	if (actions->entries[i].code == ONIBI_GA_PROGRESS) return 1;
+    return 0;
 }
 
 /* Traverse ordered epsilon paths and stop at a consume or accept state. */
@@ -373,9 +502,12 @@ onibi_nfa_emit_closure(OnibiNfaClosure *closure, long origin, long state,
 	    return;
 	}
     }
-    for (size_t i = 0; i < closure->nfa->edges.count; i++) {
-	const OnibiNfaEdge *edge = &closure->nfa->edges.entries[i];
-	if (edge->from != state) continue;
+    size_t source_slot = (size_t)(state + 1);
+    const OnibiNfaAdjacencyRange *range =
+	&closure->adjacency->ranges[source_slot];
+    for (size_t i = 0; i < range->count; i++) {
+	size_t edge_index = closure->adjacency->edge_indices[range->offset + i];
+	const OnibiNfaEdge *edge = &closure->nfa->edges.entries[edge_index];
 	OnibiGActionVector combined = onibi_g_action_vector_concat(
 	    actions, &edge->actions, closure->out->allocation_owner);
 	if (edge->kind == ONIBI_NFA_CONSUME) {
@@ -386,15 +518,24 @@ onibi_nfa_emit_closure(OnibiNfaClosure *closure, long origin, long state,
 	    onibi_g_action_vector_free(&combined);
 	    rb_raise(eRegexpError, "NFA epsilon destination is out of range");
 	}
-	if (closure->visiting[edge->to]) {
+	size_t visit_base = closure->visiting_action_bases[edge->to];
+	if (visit_base != SIZE_MAX) {
+	    /* Nullable-repeat normalization puts a progress action inside each
+	     * valid all-epsilon cycle.  Skip that normalized cycle and keep its
+	     * later ordered exits. */
+	    int valid_cycle =
+		onibi_nfa_cycle_has_progress(&combined, visit_base);
 	    onibi_g_action_vector_free(&combined);
-	    rb_raise(eRegexpError, "epsilon transition cycle");
+	    if (!valid_cycle)
+		rb_raise(eRegexpError, "NFA structure is invalid: epsilon "
+				       "cycle has no progress action");
+	    continue;
 	}
-	closure->visiting[edge->to] = 1;
+	closure->visiting_action_bases[edge->to] = combined.count;
 	OnibiNfaClosureCall call = {closure, origin, edge->to, combined};
 	(void)rb_ensure(onibi_nfa_closure_call_body, (VALUE)(uintptr_t)&call,
 			onibi_nfa_closure_call_ensure, (VALUE)(uintptr_t)&call);
-	closure->visiting[edge->to] = 0;
+	closure->visiting_action_bases[edge->to] = SIZE_MAX;
     }
 }
 
@@ -403,7 +544,10 @@ typedef struct {
     onibi_gir_builder_t *gir;
     OnibiGirEdgeVector *start_edges;
     long *state_map;
-    unsigned char *visiting;
+    size_t *visiting_action_bases;
+    OnibiNfaAdjacency adjacency;
+    size_t *adjacency_next;
+    OnibiNfaDedup dedup;
 } OnibiNfaEliminateOwner;
 
 static VALUE
@@ -411,10 +555,120 @@ onibi_nfa_eliminate_ensure(VALUE opaque)
 {
     OnibiNfaEliminateOwner *owner = (OnibiNfaEliminateOwner *)(uintptr_t)opaque;
     onibi_owned_free(owner->gir->allocation_owner, owner->state_map);
-    onibi_owned_free(owner->gir->allocation_owner, owner->visiting);
+    onibi_owned_free(owner->gir->allocation_owner,
+		     owner->visiting_action_bases);
+    onibi_owned_free(owner->gir->allocation_owner, owner->adjacency.ranges);
+    onibi_owned_free(owner->gir->allocation_owner,
+		     owner->adjacency.edge_indices);
+    onibi_owned_free(owner->gir->allocation_owner, owner->adjacency_next);
+    onibi_owned_free(owner->gir->allocation_owner, owner->dedup.slots);
     owner->state_map = NULL;
-    owner->visiting = NULL;
+    owner->visiting_action_bases = NULL;
+    owner->adjacency.ranges = NULL;
+    owner->adjacency.edge_indices = NULL;
+    owner->adjacency_next = NULL;
+    owner->dedup.slots = NULL;
     return Qnil;
+}
+
+static void
+onibi_nfa_validate_state(const OnibiTaggedNfa *nfa, size_t index)
+{
+    const OnibiNfaState *state = &nfa->states.entries[index];
+    if (state->id != (long)index)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: state IDs are not sequential");
+    if (state->kind != ONIBI_NFA_STATE_EPSILON &&
+	state->kind != ONIBI_NFA_STATE_CONSUMING &&
+	state->kind != ONIBI_NFA_STATE_ACCEPT)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: state kind is unknown");
+}
+
+static void
+onibi_nfa_validate_edge(const OnibiTaggedNfa *nfa, const OnibiNfaEdge *edge)
+{
+    size_t state_count = nfa->states.count;
+    if (edge->from < -1 ||
+	(edge->from >= 0 && (size_t)edge->from >= state_count))
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: edge source is out of range");
+    if (edge->to < 0 || (size_t)edge->to >= state_count)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: edge destination is out of range");
+    if (edge->from >= 0 &&
+	nfa->states.entries[edge->from].kind == ONIBI_NFA_STATE_ACCEPT)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: accept state has an outgoing edge");
+    const OnibiNfaState *destination = &nfa->states.entries[edge->to];
+    if (edge->kind == ONIBI_NFA_EPSILON) {
+	if (destination->kind != ONIBI_NFA_STATE_EPSILON &&
+	    destination->kind != ONIBI_NFA_STATE_ACCEPT)
+	    rb_raise(eRegexpError, "NFA structure is invalid: epsilon edge has "
+				   "a consuming destination");
+	return;
+    }
+    if (edge->kind != ONIBI_NFA_CONSUME)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: transition kind is unknown");
+    if (edge->from < 0 ||
+	nfa->states.entries[edge->from].kind != ONIBI_NFA_STATE_EPSILON)
+	rb_raise(
+	    eRegexpError,
+	    "NFA structure is invalid: consume edge has a non-epsilon source");
+    if (destination->kind != ONIBI_NFA_STATE_CONSUMING)
+	rb_raise(eRegexpError, "NFA structure is invalid: consume edge has a "
+			       "non-consuming destination");
+}
+
+static void
+onibi_nfa_build_adjacency(OnibiNfaEliminateOwner *owner)
+{
+    OnibiTaggedNfa *nfa = owner->nfa;
+    size_t state_count = nfa->states.count;
+    if (state_count == SIZE_MAX ||
+	state_count + 1 > SIZE_MAX / sizeof(*owner->adjacency.ranges) ||
+	nfa->edges.count > SIZE_MAX / sizeof(*owner->adjacency.edge_indices))
+	rb_raise(rb_eNoMemError, "NFA adjacency index is too large");
+    for (size_t i = 0; i < state_count; i++)
+	onibi_nfa_validate_state(nfa, i);
+    if (nfa->accept < 0 || (size_t)nfa->accept >= state_count ||
+	nfa->states.entries[nfa->accept].kind != ONIBI_NFA_STATE_ACCEPT)
+	rb_raise(eRegexpError,
+		 "NFA structure is invalid: root accept state is invalid");
+
+    size_t range_count = state_count + 1;
+    owner->adjacency.ranges =
+	onibi_owned_realloc(owner->gir->allocation_owner, NULL,
+			    range_count * sizeof(*owner->adjacency.ranges));
+    owner->adjacency_next =
+	onibi_owned_realloc(owner->gir->allocation_owner, NULL,
+			    range_count * sizeof(*owner->adjacency_next));
+    owner->adjacency.edge_indices =
+	nfa->edges.count
+	    ? onibi_owned_realloc(owner->gir->allocation_owner, NULL,
+				  nfa->edges.count *
+				      sizeof(*owner->adjacency.edge_indices))
+	    : NULL;
+    memset(owner->adjacency.ranges, 0,
+	   range_count * sizeof(*owner->adjacency.ranges));
+    for (size_t i = 0; i < nfa->edges.count; i++) {
+	const OnibiNfaEdge *edge = &nfa->edges.entries[i];
+	onibi_nfa_validate_edge(nfa, edge);
+	owner->adjacency.ranges[edge->from + 1].count++;
+    }
+    size_t offset = 0;
+    for (size_t i = 0; i < range_count; i++) {
+	owner->adjacency.ranges[i].offset = offset;
+	owner->adjacency_next[i] = offset;
+	offset += owner->adjacency.ranges[i].count;
+    }
+    for (size_t i = 0; i < nfa->edges.count; i++) {
+	size_t source = (size_t)(nfa->edges.entries[i].from + 1);
+	owner->adjacency.edge_indices[owner->adjacency_next[source]++] = i;
+    }
+    onibi_owned_free(owner->gir->allocation_owner, owner->adjacency_next);
+    owner->adjacency_next = NULL;
 }
 
 static VALUE
@@ -423,16 +677,22 @@ onibi_epsilon_eliminate_body(VALUE opaque)
     OnibiNfaEliminateOwner *owner = (OnibiNfaEliminateOwner *)(uintptr_t)opaque;
     OnibiTaggedNfa *nfa = owner->nfa;
     onibi_gir_builder_t *gir = owner->gir;
+    if (nfa->states.count > LONG_MAX)
+	rb_raise(rb_eNoMemError, "NFA state map is too large");
     long state_count = (long)nfa->states.count;
+    onibi_nfa_build_adjacency(owner);
     size_t map_bytes = (size_t)state_count * sizeof(*owner->state_map);
     owner->state_map = state_count ? onibi_owned_realloc(gir->allocation_owner,
 							 NULL, map_bytes)
 				   : NULL;
-    owner->visiting = state_count
-			  ? onibi_owned_realloc(gir->allocation_owner, NULL,
-						(size_t)state_count)
-			  : NULL;
-    if (owner->visiting) memset(owner->visiting, 0, (size_t)state_count);
+    owner->visiting_action_bases =
+	state_count
+	    ? onibi_owned_realloc(gir->allocation_owner, NULL,
+				  (size_t)state_count *
+				      sizeof(*owner->visiting_action_bases))
+	    : NULL;
+    for (long i = 0; i < state_count; i++)
+	owner->visiting_action_bases[i] = SIZE_MAX;
 
     onibi_gir_state_vector_free(&gir->states);
     onibi_gir_edge_vector_free(&gir->edges);
@@ -467,13 +727,25 @@ onibi_epsilon_eliminate_body(VALUE opaque)
     OnibiGActionVector empty;
     onibi_g_action_vector_init(&empty);
     onibi_g_action_vector_bind(&empty, gir->allocation_owner);
-    OnibiNfaClosure start_closure = {nfa, owner->start_edges, owner->state_map,
-				     owner->visiting, state_count};
+    OnibiNfaClosure start_closure = {nfa,
+				     &owner->adjacency,
+				     owner->start_edges,
+				     owner->state_map,
+				     owner->visiting_action_bases,
+				     &owner->dedup,
+				     state_count};
+    onibi_nfa_dedup_reset(&owner->dedup);
     onibi_nfa_emit_closure(&start_closure, -1, -1, &empty);
-    OnibiNfaClosure state_closure = {nfa, &gir->edges, owner->state_map,
-				     owner->visiting, state_count};
+    OnibiNfaClosure state_closure = {nfa,
+				     &owner->adjacency,
+				     &gir->edges,
+				     owner->state_map,
+				     owner->visiting_action_bases,
+				     &owner->dedup,
+				     state_count};
     for (long i = 0; i < state_count; i++) {
 	if (nfa->states.entries[i].kind != ONIBI_NFA_STATE_CONSUMING) continue;
+	onibi_nfa_dedup_reset(&owner->dedup);
 	onibi_nfa_emit_closure(&state_closure, owner->state_map[i], i, &empty);
     }
 
@@ -592,4 +864,76 @@ onibi_nfa_diagnostics(const OnibiTaggedNfa *nfa)
     rb_hash_aset(result, ID2SYM(rb_intern("edges")), edges);
     rb_hash_aset(result, ID2SYM(rb_intern("accept")), LONG2NUM(nfa->accept));
     return result;
+}
+
+static VALUE
+onibi_nfa_action_program_diagnostics(const OnibiGActionVector *actions)
+{
+    VALUE program = rb_ary_new_capa((long)actions->count);
+    for (size_t i = 0; i < actions->count; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	VALUE record = rb_hash_new();
+	rb_hash_aset(record, ID2SYM(rb_intern("op")),
+		     onibi_nfa_action_name(action->code));
+	if (action->has_slot)
+	    rb_hash_aset(record, ID2SYM(rb_intern("slot")),
+			 UINT2NUM(action->slot));
+	if (action->has_assert_kind)
+	    rb_hash_aset(record, ID2SYM(rb_intern("assert_kind")),
+			 UINT2NUM(action->assert_kind));
+	if (action->has_arg32)
+	    rb_hash_aset(record, ID2SYM(rb_intern("arg32")),
+			 UINT2NUM(action->arg32));
+	rb_hash_aset(record, ID2SYM(rb_intern("set")),
+		     action->set ? Qtrue : Qfalse);
+	rb_hash_aset(record, ID2SYM(rb_intern("positive")),
+		     action->positive ? Qtrue : Qfalse);
+	rb_ary_push(program, record);
+    }
+    return program;
+}
+
+static VALUE
+onibi_nfa_gir_edge_diagnostics(const OnibiGirEdgeVector *edges)
+{
+    VALUE records = rb_ary_new_capa((long)edges->count);
+    for (size_t i = 0; i < edges->count; i++) {
+	const OnibiGirEdgeEntry *edge = &edges->entries[i];
+	VALUE record = rb_hash_new();
+	rb_hash_aset(record, ID2SYM(rb_intern("from")), LONG2NUM(edge->from));
+	rb_hash_aset(record, ID2SYM(rb_intern("to")), LONG2NUM(edge->to));
+	rb_hash_aset(record, ID2SYM(rb_intern("action_program")),
+		     onibi_nfa_action_program_diagnostics(&edge->actions));
+	rb_ary_push(records, record);
+    }
+    return records;
+}
+
+/* Add the finalized form to the private NFA diagnostic result. */
+static void
+onibi_nfa_add_elimination_diagnostics(VALUE result,
+				      const onibi_gir_builder_t *gir,
+				      const OnibiGirEdgeVector *start_edges)
+{
+    VALUE eliminated = rb_hash_new();
+    VALUE states = rb_ary_new_capa((long)gir->states.count);
+    for (size_t i = 0; i < gir->states.count; i++) {
+	const OnibiGirStateEntry *state = &gir->states.entries[i];
+	VALUE record = rb_hash_new();
+	rb_hash_aset(record, ID2SYM(rb_intern("id")), LONG2NUM(state->id));
+	rb_hash_aset(
+	    record, ID2SYM(rb_intern("kind")),
+	    ID2SYM(rb_intern(state->opcode == ONIBI_G_ACCEPT ? "accept"
+							     : "consume")));
+	rb_hash_aset(record, ID2SYM(rb_intern("op")), INT2NUM(state->opcode));
+	rb_hash_aset(record, ID2SYM(rb_intern("value")),
+		     UINT2NUM(state->value));
+	rb_ary_push(states, record);
+    }
+    rb_hash_aset(eliminated, ID2SYM(rb_intern("states")), states);
+    rb_hash_aset(eliminated, ID2SYM(rb_intern("start_edges")),
+		 onibi_nfa_gir_edge_diagnostics(start_edges));
+    rb_hash_aset(eliminated, ID2SYM(rb_intern("edges")),
+		 onibi_nfa_gir_edge_diagnostics(&gir->edges));
+    rb_hash_aset(result, ID2SYM(rb_intern("eliminated")), eliminated);
 }

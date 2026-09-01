@@ -5,7 +5,7 @@
 | TASK-11 | A-01, P-11, C-08 | TASK-10 | sol/high | accepted | ext/onibi/ast.c, compiler.c, diagnostics.c, gir.c, onibi_common.c, rseq.c, token.c; resolved semantic test | Ruby 4 clean build; 34 runs/205 assertions and 17 option runs/33 assertions passed |
 | TASK-12 | P-11, P-12 | TASK-10 | luna/medium | accepted | ext/onibi/ast.c, compiler.c, onibi_common.c, parser.c, token.c; resolved semantic index tests | Ruby 4 clean build; 33 runs/170 assertions passed with zero skips |
 | TASK-13 | A-04, P-09 | TASK-10, TASK-11 | sol/high | accepted | compiler.c, diagnostics.c, gir.c, nfa.c, onibi_init.c; tagged NFA tests | Ruby 4 clean build; 108 runs/759 assertions passed with zero skips |
-| TASK-14 | A-04, P-09 | TASK-13 | sol/high | pending | — | — |
+| TASK-14 | A-04, P-09 | TASK-13 | sol/high | accepted | ext/onibi/compiler.c, nfa.c; tagged NFA elimination tests | Ruby 4 clean build; 19 runs/436 assertions passed with zero skips |
 | TASK-15 | M-01, M-04 | TASK-10 | sol/xhigh | accepted | compiler.c, diagnostics.c, gir.c, nfa.c, onibi_common.c, onibi_init.c, onibi_vector.h, rseq.c; exception-safety tests | Ruby 4 clean build; 35 runs/484 assertions passed with zero skips |
 | TASK-20 | R-03, R-04 | TASK-14 | sol/high | pending | — | — |
 | TASK-21 | R-04, A-08 | TASK-20 | sol/high | pending | — | — |
