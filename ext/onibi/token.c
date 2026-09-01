@@ -213,14 +213,6 @@ onibi_ast_add_range(OnibiAstArena *arena, OnibiAstId parent,
 		      OnibiAstRange, range, 4, "AST range vector is too large");
 }
 
-static VALUE
-onibi_ast_slice_string(const OnibiAstArena *arena, OnibiTokenSlice slice)
-{
-    if (!slice.present) return Qnil;
-    return rb_str_new((const char *)arena->bytes + slice.offset,
-		      (long)slice.length);
-}
-
 static OnibiTokenSlice
 onibi_ast_arena_copy_bytes(OnibiAstArena *arena, const unsigned char *bytes,
 			   size_t length)

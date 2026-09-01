@@ -1,9 +1,8 @@
-static onibi_fragment_t onibi_compile_node(VALUE node_reference,
+static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 static void onibi_gir_state(onibi_gir_builder_t *builder, long id,
-			    OnibiGStateOp opcode, VALUE payload);
-static VALUE onibi_class_payload_with_ctypes(VALUE payload);
-static int onibi_unicode_ctype_id(ID property);
+			    OnibiGStateOp opcode, uint32_t value,
+			    uint8_t flags);
 
 typedef struct {
     uint32_t rseq_features;
@@ -69,14 +68,13 @@ typedef struct {
 } OnibiNormalizedClass;
 
 static OnibiNormalizedClass
-onibi_compiler_normalize_class(VALUE payload, int fold)
+onibi_compiler_normalize_class(const OnibiAstArena *arena, OnibiAstId id,
+			       int fold)
 {
-    VALUE bitmap = onibi_class_bitmap(payload, fold);
     OnibiNormalizedClass normalized;
-    if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
-	rb_raise(eRegexpError, "class normalization produced invalid bitmap");
-    memcpy(normalized.bitmap, RSTRING_PTR(bitmap), 32);
-    normalized.negated = RTEST(onibi_hash_value_id(payload, id_key_negated));
+    onibi_class_bitmap_ast(arena, id, fold, normalized.bitmap);
+    normalized.negated =
+	(onibi_ast_node_const(arena, id)->flags & ONIBI_AST_NODE_NEGATED) != 0;
     return normalized;
 }
 static void
@@ -596,7 +594,7 @@ onibi_analyze_semantic_node(OnibiParsed *parsed, OnibiAstId id)
 }
 
 static long
-onibi_compile_resolved_body_subprogram(VALUE body,
+onibi_compile_resolved_body_subprogram(OnibiAstId body,
 				       OnibiSubprogramId subprogram_id,
 				       onibi_gir_builder_t *builder,
 				       uint32_t flags)
@@ -609,7 +607,7 @@ onibi_compile_resolved_body_subprogram(VALUE body,
     builder->subprogram_status[subprogram_id] = 1;
     onibi_fragment_t fragment = onibi_compile_node(body, builder);
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
     OnibiIdVector accept_starts;
     onibi_id_vector_init(&accept_starts);
     onibi_id_vector_push(&accept_starts, (OnibiStateId)accept);
@@ -673,8 +671,7 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 	onibi_ast_node_const(builder->ast, capture_id);
     const OnibiResolvedNode *capture_semantic =
 	&builder->semantics->nodes[capture_id];
-    onibi_fragment_t fragment =
-	onibi_compile_node(UINT2NUM(capture->body), builder);
+    onibi_fragment_t fragment = onibi_compile_node(capture->body, builder);
     long capture_slot = capture_semantic->capture_id;
     if (capture_slot >= 0) {
 	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
@@ -711,7 +708,7 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 	fragment.pending_actions = exits;
     }
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
     OnibiIdVector accept_starts;
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
     onibi_connect_fragment_actions(builder, &fragment.exits, &accept_starts,
@@ -739,7 +736,7 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
     int have_consuming = 0;
     for (size_t i = 0; i < sequence->child_count; i++) {
 	onibi_fragment_t part =
-	    onibi_compile_node(UINT2NUM(sequence->children[i]), builder);
+	    onibi_compile_node(sequence->children[i], builder);
 	if (part.starts.count == 0) {
 	    if (have_consuming) {
 		onibi_fragment_append_actions(&result.pending_actions,
@@ -826,203 +823,184 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
     return result;
 }
 
-static VALUE
-onibi_compile_node_field(const onibi_gir_builder_t *builder,
-			 const OnibiAstNode *node, VALUE semantic_node, ID key)
+static int
+onibi_utf8_decode_bytes(const unsigned char *bytes, size_t length,
+			uint32_t *codepoint)
 {
-    if (node == NULL) return onibi_hash_value_id(semantic_node, key);
-    if (key == id_key_start)
-	return node->start < 0 ? Qnil : LONG2NUM(node->start);
-    if (key == id_key_end) return node->end < 0 ? Qnil : LONG2NUM(node->end);
-    if (key == id_key_byte) return LONG2NUM(node->byte);
-    if (key == id_key_name || key == id_key_options ||
-	key == id_key_condition) {
-	VALUE name = onibi_ast_slice_string(builder->ast, node->name);
-	if (NIL_P(name) && key == id_key_name && node->kind == ONIBI_AST_ESCAPE)
-	    return rb_str_new((const char[]){(char)node->byte}, 1);
-	return name;
+    if (length == 1 && bytes[0] < 0x80) {
+	*codepoint = bytes[0];
+	return 1;
     }
-    if (key == id_key_name_id)
-	return node->name_id == 0 ? Qnil : ULONG2NUM(node->name_id);
-    if (key == id_key_bytes)
-	return onibi_ast_slice_string(builder->ast, node->bytes);
-    if (key == id_key_negative_options)
-	return onibi_ast_slice_string(builder->ast, node->negative_options);
-    if (key == id_key_body)
-	return node->body == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->body);
-    if (key == id_key_atom)
-	return node->atom == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->atom);
-    if (key == id_key_yes)
-	return node->yes == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->yes);
-    if (key == id_key_no)
-	return node->no == ONIBI_AST_NONE ? Qnil : UINT2NUM(node->no);
-    if (key == id_key_capture)
-	return node->capture < 0 ? Qnil : LONG2NUM(node->capture);
-    if (key == id_key_min) return LONG2NUM(node->min);
-    if (key == id_key_max)
-	return (node->flags & ONIBI_AST_NODE_HAS_MAX) ? LONG2NUM(node->max)
-						      : Qnil;
-    if (key == id_key_negated)
-	return (node->flags & ONIBI_AST_NODE_NEGATED) ? Qtrue : Qfalse;
-    if (key == id_key_negative)
-	return (node->flags & ONIBI_AST_NODE_NEGATIVE) ? Qtrue : Qfalse;
-    if (key == id_key_positive)
-	return (node->flags & ONIBI_AST_NODE_POSITIVE) ? Qtrue : Qfalse;
-    if (key == id_key_greedy)
-	return (node->flags & ONIBI_AST_NODE_GREEDY) ? Qtrue : Qfalse;
-    if (key == id_key_possessive)
-	return (node->flags & ONIBI_AST_NODE_POSSESSIVE) ? Qtrue : Qfalse;
-    return Qnil;
+    if (length == 2 && (bytes[0] & 0xe0) == 0xc0 && (bytes[1] & 0xc0) == 0x80) {
+	*codepoint = ((uint32_t)(bytes[0] & 0x1f) << 6) | (bytes[1] & 0x3f);
+	return *codepoint >= 0x80;
+    }
+    if (length == 3 && (bytes[0] & 0xf0) == 0xe0 && (bytes[1] & 0xc0) == 0x80 &&
+	(bytes[2] & 0xc0) == 0x80) {
+	*codepoint = ((uint32_t)(bytes[0] & 0x0f) << 12) |
+		     ((uint32_t)(bytes[1] & 0x3f) << 6) | (bytes[2] & 0x3f);
+	return *codepoint >= 0x800;
+    }
+    if (length == 4 && (bytes[0] & 0xf8) == 0xf0 && (bytes[1] & 0xc0) == 0x80 &&
+	(bytes[2] & 0xc0) == 0x80 && (bytes[3] & 0xc0) == 0x80) {
+	*codepoint = ((uint32_t)(bytes[0] & 0x07) << 18) |
+		     ((uint32_t)(bytes[1] & 0x3f) << 12) |
+		     ((uint32_t)(bytes[2] & 0x3f) << 6) | (bytes[3] & 0x3f);
+	return *codepoint >= 0x10000 && *codepoint <= 0x10ffff;
+    }
+    return 0;
 }
 
-static VALUE
-onibi_compile_payload_options(VALUE payload, int ignorecase, int multiline)
+static size_t
+onibi_utf8_encode_bytes(uint32_t codepoint, unsigned char bytes[4])
 {
-    VALUE result = rb_hash_dup(payload);
-    if (ignorecase) rb_hash_aset(result, ID2SYM(id_key_ignorecase), Qtrue);
-    if (multiline) rb_hash_aset(result, ID2SYM(id_key_multiline), Qtrue);
+    if (codepoint <= 0x7f) {
+	bytes[0] = (unsigned char)codepoint;
+	return 1;
+    }
+    if (codepoint <= 0x7ff) {
+	bytes[0] = (unsigned char)(0xc0 | (codepoint >> 6));
+	bytes[1] = (unsigned char)(0x80 | (codepoint & 0x3f));
+	return 2;
+    }
+    if (codepoint <= 0xffff && !(codepoint >= 0xd800 && codepoint <= 0xdfff)) {
+	bytes[0] = (unsigned char)(0xe0 | (codepoint >> 12));
+	bytes[1] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3f));
+	bytes[2] = (unsigned char)(0x80 | (codepoint & 0x3f));
+	return 3;
+    }
+    if (codepoint <= 0x10ffff) {
+	bytes[0] = (unsigned char)(0xf0 | (codepoint >> 18));
+	bytes[1] = (unsigned char)(0x80 | ((codepoint >> 12) & 0x3f));
+	bytes[2] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3f));
+	bytes[3] = (unsigned char)(0x80 | (codepoint & 0x3f));
+	return 4;
+    }
+    return 0;
+}
+
+static onibi_fragment_t
+onibi_compile_literal_bytes(const unsigned char *bytes, size_t length,
+			    int ignorecase, onibi_gir_builder_t *builder)
+{
+    long id = builder->next_id++;
+    onibi_gir_state_literal(builder, id, bytes, length, ignorecase);
+    onibi_fragment_t result = onibi_fragment_empty();
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+    result.nullable = 0;
+    return result;
+}
+
+static void
+onibi_append_branch(onibi_fragment_t *result, onibi_fragment_t *branch)
+{
+    onibi_id_vector_append(&result->starts, &branch->starts);
+    onibi_id_vector_append(&result->exits, &branch->exits);
+    onibi_id_vector_free(&branch->starts);
+    onibi_id_vector_free(&branch->exits);
+    onibi_g_action_vector_free(&branch->start_actions);
+    onibi_g_action_vector_free(&branch->pending_actions);
+}
+
+static onibi_fragment_t
+onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
+			      onibi_gir_builder_t *builder)
+{
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, node_id);
+    int literal_children = 1;
+    int has_multibyte = 0;
+    for (size_t i = 0; i < node->child_count; i++) {
+	const OnibiAstNode *child =
+	    onibi_ast_node_const(builder->ast, node->children[i]);
+	if (child->token_kind != ONIBI_TOKEN_LITERAL) literal_children = 0;
+	if (child->bytes.present && child->bytes.length > 1) has_multibyte = 1;
+    }
+    int expand_ranges = node->range_count > 0 && node->range_count <= 4;
+    long expanded = 0;
+    if (expand_ranges) {
+	for (size_t i = 0; i < node->range_count; i++) {
+	    const OnibiAstRange *range = &node->ranges[i];
+	    uint32_t first, last;
+	    if (!range->first_has_bytes || !range->last_has_bytes ||
+		!onibi_utf8_decode_bytes(builder->ast->bytes +
+					     range->first.offset,
+					 range->first.length, &first) ||
+		!onibi_utf8_decode_bytes(builder->ast->bytes +
+					     range->last.offset,
+					 range->last.length, &last) ||
+		last < first || last - first > 256U) {
+		expand_ranges = 0;
+		break;
+	    }
+	    expanded += (long)(last - first + 1U);
+	    if (expanded > 256) {
+		expand_ranges = 0;
+		break;
+	    }
+	}
+    }
+    if (!(node->flags & ONIBI_AST_NODE_NEGATED) && literal_children &&
+	((node->range_count == 0 && has_multibyte) || expand_ranges)) {
+	onibi_fragment_t result = onibi_fragment_empty();
+	result.nullable = 0;
+	for (size_t i = 0; i < node->child_count; i++) {
+	    const OnibiAstNode *child =
+		onibi_ast_node_const(builder->ast, node->children[i]);
+	    const unsigned char *bytes =
+		child->bytes.present ? builder->ast->bytes + child->bytes.offset
+				     : (const unsigned char *)&child->byte;
+	    size_t length = child->bytes.present ? child->bytes.length : 1;
+	    onibi_fragment_t branch =
+		onibi_compile_literal_bytes(bytes, length, ignorecase, builder);
+	    onibi_append_branch(&result, &branch);
+	}
+	if (expand_ranges) {
+	    for (size_t i = 0; i < node->range_count; i++) {
+		const OnibiAstRange *range = &node->ranges[i];
+		uint32_t first, last;
+		onibi_utf8_decode_bytes(builder->ast->bytes +
+					    range->first.offset,
+					range->first.length, &first);
+		onibi_utf8_decode_bytes(builder->ast->bytes +
+					    range->last.offset,
+					range->last.length, &last);
+		for (uint32_t cp = first; cp <= last; cp++) {
+		    unsigned char bytes[4];
+		    size_t length = onibi_utf8_encode_bytes(cp, bytes);
+		    onibi_fragment_t branch = onibi_compile_literal_bytes(
+			bytes, length, ignorecase, builder);
+		    onibi_append_branch(&result, &branch);
+		    if (cp == last) break;
+		}
+	    }
+	}
+	return result;
+    }
+    long id = builder->next_id++;
+    OnibiNormalizedClass normalized =
+	onibi_compiler_normalize_class(builder->ast, node_id, ignorecase);
+    onibi_gir_state_class(builder, id, normalized.bitmap, normalized.negated);
+    onibi_fragment_t result = onibi_fragment_empty();
+    onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+    result.nullable = 0;
     return result;
 }
 
 static onibi_fragment_t
-onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
+onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 {
-    VALUE semantic_node =
-	RB_INTEGER_TYPE_P(node_reference) ? Qnil : node_reference;
-    const OnibiAstNode *c_node = NULL;
-    const OnibiResolvedNode *resolved_node = NULL;
-    OnibiAstKind type_code;
-    int ignorecase = 0;
-    int multiline = 0;
-    if (RB_INTEGER_TYPE_P(node_reference)) {
-	OnibiAstId id = (OnibiAstId)NUM2UINT(node_reference);
-	c_node = onibi_ast_node_const(builder->ast, id);
-	resolved_node = &builder->semantics->nodes[id];
-	ignorecase =
-	    (resolved_node->lexical_options & ONIBI_OPT_IGNORECASE) != 0;
-	multiline = (resolved_node->lexical_options & ONIBI_OPT_MULTILINE) != 0;
-	type_code = c_node->kind;
-	if (type_code == ONIBI_AST_CHARACTER_CLASS ||
-	    type_code == ONIBI_AST_CLASS_INTERSECTION)
-	    semantic_node =
-		onibi_gir_payload_from_ast_terminal(builder->ast, id, 1);
-	else if (type_code == ONIBI_AST_ESCAPE ||
-		 type_code == ONIBI_AST_BACKREF || type_code == ONIBI_AST_ANY)
-	    semantic_node =
-		onibi_gir_payload_from_ast_terminal(builder->ast, id, 0);
-    }
-    else {
-	type_code = onibi_ast_kind(semantic_node);
-	ignorecase =
-	    RTEST(onibi_hash_value_id(semantic_node, id_key_ignorecase));
-	multiline = RTEST(onibi_hash_value_id(semantic_node, id_key_multiline));
-    }
-    if (type_code == ONIBI_AST_CHARACTER_CLASS) {
-	VALUE children = onibi_hash_value_id(semantic_node, id_key_children);
-	VALUE ranges = onibi_hash_value_id(semantic_node, id_key_ranges);
-	if (!RTEST(onibi_hash_value_id(semantic_node, id_key_negated)) &&
-	    RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY) &&
-	    RARRAY_LEN(ranges) == 0 && RARRAY_LEN(children) > 0) {
-	    int literal_only = 1;
-	    for (long i = 0; i < RARRAY_LEN(children); i++) {
-		VALUE child = rb_ary_entry(children, i);
-		if (onibi_token_kind_code(child) != ONIBI_TOKEN_LITERAL) {
-		    literal_only = 0;
-		    break;
-		}
-	    }
-	    int has_multibyte = 0;
-	    for (long i = 0; literal_only && i < RARRAY_LEN(children); i++) {
-		VALUE bytes = onibi_hash_value_id(rb_ary_entry(children, i),
-						  id_key_bytes);
-		if (!NIL_P(bytes) && RSTRING_LEN(bytes) > 1) has_multibyte = 1;
-	    }
-	    if (literal_only && has_multibyte) {
-		/* A literal-only class is an ordered union of encoded literals.
-		   Each branch lowers to one or more G_CHAR states. */
-		onibi_fragment_t result = onibi_fragment_empty();
-		result.nullable = 0;
-		for (long i = 0; i < RARRAY_LEN(children); i++) {
-		    VALUE child = onibi_compile_payload_options(
-			rb_ary_entry(children, i), ignorecase, multiline);
-		    rb_hash_aset(child, ID2SYM(id_key_type_code),
-				 UINT2NUM(ONIBI_AST_LITERAL));
-		    onibi_fragment_t branch =
-			onibi_compile_node(child, builder);
-		    onibi_id_vector_append(&result.starts, &branch.starts);
-		    onibi_id_vector_append(&result.exits, &branch.exits);
-		    onibi_id_vector_free(&branch.starts);
-		    onibi_id_vector_free(&branch.exits);
-		}
-		return result;
-	    }
-	}
-	if (!RTEST(onibi_hash_value_id(semantic_node, id_key_negated)) &&
-	    RB_TYPE_P(children, T_ARRAY) && RB_TYPE_P(ranges, T_ARRAY) &&
-	    RARRAY_LEN(ranges) > 0 && RARRAY_LEN(ranges) <= 4) {
-	    int literal_children = 1;
-	    for (long i = 0; i < RARRAY_LEN(children); i++)
-		if (onibi_token_kind_code(rb_ary_entry(children, i)) !=
-		    ONIBI_TOKEN_LITERAL)
-		    literal_children = 0;
-	    if (!literal_children) goto skip_utf8_range_expansion;
-	    onibi_fragment_t result = onibi_fragment_empty();
-	    result.nullable = 0;
-	    int expandable = 1;
-	    long expanded = 0;
-	    for (long i = 0; i < RARRAY_LEN(children); i++) {
-		VALUE child = onibi_compile_payload_options(
-		    rb_ary_entry(children, i), ignorecase, multiline);
-		rb_hash_aset(child, ID2SYM(id_key_type_code),
-			     UINT2NUM(ONIBI_AST_LITERAL));
-		onibi_fragment_t branch = onibi_compile_node(child, builder);
-		onibi_id_vector_append(&result.starts, &branch.starts);
-		onibi_id_vector_append(&result.exits, &branch.exits);
-		onibi_id_vector_free(&branch.starts);
-		onibi_id_vector_free(&branch.exits);
-	    }
-	    for (long i = 0; i < RARRAY_LEN(ranges); i++) {
-		VALUE range = rb_ary_entry(ranges, i);
-		uint32_t first = 0, last = 0;
-		if (!RB_TYPE_P(range, T_ARRAY) || RARRAY_LEN(range) != 2 ||
-		    !RB_TYPE_P(rb_ary_entry(range, 0), T_STRING) ||
-		    !RB_TYPE_P(rb_ary_entry(range, 1), T_STRING) ||
-		    !onibi_utf8_decode(rb_ary_entry(range, 0), &first) ||
-		    !onibi_utf8_decode(rb_ary_entry(range, 1), &last) ||
-		    last < first || last - first > 256U) {
-		    expandable = 0;
-		    break;
-		}
-		expanded += (long)(last - first + 1U);
-		if (expanded > 256) {
-		    expandable = 0;
-		    break;
-		}
-		for (uint32_t cp = first; cp <= last; cp++) {
-		    VALUE literal = rb_hash_new();
-		    VALUE bytes = onibi_utf8_encode(cp);
-		    rb_hash_aset(literal, ID2SYM(id_key_type_code),
-				 UINT2NUM(ONIBI_AST_LITERAL));
-		    rb_hash_aset(literal, ID2SYM(id_key_byte),
-				 INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
-		    rb_hash_aset(literal, ID2SYM(id_key_bytes), bytes);
-		    if (ignorecase)
-			rb_hash_aset(literal, ID2SYM(id_key_ignorecase), Qtrue);
-		    if (multiline)
-			rb_hash_aset(literal, ID2SYM(id_key_multiline), Qtrue);
-		    onibi_fragment_t branch =
-			onibi_compile_node(literal, builder);
-		    onibi_id_vector_append(&result.starts, &branch.starts);
-		    onibi_id_vector_append(&result.exits, &branch.exits);
-		    onibi_id_vector_free(&branch.starts);
-		    onibi_id_vector_free(&branch.exits);
-		    if (cp == last) break;
-		}
-	    }
-	    if (expandable) return result;
-	}
-    skip_utf8_range_expansion:;
-    }
+    const OnibiAstNode *c_node = onibi_ast_node_const(builder->ast, node_id);
+    const OnibiResolvedNode *resolved_node =
+	&builder->semantics->nodes[node_id];
+    OnibiAstKind type_code = c_node->kind;
+    int ignorecase =
+	(resolved_node->lexical_options & ONIBI_OPT_IGNORECASE) != 0;
+    int multiline = (resolved_node->lexical_options & ONIBI_OPT_MULTILINE) != 0;
+    if (type_code == ONIBI_AST_CHARACTER_CLASS ||
+	type_code == ONIBI_AST_CLASS_INTERSECTION)
+	return onibi_compile_character_class(node_id, ignorecase, builder);
     if (type_code == ONIBI_AST_SEQUENCE)
 	return onibi_compile_sequence(c_node, builder);
     if (type_code == ONIBI_AST_ALTERNATIVE) {
@@ -1030,7 +1008,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	result.nullable = 0;
 	for (size_t i = 0; i < c_node->child_count; i++) {
 	    onibi_fragment_t branch =
-		onibi_compile_node(UINT2NUM(c_node->children[i]), builder);
+		onibi_compile_node(c_node->children[i], builder);
 	    onibi_id_vector_append(&result.starts, &branch.starts);
 	    onibi_id_vector_append(&result.exits, &branch.exits);
 	    /* Preserve actions on each alternative edge.  A branch action
@@ -1050,140 +1028,59 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	}
 	return result;
     }
-    if (type_code == ONIBI_AST_LITERAL || type_code == ONIBI_AST_ESCAPE ||
-	type_code == ONIBI_AST_BACKREF ||
-	type_code == ONIBI_AST_CHARACTER_CLASS ||
-	type_code == ONIBI_AST_CLASS_INTERSECTION ||
-	type_code == ONIBI_AST_ANY) {
-	if (type_code == ONIBI_AST_ESCAPE) {
-	    VALUE name = onibi_compile_node_field(builder, c_node,
-						  semantic_node, id_key_name);
-	    VALUE name_id = onibi_compile_node_field(
-		builder, c_node, semantic_node, id_key_name_id);
-	    int is_property = !NIL_P(name_id) && onibi_ascii_property_name_p(
-						     (ID)NUM2ULONG(name_id));
-	    if (RB_TYPE_P(name, T_STRING) && RSTRING_LEN(name) > 1 &&
-		!is_property)
-		rb_raise(
-		    eRegexpError,
-		    "Unicode property escapes require encoded GIR classes");
-	    int code = !RB_TYPE_P(name, T_STRING)
-			   ? 0
-			   : (RSTRING_LEN(name) == 1
-				  ? onibi_ascii_fold(
-					(unsigned char)RSTRING_PTR(name)[0])
-				  : 0);
-	    if ((!RB_TYPE_P(name, T_STRING) || RSTRING_LEN(name) <= 1) &&
-		(code == 'r' || code == 'p' || code == 'u'))
-		rb_raise(eRegexpError, "escape is not supported in RSeq");
-	}
-	VALUE payload = semantic_node;
-	if (type_code == ONIBI_AST_BACKREF && resolved_node != NULL) {
-	    payload = rb_hash_dup(semantic_node);
-	    rb_hash_aset(payload, ID2SYM(id_key_capture),
-			 LONG2NUM((long)resolved_node->capture_id + 1));
-	    rb_obj_freeze(payload);
-	}
-	if (ignorecase && type_code == ONIBI_AST_BACKREF) {
-	    payload = rb_hash_dup(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
-	    rb_obj_freeze(payload);
-	}
-	VALUE escape_name_for_op = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_name);
-	int grapheme_escape =
-	    type_code == ONIBI_AST_ESCAPE &&
-	    ((NIL_P(escape_name_for_op) &&
-	      RB_INTEGER_TYPE_P(onibi_compile_node_field(
-		  builder, c_node, semantic_node, id_key_byte)) &&
-	      onibi_ascii_fold((unsigned char)NUM2INT(onibi_compile_node_field(
-		  builder, c_node, semantic_node, id_key_byte))) == 'x') ||
-	     (!NIL_P(escape_name_for_op) &&
-	      RSTRING_LEN(escape_name_for_op) == 1 &&
-	      onibi_ascii_fold(
-		  (unsigned char)RSTRING_PTR(escape_name_for_op)[0]) == 'x'));
-	if (grapheme_escape)
+    if (type_code == ONIBI_AST_LITERAL) {
+	const unsigned char *bytes =
+	    c_node->bytes.present ? builder->ast->bytes + c_node->bytes.offset
+				  : (const unsigned char *)&c_node->byte;
+	size_t length = c_node->bytes.present ? c_node->bytes.length : 1;
+	return onibi_compile_literal_bytes(bytes, length, ignorecase, builder);
+    }
+    if (type_code == ONIBI_AST_ESCAPE) {
+	size_t name_length = c_node->name.present ? c_node->name.length : 1;
+	unsigned char name_byte = c_node->name.present
+				      ? builder->ast->bytes[c_node->name.offset]
+				      : (unsigned char)c_node->byte;
+	int is_property = onibi_ascii_property_name_p(c_node->name_id);
+	if (name_length > 1 && !is_property)
+	    rb_raise(eRegexpError,
+		     "Unicode property escapes require encoded GIR classes");
+	int code = name_length == 1 ? onibi_ascii_fold(name_byte) : 0;
+	if (name_length <= 1 && (code == 'r' || code == 'p' || code == 'u'))
+	    rb_raise(eRegexpError, "escape is not supported in RSeq");
+	if (code == 'x')
 	    rb_raise(eRegexpError,
 		     "grapheme matching is not available in this PoC");
+	unsigned char bitmap[32];
+	onibi_class_bitmap_ast(builder->ast, node_id, ignorecase, bitmap);
 	long id = builder->next_id++;
-	OnibiGStateOp op =
-	    type_code == ONIBI_AST_LITERAL
-		? ONIBI_G_CHAR
-		: ((type_code == ONIBI_AST_ANY)
-		       ? ONIBI_G_ANY
-		       : ((type_code == ONIBI_AST_BACKREF)
-			      ? ONIBI_G_BACKREF
-			      : (grapheme_escape ? ONIBI_G_GRAPHEME
-						 : ONIBI_G_CLASS)));
-	if (ignorecase && type_code == ONIBI_AST_LITERAL &&
-	    !RB_INTEGER_TYPE_P(node_reference)) {
-	    payload = rb_hash_dup(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_byte),
-			 INT2NUM(onibi_ascii_fold((unsigned char)NUM2INT(
-			     onibi_hash_value_id(payload, id_key_byte)))));
-	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
-	    rb_obj_freeze(payload);
-	}
-	if (ignorecase && (type_code == ONIBI_AST_CHARACTER_CLASS ||
-			   type_code == ONIBI_AST_CLASS_INTERSECTION)) {
-	    payload = rb_hash_dup(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
-	    rb_obj_freeze(payload);
-	}
-	if (type_code == ONIBI_AST_CHARACTER_CLASS ||
-	    type_code == ONIBI_AST_CLASS_INTERSECTION) {
-	    payload = onibi_class_payload_with_ctypes(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_bitmap),
-			 onibi_class_bitmap(payload, ignorecase));
-	    rb_obj_freeze(payload);
-	}
-	if (type_code == ONIBI_AST_ESCAPE) {
-	    payload = rb_hash_dup(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_ranges), rb_ary_new());
-	    rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
-	    rb_hash_aset(payload, ID2SYM(id_key_bitmap),
-			 onibi_class_bitmap(payload, ignorecase));
-	    VALUE property_name_id =
-		onibi_hash_value_id(payload, id_key_name_id);
-	    ID property =
-		NIL_P(property_name_id) ? 0 : (ID)NUM2ULONG(property_name_id);
-	    int property_ctype = onibi_unicode_ctype_id(property);
-	    if (property_ctype >= 0)
-		rb_hash_aset(payload, ID2SYM(id_key_ctype),
-			     INT2NUM(property_ctype));
-	    rb_obj_freeze(payload);
-	}
-	if (multiline && type_code == ONIBI_AST_ANY) {
-	    payload = rb_hash_dup(payload);
-	    rb_hash_aset(payload, ID2SYM(id_key_multiline), Qtrue);
-	    rb_obj_freeze(payload);
-	}
-	if (type_code == ONIBI_AST_LITERAL && c_node != NULL) {
-	    const unsigned char *bytes =
-		c_node->bytes.length == 0
-		    ? (const unsigned char *)&c_node->byte
-		    : builder->ast->bytes + c_node->bytes.offset;
-	    size_t length =
-		c_node->bytes.length == 0 ? 1 : c_node->bytes.length;
-	    onibi_gir_state_literal(builder, id, bytes, length, ignorecase);
-	}
-	else if (type_code == ONIBI_AST_ANY) {
-	    unsigned char bitmap[32];
-	    memset(bitmap, 0xff, sizeof(bitmap));
-	    if (!multiline)
-		bitmap[(unsigned char)'\n' >> 3] &=
-		    (unsigned char)~(1U << ((unsigned char)'\n' & 7));
-	    onibi_gir_state_class(builder, id, bitmap, 0);
-	}
-	else if (op == ONIBI_G_CLASS) {
-	    OnibiNormalizedClass normalized =
-		onibi_compiler_normalize_class(payload, ignorecase);
-	    onibi_gir_state_class(builder, id, normalized.bitmap,
-				  normalized.negated);
-	}
-	else {
-	    onibi_gir_state(builder, id, op, payload);
-	}
+	onibi_gir_state_class(builder, id, bitmap, 0);
+	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	result.nullable = 0;
+	return result;
+    }
+    if (type_code == ONIBI_AST_ANY) {
+	unsigned char bitmap[32];
+	memset(bitmap, 0xff, sizeof(bitmap));
+	if (!multiline)
+	    bitmap[(unsigned char)'\n' >> 3] &=
+		(unsigned char)~(1U << ((unsigned char)'\n' & 7));
+	long id = builder->next_id++;
+	onibi_gir_state_class(builder, id, bitmap, 0);
+	onibi_fragment_t result = onibi_fragment_empty();
+	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
+	result.nullable = 0;
+	return result;
+    }
+    if (type_code == ONIBI_AST_BACKREF) {
+	if (resolved_node->capture_id < 0)
+	    rb_raise(eRegexpError, "invalid GIR backreference capture");
+	long id = builder->next_id++;
+	onibi_gir_state(builder, id, ONIBI_G_BACKREF,
+			(uint32_t)resolved_node->capture_id,
+			ignorecase ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE : 0);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -1198,12 +1095,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	long subprogram_id = onibi_compile_resolved_subprogram(
 	    resolved_node->reference_target, resolved_node->subprogram_id,
 	    builder);
-	VALUE payload = rb_hash_new();
-	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
-		     LONG2NUM(subprogram_id));
-	rb_obj_freeze(payload);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, ONIBI_G_CALL, payload);
+	onibi_gir_state(builder, id, ONIBI_G_CALL, (uint32_t)subprogram_id, 0);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -1215,10 +1108,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return onibi_fragment_empty();
     }
     if (type_code == ONIBI_AST_OPTION_SCOPE) {
-	return onibi_compile_node(onibi_compile_node_field(builder, c_node,
-							   semantic_node,
-							   id_key_body),
-				  builder);
+	return onibi_compile_node(c_node->body, builder);
     }
     if (type_code == ONIBI_AST_ANCHOR) {
 	onibi_fragment_t result = onibi_fragment_empty();
@@ -1247,13 +1137,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (resolved_node == NULL || resolved_node->capture_id < 0)
 	    rb_raise(eRegexpError, "unresolved conditional capture");
 	long capture_id = resolved_node->capture_id;
-	onibi_fragment_t yes =
-	    onibi_compile_node(onibi_compile_node_field(
-				   builder, c_node, semantic_node, id_key_yes),
-			       builder);
-	onibi_fragment_t no = onibi_compile_node(
-	    onibi_compile_node_field(builder, c_node, semantic_node, id_key_no),
-	    builder);
+	onibi_fragment_t yes = onibi_compile_node(c_node->yes, builder);
+	onibi_fragment_t no = onibi_compile_node(c_node->no, builder);
 	OnibiGActionVector yes_guard;
 	onibi_g_action_vector_init(&yes_guard);
 	onibi_g_action_vector_push(&yes_guard,
@@ -1295,17 +1180,12 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
     if (type_code == ONIBI_AST_ATOMIC) {
 	if (resolved_node == NULL || resolved_node->subprogram_id == UINT32_MAX)
 	    rb_raise(eRegexpError, "unresolved atomic subprogram");
-	VALUE body = onibi_compile_node_field(builder, c_node, semantic_node,
-					      id_key_body);
 	long subprogram_id = onibi_compile_resolved_body_subprogram(
-	    body, resolved_node->subprogram_id, builder,
+	    c_node->body, resolved_node->subprogram_id, builder,
 	    ONIBI_SUBPROGRAM_ATOMIC);
-	VALUE payload = rb_hash_new();
-	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
-		     LONG2NUM(subprogram_id));
-	rb_obj_freeze(payload);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, ONIBI_G_ATOMIC, payload);
+	onibi_gir_state(builder, id, ONIBI_G_ATOMIC, (uint32_t)subprogram_id,
+			0);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -1316,15 +1196,11 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (resolved_node == NULL || resolved_node->subprogram_id == UINT32_MAX)
 	    rb_raise(eRegexpError, "unresolved absence subprogram");
 	long subprogram_id = onibi_compile_resolved_body_subprogram(
-	    onibi_compile_node_field(builder, c_node, semantic_node,
-				     id_key_body),
-	    resolved_node->subprogram_id, builder, ONIBI_SUBPROGRAM_ABSENT);
-	VALUE payload = rb_hash_new();
-	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
-		     LONG2NUM(subprogram_id));
-	rb_obj_freeze(payload);
+	    c_node->body, resolved_node->subprogram_id, builder,
+	    ONIBI_SUBPROGRAM_ABSENT);
 	long id = builder->next_id++;
-	onibi_gir_state(builder, id, ONIBI_G_ABSENT, payload);
+	onibi_gir_state(builder, id, ONIBI_G_ABSENT, (uint32_t)subprogram_id,
+			0);
 	onibi_fragment_t result = onibi_fragment_empty();
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id);
@@ -1346,104 +1222,55 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    onibi_ast_node_const(builder->ast, c_node->body);
 	if (body->kind != ONIBI_AST_SEQUENCE)
 	    rb_raise(eRegexpError, "lookaround body has no literal sequence");
-	VALUE bytes = rb_str_new(NULL, 0);
-	VALUE predicates = rb_ary_new();
+	uint32_t predicate_count = 0;
 	for (size_t i = 0; i < body->child_count; i++) {
 	    OnibiAstId child_id = body->children[i];
+	    const OnibiAstNode *child =
+		onibi_ast_node_const(builder->ast, child_id);
 	    uint32_t child_options =
 		builder->semantics->nodes[child_id].lexical_options;
 	    int child_ignorecase = (child_options & ONIBI_OPT_IGNORECASE) != 0;
-	    int child_multiline = (child_options & ONIBI_OPT_MULTILINE) != 0;
-	    OnibiAstKind child_type =
-		onibi_ast_node_const(builder->ast, child_id)->kind;
-	    VALUE child = onibi_gir_payload_from_ast_terminal(
-		builder->ast, child_id,
-		child_type == ONIBI_AST_CHARACTER_CLASS ||
-		    child_type == ONIBI_AST_CLASS_INTERSECTION);
-	    if (child_type == ONIBI_AST_CHARACTER_CLASS ||
-		child_type == ONIBI_AST_CLASS_INTERSECTION) {
-		VALUE predicate = rb_hash_new();
-		rb_hash_aset(predicate, ID2SYM(id_key_kind),
-			     ID2SYM(id_pred_bitmap));
-		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
-			     UINT2NUM(ONIBI_PRED_BITMAP));
-		rb_hash_aset(predicate, ID2SYM(id_key_bitmap),
-			     onibi_class_bitmap(child, child_ignorecase));
-		rb_ary_push(predicates, predicate);
-		continue;
+	    if (child->kind == ONIBI_AST_CHARACTER_CLASS ||
+		child->kind == ONIBI_AST_CLASS_INTERSECTION ||
+		child->kind == ONIBI_AST_ESCAPE) {
+		if (child->kind == ONIBI_AST_ESCAPE) {
+		    size_t name_length =
+			child->name.present ? child->name.length : 1;
+		    unsigned char name_byte =
+			child->name.present
+			    ? builder->ast->bytes[child->name.offset]
+			    : (unsigned char)child->byte;
+		    int simple =
+			onibi_ascii_property_name_p(child->name_id) ||
+			(name_length == 1 && onibi_simple_escape_p(name_byte));
+		    if (!simple)
+			rb_raise(eRegexpError,
+				 "lookaround body has an unsupported escape");
+		}
+		unsigned char bitmap[32];
+		onibi_class_bitmap_ast(builder->ast, child_id, child_ignorecase,
+				       bitmap);
 	    }
-	    if (child_type == ONIBI_AST_ANY) {
-		VALUE predicate = rb_hash_new();
-		rb_hash_aset(predicate, ID2SYM(id_key_kind),
-			     ID2SYM(id_pred_any));
-		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
-			     UINT2NUM(ONIBI_PRED_ANY));
-		rb_hash_aset(predicate, ID2SYM(id_key_multiline),
-			     child_multiline ? Qtrue : Qfalse);
-		rb_ary_push(predicates, predicate);
-		continue;
-	    }
-	    if (child_type == ONIBI_AST_ESCAPE) {
-		VALUE name = onibi_hash_value_id(child, id_key_name);
-		VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
-		int simple =
-		    !NIL_P(name) &&
-		    ((!NIL_P(name_id) &&
-		      onibi_ascii_property_name_p((ID)NUM2ULONG(name_id))) ||
-		     (RSTRING_LEN(name) == 1 &&
-		      onibi_simple_escape_p(
-			  (unsigned char)RSTRING_PTR(name)[0])));
-		if (!simple)
-		    rb_raise(eRegexpError,
-			     "lookaround body has an unsupported escape");
-		VALUE payload = rb_hash_dup(child);
-		rb_hash_aset(payload, ID2SYM(id_key_ranges), rb_ary_new());
-		rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
-		VALUE predicate = rb_hash_new();
-		rb_hash_aset(predicate, ID2SYM(id_key_kind),
-			     ID2SYM(id_pred_bitmap));
-		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
-			     UINT2NUM(ONIBI_PRED_BITMAP));
-		rb_hash_aset(predicate, ID2SYM(id_key_bitmap),
-			     onibi_class_bitmap(payload, child_ignorecase));
-		rb_ary_push(predicates, predicate);
-		continue;
-	    }
-	    if (child_type != ONIBI_AST_LITERAL)
+	    else if (child->kind != ONIBI_AST_ANY &&
+		     child->kind != ONIBI_AST_LITERAL) {
 		rb_raise(
 		    eRegexpError,
 		    "lookaround body is not a fixed literal/class sequence");
-	    VALUE predicate = rb_hash_new();
-	    rb_hash_aset(predicate, ID2SYM(id_key_kind), ID2SYM(id_pred_byte));
-	    rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
-			 UINT2NUM(ONIBI_PRED_BYTE));
-	    rb_hash_aset(predicate, ID2SYM(id_key_byte),
-			 onibi_hash_value_id(child, id_key_byte));
-	    rb_hash_aset(predicate, ID2SYM(id_key_ignorecase),
-			 child_ignorecase ? Qtrue : Qfalse);
-	    rb_ary_push(predicates, predicate);
-	    rb_str_cat(bytes,
-		       (const char[]){(char)NUM2INT(
-			   onibi_hash_value_id(child, id_key_byte))},
-		       1);
+	    }
+	    predicate_count++;
 	}
-	rb_obj_freeze(bytes);
-	rb_obj_freeze(predicates);
 	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
 	    rb_raise(eRegexpError, "unnormalized lookaround assertion");
-	OnibiGAction action = {
-	    ONIBI_GA_ASSERT_POSITION,
-	    0,
-	    RTEST(onibi_compile_node_field(builder, c_node, semantic_node,
-					   id_key_positive))
-		? 1
-		: 0,
-	    0,
-	    0,
-	    1,
-	    (uint16_t)resolved_node->assertion_kind,
-	    1,
-	    (uint32_t)RARRAY_LEN(predicates)};
+	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
+			       0,
+			       (c_node->flags & ONIBI_AST_NODE_POSITIVE) ? 1
+									 : 0,
+			       0,
+			       0,
+			       1,
+			       (uint16_t)resolved_node->assertion_kind,
+			       1,
+			       predicate_count};
 	onibi_fragment_t result = onibi_fragment_empty();
 	result.nullable = 1;
 	onibi_g_action_vector_push(&result.start_actions, action);
@@ -1453,9 +1280,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	if (resolved_node == NULL || resolved_node->capture_id < 0)
 	    rb_raise(eRegexpError, "unresolved capture");
 	long capture_id = resolved_node->capture_id;
-	VALUE capture_body = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_body);
-	onibi_fragment_t result = onibi_compile_node(capture_body, builder);
+	onibi_fragment_t result = onibi_compile_node(c_node->body, builder);
 	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
 			     0,
 			     0,
@@ -1474,31 +1299,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 			      0,
 			      0,
 			      0};
-	VALUE capture_name = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_name);
-	if (!NIL_P(capture_name) && RB_INTEGER_TYPE_P(capture_body) &&
-	    onibi_c_ast_has_subroutine_name(
-		builder->ast, (OnibiAstId)NUM2UINT(capture_body), capture_name))
+	if (c_node->name.present &&
+	    onibi_c_ast_has_subroutine_name(builder->ast, c_node->body,
+					    c_node->name))
 	    close.set = 1;
-	char capture_name_key[32];
-	snprintf(capture_name_key, sizeof(capture_name_key), "%ld",
-		 capture_id + 1);
-	onibi_value_map_set(&builder->capture_bodies,
-			    rb_str_new_cstr(capture_name_key),
-			    onibi_compile_node_field(
-				builder, c_node, semantic_node, id_key_body),
-			    builder->map_roots);
-	if (!NIL_P(capture_name)) {
-	    if (NIL_P(onibi_value_map_find(&builder->capture_names,
-					   capture_name)))
-		onibi_value_map_set(&builder->capture_names, capture_name,
-				    LONG2NUM(capture_id), builder->map_roots);
-	    onibi_value_map_set(&builder->capture_bodies, capture_name,
-				onibi_compile_node_field(builder, c_node,
-							 semantic_node,
-							 id_key_body),
-				builder->map_roots);
-	}
 	onibi_g_action_vector_push(&result.start_actions, open);
 	onibi_g_action_vector_push(&result.pending_actions, close);
 	if (result.nullable)
@@ -1507,37 +1311,28 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_GROUP)
-	return onibi_compile_node(onibi_compile_node_field(builder, c_node,
-							   semantic_node,
-							   id_key_body),
-				  builder);
+	return onibi_compile_node(c_node->body, builder);
     if (type_code == ONIBI_AST_QUANTIFIER) {
 	if (resolved_node == NULL ||
 	    !(resolved_node->flags & ONIBI_SEMANTIC_NORMALIZED))
 	    rb_raise(eRegexpError, "unnormalized repeat");
 	long min = resolved_node->repeat_min;
 	long normalized_max = resolved_node->repeat_max;
-	VALUE max_value = normalized_max < 0 ? Qnil : LONG2NUM(normalized_max);
 	int possessive =
 	    (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) != 0;
 	int greedy = (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
-	VALUE atom = onibi_compile_node_field(builder, c_node, semantic_node,
-					      id_key_atom);
+	OnibiAstId atom = c_node->atom;
 	if (min == 0) builder->optional_seen = 1;
-	if (possessive && (NIL_P(max_value) || NUM2LONG(max_value) != min))
+	if (possessive && (normalized_max < 0 || normalized_max != min))
 	    rb_raise(eRegexpError,
 		     "variable possessive quantifier is not supported in RSeq");
-	if (possessive && RB_INTEGER_TYPE_P(atom) &&
-	    onibi_c_ast_has_capture(builder->ast, (OnibiAstId)NUM2UINT(atom)))
+	if (possessive && onibi_c_ast_has_capture(builder->ast, atom))
 	    rb_raise(eRegexpError,
 		     "possessive capture repeat is not supported in RSeq");
-	if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 0)
+	if (normalized_max >= 0 && min == 0 && normalized_max == 0)
 	    return onibi_fragment_empty();
-	if (!NIL_P(max_value) && min == 0 && NUM2LONG(max_value) == 1) {
-	    onibi_fragment_t result = onibi_compile_node(
-		onibi_compile_node_field(builder, c_node, semantic_node,
-					 id_key_atom),
-		builder);
+	if (normalized_max >= 0 && min == 0 && normalized_max == 1) {
+	    onibi_fragment_t result = onibi_compile_node(atom, builder);
 	    /* The atom is one ordered branch of the optional.  Keep its tag
 	     * actions on that branch only.  Fragment-level start actions also
 	     * apply to the nullable bypass edge, which would incorrectly turn
@@ -1555,13 +1350,13 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    return result;
 	}
 	long counter_slot = -1;
-	if (!NIL_P(max_value) && NUM2LONG(max_value) != min)
+	if (normalized_max >= 0 && normalized_max != min)
 	    counter_slot = builder->counter_count++;
 	onibi_fragment_t result = onibi_fragment_empty();
 	result.nullable = min == 0;
-	if (!NIL_P(max_value) && NUM2LONG(max_value) < min)
+	if (normalized_max >= 0 && normalized_max < min)
 	    rb_raise(eRegexpError, "invalid quantifier range");
-	long max = NIL_P(max_value) ? -1 : NUM2LONG(max_value);
+	long max = normalized_max;
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
 	    rb_raise(eRegexpError,
 		     "quantifier exceeds RSeq representation limit");
@@ -1615,7 +1410,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    /* Counted repeats use one counter slot.  The first start edge
 	       initializes it.  Optional bodies use ordered test edges. */
 	    OnibiGAction init =
-		onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter_slot, Qnil);
+		onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter_slot, 0, 0);
 	    init.arg32 = (uint32_t)(min > 0 ? 1 : 0);
 	    onibi_g_action_vector_push(&result.start_actions, init);
 	}
@@ -1630,7 +1425,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		    onibi_g_action_vector_push(
 			&actions,
 			onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
-					     counter_slot, Qnil));
+					     counter_slot, 0, 0));
 		onibi_connect_fragment_actions(builder, &result.exits,
 					       &part.starts, &actions, 0);
 		onibi_g_action_vector_free(&actions);
@@ -1648,11 +1443,11 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_g_action_vector_push(
 		    &repeat_actions,
 		    onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter_slot,
-					 LONG2NUM(max)));
+					 1, max));
 		onibi_g_action_vector_push(
 		    &repeat_actions,
 		    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
-					 counter_slot, Qnil));
+					 counter_slot, 0, 0));
 		if (result.exits.count > 0)
 		    onibi_connect_fragment_actions(builder, &result.exits,
 						   &part.starts,
@@ -1664,10 +1459,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    }
 	    onibi_g_action_vector_push(
 		&result.pending_actions,
-		onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter_slot,
-				     LONG2NUM(min)));
+		onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter_slot, 1,
+				     min));
 	}
-	else if (NIL_P(max_value)) {
+	else if (normalized_max < 0) {
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
 	    long progress_slot =
 		repeat.nullable ? builder->counter_count++ : -1;
@@ -1711,7 +1506,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		    onibi_g_action_vector_push(
 			&progress_actions,
 			onibi_counter_action(ONIBI_GA_PROGRESS, progress_slot,
-					     Qnil));
+					     0, 0));
 		onibi_connect_fragment_actions(builder, &repeat.exits,
 					       &repeat.starts,
 					       &progress_actions, 0);
@@ -1747,13 +1542,7 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     builder->ast = &parsed->arena;
     builder->semantics = semantics;
     onibi_gir_edge_vector_init(&builder->edges);
-    onibi_value_map_init(&builder->capture_names);
-    onibi_value_map_init(&builder->capture_bodies);
-    onibi_value_map_init(&builder->capture_ids);
-    onibi_value_map_init(&builder->active_subroutines);
-    onibi_value_map_init(&builder->subprogram_ids);
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
-    builder->map_roots = rb_ary_new();
     onibi_rseq_subprogram_vector_push(&builder->subprograms,
 				      (OnibiRSeqSubprogramEntry){0, 0, 0});
     for (size_t i = 1; i < semantics->lowered_subprogram_count; i++)
@@ -1776,10 +1565,9 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, onibi_gir_builder_t *builder,
 {
     OnibiTaggedNfa nfa;
     onibi_nfa_init(&nfa);
-    VALUE root_reference = UINT2NUM(parsed->arena.root);
-    onibi_fragment_t fragment = onibi_compile_node(root_reference, builder);
+    onibi_fragment_t fragment = onibi_compile_node(parsed->arena.root, builder);
     long accept = builder->next_id++;
-    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
+    onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, 0, 0);
     OnibiIdVector accept_starts;
     onibi_id_vector_single(&accept_starts, (OnibiStateId)accept);
     OnibiIdVector exit_ids = fragment.exits;
@@ -2079,11 +1867,6 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     onibi_gir_edge_vector_free(&start_edge_records);
     onibi_guard_vector_free(&builder.capture_guards);
     onibi_guard_vector_free(&builder.exit_guards);
-    onibi_value_map_free(&builder.capture_names);
-    onibi_value_map_free(&builder.capture_bodies);
-    onibi_value_map_free(&builder.capture_ids);
-    onibi_value_map_free(&builder.active_subroutines);
-    onibi_value_map_free(&builder.subprogram_ids);
     onibi_rseq_subprogram_vector_free(&builder.subprograms);
     onibi_gir_state_vector_free(&builder.states);
     onibi_gir_edge_vector_free(&builder.edges);

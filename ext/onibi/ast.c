@@ -1,19 +1,4 @@
 /* C AST ownership and parser-result lifetime. */
-/* GIR payloads remain Ruby objects.  These accessors are only for that
- * semantic boundary.  The tokenizer and parser use OnibiTokenRecord. */
-static inline OnibiTokenKind
-onibi_token_kind_code(VALUE token)
-{
-    VALUE kind = onibi_hash_value_id(token, id_key_kind_code);
-    return NIL_P(kind) ? (OnibiTokenKind)-1 : (OnibiTokenKind)NUM2UINT(kind);
-}
-
-static inline ID
-onibi_token_name_id(VALUE token)
-{
-    VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
-    return NIL_P(name_id) ? (ID)0 : (ID)NUM2ULONG(name_id);
-}
 
 static VALUE onibi_deep_freeze(VALUE value);
 

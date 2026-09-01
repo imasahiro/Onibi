@@ -348,61 +348,6 @@ onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
     return 0;
 }
 
-static int
-onibi_utf8_decode(VALUE bytes, uint32_t *codepoint)
-{
-    const unsigned char *p = (const unsigned char *)RSTRING_PTR(bytes);
-    long length = RSTRING_LEN(bytes);
-    if (length == 1 && p[0] < 0x80) {
-	*codepoint = p[0];
-	return 1;
-    }
-    if (length == 2 && (p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(p[0] & 0x1f) << 6) | (p[1] & 0x3f);
-	return *codepoint >= 0x80;
-    }
-    if (length == 3 && (p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 &&
-	(p[2] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(p[0] & 0x0f) << 12) |
-		     ((uint32_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
-	return *codepoint >= 0x800;
-    }
-    if (length == 4 && (p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
-	(p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(p[0] & 0x07) << 18) |
-		     ((uint32_t)(p[1] & 0x3f) << 12) |
-		     ((uint32_t)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
-	return *codepoint >= 0x10000 && *codepoint <= 0x10ffff;
-    }
-    return 0;
-}
-
-static VALUE
-onibi_utf8_encode(uint32_t codepoint)
-{
-    char out[4];
-    long length = 0;
-    if (codepoint <= 0x7f)
-	out[length++] = (char)codepoint;
-    else if (codepoint <= 0x7ff) {
-	out[length++] = (char)(0xc0 | (codepoint >> 6));
-	out[length++] = (char)(0x80 | (codepoint & 0x3f));
-    }
-    else if (codepoint <= 0xffff &&
-	     !(codepoint >= 0xd800 && codepoint <= 0xdfff)) {
-	out[length++] = (char)(0xe0 | (codepoint >> 12));
-	out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3f));
-	out[length++] = (char)(0x80 | (codepoint & 0x3f));
-    }
-    else if (codepoint <= 0x10ffff) {
-	out[length++] = (char)(0xf0 | (codepoint >> 18));
-	out[length++] = (char)(0x80 | ((codepoint >> 12) & 0x3f));
-	out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3f));
-	out[length++] = (char)(0x80 | (codepoint & 0x3f));
-    }
-    return rb_str_new(out, length);
-}
-
 static void
 onibi_free(void *ptr)
 {

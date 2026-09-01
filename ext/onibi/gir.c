@@ -25,11 +25,6 @@ typedef struct {
 } OnibiGuardEntry;
 typedef ONIBI_VECTOR(OnibiGuardEntry) OnibiGuardVector;
 typedef struct {
-    VALUE key;
-    VALUE value;
-} OnibiValueEntry;
-typedef ONIBI_VECTOR(OnibiValueEntry) OnibiValueMap;
-typedef struct {
     long id;
     OnibiGStateOp opcode;
     uint32_t payload_index;
@@ -71,15 +66,9 @@ typedef struct {
     long next_id;
     long capture_count;
     long counter_count;
-    OnibiValueMap capture_names;
-    OnibiValueMap capture_bodies;
-    OnibiValueMap capture_ids;
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
-    OnibiValueMap active_subroutines;
     OnibiRSeqSubprogramVector subprograms;
-    OnibiValueMap subprogram_ids;
-    VALUE map_roots;
     OnibiAstArena *ast;
     const OnibiResolvedArena *semantics;
     unsigned char *subprogram_status;
@@ -164,59 +153,6 @@ onibi_guard_vector_free(OnibiGuardVector *vector)
     for (size_t i = 0; i < vector->count; i++)
 	onibi_g_action_vector_free(&vector->entries[i].actions);
     ONIBI_VECTOR_RELEASE(vector->entries, vector->count, vector->capacity);
-}
-
-static void
-onibi_value_map_init(OnibiValueMap *map)
-{
-    ONIBI_VECTOR_INIT(map->entries, map->count, map->capacity);
-}
-
-static int
-onibi_value_map_key_equal(VALUE left, VALUE right)
-{
-    return left == right || RTEST(rb_equal(left, right));
-}
-
-static VALUE
-onibi_value_map_find(const OnibiValueMap *map, VALUE key)
-{
-    for (size_t i = 0; i < map->count; i++)
-	if (onibi_value_map_key_equal(map->entries[i].key, key))
-	    return map->entries[i].value;
-    return Qnil;
-}
-
-static void
-onibi_value_map_reserve(OnibiValueMap *map, size_t additional)
-{
-    ONIBI_VECTOR_RESERVE(map->entries, map->count, map->capacity,
-			 OnibiValueEntry, additional, 8,
-			 "GIR value map is too large");
-}
-
-static void
-onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALUE roots)
-{
-    for (size_t i = 0; i < map->count; i++) {
-	if (onibi_value_map_key_equal(map->entries[i].key, key)) {
-	    map->entries[i].value = value;
-	    rb_ary_push(roots, value);
-	    return;
-	}
-    }
-    onibi_value_map_reserve(map, 1);
-    map->entries[map->count].key = key;
-    map->entries[map->count].value = value;
-    rb_ary_push(roots, key);
-    rb_ary_push(roots, value);
-    map->count++;
-}
-
-static void
-onibi_value_map_free(OnibiValueMap *map)
-{
-    ONIBI_VECTOR_RELEASE(map->entries, map->count, map->capacity);
 }
 
 ONIBI_VECTOR_DEFINE(onibi_gir_state_vector, OnibiGirStateVector,
@@ -482,158 +418,97 @@ onibi_ascii_property_name_p(ID name_id)
 	   onibi_ascii_property_kind_id(name_id) != ONIBI_ASCII_PROP_UNKNOWN;
 }
 
-static VALUE
-onibi_class_bitmap(VALUE payload, int fold)
+static unsigned char
+onibi_ast_escape_byte(const OnibiAstArena *arena, const OnibiAstNode *node)
 {
-    unsigned char bits[32];
-    memset(bits, 0, sizeof(bits));
-    if (onibi_ast_kind(payload) == ONIBI_AST_CLASS_INTERSECTION) {
-	VALUE operands = onibi_hash_value_id(payload, id_key_operands);
-	if (!RB_TYPE_P(operands, T_ARRAY) || RARRAY_LEN(operands) < 2)
+    if (node->name.present && node->name.length == 1)
+	return arena->bytes[node->name.offset];
+    return (unsigned char)node->byte;
+}
+
+static void
+onibi_class_escape_bitmap(const OnibiAstArena *arena, const OnibiAstNode *node,
+			  int fold, unsigned char bits[32])
+{
+    OnibiAsciiProperty property =
+	node->name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN
+			   : onibi_ascii_property_kind_id(node->name_id);
+    if (property != ONIBI_ASCII_PROP_UNKNOWN) {
+	for (int c = 0; c < 256; c++)
+	    if (onibi_ascii_property_hit_kind(property, c) > 0)
+		onibi_bitmap_set(bits, (unsigned char)c, fold);
+	if (node->byte == 'P')
+	    for (size_t i = 0; i < 32; i++)
+		bits[i] = (unsigned char)~bits[i];
+	return;
+    }
+    unsigned char raw = onibi_ast_escape_byte(arena, node);
+    int code = onibi_ascii_fold(raw);
+    if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
+	rb_raise(eRegexpError, "escape is not supported in RSeq class");
+    int upper = raw >= 'A' && raw <= 'Z';
+    for (int c = 0; c < 256; c++) {
+	int hit =
+	    code == 'd'
+		? onibi_ascii_digit(c)
+		: (code == 's'
+		       ? onibi_ascii_space(c)
+		       : (code == 'w'
+			      ? (onibi_ascii_alnum(c) || c == '_')
+			      : (code == 'h' ? onibi_ascii_xdigit(c) : 0)));
+	if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
+    }
+}
+
+static void
+onibi_class_bitmap_ast(const OnibiAstArena *arena, OnibiAstId id, int fold,
+		       unsigned char bits[32])
+{
+    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+    memset(bits, 0, 32);
+    if (node->kind == ONIBI_AST_CLASS_INTERSECTION) {
+	if (node->child_count < 2)
 	    rb_raise(eRegexpError, "class intersection has no operands");
-	/* Set intersection is defined before case folding.  Folding each
-	   operand first would turn [a-z&&A-Z] into [a-z]. */
-	VALUE first = onibi_class_bitmap(rb_ary_entry(operands, 0), 0);
-	memcpy(bits, RSTRING_PTR(first), sizeof(bits));
-	for (long i = 1; i < RARRAY_LEN(operands); i++) {
-	    VALUE next = onibi_class_bitmap(rb_ary_entry(operands, i), 0);
-	    for (long byte = 0; byte < 32; byte++)
-		bits[byte] &= (unsigned char)RSTRING_PTR(next)[byte];
+	onibi_class_bitmap_ast(arena, node->children[0], 0, bits);
+	for (size_t i = 1; i < node->child_count; i++) {
+	    unsigned char operand[32];
+	    onibi_class_bitmap_ast(arena, node->children[i], 0, operand);
+	    for (size_t byte = 0; byte < 32; byte++)
+		bits[byte] &= operand[byte];
 	}
 	if (fold) {
 	    unsigned char original[32];
 	    memcpy(original, bits, sizeof(original));
-	    for (int c = 0; c < 256; c++) {
+	    for (int c = 0; c < 256; c++)
 		if ((original[c >> 3] & (1U << (c & 7))) != 0)
 		    onibi_bitmap_set(bits, (unsigned char)c, 1);
-	    }
 	}
-	VALUE result = rb_str_new((const char *)bits, sizeof(bits));
-	rb_obj_freeze(result);
-	return result;
+	return;
     }
-    VALUE ranges = onibi_hash_value_id(payload, id_key_ranges);
-    VALUE escape_name = onibi_hash_value_id(payload, id_key_name);
-    ID escape_name_id = onibi_token_name_id(payload);
-    if (!NIL_P(escape_name) && RSTRING_LEN(escape_name) == 1) {
-	int upper = ((unsigned char)RSTRING_PTR(escape_name)[0] >= 'A' &&
-		     (unsigned char)RSTRING_PTR(escape_name)[0] <= 'Z');
-	int code = onibi_ascii_fold((unsigned char)RSTRING_PTR(escape_name)[0]);
-	for (int c = 0; c < 256; c++) {
-	    int hit =
-		code == 'd'
-		    ? onibi_ascii_digit(c)
-		    : (code == 's'
-			   ? onibi_ascii_space(c)
-			   : (code == 'w'
-				  ? (onibi_ascii_alnum(c) || c == '_')
-				  : (code == 'h' ? onibi_ascii_xdigit(c) : 0)));
-	    if (upper ? !hit : hit)
-		onibi_bitmap_set(bits, (unsigned char)c, fold);
-	}
-    }
-    else {
-	OnibiAsciiProperty property_kind =
-	    escape_name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN
-				: onibi_ascii_property_kind_id(escape_name_id);
-	if (property_kind == ONIBI_ASCII_PROP_UNKNOWN) goto class_children;
-	for (int c = 0; c < 256; c++) {
-	    int hit = onibi_ascii_property_hit_kind(property_kind, c);
-	    if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
-	}
-	VALUE payload_byte = onibi_hash_value_id(payload, id_key_byte);
-	if (RB_INTEGER_TYPE_P(payload_byte) && NUM2INT(payload_byte) == 'P')
-	    for (long i = 0; i < 32; i++)
-		bits[i] = (unsigned char)~bits[i];
-    }
-class_children:
-    if (!RB_TYPE_P(ranges, T_ARRAY)) ranges = rb_ary_new();
-    for (long i = 0; i < RARRAY_LEN(ranges); i++) {
-	VALUE range = rb_ary_entry(ranges, i);
-	if (!RB_TYPE_P(range, T_ARRAY)) continue;
-	if (RARRAY_LEN(range) != 2) continue;
-	if (!RB_INTEGER_TYPE_P(rb_ary_entry(range, 0)) ||
-	    !RB_INTEGER_TYPE_P(rb_ary_entry(range, 1)))
-	    continue;
-	int first = NUM2INT(rb_ary_entry(range, 0));
-	int last = NUM2INT(rb_ary_entry(range, 1));
-	if (first < 0) first = 0;
-	if (last > 255) last = 255;
-	for (int c = first; c <= last; c++)
+    if (node->kind == ONIBI_AST_ESCAPE)
+	onibi_class_escape_bitmap(arena, node, fold, bits);
+    for (size_t i = 0; i < node->range_count; i++) {
+	const OnibiAstRange *range = &node->ranges[i];
+	if (range->first_has_bytes || range->last_has_bytes) continue;
+	for (unsigned int c = range->first_byte; c <= range->last_byte; c++) {
 	    onibi_bitmap_set(bits, (unsigned char)c, fold);
+	    if (c == range->last_byte) break;
+	}
     }
-    VALUE children = onibi_hash_value_id(payload, id_key_children);
-    if (!RB_TYPE_P(children, T_ARRAY)) children = rb_ary_new();
-    for (long i = 0; i < RARRAY_LEN(children); i++) {
-	VALUE child = rb_ary_entry(children, i);
-	if (!RB_TYPE_P(child, T_HASH)) continue;
-	OnibiTokenKind token_kind = onibi_token_kind_code(child);
-	OnibiAstKind ast_kind = onibi_ast_kind(child);
-	if (token_kind == ONIBI_TOKEN_LITERAL ||
-	    ast_kind == ONIBI_AST_LITERAL) {
-	    onibi_bitmap_set(
-		bits,
-		(unsigned char)NUM2INT(onibi_hash_value_id(child, id_key_byte)),
-		fold);
+    for (size_t i = 0; i < node->child_count; i++) {
+	const OnibiAstNode *child =
+	    onibi_ast_node_const(arena, node->children[i]);
+	if (child->token_kind == ONIBI_TOKEN_LITERAL ||
+	    child->kind == ONIBI_AST_LITERAL) {
+	    onibi_bitmap_set(bits, (unsigned char)child->byte, fold);
 	}
-	else if (token_kind == ONIBI_TOKEN_ESCAPE ||
-		 token_kind == ONIBI_TOKEN_META_ESCAPE ||
-		 ast_kind == ONIBI_AST_ESCAPE) {
-	    VALUE name = onibi_hash_value_id(child, id_key_name);
-	    ID name_id = onibi_token_name_id(child);
-	    VALUE child_byte_value = onibi_hash_value_id(child, id_key_byte);
-	    OnibiAsciiProperty property_kind =
-		name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN
-			     : onibi_ascii_property_kind_id(name_id);
-	    if (property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
-		for (int c = 0; c < 256; c++) {
-		    int hit = onibi_ascii_property_hit_kind(property_kind, c);
-		    if (hit > 0) onibi_bitmap_set(bits, (unsigned char)c, fold);
-		}
-		if (!NIL_P(child_byte_value) &&
-		    NUM2INT(child_byte_value) == 'P')
-		    for (long byte = 0; byte < 32; byte++)
-			bits[byte] = (unsigned char)~bits[byte];
-		continue;
-	    }
-	    int escape_code =
-		NIL_P(name) ? (RB_INTEGER_TYPE_P(child_byte_value)
-				   ? onibi_ascii_fold((unsigned char)NUM2INT(
-					 child_byte_value))
-				   : 0)
-			    : (RSTRING_LEN(name) == 1
-				   ? onibi_ascii_fold(
-					 (unsigned char)RSTRING_PTR(name)[0])
-				   : 0);
-	    if (escape_code == 'r' || escape_code == 'p' ||
-		escape_code == 'x' || escape_code == 'u')
-		rb_raise(eRegexpError, "escape is not supported in RSeq class");
-	    int upper = NIL_P(name)
-			    ? (RB_INTEGER_TYPE_P(child_byte_value) &&
-			       NUM2INT(child_byte_value) >= 'A' &&
-			       NUM2INT(child_byte_value) <= 'Z')
-			    : (RSTRING_LEN(name) == 1 &&
-			       ((unsigned char)RSTRING_PTR(name)[0] >= 'A' &&
-				(unsigned char)RSTRING_PTR(name)[0] <= 'Z'));
-	    int code = escape_code;
-	    for (int c = 0; c < 256; c++) {
-		int hit =
-		    code == 'd'
-			? onibi_ascii_digit(c)
-			: (code == 's'
-			       ? onibi_ascii_space(c)
-			       : (code == 'w'
-				      ? (onibi_ascii_alnum(c) || c == '_')
-				      : (code == 'h' ? onibi_ascii_xdigit(c)
-						     : 0)));
-		if (upper ? !hit : hit)
-		    onibi_bitmap_set(bits, (unsigned char)c, fold);
-	    }
+	else if (child->token_kind == ONIBI_TOKEN_ESCAPE ||
+		 child->token_kind == ONIBI_TOKEN_META_ESCAPE ||
+		 child->kind == ONIBI_AST_ESCAPE) {
+	    onibi_class_escape_bitmap(arena, child, fold, bits);
 	}
-	else if (token_kind == ONIBI_TOKEN_POSIX_CLASS) {
-	    VALUE name_id = onibi_hash_value_id(child, id_key_name_id);
-	    ID property = NIL_P(name_id) ? 0 : (ID)NUM2ULONG(name_id);
-	    OnibiPosixKind posix = onibi_posix_kind_id(property);
+	else if (child->token_kind == ONIBI_TOKEN_POSIX_CLASS) {
+	    OnibiPosixKind posix = onibi_posix_kind_id(child->name_id);
 	    for (int c = 0; c < 256; c++) {
 		int hit = posix == ONIBI_POSIX_ALPHA   ? onibi_ascii_alpha(c)
 			  : posix == ONIBI_POSIX_DIGIT ? onibi_ascii_digit(c)
@@ -649,19 +524,17 @@ class_children:
 		if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
 	    }
 	}
-	else if (ast_kind == ONIBI_AST_CHARACTER_CLASS ||
-		 ast_kind == ONIBI_AST_CLASS_INTERSECTION) {
-	    VALUE nested = onibi_class_bitmap(child, fold);
-	    for (long byte = 0; byte < 32; byte++)
-		bits[byte] |= (unsigned char)RSTRING_PTR(nested)[byte];
+	else if (child->kind == ONIBI_AST_CHARACTER_CLASS ||
+		 child->kind == ONIBI_AST_CLASS_INTERSECTION) {
+	    unsigned char nested[32];
+	    onibi_class_bitmap_ast(arena, node->children[i], fold, nested);
+	    for (size_t byte = 0; byte < 32; byte++)
+		bits[byte] |= nested[byte];
 	}
     }
-    if (RTEST(onibi_hash_value_id(payload, id_key_negated)))
-	for (long i = 0; i < 32; i++)
+    if (node->flags & ONIBI_AST_NODE_NEGATED)
+	for (size_t i = 0; i < 32; i++)
 	    bits[i] = (unsigned char)~bits[i];
-    VALUE bitmap = rb_str_new((const char *)bits, sizeof(bits));
-    rb_obj_freeze(bitmap);
-    return bitmap;
 }
 
 static OnibiPosixKind
@@ -683,56 +556,18 @@ onibi_posix_kind_id(ID property)
 
 static void
 onibi_gir_state(onibi_gir_builder_t *builder, long id, OnibiGStateOp opcode,
-		VALUE payload)
+		uint32_t value, uint8_t flags)
 {
     OnibiGirStateEntry entry;
     memset(&entry, 0, sizeof(entry));
     entry.id = id;
     entry.opcode = opcode;
-    if (opcode == ONIBI_G_CHAR) {
-	VALUE encoded = onibi_hash_value_id(payload, id_key_bytes);
-	if (RB_TYPE_P(encoded, T_STRING) && RSTRING_LEN(encoded) > 0 &&
-	    RSTRING_LEN(encoded) <= 4) {
-	    entry.literal_length = (uint8_t)RSTRING_LEN(encoded);
-	    memcpy(entry.literal, RSTRING_PTR(encoded), entry.literal_length);
-	}
-	entry.value =
-	    (uint32_t)NUM2UINT(onibi_hash_value_id(payload, id_key_byte));
-	if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))
-	    entry.flags |= 1U;
-    }
-    else if (opcode == ONIBI_G_CLASS) {
-	VALUE bitmap = onibi_hash_value_id(payload, id_key_bitmap);
-	if (!RB_TYPE_P(bitmap, T_STRING) || RSTRING_LEN(bitmap) != 32)
-	    rb_raise(eRegexpError, "GIR class requires a 256-bit bitmap");
-	memcpy(entry.bitmap, RSTRING_PTR(bitmap), sizeof(entry.bitmap));
-	if (RTEST(onibi_hash_value_id(payload, id_key_negated)))
-	    entry.flags |= 1U;
-    }
-    else if (opcode == ONIBI_G_BACKREF) {
-	VALUE capture = onibi_hash_value_id(payload, id_key_capture);
-	if (NIL_P(capture) || NUM2LONG(capture) <= 0)
-	    rb_raise(eRegexpError, "invalid GIR backreference capture");
-	entry.value = (uint32_t)(NUM2ULONG(capture) - 1U);
-	if (RTEST(onibi_hash_value_id(payload, id_key_ignorecase)))
-	    entry.flags |= 1U;
-    }
-    else if (opcode == ONIBI_G_CALL || opcode == ONIBI_G_ATOMIC ||
-	     opcode == ONIBI_G_ABSENT) {
-	VALUE subprogram = onibi_hash_value_id(payload, id_key_subprogram);
-	if (NIL_P(subprogram))
-	    rb_raise(eRegexpError, "GIR state requires a subprogram");
-	entry.value = (uint32_t)NUM2ULONG(subprogram);
-    }
-    else if (opcode == ONIBI_G_ANY &&
-	     RTEST(onibi_hash_value_id(payload, id_key_multiline))) {
-	entry.flags |= 1U;
-    }
+    entry.value = value;
+    entry.flags = flags;
     onibi_gir_state_vector_push(&builder->states, entry);
 }
 
-/* Typed terminal path.  This bypasses Ruby Hash payloads for literals while
- * the remaining compatibility-only composite nodes are migrated. */
+/* Store one typed literal record in GIR. */
 static void
 onibi_gir_state_literal(onibi_gir_builder_t *builder, long id,
 			const unsigned char *bytes, size_t length,
@@ -909,84 +744,11 @@ onibi_capture_test_action(long slot, int set)
 }
 
 static OnibiGAction
-onibi_counter_action(OnibiGActionOp code, long slot, VALUE limit)
+onibi_counter_action(OnibiGActionOp code, long slot, int has_limit, long limit)
 {
-    uint32_t value = code == ONIBI_GA_COUNTER_INIT
-			 ? 1U
-			 : (NIL_P(limit) ? 0U : (uint32_t)NUM2ULONG(limit));
+    uint32_t value =
+	code == ONIBI_GA_COUNTER_INIT ? 1U : (has_limit ? (uint32_t)limit : 0U);
     return (OnibiGAction){code, 0, 0, 1, (uint16_t)slot, 0, 0, 1, value};
-}
-
-static VALUE
-onibi_gir_payload_from_ast_terminal(const OnibiAstArena *arena, OnibiAstId id,
-				    int semantic_class)
-{
-    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
-    if (node->kind != ONIBI_AST_LITERAL && node->kind != ONIBI_AST_ESCAPE &&
-	node->kind != ONIBI_AST_ANY && node->kind != ONIBI_AST_BACKREF &&
-	node->kind != ONIBI_AST_CHARACTER_CLASS &&
-	node->kind != ONIBI_AST_CLASS_INTERSECTION &&
-	!(node->kind == ONIBI_AST_UNKNOWN &&
-	  node->token_kind == ONIBI_TOKEN_POSIX_CLASS))
-	rb_raise(rb_eArgError, "GIR payload requires a terminal AST node");
-    VALUE value = rb_hash_new();
-    rb_hash_aset(value, ID2SYM(id_key_type_code), UINT2NUM(node->kind));
-    if (node->token_kind >= ONIBI_TOKEN_LITERAL)
-	rb_hash_aset(value, ID2SYM(id_key_kind_code),
-		     UINT2NUM(node->token_kind));
-    if (node->start >= 0)
-	rb_hash_aset(value, ID2SYM(id_key_start), LONG2NUM(node->start));
-    if (node->end >= 0)
-	rb_hash_aset(value, ID2SYM(id_key_end), LONG2NUM(node->end));
-    rb_hash_aset(value, ID2SYM(id_key_byte), LONG2NUM(node->byte));
-    if (node->name_id != 0)
-	rb_hash_aset(value, ID2SYM(id_key_name_id), ULONG2NUM(node->name_id));
-    VALUE name = onibi_ast_slice_string(arena, node->name);
-    if (NIL_P(name) && node->kind == ONIBI_AST_ESCAPE)
-	name = rb_str_new((const char[]){(char)node->byte}, 1);
-    if (!NIL_P(name)) rb_hash_aset(value, ID2SYM(id_key_name), name);
-    VALUE bytes = onibi_ast_slice_string(arena, node->bytes);
-    if (!NIL_P(bytes)) rb_hash_aset(value, ID2SYM(id_key_bytes), bytes);
-
-    if (node->kind == ONIBI_AST_CHARACTER_CLASS) {
-	VALUE children = rb_ary_new_capa((long)node->child_count);
-	for (size_t i = 0; i < node->child_count; i++) {
-	    VALUE child = semantic_class ? onibi_gir_payload_from_ast_terminal(
-					       arena, node->children[i], 1)
-					 : UINT2NUM(node->children[i]);
-	    rb_ary_push(children, child);
-	}
-	VALUE ranges = rb_ary_new_capa((long)node->range_count);
-	for (size_t i = 0; i < node->range_count; i++) {
-	    const OnibiAstRange *range = &node->ranges[i];
-	    VALUE first = range->first_has_bytes
-			      ? onibi_ast_slice_string(arena, range->first)
-			      : INT2NUM(range->first_byte);
-	    VALUE last = range->last_has_bytes
-			     ? onibi_ast_slice_string(arena, range->last)
-			     : INT2NUM(range->last_byte);
-	    rb_ary_push(ranges, rb_ary_new_from_args(2, first, last));
-	}
-	rb_hash_aset(value, ID2SYM(id_key_children), children);
-	rb_hash_aset(value, ID2SYM(id_key_ranges), ranges);
-    }
-    if (node->kind == ONIBI_AST_CLASS_INTERSECTION && semantic_class) {
-	VALUE operands = rb_ary_new_capa((long)node->child_count);
-	for (size_t i = 0; i < node->child_count; i++)
-	    rb_ary_push(operands, onibi_gir_payload_from_ast_terminal(
-				      arena, node->children[i], 1));
-	rb_hash_aset(value, ID2SYM(id_key_operands), operands);
-    }
-    if (node->flags & ONIBI_AST_NODE_NEGATED)
-	rb_hash_aset(value, ID2SYM(id_key_negated), Qtrue);
-    else if (node->kind == ONIBI_AST_CHARACTER_CLASS)
-	rb_hash_aset(value, ID2SYM(id_key_negated), Qfalse);
-    if (node->kind == ONIBI_AST_BACKREF) {
-	if (NIL_P(name))
-	    rb_hash_aset(value, ID2SYM(id_key_capture),
-			 LONG2NUM(node->capture));
-    }
-    return value;
 }
 
 static int
@@ -1012,13 +774,13 @@ onibi_c_ast_has_capture(const OnibiAstArena *arena, OnibiAstId id)
 
 static int
 onibi_c_ast_has_subroutine_name(const OnibiAstArena *arena, OnibiAstId id,
-				VALUE name)
+				OnibiTokenSlice name)
 {
     const OnibiAstNode *node = onibi_ast_node_const(arena, id);
     if (node->kind == ONIBI_AST_SUBROUTINE && node->name.present &&
-	node->name.length == (size_t)RSTRING_LEN(name) &&
-	memcmp(arena->bytes + node->name.offset, RSTRING_PTR(name),
-	       node->name.length) == 0)
+	name.present && node->name.length == name.length &&
+	memcmp(arena->bytes + node->name.offset, arena->bytes + name.offset,
+	       name.length) == 0)
 	return 1;
     if (node->body != ONIBI_AST_NONE &&
 	onibi_c_ast_has_subroutine_name(arena, node->body, name))

@@ -62,4 +62,20 @@ class ResolvedSemanticAstTest < Minitest::Test
     refute_includes source, "onibi_compile_subprogram("
     refute_includes lower, "onibi_rseq_subprogram_vector_push"
   end
+
+  def test_production_gir_lowering_uses_typed_c_records
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    gir = File.read(File.join(ROOT, "ext/onibi/gir.c"))
+    rseq = File.read(File.join(ROOT, "ext/onibi/rseq.c"))
+
+    assert_includes compiler,
+                    "onibi_compile_node(OnibiAstId node_id"
+    refute_match(/onibi_compile_node\(VALUE/, compiler)
+    refute_includes compiler, "onibi_gir_payload_from_ast_terminal"
+    refute_match(/rb_(?:hash|ary|str_new)/, compiler)
+    refute_includes gir, "OnibiValueMap"
+    refute_match(/VALUE (?:payload|key|value);/, gir)
+    assert_includes rseq, "compiled_data->states.entries"
+    assert_includes rseq, "compiled_data->subprograms.entries"
+  end
 end

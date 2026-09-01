@@ -419,9 +419,8 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	physical_subprograms[i].flags = record->flags;
     }
     rb_obj_freeze(blob);
-    /* Validate once, then publish only the relocatable blob. Semantic Ruby
-	 mirrors are compile-time adapters and are not retained by the regexp.
-     */
+    /* Validate once. Publish only the relocatable blob. The typed GIR vectors
+	 remain compiler-owned and are released after lowering. */
     onibi_rseq_blob_validate(blob);
     onibi_rseq_class_payload_vector_free(&class_payloads);
     onibi_rseq_literal_payload_vector_free(&literal_payloads);
