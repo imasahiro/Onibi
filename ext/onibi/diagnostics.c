@@ -191,6 +191,42 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
 
 typedef struct {
     VALUE source;
+    int options;
+    OnibiTokenVector tokens;
+} OnibiNfaDiagnosticCall;
+
+static VALUE
+onibi_nfa_diagnostic_call(VALUE opaque)
+{
+    OnibiNfaDiagnosticCall *call = (OnibiNfaDiagnosticCall *)(uintptr_t)opaque;
+    onibi_token_vector_init(&call->tokens);
+    onibi_tokenize_internal(
+	call->source, (call->options & ONIBI_OPT_EXTENDED) != 0, &call->tokens);
+    VALUE parsed = onibi_parser_parse_internal(
+	call->source, INT2NUM(call->options), &call->tokens);
+    return onibi_compiler_nfa_diagnostics(parsed);
+}
+
+static VALUE
+onibi_nfa_diagnostic_cleanup(VALUE opaque)
+{
+    OnibiNfaDiagnosticCall *call = (OnibiNfaDiagnosticCall *)(uintptr_t)opaque;
+    onibi_token_vector_free(&call->tokens);
+    return Qnil;
+}
+
+static VALUE
+onibi_pre_elimination_nfa_diagnostics(VALUE self)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    OnibiNfaDiagnosticCall call = {obj->source, obj->options, {0}};
+    return rb_ensure(onibi_nfa_diagnostic_call, (VALUE)(uintptr_t)&call,
+		     onibi_nfa_diagnostic_cleanup, (VALUE)(uintptr_t)&call);
+}
+
+typedef struct {
+    VALUE source;
     VALUE options;
     int phase;
     OnibiTokenVector tokens;

@@ -4,7 +4,7 @@
 | TASK-10 | A-01, A-02, A-03, API-03 | TASK-00 | sol/high | accepted | ext/onibi/ast.c, compiler.c, gir.c, onibi_common.c, parser.c, rseq.c; resolved semantic and option tests | Ruby 4 build; 22 focused runs and 3 option runs passed |
 | TASK-11 | A-01, P-11, C-08 | TASK-10 | sol/high | accepted | ext/onibi/ast.c, compiler.c, diagnostics.c, gir.c, onibi_common.c, rseq.c, token.c; resolved semantic test | Ruby 4 clean build; 34 runs/205 assertions and 17 option runs/33 assertions passed |
 | TASK-12 | P-11, P-12 | TASK-10 | luna/medium | accepted | ext/onibi/ast.c, compiler.c, onibi_common.c, parser.c, token.c; resolved semantic index tests | Ruby 4 clean build; 33 runs/170 assertions passed with zero skips |
-| TASK-13 | A-04, P-09 | TASK-10, TASK-11 | sol/high | pending | — | — |
+| TASK-13 | A-04, P-09 | TASK-10, TASK-11 | sol/high | accepted | compiler.c, diagnostics.c, gir.c, nfa.c, onibi_init.c; tagged NFA tests | Ruby 4 clean build; 108 runs/759 assertions passed with zero skips |
 | TASK-14 | A-04, P-09 | TASK-13 | sol/high | pending | — | — |
 | TASK-15 | M-01, M-04 | TASK-10 | sol/xhigh | accepted | compiler.c, diagnostics.c, gir.c, nfa.c, onibi_common.c, onibi_init.c, onibi_vector.h, rseq.c; exception-safety tests | Ruby 4 clean build; 35 runs/484 assertions passed with zero skips |
 | TASK-20 | R-03, R-04 | TASK-14 | sol/high | pending | — | — |

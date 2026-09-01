@@ -60,6 +60,7 @@ typedef struct {
     uint32_t flags;
 } OnibiRSeqSubprogramEntry;
 typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
+typedef struct OnibiTaggedNfa OnibiTaggedNfa;
 typedef struct {
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
@@ -75,6 +76,7 @@ typedef struct {
     size_t resolved_subprogram_count;
     int optional_seen;
     onibi_allocation_owner_t *allocation_owner;
+    OnibiTaggedNfa *nfa;
 } onibi_gir_builder_t;
 ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
 		    "GIR state vector is too large")
@@ -192,14 +194,6 @@ onibi_gir_edge_vector_push(OnibiGirEdgeVector *vector, OnibiGirEdgeEntry entry)
 {
     ONIBI_OWNED_VECTOR_PUSH(vector, OnibiGirEdgeEntry, entry, 8,
 			    "GIR edge vector is too large");
-}
-
-static void
-onibi_gir_edge_vector_insert(OnibiGirEdgeVector *vector, size_t index,
-			     OnibiGirEdgeEntry entry)
-{
-    ONIBI_OWNED_VECTOR_INSERT(vector, OnibiGirEdgeEntry, index, entry, 8,
-			      "GIR edge vector is too large");
 }
 
 typedef struct {
@@ -633,105 +627,6 @@ onibi_posix_kind_id(ID property)
     return ONIBI_POSIX_UNKNOWN;
 }
 
-static void
-onibi_gir_state(onibi_gir_builder_t *builder, long id, OnibiGStateOp opcode,
-		uint32_t value, uint8_t flags)
-{
-    OnibiGirStateEntry entry;
-    memset(&entry, 0, sizeof(entry));
-    entry.id = id;
-    entry.opcode = opcode;
-    entry.value = value;
-    entry.flags = flags;
-    onibi_gir_state_vector_push(&builder->states, entry);
-}
-
-/* Store one typed literal record in GIR. */
-static void
-onibi_gir_state_literal(onibi_gir_builder_t *builder, long id,
-			const unsigned char *bytes, size_t length,
-			int ignorecase)
-{
-    OnibiGirStateEntry entry;
-    memset(&entry, 0, sizeof(entry));
-    entry.id = id;
-    entry.opcode = ONIBI_G_CHAR;
-    if (length == 0 || length > sizeof(entry.literal))
-	rb_raise(eRegexpError, "literal descriptor has invalid length");
-    entry.literal_length = (uint8_t)length;
-    memcpy(entry.literal, bytes, length);
-    entry.value = bytes[0];
-    if (ignorecase) entry.flags |= 1U;
-    onibi_gir_state_vector_push(&builder->states, entry);
-}
-
-static void
-onibi_gir_state_class(onibi_gir_builder_t *builder, long id,
-		      const unsigned char bitmap[32], int negated)
-{
-    OnibiGirStateEntry entry;
-    memset(&entry, 0, sizeof(entry));
-    entry.id = id;
-    entry.opcode = ONIBI_G_CLASS;
-    memcpy(entry.bitmap, bitmap, sizeof(entry.bitmap));
-    if (negated) entry.flags |= 1U;
-    onibi_gir_state_vector_push(&builder->states, entry);
-}
-
-static OnibiGActionVector
-onibi_gir_compose_edge_actions(onibi_gir_builder_t *builder, long from, long to,
-			       const OnibiGActionVector *explicit_actions)
-{
-    const OnibiGuardEntry *capture_guard = onibi_guard_vector_find_entry(
-	&builder->capture_guards, (OnibiStateId)to);
-    const OnibiGuardEntry *exit_guard = onibi_guard_vector_find_entry(
-	&builder->exit_guards, (OnibiStateId)from);
-    OnibiGActionVector actions;
-    onibi_g_action_vector_init(&actions);
-    onibi_g_action_vector_bind(&actions, builder->allocation_owner);
-    if (exit_guard)
-	onibi_g_action_vector_append(&actions, &exit_guard->actions);
-    onibi_g_action_vector_append(&actions, explicit_actions);
-    if (capture_guard)
-	onibi_g_action_vector_append(&actions, &capture_guard->actions);
-    return actions;
-}
-
-static void
-onibi_gir_edge(onibi_gir_builder_t *builder, long from, long to)
-{
-    OnibiGActionVector empty;
-    onibi_g_action_vector_init(&empty);
-    onibi_g_action_vector_bind(&empty, builder->allocation_owner);
-    OnibiGActionVector actions =
-	onibi_gir_compose_edge_actions(builder, from, to, &empty);
-    onibi_gir_edge_vector_push(&builder->edges,
-			       (OnibiGirEdgeEntry){from, to, 0, actions});
-}
-
-static void
-onibi_gir_edge_actions(onibi_gir_builder_t *builder, long from, long to,
-		       const OnibiGActionVector *actions)
-{
-    OnibiGActionVector composed =
-	onibi_gir_compose_edge_actions(builder, from, to, actions);
-    /* Action programs are part of edge identity.  Keep the first identical
-     * edge for priority, but never merge different paths into one program. */
-    for (size_t i = 0; i < builder->edges.count; i++) {
-	const OnibiGirEdgeEntry *prior = &builder->edges.entries[i];
-	if (prior->from == from && prior->to == to &&
-	    prior->actions.count == composed.count &&
-	    (composed.count == 0 ||
-	     memcmp(prior->actions.entries, composed.entries,
-		    composed.count * sizeof(*composed.entries)) == 0)) {
-	    onibi_g_action_vector_free(&composed);
-	    return;
-	}
-    }
-    onibi_gir_edge_vector_push(&builder->edges,
-			       (OnibiGirEdgeEntry){from, to, 0, composed});
-}
-
 static onibi_fragment_t
 onibi_fragment_empty(onibi_gir_builder_t *builder)
 {
@@ -756,49 +651,6 @@ onibi_fragment_append_actions(OnibiGActionVector *destination,
 			      const OnibiGActionVector *source)
 {
     onibi_g_action_vector_append(destination, source);
-}
-
-/* Fragment composition still stores Ruby arrays, but all numeric exit
- * traversal goes through the C vector boundary. */
-static void
-onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
-			       const OnibiIdVector *exits,
-			       const OnibiIdVector *starts,
-			       const OnibiGActionVector *actions, int prepend)
-{
-    for (size_t i = 0; i < exits->count; i++) {
-	long from = (long)exits->entries[i];
-	for (size_t j = 0; j < starts->count; j++) {
-	    long to = (long)starts->entries[j];
-	    if (prepend) {
-		size_t insert_at = builder->edges.count;
-		for (size_t k = 0; k < builder->edges.count; k++) {
-		    if (builder->edges.entries[k].from == from) {
-			insert_at = k;
-			break;
-		    }
-		}
-		OnibiGActionVector edge_actions =
-		    onibi_gir_compose_edge_actions(builder, from, to, actions);
-		onibi_gir_edge_vector_insert(
-		    &builder->edges, insert_at,
-		    (OnibiGirEdgeEntry){from, to, 0, edge_actions});
-	    }
-	    else {
-		onibi_gir_edge_actions(builder, from, to, actions);
-	    }
-	}
-    }
-}
-
-static void
-onibi_connect_fragment(onibi_gir_builder_t *builder, const OnibiIdVector *exits,
-		       const OnibiIdVector *starts)
-{
-    for (size_t i = 0; i < exits->count; i++)
-	for (size_t j = 0; j < starts->count; j++)
-	    onibi_gir_edge(builder, (long)exits->entries[i],
-			   (long)starts->entries[j]);
 }
 
 static void
