@@ -15,23 +15,6 @@ onibi_g_action_assert_kind(const OnibiGAction *action)
     return action->has_assert_kind ? (OnibiRAssertKind)action->assert_kind : 0;
 }
 
-/* Debug validator adapter. Runtime lowering uses OnibiGAction enums. */
-static OnibiRAssertKind
-onibi_rseq_assert_kind(ID op)
-{
-    if (op == id_a_assert_begin_buffer) return ONIBI_RAP_BEGIN_BUFFER;
-    if (op == id_a_assert_end_buffer) return ONIBI_RAP_END_BUFFER;
-    if (op == id_a_assert_begin_line) return ONIBI_RAP_BEGIN_LINE;
-    if (op == id_a_assert_end_line) return ONIBI_RAP_END_LINE;
-    if (op == id_a_assert_semi_end_buffer) return ONIBI_RAP_SEMI_END_BUFFER;
-    if (op == id_a_assert_search_origin) return ONIBI_RAP_SEARCH_ORIGIN;
-    if (op == id_a_assert_word_boundary) return ONIBI_RAP_WORD_BOUNDARY;
-    if (op == id_a_assert_nonword_boundary) return ONIBI_RAP_NONWORD_BOUNDARY;
-    if (op == id_a_assert_lookahead) return ONIBI_RAP_LOOKAHEAD;
-    if (op == id_a_assert_lookbehind) return ONIBI_RAP_LOOKBEHIND;
-    return 0;
-}
-
 static VALUE
 onibi_rseq_lower(VALUE self, VALUE compiled)
 {
@@ -275,7 +258,9 @@ onibi_rseq_lower(VALUE self, VALUE compiled)
 	while (current >= 0 && (size_t)current < state_records.count &&
 	       physical.prefix_length < sizeof(physical.prefix)) {
 	    OnibiGirStateEntry *state = &state_records.entries[current];
-	    if (state->opcode != ONIBI_G_CHAR || state->literal_length == 0 ||
+	    if (state->opcode != ONIBI_G_CHAR ||
+		(state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0 ||
+		state->literal_length == 0 ||
 		state->literal_length >
 		    sizeof(physical.prefix) - physical.prefix_length)
 		break;
@@ -977,23 +962,25 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 		 "no implicit conversion of String into Integer");
     if (NIL_P(str)) {
 	if (!NIL_P(pos))
-	    rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
+	    rb_raise(rb_eTypeError,
+		     "no implicit conversion from nil to String");
 	return Qnil;
     }
     if (SYMBOL_P(str)) str = rb_sym2str(str);
     if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
     long origin = 0;
-	if (!NIL_P(pos)) {
+    if (!NIL_P(pos)) {
 	origin = NUM2LONG(pos);
 	if (origin < 0) origin += RSTRING_LEN(str);
 	if (origin < 0) return Qnil;
 	if (origin > RSTRING_LEN(str)) origin = RSTRING_LEN(str);
     }
     long start = 0, end = 0;
-	OnibiExecStatus search_status = onibi_vm_search(self, str, origin, &start, &end);
-	if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+    OnibiExecStatus search_status =
+	onibi_vm_search(self, str, origin, &start, &end);
+    if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
 	rb_raise(eRegexpError, "Onibi execution failed");
-	if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
+    if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
 	return Qnil;
     }
@@ -1014,10 +1001,10 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
     VALUE str, pos = Qnil;
     rb_scan_args(argc, argv, "11", &str, &pos);
     if (SYMBOL_P(str)) str = rb_sym2str(str);
-	if (NIL_P(str))
-	    rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
-	if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
-	{
+    if (NIL_P(str))
+	rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
+    if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
+    {
 	long origin = 0;
 	if (!NIL_P(pos)) {
 	    origin = NUM2LONG(pos);
@@ -1025,12 +1012,13 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	    if (origin < 0) return Qfalse;
 	}
 	long start = 0, end = 0;
-	OnibiExecStatus result = onibi_vm_search(self, str, origin, &start, &end);
+	OnibiExecStatus result =
+	    onibi_vm_search(self, str, origin, &start, &end);
 	if (result == ONIBI_EXEC_STATUS_MATCH ||
 	    result == ONIBI_EXEC_STATUS_NO_MATCH)
 	    return result == ONIBI_EXEC_STATUS_MATCH ? Qtrue : Qfalse;
 	if (result == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
-	rb_raise(eRegexpError, "Onibi execution failed");
+	    rb_raise(eRegexpError, "Onibi execution failed");
 	if (result == ONIBI_EXEC_STATUS_FALLBACK) {
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);

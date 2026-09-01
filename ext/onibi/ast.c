@@ -65,6 +65,7 @@ onibi_c_find_close(const OnibiTokenVector *tokens, long begin, long end,
 
 typedef struct {
     OnibiAstArena arena;
+    OnibiResolvedArena semantics;
     int options;
     int encoding_index;
     unsigned int ast_flags;
@@ -82,7 +83,10 @@ static void
 onibi_parsed_free(void *ptr)
 {
     OnibiParsed *parsed = (OnibiParsed *)ptr;
-    if (parsed != NULL) onibi_ast_arena_free(&parsed->arena);
+    if (parsed != NULL) {
+	onibi_ast_arena_free(&parsed->arena);
+	xfree(parsed->semantics.nodes);
+    }
     xfree(parsed);
 }
 static size_t
@@ -92,7 +96,8 @@ onibi_parsed_memsize(const void *ptr)
     if (parsed == NULL) return 0;
     size_t size = sizeof(*parsed) +
 		  parsed->arena.capacity * sizeof(OnibiAstNode) +
-		  parsed->arena.bytes_count;
+		  parsed->arena.bytes_count +
+		  parsed->semantics.count * sizeof(OnibiResolvedNode);
     for (size_t i = 0; i < parsed->arena.count; i++) {
 	size += parsed->arena.nodes[i].child_capacity * sizeof(OnibiAstId);
 	size += parsed->arena.nodes[i].range_capacity * sizeof(OnibiAstRange);

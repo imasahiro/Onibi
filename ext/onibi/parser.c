@@ -402,6 +402,7 @@ onibi_parser_parse_internal(VALUE source, VALUE options,
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiParsed,
 					 &onibi_parsed_type, parsed);
     onibi_ast_arena_init(&parsed->arena, tokens);
+    memset(&parsed->semantics, 0, sizeof(parsed->semantics));
     parsed->ast_flags = 0;
     parsed->encoding_index = rb_enc_get_index(source);
     parsed->options = onibi_option_mask(options);

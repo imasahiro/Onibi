@@ -171,7 +171,6 @@ onibi_hash_value_id(VALUE hash, ID key)
 {
     return rb_hash_aref(hash, ID2SYM(key));
 }
-static OnibiRAssertKind onibi_rseq_assert_kind(ID op);
 static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(ID name_id);
 static int onibi_valid_encoding(VALUE str);
@@ -571,6 +570,44 @@ typedef struct {
     size_t bytes_capacity;
     OnibiAstId root;
 } OnibiAstArena;
+
+enum {
+    ONIBI_SEMANTIC_RESOLVED = 1U << 0,
+    ONIBI_SEMANTIC_NORMALIZED = 1U << 1,
+    ONIBI_SEMANTIC_ANALYZED = 1U << 2,
+    ONIBI_SEMANTIC_NULLABLE = 1U << 3,
+    ONIBI_SEMANTIC_REPEAT_HAS_MAX = 1U << 4,
+    ONIBI_SEMANTIC_REPEAT_GREEDY = 1U << 5,
+    ONIBI_SEMANTIC_REPEAT_POSSESSIVE = 1U << 6,
+    ONIBI_SEMANTIC_ANALYZING = 1U << 7
+};
+
+/* C-owned semantic data. Source positions are diagnostic data only. */
+typedef struct {
+    OnibiAstKind kind;
+    OnibiAstId source_id;
+    OnibiAstId reference_target;
+    OnibiSubprogramId subprogram_id;
+    uint32_t lexical_options;
+    int encoding_index;
+    int32_t capture_id;
+    int32_t assertion_kind;
+    long repeat_min;
+    long repeat_max;
+    long min_width;
+    long max_width;
+    long source_start;
+    long source_end;
+    uint32_t flags;
+} OnibiResolvedNode;
+
+typedef struct {
+    OnibiResolvedNode *nodes;
+    size_t count;
+    uint32_t capture_count;
+    uint32_t subprogram_count;
+    uint32_t lowered_subprogram_count;
+} OnibiResolvedArena;
 
 typedef enum {
     ONIBI_CLASS_MODE_NORMAL = 0,

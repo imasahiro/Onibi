@@ -81,8 +81,9 @@ typedef struct {
     OnibiValueMap subprogram_ids;
     VALUE map_roots;
     OnibiAstArena *ast;
-    int ignorecase;
-    int multiline;
+    const OnibiResolvedArena *semantics;
+    unsigned char *subprogram_status;
+    size_t resolved_subprogram_count;
     int optional_seen;
 } onibi_gir_builder_t;
 ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
@@ -210,17 +211,6 @@ onibi_value_map_set(OnibiValueMap *map, VALUE key, VALUE value, VALUE roots)
     rb_ary_push(roots, key);
     rb_ary_push(roots, value);
     map->count++;
-}
-
-static void
-onibi_value_map_delete(OnibiValueMap *map, VALUE key)
-{
-    for (size_t i = 0; i < map->count; i++) {
-	if (onibi_value_map_key_equal(map->entries[i].key, key)) {
-	    map->entries[i] = map->entries[--map->count];
-	    return;
-	}
-    }
 }
 
 static void

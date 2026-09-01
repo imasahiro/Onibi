@@ -126,6 +126,29 @@ class InlineModifierTest < Minitest::Test
     assert_equal "mx", token[:negative_name]
   end
 
+  def test_global_modifier_applies_to_later_alternative
+    pattern = "(?i)a|b"
+
+    assert_equal Regexp.new(pattern).match?("B"),
+                 Onibi::Regexp.new(pattern).match?("B")
+  end
+
+  def test_global_modifier_in_middle_branch_applies_to_later_alternative
+    pattern = "a|(?i)b|c"
+
+    assert_equal Regexp.new(pattern).match?("C"),
+                 Onibi::Regexp.new(pattern).match?("C")
+  end
+
+  def test_group_global_modifier_does_not_escape_to_outer_alternative
+    patterns = ["(?:(?i)a)|b", "a|(?:(?i)b)|c"]
+
+    patterns.each do |pattern|
+      assert_equal Regexp.new(pattern).match?(pattern.end_with?("b") ? "B" : "C"),
+                   Onibi::Regexp.new(pattern).match?(pattern.end_with?("b") ? "B" : "C")
+    end
+  end
+
   private
 
   def option_names(options)

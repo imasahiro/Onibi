@@ -33,14 +33,15 @@ typedef struct {
 } OnibiParseOutput;
 typedef struct {
     OnibiParsed *parsed;
-    int options;
+    const OnibiResolvedArena *semantics;
 } OnibiResolveOutput;
 typedef struct {
     OnibiParsed *parsed;
-    int options;
+    const OnibiResolvedArena *semantics;
 } OnibiNormalizeOutput;
 typedef struct {
     OnibiParsed *parsed;
+    const OnibiResolvedArena *semantics;
     onibi_gir_builder_t *builder;
     long capture_count;
     int nullable;
@@ -124,10 +125,488 @@ onibi_compiled_get(VALUE value)
     return compiled;
 }
 
-static long
-onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
-			 uint32_t flags)
+static int
+onibi_ast_slice_equal(const OnibiAstArena *arena, OnibiTokenSlice first,
+		      OnibiTokenSlice second)
 {
+    return first.present && second.present && first.length == second.length &&
+	   memcmp(arena->bytes + first.offset, arena->bytes + second.offset,
+		  first.length) == 0;
+}
+
+static int
+onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
+		       long *number)
+{
+    if (!slice.present || slice.length == 0) return 0;
+    long value = 0;
+    for (size_t i = 0; i < slice.length; i++) {
+	unsigned char byte = arena->bytes[slice.offset + i];
+	if (byte < '0' || byte > '9') return 0;
+	if (value > (LONG_MAX - (byte - '0')) / 10)
+	    rb_raise(eRegexpError, "capture number is too large");
+	value = value * 10 + (byte - '0');
+    }
+    *number = value;
+    return 1;
+}
+
+static OnibiAstId
+onibi_resolved_named_capture(const OnibiAstArena *arena,
+			     const OnibiResolvedArena *semantics,
+			     OnibiTokenSlice name)
+{
+    for (size_t i = 0; i < semantics->count; i++) {
+	const OnibiAstNode *candidate =
+	    onibi_ast_node_const(arena, (OnibiAstId)i);
+	if (candidate->kind == ONIBI_AST_CAPTURE &&
+	    onibi_ast_slice_equal(arena, candidate->name, name))
+	    return (OnibiAstId)i;
+    }
+    return ONIBI_AST_NONE;
+}
+
+static OnibiAstId
+onibi_resolved_numbered_capture(const OnibiResolvedArena *semantics,
+				long number)
+{
+    if (number <= 0) return ONIBI_AST_NONE;
+    for (size_t i = 0; i < semantics->count; i++)
+	if (semantics->nodes[i].kind == ONIBI_AST_CAPTURE &&
+	    semantics->nodes[i].capture_id == number - 1)
+	    return (OnibiAstId)i;
+    return ONIBI_AST_NONE;
+}
+
+static void
+onibi_resolve_capture_numbers(OnibiParsed *parsed, OnibiAstId id,
+			      long *next_capture)
+{
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
+    if (node->kind == ONIBI_AST_CAPTURE) {
+	semantic->capture_id = (int32_t)(*next_capture)++;
+	if (node->name.present) {
+	    for (size_t i = 0; i < id; i++) {
+		const OnibiAstNode *prior =
+		    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
+		if (prior->kind == ONIBI_AST_CAPTURE &&
+		    onibi_ast_slice_equal(&parsed->arena, prior->name,
+					  node->name))
+		    rb_raise(eRegexpError, "duplicate named capture requires "
+					   "compatibility execution");
+	    }
+	}
+    }
+    if (node->body != ONIBI_AST_NONE)
+	onibi_resolve_capture_numbers(parsed, node->body, next_capture);
+    if (node->atom != ONIBI_AST_NONE)
+	onibi_resolve_capture_numbers(parsed, node->atom, next_capture);
+    if (node->yes != ONIBI_AST_NONE)
+	onibi_resolve_capture_numbers(parsed, node->yes, next_capture);
+    if (node->no != ONIBI_AST_NONE)
+	onibi_resolve_capture_numbers(parsed, node->no, next_capture);
+    for (size_t i = 0; i < node->child_count; i++)
+	onibi_resolve_capture_numbers(parsed, node->children[i], next_capture);
+}
+
+static uint32_t
+onibi_resolve_option_slice(const OnibiAstArena *arena, OnibiTokenSlice slice,
+			   uint32_t options, int enabled)
+{
+    if (!slice.present) return options;
+    for (size_t i = 0; i < slice.length; i++) {
+	uint32_t bit;
+	switch (arena->bytes[slice.offset + i]) {
+	case 'i': bit = ONIBI_OPT_IGNORECASE; break;
+	case 'm': bit = ONIBI_OPT_MULTILINE; break;
+	case 'x': bit = ONIBI_OPT_EXTENDED; break;
+	default: rb_raise(eRegexpError, "unknown inline option flag");
+	}
+	if (enabled)
+	    options |= bit;
+	else
+	    options &= ~bit;
+    }
+    return options;
+}
+
+static uint32_t
+onibi_resolve_option_node(const OnibiAstArena *arena, const OnibiAstNode *node,
+			  uint32_t options)
+{
+    int enabled = (node->flags & ONIBI_AST_NODE_NEGATIVE) == 0;
+    options = onibi_resolve_option_slice(arena, node->name, options, enabled);
+    return onibi_resolve_option_slice(arena, node->negative_options, options,
+				      0);
+}
+
+static uint32_t
+onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
+			    uint32_t options, uint32_t *next_subprogram)
+{
+    const OnibiAstArena *arena = &parsed->arena;
+    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
+    OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
+    semantic->lexical_options = options;
+    semantic->encoding_index = parsed->encoding_index;
+    semantic->flags |= ONIBI_SEMANTIC_RESOLVED;
+
+    if (node->kind == ONIBI_AST_BACKREF) {
+	OnibiAstId target = ONIBI_AST_NONE;
+	if (node->name.present)
+	    target = onibi_resolved_named_capture(arena, &parsed->semantics,
+						  node->name);
+	else
+	    target = onibi_resolved_numbered_capture(&parsed->semantics,
+						     node->capture);
+	if (target == ONIBI_AST_NONE)
+	    rb_raise(eRegexpError, "undefined backreference");
+	semantic->reference_target = target;
+	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
+    }
+    else if (node->kind == ONIBI_AST_SUBROUTINE) {
+	long number = 0;
+	OnibiAstId target =
+	    onibi_ast_slice_number(arena, node->name, &number)
+		? onibi_resolved_numbered_capture(&parsed->semantics, number)
+		: onibi_resolved_named_capture(arena, &parsed->semantics,
+					       node->name);
+	if (target == ONIBI_AST_NONE)
+	    rb_raise(eRegexpError, "undefined subroutine call");
+	semantic->reference_target = target;
+	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
+	if (parsed->semantics.nodes[target].subprogram_id == UINT32_MAX)
+	    parsed->semantics.nodes[target].subprogram_id =
+		(*next_subprogram)++;
+	semantic->subprogram_id = parsed->semantics.nodes[target].subprogram_id;
+    }
+    else if (node->kind == ONIBI_AST_ATOMIC ||
+	     node->kind == ONIBI_AST_ABSENCE) {
+	semantic->subprogram_id = (*next_subprogram)++;
+    }
+    else if (node->kind == ONIBI_AST_CONDITIONAL) {
+	OnibiTokenSlice condition = node->name;
+	if (condition.present && condition.length >= 2 &&
+	    arena->bytes[condition.offset] == '<' &&
+	    arena->bytes[condition.offset + condition.length - 1] == '>') {
+	    condition.offset++;
+	    condition.length -= 2;
+	}
+	long number = 0;
+	OnibiAstId target =
+	    onibi_ast_slice_number(arena, condition, &number)
+		? onibi_resolved_numbered_capture(&parsed->semantics, number)
+		: onibi_resolved_named_capture(arena, &parsed->semantics,
+					       condition);
+	if (target == ONIBI_AST_NONE)
+	    rb_raise(eRegexpError, "conditional capture is undefined");
+	semantic->reference_target = target;
+	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
+    }
+
+    if (node->kind == ONIBI_AST_SEQUENCE) {
+	uint32_t current = options;
+	for (size_t i = 0; i < node->child_count; i++) {
+	    OnibiAstId child_id = node->children[i];
+	    current = onibi_resolve_semantic_node(parsed, child_id, current,
+						  next_subprogram);
+	}
+	return current;
+    }
+    if (node->kind == ONIBI_AST_ALTERNATIVE) {
+	uint32_t current = options;
+	for (size_t i = 0; i < node->child_count; i++)
+	    current = onibi_resolve_semantic_node(parsed, node->children[i],
+						  current, next_subprogram);
+	return current;
+    }
+    if (node->kind == ONIBI_AST_OPTION_GLOBAL) {
+	return onibi_resolve_option_node(arena, node, options);
+    }
+    if (node->kind == ONIBI_AST_OPTION_SCOPE) {
+	uint32_t scoped = onibi_resolve_option_node(arena, node, options);
+	if (node->body != ONIBI_AST_NONE)
+	    (void)onibi_resolve_semantic_node(parsed, node->body, scoped,
+					      next_subprogram);
+	return options;
+    }
+    if (node->body != ONIBI_AST_NONE)
+	(void)onibi_resolve_semantic_node(parsed, node->body, options,
+					  next_subprogram);
+    if (node->atom != ONIBI_AST_NONE)
+	(void)onibi_resolve_semantic_node(parsed, node->atom, options,
+					  next_subprogram);
+    if (node->yes != ONIBI_AST_NONE)
+	(void)onibi_resolve_semantic_node(parsed, node->yes, options,
+					  next_subprogram);
+    if (node->no != ONIBI_AST_NONE)
+	(void)onibi_resolve_semantic_node(parsed, node->no, options,
+					  next_subprogram);
+    for (size_t i = 0; i < node->child_count; i++)
+	(void)onibi_resolve_semantic_node(parsed, node->children[i], options,
+					  next_subprogram);
+    return options;
+}
+
+static void
+onibi_assign_lookaround_subprograms(OnibiParsed *parsed,
+				    uint32_t *next_subprogram)
+{
+    for (size_t i = 0; i < parsed->semantics.count; i++) {
+	OnibiResolvedNode *node = &parsed->semantics.nodes[i];
+	if (!(node->flags & ONIBI_SEMANTIC_RESOLVED)) continue;
+	if (node->kind == ONIBI_AST_LOOKAHEAD ||
+	    node->kind == ONIBI_AST_LOOKBEHIND)
+	    node->subprogram_id = (*next_subprogram)++;
+    }
+}
+
+static OnibiResolveOutput
+onibi_compiler_pass_resolve(OnibiParseOutput parse)
+{
+    OnibiParsed *parsed = parse.parsed;
+    xfree(parsed->semantics.nodes);
+    parsed->semantics.count = parsed->arena.count;
+    parsed->semantics.nodes =
+	ALLOC_N(OnibiResolvedNode, parsed->semantics.count);
+    for (size_t i = 0; i < parsed->semantics.count; i++) {
+	const OnibiAstNode *source =
+	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
+	OnibiResolvedNode *node = &parsed->semantics.nodes[i];
+	memset(node, 0, sizeof(*node));
+	node->kind = source->kind;
+	node->source_id = (OnibiAstId)i;
+	node->reference_target = ONIBI_AST_NONE;
+	node->subprogram_id = UINT32_MAX;
+	node->capture_id = -1;
+	node->assertion_kind = 0;
+	node->repeat_max = -1;
+	node->max_width = -1;
+	node->source_start = source->start;
+	node->source_end = source->end;
+    }
+    long captures = 0;
+    onibi_resolve_capture_numbers(parsed, parsed->arena.root, &captures);
+    parsed->semantics.capture_count = (uint32_t)captures;
+    uint32_t subprograms = 1;
+    (void)onibi_resolve_semantic_node(parsed, parsed->arena.root,
+				      (uint32_t)parse.options, &subprograms);
+    parsed->semantics.lowered_subprogram_count = subprograms;
+    onibi_assign_lookaround_subprograms(parsed, &subprograms);
+    parsed->semantics.subprogram_count = subprograms;
+    return (OnibiResolveOutput){parsed, &parsed->semantics};
+}
+
+static int32_t
+onibi_normalized_assertion(const OnibiAstNode *node)
+{
+    if (node->kind == ONIBI_AST_LOOKAHEAD) return ONIBI_RAP_LOOKAHEAD;
+    if (node->kind == ONIBI_AST_LOOKBEHIND) return ONIBI_RAP_LOOKBEHIND;
+    if (node->kind != ONIBI_AST_ANCHOR) return 0;
+    switch (node->byte) {
+    case '^': return ONIBI_RAP_BEGIN_LINE;
+    case '$': return ONIBI_RAP_END_LINE;
+    case 'b': return ONIBI_RAP_WORD_BOUNDARY;
+    case 'B': return ONIBI_RAP_NONWORD_BOUNDARY;
+    case 'A': return ONIBI_RAP_BEGIN_BUFFER;
+    case 'G': return ONIBI_RAP_SEARCH_ORIGIN;
+    case 'Z': return ONIBI_RAP_SEMI_END_BUFFER;
+    default: return ONIBI_RAP_END_BUFFER;
+    }
+}
+
+static OnibiNormalizeOutput
+onibi_compiler_pass_normalize(OnibiResolveOutput resolve)
+{
+    OnibiParsed *parsed = resolve.parsed;
+    for (size_t i = 0; i < resolve.semantics->count; i++) {
+	const OnibiAstNode *source =
+	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
+	OnibiResolvedNode *node = &parsed->semantics.nodes[i];
+	if (!(node->flags & ONIBI_SEMANTIC_RESOLVED)) continue;
+	if (node->kind != source->kind || node->encoding_index < 0)
+	    rb_raise(eRegexpError, "semantic resolve invariant failed");
+	node->assertion_kind = onibi_normalized_assertion(source);
+	if (source->kind == ONIBI_AST_QUANTIFIER) {
+	    if (source->min < 0 || ((source->flags & ONIBI_AST_NODE_HAS_MAX) &&
+				    source->max < source->min))
+		rb_raise(eRegexpError, "invalid normalized repeat");
+	    node->repeat_min = source->min;
+	    node->repeat_max =
+		(source->flags & ONIBI_AST_NODE_HAS_MAX) ? source->max : -1;
+	    if (source->flags & ONIBI_AST_NODE_HAS_MAX)
+		node->flags |= ONIBI_SEMANTIC_REPEAT_HAS_MAX;
+	    if (source->flags & ONIBI_AST_NODE_GREEDY)
+		node->flags |= ONIBI_SEMANTIC_REPEAT_GREEDY;
+	    if (source->flags & ONIBI_AST_NODE_POSSESSIVE)
+		node->flags |= ONIBI_SEMANTIC_REPEAT_POSSESSIVE;
+	}
+	node->flags |= ONIBI_SEMANTIC_NORMALIZED;
+    }
+    return (OnibiNormalizeOutput){parsed, resolve.semantics};
+}
+
+static long
+onibi_width_add(long first, long second)
+{
+    if (first < 0 || second < 0) return -1;
+    if (first > LONG_MAX - second) return -1;
+    return first + second;
+}
+
+static long
+onibi_width_multiply(long width, long count)
+{
+    if (width < 0 || count < 0) return -1;
+    if (count != 0 && width > LONG_MAX / count) return -1;
+    return width * count;
+}
+
+static void
+onibi_analyze_semantic_node(OnibiParsed *parsed, OnibiAstId id)
+{
+    OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
+    const OnibiAstNode *node = onibi_ast_node_const(&parsed->arena, id);
+    if (semantic->flags & ONIBI_SEMANTIC_ANALYZED) return;
+    if (semantic->flags & ONIBI_SEMANTIC_ANALYZING) {
+	semantic->min_width = 0;
+	semantic->max_width = -1;
+	semantic->flags |= ONIBI_SEMANTIC_ANALYZED | ONIBI_SEMANTIC_NULLABLE;
+	return;
+    }
+    semantic->flags |= ONIBI_SEMANTIC_ANALYZING;
+    long min = 0;
+    long max = 0;
+    int nullable = 1;
+    switch (node->kind) {
+    case ONIBI_AST_LITERAL:
+    case ONIBI_AST_ESCAPE:
+    case ONIBI_AST_ANY:
+    case ONIBI_AST_CHARACTER_CLASS:
+    case ONIBI_AST_CLASS_INTERSECTION:
+	for (size_t i = 0; i < node->child_count; i++)
+	    onibi_analyze_semantic_node(parsed, node->children[i]);
+	min = max = 1;
+	nullable = 0;
+	break;
+    case ONIBI_AST_BACKREF:
+	min = 0;
+	max = -1;
+	nullable = 1;
+	break;
+    case ONIBI_AST_SEQUENCE:
+	for (size_t i = 0; i < node->child_count; i++) {
+	    onibi_analyze_semantic_node(parsed, node->children[i]);
+	    OnibiResolvedNode *child =
+		&parsed->semantics.nodes[node->children[i]];
+	    min = onibi_width_add(min, child->min_width);
+	    max = onibi_width_add(max, child->max_width);
+	    nullable =
+		nullable && ((child->flags & ONIBI_SEMANTIC_NULLABLE) != 0);
+	}
+	break;
+    case ONIBI_AST_ALTERNATIVE:
+	min = LONG_MAX;
+	max = 0;
+	nullable = 0;
+	for (size_t i = 0; i < node->child_count; i++) {
+	    onibi_analyze_semantic_node(parsed, node->children[i]);
+	    OnibiResolvedNode *child =
+		&parsed->semantics.nodes[node->children[i]];
+	    if (child->min_width < min) min = child->min_width;
+	    if (child->max_width < 0 || max < 0)
+		max = -1;
+	    else if (child->max_width > max)
+		max = child->max_width;
+	    nullable =
+		nullable || ((child->flags & ONIBI_SEMANTIC_NULLABLE) != 0);
+	}
+	if (min == LONG_MAX) min = 0;
+	break;
+    case ONIBI_AST_QUANTIFIER: {
+	onibi_analyze_semantic_node(parsed, node->atom);
+	OnibiResolvedNode *atom = &parsed->semantics.nodes[node->atom];
+	min = onibi_width_multiply(atom->min_width, semantic->repeat_min);
+	max = semantic->repeat_max < 0
+		  ? -1
+		  : onibi_width_multiply(atom->max_width, semantic->repeat_max);
+	nullable = semantic->repeat_min == 0 ||
+		   ((atom->flags & ONIBI_SEMANTIC_NULLABLE) != 0);
+	break;
+    }
+    case ONIBI_AST_CAPTURE:
+    case ONIBI_AST_GROUP:
+    case ONIBI_AST_ATOMIC:
+    case ONIBI_AST_OPTION_SCOPE:
+	onibi_analyze_semantic_node(parsed, node->body);
+	min = parsed->semantics.nodes[node->body].min_width;
+	max = parsed->semantics.nodes[node->body].max_width;
+	nullable = (parsed->semantics.nodes[node->body].flags &
+		    ONIBI_SEMANTIC_NULLABLE) != 0;
+	break;
+    case ONIBI_AST_SUBROUTINE: {
+	OnibiAstId target = semantic->reference_target;
+	const OnibiAstNode *capture =
+	    onibi_ast_node_const(&parsed->arena, target);
+	onibi_analyze_semantic_node(parsed, capture->body);
+	min = parsed->semantics.nodes[capture->body].min_width;
+	max = parsed->semantics.nodes[capture->body].max_width;
+	nullable = (parsed->semantics.nodes[capture->body].flags &
+		    ONIBI_SEMANTIC_NULLABLE) != 0;
+	break;
+    }
+    case ONIBI_AST_CONDITIONAL:
+	onibi_analyze_semantic_node(parsed, node->yes);
+	onibi_analyze_semantic_node(parsed, node->no);
+	min = parsed->semantics.nodes[node->yes].min_width <
+		      parsed->semantics.nodes[node->no].min_width
+		  ? parsed->semantics.nodes[node->yes].min_width
+		  : parsed->semantics.nodes[node->no].min_width;
+	max = parsed->semantics.nodes[node->yes].max_width;
+	if (max >= 0 && (parsed->semantics.nodes[node->no].max_width < 0 ||
+			 parsed->semantics.nodes[node->no].max_width > max))
+	    max = parsed->semantics.nodes[node->no].max_width;
+	nullable = ((parsed->semantics.nodes[node->yes].flags |
+		     parsed->semantics.nodes[node->no].flags) &
+		    ONIBI_SEMANTIC_NULLABLE) != 0;
+	break;
+    case ONIBI_AST_ABSENCE:
+	onibi_analyze_semantic_node(parsed, node->body);
+	min = 0;
+	max = -1;
+	nullable = 1;
+	break;
+    case ONIBI_AST_LOOKAHEAD:
+    case ONIBI_AST_LOOKBEHIND:
+	onibi_analyze_semantic_node(parsed, node->body);
+	min = max = 0;
+	nullable = 1;
+	break;
+    default:
+	min = max = 0;
+	nullable = 1;
+	break;
+    }
+    semantic->min_width = min;
+    semantic->max_width = max;
+    semantic->flags &= ~ONIBI_SEMANTIC_ANALYZING;
+    semantic->flags |= ONIBI_SEMANTIC_ANALYZED;
+    if (nullable) semantic->flags |= ONIBI_SEMANTIC_NULLABLE;
+}
+
+static long
+onibi_compile_resolved_body_subprogram(VALUE body,
+				       OnibiSubprogramId subprogram_id,
+				       onibi_gir_builder_t *builder,
+				       uint32_t flags)
+{
+    if (subprogram_id == 0 ||
+	(size_t)subprogram_id >= builder->resolved_subprogram_count)
+	rb_raise(eRegexpError, "resolved subprogram ID is invalid");
+    if (builder->subprogram_status[subprogram_id] != 0)
+	return (long)subprogram_id;
+    builder->subprogram_status[subprogram_id] = 1;
     onibi_fragment_t fragment = onibi_compile_node(body, builder);
     long accept = builder->next_id++;
     onibi_gir_state(builder, accept, ONIBI_G_ACCEPT, Qnil);
@@ -138,8 +617,9 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
 				   &fragment.pending_actions, 0);
     long entry =
 	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
-    onibi_rseq_subprogram_vector_push(
-	&builder->subprograms,
+
+    onibi_rseq_subprogram_vector_store(
+	&builder->subprograms, (size_t)subprogram_id,
 	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
 				   flags});
     onibi_id_vector_free(&fragment.starts);
@@ -147,80 +627,61 @@ onibi_compile_subprogram(VALUE body, onibi_gir_builder_t *builder,
     onibi_id_vector_free(&accept_starts);
     onibi_g_action_vector_free(&fragment.start_actions);
     onibi_g_action_vector_free(&fragment.pending_actions);
-    return (long)builder->subprograms.count - 1;
+    builder->subprogram_status[subprogram_id] = 2;
+    return (long)subprogram_id;
 }
 
-/* Resolve pass: collect immutable symbol information from the C AST. */
-static void
-onibi_compiler_pass_collect_captures(OnibiAstId ast_id,
-				     onibi_gir_builder_t *builder,
-				     long *next_capture)
+static int
+onibi_semantic_has_call(const onibi_gir_builder_t *builder, OnibiAstId id,
+			OnibiSubprogramId subprogram_id)
 {
-    OnibiAstNode *node = onibi_ast_node_at(builder->ast, ast_id);
-    if (node->kind == ONIBI_AST_CAPTURE) {
-	long id = (*next_capture)++;
-	node->capture = id;
-	onibi_value_map_set(&builder->capture_ids, LONG2NUM(node->start),
-			    LONG2NUM(id), builder->map_roots);
-	VALUE key = rb_str_new_cstr("");
-	char number[32];
-	snprintf(number, sizeof(number), "%ld", id + 1);
-	key = rb_str_new_cstr(number);
-	onibi_value_map_set(&builder->capture_bodies, key, UINT2NUM(node->body),
-			    builder->map_roots);
-	VALUE name = onibi_ast_slice_string(builder->ast, node->name);
-	if (!NIL_P(name)) {
-	    if (!NIL_P(onibi_value_map_find(&builder->capture_names, name)))
-		rb_raise(
-		    eRegexpError,
-		    "duplicate named capture requires compatibility execution");
-	    /* MRI resolves a duplicate named backreference to the first
-	       matching group definition.  Keep the earliest slot in the compile
-	       index. */
-	    onibi_value_map_set(&builder->capture_names, name, LONG2NUM(id),
-				builder->map_roots);
-	    onibi_value_map_set(&builder->capture_bodies, name,
-				UINT2NUM(node->body), builder->map_roots);
-	}
-	onibi_compiler_pass_collect_captures(node->body, builder, next_capture);
-	return;
-    }
-    if (node->body != ONIBI_AST_NONE)
-	onibi_compiler_pass_collect_captures(node->body, builder, next_capture);
-    if (node->atom != ONIBI_AST_NONE)
-	onibi_compiler_pass_collect_captures(node->atom, builder, next_capture);
-    if (node->yes != ONIBI_AST_NONE)
-	onibi_compiler_pass_collect_captures(node->yes, builder, next_capture);
-    if (node->no != ONIBI_AST_NONE)
-	onibi_compiler_pass_collect_captures(node->no, builder, next_capture);
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    const OnibiResolvedNode *semantic = &builder->semantics->nodes[id];
+    if (node->kind == ONIBI_AST_SUBROUTINE &&
+	semantic->subprogram_id == subprogram_id)
+	return 1;
+    if (node->body != ONIBI_AST_NONE &&
+	onibi_semantic_has_call(builder, node->body, subprogram_id))
+	return 1;
+    if (node->atom != ONIBI_AST_NONE &&
+	onibi_semantic_has_call(builder, node->atom, subprogram_id))
+	return 1;
+    if (node->yes != ONIBI_AST_NONE &&
+	onibi_semantic_has_call(builder, node->yes, subprogram_id))
+	return 1;
+    if (node->no != ONIBI_AST_NONE &&
+	onibi_semantic_has_call(builder, node->no, subprogram_id))
+	return 1;
     for (size_t i = 0; i < node->child_count; i++)
-	onibi_compiler_pass_collect_captures(node->children[i], builder,
-					     next_capture);
+	if (onibi_semantic_has_call(builder, node->children[i], subprogram_id))
+	    return 1;
+    return 0;
 }
 
 static long
-onibi_compile_named_subprogram(VALUE name, VALUE body,
-			       onibi_gir_builder_t *builder)
+onibi_compile_resolved_subprogram(OnibiAstId capture_id,
+				  OnibiSubprogramId subprogram_id,
+				  onibi_gir_builder_t *builder)
 {
-    long id = (long)builder->subprograms.count;
-    onibi_rseq_subprogram_vector_push(
-	&builder->subprograms,
-	(OnibiRSeqSubprogramEntry){0, 0, 0}); /* reserve recursive target */
-    onibi_value_map_set(&builder->subprogram_ids, name, LONG2NUM(id),
-			builder->map_roots);
-    onibi_value_map_set(&builder->active_subroutines, name, Qtrue,
-			builder->map_roots);
-    onibi_fragment_t fragment = onibi_compile_node(body, builder);
-    onibi_value_map_delete(&builder->active_subroutines, name);
-    VALUE capture_id_value =
-	onibi_value_map_find(&builder->capture_names, name);
-    if (!NIL_P(capture_id_value)) {
-	long capture_id = NUM2LONG(capture_id_value);
+    if (subprogram_id == 0 ||
+	(size_t)subprogram_id >= builder->resolved_subprogram_count)
+	rb_raise(eRegexpError, "resolved subprogram ID is invalid");
+    if (builder->subprogram_status[subprogram_id] != 0)
+	return (long)subprogram_id;
+    builder->subprogram_status[subprogram_id] = 1;
+    const OnibiAstNode *capture =
+	onibi_ast_node_const(builder->ast, capture_id);
+    const OnibiResolvedNode *capture_semantic =
+	&builder->semantics->nodes[capture_id];
+    onibi_fragment_t fragment =
+	onibi_compile_node(UINT2NUM(capture->body), builder);
+    long capture_slot = capture_semantic->capture_id;
+    if (capture_slot >= 0) {
 	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
 			     0,
 			     0,
 			     1,
-			     (uint16_t)(2 * capture_id),
+			     (uint16_t)(2 * capture_slot),
 			     0,
 			     0,
 			     0,
@@ -229,14 +690,12 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
 			      0,
 			      0,
 			      1,
-			      (uint16_t)(2 * capture_id + 1),
+			      (uint16_t)(2 * capture_slot + 1),
 			      0,
 			      0,
 			      0,
 			      0};
-	if (RB_INTEGER_TYPE_P(body) &&
-	    onibi_c_ast_has_subroutine_name(builder->ast,
-					    (OnibiAstId)NUM2UINT(body), name))
+	if (onibi_semantic_has_call(builder, capture->body, subprogram_id))
 	    close.set = 1;
 	OnibiGActionVector starts;
 	onibi_g_action_vector_init(&starts);
@@ -260,7 +719,7 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
     long entry =
 	fragment.starts.count > 0 ? (long)fragment.starts.entries[0] : accept;
     onibi_rseq_subprogram_vector_store(
-	&builder->subprograms, (size_t)id,
+	&builder->subprograms, (size_t)subprogram_id,
 	(OnibiRSeqSubprogramEntry){(OnibiStateId)entry, (OnibiStateId)accept,
 				   0});
     onibi_id_vector_free(&fragment.starts);
@@ -268,7 +727,8 @@ onibi_compile_named_subprogram(VALUE name, VALUE body,
     onibi_id_vector_free(&accept_starts);
     onibi_g_action_vector_free(&fragment.start_actions);
     onibi_g_action_vector_free(&fragment.pending_actions);
-    return id;
+    builder->subprogram_status[subprogram_id] = 2;
+    return (long)subprogram_id;
 }
 
 static onibi_fragment_t
@@ -328,17 +788,18 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
 	     * bypass path both retain the same capture boundaries. */
 	    if (result.pending_actions.count > 0)
 		onibi_add_exit_guard_fragment(builder, &old_exits,
-					       &result.pending_actions);
-	    if (part.nullable &&
-		(part.start_actions.count > 0 || part.pending_actions.count > 0)) {
+					      &result.pending_actions);
+	    if (part.nullable && (part.start_actions.count > 0 ||
+				  part.pending_actions.count > 0)) {
 		/* A nullable continuation can also be bypassed from old_exits.
-		 * Preserve its empty-path actions on that bypass while retaining
-		 * the normal actions on the transition into the continuation. */
+		 * Preserve its empty-path actions on that bypass while
+		 * retaining the normal actions on the transition into the
+		 * continuation. */
 		OnibiGActionVector bypass_actions =
 		    onibi_g_action_vector_concat(&part.start_actions,
 						 &part.pending_actions);
 		onibi_add_exit_guard_fragment(builder, &old_exits,
-					       &bypass_actions);
+					      &bypass_actions);
 		onibi_g_action_vector_free(&bypass_actions);
 	    }
 	    OnibiGActionVector transition_actions =
@@ -414,16 +875,32 @@ onibi_compile_node_field(const onibi_gir_builder_t *builder,
     return Qnil;
 }
 
+static VALUE
+onibi_compile_payload_options(VALUE payload, int ignorecase, int multiline)
+{
+    VALUE result = rb_hash_dup(payload);
+    if (ignorecase) rb_hash_aset(result, ID2SYM(id_key_ignorecase), Qtrue);
+    if (multiline) rb_hash_aset(result, ID2SYM(id_key_multiline), Qtrue);
+    return result;
+}
+
 static onibi_fragment_t
 onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 {
     VALUE semantic_node =
 	RB_INTEGER_TYPE_P(node_reference) ? Qnil : node_reference;
     const OnibiAstNode *c_node = NULL;
+    const OnibiResolvedNode *resolved_node = NULL;
     OnibiAstKind type_code;
+    int ignorecase = 0;
+    int multiline = 0;
     if (RB_INTEGER_TYPE_P(node_reference)) {
 	OnibiAstId id = (OnibiAstId)NUM2UINT(node_reference);
 	c_node = onibi_ast_node_const(builder->ast, id);
+	resolved_node = &builder->semantics->nodes[id];
+	ignorecase =
+	    (resolved_node->lexical_options & ONIBI_OPT_IGNORECASE) != 0;
+	multiline = (resolved_node->lexical_options & ONIBI_OPT_MULTILINE) != 0;
 	type_code = c_node->kind;
 	if (type_code == ONIBI_AST_CHARACTER_CLASS ||
 	    type_code == ONIBI_AST_CLASS_INTERSECTION)
@@ -436,6 +913,9 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
     }
     else {
 	type_code = onibi_ast_kind(semantic_node);
+	ignorecase =
+	    RTEST(onibi_hash_value_id(semantic_node, id_key_ignorecase));
+	multiline = RTEST(onibi_hash_value_id(semantic_node, id_key_multiline));
     }
     if (type_code == ONIBI_AST_CHARACTER_CLASS) {
 	VALUE children = onibi_hash_value_id(semantic_node, id_key_children);
@@ -463,7 +943,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_fragment_t result = onibi_fragment_empty();
 		result.nullable = 0;
 		for (long i = 0; i < RARRAY_LEN(children); i++) {
-		    VALUE child = rb_hash_dup(rb_ary_entry(children, i));
+		    VALUE child = onibi_compile_payload_options(
+			rb_ary_entry(children, i), ignorecase, multiline);
 		    rb_hash_aset(child, ID2SYM(id_key_type_code),
 				 UINT2NUM(ONIBI_AST_LITERAL));
 		    onibi_fragment_t branch =
@@ -490,7 +971,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    int expandable = 1;
 	    long expanded = 0;
 	    for (long i = 0; i < RARRAY_LEN(children); i++) {
-		VALUE child = rb_hash_dup(rb_ary_entry(children, i));
+		VALUE child = onibi_compile_payload_options(
+		    rb_ary_entry(children, i), ignorecase, multiline);
 		rb_hash_aset(child, ID2SYM(id_key_type_code),
 			     UINT2NUM(ONIBI_AST_LITERAL));
 		onibi_fragment_t branch = onibi_compile_node(child, builder);
@@ -524,6 +1006,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		    rb_hash_aset(literal, ID2SYM(id_key_byte),
 				 INT2NUM((unsigned char)RSTRING_PTR(bytes)[0]));
 		    rb_hash_aset(literal, ID2SYM(id_key_bytes), bytes);
+		    if (ignorecase)
+			rb_hash_aset(literal, ID2SYM(id_key_ignorecase), Qtrue);
+		    if (multiline)
+			rb_hash_aset(literal, ID2SYM(id_key_multiline), Qtrue);
 		    onibi_fragment_t branch =
 			onibi_compile_node(literal, builder);
 		    onibi_id_vector_append(&result.starts, &branch.starts);
@@ -592,21 +1078,13 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		rb_raise(eRegexpError, "escape is not supported in RSeq");
 	}
 	VALUE payload = semantic_node;
-	if (type_code == ONIBI_AST_BACKREF &&
-	    !NIL_P(onibi_compile_node_field(builder, c_node, semantic_node,
-					    id_key_name))) {
-	    VALUE id_value = onibi_value_map_find(
-		&builder->capture_names,
-		onibi_compile_node_field(builder, c_node, semantic_node,
-					 id_key_name));
-	    if (NIL_P(id_value))
-		rb_raise(eRegexpError, "undefined named backreference");
+	if (type_code == ONIBI_AST_BACKREF && resolved_node != NULL) {
 	    payload = rb_hash_dup(semantic_node);
 	    rb_hash_aset(payload, ID2SYM(id_key_capture),
-			 LONG2NUM(NUM2LONG(id_value) + 1));
+			 LONG2NUM((long)resolved_node->capture_id + 1));
 	    rb_obj_freeze(payload);
 	}
-	if (builder->ignorecase && type_code == ONIBI_AST_BACKREF) {
+	if (ignorecase && type_code == ONIBI_AST_BACKREF) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
 	    rb_obj_freeze(payload);
@@ -637,7 +1115,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 			      ? ONIBI_G_BACKREF
 			      : (grapheme_escape ? ONIBI_G_GRAPHEME
 						 : ONIBI_G_CLASS)));
-	if (builder->ignorecase && type_code == ONIBI_AST_LITERAL &&
+	if (ignorecase && type_code == ONIBI_AST_LITERAL &&
 	    !RB_INTEGER_TYPE_P(node_reference)) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_byte),
@@ -646,9 +1124,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
 	    rb_obj_freeze(payload);
 	}
-	if (builder->ignorecase &&
-	    (type_code == ONIBI_AST_CHARACTER_CLASS ||
-	     type_code == ONIBI_AST_CLASS_INTERSECTION)) {
+	if (ignorecase && (type_code == ONIBI_AST_CHARACTER_CLASS ||
+			   type_code == ONIBI_AST_CLASS_INTERSECTION)) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_ignorecase), Qtrue);
 	    rb_obj_freeze(payload);
@@ -657,7 +1134,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    type_code == ONIBI_AST_CLASS_INTERSECTION) {
 	    payload = onibi_class_payload_with_ctypes(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_bitmap),
-			 onibi_class_bitmap(payload, builder->ignorecase));
+			 onibi_class_bitmap(payload, ignorecase));
 	    rb_obj_freeze(payload);
 	}
 	if (type_code == ONIBI_AST_ESCAPE) {
@@ -665,7 +1142,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    rb_hash_aset(payload, ID2SYM(id_key_ranges), rb_ary_new());
 	    rb_hash_aset(payload, ID2SYM(id_key_children), rb_ary_new());
 	    rb_hash_aset(payload, ID2SYM(id_key_bitmap),
-			 onibi_class_bitmap(payload, builder->ignorecase));
+			 onibi_class_bitmap(payload, ignorecase));
 	    VALUE property_name_id =
 		onibi_hash_value_id(payload, id_key_name_id);
 	    ID property =
@@ -676,7 +1153,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 			     INT2NUM(property_ctype));
 	    rb_obj_freeze(payload);
 	}
-	if (builder->multiline && type_code == ONIBI_AST_ANY) {
+	if (multiline && type_code == ONIBI_AST_ANY) {
 	    payload = rb_hash_dup(payload);
 	    rb_hash_aset(payload, ID2SYM(id_key_multiline), Qtrue);
 	    rb_obj_freeze(payload);
@@ -688,12 +1165,19 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		    : builder->ast->bytes + c_node->bytes.offset;
 	    size_t length =
 		c_node->bytes.length == 0 ? 1 : c_node->bytes.length;
-	    onibi_gir_state_literal(builder, id, bytes, length,
-				    builder->ignorecase);
+	    onibi_gir_state_literal(builder, id, bytes, length, ignorecase);
+	}
+	else if (type_code == ONIBI_AST_ANY) {
+	    unsigned char bitmap[32];
+	    memset(bitmap, 0xff, sizeof(bitmap));
+	    if (!multiline)
+		bitmap[(unsigned char)'\n' >> 3] &=
+		    (unsigned char)~(1U << ((unsigned char)'\n' & 7));
+	    onibi_gir_state_class(builder, id, bitmap, 0);
 	}
 	else if (op == ONIBI_G_CLASS) {
 	    OnibiNormalizedClass normalized =
-		onibi_compiler_normalize_class(payload, builder->ignorecase);
+		onibi_compiler_normalize_class(payload, ignorecase);
 	    onibi_gir_state_class(builder, id, normalized.bitmap,
 				  normalized.negated);
 	}
@@ -707,18 +1191,13 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_SUBROUTINE) {
-	VALUE name = onibi_compile_node_field(builder, c_node, semantic_node,
-					      id_key_name);
-	VALUE body = NIL_P(name)
-			 ? Qnil
-			 : onibi_value_map_find(&builder->capture_bodies, name);
-	if (NIL_P(body)) rb_raise(eRegexpError, "undefined subroutine call");
-	VALUE existing = onibi_value_map_find(&builder->subprogram_ids, name);
-	long subprogram_id;
-	if (!NIL_P(existing))
-	    subprogram_id = NUM2LONG(existing);
-	else
-	    subprogram_id = onibi_compile_named_subprogram(name, body, builder);
+	if (resolved_node == NULL ||
+	    resolved_node->reference_target == ONIBI_AST_NONE ||
+	    resolved_node->subprogram_id == UINT32_MAX)
+	    rb_raise(eRegexpError, "unresolved subroutine call");
+	long subprogram_id = onibi_compile_resolved_subprogram(
+	    resolved_node->reference_target, resolved_node->subprogram_id,
+	    builder);
 	VALUE payload = rb_hash_new();
 	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
 		     LONG2NUM(subprogram_id));
@@ -732,109 +1211,26 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_OPTION_GLOBAL) {
-	VALUE option_names = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_options);
-	int negative = RTEST(onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_negative));
-	if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
-	    rb_raise(eRegexpError, "global option modifier has no flags");
-	for (long i = 0; i < RSTRING_LEN(option_names); i++) {
-	    int enabled = negative ? 0 : 1;
-	    if (RSTRING_PTR(option_names)[i] == 'i')
-		builder->ignorecase = enabled;
-	    else if (RSTRING_PTR(option_names)[i] == 'm')
-		builder->multiline = enabled;
-	    else if (RSTRING_PTR(option_names)[i] == 'x')
-		continue;
-	    else
-		rb_raise(eRegexpError, "unknown global option flag");
-	}
-	VALUE negative_options = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_negative_options);
-	if (!NIL_P(negative_options)) {
-	    for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
-		if (RSTRING_PTR(negative_options)[i] == 'i')
-		    builder->ignorecase = 0;
-		else if (RSTRING_PTR(negative_options)[i] == 'm')
-		    builder->multiline = 0;
-		else if (RSTRING_PTR(negative_options)[i] == 'x')
-		    continue;
-		else
-		    rb_raise(eRegexpError, "unknown global option flag");
-	    }
-	}
+	/* Resolve applies this option to later semantic nodes. */
 	return onibi_fragment_empty();
     }
     if (type_code == ONIBI_AST_OPTION_SCOPE) {
-	VALUE option_names = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_options);
-	if (NIL_P(option_names) || !RB_TYPE_P(option_names, T_STRING))
-	    rb_raise(eRegexpError, "option scope has no flags");
-	int saved_ignorecase = builder->ignorecase;
-	int saved_multiline = builder->multiline;
-	int negative = RTEST(onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_negative));
-	for (long i = 0; i < RSTRING_LEN(option_names); i++) {
-	    int enabled = negative ? 0 : 1;
-	    if (RSTRING_PTR(option_names)[i] == 'i')
-		builder->ignorecase = enabled;
-	    else if (RSTRING_PTR(option_names)[i] == 'm')
-		builder->multiline = enabled;
-	    else if (RSTRING_PTR(option_names)[i] == 'x')
-		continue;
-	    else
-		rb_raise(eRegexpError, "unknown option scope flag");
-	}
-	VALUE negative_options = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_negative_options);
-	if (!NIL_P(negative_options)) {
-	    for (long i = 0; i < RSTRING_LEN(negative_options); i++) {
-		if (RSTRING_PTR(negative_options)[i] == 'i')
-		    builder->ignorecase = 0;
-		else if (RSTRING_PTR(negative_options)[i] == 'm')
-		    builder->multiline = 0;
-		else if (RSTRING_PTR(negative_options)[i] == 'x')
-		    continue;
-		else
-		    rb_raise(eRegexpError, "unknown option scope flag");
-	    }
-	}
-	onibi_fragment_t result =
-	    onibi_compile_node(onibi_compile_node_field(
-				   builder, c_node, semantic_node, id_key_body),
-			       builder);
-	builder->ignorecase = saved_ignorecase;
-	builder->multiline = saved_multiline;
-	return result;
+	return onibi_compile_node(onibi_compile_node_field(builder, c_node,
+							   semantic_node,
+							   id_key_body),
+				  builder);
     }
     if (type_code == ONIBI_AST_ANCHOR) {
 	onibi_fragment_t result = onibi_fragment_empty();
-	long marker = NUM2LONG(onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_byte));
-	ID op = id_a_assert_end_buffer;
-	/* Ruby keeps ^ and $ line anchors independent of the m option.  The
-	   option changes dot-newline matching only. */
-	if (marker == '^')
-	    op = id_a_assert_begin_line;
-	else if (marker == '$')
-	    op = id_a_assert_end_line;
-	else if (marker == 'b')
-	    op = id_a_assert_word_boundary;
-	else if (marker == 'B')
-	    op = id_a_assert_nonword_boundary;
-	else if (marker == 'A')
-	    op = id_a_assert_begin_buffer;
-	else if (marker == 'G')
-	    op = id_a_assert_search_origin;
-	else if (marker == 'Z')
-	    op = id_a_assert_semi_end_buffer;
+	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
+	    rb_raise(eRegexpError, "unnormalized assertion");
 	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
 			       0,
 			       0,
 			       0,
 			       0,
 			       1,
-			       (uint16_t)onibi_rseq_assert_kind(op),
+			       (uint16_t)resolved_node->assertion_kind,
 			       0,
 			       0};
 	onibi_g_action_vector_push(&result.pending_actions, action);
@@ -848,26 +1244,9 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_CONDITIONAL) {
-	VALUE condition = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_condition);
-	char *endptr = NULL;
-	const char *condition_text = StringValueCStr(condition);
-	long capture_id = strtol(condition_text, &endptr, 10) - 1;
-	if (endptr == condition_text || *endptr != '\0') {
-	    VALUE named_condition = condition;
-	    if (RSTRING_LEN(condition) >= 2 &&
-		RSTRING_PTR(condition)[0] == '<' &&
-		RSTRING_PTR(condition)[RSTRING_LEN(condition) - 1] == '>')
-		named_condition =
-		    rb_str_substr(condition, 1, RSTRING_LEN(condition) - 2);
-	    VALUE named =
-		onibi_value_map_find(&builder->capture_names, named_condition);
-	    if (NIL_P(named))
-		rb_raise(eRegexpError, "conditional capture is undefined");
-	    capture_id = NUM2LONG(named);
-	}
-	if (capture_id < 0)
-	    rb_raise(eRegexpError, "conditional capture is invalid");
+	if (resolved_node == NULL || resolved_node->capture_id < 0)
+	    rb_raise(eRegexpError, "unresolved conditional capture");
+	long capture_id = resolved_node->capture_id;
 	onibi_fragment_t yes =
 	    onibi_compile_node(onibi_compile_node_field(
 				   builder, c_node, semantic_node, id_key_yes),
@@ -914,10 +1293,13 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_ATOMIC) {
+	if (resolved_node == NULL || resolved_node->subprogram_id == UINT32_MAX)
+	    rb_raise(eRegexpError, "unresolved atomic subprogram");
 	VALUE body = onibi_compile_node_field(builder, c_node, semantic_node,
 					      id_key_body);
-	long subprogram_id =
-	    onibi_compile_subprogram(body, builder, ONIBI_SUBPROGRAM_ATOMIC);
+	long subprogram_id = onibi_compile_resolved_body_subprogram(
+	    body, resolved_node->subprogram_id, builder,
+	    ONIBI_SUBPROGRAM_ATOMIC);
 	VALUE payload = rb_hash_new();
 	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
 		     LONG2NUM(subprogram_id));
@@ -931,10 +1313,12 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_ABSENCE) {
-	long subprogram_id = onibi_compile_subprogram(
+	if (resolved_node == NULL || resolved_node->subprogram_id == UINT32_MAX)
+	    rb_raise(eRegexpError, "unresolved absence subprogram");
+	long subprogram_id = onibi_compile_resolved_body_subprogram(
 	    onibi_compile_node_field(builder, c_node, semantic_node,
 				     id_key_body),
-	    builder, ONIBI_SUBPROGRAM_ABSENT);
+	    resolved_node->subprogram_id, builder, ONIBI_SUBPROGRAM_ABSENT);
 	VALUE payload = rb_hash_new();
 	rb_hash_aset(payload, ID2SYM(id_key_subprogram),
 		     LONG2NUM(subprogram_id));
@@ -948,6 +1332,14 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_LOOKAHEAD || type_code == ONIBI_AST_LOOKBEHIND) {
+	/* TASK-23 will lower this resolved ID to an RSeq subprogram. The
+	 * current fixed-predicate form still requires the semantic owner ID
+	 * here. */
+	if (resolved_node == NULL ||
+	    resolved_node->subprogram_id == UINT32_MAX ||
+	    resolved_node->subprogram_id <
+		builder->semantics->lowered_subprogram_count)
+	    rb_raise(eRegexpError, "unresolved lookaround subprogram");
 	if (c_node == NULL || c_node->body == ONIBI_AST_NONE)
 	    rb_raise(eRegexpError, "lookaround body has no literal sequence");
 	const OnibiAstNode *body =
@@ -958,6 +1350,10 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	VALUE predicates = rb_ary_new();
 	for (size_t i = 0; i < body->child_count; i++) {
 	    OnibiAstId child_id = body->children[i];
+	    uint32_t child_options =
+		builder->semantics->nodes[child_id].lexical_options;
+	    int child_ignorecase = (child_options & ONIBI_OPT_IGNORECASE) != 0;
+	    int child_multiline = (child_options & ONIBI_OPT_MULTILINE) != 0;
 	    OnibiAstKind child_type =
 		onibi_ast_node_const(builder->ast, child_id)->kind;
 	    VALUE child = onibi_gir_payload_from_ast_terminal(
@@ -972,7 +1368,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
 			     UINT2NUM(ONIBI_PRED_BITMAP));
 		rb_hash_aset(predicate, ID2SYM(id_key_bitmap),
-			     onibi_class_bitmap(child, builder->ignorecase));
+			     onibi_class_bitmap(child, child_ignorecase));
 		rb_ary_push(predicates, predicate);
 		continue;
 	    }
@@ -983,7 +1379,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
 			     UINT2NUM(ONIBI_PRED_ANY));
 		rb_hash_aset(predicate, ID2SYM(id_key_multiline),
-			     builder->multiline ? Qtrue : Qfalse);
+			     child_multiline ? Qtrue : Qfalse);
 		rb_ary_push(predicates, predicate);
 		continue;
 	    }
@@ -1009,7 +1405,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		rb_hash_aset(predicate, ID2SYM(id_key_predicate_code),
 			     UINT2NUM(ONIBI_PRED_BITMAP));
 		rb_hash_aset(predicate, ID2SYM(id_key_bitmap),
-			     onibi_class_bitmap(payload, builder->ignorecase));
+			     onibi_class_bitmap(payload, child_ignorecase));
 		rb_ary_push(predicates, predicate);
 		continue;
 	    }
@@ -1024,7 +1420,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    rb_hash_aset(predicate, ID2SYM(id_key_byte),
 			 onibi_hash_value_id(child, id_key_byte));
 	    rb_hash_aset(predicate, ID2SYM(id_key_ignorecase),
-			 builder->ignorecase ? Qtrue : Qfalse);
+			 child_ignorecase ? Qtrue : Qfalse);
 	    rb_ary_push(predicates, predicate);
 	    rb_str_cat(bytes,
 		       (const char[]){(char)NUM2INT(
@@ -1033,9 +1429,8 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	}
 	rb_obj_freeze(bytes);
 	rb_obj_freeze(predicates);
-	ID assertion_op = type_code == ONIBI_AST_LOOKBEHIND
-			      ? id_a_assert_lookbehind
-			      : id_a_assert_lookahead;
+	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
+	    rb_raise(eRegexpError, "unnormalized lookaround assertion");
 	OnibiGAction action = {
 	    ONIBI_GA_ASSERT_POSITION,
 	    0,
@@ -1046,7 +1441,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    0,
 	    0,
 	    1,
-	    (uint16_t)onibi_rseq_assert_kind(assertion_op),
+	    (uint16_t)resolved_node->assertion_kind,
 	    1,
 	    (uint32_t)RARRAY_LEN(predicates)};
 	onibi_fragment_t result = onibi_fragment_empty();
@@ -1055,18 +1450,9 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_CAPTURE) {
-	VALUE capture_ast_key = onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_start);
-	VALUE capture_id_value =
-	    onibi_value_map_find(&builder->capture_ids, capture_ast_key);
-	long capture_id;
-	if (NIL_P(capture_id_value)) {
-	    capture_id = builder->capture_count++;
-	    onibi_value_map_set(&builder->capture_ids, capture_ast_key,
-				LONG2NUM(capture_id), builder->map_roots);
-	}
-	else
-	    capture_id = NUM2LONG(capture_id_value);
+	if (resolved_node == NULL || resolved_node->capture_id < 0)
+	    rb_raise(eRegexpError, "unresolved capture");
+	long capture_id = resolved_node->capture_id;
 	VALUE capture_body = onibi_compile_node_field(
 	    builder, c_node, semantic_node, id_key_body);
 	onibi_fragment_t result = onibi_compile_node(capture_body, builder);
@@ -1126,22 +1512,22 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 							   id_key_body),
 				  builder);
     if (type_code == ONIBI_AST_QUANTIFIER) {
-	VALUE min_value = onibi_compile_node_field(builder, c_node,
-						   semantic_node, id_key_min),
-	      max_value = onibi_compile_node_field(builder, c_node,
-						   semantic_node, id_key_max);
-	long min = NUM2LONG(min_value);
+	if (resolved_node == NULL ||
+	    !(resolved_node->flags & ONIBI_SEMANTIC_NORMALIZED))
+	    rb_raise(eRegexpError, "unnormalized repeat");
+	long min = resolved_node->repeat_min;
+	long normalized_max = resolved_node->repeat_max;
+	VALUE max_value = normalized_max < 0 ? Qnil : LONG2NUM(normalized_max);
+	int possessive =
+	    (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) != 0;
+	int greedy = (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
 	VALUE atom = onibi_compile_node_field(builder, c_node, semantic_node,
 					      id_key_atom);
 	if (min == 0) builder->optional_seen = 1;
-	if (RTEST(onibi_compile_node_field(builder, c_node, semantic_node,
-					   id_key_possessive)) &&
-	    (NIL_P(max_value) || NUM2LONG(max_value) != min))
+	if (possessive && (NIL_P(max_value) || NUM2LONG(max_value) != min))
 	    rb_raise(eRegexpError,
 		     "variable possessive quantifier is not supported in RSeq");
-	if (RTEST(onibi_compile_node_field(builder, c_node, semantic_node,
-					   id_key_possessive)) &&
-	    RB_INTEGER_TYPE_P(atom) &&
+	if (possessive && RB_INTEGER_TYPE_P(atom) &&
 	    onibi_c_ast_has_capture(builder->ast, (OnibiAstId)NUM2UINT(atom)))
 	    rb_raise(eRegexpError,
 		     "possessive capture repeat is not supported in RSeq");
@@ -1157,16 +1543,15 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	     * apply to the nullable bypass edge, which would incorrectly turn
 	     * an unset capture into an empty capture. */
 	    onibi_add_capture_guard_fragment(builder, &result.starts,
-					      &result.start_actions);
+					     &result.start_actions);
 	    onibi_add_exit_guard_fragment(builder, &result.exits,
-					   &result.pending_actions);
+					  &result.pending_actions);
 	    onibi_g_action_vector_free(&result.start_actions);
 	    onibi_g_action_vector_free(&result.pending_actions);
 	    onibi_g_action_vector_init(&result.start_actions);
 	    onibi_g_action_vector_init(&result.pending_actions);
 	    result.nullable = 1;
-	    result.lazy = !RTEST(onibi_compile_node_field(
-		builder, c_node, semantic_node, id_key_greedy));
+	    result.lazy = !greedy;
 	    return result;
 	}
 	long counter_slot = -1;
@@ -1223,8 +1608,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		onibi_g_action_vector_free(&part.pending_actions);
 	    }
 	    result.nullable = min == 0;
-	    result.lazy = !RTEST(onibi_compile_node_field(
-		builder, c_node, semantic_node, id_key_greedy));
+	    result.lazy = !greedy;
 	    return result;
 	}
 	if (max >= 0 && max != min) {
@@ -1289,11 +1673,12 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 		repeat.nullable ? builder->counter_count++ : -1;
 	    if (min == 0 && !repeat.nullable) {
 		/* The repeated body is optional.  Its actions belong only to
-		 * body and loop edges, never to the zero-iteration accept edge. */
+		 * body and loop edges, never to the zero-iteration accept edge.
+		 */
 		onibi_add_capture_guard_fragment(builder, &repeat.starts,
-						  &repeat.start_actions);
+						 &repeat.start_actions);
 		onibi_add_exit_guard_fragment(builder, &repeat.exits,
-						 &repeat.pending_actions);
+					      &repeat.pending_actions);
 		onibi_g_action_vector_free(&repeat.start_actions);
 		onibi_g_action_vector_free(&repeat.pending_actions);
 		onibi_g_action_vector_init(&repeat.start_actions);
@@ -1345,8 +1730,7 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 	    onibi_id_vector_free(&repeat.starts);
 	    onibi_id_vector_free(&repeat.exits);
 	}
-	result.lazy = !RTEST(onibi_compile_node_field(
-	    builder, c_node, semantic_node, id_key_greedy));
+	result.lazy = !greedy;
 	return result;
     }
     rb_raise(eRegexpError, "unsupported AST node");
@@ -1356,11 +1740,12 @@ onibi_compile_node(VALUE node_reference, onibi_gir_builder_t *builder)
 /* Initialize pass: create one owner for all mutable compiler state. */
 static void
 onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
-				 OnibiParsed *parsed, int ignorecase,
-				 int multiline)
+				 OnibiParsed *parsed,
+				 const OnibiResolvedArena *semantics)
 {
     memset(builder, 0, sizeof(*builder));
     builder->ast = &parsed->arena;
+    builder->semantics = semantics;
     onibi_gir_edge_vector_init(&builder->edges);
     onibi_value_map_init(&builder->capture_names);
     onibi_value_map_init(&builder->capture_bodies);
@@ -1371,10 +1756,16 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     builder->map_roots = rb_ary_new();
     onibi_rseq_subprogram_vector_push(&builder->subprograms,
 				      (OnibiRSeqSubprogramEntry){0, 0, 0});
+    for (size_t i = 1; i < semantics->lowered_subprogram_count; i++)
+	onibi_rseq_subprogram_vector_push(&builder->subprograms,
+					  (OnibiRSeqSubprogramEntry){0, 0, 0});
+    builder->resolved_subprogram_count = semantics->lowered_subprogram_count;
+    builder->subprogram_status =
+	ALLOC_N(unsigned char, builder->resolved_subprogram_count);
+    memset(builder->subprogram_status, 0,
+	   builder->resolved_subprogram_count * sizeof(unsigned char));
     onibi_guard_vector_init(&builder->capture_guards);
     onibi_guard_vector_init(&builder->exit_guards);
-    builder->ignorecase = ignorecase;
-    builder->multiline = multiline;
 }
 
 /* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
@@ -1477,13 +1868,13 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	semantic = ALLOC_N(unsigned char, (size_t)builder->capture_count);
 	memset(semantic, 0, (size_t)builder->capture_count);
     }
-#define MARK_SEMANTIC_CAPTURE(slot) \
-    do { \
-	uint32_t _slot = (uint32_t)(slot); \
-	if (semantic && _slot < result.capture_count && !semantic[_slot]) { \
-	    semantic[_slot] = 1; \
-	    result.semantic_capture_count++; \
-	} \
+#define MARK_SEMANTIC_CAPTURE(slot)                                            \
+    do {                                                                       \
+	uint32_t _slot = (uint32_t)(slot);                                     \
+	if (semantic && _slot < result.capture_count && !semantic[_slot]) {    \
+	    semantic[_slot] = 1;                                               \
+	    result.semantic_capture_count++;                                   \
+	}                                                                      \
     } while (0)
     if (result.capture_count > 0)
 	result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
@@ -1541,7 +1932,7 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    }
 	}
     }
-	for (size_t i = 0; i < start_edges->count; i++) {
+    for (size_t i = 0; i < start_edges->count; i++) {
 	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
 	for (size_t j = 0; j < actions->count; j++) {
 	    const OnibiGAction *action = &actions->entries[j];
@@ -1575,15 +1966,42 @@ onibi_compiler_pass_optimize(onibi_gir_builder_t *builder)
 /* Analyze pass.  This pass reads only the immutable AST.  Lowering must not
  * perform these queries while it walks nodes. */
 static OnibiAnalyzeOutput
-onibi_compiler_pass_analyze(OnibiParsed *parsed, onibi_gir_builder_t *builder)
+onibi_compiler_pass_analyze(OnibiNormalizeOutput normalize,
+			    onibi_gir_builder_t *builder)
 {
-    long captures = 0;
-    onibi_compiler_pass_collect_captures(parsed->arena.root, builder,
-					 &captures);
-    OnibiAstAnalysis ast_analysis = {0};
-    int nullable = onibi_ast_nullable_scan(&parsed->arena, parsed->arena.root,
-					   &ast_analysis);
-    return (OnibiAnalyzeOutput){parsed, builder, captures, nullable, 0, -1};
+    OnibiParsed *parsed = normalize.parsed;
+    onibi_analyze_semantic_node(parsed, parsed->arena.root);
+    const OnibiResolvedNode *root =
+	&normalize.semantics->nodes[parsed->arena.root];
+    for (size_t i = 0; i < normalize.semantics->count; i++) {
+	const OnibiResolvedNode *node = &normalize.semantics->nodes[i];
+	if (!(node->flags & ONIBI_SEMANTIC_RESOLVED)) continue;
+	if ((node->flags &
+	     (ONIBI_SEMANTIC_RESOLVED | ONIBI_SEMANTIC_NORMALIZED |
+	      ONIBI_SEMANTIC_ANALYZED)) !=
+	    (ONIBI_SEMANTIC_RESOLVED | ONIBI_SEMANTIC_NORMALIZED |
+	     ONIBI_SEMANTIC_ANALYZED))
+	    rb_raise(eRegexpError, "semantic analysis invariant failed");
+	if ((node->kind == ONIBI_AST_BACKREF ||
+	     node->kind == ONIBI_AST_SUBROUTINE ||
+	     node->kind == ONIBI_AST_CONDITIONAL) &&
+	    node->reference_target == ONIBI_AST_NONE)
+	    rb_raise(eRegexpError, "semantic reference invariant failed");
+	if ((node->kind == ONIBI_AST_SUBROUTINE ||
+	     node->kind == ONIBI_AST_ATOMIC ||
+	     node->kind == ONIBI_AST_ABSENCE ||
+	     node->kind == ONIBI_AST_LOOKAHEAD ||
+	     node->kind == ONIBI_AST_LOOKBEHIND) &&
+	    node->subprogram_id == UINT32_MAX)
+	    rb_raise(eRegexpError, "semantic subprogram invariant failed");
+    }
+    return (OnibiAnalyzeOutput){parsed,
+				normalize.semantics,
+				builder,
+				(long)normalize.semantics->capture_count,
+				(root->flags & ONIBI_SEMANTIC_NULLABLE) != 0,
+				root->min_width,
+				root->max_width};
 }
 
 /* Publish pass: transfer verified immutable GIR records to the result. */
@@ -1630,19 +2048,14 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     if (parsed_data->arena.root == ONIBI_AST_NONE)
 	rb_raise(rb_eArgError, "compiler requires parser output");
     OnibiParseOutput parse = {parsed_data, parsed_data->options};
-    /* Resolve names and options are separate contracts.  The parser already
-     * stores normalized option bits, so these passes validate and forward it.
-     */
-    OnibiResolveOutput resolve = {parse.parsed, parse.options};
-    OnibiNormalizeOutput normalize = {resolve.parsed, resolve.options};
-    int parsed_options = normalize.options;
-    int ignorecase = (parsed_options & ONIBI_OPT_IGNORECASE) != 0;
-    int multiline = (parsed_options & ONIBI_OPT_MULTILINE) != 0;
+    OnibiResolveOutput resolve = onibi_compiler_pass_resolve(parse);
+    OnibiNormalizeOutput normalize = onibi_compiler_pass_normalize(resolve);
+    int parsed_options = parse.options;
     onibi_gir_builder_t builder;
-    onibi_compiler_pass_init_builder(&builder, parsed_data, ignorecase,
-				     multiline);
+    onibi_compiler_pass_init_builder(&builder, parsed_data,
+				     normalize.semantics);
     OnibiAnalyzeOutput analyze =
-	onibi_compiler_pass_analyze(normalize.parsed, &builder);
+	onibi_compiler_pass_analyze(normalize, &builder);
     builder.capture_count = analyze.capture_count;
     OnibiGirEdgeVector start_edge_records;
     long accept;
@@ -1674,6 +2087,7 @@ onibi_compiler_compile(VALUE self, VALUE parsed)
     onibi_rseq_subprogram_vector_free(&builder.subprograms);
     onibi_gir_state_vector_free(&builder.states);
     onibi_gir_edge_vector_free(&builder.edges);
+    xfree(builder.subprogram_status);
     rb_obj_freeze(result);
     return result;
 }
