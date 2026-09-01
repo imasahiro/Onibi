@@ -78,4 +78,63 @@ class ResolvedSemanticAstTest < Minitest::Test
     assert_includes rseq, "compiled_data->states.entries"
     assert_includes rseq, "compiled_data->subprograms.entries"
   end
+
+  def test_capture_indexes_are_typed_and_source_ordered
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    common = File.read(File.join(ROOT, "ext/onibi/onibi_common.c"))
+    assert_includes common, "capture_by_number"
+    assert_includes common, "OnibiNameIndexEntry"
+    assert_includes compiler, "entry->definitions[entry->definition_count++]"
+    assert_includes compiler, "return entry->definitions[0]"
+    refute_includes compiler, "duplicate named capture requires"
+  end
+
+  def test_name_and_subprogram_indexes_do_not_intern_source_text
+    token = File.read(File.join(ROOT, "ext/onibi/token.c"))
+    parser = File.read(File.join(ROOT, "ext/onibi/parser.c"))
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    refute_includes token, "rb_intern2"
+    refute_includes parser, "rb_intern2"
+    assert_includes token, "onibi_known_property_id"
+    assert_equal 1, token.scan(/rb_intern\(/).length
+    assert_equal 0, parser.scan(/rb_intern/).length
+    assert_includes File.read(File.join(ROOT, "ext/onibi/onibi_common.c")),
+                    "OnibiSubprogramId subprogram_id"
+    assert_includes compiler, "entry->subprogram_id"
+    assert_includes compiler, "onibi_resolved_named_subprogram"
+  end
+
+  def test_large_capture_name_corpus_uses_indexed_compile_paths
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    assert_includes compiler, "onibi_name_hash"
+    assert_includes compiler, "onibi_resolved_numbered_capture"
+    assert_includes compiler, "capture_by_number[number - 1]"
+    lookup = compiler[/static OnibiAstId\nonibi_resolved_named_capture.*?\n}\n/m]
+    refute_nil lookup
+    refute_match(/for \(size_t .*semantics->count/, lookup)
+    bounded = (0...10).map { |i| "(?<n#{i}>a)" }.join
+    regexp = Onibi::Regexp.new(bounded)
+    assert regexp.send(:__onibi_diagnostics__, "a" * 10)[:rseq]
+    large = (0...40).map { |i| "(?<n#{i}>a)" }.join
+    assert Onibi::Regexp.new(large)
+  end
+
+  def test_duplicate_names_keep_order_and_compile_to_rseq
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    assert_includes compiler, "entry->definitions[entry->definition_count++]"
+    regexp = Onibi::Regexp.new("(?<same>a)(?<same>b)\\k<same>")
+    assert regexp.send(:__onibi_diagnostics__, "aba")[:rseq]
+  end
+
+  def test_repeated_named_subroutine_compiles_to_rseq
+    regexp = Onibi::Regexp.new("(?<same>a)\\g<same>\\g<same>")
+    assert regexp.send(:__onibi_diagnostics__, "aaa")[:rseq]
+  end
+
+  def test_named_subroutine_uses_typed_index_directly
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    branch = compiler[/else if \(node->kind == ONIBI_AST_SUBROUTINE\).*?\n    \}\n    else if/m]
+    refute_nil branch
+    assert_includes branch, "onibi_resolved_named_subprogram"
+  end
 end

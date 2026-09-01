@@ -546,13 +546,44 @@ typedef struct {
     uint32_t flags;
 } OnibiResolvedNode;
 
+typedef struct OnibiNameIndexEntry {
+    OnibiTokenSlice name;
+    OnibiAstId *definitions;
+    size_t definition_count;
+    size_t definition_capacity;
+    OnibiSubprogramId subprogram_id;
+    unsigned char used;
+} OnibiNameIndexEntry;
+
 typedef struct {
     OnibiResolvedNode *nodes;
     size_t count;
     uint32_t capture_count;
     uint32_t subprogram_count;
     uint32_t lowered_subprogram_count;
+    /* Compiler-owned indexes.  The source arena owns all name bytes. */
+    OnibiAstId *capture_by_number;
+    size_t capture_by_number_count;
+    OnibiNameIndexEntry *name_entries;
+    size_t name_entry_count;
+    size_t name_index_capacity;
 } OnibiResolvedArena;
+
+static void
+onibi_resolved_indexes_free(OnibiResolvedArena *semantics)
+{
+    xfree(semantics->capture_by_number);
+    semantics->capture_by_number = NULL;
+    if (semantics->name_entries != NULL) {
+	for (size_t i = 0; i < semantics->name_index_capacity; i++)
+	    xfree(semantics->name_entries[i].definitions);
+	xfree(semantics->name_entries);
+    }
+    semantics->name_entries = NULL;
+    semantics->capture_by_number_count = 0;
+    semantics->name_entry_count = 0;
+    semantics->name_index_capacity = 0;
+}
 
 typedef enum {
     ONIBI_CLASS_MODE_NORMAL = 0,

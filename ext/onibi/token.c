@@ -55,6 +55,30 @@ onibi_quantifier_byte_p(unsigned char c)
     return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
 }
 
+/* Return an ID only for the bounded set of built-in property names.  User
+ * capture and subroutine names remain byte slices in the AST. */
+static ID
+onibi_known_property_id(const char *bytes, size_t length)
+{
+    static const char *const names[] = {
+	"ASCII",  "ASCII_Hex_Digit", "Digit", "Alpha", "alpha",
+	"Letter", "digit",	     "Alnum", "alnum", "Lower",
+	"lower",  "Upper",	     "upper", "Space", "space",
+	"Blank",  "blank",	     "Word",  "word",  "XDigit",
+	"xdigit", "Cntrl",	     "Print", "Graph", "Punct"};
+    static ID ids[sizeof(names) / sizeof(names[0])];
+    static int ready;
+    if (!ready) {
+	for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+	    ids[i] = rb_intern(names[i]);
+	ready = 1;
+    }
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+	if (strlen(names[i]) == length && memcmp(names[i], bytes, length) == 0)
+	    return ids[i];
+    return 0;
+}
+
 /* Append one decimal digit without ever evaluating a signed overflowing
  * multiply.  Numeric backreferences use this helper for every digit. */
 static long
@@ -699,9 +723,11 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		: onibi_token_vector_copy(
 		      tokens, RSTRING_PTR(src) + negative_name_start,
 		      (size_t)negative_name_length);
-	ID name_id = name_start < 0 ? 0
-				    : rb_intern2(RSTRING_PTR(src) + name_start,
-						 name_length);
+	ID name_id =
+	    name_start < 0
+		? 0
+		: onibi_known_property_id(RSTRING_PTR(src) + name_start,
+					  (size_t)name_length);
 	OnibiTokenRecord record = {
 	    kind,
 	    byte,

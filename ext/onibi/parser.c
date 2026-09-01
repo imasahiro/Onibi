@@ -240,8 +240,8 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	rb_raise(eRegexpError, "unexpected token in expression");
     OnibiAstId id = onibi_ast_arena_add(arena, kind, token);
     OnibiAstNode *node = onibi_ast_node_at(arena, id);
-    if (kind == ONIBI_AST_ESCAPE && !node->name.present)
-	node->name_id = rb_intern2((const char *)&token->byte, 1);
+    /* Escape spelling is retained as a byte.  Do not intern source text. */
+    if (kind == ONIBI_AST_ESCAPE && !node->name.present) node->name_id = 0;
     if (kind == ONIBI_AST_BACKREF && !node->name.present && !token->has_capture)
 	node->capture = token->byte - '0';
     (*index)++;

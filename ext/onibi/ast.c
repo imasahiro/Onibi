@@ -71,6 +71,7 @@ onibi_parsed_free(void *ptr)
     if (parsed != NULL) {
 	onibi_ast_arena_free(&parsed->arena);
 	xfree(parsed->semantics.nodes);
+	onibi_resolved_indexes_free(&parsed->semantics);
     }
     xfree(parsed);
 }
@@ -83,6 +84,11 @@ onibi_parsed_memsize(const void *ptr)
 		  parsed->arena.capacity * sizeof(OnibiAstNode) +
 		  parsed->arena.bytes_count +
 		  parsed->semantics.count * sizeof(OnibiResolvedNode);
+    size += parsed->semantics.capture_by_number_count * sizeof(OnibiAstId);
+    size += parsed->semantics.name_index_capacity * sizeof(OnibiNameIndexEntry);
+    for (size_t i = 0; i < parsed->semantics.name_index_capacity; i++)
+	size += parsed->semantics.name_entries[i].definition_capacity *
+		sizeof(OnibiAstId);
     for (size_t i = 0; i < parsed->arena.count; i++) {
 	size += parsed->arena.nodes[i].child_capacity * sizeof(OnibiAstId);
 	size += parsed->arena.nodes[i].range_capacity * sizeof(OnibiAstRange);

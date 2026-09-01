@@ -132,6 +132,66 @@ onibi_ast_slice_equal(const OnibiAstArena *arena, OnibiTokenSlice first,
 		  first.length) == 0;
 }
 
+static uint64_t
+onibi_name_hash(const OnibiAstArena *arena, OnibiTokenSlice name)
+{
+    uint64_t h = UINT64_C(1469598103934665603);
+    for (size_t i = 0; i < name.length; i++) {
+	h ^= arena->bytes[name.offset + i];
+	h *= UINT64_C(1099511628211);
+    }
+    return h;
+}
+
+static OnibiNameIndexEntry *
+onibi_name_index_find(OnibiResolvedArena *semantics, const OnibiAstArena *arena,
+		      OnibiTokenSlice name)
+{
+    if (semantics->name_index_capacity == 0) return NULL;
+    size_t mask = semantics->name_index_capacity - 1;
+    size_t slot = (size_t)onibi_name_hash(arena, name) & mask;
+    for (;;) {
+	OnibiNameIndexEntry *entry = &semantics->name_entries[slot];
+	if (!entry->used) return entry;
+	if (onibi_ast_slice_equal(arena, entry->name, name)) return entry;
+	slot = (slot + 1) & mask;
+    }
+}
+
+static void
+onibi_name_index_build(OnibiParsed *parsed)
+{
+    OnibiResolvedArena *semantics = &parsed->semantics;
+    size_t needed = semantics->capture_count * 2 + 1;
+    size_t capacity = 1;
+    while (capacity < needed)
+	capacity <<= 1;
+    semantics->name_entries = ALLOC_N(OnibiNameIndexEntry, capacity);
+    memset(semantics->name_entries, 0,
+	   capacity * sizeof(*semantics->name_entries));
+    semantics->name_index_capacity = capacity;
+    for (size_t i = 0; i < semantics->count; i++) {
+	const OnibiAstNode *node =
+	    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
+	if (node->kind != ONIBI_AST_CAPTURE || !node->name.present) continue;
+	OnibiNameIndexEntry *entry =
+	    onibi_name_index_find(semantics, &parsed->arena, node->name);
+	if (!entry->used) {
+	    entry->used = 1;
+	    entry->name = node->name;
+	    entry->subprogram_id = UINT32_MAX;
+	    semantics->name_entry_count++;
+	}
+	if (entry->definition_count == entry->definition_capacity) {
+	    size_t cap =
+		entry->definition_capacity ? entry->definition_capacity * 2 : 2;
+	    REALLOC_N(entry->definitions, OnibiAstId, cap);
+	    entry->definition_capacity = cap;
+	}
+	entry->definitions[entry->definition_count++] = (OnibiAstId)i;
+    }
+}
+
 static int
 onibi_ast_slice_number(const OnibiAstArena *arena, OnibiTokenSlice slice,
 		       long *number)
@@ -154,14 +214,21 @@ onibi_resolved_named_capture(const OnibiAstArena *arena,
 			     const OnibiResolvedArena *semantics,
 			     OnibiTokenSlice name)
 {
-    for (size_t i = 0; i < semantics->count; i++) {
-	const OnibiAstNode *candidate =
-	    onibi_ast_node_const(arena, (OnibiAstId)i);
-	if (candidate->kind == ONIBI_AST_CAPTURE &&
-	    onibi_ast_slice_equal(arena, candidate->name, name))
-	    return (OnibiAstId)i;
-    }
+    OnibiNameIndexEntry *entry =
+	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    if (entry != NULL && entry->used && entry->definition_count != 0)
+	return entry->definitions[0];
     return ONIBI_AST_NONE;
+}
+
+static OnibiSubprogramId
+onibi_resolved_named_subprogram(const OnibiAstArena *arena,
+				const OnibiResolvedArena *semantics,
+				OnibiTokenSlice name)
+{
+    OnibiNameIndexEntry *entry =
+	onibi_name_index_find((OnibiResolvedArena *)semantics, arena, name);
+    return entry != NULL && entry->used ? entry->subprogram_id : UINT32_MAX;
 }
 
 static OnibiAstId
@@ -169,10 +236,8 @@ onibi_resolved_numbered_capture(const OnibiResolvedArena *semantics,
 				long number)
 {
     if (number <= 0) return ONIBI_AST_NONE;
-    for (size_t i = 0; i < semantics->count; i++)
-	if (semantics->nodes[i].kind == ONIBI_AST_CAPTURE &&
-	    semantics->nodes[i].capture_id == number - 1)
-	    return (OnibiAstId)i;
+    if ((size_t)(number - 1) < semantics->capture_by_number_count)
+	return semantics->capture_by_number[number - 1];
     return ONIBI_AST_NONE;
 }
 
@@ -184,17 +249,6 @@ onibi_resolve_capture_numbers(OnibiParsed *parsed, OnibiAstId id,
     OnibiResolvedNode *semantic = &parsed->semantics.nodes[id];
     if (node->kind == ONIBI_AST_CAPTURE) {
 	semantic->capture_id = (int32_t)(*next_capture)++;
-	if (node->name.present) {
-	    for (size_t i = 0; i < id; i++) {
-		const OnibiAstNode *prior =
-		    onibi_ast_node_const(&parsed->arena, (OnibiAstId)i);
-		if (prior->kind == ONIBI_AST_CAPTURE &&
-		    onibi_ast_slice_equal(&parsed->arena, prior->name,
-					  node->name))
-		    rb_raise(eRegexpError, "duplicate named capture requires "
-					   "compatibility execution");
-	    }
-	}
     }
     if (node->body != ONIBI_AST_NONE)
 	onibi_resolve_capture_numbers(parsed, node->body, next_capture);
@@ -274,10 +328,24 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	    rb_raise(eRegexpError, "undefined subroutine call");
 	semantic->reference_target = target;
 	semantic->capture_id = parsed->semantics.nodes[target].capture_id;
-	if (parsed->semantics.nodes[target].subprogram_id == UINT32_MAX)
-	    parsed->semantics.nodes[target].subprogram_id =
-		(*next_subprogram)++;
-	semantic->subprogram_id = parsed->semantics.nodes[target].subprogram_id;
+	if (number == 0) {
+	    OnibiSubprogramId indexed = onibi_resolved_named_subprogram(
+		arena, &parsed->semantics, node->name);
+	    if (indexed != UINT32_MAX) semantic->subprogram_id = indexed;
+	}
+	if (semantic->subprogram_id == UINT32_MAX) {
+	    if (parsed->semantics.nodes[target].subprogram_id == UINT32_MAX)
+		parsed->semantics.nodes[target].subprogram_id =
+		    (*next_subprogram)++;
+	    semantic->subprogram_id =
+		parsed->semantics.nodes[target].subprogram_id;
+	    if (number == 0) {
+		OnibiNameIndexEntry *entry = onibi_name_index_find(
+		    &parsed->semantics, arena, node->name);
+		if (entry != NULL)
+		    entry->subprogram_id = semantic->subprogram_id;
+	    }
+	}
     }
     else if (node->kind == ONIBI_AST_ATOMIC ||
 	     node->kind == ONIBI_AST_ABSENCE) {
@@ -364,6 +432,7 @@ static OnibiResolveOutput
 onibi_compiler_pass_resolve(OnibiParseOutput parse)
 {
     OnibiParsed *parsed = parse.parsed;
+    onibi_resolved_indexes_free(&parsed->semantics);
     xfree(parsed->semantics.nodes);
     parsed->semantics.count = parsed->arena.count;
     parsed->semantics.nodes =
@@ -387,9 +456,28 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse)
     long captures = 0;
     onibi_resolve_capture_numbers(parsed, parsed->arena.root, &captures);
     parsed->semantics.capture_count = (uint32_t)captures;
+    parsed->semantics.capture_by_number_count = (size_t)captures;
+    if (captures != 0)
+	parsed->semantics.capture_by_number =
+	    ALLOC_N(OnibiAstId, (size_t)captures);
+    for (size_t i = 0; i < (size_t)captures; i++)
+	parsed->semantics.capture_by_number[i] = ONIBI_AST_NONE;
+    for (size_t i = 0; i < parsed->semantics.count; i++) {
+	if (parsed->semantics.nodes[i].capture_id >= 0)
+	    parsed->semantics
+		.capture_by_number[parsed->semantics.nodes[i].capture_id] =
+		(OnibiAstId)i;
+    }
+    onibi_name_index_build(parsed);
     uint32_t subprograms = 1;
     (void)onibi_resolve_semantic_node(parsed, parsed->arena.root,
 				      (uint32_t)parse.options, &subprograms);
+    for (size_t i = 0; i < parsed->semantics.name_index_capacity; i++) {
+	OnibiNameIndexEntry *entry = &parsed->semantics.name_entries[i];
+	if (entry->used && entry->definition_count != 0)
+	    entry->subprogram_id =
+		parsed->semantics.nodes[entry->definitions[0]].subprogram_id;
+    }
     parsed->semantics.lowered_subprogram_count = subprograms;
     onibi_assign_lookaround_subprograms(parsed, &subprograms);
     parsed->semantics.subprogram_count = subprograms;
