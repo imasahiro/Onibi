@@ -131,6 +131,7 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
      * explicit so a later publication path cannot free published storage. */
     onibi_guard_vector_free(&owner->builder.capture_guards);
     onibi_guard_vector_free(&owner->builder.exit_guards);
+    onibi_id_vector_free(&owner->builder.progress_slots);
     if (!owner->gir_transferred) {
 	onibi_gir_edge_vector_free(&owner->start_edges);
 	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
@@ -522,6 +523,9 @@ onibi_compiler_pass_resolve(OnibiParseOutput parse, OnibiCompilerOwner *owner)
     }
     long captures = 0;
     onibi_resolve_capture_numbers(parsed, parsed->arena.root, &captures);
+    if ((uint64_t)captures > ONIBI_GIR_MAX_CAPTURE_COUNT)
+	rb_raise(eRegexpError,
+		 "capture count exceeds the GIR action operand limit");
     parsed->semantics.capture_count = (uint32_t)captures;
     parsed->semantics.capture_by_number_count = (size_t)captures;
     if (captures != 0)
@@ -788,33 +792,6 @@ onibi_compile_resolved_body_subprogram(OnibiAstId body,
     return (long)subprogram_id;
 }
 
-static int
-onibi_semantic_has_call(const onibi_gir_builder_t *builder, OnibiAstId id,
-			OnibiSubprogramId subprogram_id)
-{
-    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
-    const OnibiResolvedNode *semantic = &builder->semantics->nodes[id];
-    if (node->kind == ONIBI_AST_SUBROUTINE &&
-	semantic->subprogram_id == subprogram_id)
-	return 1;
-    if (node->body != ONIBI_AST_NONE &&
-	onibi_semantic_has_call(builder, node->body, subprogram_id))
-	return 1;
-    if (node->atom != ONIBI_AST_NONE &&
-	onibi_semantic_has_call(builder, node->atom, subprogram_id))
-	return 1;
-    if (node->yes != ONIBI_AST_NONE &&
-	onibi_semantic_has_call(builder, node->yes, subprogram_id))
-	return 1;
-    if (node->no != ONIBI_AST_NONE &&
-	onibi_semantic_has_call(builder, node->no, subprogram_id))
-	return 1;
-    for (size_t i = 0; i < node->child_count; i++)
-	if (onibi_semantic_has_call(builder, node->children[i], subprogram_id))
-	    return 1;
-    return 0;
-}
-
 static long
 onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 				  OnibiSubprogramId subprogram_id,
@@ -837,7 +814,7 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 			     0,
 			     0,
 			     1,
-			     (uint16_t)(2 * capture_slot),
+			     onibi_capture_boundary_slot(capture_slot, 0),
 			     0,
 			     0,
 			     0,
@@ -846,13 +823,11 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 			      0,
 			      0,
 			      1,
-			      (uint16_t)(2 * capture_slot + 1),
+			      onibi_capture_boundary_slot(capture_slot, 1),
 			      0,
 			      0,
 			      0,
 			      0};
-	if (onibi_semantic_has_call(builder, capture->body, subprogram_id))
-	    close.set = 1;
 	OnibiGActionVector starts;
 	onibi_g_action_vector_init(&starts);
 	onibi_g_action_vector_bind(&starts, builder->allocation_owner);
@@ -1455,7 +1430,9 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			       1,
 			       (uint16_t)resolved_node->assertion_kind,
 			       1,
-			       predicate_count};
+			       predicate_count,
+			       1,
+			       resolved_node->subprogram_id};
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = 1;
 	onibi_g_action_vector_push(&result.start_actions, action);
@@ -1470,7 +1447,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			     0,
 			     0,
 			     1,
-			     (uint16_t)(2 * capture_id),
+			     onibi_capture_boundary_slot(capture_id, 0),
 			     0,
 			     0,
 			     0,
@@ -1479,15 +1456,11 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			      0,
 			      0,
 			      1,
-			      (uint16_t)(2 * capture_id + 1),
+			      onibi_capture_boundary_slot(capture_id, 1),
 			      0,
 			      0,
 			      0,
 			      0};
-	if (c_node->name.present &&
-	    onibi_c_ast_has_subroutine_name(builder->ast, c_node->body,
-					    c_node->name))
-	    close.set = 1;
 	OnibiGActionVector starts;
 	onibi_g_action_vector_init(&starts);
 	onibi_g_action_vector_bind(&starts, builder->allocation_owner);
@@ -1546,7 +1519,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	}
 	long counter_slot = -1;
 	if (normalized_max >= 0 && normalized_max != min)
-	    counter_slot = builder->counter_count++;
+	    counter_slot = onibi_gir_allocate_counter_slot(builder, 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = min == 0;
 	if (normalized_max >= 0 && normalized_max < min)
@@ -1665,7 +1638,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	else if (normalized_max < 0) {
 	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
 	    long progress_slot =
-		repeat.nullable ? builder->counter_count++ : -1;
+		repeat.nullable ? onibi_gir_allocate_counter_slot(builder, 1)
+				: -1;
 	    if (min == 0 && !repeat.nullable) {
 		/* The repeated body is optional.  Its actions belong only to
 		 * body and loop edges, never to the zero-iteration accept edge.
@@ -1764,6 +1738,7 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 	onibi_rseq_subprogram_vector_push(&builder->subprograms,
 					  (OnibiRSeqSubprogramEntry){0, 0, 0});
     builder->resolved_subprogram_count = semantics->lowered_subprogram_count;
+    builder->semantic_subprogram_count = semantics->subprogram_count;
     builder->subprogram_status = onibi_owned_realloc(
 	builder->allocation_owner, NULL, builder->resolved_subprogram_count);
     memset(builder->subprogram_status, 0,
@@ -1773,6 +1748,8 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 			    builder->allocation_owner);
     onibi_guard_vector_init(&builder->exit_guards);
     onibi_guard_vector_bind(&builder->exit_guards, builder->allocation_owner);
+    onibi_id_vector_init(&builder->progress_slots);
+    onibi_id_vector_bind(&builder->progress_slots, builder->allocation_owner);
 }
 
 /* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
@@ -1849,16 +1826,23 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 
 static void
 onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
+			       const OnibiGirEdgeVector *start_edges,
+			       long accept, long root_entry, int options,
 			       OnibiCompilerOwner *owner)
 {
-    for (size_t i = 0; i < builder->edges.count; i++) {
-	const OnibiGirEdgeEntry *edge = &builder->edges.entries[i];
-	if (edge->from < 0 || edge->to < 0 ||
-	    (size_t)edge->from >= builder->states.count ||
-	    (size_t)edge->to >= builder->states.count)
-	    rb_raise(eRegexpError,
-		     "GIR verification failed: edge state is out of range");
-    }
+    OnibiGIRView view = {&builder->states,
+			 &builder->edges,
+			 start_edges,
+			 &builder->subprograms,
+			 &builder->progress_slots,
+			 builder->next_id,
+			 builder->capture_count,
+			 builder->counter_count,
+			 accept,
+			 root_entry,
+			 builder->semantic_subprogram_count,
+			 (uint32_t)options};
+    onibi_gir_verify(&view);
     onibi_compiler_fail_if(owner, 5);
 }
 
@@ -1867,7 +1851,8 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 			     const OnibiGirEdgeVector *start_edges,
 			     OnibiCompilerOwner *owner)
 {
-    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
+    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0,
+				  (uint32_t)builder->counter_count,
 				  ONIBI_EXEC_REGULAR};
     unsigned char *semantic = NULL;
     if (builder->capture_count > 0) {
@@ -2024,10 +2009,6 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			    int parsed_options, VerifiedGIRAnalysis analysis,
 			    OnibiCompilerOwner *owner)
 {
-    onibi_rseq_subprogram_vector_store(
-	&builder->subprograms, 0,
-	(OnibiRSeqSubprogramEntry){(OnibiStateId)root_entry,
-				   (OnibiStateId)accept, 0});
     onibi_compiler_fail_if(owner, 8);
     OnibiCompiled *compiled_result;
     VALUE result = TypedData_Make_Struct(rb_cObject, OnibiCompiled,
@@ -2134,8 +2115,13 @@ onibi_compiler_compile_body(VALUE opaque)
     (void)lower_nfa;
     OnibiGirOutput gir = {&owner->builder};
     (void)gir;
+    onibi_rseq_subprogram_vector_store(
+	&owner->builder.subprograms, 0,
+	(OnibiRSeqSubprogramEntry){(OnibiStateId)root_entry,
+				   (OnibiStateId)accept, 0});
     onibi_allocation_owner_set_phase(&owner->allocations, 5);
-    onibi_compiler_pass_verify_gir(&owner->builder, owner);
+    onibi_compiler_pass_verify_gir(&owner->builder, &owner->start_edges, accept,
+				   root_entry, parsed_options, owner);
     onibi_allocation_owner_set_phase(&owner->allocations, 6);
     VerifiedGIRAnalysis analysis = onibi_compiler_pass_classify(
 	&owner->builder, &owner->start_edges, owner);

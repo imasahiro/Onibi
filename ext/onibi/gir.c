@@ -9,6 +9,8 @@ typedef struct {
     uint16_t assert_kind;
     uint8_t has_arg32;
     uint32_t arg32;
+    uint8_t has_subprogram;
+    OnibiSubprogramId subprogram_id;
 } OnibiGAction;
 typedef ONIBI_VECTOR(OnibiGAction) OnibiGActionVector;
 typedef struct {
@@ -70,14 +72,32 @@ typedef struct {
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
     OnibiRSeqSubprogramVector subprograms;
+    OnibiIdVector progress_slots;
     OnibiAstArena *ast;
     const OnibiResolvedArena *semantics;
     unsigned char *subprogram_status;
     size_t resolved_subprogram_count;
+    size_t semantic_subprogram_count;
     int optional_seen;
     onibi_allocation_owner_t *allocation_owner;
     OnibiTaggedNfa *nfa;
 } onibi_gir_builder_t;
+
+/* This view is the complete verifier input.  It contains typed GIR only. */
+typedef struct {
+    const OnibiGirStateVector *states;
+    const OnibiGirEdgeVector *edges;
+    const OnibiGirEdgeVector *start_edges;
+    const OnibiRSeqSubprogramVector *subprograms;
+    const OnibiIdVector *progress_slots;
+    long next_id;
+    long capture_count;
+    long counter_count;
+    long accept;
+    long root_entry;
+    size_t semantic_subprogram_count;
+    uint32_t options;
+} OnibiGIRView;
 ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
 		    "GIR state vector is too large")
 
@@ -283,6 +303,500 @@ onibi_gir_edge_vector_free(OnibiGirEdgeVector *vector)
     for (size_t i = 0; i < vector->count; i++)
 	onibi_g_action_vector_free(&vector->entries[i].actions);
     ONIBI_OWNED_VECTOR_RELEASE(vector);
+}
+
+NORETURN(static void onibi_gir_verification_error(const char *message));
+static void
+onibi_gir_verification_error(const char *message)
+{
+    rb_raise(eRegexpError, "GIR verification failed: %s", message);
+}
+
+static int
+onibi_gir_zero_bytes(const unsigned char *bytes, size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+	if (bytes[i] != 0) return 0;
+    return 1;
+}
+
+static int
+onibi_gir_action_equal(const OnibiGAction *left, const OnibiGAction *right)
+{
+    return left->code == right->code && left->set == right->set &&
+	   left->positive == right->positive &&
+	   left->has_slot == right->has_slot && left->slot == right->slot &&
+	   left->has_assert_kind == right->has_assert_kind &&
+	   left->assert_kind == right->assert_kind &&
+	   left->has_arg32 == right->has_arg32 && left->arg32 == right->arg32 &&
+	   left->has_subprogram == right->has_subprogram &&
+	   left->subprogram_id == right->subprogram_id;
+}
+
+static int
+onibi_gir_action_vectors_equal(const OnibiGActionVector *left,
+			       const OnibiGActionVector *right)
+{
+    if (left->count != right->count) return 0;
+    for (size_t i = 0; i < left->count; i++)
+	if (!onibi_gir_action_equal(&left->entries[i], &right->entries[i]))
+	    return 0;
+    return 1;
+}
+
+typedef struct {
+    uint64_t hash;
+    size_t index;
+    uint8_t start;
+    uint8_t used;
+} OnibiGIREdgeIndexSlot;
+
+typedef struct {
+    onibi_allocation_owner_t allocations;
+    unsigned char *physical_subprogram_references;
+    unsigned char *semantic_subprogram_references;
+    unsigned char *progress_slot_states;
+    OnibiGIREdgeIndexSlot *edge_index;
+    size_t edge_index_capacity;
+} OnibiGIRVerifyOwner;
+
+typedef struct {
+    const OnibiGIRView *view;
+    OnibiGIRVerifyOwner owner;
+} OnibiGIRVerifyCall;
+
+static uint64_t
+onibi_gir_hash_bytes(uint64_t hash, const void *data, size_t length)
+{
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < length; i++) {
+	hash ^= bytes[i];
+	hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static uint64_t
+onibi_gir_action_vector_hash(long from, long to,
+			     const OnibiGActionVector *actions)
+{
+    uint64_t hash = UINT64_C(1469598103934665603);
+    hash = onibi_gir_hash_bytes(hash, &from, sizeof(from));
+    hash = onibi_gir_hash_bytes(hash, &to, sizeof(to));
+    hash = onibi_gir_hash_bytes(hash, &actions->count, sizeof(actions->count));
+    for (size_t i = 0; i < actions->count; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	hash = onibi_gir_hash_bytes(hash, &action->code, sizeof(action->code));
+	hash = onibi_gir_hash_bytes(hash, &action->set, sizeof(action->set));
+	hash = onibi_gir_hash_bytes(hash, &action->positive,
+				    sizeof(action->positive));
+	hash = onibi_gir_hash_bytes(hash, &action->has_slot,
+				    sizeof(action->has_slot));
+	hash = onibi_gir_hash_bytes(hash, &action->slot, sizeof(action->slot));
+	hash = onibi_gir_hash_bytes(hash, &action->has_assert_kind,
+				    sizeof(action->has_assert_kind));
+	hash = onibi_gir_hash_bytes(hash, &action->assert_kind,
+				    sizeof(action->assert_kind));
+	hash = onibi_gir_hash_bytes(hash, &action->has_arg32,
+				    sizeof(action->has_arg32));
+	hash =
+	    onibi_gir_hash_bytes(hash, &action->arg32, sizeof(action->arg32));
+	hash = onibi_gir_hash_bytes(hash, &action->has_subprogram,
+				    sizeof(action->has_subprogram));
+	hash = onibi_gir_hash_bytes(hash, &action->subprogram_id,
+				    sizeof(action->subprogram_id));
+    }
+    return hash;
+}
+
+static void
+onibi_gir_verify_edge_index_insert(const OnibiGIRView *view,
+				   OnibiGIRVerifyOwner *owner,
+				   const OnibiGirEdgeEntry *edge, size_t index,
+				   int start)
+{
+    uint64_t hash =
+	onibi_gir_action_vector_hash(edge->from, edge->to, &edge->actions);
+    size_t slot = (size_t)hash & (owner->edge_index_capacity - 1);
+    while (owner->edge_index[slot].used) {
+	const OnibiGIREdgeIndexSlot *prior_slot = &owner->edge_index[slot];
+	const OnibiGirEdgeEntry *prior =
+	    prior_slot->start ? &view->start_edges->entries[prior_slot->index]
+			      : &view->edges->entries[prior_slot->index];
+	if (prior_slot->hash == hash && prior->from == edge->from &&
+	    prior->to == edge->to &&
+	    onibi_gir_action_vectors_equal(&prior->actions, &edge->actions))
+	    onibi_gir_verification_error(start ? "start edge is duplicated"
+					       : "ordered edge is duplicated");
+	slot = (slot + 1) & (owner->edge_index_capacity - 1);
+    }
+    owner->edge_index[slot] =
+	(OnibiGIREdgeIndexSlot){hash, index, start ? 1 : 0, 1};
+}
+
+static void
+onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
+			const OnibiGAction *action, int start_action,
+			long edge_from, long edge_to)
+{
+    if ((unsigned int)action->code > ONIBI_GA_PROGRESS ||
+	action->code == ONIBI_GA_END)
+	onibi_gir_verification_error("action opcode is invalid");
+    if (action->set > 1 || action->positive > 1 || action->has_slot > 1 ||
+	action->has_assert_kind > 1 || action->has_arg32 > 1 ||
+	action->has_subprogram > 1)
+	onibi_gir_verification_error("action payload flag is invalid");
+    if ((!action->has_slot && action->slot != 0) ||
+	(!action->has_assert_kind && action->assert_kind != 0) ||
+	(!action->has_arg32 && action->arg32 != 0) ||
+	(!action->has_subprogram && action->subprogram_id != 0))
+	onibi_gir_verification_error("action payload is not canonical");
+
+    switch (action->code) {
+    case ONIBI_GA_CAPTURE_OPEN:
+    case ONIBI_GA_CAPTURE_CLOSE: {
+	uint32_t capture_slots = (uint32_t)view->capture_count * 2U;
+	if (!action->has_slot || action->has_assert_kind || action->has_arg32 ||
+	    action->has_subprogram || action->positive)
+	    onibi_gir_verification_error(
+		action->code == ONIBI_GA_CAPTURE_CLOSE
+		    ? "capture-close payload is invalid"
+		    : "capture-open payload is invalid");
+	if (action->set != 0)
+	    onibi_gir_verification_error(
+		action->code == ONIBI_GA_CAPTURE_CLOSE
+		    ? "capture-close payload is invalid"
+		    : "capture-open payload is invalid");
+	if (action->slot >= capture_slots ||
+	    ((action->slot & 1U) !=
+	     (action->code == ONIBI_GA_CAPTURE_CLOSE ? 1U : 0U)))
+	    onibi_gir_verification_error("capture slot is invalid");
+	break;
+    }
+    case ONIBI_GA_MATCH_RESET:
+	if (action->set || action->positive || action->has_slot ||
+	    action->has_assert_kind || action->has_arg32 ||
+	    action->has_subprogram)
+	    onibi_gir_verification_error("match-reset payload is invalid");
+	break;
+    case ONIBI_GA_ASSERT_POSITION: {
+	int lookaround = action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
+			 action->assert_kind == ONIBI_RAP_LOOKBEHIND;
+	if (action->set || action->has_slot || !action->has_assert_kind ||
+	    action->assert_kind < ONIBI_RAP_BEGIN_BUFFER ||
+	    action->assert_kind > ONIBI_RAP_LOOKBEHIND)
+	    onibi_gir_verification_error("assertion payload is invalid");
+	if (lookaround) {
+	    if (!action->has_arg32 || !action->has_subprogram ||
+		action->subprogram_id < view->subprograms->count ||
+		action->subprogram_id >= view->semantic_subprogram_count)
+		onibi_gir_verification_error(
+		    "lookaround subprogram is invalid");
+	    owner->semantic_subprogram_references[action->subprogram_id] = 1;
+	}
+	else if (action->positive || action->has_arg32 ||
+		 action->has_subprogram) {
+	    onibi_gir_verification_error("assertion payload is invalid");
+	}
+	break;
+    }
+    case ONIBI_GA_TEST_CAPTURE:
+	if (!action->has_slot ||
+	    action->slot >= (uint32_t)view->capture_count || action->positive ||
+	    action->has_assert_kind || action->has_arg32 ||
+	    action->has_subprogram)
+	    onibi_gir_verification_error(
+		"semantic capture reference is invalid");
+	break;
+    case ONIBI_GA_COUNTER_INIT:
+    case ONIBI_GA_TEST_COUNTER_LT:
+    case ONIBI_GA_TEST_COUNTER_GE:
+	if (action->set || action->positive || !action->has_slot ||
+	    action->slot >= (uint32_t)view->counter_count ||
+	    action->has_assert_kind || !action->has_arg32 ||
+	    action->has_subprogram ||
+	    owner->progress_slot_states[action->slot] != 0)
+	    onibi_gir_verification_error("counter slot is invalid");
+	break;
+    case ONIBI_GA_COUNTER_INCREMENT:
+	if (action->set || action->positive || !action->has_slot ||
+	    action->slot >= (uint32_t)view->counter_count ||
+	    action->has_assert_kind || action->has_arg32 ||
+	    action->has_subprogram ||
+	    owner->progress_slot_states[action->slot] != 0)
+	    onibi_gir_verification_error("counter slot is invalid");
+	break;
+    case ONIBI_GA_PROGRESS:
+	if (action->set || action->positive || !action->has_slot ||
+	    action->slot >= (uint32_t)view->counter_count ||
+	    action->has_assert_kind || action->has_arg32 ||
+	    action->has_subprogram ||
+	    owner->progress_slot_states[action->slot] == 0 || start_action ||
+	    edge_to > edge_from)
+	    onibi_gir_verification_error("repeat progress is invalid");
+	owner->progress_slot_states[action->slot] = 2;
+	break;
+    default: onibi_gir_verification_error("action opcode is invalid");
+    }
+}
+
+static void
+onibi_gir_verify_action_vector(const OnibiGIRView *view,
+			       OnibiGIRVerifyOwner *owner,
+			       const OnibiGActionVector *actions,
+			       int start_action, long edge_from, long edge_to)
+{
+    if (actions->count > actions->capacity ||
+	(actions->count != 0 && actions->entries == NULL))
+	onibi_gir_verification_error("action vector is invalid");
+    for (size_t i = 0; i < actions->count; i++)
+	onibi_gir_verify_action(view, owner, &actions->entries[i], start_action,
+				edge_from, edge_to);
+}
+
+static void
+onibi_gir_verify_owner_initialize(const OnibiGIRView *view,
+				  OnibiGIRVerifyOwner *owner)
+{
+    size_t physical_count = view->subprograms->count;
+    size_t semantic_count = view->semantic_subprogram_count;
+    size_t counter_count = (size_t)view->counter_count;
+    if (physical_count != 0) {
+	owner->physical_subprogram_references =
+	    onibi_owned_realloc(&owner->allocations, NULL, physical_count);
+	memset(owner->physical_subprogram_references, 0, physical_count);
+    }
+    if (semantic_count != 0) {
+	owner->semantic_subprogram_references =
+	    onibi_owned_realloc(&owner->allocations, NULL, semantic_count);
+	memset(owner->semantic_subprogram_references, 0, semantic_count);
+    }
+    if (counter_count != 0) {
+	owner->progress_slot_states =
+	    onibi_owned_realloc(&owner->allocations, NULL, counter_count);
+	memset(owner->progress_slot_states, 0, counter_count);
+    }
+    size_t edge_count;
+    if (view->edges->count > SIZE_MAX - view->start_edges->count)
+	onibi_gir_verification_error("verification index is too large");
+    edge_count = view->edges->count + view->start_edges->count;
+    if (edge_count > SIZE_MAX / 2)
+	onibi_gir_verification_error("verification index is too large");
+    size_t capacity = 1;
+    while (capacity < edge_count * 2) {
+	if (capacity > SIZE_MAX / 2)
+	    onibi_gir_verification_error("verification index is too large");
+	capacity *= 2;
+    }
+    if (capacity > SIZE_MAX / sizeof(*owner->edge_index))
+	onibi_gir_verification_error("verification index is too large");
+    owner->edge_index = onibi_owned_realloc(
+	&owner->allocations, NULL, capacity * sizeof(*owner->edge_index));
+    memset(owner->edge_index, 0, capacity * sizeof(*owner->edge_index));
+    owner->edge_index_capacity = capacity;
+}
+
+static VALUE
+onibi_gir_verify_body(VALUE opaque)
+{
+    OnibiGIRVerifyCall *call = (OnibiGIRVerifyCall *)(uintptr_t)opaque;
+    const OnibiGIRView *view = call->view;
+    OnibiGIRVerifyOwner *owner = &call->owner;
+    const uint32_t option_mask = ONIBI_OPT_IGNORECASE | ONIBI_OPT_EXTENDED |
+				 ONIBI_OPT_MULTILINE | ONIBI_OPT_FIXEDENCODING |
+				 ONIBI_OPT_NOENCODING;
+    if (!view || !view->states || !view->edges || !view->start_edges ||
+	!view->subprograms || !view->progress_slots)
+	onibi_gir_verification_error("typed GIR input is incomplete");
+    if (view->subprograms->count == 0 ||
+	view->subprograms->count > view->subprograms->capacity ||
+	view->subprograms->entries == NULL ||
+	view->semantic_subprogram_count < view->subprograms->count ||
+	view->semantic_subprogram_count > UINT32_MAX)
+	onibi_gir_verification_error("subprogram table is invalid");
+    if (view->progress_slots->count > view->progress_slots->capacity ||
+	(view->progress_slots->count != 0 &&
+	 view->progress_slots->entries == NULL))
+	onibi_gir_verification_error("repeat progress table is invalid");
+    if (view->edges->count > view->edges->capacity ||
+	(view->edges->count != 0 && view->edges->entries == NULL))
+	onibi_gir_verification_error("ordered edge vector is invalid");
+    if (view->start_edges->count == 0 ||
+	view->start_edges->count > view->start_edges->capacity ||
+	view->start_edges->entries == NULL)
+	onibi_gir_verification_error("start edges are invalid");
+    if (view->capture_count < 0 ||
+	(uint64_t)view->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT)
+	onibi_gir_verification_error("capture count exceeds the operand limit");
+    if (view->counter_count < 0 ||
+	(uint64_t)view->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT)
+	onibi_gir_verification_error("counter count exceeds the operand limit");
+    if ((view->options & ~option_mask) != 0)
+	onibi_gir_verification_error("option environment is unresolved");
+    if (view->states->count == 0 || view->states->count > UINT32_MAX ||
+	view->states->count > view->states->capacity ||
+	view->states->entries == NULL || view->next_id < 0 ||
+	(size_t)view->next_id != view->states->count)
+	onibi_gir_verification_error("state IDs are not contiguous");
+
+    onibi_gir_verify_owner_initialize(view, owner);
+    for (size_t i = 0; i < view->progress_slots->count; i++) {
+	uint32_t slot = view->progress_slots->entries[i];
+	if (slot >= (uint32_t)view->counter_count)
+	    onibi_gir_verification_error("repeat progress is invalid");
+	if (owner->progress_slot_states[slot] != 0)
+	    onibi_gir_verification_error("repeat progress slot is duplicated");
+	owner->progress_slot_states[slot] = 1;
+    }
+
+    for (size_t i = 0; i < view->states->count; i++) {
+	const OnibiGirStateEntry *state = &view->states->entries[i];
+	if (state->id != (long)i)
+	    onibi_gir_verification_error("state IDs are not contiguous");
+	if ((unsigned int)state->opcode > ONIBI_G_ABSENT ||
+	    state->payload_index != 0)
+	    onibi_gir_verification_error("state opcode payload is invalid");
+	uint8_t allowed_flags = 0;
+	if (state->opcode == ONIBI_G_CHAR || state->opcode == ONIBI_G_BACKREF)
+	    allowed_flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+	else if (state->opcode == ONIBI_G_CLASS || state->opcode == ONIBI_G_ANY)
+	    allowed_flags = ONIBI_RSEQ_STATE_FLAG_NEGATED;
+	if ((state->flags & ~allowed_flags) != 0)
+	    onibi_gir_verification_error("option environment is unresolved");
+	if (state->opcode == ONIBI_G_CHAR) {
+	    if (state->literal_length == 0 ||
+		state->literal_length > sizeof(state->literal) ||
+		state->value != state->literal[0] ||
+		!onibi_gir_zero_bytes(state->bitmap, sizeof(state->bitmap)))
+		onibi_gir_verification_error("state opcode payload is invalid");
+	}
+	else if (state->opcode == ONIBI_G_CLASS) {
+	    if (state->value != 0 || state->literal_length != 0 ||
+		!onibi_gir_zero_bytes(state->literal, sizeof(state->literal)))
+		onibi_gir_verification_error("state opcode payload is invalid");
+	}
+	else {
+	    if (state->literal_length != 0 ||
+		!onibi_gir_zero_bytes(state->literal, sizeof(state->literal)) ||
+		!onibi_gir_zero_bytes(state->bitmap, sizeof(state->bitmap)))
+		onibi_gir_verification_error("state opcode payload is invalid");
+	    if ((state->opcode == ONIBI_G_ACCEPT ||
+		 state->opcode == ONIBI_G_ANY ||
+		 state->opcode == ONIBI_G_GRAPHEME) &&
+		state->value != 0)
+		onibi_gir_verification_error("state opcode payload is invalid");
+	}
+	if (state->opcode == ONIBI_G_BACKREF &&
+	    state->value >= (uint32_t)view->capture_count)
+	    onibi_gir_verification_error(
+		"semantic capture reference is invalid");
+	if (state->opcode == ONIBI_G_CALL || state->opcode == ONIBI_G_ATOMIC ||
+	    state->opcode == ONIBI_G_ABSENT) {
+	    if (state->value == 0 || state->value >= view->subprograms->count)
+		onibi_gir_verification_error("subprogram reference is invalid");
+	    uint32_t required_flags =
+		state->opcode == ONIBI_G_ATOMIC	  ? ONIBI_SUBPROGRAM_ATOMIC
+		: state->opcode == ONIBI_G_ABSENT ? ONIBI_SUBPROGRAM_ABSENT
+						  : 0;
+	    if (view->subprograms->entries[state->value].flags !=
+		required_flags)
+		onibi_gir_verification_error(
+		    state->opcode == ONIBI_G_ATOMIC
+			? "atomic subprogram is invalid"
+		    : state->opcode == ONIBI_G_ABSENT
+			? "absence subprogram is invalid"
+			: "subprogram reference is invalid");
+	    owner->physical_subprogram_references[state->value] = 1;
+	}
+    }
+
+    long last_source = -1;
+    for (size_t i = 0; i < view->edges->count; i++) {
+	const OnibiGirEdgeEntry *edge = &view->edges->entries[i];
+	if (edge->from < 0 || edge->to < 0 ||
+	    (size_t)edge->from >= view->states->count ||
+	    (size_t)edge->to >= view->states->count)
+	    onibi_gir_verification_error("edge state is out of range");
+	if (edge->from < last_source)
+	    onibi_gir_verification_error("ordered edges are not preserved");
+	last_source = edge->from;
+	if (edge->action_offset != 0)
+	    onibi_gir_verification_error("edge payload is not canonical");
+	if (view->states->entries[edge->from].opcode == ONIBI_G_ACCEPT)
+	    onibi_gir_verification_error("accept state has an outgoing edge");
+	onibi_gir_verify_action_vector(view, owner, &edge->actions, 0,
+				       edge->from, edge->to);
+	onibi_gir_verify_edge_index_insert(view, owner, edge, i, 0);
+    }
+
+    int root_started = 0;
+    for (size_t i = 0; i < view->start_edges->count; i++) {
+	const OnibiGirEdgeEntry *edge = &view->start_edges->entries[i];
+	if (edge->from != -1 || edge->to < 0 ||
+	    (size_t)edge->to >= view->states->count || edge->action_offset != 0)
+	    onibi_gir_verification_error("start edge is invalid");
+	if (edge->to == view->root_entry) root_started = 1;
+	onibi_gir_verify_action_vector(view, owner, &edge->actions, 1,
+				       edge->from, edge->to);
+	onibi_gir_verify_edge_index_insert(view, owner, edge, i, 1);
+    }
+    if (!root_started)
+	onibi_gir_verification_error("root entry has no start edge");
+
+    if (view->accept < 0 || view->root_entry < 0 ||
+	(size_t)view->accept >= view->states->count ||
+	(size_t)view->root_entry >= view->states->count ||
+	view->states->entries[view->accept].opcode != ONIBI_G_ACCEPT)
+	onibi_gir_verification_error("accept state is invalid");
+    for (size_t i = 0; i < view->subprograms->count; i++) {
+	const OnibiRSeqSubprogramEntry *subprogram =
+	    &view->subprograms->entries[i];
+	if (subprogram->entry >= view->states->count ||
+	    subprogram->accept >= view->states->count ||
+	    view->states->entries[subprogram->accept].opcode !=
+		ONIBI_G_ACCEPT ||
+	    (subprogram->flags != 0 &&
+	     subprogram->flags != ONIBI_SUBPROGRAM_ATOMIC &&
+	     subprogram->flags != ONIBI_SUBPROGRAM_ABSENT))
+	    onibi_gir_verification_error("subprogram descriptor is invalid");
+	if (i == 0 && (subprogram->entry != (OnibiStateId)view->root_entry ||
+		       subprogram->accept != (OnibiStateId)view->accept ||
+		       subprogram->flags != 0))
+	    onibi_gir_verification_error("root subprogram is invalid");
+	if (i != 0 && !owner->physical_subprogram_references[i])
+	    onibi_gir_verification_error("subprogram reference is missing");
+    }
+    for (size_t i = view->subprograms->count;
+	 i < view->semantic_subprogram_count; i++)
+	if (!owner->semantic_subprogram_references[i])
+	    onibi_gir_verification_error("lookaround subprogram is missing");
+
+    for (size_t i = 0; i < view->progress_slots->count; i++) {
+	uint32_t slot = view->progress_slots->entries[i];
+	if (owner->progress_slot_states[slot] != 2)
+	    onibi_gir_verification_error("repeat progress is invalid");
+    }
+    return Qnil;
+}
+
+static VALUE
+onibi_gir_verify_ensure(VALUE opaque)
+{
+    OnibiGIRVerifyCall *call = (OnibiGIRVerifyCall *)(uintptr_t)opaque;
+    onibi_allocation_owner_cleanup(&call->owner.allocations);
+    return Qnil;
+}
+
+static void
+onibi_gir_verify(const OnibiGIRView *view)
+{
+    OnibiGIRVerifyCall call;
+    memset(&call, 0, sizeof(call));
+    call.view = view;
+    onibi_allocation_owner_init(&call.owner.allocations, NULL);
+    onibi_allocation_owner_set_phase(&call.owner.allocations, 1);
+    (void)rb_ensure(onibi_gir_verify_body, (VALUE)(uintptr_t)&call,
+		    onibi_gir_verify_ensure, (VALUE)(uintptr_t)&call);
 }
 
 static uint8_t
@@ -678,16 +1192,43 @@ onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
 static OnibiGAction
 onibi_capture_test_action(long slot, int set)
 {
+    if (slot < 0 || (uint64_t)slot >= ONIBI_GIR_MAX_CAPTURE_COUNT)
+	rb_raise(eRegexpError,
+		 "capture reference exceeds the GIR operand limit");
     return (OnibiGAction){
 	ONIBI_GA_TEST_CAPTURE, set ? 1 : 0, 0, 1, (uint16_t)slot, 0, 0, 0, 0};
+}
+
+static uint16_t
+onibi_capture_boundary_slot(long capture_id, int close)
+{
+    if (capture_id < 0 || (uint64_t)capture_id >= ONIBI_GIR_MAX_CAPTURE_COUNT)
+	rb_raise(eRegexpError, "capture slot exceeds the GIR operand limit");
+    return (uint16_t)((uint32_t)capture_id * 2U + (close ? 1U : 0U));
+}
+
+static long
+onibi_gir_allocate_counter_slot(onibi_gir_builder_t *builder, int progress)
+{
+    if (builder->counter_count < 0 ||
+	(uint64_t)builder->counter_count >= ONIBI_GIR_MAX_COUNTER_COUNT)
+	rb_raise(eRegexpError, "counter count exceeds the GIR operand limit");
+    long slot = builder->counter_count++;
+    if (progress)
+	onibi_id_vector_push(&builder->progress_slots, (OnibiStateId)slot);
+    return slot;
 }
 
 static OnibiGAction
 onibi_counter_action(OnibiGActionOp code, long slot, int has_limit, long limit)
 {
+    if (slot < 0 || (uint64_t)slot >= ONIBI_GIR_MAX_COUNTER_COUNT)
+	rb_raise(eRegexpError, "counter slot exceeds the GIR operand limit");
     uint32_t value =
 	code == ONIBI_GA_COUNTER_INIT ? 1U : (has_limit ? (uint32_t)limit : 0U);
-    return (OnibiGAction){code, 0, 0, 1, (uint16_t)slot, 0, 0, 1, value};
+    uint8_t has_arg32 = code == ONIBI_GA_COUNTER_INIT || has_limit;
+    return (OnibiGAction){code, 0, 0,	      1,    (uint16_t)slot,
+			  0,	0, has_arg32, value};
 }
 
 static int
@@ -708,33 +1249,5 @@ onibi_c_ast_has_capture(const OnibiAstArena *arena, OnibiAstId id)
 	return 1;
     for (size_t i = 0; i < node->child_count; i++)
 	if (onibi_c_ast_has_capture(arena, node->children[i])) return 1;
-    return 0;
-}
-
-static int
-onibi_c_ast_has_subroutine_name(const OnibiAstArena *arena, OnibiAstId id,
-				OnibiTokenSlice name)
-{
-    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
-    if (node->kind == ONIBI_AST_SUBROUTINE && node->name.present &&
-	name.present && node->name.length == name.length &&
-	memcmp(arena->bytes + node->name.offset, arena->bytes + name.offset,
-	       name.length) == 0)
-	return 1;
-    if (node->body != ONIBI_AST_NONE &&
-	onibi_c_ast_has_subroutine_name(arena, node->body, name))
-	return 1;
-    if (node->atom != ONIBI_AST_NONE &&
-	onibi_c_ast_has_subroutine_name(arena, node->atom, name))
-	return 1;
-    if (node->yes != ONIBI_AST_NONE &&
-	onibi_c_ast_has_subroutine_name(arena, node->yes, name))
-	return 1;
-    if (node->no != ONIBI_AST_NONE &&
-	onibi_c_ast_has_subroutine_name(arena, node->no, name))
-	return 1;
-    for (size_t i = 0; i < node->child_count; i++)
-	if (onibi_c_ast_has_subroutine_name(arena, node->children[i], name))
-	    return 1;
     return 0;
 }

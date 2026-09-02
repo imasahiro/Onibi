@@ -14,6 +14,10 @@ typedef uint32_t OnibiSubprogramId;
 typedef uint32_t OnibiTagEventId;
 typedef uint32_t OnibiCallFrameId;
 
+/* GIR v1 uses 16-bit action operands.  Capture boundaries need two slots. */
+#define ONIBI_GIR_MAX_CAPTURE_COUNT UINT32_C(32768)
+#define ONIBI_GIR_MAX_COUNTER_COUNT UINT32_C(65536)
+
 /* Immutable entry metadata for a compiled subprogram. */
 typedef struct {
     OnibiStateId entry;

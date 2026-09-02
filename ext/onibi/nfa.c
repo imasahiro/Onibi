@@ -156,7 +156,8 @@ onibi_nfa_actions_equal(const OnibiGActionVector *left,
 	    a->positive != b->positive || a->has_slot != b->has_slot ||
 	    a->slot != b->slot || a->has_assert_kind != b->has_assert_kind ||
 	    a->assert_kind != b->assert_kind || a->has_arg32 != b->has_arg32 ||
-	    a->arg32 != b->arg32)
+	    a->arg32 != b->arg32 || a->has_subprogram != b->has_subprogram ||
+	    a->subprogram_id != b->subprogram_id)
 	    return 0;
     }
     return 1;
@@ -394,6 +395,10 @@ onibi_nfa_edge_key_hash(long destination, const OnibiGActionVector *actions)
 				    sizeof(action->has_arg32));
 	hash =
 	    onibi_nfa_hash_bytes(hash, &action->arg32, sizeof(action->arg32));
+	hash = onibi_nfa_hash_bytes(hash, &action->has_subprogram,
+				    sizeof(action->has_subprogram));
+	hash = onibi_nfa_hash_bytes(hash, &action->subprogram_id,
+				    sizeof(action->subprogram_id));
     }
     return hash;
 }
@@ -884,6 +889,9 @@ onibi_nfa_action_program_diagnostics(const OnibiGActionVector *actions)
 	if (action->has_arg32)
 	    rb_hash_aset(record, ID2SYM(rb_intern("arg32")),
 			 UINT2NUM(action->arg32));
+	if (action->has_subprogram)
+	    rb_hash_aset(record, ID2SYM(rb_intern("subprogram_id")),
+			 UINT2NUM(action->subprogram_id));
 	rb_hash_aset(record, ID2SYM(rb_intern("set")),
 		     action->set ? Qtrue : Qfalse);
 	rb_hash_aset(record, ID2SYM(rb_intern("positive")),

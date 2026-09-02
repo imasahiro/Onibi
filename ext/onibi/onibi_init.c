@@ -181,6 +181,8 @@ Init_onibi(void)
 			     onibi_compile_failure_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_nfa_diagnostics__",
 			     onibi_pre_elimination_nfa_diagnostics, 0);
+    rb_define_private_method(cRegexp, "__onibi_gir_verifier_diagnostics__",
+			     onibi_gir_verifier_diagnostics, 1);
     rb_define_const(cRegexp, "IGNORECASE", INT2NUM(1));
     rb_define_const(cRegexp, "EXTENDED", INT2NUM(2));
     rb_define_const(cRegexp, "MULTILINE", INT2NUM(4));

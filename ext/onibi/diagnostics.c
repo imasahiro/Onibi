@@ -236,6 +236,166 @@ typedef struct {
 } OnibiCompileFailureDiagnostic;
 
 static VALUE
+onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
+{
+    (void)self;
+    ID scenario = rb_to_id(scenario_value);
+    OnibiGirStateEntry states[4];
+    OnibiGirEdgeEntry edges[2];
+    OnibiGirEdgeEntry starts[1];
+    OnibiRSeqSubprogramEntry subprograms[2];
+    OnibiGAction actions[2];
+    OnibiStateId progress_slots[1] = {0};
+    memset(states, 0, sizeof(states));
+    memset(edges, 0, sizeof(edges));
+    memset(starts, 0, sizeof(starts));
+    memset(subprograms, 0, sizeof(subprograms));
+    memset(actions, 0, sizeof(actions));
+    states[0].id = 0;
+    states[0].opcode = ONIBI_G_CHAR;
+    states[0].value = 'a';
+    states[0].literal[0] = 'a';
+    states[0].literal_length = 1;
+    states[1].id = 1;
+    states[1].opcode = ONIBI_G_CHAR;
+    states[1].value = 'b';
+    states[1].literal[0] = 'b';
+    states[1].literal_length = 1;
+    states[2].id = 2;
+    states[2].opcode = ONIBI_G_ACCEPT;
+    states[3].id = 3;
+    states[3].opcode = ONIBI_G_ACCEPT;
+    edges[0].from = 0;
+    edges[0].to = 1;
+    edges[1].from = 1;
+    edges[1].to = 3;
+    starts[0].from = -1;
+    starts[0].to = 0;
+    subprograms[0] = (OnibiRSeqSubprogramEntry){0, 3, 0};
+    OnibiGirStateVector state_vector = {states, 4, 4, NULL};
+    OnibiGirEdgeVector edge_vector = {edges, 2, 2, NULL};
+    OnibiGirEdgeVector start_vector = {starts, 1, 1, NULL};
+    OnibiRSeqSubprogramVector subprogram_vector = {subprograms, 1, 2, NULL};
+    OnibiIdVector progress_vector = {progress_slots, 0, 1, NULL};
+    OnibiGIRView view = {&state_vector,
+			 &edge_vector,
+			 &start_vector,
+			 &subprogram_vector,
+			 &progress_vector,
+			 4,
+			 1,
+			 1,
+			 3,
+			 0,
+			 1,
+			 0};
+
+    if (scenario == rb_intern("state_ids"))
+	states[1].id = 2;
+    else if (scenario == rb_intern("state_opcode_payload"))
+	states[0].literal_length = 0;
+    else if (scenario == rb_intern("edge_state_range"))
+	edges[0].to = 4;
+    else if (scenario == rb_intern("edge_order")) {
+	edges[0].from = 1;
+	edges[0].to = 3;
+	edges[1].from = 0;
+	edges[1].to = 1;
+    }
+    else if (scenario == rb_intern("action_opcode")) {
+	actions[0].code = (OnibiGActionOp)99;
+	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("action_opcode_payload")) {
+	actions[0] = (OnibiGAction){ONIBI_GA_MATCH_RESET, 0, 0, 1, 0};
+	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("capture_slot")) {
+	actions[0] = (OnibiGAction){ONIBI_GA_CAPTURE_CLOSE, 0, 0, 1, 2};
+	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("capture_close_unused_payload")) {
+	actions[0] = (OnibiGAction){ONIBI_GA_CAPTURE_CLOSE, 1, 0, 1, 1};
+	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("counter_slot")) {
+	actions[0] =
+	    (OnibiGAction){ONIBI_GA_COUNTER_INIT, 0, 0, 1, 1, 0, 0, 1, 0};
+	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("capture_count"))
+	view.capture_count = (long)ONIBI_GIR_MAX_CAPTURE_COUNT + 1;
+    else if (scenario == rb_intern("counter_count"))
+	view.counter_count = (long)ONIBI_GIR_MAX_COUNTER_COUNT + 1;
+    else if (scenario == rb_intern("subprogram_reference")) {
+	states[0].opcode = ONIBI_G_CALL;
+	states[0].value = 1;
+	states[0].literal[0] = 0;
+	states[0].literal_length = 0;
+    }
+    else if (scenario == rb_intern("semantic_capture_reference")) {
+	states[0].opcode = ONIBI_G_BACKREF;
+	states[0].value = 1;
+	states[0].literal[0] = 0;
+	states[0].literal_length = 0;
+    }
+    else if (scenario == rb_intern("repeat_progress"))
+	progress_vector.count = 1;
+    else if (scenario == rb_intern("start_edge"))
+	starts[0].from = 0;
+    else if (scenario == rb_intern("accept_state")) {
+	edges[1].from = 3;
+	edges[1].to = 0;
+    }
+    else if (scenario == rb_intern("lookaround_subprogram")) {
+	actions[0] = (OnibiGAction){ONIBI_GA_ASSERT_POSITION, 0, 1, 0, 0, 1,
+				    ONIBI_RAP_LOOKAHEAD,      1, 1, 1, 1};
+	starts[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("atomic_subprogram") ||
+	     scenario == rb_intern("absence_subprogram")) {
+	int atomic = scenario == rb_intern("atomic_subprogram");
+	states[0].opcode = atomic ? ONIBI_G_ATOMIC : ONIBI_G_ABSENT;
+	states[0].value = 1;
+	states[0].literal[0] = 0;
+	states[0].literal_length = 0;
+	subprograms[1] = (OnibiRSeqSubprogramEntry){1, 2, 0};
+	subprogram_vector.count = 2;
+	view.semantic_subprogram_count = 2;
+    }
+    else if (scenario == rb_intern("resolved_options"))
+	view.options = UINT32_C(0x80000000);
+    else if (scenario == rb_intern("physical_limits")) {
+	view.capture_count = ONIBI_GIR_MAX_CAPTURE_COUNT;
+	view.counter_count = ONIBI_GIR_MAX_COUNTER_COUNT;
+	actions[0] = (OnibiGAction){
+	    ONIBI_GA_CAPTURE_CLOSE, 0, 0, 1,
+	    onibi_capture_boundary_slot(ONIBI_GIR_MAX_CAPTURE_COUNT - 1, 1)};
+	actions[1] = onibi_counter_action(
+	    ONIBI_GA_COUNTER_INIT, ONIBI_GIR_MAX_COUNTER_COUNT - 1, 1, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 2, 2, NULL};
+    }
+    else if (scenario == rb_intern("capture_operand_overflow")) {
+	(void)onibi_capture_boundary_slot(ONIBI_GIR_MAX_CAPTURE_COUNT, 0);
+    }
+    else if (scenario == rb_intern("counter_operand_overflow")) {
+	(void)onibi_counter_action(ONIBI_GA_COUNTER_INIT,
+				   ONIBI_GIR_MAX_COUNTER_COUNT, 1, 0);
+    }
+    else {
+	rb_raise(rb_eArgError, "unknown GIR verifier diagnostic");
+    }
+
+    onibi_gir_verify(&view);
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("capture_slot")),
+		 UINT2NUM(actions[0].slot));
+    rb_hash_aset(result, ID2SYM(rb_intern("counter_slot")),
+		 UINT2NUM(actions[1].slot));
+    return result;
+}
+
+static VALUE
 onibi_compile_failure_diagnostic_call(VALUE opaque)
 {
     OnibiCompileFailureDiagnostic *call =
