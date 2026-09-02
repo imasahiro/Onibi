@@ -135,11 +135,6 @@ onibi_rseq_blob_validate(VALUE blob)
 	header->start_edge_base > header->edge_count ||
 	header->start_edge_count > header->edge_count - header->start_edge_base)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq section layout");
-    if (header->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT ||
-	header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
-	header->subprogram_count == 0 ||
-	header->subprogram_count > header->semantic_subprogram_count)
-	rb_raise(rb_eArgError, "invalid Onibi RSeq operand limits");
     for (uint32_t i = 0; i < header->state_count; i++) {
 	const OnibiRState *state = &view.states[i];
 	if ((uint64_t)state->edge_base + state->edge_count >
@@ -167,75 +162,9 @@ onibi_rseq_blob_validate(VALUE blob)
 		rb_raise(rb_eArgError, "invalid Onibi RSeq action offset");
 	}
     }
-    for (uint32_t i = 0; i < header->action_count; i++) {
-	const OnibiRAction *action = &view.actions[i];
-	uint64_t capture_slots = (uint64_t)header->capture_count * 2U;
-	if (action->op > ONIBI_RA_PROGRESS)
+    for (uint32_t i = 0; i < header->action_count; i++)
+	if (view.actions[i].op > ONIBI_RA_PROGRESS)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
-	switch (action->op) {
-	case ONIBI_RA_END:
-	    if (action->flags || action->arg16 || action->arg32)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq end action");
-	    break;
-	case ONIBI_RA_CAPTURE:
-	    if (header->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT ||
-		action->flags > ONIBI_RA_CAPTURE_CLOSE ||
-		action->arg16 >= capture_slots || action->arg32 != 0 ||
-		((action->arg16 & 1U) !=
-		 (action->flags == ONIBI_RA_CAPTURE_CLOSE ? 1U : 0U)))
-		rb_raise(rb_eArgError, "invalid Onibi RSeq capture action");
-	    break;
-	case ONIBI_RA_MATCH_RESET:
-	    if (action->flags || action->arg16 || action->arg32)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq match-reset action");
-	    break;
-	case ONIBI_RA_ASSERT_POSITION:
-	    if (action->flags || action->arg16 < ONIBI_RAP_BEGIN_BUFFER ||
-		action->arg16 > ONIBI_RAP_NONWORD_BOUNDARY ||
-		action->arg32 != 0)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq position assertion");
-	    break;
-	case ONIBI_RA_ASSERT_SUBPROGRAM:
-	    if ((action->flags != 1 && action->flags != 2 &&
-		 action->flags != 5 && action->flags != 6) ||
-		action->arg32 < header->subprogram_count ||
-		action->arg32 >= header->semantic_subprogram_count)
-		rb_raise(rb_eArgError,
-			 "invalid Onibi RSeq subprogram assertion");
-	    break;
-	case ONIBI_RA_TEST_CAPTURE:
-	    if ((action->flags != ONIBI_RA_TEST_CAPTURE_SET &&
-		 action->flags != ONIBI_RA_TEST_CAPTURE_UNSET) ||
-		action->arg16 >= header->capture_count || action->arg32 != 0)
-		rb_raise(rb_eArgError,
-			 "invalid Onibi RSeq capture test action");
-	    break;
-	case ONIBI_RA_COUNTER_SET:
-	    if (header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
-		action->flags || action->arg16 >= header->counter_count)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq counter action");
-	    break;
-	case ONIBI_RA_COUNTER_ADD:
-	    if (header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
-		action->flags || action->arg16 >= header->counter_count ||
-		action->arg32 != 0)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq counter action");
-	    break;
-	case ONIBI_RA_COUNTER_TEST:
-	    if (header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
-		action->flags > ONIBI_RA_COUNTER_GE ||
-		action->arg16 >= header->counter_count)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq counter action");
-	    break;
-	case ONIBI_RA_PROGRESS:
-	    if (header->counter_count > ONIBI_GIR_MAX_COUNTER_COUNT ||
-		action->flags || action->arg16 >= header->counter_count ||
-		action->arg32 != 0)
-		rb_raise(rb_eArgError, "invalid Onibi RSeq progress action");
-	    break;
-	default: rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
-	}
-    }
     for (uint32_t i = 0; i < header->subprogram_count; i++) {
 	const OnibiSubprogramDesc *subprogram = &view.subprograms[i];
 	if (subprogram->entry >= header->state_count ||

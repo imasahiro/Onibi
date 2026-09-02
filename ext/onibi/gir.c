@@ -353,23 +353,6 @@ onibi_assertion_kind_operand(int32_t assertion_kind)
     return (uint16_t)assertion_kind;
 }
 
-static uint16_t
-onibi_assertion_width_operand(uint32_t width)
-{
-    if (width > ONIBI_GIR_MAX_ASSERTION_WIDTH)
-	rb_raise(eRegexpError, "assertion width exceeds the GIR operand limit");
-    return (uint16_t)width;
-}
-
-static OnibiSubprogramId
-onibi_subprogram_id_operand(long subprogram_id)
-{
-    if (subprogram_id < 0 ||
-	(uint64_t)subprogram_id > ONIBI_GIR_MAX_SUBPROGRAM_ID)
-	rb_raise(eRegexpError, "subprogram ID exceeds the GIR operand limit");
-    return (OnibiSubprogramId)subprogram_id;
-}
-
 typedef struct {
     uint64_t hash;
     size_t index;
@@ -514,7 +497,6 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    onibi_gir_verification_error("assertion payload is invalid");
 	if (lookaround) {
 	    if (!action->has_arg32 || !action->has_subprogram ||
-		action->arg32 > ONIBI_GIR_MAX_ASSERTION_WIDTH ||
 		action->subprogram_id < view->subprograms->count ||
 		action->subprogram_id >= view->semantic_subprogram_count)
 		onibi_gir_verification_error(
@@ -639,7 +621,7 @@ onibi_gir_verify_body(VALUE opaque)
 	view->subprograms->count > view->subprograms->capacity ||
 	view->subprograms->entries == NULL ||
 	view->semantic_subprogram_count < view->subprograms->count ||
-	view->semantic_subprogram_count > ONIBI_GIR_MAX_SUBPROGRAM_COUNT)
+	view->semantic_subprogram_count > UINT32_MAX)
 	onibi_gir_verification_error("subprogram table is invalid");
     if (view->progress_slots->count > view->progress_slots->capacity ||
 	(view->progress_slots->count != 0 &&

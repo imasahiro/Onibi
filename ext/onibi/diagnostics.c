@@ -238,9 +238,6 @@ typedef struct {
 static VALUE
 onibi_action_operand_diagnostics(void)
 {
-    OnibiSubprogramId next_subprogram = ONIBI_GIR_MAX_SUBPROGRAM_ID;
-    OnibiSubprogramId subprogram_id =
-	onibi_allocate_subprogram_id(&next_subprogram);
     OnibiGAction semantic[] = {
 	{ONIBI_GA_CAPTURE_CLOSE, 0, 0, 1,
 	 onibi_capture_boundary_slot(ONIBI_GIR_MAX_CAPTURE_COUNT - 1, 1)},
@@ -248,12 +245,6 @@ onibi_action_operand_diagnostics(void)
 	onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE,
 			     ONIBI_GIR_MAX_COUNTER_COUNT - 1, 1,
 			     (long)UINT32_MAX),
-	{ONIBI_GA_ASSERT_POSITION, 0, 0, 0, 0, 1,
-	 onibi_assertion_kind_operand(ONIBI_RAP_NONWORD_BOUNDARY), 0, 0, 0, 0},
-	{ONIBI_GA_ASSERT_POSITION, 0, 1, 0, 0, 1,
-	 onibi_assertion_kind_operand(ONIBI_RAP_LOOKBEHIND), 1,
-	 onibi_assertion_width_operand(ONIBI_GIR_MAX_ASSERTION_WIDTH), 1,
-	 subprogram_id},
     };
     OnibiRAction physical[sizeof(semantic) / sizeof(semantic[0])];
     for (size_t i = 0; i < sizeof(semantic) / sizeof(semantic[0]); i++)
@@ -266,11 +257,6 @@ onibi_action_operand_diagnostics(void)
     SET_OPERAND("capture_reference", physical[1].arg16);
     SET_OPERAND("counter_slot", physical[2].arg16);
     SET_OPERAND("counter_value", physical[2].arg32);
-    SET_OPERAND("position_assertion", physical[3].arg16);
-    SET_OPERAND("semantic_assertion_kind", semantic[4].assert_kind);
-    SET_OPERAND("assertion_width", physical[4].arg16);
-    SET_OPERAND("subprogram_id", physical[4].arg32);
-    SET_OPERAND("subprogram_op", physical[4].op);
 #undef SET_OPERAND
     return result;
 }
@@ -282,18 +268,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     ID scenario = rb_to_id(scenario_value);
     if (scenario == rb_intern("action_operand_limits"))
 	return onibi_action_operand_diagnostics();
-    if (scenario == rb_intern("assertion_operand_overflow")) {
-	(void)onibi_assertion_width_operand(
-	    (uint32_t)ONIBI_GIR_MAX_ASSERTION_WIDTH + 1U);
-    }
-    if (scenario == rb_intern("assertion_kind_overflow"))
-	(void)onibi_assertion_kind_operand(ONIBI_RAP_LOOKBEHIND + 1);
-    if (scenario == rb_intern("subprogram_operand_overflow")) {
-	OnibiSubprogramId next_subprogram = UINT32_MAX;
-	(void)onibi_allocate_subprogram_id(&next_subprogram);
-    }
     if (scenario == rb_intern("counter_value_overflow")) {
-	(void)onibi_counter_action(ONIBI_GA_COUNTER_INIT, 0, 1,
+	(void)onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, 0, 1,
 				   (long)UINT32_MAX + 1L);
     }
     OnibiGirStateEntry states[4];

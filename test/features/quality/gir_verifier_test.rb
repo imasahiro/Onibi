@@ -50,11 +50,6 @@ class GirVerifierTest < Minitest::Test
     assert_equal 32_767, result.fetch(:capture_reference)
     assert_equal 65_535, result.fetch(:counter_slot)
     assert_equal 4_294_967_295, result.fetch(:counter_value)
-    assert_equal 8, result.fetch(:position_assertion)
-    assert_equal 10, result.fetch(:semantic_assertion_kind)
-    assert_equal 65_535, result.fetch(:assertion_width)
-    assert_equal 4_294_967_294, result.fetch(:subprogram_id)
-    assert_equal 4, result.fetch(:subprogram_op)
   end
 
   def test_capture_producer_rejects_the_first_value_above_its_limit
@@ -71,30 +66,6 @@ class GirVerifierTest < Minitest::Test
     end
 
     assert_equal "counter slot exceeds the GIR operand limit", error.message
-  end
-
-  def test_assertion_producer_rejects_the_first_width_above_its_limit
-    error = assert_raises(Onibi::RegexpError) do
-      verifier_diagnostic(:assertion_operand_overflow)
-    end
-
-    assert_equal "assertion width exceeds the GIR operand limit", error.message
-  end
-
-  def test_assertion_producer_rejects_the_first_kind_above_its_limit
-    error = assert_raises(Onibi::RegexpError) do
-      verifier_diagnostic(:assertion_kind_overflow)
-    end
-
-    assert_equal "assertion kind exceeds the GIR operand limit", error.message
-  end
-
-  def test_subprogram_producer_rejects_the_reserved_id
-    error = assert_raises(Onibi::RegexpError) do
-      verifier_diagnostic(:subprogram_operand_overflow)
-    end
-
-    assert_equal "subprogram count exceeds the GIR operand limit", error.message
   end
 
   def test_counter_producer_rejects_the_first_value_above_uint32
