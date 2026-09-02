@@ -17,9 +17,19 @@ typedef struct {
     long accept;
     long capture_count;
     long counter_count;
+    uint32_t semantic_subprogram_count;
     int options;
     VerifiedGIRAnalysis analysis;
 } OnibiCompiled;
+
+static OnibiSubprogramId
+onibi_allocate_subprogram_id(uint32_t *next_subprogram)
+{
+    if (*next_subprogram > ONIBI_GIR_MAX_SUBPROGRAM_ID)
+	rb_raise(eRegexpError,
+		 "subprogram count exceeds the GIR operand limit");
+    return (*next_subprogram)++;
+}
 
 /* A compile owner contains every mutable allocation that can outlive one
  * pass.  The owner is stack scoped and is released by rb_ensure. */
@@ -403,7 +413,7 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
 	if (semantic->subprogram_id == UINT32_MAX) {
 	    if (parsed->semantics.nodes[target].subprogram_id == UINT32_MAX)
 		parsed->semantics.nodes[target].subprogram_id =
-		    (*next_subprogram)++;
+		    onibi_allocate_subprogram_id(next_subprogram);
 	    semantic->subprogram_id =
 		parsed->semantics.nodes[target].subprogram_id;
 	    if (number == 0) {
@@ -416,7 +426,7 @@ onibi_resolve_semantic_node(OnibiParsed *parsed, OnibiAstId id,
     }
     else if (node->kind == ONIBI_AST_ATOMIC ||
 	     node->kind == ONIBI_AST_ABSENCE) {
-	semantic->subprogram_id = (*next_subprogram)++;
+	semantic->subprogram_id = onibi_allocate_subprogram_id(next_subprogram);
     }
     else if (node->kind == ONIBI_AST_CONDITIONAL) {
 	OnibiTokenSlice condition = node->name;
@@ -491,7 +501,7 @@ onibi_assign_lookaround_subprograms(OnibiParsed *parsed,
 	if (!(node->flags & ONIBI_SEMANTIC_RESOLVED)) continue;
 	if (node->kind == ONIBI_AST_LOOKAHEAD ||
 	    node->kind == ONIBI_AST_LOOKBEHIND)
-	    node->subprogram_id = (*next_subprogram)++;
+	    node->subprogram_id = onibi_allocate_subprogram_id(next_subprogram);
     }
 }
 
@@ -1248,7 +1258,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    resolved_node->reference_target, resolved_node->subprogram_id,
 	    builder);
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_CALL, (uint32_t)subprogram_id, 0);
+	onibi_nfa_state(builder, id, ONIBI_G_CALL,
+			onibi_subprogram_id_operand(subprogram_id), 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -1268,15 +1279,16 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
 	    rb_raise(eRegexpError, "unnormalized assertion");
-	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
-			       0,
-			       0,
-			       0,
-			       0,
-			       1,
-			       (uint16_t)resolved_node->assertion_kind,
-			       0,
-			       0};
+	OnibiGAction action = {
+	    ONIBI_GA_ASSERT_POSITION,
+	    0,
+	    0,
+	    0,
+	    0,
+	    1,
+	    onibi_assertion_kind_operand(resolved_node->assertion_kind),
+	    0,
+	    0};
 	onibi_g_action_vector_push(&result.pending_actions, action);
 	return result;
     }
@@ -1340,8 +1352,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    c_node->body, resolved_node->subprogram_id, builder,
 	    ONIBI_SUBPROGRAM_ATOMIC);
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_ATOMIC, (uint32_t)subprogram_id,
-			0);
+	onibi_nfa_state(builder, id, ONIBI_G_ATOMIC,
+			onibi_subprogram_id_operand(subprogram_id), 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -1357,8 +1369,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    c_node->body, resolved_node->subprogram_id, builder,
 	    ONIBI_SUBPROGRAM_ABSENT);
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_ABSENT, (uint32_t)subprogram_id,
-			0);
+	onibi_nfa_state(builder, id, ONIBI_G_ABSENT,
+			onibi_subprogram_id_operand(subprogram_id), 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -1382,6 +1394,9 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    onibi_ast_node_const(builder->ast, c_node->body);
 	if (body->kind != ONIBI_AST_SEQUENCE)
 	    rb_raise(eRegexpError, "lookaround body has no literal sequence");
+	if (body->child_count > ONIBI_GIR_MAX_ASSERTION_WIDTH)
+	    rb_raise(eRegexpError,
+		     "assertion width exceeds the GIR operand limit");
 	uint32_t predicate_count = 0;
 	for (size_t i = 0; i < body->child_count; i++) {
 	    OnibiAstId child_id = body->children[i];
@@ -1421,18 +1436,18 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	}
 	if (resolved_node == NULL || resolved_node->assertion_kind == 0)
 	    rb_raise(eRegexpError, "unnormalized lookaround assertion");
-	OnibiGAction action = {ONIBI_GA_ASSERT_POSITION,
-			       0,
-			       (c_node->flags & ONIBI_AST_NODE_POSITIVE) ? 1
-									 : 0,
-			       0,
-			       0,
-			       1,
-			       (uint16_t)resolved_node->assertion_kind,
-			       1,
-			       predicate_count,
-			       1,
-			       resolved_node->subprogram_id};
+	OnibiGAction action = {
+	    ONIBI_GA_ASSERT_POSITION,
+	    0,
+	    (c_node->flags & ONIBI_AST_NODE_POSITIVE) ? 1 : 0,
+	    0,
+	    0,
+	    1,
+	    onibi_assertion_kind_operand(resolved_node->assertion_kind),
+	    1,
+	    onibi_assertion_width_operand(predicate_count),
+	    1,
+	    resolved_node->subprogram_id};
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	result.nullable = 1;
 	onibi_g_action_vector_push(&result.start_actions, action);
@@ -2069,6 +2084,11 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->accept = accept;
     compiled_result->capture_count = builder->capture_count;
     compiled_result->counter_count = analysis.counter_count;
+    if (builder->semantic_subprogram_count > ONIBI_GIR_MAX_SUBPROGRAM_COUNT)
+	rb_raise(eRegexpError,
+		 "subprogram count exceeds the GIR operand limit");
+    compiled_result->semantic_subprogram_count =
+	(uint32_t)builder->semantic_subprogram_count;
     compiled_result->analysis = analysis;
     compiled_result->options = parsed_options;
     return result;

@@ -14,9 +14,14 @@ typedef uint32_t OnibiSubprogramId;
 typedef uint32_t OnibiTagEventId;
 typedef uint32_t OnibiCallFrameId;
 
-/* GIR v1 uses 16-bit action operands.  Capture boundaries need two slots. */
+/* GIR v1 uses checked 16-bit action slot and assertion-width operands.
+   Capture boundaries need two slots.  UINT32_MAX remains the invalid
+   subprogram-ID sentinel. */
 #define ONIBI_GIR_MAX_CAPTURE_COUNT UINT32_C(32768)
 #define ONIBI_GIR_MAX_COUNTER_COUNT UINT32_C(65536)
+#define ONIBI_GIR_MAX_ASSERTION_WIDTH UINT16_MAX
+#define ONIBI_GIR_MAX_SUBPROGRAM_ID (UINT32_MAX - UINT32_C(1))
+#define ONIBI_GIR_MAX_SUBPROGRAM_COUNT UINT32_MAX
 
 /* Immutable entry metadata for a compiled subprogram. */
 typedef struct {
@@ -248,6 +253,7 @@ typedef struct {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t semantic_subprogram_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;

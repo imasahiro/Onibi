@@ -943,6 +943,14 @@ Action execution is transactional.
 
 If one predicate in an action program fails, the engine discards all modifications from that action program.
 
+Each candidate thread owns its action transaction.
+
+Action operands identify capture, counter, assertion, and subprogram state.
+
+They do not identify shared mutable executor state.
+
+RSeq stays immutable during the transaction.
+
 ---
 
 # 21. Semantic Action Operations
@@ -1007,6 +1015,37 @@ Size:
 8 bytes
 ```
 
+RSeq v1 uses checked 16-bit action slots and assertion widths.
+
+It does not widen the physical action record.
+
+The verifier applies these exact semantic limits:
+
+```text
+capture count                    0..32768
+capture boundary slot            0..65535
+capture reference                0..32767
+counter count                    0..65536
+counter or progress slot         0..65535
+assertion kind                   1..10
+lookaround width                 0..65535
+subprogram count                 1..4294967295
+subprogram ID                    0..4294967294
+counter value                    0..4294967295
+```
+
+`UINT32_MAX` is the invalid subprogram-ID sentinel.
+
+The physical `arg16` range is `0..65535`.
+
+The physical `arg32` range is `0..4294967295`.
+
+The compiler checks each value before a narrowing conversion.
+
+The verifier rejects values outside the semantic range.
+
+Unused operands and flags are zero.
+
 The RSeq action operations are:
 
 ```c
@@ -1031,7 +1070,9 @@ enum OnibiRActionOp {
 
 `RA_CAPTURE.flags` selects open or close.
 
-`RA_ASSERT_POSITION.arg16` selects the position predicate.
+`RA_CAPTURE.arg16` stores the capture boundary slot.
+
+`RA_ASSERT_POSITION.arg16` stores a position predicate from `1..8`.
 
 `RA_ASSERT_SUBPROGRAM.flags` selects:
 
@@ -1042,7 +1083,25 @@ forward
 backward
 ```
 
+`RA_ASSERT_SUBPROGRAM.arg16` stores the fixed lookaround width.
+
+`RA_ASSERT_SUBPROGRAM.arg32` stores the semantic subprogram ID.
+
+This ID is not less than `subprogram_count`.
+
+This ID is less than `semantic_subprogram_count`.
+
 `RA_TEST_CAPTURE.flags` selects set or unset.
+
+`RA_TEST_CAPTURE.arg16` stores the capture reference.
+
+Counter actions use `arg16` for the counter slot.
+
+Counter set and test actions use `arg32` for the counter value.
+
+`RA_PROGRESS.arg16` stores the progress slot.
+
+The serializer preserves all accepted semantic operands in these fields.
 
 This compression reduces RSeq size without changing G-IR semantics.
 
@@ -1766,6 +1825,7 @@ struct OnibiRSeqHeader {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t semantic_subprogram_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
@@ -1796,6 +1856,18 @@ All sections must have four-byte alignment.
 The blob must be smaller than 4 GiB.
 
 The compiler must raise `RegexpError` if representation limits are exceeded.
+
+RSeq v1 also uses the action limits in section 22.
+
+The first invalid capture count is `32769`.
+
+The first invalid counter count is `65537`.
+
+The first invalid assertion width is `65536`.
+
+The first assertion kind above the valid range is `11`.
+
+The first invalid subprogram ID is `4294967295`.
 
 ---
 

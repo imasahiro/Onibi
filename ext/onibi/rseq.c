@@ -15,6 +15,32 @@ onibi_g_action_assert_kind(const OnibiGAction *action)
     return action->has_assert_kind ? (OnibiRAssertKind)action->assert_kind : 0;
 }
 
+static void
+onibi_rseq_serialize_action(const OnibiGAction *action,
+			    OnibiRAction *physical_action)
+{
+    memset(physical_action, 0, sizeof(*physical_action));
+    physical_action->op = onibi_rseq_physical_action_op(action->code);
+    physical_action->flags = onibi_g_action_flags(action);
+    physical_action->arg16 = action->has_assert_kind
+				 ? action->assert_kind
+				 : onibi_g_action_assert_kind(action);
+
+    if (action->code == ONIBI_GA_ASSERT_POSITION &&
+	(action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
+	 action->assert_kind == ONIBI_RAP_LOOKBEHIND)) {
+	physical_action->op = ONIBI_RA_ASSERT_SUBPROGRAM;
+	physical_action->flags = action->assert_kind == ONIBI_RAP_LOOKAHEAD
+				     ? (action->positive ? 1 : 2)
+				     : (action->positive ? 5 : 6);
+	physical_action->arg16 = onibi_assertion_width_operand(action->arg32);
+	physical_action->arg32 = action->subprogram_id;
+	return;
+    }
+    if (action->has_slot) physical_action->arg16 = action->slot;
+    if (action->has_arg32) physical_action->arg32 = action->arg32;
+}
+
 /* RSeq lowering uses one scoped owner for all mutable lowering records.  The
  * owner remains active until the protected body publishes or discards them. */
 typedef struct {
@@ -259,7 +285,8 @@ onibi_rseq_lower_body(VALUE opaque)
 	class_section_size + literal_desc_size + literal_data_size +
 	subprogram_section_size;
     if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
-	action_records.count > UINT32_MAX || physical_size > UINT32_MAX) {
+	action_records.count > UINT32_MAX ||
+	subprogram_records.count > UINT32_MAX || physical_size > UINT32_MAX) {
 	rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
@@ -273,6 +300,8 @@ onibi_rseq_lower_body(VALUE opaque)
 		     (multiline ? ONIBI_RSEQ_HEADER_FLAG_MULTILINE : 0);
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
+    physical.semantic_subprogram_count =
+	compiled_data->semantic_subprogram_count;
     physical.capture_count = capture_count;
     physical.semantic_capture_count = analysis.semantic_capture_count;
     physical.counter_count = counter_count;
@@ -435,26 +464,9 @@ onibi_rseq_lower_body(VALUE opaque)
     }
     OnibiRAction *physical_actions =
 	(OnibiRAction *)(RSTRING_PTR(blob) + physical.actions_offset);
-    for (size_t i = 0; i < action_records.count; i++) {
-	const OnibiGAction *action = &action_records.entries[i];
-	physical_actions[i].op = onibi_rseq_physical_action_op(action->code);
-	physical_actions[i].flags = onibi_g_action_flags(action);
-	physical_actions[i].arg16 = action_records.entries[i].has_assert_kind
-					? action_records.entries[i].assert_kind
-					: onibi_g_action_assert_kind(action);
-	if (action->code == ONIBI_GA_ASSERT_POSITION &&
-	    (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
-	     action->assert_kind == ONIBI_RAP_LOOKBEHIND)) {
-	    int positive = action_records.entries[i].positive;
-	    physical_actions[i].flags =
-		action->assert_kind == ONIBI_RAP_LOOKAHEAD ? (positive ? 1 : 2)
-							   : (positive ? 5 : 6);
-	}
-	if (action_records.entries[i].has_slot)
-	    physical_actions[i].arg16 = action_records.entries[i].slot;
-	if (action_records.entries[i].has_arg32)
-	    physical_actions[i].arg32 = action_records.entries[i].arg32;
-    }
+    for (size_t i = 0; i < action_records.count; i++)
+	onibi_rseq_serialize_action(&action_records.entries[i],
+				    &physical_actions[i]);
     OnibiClassDesc *class_descs =
 	(OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
     unsigned char *class_data = (unsigned char *)(class_descs + class_count);
