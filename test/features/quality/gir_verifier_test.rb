@@ -23,7 +23,13 @@ class GirVerifierTest < Minitest::Test
     lookaround_subprogram: "lookaround subprogram is invalid",
     atomic_subprogram: "atomic subprogram is invalid",
     absence_subprogram: "absence subprogram is invalid",
-    resolved_options: "option environment is unresolved"
+    resolved_options: "option environment is unresolved",
+    class_descriptor_kind: "class descriptor is invalid",
+    class_descriptor_shape: "class character type is invalid",
+    class_fold_metadata: "class descriptor is invalid",
+    class_range_order: "class range set is invalid",
+    class_mixed_stack: "mixed class stack is invalid",
+    class_reference: "class reference is invalid"
   }.freeze
 
   FAILURE_CASES.each do |scenario, message|

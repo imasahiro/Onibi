@@ -51,6 +51,13 @@ typedef enum {
 } OnibiExecutionKind;
 
 typedef enum {
+    ONIBI_ENC_ASCII_7BIT = 0,
+    ONIBI_ENC_SINGLE_BYTE,
+    ONIBI_ENC_UTF8,
+    ONIBI_ENC_GENERIC_MB
+} OnibiEncodingMode;
+
+typedef enum {
     ONIBI_OPT_IGNORECASE = 1u << 0,
     ONIBI_OPT_EXTENDED = 1u << 1,
     ONIBI_OPT_MULTILINE = 1u << 2,
@@ -90,6 +97,36 @@ enum {
     ONIBI_RSEQ_HEADER_FLAG_MULTILINE = 1u << 1,
     ONIBI_RSEQ_CLASS_FLAG_NEGATED = 1u << 0
 };
+
+typedef enum {
+    ONIBI_CLASS_ASCII_BITMAP = 0,
+    ONIBI_CLASS_CODEPOINT_RANGES,
+    ONIBI_CLASS_ENCODING_CTYPE,
+    ONIBI_CLASS_MIXED
+} OnibiClassKind;
+
+typedef enum {
+    ONIBI_CLASS_EXPR_RANGE = 1,
+    ONIBI_CLASS_EXPR_CTYPE,
+    ONIBI_CLASS_EXPR_UNION,
+    ONIBI_CLASS_EXPR_INTERSECTION,
+    ONIBI_CLASS_EXPR_NEGATE
+} OnibiClassExprOp;
+
+typedef struct {
+    uint32_t first;
+    uint32_t last;
+} OnibiCodepointRange;
+
+/* MIXED descriptors use a postfix program. Each operator consumes one or
+   two Boolean values. Leaf operators produce one Boolean value. */
+typedef struct {
+    uint32_t arg0;
+    uint32_t arg1;
+    uint8_t op;
+    uint8_t flags;
+    uint16_t reserved;
+} OnibiClassExpr;
 enum {
     ONIBI_RSEQ_FEATURE_BACKREF = 1u << 0,
     ONIBI_RSEQ_FEATURE_CAPTURE = 1u << 1,
@@ -97,7 +134,10 @@ enum {
     ONIBI_RSEQ_FEATURE_MATCH_RESET = 1u << 3,
     ONIBI_RSEQ_FEATURE_ASSERTION = 1u << 4,
     ONIBI_RSEQ_FEATURE_LOOKAROUND = 1u << 5,
-    ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6
+    ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6,
+    ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD = 1u << 7,
+    ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD = 1u << 8,
+    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9
 };
 
 typedef enum {
@@ -279,6 +319,7 @@ typedef struct {
     const OnibiClassDesc *classes;
     const OnibiLiteralDesc *literals;
     const OnibiSubprogramDesc *subprograms;
+    uint32_t class_stack_capacity;
     uint8_t regular_capable;
 } OnibiRSeqView;
 
@@ -287,6 +328,8 @@ typedef char onibi_redge_size_must_be_8[(sizeof(OnibiREdge) == 8) ? 1 : -1];
 typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
 typedef char
     onibi_class_desc_size_must_be_8[(sizeof(OnibiClassDesc) == 8) ? 1 : -1];
+typedef char
+    onibi_class_expr_size_must_be_12[(sizeof(OnibiClassExpr) == 12) ? 1 : -1];
 typedef char
     onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
 typedef char onibi_subprogram_desc_size_must_be_12

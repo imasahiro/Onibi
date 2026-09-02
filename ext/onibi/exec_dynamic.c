@@ -1,11 +1,4 @@
 static int
-onibi_rseq_word_byte(unsigned char byte)
-{
-    return ((byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') ||
-	    (byte >= '0' && byte <= '9') || byte == '_');
-}
-
-static int
 onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
 			  size_t length, int fold)
 {
@@ -20,10 +13,105 @@ onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
     return 1;
 }
 
-/* One semantic consume operation for the ASCII RSeq primitives. */
 static int
-onibi_rseq_consume_ascii(const OnibiRSeqView *view, const OnibiRState *state,
-			 VALUE str, long position, long *next_position)
+onibi_rseq_class_raw_hit(const OnibiRSeqView *view, const OnibiClassDesc *klass,
+			 OnigCodePoint codepoint, rb_encoding *encoding,
+			 unsigned char *stack, size_t stack_capacity)
+{
+    const unsigned char *data = view->blob + klass->data_offset;
+    if (klass->kind == ONIBI_CLASS_ASCII_BITMAP)
+	return codepoint < 256 &&
+	       (data[codepoint >> 3] & (1U << (codepoint & 7))) != 0;
+    if (klass->kind == ONIBI_CLASS_ENCODING_CTYPE) {
+	uint32_t ctype;
+	memcpy(&ctype, data, sizeof(ctype));
+	return ONIGENC_IS_CODE_CTYPE(encoding, codepoint, (OnigCtype)ctype) !=
+	       0;
+    }
+    if (klass->kind == ONIBI_CLASS_CODEPOINT_RANGES) {
+	const OnibiCodepointRange *ranges = (const OnibiCodepointRange *)data;
+	size_t low = 0;
+	size_t high = klass->data_length / sizeof(*ranges);
+	while (low < high) {
+	    size_t middle = low + (high - low) / 2U;
+	    if (codepoint < ranges[middle].first)
+		high = middle;
+	    else if (codepoint > ranges[middle].last)
+		low = middle + 1U;
+	    else
+		return 1;
+	}
+	return 0;
+    }
+    const OnibiClassExpr *expr = (const OnibiClassExpr *)data;
+    size_t count = klass->data_length / sizeof(*expr);
+    if (!stack || count > stack_capacity) return 0;
+    size_t depth = 0;
+    for (size_t i = 0; i < count; i++) {
+	if (expr[i].op == ONIBI_CLASS_EXPR_RANGE) {
+	    stack[depth++] =
+		codepoint >= expr[i].arg0 && codepoint <= expr[i].arg1;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_CTYPE) {
+	    stack[depth++] =
+		ONIGENC_IS_CODE_CTYPE(encoding, codepoint,
+				      (OnigCtype)expr[i].arg0) != 0;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_NEGATE) {
+	    stack[depth - 1U] = !stack[depth - 1U];
+	}
+	else {
+	    unsigned char right = stack[--depth];
+	    if (expr[i].op == ONIBI_CLASS_EXPR_UNION)
+		stack[depth - 1U] = stack[depth - 1U] || right;
+	    else
+		stack[depth - 1U] = stack[depth - 1U] && right;
+	}
+    }
+    return stack[0] != 0;
+}
+
+static int
+onibi_rseq_class_hit(const OnibiRSeqView *view, const OnibiClassDesc *klass,
+		     OnigCodePoint codepoint, rb_encoding *encoding,
+		     unsigned char *stack, size_t stack_capacity)
+{
+    int hit = onibi_rseq_class_raw_hit(view, klass, codepoint, encoding, stack,
+				       stack_capacity);
+    if ((klass->flags & ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0) hit = !hit;
+    return hit;
+}
+
+static int
+onibi_rseq_decode_character(VALUE str, long position, rb_encoding *encoding,
+			    OnibiEncodingMode mode, OnigCodePoint *codepoint,
+			    long *width)
+{
+    if (position < 0 || position >= RSTRING_LEN(str)) return 0;
+    const unsigned char *begin =
+	(const unsigned char *)RSTRING_PTR(str) + position;
+    const unsigned char *end =
+	(const unsigned char *)RSTRING_PTR(str) + RSTRING_LEN(str);
+    if (mode == ONIBI_ENC_ASCII_7BIT) {
+	*codepoint = *begin;
+	*width = 1;
+	return 1;
+    }
+    int length =
+	rb_enc_precise_mbclen((const char *)begin, (const char *)end, encoding);
+    if (!MBCLEN_CHARFOUND_P(length)) return 0;
+    *width = MBCLEN_CHARFOUND_LEN(length);
+    *codepoint = ONIGENC_MBC_TO_CODE(encoding, begin, end);
+    return 1;
+}
+
+/* One semantic consume operation for the encoding-aware RSeq primitives. */
+static int
+onibi_rseq_consume_character(const OnibiRSeqView *view,
+			     const OnibiRState *state, VALUE str, long position,
+			     rb_encoding *encoding, OnibiEncodingMode mode,
+			     long *next_position, unsigned char *class_stack,
+			     size_t class_stack_capacity)
 {
     if (position < 0 || position >= RSTRING_LEN(str)) return 0;
     const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
@@ -40,27 +128,101 @@ onibi_rseq_consume_ascii(const OnibiRSeqView *view, const OnibiRState *state,
     }
     if (state->op == ONIBI_RS_CLASS) {
 	const OnibiClassDesc *klass = &view->classes[state->payload];
-	const unsigned char *bitmap = view->blob + klass->data_offset;
-	if ((bitmap[bytes[position] >> 3] & (1U << (bytes[position] & 7))) == 0)
+	OnigCodePoint codepoint;
+	long width;
+	if (!onibi_rseq_decode_character(str, position, encoding, mode,
+					 &codepoint, &width) ||
+	    !onibi_rseq_class_hit(view, klass, codepoint, encoding, class_stack,
+				  class_stack_capacity))
 	    return 0;
-	*next_position = position + 1;
+	*next_position = position + width;
 	return 1;
     }
     if (state->op == ONIBI_RS_ANY) {
-	if (bytes[position] == '\n' &&
-	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) == 0)
+	OnigCodePoint codepoint;
+	long width;
+	if (!onibi_rseq_decode_character(str, position, encoding, mode,
+					 &codepoint, &width))
 	    return 0;
-	*next_position = position + 1;
+	(void)codepoint;
+	int multiline =
+	    (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0 ||
+	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0;
+	if (!multiline && ONIGENC_IS_MBC_NEWLINE(encoding, bytes + position,
+						 bytes + RSTRING_LEN(str)))
+	    return 0;
+	*next_position = position + width;
 	return 1;
     }
     return 0;
 }
 
 static int
+onibi_rseq_word_at(VALUE str, long position, rb_encoding *encoding,
+		   OnibiEncodingMode mode)
+{
+    OnigCodePoint codepoint;
+    long width;
+    return onibi_rseq_decode_character(str, position, encoding, mode,
+				       &codepoint, &width) &&
+	   ONIGENC_IS_CODE_CTYPE(encoding, codepoint, ONIGENC_CTYPE_WORD) != 0;
+}
+
+static int
+onibi_rseq_word_before(VALUE str, long position, rb_encoding *encoding,
+		       OnibiEncodingMode mode)
+{
+    if (position <= 0) return 0;
+    if (mode == ONIBI_ENC_ASCII_7BIT)
+	return onibi_rseq_word_at(str, position - 1, encoding, mode);
+    const char *begin = RSTRING_PTR(str);
+    const char *current = begin + position;
+    const char *end = begin + RSTRING_LEN(str);
+    const char *previous = rb_enc_prev_char(begin, current, end, encoding);
+    if (!previous) return 0;
+    return onibi_rseq_word_at(str, previous - begin, encoding, mode);
+}
+
+static int
+onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str, long pos,
+				  long search_origin, rb_encoding *encoding,
+				  OnibiEncodingMode mode)
+{
+    int hit = 0;
+    switch (kind) {
+    case ONIBI_RAP_BEGIN_BUFFER: hit = pos == 0; break;
+    case ONIBI_RAP_END_BUFFER: hit = pos == RSTRING_LEN(str); break;
+    case ONIBI_RAP_BEGIN_LINE:
+	hit = pos == 0 || RSTRING_PTR(str)[pos - 1] == '\n';
+	break;
+    case ONIBI_RAP_END_LINE:
+	hit = pos == RSTRING_LEN(str) || RSTRING_PTR(str)[pos] == '\n';
+	break;
+    case ONIBI_RAP_SEMI_END_BUFFER:
+	hit = pos == RSTRING_LEN(str) ||
+	      (pos + 1 == RSTRING_LEN(str) && RSTRING_PTR(str)[pos] == '\n');
+	break;
+    case ONIBI_RAP_SEARCH_ORIGIN: hit = pos == search_origin; break;
+    case ONIBI_RAP_WORD_BOUNDARY:
+    case ONIBI_RAP_NONWORD_BOUNDARY: {
+	int left = onibi_rseq_word_before(str, pos, encoding, mode);
+	int right = pos < RSTRING_LEN(str) &&
+		    onibi_rseq_word_at(str, pos, encoding, mode);
+	hit = left != right;
+	if (kind == ONIBI_RAP_NONWORD_BOUNDARY) hit = !hit;
+	break;
+    }
+    default: return 0;
+    }
+    return hit;
+}
+
+static int
 onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   VALUE str, long pos, long search_origin,
 			   long *counters, uint32_t counter_count,
-			   long *captures, uint32_t capture_slots)
+			   long *captures, uint32_t capture_slots,
+			   rb_encoding *encoding, OnibiEncodingMode mode)
 {
     if (edge->action_offset == 0) return 1;
     uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
@@ -112,35 +274,10 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    continue;
 	}
 	if (action->op != ONIBI_RA_ASSERT_POSITION) return 0;
-	int hit = 0;
-	switch ((OnibiRAssertKind)action->arg16) {
-	case ONIBI_RAP_BEGIN_BUFFER: hit = pos == 0; break;
-	case ONIBI_RAP_END_BUFFER: hit = pos == RSTRING_LEN(str); break;
-	case ONIBI_RAP_BEGIN_LINE:
-	    hit = pos == 0 || RSTRING_PTR(str)[pos - 1] == '\n';
-	    break;
-	case ONIBI_RAP_END_LINE:
-	    hit = pos == RSTRING_LEN(str) || RSTRING_PTR(str)[pos] == '\n';
-	    break;
-	case ONIBI_RAP_SEMI_END_BUFFER:
-	    hit = pos == RSTRING_LEN(str) || (pos + 1 == RSTRING_LEN(str) &&
-					      RSTRING_PTR(str)[pos] == '\n');
-	    break;
-	case ONIBI_RAP_SEARCH_ORIGIN: hit = pos == search_origin; break;
-	case ONIBI_RAP_WORD_BOUNDARY:
-	case ONIBI_RAP_NONWORD_BOUNDARY: {
-	    int left = pos > 0 && onibi_rseq_word_byte(
-				      (unsigned char)RSTRING_PTR(str)[pos - 1]);
-	    int right =
-		pos < RSTRING_LEN(str) &&
-		onibi_rseq_word_byte((unsigned char)RSTRING_PTR(str)[pos]);
-	    hit = left != right;
-	    if (action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY) hit = !hit;
-	    break;
-	}
-	default: return 0;
-	}
-	if (!hit) return 0;
+	if (!onibi_rseq_position_assertion_hit((OnibiRAssertKind)action->arg16,
+					       str, pos, search_origin,
+					       encoding, mode))
+	    return 0;
     }
     return 0;
 }
@@ -148,7 +285,8 @@ onibi_rseq_edge_actions_ok(const OnibiRSeqView *view, const OnibiREdge *edge,
 static int
 onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 			      VALUE str, long start, long search_origin,
-			      long *matched_end)
+			      long *matched_end, unsigned char *class_stack,
+			      size_t class_stack_capacity)
 {
     onibi_diagnostics.dfs++;
     OnibiRSeqView local_view;
@@ -161,6 +299,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
     }
     const OnibiRSeqHeader *header = view->header;
     if (!view->regular_capable) return -1;
+    rb_encoding *encoding = rb_enc_get(str);
+    OnibiEncodingMode encoding_mode = onibi_encoding_mode_for(str, encoding);
     const OnibiRState *states = view->states;
     const OnibiREdge *edges = view->edges;
     size_t span = (size_t)RSTRING_LEN(str) + 1U;
@@ -225,7 +365,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		branch_captures[slot] = -1;
 	if (!onibi_rseq_edge_actions_ok(view, edge, str, start, search_origin,
 					branch_counters, header->counter_count,
-					branch_captures, capture_slots))
+					branch_captures, capture_slots,
+					encoding, encoding_mode))
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    *matched_end = start;
@@ -276,7 +417,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		       (frame.return_depth - 1U) * sizeof(uint32_t));
 	    if (!onibi_rseq_edge_actions_ok(
 		    view, edge, str, frame.pos, search_origin, next_counters,
-		    header->counter_count, next_captures, capture_slots))
+		    header->counter_count, next_captures, capture_slots,
+		    encoding, encoding_mode))
 		continue;
 	    if (edge->destination == ONIBI_ACCEPT_STATE) {
 		*matched_end = frame.pos;
@@ -347,8 +489,9 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 	}
 	else if (state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_CLASS ||
 		 state->op == ONIBI_RS_ANY) {
-	    hit = onibi_rseq_consume_ascii(view, state, str, frame.pos,
-					   &next_pos);
+	    hit = onibi_rseq_consume_character(
+		view, state, str, frame.pos, encoding, encoding_mode, &next_pos,
+		class_stack, class_stack_capacity);
 	}
 	else
 	    hit = 0;
@@ -376,7 +519,8 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		       frame.return_depth * sizeof(uint32_t));
 	    if (!onibi_rseq_edge_actions_ok(
 		    view, edge, str, next_pos, search_origin, next_counters,
-		    header->counter_count, next_captures, capture_slots))
+		    header->counter_count, next_captures, capture_slots,
+		    encoding, encoding_mode))
 		continue;
 	    uint32_t destination = edge->destination;
 	    if (destination == ONIBI_ACCEPT_STATE) {
@@ -419,8 +563,8 @@ onibi_regular_tag_arena_grow(OnibiTagArena *arena)
     if (capacity < arena->capacity ||
 	capacity > SIZE_MAX / sizeof(onibi_regular_tag_event_t))
 	rb_memerror();
-    arena->data = ruby_xrealloc(
-	arena->data, capacity * sizeof(onibi_regular_tag_event_t));
+    arena->data = ruby_xrealloc(arena->data,
+				capacity * sizeof(onibi_regular_tag_event_t));
     arena->capacity = capacity;
 }
 
@@ -439,9 +583,11 @@ onibi_regular_tag_append(OnibiTagArena *arena, uint32_t parent, uint32_t slot,
 
 static int
 onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
-			    long position, uint32_t parent,
-			    uint32_t capture_slots, int capture_mode,
-			    OnibiTagArena *arena, uint32_t *history)
+			    VALUE str, long position, long search_origin,
+			    rb_encoding *encoding, OnibiEncodingMode mode,
+			    uint32_t parent, uint32_t capture_slots,
+			    int capture_mode, OnibiTagArena *arena,
+			    uint32_t *history)
 {
     onibi_regular_action_transaction_t transaction = {arena->count, parent};
     if (edge->action_offset == 0) {
@@ -455,8 +601,18 @@ onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    *history = transaction.history;
 	    return 1;
 	}
-	if (action->op != ONIBI_RA_CAPTURE ||
-	    action->arg16 >= capture_slots) {
+	if (action->op == ONIBI_RA_ASSERT_POSITION &&
+	    (action->arg16 == ONIBI_RAP_WORD_BOUNDARY ||
+	     action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY)) {
+	    if (!onibi_rseq_position_assertion_hit(
+		    (OnibiRAssertKind)action->arg16, str, position,
+		    search_origin, encoding, mode)) {
+		arena->count = transaction.checkpoint;
+		return 0;
+	    }
+	    continue;
+	}
+	if (action->op != ONIBI_RA_CAPTURE || action->arg16 >= capture_slots) {
 	    arena->count = transaction.checkpoint;
 	    return 0;
 	}
@@ -474,7 +630,8 @@ onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
 {
     const onibi_regular_tag_event_t *events =
 	(const onibi_regular_tag_event_t *)arena->data;
-    for (uint32_t i = 0; i < capture_slots; i++) captures[i] = -1;
+    for (uint32_t i = 0; i < capture_slots; i++)
+	captures[i] = -1;
     while (history != UINT32_MAX && history < arena->count) {
 	const onibi_regular_tag_event_t *event = &events[history];
 	if (event->slot < capture_slots && captures[event->slot] < 0)
@@ -485,17 +642,18 @@ onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
 
 static int
 onibi_regular_accept_history(const OnibiRSeqView *view,
-			     const OnibiRState *state, long position,
-			     uint32_t parent, uint32_t capture_slots,
-			     int capture_mode, OnibiTagArena *arena,
-			     uint32_t *history)
+			     const OnibiRState *state, VALUE str, long position,
+			     long search_origin, rb_encoding *encoding,
+			     OnibiEncodingMode mode, uint32_t parent,
+			     uint32_t capture_slots, int capture_mode,
+			     OnibiTagArena *arena, uint32_t *history)
 {
     for (uint32_t i = 0; i < state->edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[state->edge_base + i];
 	if (edge->destination != ONIBI_ACCEPT_STATE) continue;
 	return onibi_regular_apply_actions(
-	    view, edge, position, parent, capture_slots, capture_mode, arena,
-	    history);
+	    view, edge, str, position, search_origin, encoding, mode, parent,
+	    capture_slots, capture_mode, arena, history);
     }
     *history = parent;
     return 1;
@@ -520,8 +678,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
     uint32_t *next = ALLOCA_N(uint32_t, count);
     uint32_t *current_histories =
 	capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
-    uint32_t *next_histories =
-	capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
+    uint32_t *next_histories = capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
     unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
     unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
     size_t current_count = 0;
@@ -532,8 +689,9 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
 	    if (!onibi_regular_apply_actions(
-		    view, edge, start, UINT32_MAX, capture_slots,
-		    capture_mode, &ctx->tags, &best_history))
+		    view, edge, str, start, ctx->search_origin, ctx->encoding,
+		    ctx->encoding_mode, UINT32_MAX, capture_slots, capture_mode,
+		    &ctx->tags, &best_history))
 		continue;
 	    best_end = start;
 	    break;
@@ -543,7 +701,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	if ((current_bits[state >> 3] & (1U << (state & 7))) == 0) {
 	    uint32_t history;
 	    if (!onibi_regular_apply_actions(
-		    view, edge, start, UINT32_MAX, capture_slots, capture_mode,
+		    view, edge, str, start, ctx->search_origin, ctx->encoding,
+		    ctx->encoding_mode, UINT32_MAX, capture_slots, capture_mode,
 		    &ctx->tags, &history))
 		continue;
 	    current_bits[state >> 3] |= (unsigned char)(1U << (state & 7));
@@ -568,7 +727,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    if (state->op == 0) {
 		uint32_t accept_history;
 		if (!onibi_regular_accept_history(
-			view, state, position, thread_history,
+			view, state, str, position, ctx->search_origin,
+			ctx->encoding, ctx->encoding_mode, thread_history,
 			capture_slots, capture_mode, &ctx->tags,
 			&accept_history))
 		    continue;
@@ -591,8 +751,9 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
 	    long next_position = position;
-	    int hit = onibi_rseq_consume_ascii(view, state, str, position,
-					       &next_position);
+	    int hit = onibi_rseq_consume_character(
+		view, state, str, position, ctx->encoding, ctx->encoding_mode,
+		&next_position, ctx->class_stack, ctx->class_stack_capacity);
 	    if (hit) step_width = next_position - position;
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;
@@ -601,7 +762,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    uint32_t accept_history;
 		    if (!onibi_regular_apply_actions(
-			    view, edge, next_position, thread_history,
+			    view, edge, str, next_position, ctx->search_origin,
+			    ctx->encoding, ctx->encoding_mode, thread_history,
 			    capture_slots, capture_mode, &ctx->tags,
 			    &accept_history))
 			continue;
@@ -630,7 +792,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 		    0) {
 		    uint32_t history;
 		    if (!onibi_regular_apply_actions(
-			    view, edge, next_position, thread_history,
+			    view, edge, str, next_position, ctx->search_origin,
+			    ctx->encoding, ctx->encoding_mode, thread_history,
 			    capture_slots, capture_mode, &ctx->tags, &history))
 			continue;
 		    next_bits[destination >> 3] |=
@@ -645,17 +808,17 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	if (!next_count) {
 	    if (have_fallback) {
 		if (capture_mode)
-		    onibi_regular_materialize_tags(
-			&ctx->tags, fallback_history,
-			onibi_regular_capture_result, capture_slots);
+		    onibi_regular_materialize_tags(&ctx->tags, fallback_history,
+						   onibi_regular_capture_result,
+						   capture_slots);
 		ctx->matched_end = fallback_end;
 		return 1;
 	    }
 	    if (best_end >= 0) {
 		if (capture_mode)
-		    onibi_regular_materialize_tags(
-			&ctx->tags, best_history, onibi_regular_capture_result,
-			capture_slots);
+		    onibi_regular_materialize_tags(&ctx->tags, best_history,
+						   onibi_regular_capture_result,
+						   capture_slots);
 		ctx->matched_end = best_end;
 		return 1;
 	    }
@@ -683,7 +846,8 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
     onibi_diagnostics.dynamic++;
     int result = onibi_rseq_backtracking_match(
 	ctx->rseq, ctx->view, ctx->subject, ctx->attempt_start,
-	ctx->search_origin, &ctx->matched_end);
+	ctx->search_origin, &ctx->matched_end, ctx->class_stack,
+	ctx->class_stack_capacity);
     if (result < 0) {
 	onibi_diagnostics.fallback++;
 	return ONIBI_EXEC_STATUS_FALLBACK;

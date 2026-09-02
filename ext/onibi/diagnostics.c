@@ -155,6 +155,22 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	}
     }
     rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
+    VALUE class_kinds = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	static const char *const names[] = {"ascii_bitmap", "codepoint_ranges",
+					    "encoding_ctype", "mixed"};
+	for (uint32_t i = 0; i < obj->rseq_view.header->class_count; i++) {
+	    const OnibiClassDesc *klass = &obj->rseq_view.classes[i];
+	    rb_ary_push(class_kinds, ID2SYM(rb_intern(names[klass->kind])));
+	}
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("class_kinds")), class_kinds);
+    VALUE class_flags = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->class_count; i++)
+	    rb_ary_push(class_flags, UINT2NUM(obj->rseq_view.classes[i].flags));
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("class_flags")), class_flags);
     rb_hash_aset(result, ID2SYM(rb_intern("regular")),
 		 ULONG2NUM(onibi_diagnostics.regular));
     rb_hash_aset(result, ID2SYM(rb_intern("tagged")),
@@ -277,12 +293,19 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiGirEdgeEntry starts[1];
     OnibiRSeqSubprogramEntry subprograms[2];
     OnibiGAction actions[2];
+    unsigned char class_bitmap[32];
+    OnibiCodepointRange class_ranges[2] = {{10, 20}, {15, 30}};
+    OnibiClassExpr class_expr[1] = {{0, 0, ONIBI_CLASS_EXPR_UNION, 0, 0}};
+    OnibiSemanticClass classes[1];
     OnibiStateId progress_slots[1] = {0};
     memset(states, 0, sizeof(states));
     memset(edges, 0, sizeof(edges));
     memset(starts, 0, sizeof(starts));
     memset(subprograms, 0, sizeof(subprograms));
     memset(actions, 0, sizeof(actions));
+    memset(class_bitmap, 0, sizeof(class_bitmap));
+    classes[0] = (OnibiSemanticClass){class_bitmap, sizeof(class_bitmap),
+				      ONIBI_CLASS_ASCII_BITMAP, 0};
     states[0].id = 0;
     states[0].opcode = ONIBI_G_CHAR;
     states[0].value = 'a';
@@ -308,11 +331,13 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiGirEdgeVector edge_vector = {edges, 2, 2, NULL};
     OnibiGirEdgeVector start_vector = {starts, 1, 1, NULL};
     OnibiRSeqSubprogramVector subprogram_vector = {subprograms, 1, 2, NULL};
+    OnibiSemanticClassVector class_vector = {classes, 0, 1, NULL};
     OnibiIdVector progress_vector = {progress_slots, 0, 1, NULL};
     OnibiGIRView view = {&state_vector,
 			 &edge_vector,
 			 &start_vector,
 			 &subprogram_vector,
+			 &class_vector,
 			 &progress_vector,
 			 4,
 			 1,
@@ -397,6 +422,38 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     }
     else if (scenario == rb_intern("resolved_options"))
 	view.options = UINT32_C(0x80000000);
+    else if (scenario == rb_intern("class_descriptor_kind")) {
+	class_vector.count = 1;
+	classes[0].kind = UINT8_MAX;
+    }
+    else if (scenario == rb_intern("class_descriptor_shape")) {
+	class_vector.count = 1;
+	classes[0].kind = ONIBI_CLASS_ENCODING_CTYPE;
+	classes[0].data_length = 3;
+    }
+    else if (scenario == rb_intern("class_fold_metadata")) {
+	class_vector.count = 1;
+	classes[0].incomplete_casefold = 1;
+    }
+    else if (scenario == rb_intern("class_range_order")) {
+	class_vector.count = 1;
+	classes[0].kind = ONIBI_CLASS_CODEPOINT_RANGES;
+	classes[0].data = (unsigned char *)class_ranges;
+	classes[0].data_length = sizeof(class_ranges);
+    }
+    else if (scenario == rb_intern("class_mixed_stack")) {
+	class_vector.count = 1;
+	classes[0].kind = ONIBI_CLASS_MIXED;
+	classes[0].data = (unsigned char *)class_expr;
+	classes[0].data_length = sizeof(class_expr);
+    }
+    else if (scenario == rb_intern("class_reference")) {
+	class_vector.count = 1;
+	states[0].opcode = ONIBI_G_CLASS;
+	states[0].value = 1;
+	states[0].literal[0] = 0;
+	states[0].literal_length = 0;
+    }
     else if (scenario == rb_intern("physical_limits")) {
 	view.capture_count = ONIBI_GIR_MAX_CAPTURE_COUNT;
 	view.counter_count = ONIBI_GIR_MAX_COUNTER_COUNT;

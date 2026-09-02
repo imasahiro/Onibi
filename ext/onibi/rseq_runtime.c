@@ -32,6 +32,7 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->subprograms =
 	(const OnibiSubprogramDesc *)(view->blob +
 				      view->header->subprograms_offset);
+    view->class_stack_capacity = 0;
     view->regular_capable = 0;
     return 1;
 }
@@ -39,6 +40,14 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
 static void
 onibi_rseq_view_prepare(OnibiRSeqView *view)
 {
+    view->class_stack_capacity = 0;
+    for (uint32_t i = 0; i < view->header->class_count; i++) {
+	const OnibiClassDesc *klass = &view->classes[i];
+	if (klass->kind != ONIBI_CLASS_MIXED) continue;
+	uint32_t count = klass->data_length / sizeof(OnibiClassExpr);
+	if (count > view->class_stack_capacity)
+	    view->class_stack_capacity = count;
+    }
     view->regular_capable = onibi_rseq_regular_capable(view);
 }
 
@@ -52,7 +61,12 @@ onibi_rseq_regular_edge_capable(const OnibiRSeqView *view,
     for (; index < view->header->action_count; index++) {
 	const OnibiRAction *action = &view->actions[index];
 	if (action->op == ONIBI_RA_END) return 1;
-	if (action->op != ONIBI_RA_CAPTURE) return 0;
+	if (action->op == ONIBI_RA_CAPTURE) continue;
+	if (action->op == ONIBI_RA_ASSERT_POSITION &&
+	    (action->arg16 == ONIBI_RAP_WORD_BOUNDARY ||
+	     action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY))
+	    continue;
+	return 0;
     }
     return 0;
 }
@@ -67,10 +81,14 @@ onibi_rseq_regular_capable(const OnibiRSeqView *view)
 	return 0;
     for (uint32_t i = 0; i < header->state_count; i++) {
 	const OnibiRState *state = &view->states[i];
-	if (state->flags != 0 &&
-	    !(state->op == ONIBI_RS_CLASS &&
-	      state->flags == ONIBI_RSEQ_STATE_FLAG_NEGATED))
-	    return 0;
+	if (state->flags != 0) {
+	    uint8_t allowed =
+		state->op == ONIBI_RS_CHAR ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE
+		: (state->op == ONIBI_RS_CLASS || state->op == ONIBI_RS_ANY)
+		    ? ONIBI_RSEQ_STATE_FLAG_NEGATED
+		    : 0;
+	    if ((state->flags & ~allowed) != 0) return 0;
+	}
 	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
 	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY)
 	    return 0;
@@ -78,6 +96,14 @@ onibi_rseq_regular_capable(const OnibiRSeqView *view)
 	    (view->classes[state->payload].flags &
 	     ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0)
 	    return 0;
+	if (state->op == ONIBI_RS_CHAR) {
+	    const OnibiLiteralDesc *literal = &view->literals[state->payload];
+	    if ((literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0) {
+		const unsigned char *bytes = view->blob + literal->data_offset;
+		for (uint32_t j = 0; j < literal->data_length; j++)
+		    if (bytes[j] >= 0x80) return 0;
+	    }
+	}
 	if (state->op == ONIBI_RS_CALL) return 0;
 	for (uint32_t e = 0; e < state->edge_count; e++) {
 	    const OnibiREdge *edge = &view->edges[state->edge_base + e];
@@ -89,6 +115,59 @@ onibi_rseq_regular_capable(const OnibiRSeqView *view)
 		view, &view->edges[header->start_edge_base + i]))
 	    return 0;
     return 1;
+}
+
+static int
+onibi_rseq_class_descriptor_valid(const OnibiRSeqView *view,
+				  const OnibiClassDesc *klass,
+				  uint64_t data_begin, uint64_t data_end)
+{
+    if (klass->kind > ONIBI_CLASS_MIXED || klass->data_length == 0 ||
+	(klass->flags & ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0 ||
+	klass->data_offset != data_begin || (klass->data_offset & 3U) != 0 ||
+	(uint64_t)klass->data_offset + klass->data_length > data_end)
+	return 0;
+    if (klass->kind == ONIBI_CLASS_ASCII_BITMAP)
+	return klass->data_length == 32;
+    if (klass->kind == ONIBI_CLASS_ENCODING_CTYPE)
+	return klass->data_length == sizeof(uint32_t);
+    if (klass->kind == ONIBI_CLASS_CODEPOINT_RANGES) {
+	if (klass->data_length % sizeof(OnibiCodepointRange) != 0) return 0;
+	const OnibiCodepointRange *ranges =
+	    (const OnibiCodepointRange *)(view->blob + klass->data_offset);
+	size_t count = klass->data_length / sizeof(*ranges);
+	for (size_t i = 0; i < count; i++)
+	    if (ranges[i].first > ranges[i].last ||
+		(i > 0 && ranges[i - 1].last >= ranges[i].first))
+		return 0;
+	return count != 0;
+    }
+    if (klass->data_length % sizeof(OnibiClassExpr) != 0) return 0;
+    const OnibiClassExpr *expr =
+	(const OnibiClassExpr *)(view->blob + klass->data_offset);
+    size_t count = klass->data_length / sizeof(*expr);
+    size_t depth = 0;
+    for (size_t i = 0; i < count; i++) {
+	if (expr[i].flags != 0 || expr[i].reserved != 0 ||
+	    expr[i].op < ONIBI_CLASS_EXPR_RANGE ||
+	    expr[i].op > ONIBI_CLASS_EXPR_NEGATE)
+	    return 0;
+	if (expr[i].op == ONIBI_CLASS_EXPR_RANGE ||
+	    expr[i].op == ONIBI_CLASS_EXPR_CTYPE) {
+	    if (expr[i].op == ONIBI_CLASS_EXPR_RANGE &&
+		expr[i].arg0 > expr[i].arg1)
+		return 0;
+	    depth++;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_NEGATE) {
+	    if (depth < 1) return 0;
+	}
+	else {
+	    if (depth < 2) return 0;
+	    depth--;
+	}
+    }
+    return count != 0 && depth == 1;
 }
 
 static void
@@ -171,13 +250,16 @@ onibi_rseq_blob_validate(VALUE blob)
 	    subprogram->accept >= header->state_count)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq subprogram");
     }
+    uint64_t class_data_cursor = class_desc_end;
     for (uint32_t i = 0; i < header->class_count; i++) {
 	const OnibiClassDesc *klass = &view.classes[i];
-	if (klass->data_length != 32 || klass->kind != 0 ||
-	    (uint64_t)klass->data_offset + klass->data_length >
-		header->descriptors_offset)
+	if (!onibi_rseq_class_descriptor_valid(&view, klass, class_data_cursor,
+					       header->literals_offset))
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq class descriptor");
+	class_data_cursor += klass->data_length;
     }
+    if (class_data_cursor != header->literals_offset)
+	rb_raise(rb_eArgError, "invalid Onibi RSeq class data layout");
     for (uint32_t i = 0; i < literal_count; i++) {
 	const OnibiLiteralDesc *literal = &view.literals[i];
 	if ((uint64_t)literal->data_offset + literal->data_length >

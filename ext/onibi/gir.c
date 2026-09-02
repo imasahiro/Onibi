@@ -45,10 +45,14 @@ typedef struct {
 } OnibiGirEdgeEntry;
 typedef ONIBI_VECTOR(OnibiGirEdgeEntry) OnibiGirEdgeVector;
 typedef struct {
-    unsigned char bitmap[32];
-    int negated;
-} OnibiRSeqClassPayloadEntry;
-typedef ONIBI_VECTOR(OnibiRSeqClassPayloadEntry) OnibiRSeqClassPayloadVector;
+    unsigned char *data;
+    uint16_t data_length;
+    uint8_t kind;
+    uint8_t flags;
+    uint8_t casefolded;
+    uint8_t incomplete_casefold;
+} OnibiSemanticClass;
+typedef ONIBI_VECTOR(OnibiSemanticClass) OnibiSemanticClassVector;
 typedef struct {
     unsigned char bytes[4];
     uint8_t length;
@@ -72,13 +76,16 @@ typedef struct {
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
     OnibiRSeqSubprogramVector subprograms;
+    OnibiSemanticClassVector classes;
     OnibiIdVector progress_slots;
     OnibiAstArena *ast;
     const OnibiResolvedArena *semantics;
     unsigned char *subprogram_status;
     size_t resolved_subprogram_count;
     size_t semantic_subprogram_count;
+    int encoding_index;
     int optional_seen;
+    int casefold_repeat_depth;
     onibi_allocation_owner_t *allocation_owner;
     OnibiTaggedNfa *nfa;
 } onibi_gir_builder_t;
@@ -89,6 +96,7 @@ typedef struct {
     const OnibiGirEdgeVector *edges;
     const OnibiGirEdgeVector *start_edges;
     const OnibiRSeqSubprogramVector *subprograms;
+    const OnibiSemanticClassVector *classes;
     const OnibiIdVector *progress_slots;
     long next_id;
     long capture_count;
@@ -194,6 +202,38 @@ onibi_guard_vector_free(OnibiGuardVector *vector)
 
 ONIBI_VECTOR_DEFINE(onibi_gir_state_vector, OnibiGirStateVector,
 		    OnibiGirStateEntry, 8, "GIR state vector is too large")
+
+ONIBI_VECTOR_DEFINE(onibi_semantic_class_vector, OnibiSemanticClassVector,
+		    OnibiSemanticClass, 8,
+		    "GIR class descriptor vector is too large")
+
+static uint32_t
+onibi_semantic_class_add(onibi_gir_builder_t *builder, uint8_t kind,
+			 uint8_t flags, int casefolded, int incomplete_casefold,
+			 const void *data, size_t data_length)
+{
+    if (data_length == 0 || data_length > UINT16_MAX)
+	rb_raise(eRegexpError, "class descriptor exceeds the v1 size limit");
+    if (builder->classes.count >= UINT32_MAX)
+	rb_raise(eRegexpError, "too many GIR class descriptors");
+    for (size_t i = 0; i < builder->classes.count; i++) {
+	const OnibiSemanticClass *prior = &builder->classes.entries[i];
+	if (prior->kind == kind && prior->flags == flags &&
+	    prior->casefolded == casefolded &&
+	    prior->incomplete_casefold == incomplete_casefold &&
+	    prior->data_length == data_length &&
+	    memcmp(prior->data, data, data_length) == 0)
+	    return (uint32_t)i;
+    }
+    unsigned char *copy =
+	onibi_owned_realloc(builder->allocation_owner, NULL, data_length);
+    memcpy(copy, data, data_length);
+    OnibiSemanticClass entry = {
+	copy,  (uint16_t)data_length, kind,
+	flags, (uint8_t)casefolded,   (uint8_t)incomplete_casefold};
+    onibi_semantic_class_vector_push(&builder->classes, entry);
+    return (uint32_t)(builder->classes.count - 1U);
+}
 
 static void
 onibi_gir_edge_vector_init(OnibiGirEdgeVector *vector)
@@ -605,6 +645,68 @@ onibi_gir_verify_owner_initialize(const OnibiGIRView *view,
     owner->edge_index_capacity = capacity;
 }
 
+static void
+onibi_gir_verify_class(const OnibiSemanticClass *klass)
+{
+    if (!klass->data || klass->data_length == 0 ||
+	klass->kind > ONIBI_CLASS_MIXED || klass->casefolded > 1 ||
+	klass->incomplete_casefold > 1 ||
+	(klass->incomplete_casefold && !klass->casefolded) ||
+	(klass->flags & ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0)
+	onibi_gir_verification_error("class descriptor is invalid");
+    if (klass->kind == ONIBI_CLASS_ASCII_BITMAP) {
+	if (klass->data_length != 32)
+	    onibi_gir_verification_error("class bitmap is invalid");
+	return;
+    }
+    if (klass->kind == ONIBI_CLASS_CODEPOINT_RANGES) {
+	if (klass->data_length % sizeof(OnibiCodepointRange) != 0)
+	    onibi_gir_verification_error("class range set is invalid");
+	const OnibiCodepointRange *ranges =
+	    (const OnibiCodepointRange *)klass->data;
+	size_t count = klass->data_length / sizeof(*ranges);
+	for (size_t i = 0; i < count; i++)
+	    if (ranges[i].first > ranges[i].last ||
+		(i > 0 && ranges[i - 1].last >= ranges[i].first))
+		onibi_gir_verification_error("class range set is invalid");
+	return;
+    }
+    if (klass->kind == ONIBI_CLASS_ENCODING_CTYPE) {
+	if (klass->data_length != sizeof(uint32_t))
+	    onibi_gir_verification_error("class character type is invalid");
+	return;
+    }
+    if (klass->data_length % sizeof(OnibiClassExpr) != 0)
+	onibi_gir_verification_error("mixed class program is invalid");
+    const OnibiClassExpr *expr = (const OnibiClassExpr *)klass->data;
+    size_t count = klass->data_length / sizeof(*expr);
+    size_t depth = 0;
+    for (size_t i = 0; i < count; i++) {
+	if (expr[i].flags != 0 || expr[i].reserved != 0 ||
+	    expr[i].op < ONIBI_CLASS_EXPR_RANGE ||
+	    expr[i].op > ONIBI_CLASS_EXPR_NEGATE)
+	    onibi_gir_verification_error("mixed class program is invalid");
+	if (expr[i].op == ONIBI_CLASS_EXPR_RANGE ||
+	    expr[i].op == ONIBI_CLASS_EXPR_CTYPE) {
+	    if (expr[i].op == ONIBI_CLASS_EXPR_RANGE &&
+		expr[i].arg0 > expr[i].arg1)
+		onibi_gir_verification_error("mixed class range is invalid");
+	    depth++;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_NEGATE) {
+	    if (depth < 1)
+		onibi_gir_verification_error("mixed class stack is invalid");
+	}
+	else {
+	    if (depth < 2)
+		onibi_gir_verification_error("mixed class stack is invalid");
+	    depth--;
+	}
+    }
+    if (depth != 1)
+	onibi_gir_verification_error("mixed class stack is invalid");
+}
+
 static VALUE
 onibi_gir_verify_body(VALUE opaque)
 {
@@ -647,6 +749,12 @@ onibi_gir_verify_body(VALUE opaque)
 	view->states->entries == NULL || view->next_id < 0 ||
 	(size_t)view->next_id != view->states->count)
 	onibi_gir_verification_error("state IDs are not contiguous");
+    if (!view->classes || view->classes->count > UINT32_MAX ||
+	view->classes->count > view->classes->capacity ||
+	(view->classes->count != 0 && view->classes->entries == NULL))
+	onibi_gir_verification_error("class descriptor vector is invalid");
+    for (size_t i = 0; i < view->classes->count; i++)
+	onibi_gir_verify_class(&view->classes->entries[i]);
 
     onibi_gir_verify_owner_initialize(view, owner);
     for (size_t i = 0; i < view->progress_slots->count; i++) {
@@ -680,8 +788,11 @@ onibi_gir_verify_body(VALUE opaque)
 		onibi_gir_verification_error("state opcode payload is invalid");
 	}
 	else if (state->opcode == ONIBI_G_CLASS) {
-	    if (state->value != 0 || state->literal_length != 0 ||
-		!onibi_gir_zero_bytes(state->literal, sizeof(state->literal)))
+	    if (state->value >= view->classes->count)
+		onibi_gir_verification_error("class reference is invalid");
+	    if (state->literal_length != 0 ||
+		!onibi_gir_zero_bytes(state->literal, sizeof(state->literal)) ||
+		!onibi_gir_zero_bytes(state->bitmap, sizeof(state->bitmap)))
 		onibi_gir_verification_error("state opcode payload is invalid");
 	}
 	else {
@@ -826,33 +937,6 @@ onibi_rseq_physical_action_op(OnibiGActionOp code)
 					     : ONIBI_RA_END);
 }
 static void
-onibi_rseq_class_payload_vector_init(OnibiRSeqClassPayloadVector *vector)
-{
-    ONIBI_VECTOR_INIT(vector->entries, vector->count, vector->capacity);
-    vector->allocation_owner = NULL;
-}
-static void
-onibi_rseq_class_payload_vector_bind(OnibiRSeqClassPayloadVector *vector,
-				     onibi_allocation_owner_t *owner)
-{
-    vector->allocation_owner = owner;
-}
-static void
-onibi_rseq_class_payload_vector_push(OnibiRSeqClassPayloadVector *vector,
-				     const OnibiGirStateEntry *state)
-{
-    OnibiRSeqClassPayloadEntry entry;
-    memcpy(entry.bitmap, state->bitmap, sizeof(entry.bitmap));
-    entry.negated = (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0;
-    ONIBI_OWNED_VECTOR_PUSH(vector, OnibiRSeqClassPayloadEntry, entry, 8,
-			    "RSeq class payload vector is too large");
-}
-static void
-onibi_rseq_class_payload_vector_free(OnibiRSeqClassPayloadVector *vector)
-{
-    ONIBI_OWNED_VECTOR_RELEASE(vector);
-}
-static void
 onibi_rseq_literal_payload_vector_init(OnibiRSeqLiteralPayloadVector *vector)
 {
     ONIBI_VECTOR_INIT(vector->entries, vector->count, vector->capacity);
@@ -896,71 +980,12 @@ onibi_rseq_subprogram_vector_store(OnibiRSeqSubprogramVector *vector,
 	rb_raise(rb_eArgError, "subprogram index is out of range");
     vector->entries[index] = descriptor;
 }
-typedef struct {
-    unsigned char values[3];
-    uint8_t count;
-} OnibiCaseFoldExpansion;
-
 static unsigned char
 onibi_ascii_fold(unsigned char value)
 {
     return (value >= 'A' && value <= 'Z') ? (unsigned char)(value + ('a' - 'A'))
 					  : value;
 }
-static int
-onibi_ascii_alpha(int c)
-{
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-}
-static int
-onibi_ascii_digit(int c)
-{
-    return c >= '0' && c <= '9';
-}
-static int
-onibi_ascii_space(int c)
-{
-    return c == ' ' || (c >= '\t' && c <= '\r');
-}
-static int
-onibi_ascii_xdigit(int c)
-{
-    return onibi_ascii_digit(c) || (c >= 'A' && c <= 'F') ||
-	   (c >= 'a' && c <= 'f');
-}
-static int
-onibi_ascii_alnum(int c)
-{
-    return onibi_ascii_alpha(c) || onibi_ascii_digit(c);
-}
-
-/* Small fold DAG node for ASCII-compatible patterns. */
-static OnibiCaseFoldExpansion
-onibi_casefold_expand(unsigned char value)
-{
-    OnibiCaseFoldExpansion expansion = {{value, 0, 0}, 1};
-    unsigned char lower = onibi_ascii_fold(value);
-    unsigned char upper = (value >= 'a' && value <= 'z')
-			      ? (unsigned char)(value - ('a' - 'A'))
-			      : value;
-    if (lower != value && expansion.count < 3)
-	expansion.values[expansion.count++] = lower;
-    if (upper != value && upper != lower && expansion.count < 3)
-	expansion.values[expansion.count++] = upper;
-    return expansion;
-}
-
-static void
-onibi_bitmap_set(unsigned char *bits, unsigned char value, int fold)
-{
-    OnibiCaseFoldExpansion expansion = onibi_casefold_expand(value);
-    uint8_t count = fold ? expansion.count : 1;
-    for (uint8_t i = 0; i < count; i++) {
-	unsigned char folded = expansion.values[i];
-	bits[folded >> 3] |= (unsigned char)(1U << (folded & 7));
-    }
-}
-
 static OnibiAsciiProperty
 onibi_ascii_property_kind_id(ID property)
 {
@@ -981,156 +1006,10 @@ onibi_ascii_property_kind_id(ID property)
 }
 
 static int
-onibi_ascii_property_hit_kind(OnibiAsciiProperty kind, int c)
-{
-    int ascii_alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-    int ascii_digit = c >= '0' && c <= '9';
-    switch (kind) {
-    case ONIBI_ASCII_PROP_ASCII: return c < 128;
-    case ONIBI_ASCII_PROP_HEX:
-    case ONIBI_ASCII_PROP_XDIGIT:
-	return ascii_digit || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-    case ONIBI_ASCII_PROP_DIGIT: return ascii_digit;
-    case ONIBI_ASCII_PROP_ALPHA: return ascii_alpha;
-    case ONIBI_ASCII_PROP_ALNUM: return ascii_alpha || ascii_digit;
-    case ONIBI_ASCII_PROP_LOWER: return c >= 'a' && c <= 'z';
-    case ONIBI_ASCII_PROP_UPPER: return c >= 'A' && c <= 'Z';
-    case ONIBI_ASCII_PROP_SPACE: return c == ' ' || (c >= '\t' && c <= '\r');
-    case ONIBI_ASCII_PROP_BLANK: return c == ' ' || c == '\t';
-    case ONIBI_ASCII_PROP_WORD: return ascii_alpha || ascii_digit || c == '_';
-    case ONIBI_ASCII_PROP_CNTRL: return c < 32 || c == 127;
-    case ONIBI_ASCII_PROP_PRINT: return c >= 32 && c < 127;
-    case ONIBI_ASCII_PROP_GRAPH: return c > 32 && c < 127;
-    case ONIBI_ASCII_PROP_PUNCT:
-	return c >= 33 && c <= 126 && !ascii_alpha && !ascii_digit && c != '_';
-    default: return -1;
-    }
-}
-
-static int
 onibi_ascii_property_name_p(ID name_id)
 {
     return name_id != 0 &&
 	   onibi_ascii_property_kind_id(name_id) != ONIBI_ASCII_PROP_UNKNOWN;
-}
-
-static unsigned char
-onibi_ast_escape_byte(const OnibiAstArena *arena, const OnibiAstNode *node)
-{
-    if (node->name.present && node->name.length == 1)
-	return arena->bytes[node->name.offset];
-    return (unsigned char)node->byte;
-}
-
-static void
-onibi_class_escape_bitmap(const OnibiAstArena *arena, const OnibiAstNode *node,
-			  int fold, unsigned char bits[32])
-{
-    OnibiAsciiProperty property =
-	node->name_id == 0 ? ONIBI_ASCII_PROP_UNKNOWN
-			   : onibi_ascii_property_kind_id(node->name_id);
-    if (property != ONIBI_ASCII_PROP_UNKNOWN) {
-	for (int c = 0; c < 256; c++)
-	    if (onibi_ascii_property_hit_kind(property, c) > 0)
-		onibi_bitmap_set(bits, (unsigned char)c, fold);
-	if (node->byte == 'P')
-	    for (size_t i = 0; i < 32; i++)
-		bits[i] = (unsigned char)~bits[i];
-	return;
-    }
-    unsigned char raw = onibi_ast_escape_byte(arena, node);
-    int code = onibi_ascii_fold(raw);
-    if (code == 'r' || code == 'p' || code == 'x' || code == 'u')
-	rb_raise(eRegexpError, "escape is not supported in RSeq class");
-    int upper = raw >= 'A' && raw <= 'Z';
-    for (int c = 0; c < 256; c++) {
-	int hit =
-	    code == 'd'
-		? onibi_ascii_digit(c)
-		: (code == 's'
-		       ? onibi_ascii_space(c)
-		       : (code == 'w'
-			      ? (onibi_ascii_alnum(c) || c == '_')
-			      : (code == 'h' ? onibi_ascii_xdigit(c) : 0)));
-	if (upper ? !hit : hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
-    }
-}
-
-static void
-onibi_class_bitmap_ast(const OnibiAstArena *arena, OnibiAstId id, int fold,
-		       unsigned char bits[32])
-{
-    const OnibiAstNode *node = onibi_ast_node_const(arena, id);
-    memset(bits, 0, 32);
-    if (node->kind == ONIBI_AST_CLASS_INTERSECTION) {
-	if (node->child_count < 2)
-	    rb_raise(eRegexpError, "class intersection has no operands");
-	onibi_class_bitmap_ast(arena, node->children[0], 0, bits);
-	for (size_t i = 1; i < node->child_count; i++) {
-	    unsigned char operand[32];
-	    onibi_class_bitmap_ast(arena, node->children[i], 0, operand);
-	    for (size_t byte = 0; byte < 32; byte++)
-		bits[byte] &= operand[byte];
-	}
-	if (fold) {
-	    unsigned char original[32];
-	    memcpy(original, bits, sizeof(original));
-	    for (int c = 0; c < 256; c++)
-		if ((original[c >> 3] & (1U << (c & 7))) != 0)
-		    onibi_bitmap_set(bits, (unsigned char)c, 1);
-	}
-	return;
-    }
-    if (node->kind == ONIBI_AST_ESCAPE)
-	onibi_class_escape_bitmap(arena, node, fold, bits);
-    for (size_t i = 0; i < node->range_count; i++) {
-	const OnibiAstRange *range = &node->ranges[i];
-	if (range->first_has_bytes || range->last_has_bytes) continue;
-	for (unsigned int c = range->first_byte; c <= range->last_byte; c++) {
-	    onibi_bitmap_set(bits, (unsigned char)c, fold);
-	    if (c == range->last_byte) break;
-	}
-    }
-    for (size_t i = 0; i < node->child_count; i++) {
-	const OnibiAstNode *child =
-	    onibi_ast_node_const(arena, node->children[i]);
-	if (child->token_kind == ONIBI_TOKEN_LITERAL ||
-	    child->kind == ONIBI_AST_LITERAL) {
-	    onibi_bitmap_set(bits, (unsigned char)child->byte, fold);
-	}
-	else if (child->token_kind == ONIBI_TOKEN_ESCAPE ||
-		 child->token_kind == ONIBI_TOKEN_META_ESCAPE ||
-		 child->kind == ONIBI_AST_ESCAPE) {
-	    onibi_class_escape_bitmap(arena, child, fold, bits);
-	}
-	else if (child->token_kind == ONIBI_TOKEN_POSIX_CLASS) {
-	    OnibiPosixKind posix = onibi_posix_kind_id(child->name_id);
-	    for (int c = 0; c < 256; c++) {
-		int hit = posix == ONIBI_POSIX_ALPHA   ? onibi_ascii_alpha(c)
-			  : posix == ONIBI_POSIX_DIGIT ? onibi_ascii_digit(c)
-			  : posix == ONIBI_POSIX_ALNUM ? onibi_ascii_alnum(c)
-			  : posix == ONIBI_POSIX_SPACE ? onibi_ascii_space(c)
-			  : posix == ONIBI_POSIX_BLANK ? (c == ' ' || c == '\t')
-			  : posix == ONIBI_POSIX_LOWER ? (c >= 'a' && c <= 'z')
-			  : posix == ONIBI_POSIX_UPPER ? (c >= 'A' && c <= 'Z')
-			  : posix == ONIBI_POSIX_WORD
-			      ? (onibi_ascii_alnum(c) || c == '_')
-			  : posix == ONIBI_POSIX_XDIGIT ? onibi_ascii_xdigit(c)
-							: 0;
-		if (hit) onibi_bitmap_set(bits, (unsigned char)c, fold);
-	    }
-	}
-	else if (child->kind == ONIBI_AST_CHARACTER_CLASS ||
-		 child->kind == ONIBI_AST_CLASS_INTERSECTION) {
-	    unsigned char nested[32];
-	    onibi_class_bitmap_ast(arena, node->children[i], fold, nested);
-	    for (size_t byte = 0; byte < 32; byte++)
-		bits[byte] |= nested[byte];
-	}
-    }
-    if (node->flags & ONIBI_AST_NODE_NEGATED)
-	for (size_t i = 0; i < 32; i++)
-	    bits[i] = (unsigned char)~bits[i];
 }
 
 static OnibiPosixKind

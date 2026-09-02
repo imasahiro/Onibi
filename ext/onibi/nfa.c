@@ -132,15 +132,14 @@ onibi_nfa_state_literal(onibi_gir_builder_t *builder, long id,
 
 static void
 onibi_nfa_state_class(onibi_gir_builder_t *builder, long id,
-		      const unsigned char bitmap[32], int negated)
+		      uint32_t class_index)
 {
     OnibiNfaState entry;
     memset(&entry, 0, sizeof(entry));
     entry.id = id;
     entry.kind = ONIBI_NFA_STATE_CONSUMING;
     entry.opcode = ONIBI_G_CLASS;
-    memcpy(entry.bitmap, bitmap, sizeof(entry.bitmap));
-    if (negated) entry.flags |= 1U;
+    entry.value = class_index;
     onibi_nfa_state_push(builder, entry);
 }
 

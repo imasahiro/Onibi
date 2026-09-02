@@ -11,6 +11,7 @@ typedef struct {
 
 typedef struct {
     OnibiRSeqSubprogramVector subprograms;
+    OnibiSemanticClassVector classes;
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
     OnibiGirEdgeVector start_edges;
@@ -90,20 +91,475 @@ typedef struct {
 typedef struct {
     VALUE rseq;
 } OnibiSearchMetadataOutput;
-typedef struct {
-    unsigned char bitmap[32];
-    unsigned char negated;
-} OnibiNormalizedClass;
+typedef ONIBI_VECTOR(OnibiClassExpr) OnibiClassExprVector;
+ONIBI_VECTOR_DEFINE(onibi_class_expr_vector, OnibiClassExprVector,
+		    OnibiClassExpr, 16,
+		    "class expression exceeds the v1 size limit")
+typedef ONIBI_VECTOR(OnigCodePoint) OnibiCodepointVector;
+ONIBI_VECTOR_DEFINE(onibi_codepoint_vector, OnibiCodepointVector, OnigCodePoint,
+		    16, "class case-fold closure exceeds the v1 size limit")
 
-static OnibiNormalizedClass
-onibi_compiler_normalize_class(const OnibiAstArena *arena, OnibiAstId id,
+static void
+onibi_class_expr_push(OnibiClassExprVector *expr, OnibiClassExprOp op,
+		      uint32_t arg0, uint32_t arg1)
+{
+    if (expr->count >= UINT16_MAX / sizeof(OnibiClassExpr))
+	rb_raise(eRegexpError, "class descriptor exceeds the v1 size limit");
+    OnibiClassExpr item = {arg0, arg1, (uint8_t)op, 0, 0};
+    onibi_class_expr_vector_push(expr, item);
+}
+
+static uint32_t
+onibi_class_decode(const onibi_gir_builder_t *builder,
+		   const unsigned char *bytes, size_t length)
+{
+    rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    const char *begin = (const char *)bytes;
+    const char *end = begin + length;
+    int width = rb_enc_precise_mbclen(begin, end, encoding);
+    if (!MBCLEN_CHARFOUND_P(width) ||
+	(size_t)MBCLEN_CHARFOUND_LEN(width) != length)
+	rb_raise(eRegexpError, "class character has an invalid encoding");
+    return (uint32_t)rb_enc_mbc_to_codepoint(begin, end, encoding);
+}
+
+static void
+onibi_class_expr_combine(OnibiClassExprVector *expr, size_t *operand_count,
+			 OnibiClassExprOp op)
+{
+    if (*operand_count > 0) onibi_class_expr_push(expr, op, 0, 0);
+    (*operand_count)++;
+}
+
+static uint32_t
+onibi_class_property_ctype(const onibi_gir_builder_t *builder,
+			   const OnibiAstNode *node, int *negated)
+{
+    const unsigned char *name = builder->ast->bytes + node->name.offset;
+    size_t length = node->name.length;
+    if (length > 0 && name[0] == '^') {
+	name++;
+	length--;
+	*negated = !*negated;
+    }
+    rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    int ctype = ONIGENC_PROPERTY_NAME_TO_CTYPE(
+	encoding, (const OnigUChar *)name, (const OnigUChar *)name + length);
+    if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    return (uint32_t)ctype;
+}
+
+static uint32_t
+onibi_class_named_ctype(const onibi_gir_builder_t *builder, const char *name)
+{
+    rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    const OnigUChar *begin = (const OnigUChar *)name;
+    int ctype =
+	ONIGENC_PROPERTY_NAME_TO_CTYPE(encoding, begin, begin + strlen(name));
+    if (ctype < 0) rb_raise(eRegexpError, "invalid character property name");
+    return (uint32_t)ctype;
+}
+
+static void
+onibi_class_expr_word(onibi_gir_builder_t *builder, OnibiClassExprVector *expr)
+{
+    rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    if (!ONIGENC_IS_UNICODE(encoding)) {
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_CTYPE, ONIGENC_CTYPE_WORD,
+			      0);
+	return;
+    }
+    const char *const names[] = {"Alpha", "M", "Nd", "Pc", "Join_Control"};
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_CTYPE,
+			      onibi_class_named_ctype(builder, names[i]), 0);
+	if (i > 0) onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_UNION, 0, 0);
+    }
+}
+
+static void
+onibi_class_expr_ascii_escape(OnibiClassExprVector *expr, unsigned char code)
+{
+    const OnibiCodepointRange *ranges;
+    size_t count;
+    static const OnibiCodepointRange digit[] = {{'0', '9'}};
+    static const OnibiCodepointRange space[] = {{'\t', '\r'}, {' ', ' '}};
+    static const OnibiCodepointRange word[] = {
+	{'0', '9'}, {'A', 'Z'}, {'_', '_'}, {'a', 'z'}};
+    static const OnibiCodepointRange hex[] = {
+	{'0', '9'}, {'A', 'F'}, {'a', 'f'}};
+    if (code == 'd') {
+	ranges = digit;
+	count = sizeof(digit) / sizeof(digit[0]);
+    }
+    else if (code == 's') {
+	ranges = space;
+	count = sizeof(space) / sizeof(space[0]);
+    }
+    else if (code == 'w') {
+	ranges = word;
+	count = sizeof(word) / sizeof(word[0]);
+    }
+    else {
+	ranges = hex;
+	count = sizeof(hex) / sizeof(hex[0]);
+    }
+    for (size_t i = 0; i < count; i++) {
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_RANGE, ranges[i].first,
+			      ranges[i].last);
+	if (i > 0) onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_UNION, 0, 0);
+    }
+}
+
+static void onibi_class_expr_ast(onibi_gir_builder_t *builder, OnibiAstId id,
+				 OnibiClassExprVector *expr);
+
+static void
+onibi_class_expr_escape(onibi_gir_builder_t *builder, const OnibiAstNode *node,
+			OnibiClassExprVector *expr)
+{
+    int negated = node->byte == 'P';
+    uint32_t ctype;
+    if (node->name.present) {
+	const unsigned char *name = builder->ast->bytes + node->name.offset;
+	size_t length = node->name.length;
+	size_t first = length > 0 && name[0] == '^' ? 1 : 0;
+	if (length - first == 4 && (memcmp(name + first, "Word", 4) == 0 ||
+				    memcmp(name + first, "word", 4) == 0)) {
+	    if (first != 0) negated = !negated;
+	    onibi_class_expr_word(builder, expr);
+	    if (negated)
+		onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
+	    return;
+	}
+	ctype = onibi_class_property_ctype(builder, node, &negated);
+    }
+    else {
+	unsigned char raw = (unsigned char)node->byte;
+	unsigned char code = onibi_ascii_fold(raw);
+	if (code != 'd' && code != 's' && code != 'w' && code != 'h')
+	    rb_raise(eRegexpError, "escape is not supported in RSeq class");
+	onibi_class_expr_ascii_escape(expr, code);
+	if (raw >= 'A' && raw <= 'Z') negated = !negated;
+	if (negated) onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
+	return;
+    }
+    onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_CTYPE, ctype, 0);
+    if (negated) onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
+}
+
+static void
+onibi_class_expr_ast(onibi_gir_builder_t *builder, OnibiAstId id,
+		     OnibiClassExprVector *expr)
+{
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    if (node->kind == ONIBI_AST_ESCAPE) {
+	onibi_class_expr_escape(builder, node, expr);
+	return;
+    }
+    if (node->kind == ONIBI_AST_CLASS_INTERSECTION) {
+	if (node->child_count < 2)
+	    rb_raise(eRegexpError, "class intersection has no operands");
+	onibi_class_expr_ast(builder, node->children[0], expr);
+	for (size_t i = 1; i < node->child_count; i++) {
+	    onibi_class_expr_ast(builder, node->children[i], expr);
+	    onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_INTERSECTION, 0, 0);
+	}
+	if (node->flags & ONIBI_AST_NODE_NEGATED)
+	    onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
+	return;
+    }
+    size_t operands = 0;
+    for (size_t i = 0; i < node->range_count; i++) {
+	const OnibiAstRange *range = &node->ranges[i];
+	const unsigned char *first =
+	    range->first_has_bytes ? builder->ast->bytes + range->first.offset
+				   : &range->first_byte;
+	const unsigned char *last =
+	    range->last_has_bytes ? builder->ast->bytes + range->last.offset
+				  : &range->last_byte;
+	size_t first_length = range->first_has_bytes ? range->first.length : 1;
+	size_t last_length = range->last_has_bytes ? range->last.length : 1;
+	uint32_t first_code = onibi_class_decode(builder, first, first_length);
+	uint32_t last_code = onibi_class_decode(builder, last, last_length);
+	if (first_code > last_code)
+	    rb_raise(eRegexpError, "empty range in character class");
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_RANGE, first_code,
+			      last_code);
+	onibi_class_expr_combine(expr, &operands, ONIBI_CLASS_EXPR_UNION);
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+	const OnibiAstNode *child =
+	    onibi_ast_node_const(builder->ast, node->children[i]);
+	if (child->token_kind == ONIBI_TOKEN_LITERAL ||
+	    child->kind == ONIBI_AST_LITERAL) {
+	    unsigned char single = (unsigned char)child->byte;
+	    const unsigned char *bytes =
+		child->bytes.present ? builder->ast->bytes + child->bytes.offset
+				     : &single;
+	    size_t length = child->bytes.present ? child->bytes.length : 1;
+	    uint32_t codepoint = onibi_class_decode(builder, bytes, length);
+	    onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_RANGE, codepoint,
+				  codepoint);
+	}
+	else if (child->token_kind == ONIBI_TOKEN_ESCAPE ||
+		 child->token_kind == ONIBI_TOKEN_META_ESCAPE ||
+		 child->kind == ONIBI_AST_ESCAPE) {
+	    onibi_class_expr_escape(builder, child, expr);
+	}
+	else if (child->token_kind == ONIBI_TOKEN_POSIX_CLASS) {
+	    int ctype = onibi_unicode_ctype_id(child->name_id);
+	    if (ctype < 0)
+		rb_raise(eRegexpError, "unknown POSIX character class");
+	    if (onibi_posix_kind_id(child->name_id) == ONIBI_POSIX_WORD)
+		onibi_class_expr_word(builder, expr);
+	    else
+		onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_CTYPE,
+				      (uint32_t)ctype, 0);
+	}
+	else if (child->kind == ONIBI_AST_CHARACTER_CLASS ||
+		 child->kind == ONIBI_AST_CLASS_INTERSECTION) {
+	    onibi_class_expr_ast(builder, node->children[i], expr);
+	}
+	else {
+	    rb_raise(eRegexpError, "unsupported character class token");
+	}
+	onibi_class_expr_combine(expr, &operands, ONIBI_CLASS_EXPR_UNION);
+    }
+    if (operands == 0)
+	rb_raise(eRegexpError, "empty character class descriptor");
+    if (node->flags & ONIBI_AST_NODE_NEGATED)
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
+}
+
+static int
+onibi_codepoint_range_compare(const void *left, const void *right)
+{
+    const OnibiCodepointRange *a = left;
+    const OnibiCodepointRange *b = right;
+    return a->first < b->first ? -1 : a->first > b->first ? 1 : 0;
+}
+
+static int
+onibi_class_expr_hit(const OnibiClassExpr *expr, size_t count,
+		     OnigCodePoint codepoint, rb_encoding *encoding,
+		     unsigned char *stack)
+{
+    size_t depth = 0;
+    for (size_t i = 0; i < count; i++) {
+	if (expr[i].op == ONIBI_CLASS_EXPR_RANGE) {
+	    stack[depth++] =
+		codepoint >= expr[i].arg0 && codepoint <= expr[i].arg1;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_CTYPE) {
+	    stack[depth++] =
+		ONIGENC_IS_CODE_CTYPE(encoding, codepoint,
+				      (OnigCtype)expr[i].arg0) != 0;
+	}
+	else if (expr[i].op == ONIBI_CLASS_EXPR_NEGATE) {
+	    stack[depth - 1U] = !stack[depth - 1U];
+	}
+	else {
+	    unsigned char right = stack[--depth];
+	    if (expr[i].op == ONIBI_CLASS_EXPR_UNION)
+		stack[depth - 1U] = stack[depth - 1U] || right;
+	    else
+		stack[depth - 1U] = stack[depth - 1U] && right;
+	}
+    }
+    return stack[0] != 0;
+}
+
+typedef struct {
+    const OnibiClassExpr *expr;
+    size_t expr_count;
+    rb_encoding *encoding;
+    unsigned char *stack;
+    OnibiCodepointVector *additions;
+    int repeated;
+    int changed;
+    int incomplete;
+} OnibiClassFoldClosure;
+
+static int
+onibi_class_fold_member(OnibiClassFoldClosure *closure, OnigCodePoint codepoint)
+{
+    if (onibi_class_expr_hit(closure->expr, closure->expr_count, codepoint,
+			     closure->encoding, closure->stack))
+	return 1;
+    for (size_t i = 0; i < closure->additions->count; i++)
+	if (closure->additions->entries[i] == codepoint) return 1;
+    return 0;
+}
+
+static void
+onibi_class_fold_add(OnibiClassFoldClosure *closure, OnigCodePoint codepoint)
+{
+    if (onibi_class_fold_member(closure, codepoint)) return;
+    size_t limit = UINT16_MAX / sizeof(OnibiClassExpr);
+    if (closure->expr_count >= limit ||
+	closure->additions->count >= (limit - closure->expr_count) / 2U)
+	rb_raise(eRegexpError,
+		 "class case-fold closure exceeds the v1 size limit");
+    onibi_codepoint_vector_push(closure->additions, codepoint);
+    closure->changed = 1;
+}
+
+static int
+onibi_class_fold_callback(OnigCodePoint from, OnigCodePoint *to, int to_len,
+			  void *opaque)
+{
+    OnibiClassFoldClosure *closure = opaque;
+    if (to_len != 1) {
+	if (onibi_class_fold_member(closure, from)) {
+	    closure->incomplete = 1;
+	    return 0;
+	}
+	if (closure->repeated && to_len > 1) {
+	    int all_members = 1;
+	    for (int i = 0; i < to_len; i++)
+		if (!onibi_class_fold_member(closure, to[i])) {
+		    all_members = 0;
+		    break;
+		}
+	    if (all_members) closure->incomplete = 1;
+	}
+	return 0;
+    }
+    int from_member = onibi_class_fold_member(closure, from);
+    int to_member = onibi_class_fold_member(closure, to[0]);
+    if (from_member && !to_member) onibi_class_fold_add(closure, to[0]);
+    if (to_member && !from_member) onibi_class_fold_add(closure, from);
+    return 0;
+}
+
+static void
+onibi_class_expr_apply_casefold(onibi_gir_builder_t *builder,
+				OnibiClassExprVector *expr, int *incomplete)
+{
+    if (expr->count == 1 && expr->entries[0].op == ONIBI_CLASS_EXPR_CTYPE &&
+	expr->entries[0].arg0 == ONIGENC_CTYPE_ASCII)
+	return;
+    OnibiCodepointVector additions;
+    onibi_codepoint_vector_init(&additions);
+    onibi_codepoint_vector_bind(&additions, builder->allocation_owner);
+    unsigned char *stack =
+	onibi_owned_realloc(builder->allocation_owner, NULL, expr->count);
+    rb_encoding *fold_encoding = rb_enc_from_index(builder->encoding_index);
+    if (builder->encoding_index == rb_usascii_encindex())
+	fold_encoding = rb_utf8_encoding();
+    OnibiClassFoldClosure closure = {expr->entries,
+				     expr->count,
+				     fold_encoding,
+				     stack,
+				     &additions,
+				     builder->casefold_repeat_depth > 0,
+				     0,
+				     0};
+    do {
+	closure.changed = 0;
+	int status = ONIGENC_APPLY_ALL_CASE_FOLD(
+	    closure.encoding, ONIGENC_CASE_FOLD_DEFAULT,
+	    onibi_class_fold_callback, &closure);
+	if (status != 0)
+	    rb_raise(eRegexpError, "class case-fold closure failed");
+    } while (closure.changed);
+    *incomplete = closure.incomplete;
+    onibi_owned_free(builder->allocation_owner, stack);
+    for (size_t i = 0; i < additions.count; i++) {
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_RANGE,
+			      additions.entries[i], additions.entries[i]);
+	onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_UNION, 0, 0);
+    }
+    onibi_codepoint_vector_free(&additions);
+}
+
+static uint32_t
+onibi_compiler_normalize_class(onibi_gir_builder_t *builder, OnibiAstId id,
 			       int fold)
 {
-    OnibiNormalizedClass normalized;
-    onibi_class_bitmap_ast(arena, id, fold, normalized.bitmap);
-    normalized.negated =
-	(onibi_ast_node_const(arena, id)->flags & ONIBI_AST_NODE_NEGATED) != 0;
-    return normalized;
+    OnibiClassExprVector expr;
+    onibi_class_expr_vector_init(&expr);
+    onibi_class_expr_vector_bind(&expr, builder->allocation_owner);
+    onibi_class_expr_ast(builder, id, &expr);
+    uint8_t flags = 0;
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    int whole_negated = node->kind == ONIBI_AST_ESCAPE ||
+			(node->flags & ONIBI_AST_NODE_NEGATED) != 0;
+    if (whole_negated && expr.count > 1 &&
+	expr.entries[expr.count - 1].op == ONIBI_CLASS_EXPR_NEGATE) {
+	flags |= ONIBI_RSEQ_CLASS_FLAG_NEGATED;
+	expr.count--;
+    }
+    int incomplete_casefold = 0;
+    if (fold)
+	onibi_class_expr_apply_casefold(builder, &expr, &incomplete_casefold);
+    uint32_t result;
+    if (expr.count == 1 && expr.entries[0].op == ONIBI_CLASS_EXPR_CTYPE) {
+	uint32_t ctype = expr.entries[0].arg0;
+	result = onibi_semantic_class_add(builder, ONIBI_CLASS_ENCODING_CTYPE,
+					  flags, fold, incomplete_casefold,
+					  &ctype, sizeof(ctype));
+    }
+    else {
+	int ranges_only = expr.count > 0;
+	size_t range_count = 0;
+	for (size_t i = 0; i < expr.count; i++) {
+	    if (expr.entries[i].op == ONIBI_CLASS_EXPR_RANGE)
+		range_count++;
+	    else if (expr.entries[i].op != ONIBI_CLASS_EXPR_UNION)
+		ranges_only = 0;
+	}
+	if (ranges_only && range_count > 0) {
+	    OnibiCodepointRange *ranges =
+		onibi_owned_realloc(builder->allocation_owner, NULL,
+				    range_count * sizeof(OnibiCodepointRange));
+	    size_t at = 0;
+	    for (size_t i = 0; i < expr.count; i++)
+		if (expr.entries[i].op == ONIBI_CLASS_EXPR_RANGE)
+		    ranges[at++] = (OnibiCodepointRange){expr.entries[i].arg0,
+							 expr.entries[i].arg1};
+	    qsort(ranges, range_count, sizeof(*ranges),
+		  onibi_codepoint_range_compare);
+	    size_t merged = 0;
+	    for (size_t i = 0; i < range_count; i++) {
+		if (merged > 0 && (ranges[merged - 1].last == UINT32_MAX ||
+				   ranges[i].first <=
+				       ranges[merged - 1].last + UINT32_C(1))) {
+		    if (ranges[i].last > ranges[merged - 1].last)
+			ranges[merged - 1].last = ranges[i].last;
+		}
+		else
+		    ranges[merged++] = ranges[i];
+	    }
+	    int ascii = ranges[merged - 1].last <= 255;
+	    if (ascii) {
+		unsigned char bitmap[32] = {0};
+		for (size_t i = 0; i < merged; i++)
+		    for (uint32_t cp = ranges[i].first; cp <= ranges[i].last;
+			 cp++) {
+			bitmap[cp >> 3] |= (unsigned char)(1U << (cp & 7));
+			if (cp == ranges[i].last) break;
+		    }
+		result = onibi_semantic_class_add(
+		    builder, ONIBI_CLASS_ASCII_BITMAP, flags, fold,
+		    incomplete_casefold, bitmap, sizeof(bitmap));
+	    }
+	    else {
+		result = onibi_semantic_class_add(
+		    builder, ONIBI_CLASS_CODEPOINT_RANGES, flags, fold,
+		    incomplete_casefold, ranges, merged * sizeof(*ranges));
+	    }
+	    onibi_owned_free(builder->allocation_owner, ranges);
+	}
+	else {
+	    result = onibi_semantic_class_add(
+		builder, ONIBI_CLASS_MIXED, flags, fold, incomplete_casefold,
+		expr.entries, expr.count * sizeof(*expr.entries));
+	}
+    }
+    onibi_class_expr_vector_free(&expr);
+    return result;
 }
 static void
 onibi_compiled_mark(void *ptr)
@@ -135,6 +591,7 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
     if (!owner->gir_transferred) {
 	onibi_gir_edge_vector_free(&owner->start_edges);
 	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
+	onibi_semantic_class_vector_free(&owner->builder.classes);
 	onibi_gir_state_vector_free(&owner->builder.states);
 	onibi_gir_edge_vector_free(&owner->builder.edges);
     }
@@ -158,6 +615,9 @@ onibi_compiled_free(void *ptr)
     onibi_gir_edge_vector_free(&compiled->edges);
     onibi_gir_edge_vector_free(&compiled->start_edges);
     onibi_rseq_subprogram_vector_free(&compiled->subprograms);
+    for (size_t i = 0; i < compiled->classes.count; i++)
+	ruby_xfree(compiled->classes.entries[i].data);
+    onibi_semantic_class_vector_free(&compiled->classes);
     xfree(ptr);
 }
 static size_t
@@ -165,13 +625,18 @@ onibi_compiled_memsize(const void *ptr)
 {
     const OnibiCompiled *compiled = (const OnibiCompiled *)ptr;
     if (!compiled) return 0;
-    return sizeof(*compiled) +
-	   compiled->states.capacity * sizeof(*compiled->states.entries) +
-	   compiled->edges.capacity * sizeof(*compiled->edges.entries) +
-	   compiled->start_edges.capacity *
-	       sizeof(*compiled->start_edges.entries) +
-	   compiled->subprograms.capacity *
-	       sizeof(*compiled->subprograms.entries);
+    size_t size =
+	sizeof(*compiled) +
+	compiled->states.capacity * sizeof(*compiled->states.entries) +
+	compiled->edges.capacity * sizeof(*compiled->edges.entries) +
+	compiled->start_edges.capacity *
+	    sizeof(*compiled->start_edges.entries) +
+	compiled->subprograms.capacity *
+	    sizeof(*compiled->subprograms.entries) +
+	compiled->classes.capacity * sizeof(*compiled->classes.entries);
+    for (size_t i = 0; i < compiled->classes.count; i++)
+	size += compiled->classes.entries[i].data_length;
+    return size;
 }
 static const rb_data_type_t onibi_compiled_type = {"Onibi::Compiled",
 						   {onibi_compiled_mark,
@@ -965,62 +1430,6 @@ onibi_compile_sequence(const OnibiAstNode *sequence,
     return result;
 }
 
-static int
-onibi_utf8_decode_bytes(const unsigned char *bytes, size_t length,
-			uint32_t *codepoint)
-{
-    if (length == 1 && bytes[0] < 0x80) {
-	*codepoint = bytes[0];
-	return 1;
-    }
-    if (length == 2 && (bytes[0] & 0xe0) == 0xc0 && (bytes[1] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(bytes[0] & 0x1f) << 6) | (bytes[1] & 0x3f);
-	return *codepoint >= 0x80;
-    }
-    if (length == 3 && (bytes[0] & 0xf0) == 0xe0 && (bytes[1] & 0xc0) == 0x80 &&
-	(bytes[2] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(bytes[0] & 0x0f) << 12) |
-		     ((uint32_t)(bytes[1] & 0x3f) << 6) | (bytes[2] & 0x3f);
-	return *codepoint >= 0x800;
-    }
-    if (length == 4 && (bytes[0] & 0xf8) == 0xf0 && (bytes[1] & 0xc0) == 0x80 &&
-	(bytes[2] & 0xc0) == 0x80 && (bytes[3] & 0xc0) == 0x80) {
-	*codepoint = ((uint32_t)(bytes[0] & 0x07) << 18) |
-		     ((uint32_t)(bytes[1] & 0x3f) << 12) |
-		     ((uint32_t)(bytes[2] & 0x3f) << 6) | (bytes[3] & 0x3f);
-	return *codepoint >= 0x10000 && *codepoint <= 0x10ffff;
-    }
-    return 0;
-}
-
-static size_t
-onibi_utf8_encode_bytes(uint32_t codepoint, unsigned char bytes[4])
-{
-    if (codepoint <= 0x7f) {
-	bytes[0] = (unsigned char)codepoint;
-	return 1;
-    }
-    if (codepoint <= 0x7ff) {
-	bytes[0] = (unsigned char)(0xc0 | (codepoint >> 6));
-	bytes[1] = (unsigned char)(0x80 | (codepoint & 0x3f));
-	return 2;
-    }
-    if (codepoint <= 0xffff && !(codepoint >= 0xd800 && codepoint <= 0xdfff)) {
-	bytes[0] = (unsigned char)(0xe0 | (codepoint >> 12));
-	bytes[1] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3f));
-	bytes[2] = (unsigned char)(0x80 | (codepoint & 0x3f));
-	return 3;
-    }
-    if (codepoint <= 0x10ffff) {
-	bytes[0] = (unsigned char)(0xf0 | (codepoint >> 18));
-	bytes[1] = (unsigned char)(0x80 | ((codepoint >> 12) & 0x3f));
-	bytes[2] = (unsigned char)(0x80 | ((codepoint >> 6) & 0x3f));
-	bytes[3] = (unsigned char)(0x80 | (codepoint & 0x3f));
-	return 4;
-    }
-    return 0;
-}
-
 static onibi_fragment_t
 onibi_compile_literal_bytes(const unsigned char *bytes, size_t length,
 			    int ignorecase, onibi_gir_builder_t *builder)
@@ -1036,101 +1445,30 @@ onibi_compile_literal_bytes(const unsigned char *bytes, size_t length,
     return result;
 }
 
-static void
-onibi_append_branch(onibi_fragment_t *result, onibi_fragment_t *branch)
-{
-    onibi_id_vector_append(&result->starts, &branch->starts);
-    onibi_id_vector_append(&result->exits, &branch->exits);
-    onibi_id_vector_free(&branch->starts);
-    onibi_id_vector_free(&branch->exits);
-    onibi_g_action_vector_free(&branch->start_actions);
-    onibi_g_action_vector_free(&branch->pending_actions);
-}
-
 static onibi_fragment_t
 onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
 			      onibi_gir_builder_t *builder)
 {
-    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, node_id);
-    int literal_children = 1;
-    int has_multibyte = 0;
-    for (size_t i = 0; i < node->child_count; i++) {
-	const OnibiAstNode *child =
-	    onibi_ast_node_const(builder->ast, node->children[i]);
-	if (child->token_kind != ONIBI_TOKEN_LITERAL) literal_children = 0;
-	if (child->bytes.present && child->bytes.length > 1) has_multibyte = 1;
-    }
-    int expand_ranges = node->range_count > 0 && node->range_count <= 4;
-    long expanded = 0;
-    if (expand_ranges) {
-	for (size_t i = 0; i < node->range_count; i++) {
-	    const OnibiAstRange *range = &node->ranges[i];
-	    uint32_t first, last;
-	    if (!range->first_has_bytes || !range->last_has_bytes ||
-		!onibi_utf8_decode_bytes(builder->ast->bytes +
-					     range->first.offset,
-					 range->first.length, &first) ||
-		!onibi_utf8_decode_bytes(builder->ast->bytes +
-					     range->last.offset,
-					 range->last.length, &last) ||
-		last < first || last - first > 256U) {
-		expand_ranges = 0;
-		break;
-	    }
-	    expanded += (long)(last - first + 1U);
-	    if (expanded > 256) {
-		expand_ranges = 0;
-		break;
-	    }
-	}
-    }
-    if (!(node->flags & ONIBI_AST_NODE_NEGATED) && literal_children &&
-	((node->range_count == 0 && has_multibyte) || expand_ranges)) {
-	onibi_fragment_t result = onibi_fragment_empty(builder);
-	result.nullable = 0;
-	for (size_t i = 0; i < node->child_count; i++) {
-	    const OnibiAstNode *child =
-		onibi_ast_node_const(builder->ast, node->children[i]);
-	    const unsigned char *bytes =
-		child->bytes.present ? builder->ast->bytes + child->bytes.offset
-				     : (const unsigned char *)&child->byte;
-	    size_t length = child->bytes.present ? child->bytes.length : 1;
-	    onibi_fragment_t branch =
-		onibi_compile_literal_bytes(bytes, length, ignorecase, builder);
-	    onibi_append_branch(&result, &branch);
-	}
-	if (expand_ranges) {
-	    for (size_t i = 0; i < node->range_count; i++) {
-		const OnibiAstRange *range = &node->ranges[i];
-		uint32_t first, last;
-		onibi_utf8_decode_bytes(builder->ast->bytes +
-					    range->first.offset,
-					range->first.length, &first);
-		onibi_utf8_decode_bytes(builder->ast->bytes +
-					    range->last.offset,
-					range->last.length, &last);
-		for (uint32_t cp = first; cp <= last; cp++) {
-		    unsigned char bytes[4];
-		    size_t length = onibi_utf8_encode_bytes(cp, bytes);
-		    onibi_fragment_t branch = onibi_compile_literal_bytes(
-			bytes, length, ignorecase, builder);
-		    onibi_append_branch(&result, &branch);
-		    if (cp == last) break;
-		}
-	    }
-	}
-	return result;
-    }
     long id = builder->next_id++;
-    OnibiNormalizedClass normalized =
-	onibi_compiler_normalize_class(builder->ast, node_id, ignorecase);
-    onibi_nfa_state_class(builder, id, normalized.bitmap, normalized.negated);
+    uint32_t class_index =
+	onibi_compiler_normalize_class(builder, node_id, ignorecase);
+    onibi_nfa_state_class(builder, id, class_index);
     onibi_fragment_t result = onibi_fragment_empty(builder);
     onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			   builder->allocation_owner);
     onibi_id_vector_single(&result.exits, (OnibiStateId)id,
 			   builder->allocation_owner);
     result.nullable = 0;
+    return result;
+}
+
+static onibi_fragment_t
+onibi_compile_repeat_atom(OnibiAstId atom, onibi_gir_builder_t *builder,
+			  int can_repeat)
+{
+    if (can_repeat) builder->casefold_repeat_depth++;
+    onibi_fragment_t result = onibi_compile_node(atom, builder);
+    if (can_repeat) builder->casefold_repeat_depth--;
     return result;
 }
 
@@ -1186,20 +1524,16 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	unsigned char name_byte = c_node->name.present
 				      ? builder->ast->bytes[c_node->name.offset]
 				      : (unsigned char)c_node->byte;
-	int is_property = onibi_ascii_property_name_p(c_node->name_id);
-	if (name_length > 1 && !is_property)
-	    rb_raise(eRegexpError,
-		     "Unicode property escapes require encoded GIR classes");
 	int code = name_length == 1 ? onibi_ascii_fold(name_byte) : 0;
 	if (name_length <= 1 && (code == 'r' || code == 'p' || code == 'u'))
 	    rb_raise(eRegexpError, "escape is not supported in RSeq");
 	if (code == 'x')
 	    rb_raise(eRegexpError,
 		     "grapheme matching is not available in this PoC");
-	unsigned char bitmap[32];
-	onibi_class_bitmap_ast(builder->ast, node_id, ignorecase, bitmap);
 	long id = builder->next_id++;
-	onibi_nfa_state_class(builder, id, bitmap, 0);
+	uint32_t class_index =
+	    onibi_compiler_normalize_class(builder, node_id, ignorecase);
+	onibi_nfa_state_class(builder, id, class_index);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -1209,13 +1543,9 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_ANY) {
-	unsigned char bitmap[32];
-	memset(bitmap, 0xff, sizeof(bitmap));
-	if (!multiline)
-	    bitmap[(unsigned char)'\n' >> 3] &=
-		(unsigned char)~(1U << ((unsigned char)'\n' & 7));
 	long id = builder->next_id++;
-	onibi_nfa_state_class(builder, id, bitmap, 0);
+	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0,
+			multiline ? ONIBI_RSEQ_STATE_FLAG_NEGATED : 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -1408,9 +1738,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			rb_raise(eRegexpError,
 				 "lookaround body has an unsupported escape");
 		}
-		unsigned char bitmap[32];
-		onibi_class_bitmap_ast(builder->ast, child_id, child_ignorecase,
-				       bitmap);
+		(void)onibi_compiler_normalize_class(builder, child_id,
+						     child_ignorecase);
 	    }
 	    else if (child->kind != ONIBI_AST_ANY &&
 		     child->kind != ONIBI_AST_LITERAL) {
@@ -1483,6 +1812,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    rb_raise(eRegexpError, "unnormalized repeat");
 	long min = resolved_node->repeat_min;
 	long normalized_max = resolved_node->repeat_max;
+	int can_repeat = normalized_max < 0 || normalized_max > 1;
 	int possessive =
 	    (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) != 0;
 	int greedy = (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
@@ -1497,7 +1827,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	if (normalized_max >= 0 && min == 0 && normalized_max == 0)
 	    return onibi_fragment_empty(builder);
 	if (normalized_max >= 0 && min == 0 && normalized_max == 1) {
-	    onibi_fragment_t result = onibi_compile_node(atom, builder);
+	    onibi_fragment_t result =
+		onibi_compile_repeat_atom(atom, builder, can_repeat);
 	    /* The atom is one ordered branch of the optional.  Keep its tag
 	     * actions on that branch only.  Fragment-level start actions also
 	     * apply to the nullable bypass edge, which would incorrectly turn
@@ -1535,7 +1866,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	     * larger repeats.  Fragment order preserves greedy/lazy edge
 	     * priority. */
 	    for (long i = 0; i < min; i++) {
-		onibi_fragment_t part = onibi_compile_node(atom, builder);
+		onibi_fragment_t part =
+		    onibi_compile_repeat_atom(atom, builder, can_repeat);
 		if (i == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		else {
@@ -1556,7 +1888,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 		onibi_g_action_vector_free(&part.pending_actions);
 	    }
 	    for (long i = min; i < max; i++) {
-		onibi_fragment_t part = onibi_compile_node(atom, builder);
+		onibi_fragment_t part =
+		    onibi_compile_repeat_atom(atom, builder, can_repeat);
 		if (result.starts.count == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		if (result.exits.count > 0) {
@@ -1586,7 +1919,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    onibi_g_action_vector_push(&result.start_actions, init);
 	}
 	for (long i = 0; i < min; i++) {
-	    onibi_fragment_t part = onibi_compile_node(atom, builder);
+	    onibi_fragment_t part =
+		onibi_compile_repeat_atom(atom, builder, can_repeat);
 	    if (i == 0)
 		onibi_id_vector_move(&result.starts, &part.starts);
 	    else {
@@ -1607,7 +1941,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	if (max >= 0 && max > min) {
 	    long optional = max - min;
 	    for (long i = 0; i < optional; i++) {
-		onibi_fragment_t part = onibi_compile_node(atom, builder);
+		onibi_fragment_t part =
+		    onibi_compile_repeat_atom(atom, builder, can_repeat);
 		if (result.starts.count == 0)
 		    onibi_id_vector_move(&result.starts, &part.starts);
 		OnibiGActionVector repeat_actions;
@@ -1637,7 +1972,8 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 				     min));
 	}
 	else if (normalized_max < 0) {
-	    onibi_fragment_t repeat = onibi_compile_node(atom, builder);
+	    onibi_fragment_t repeat =
+		onibi_compile_repeat_atom(atom, builder, can_repeat);
 	    long progress_slot =
 		repeat.nullable ? onibi_gir_allocate_counter_slot(builder, 1)
 				: -1;
@@ -1725,6 +2061,7 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     memset(builder, 0, sizeof(*builder));
     builder->ast = &parsed->arena;
     builder->semantics = semantics;
+    builder->encoding_index = parsed->encoding_index;
     builder->allocation_owner = allocation_owner;
     onibi_gir_state_vector_init(&builder->states);
     onibi_gir_state_vector_bind(&builder->states, allocation_owner);
@@ -1735,6 +2072,8 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 				      builder->allocation_owner);
     onibi_rseq_subprogram_vector_push(&builder->subprograms,
 				      (OnibiRSeqSubprogramEntry){0, 0, 0});
+    onibi_semantic_class_vector_init(&builder->classes);
+    onibi_semantic_class_vector_bind(&builder->classes, allocation_owner);
     for (size_t i = 1; i < semantics->lowered_subprogram_count; i++)
 	onibi_rseq_subprogram_vector_push(&builder->subprograms,
 					  (OnibiRSeqSubprogramEntry){0, 0, 0});
@@ -1835,6 +2174,7 @@ onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
 			 &builder->edges,
 			 start_edges,
 			 &builder->subprograms,
+			 &builder->classes,
 			 &builder->progress_slots,
 			 builder->next_id,
 			 builder->capture_count,
@@ -1873,6 +2213,16 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
     for (size_t i = 0; i < builder->states.count; i++) {
 	const OnibiGirStateEntry *state = &builder->states.entries[i];
+	if (state->opcode == ONIBI_G_CHAR &&
+	    (state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0)
+	    result.rseq_features |= ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD;
+	if (state->opcode == ONIBI_G_BACKREF &&
+	    (state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0)
+	    result.rseq_features |= ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD;
+	if (state->opcode == ONIBI_G_CLASS &&
+	    state->value < builder->classes.count &&
+	    builder->classes.entries[state->value].incomplete_casefold)
+	    result.rseq_features |= ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD;
 	if (state->opcode == ONIBI_G_GRAPHEME ||
 	    state->opcode == ONIBI_G_BACKREF || state->opcode == ONIBI_G_CALL ||
 	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
@@ -2016,6 +2366,7 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 					 &onibi_compiled_type, compiled_result);
     memset(compiled_result, 0, sizeof(*compiled_result));
     onibi_rseq_subprogram_vector_init(&compiled_result->subprograms);
+    onibi_semantic_class_vector_init(&compiled_result->classes);
     onibi_gir_state_vector_init(&compiled_result->states);
     onibi_gir_edge_vector_init(&compiled_result->edges);
     onibi_gir_edge_vector_init(&compiled_result->start_edges);
@@ -2055,18 +2406,25 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_owned_transfer(builder->allocation_owner, start_edges->entries);
     onibi_owned_transfer(builder->allocation_owner,
 			 builder->subprograms.entries);
+    for (size_t i = 0; i < builder->classes.count; i++)
+	onibi_owned_transfer(builder->allocation_owner,
+			     builder->classes.entries[i].data);
+    onibi_owned_transfer(builder->allocation_owner, builder->classes.entries);
     builder->states.allocation_owner = NULL;
     builder->edges.allocation_owner = NULL;
     start_edges->allocation_owner = NULL;
     builder->subprograms.allocation_owner = NULL;
+    builder->classes.allocation_owner = NULL;
     compiled_result->states = builder->states;
     compiled_result->edges = builder->edges;
     compiled_result->start_edges = *start_edges;
     compiled_result->subprograms = builder->subprograms;
+    compiled_result->classes = builder->classes;
     onibi_gir_state_vector_init(&builder->states);
     onibi_gir_edge_vector_init(&builder->edges);
     onibi_gir_edge_vector_init(start_edges);
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
+    onibi_semantic_class_vector_init(&builder->classes);
     compiled_result->accept = accept;
     compiled_result->capture_count = builder->capture_count;
     compiled_result->counter_count = analysis.counter_count;
@@ -2126,6 +2484,8 @@ onibi_compiler_compile_body(VALUE opaque)
     onibi_allocation_owner_set_phase(&owner->allocations, 6);
     VerifiedGIRAnalysis analysis = onibi_compiler_pass_classify(
 	&owner->builder, &owner->start_edges, owner);
+    if (analyze.max_width == 0)
+	analysis.rseq_features |= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
     onibi_allocation_owner_set_phase(&owner->allocations, 7);
     onibi_compiler_pass_optimize(&owner->builder, owner);
     onibi_allocation_owner_set_phase(&owner->allocations, 8);

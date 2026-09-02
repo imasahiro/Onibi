@@ -2,6 +2,7 @@
 #include "ruby.h"
 #include "ruby/encoding.h"
 #include "ruby/onigmo.h"
+#include "ruby/re.h"
 #include "ruby/thread.h"
 
 #define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
@@ -223,6 +224,10 @@ typedef struct {
     uint64_t timeout_deadline;
     VALUE rseq;
     const OnibiRSeqView *view;
+    rb_encoding *encoding;
+    OnibiEncodingMode encoding_mode;
+    unsigned char *class_stack;
+    size_t class_stack_capacity;
     long matched_end;
 } OnibiExecCtx;
 typedef enum {
@@ -243,7 +248,9 @@ static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
 static int onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *view,
 					 VALUE subject, long start,
-					 long search_origin, long *matched_end);
+					 long search_origin, long *matched_end,
+					 unsigned char *class_stack,
+					 size_t class_stack_capacity);
 static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
@@ -336,15 +343,18 @@ typedef enum {
 static OnibiPosixKind onibi_posix_kind_id(ID property);
 
 static int
-onibi_ascii_pattern(VALUE source)
-{
-    return rb_enc_str_asciionly_p(source);
-}
-
-static int
 onibi_valid_encoding(VALUE str)
 {
     return rb_enc_str_coderange(str) != RUBY_ENC_CODERANGE_BROKEN;
+}
+
+static OnibiEncodingMode
+onibi_encoding_mode_for(VALUE str, rb_encoding *encoding)
+{
+    if (rb_enc_str_asciionly_p(str)) return ONIBI_ENC_ASCII_7BIT;
+    if (rb_enc_mbmaxlen(encoding) == 1) return ONIBI_ENC_SINGLE_BYTE;
+    if (rb_enc_get_index(str) == rb_utf8_encindex()) return ONIBI_ENC_UTF8;
+    return ONIBI_ENC_GENERIC_MB;
 }
 
 static int
@@ -445,20 +455,6 @@ onibi_regexp_fixed_p(const onibi_regexp_t *obj)
 }
 
 static int
-onibi_encoded_literal_program_p(const onibi_regexp_t *obj)
-{
-    return (obj->options & ONIBI_OPT_FIXEDENCODING) &&
-	   !(obj->options & (ONIBI_OPT_IGNORECASE | ONIBI_OPT_NOENCODING)) &&
-	   obj->source_encoding_index != rb_ascii8bit_encindex() &&
-	   !obj->source_ascii_only &&
-	   ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) &&
-	   !(obj->feature_flags & ONIBI_FEATURE_WILDCARD) &&
-	   !(obj->feature_flags & ONIBI_FEATURE_ANCHOR) &&
-	   (!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_CLASS) ||
-	    (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
-}
-
-static int
 onibi_character_boundary(VALUE str, long pos)
 {
     const char *start = RSTRING_PTR(str);
@@ -473,6 +469,21 @@ static int
 onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
 {
     int encoding = rb_enc_get_index(str);
+    int subject_ascii_only = rb_enc_str_asciionly_p(str);
+    if (!rb_enc_asciicompat(rb_enc_from_index(obj->source_encoding_index)))
+	return 0;
+    /* The verified RSeq feature records folds that still require DAG paths. */
+    if ((obj->rseq_view.header->features &
+	 ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD) != 0)
+	return 0;
+    if ((obj->rseq_view.header->features &
+	 ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD) != 0 &&
+	(!obj->source_ascii_only || !subject_ascii_only))
+	return 0;
+    /* Keep zero-width multibyte search on the existing API fallback path. */
+    if (!subject_ascii_only && (obj->rseq_view.header->features &
+				ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY) != 0)
+	return 0;
     /* A fixed-encoding regexp cannot consume non-ASCII bytes tagged as
      * ASCII-8BIT.  Let MRI report Encoding::CompatibilityError instead of
      * entering the byte-oriented RSeq path. */
@@ -480,18 +491,7 @@ onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
 	!rb_enc_str_asciionly_p(str))
 	return 0;
     if (rb_enc_compatible(str, obj->source) == NULL) return 0;
-    if (rb_enc_str_asciionly_p(str) || encoding == rb_ascii8bit_encindex())
-	return 1;
-    if (onibi_encoded_literal_program_p(obj) &&
-	encoding == obj->source_encoding_index)
-	return onibi_valid_encoding(str);
-    if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_UNICODE_PROPERTY) &&
-	(!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_UNICODE_PROPERTY_CLASS) ||
-	 (!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NESTED_CLASS) &&
-	  !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CLASS_INTERSECTION))) &&
-	encoding == rb_utf8_encindex())
-	return onibi_valid_encoding(str);
-    return 0;
+    return subject_ascii_only || onibi_valid_encoding(str);
 }
 
 static void

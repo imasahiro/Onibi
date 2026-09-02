@@ -1600,6 +1600,25 @@ ENCODING_CTYPE
 MIXED
 ```
 
+`ASCII_BITMAP` data is one 256-bit bitmap.
+
+`CODEPOINT_RANGES` data is a sorted array of inclusive `uint32_t` pairs.
+
+`ENCODING_CTYPE` data is one MRI/Onigmo character-type identifier.
+
+`MIXED` data is a checked postfix program of range, ctype, union,
+intersection, and negation operations.
+
+Descriptor flags store whole-class negation.
+
+The compiler puts one-character case-fold closure in the descriptor data.
+
+The executor applies whole-class negation after descriptor evaluation.
+
+Verified GIR analysis marks folds that still need multi-character paths.
+
+The dispatcher keeps these programs on the MRI fallback path.
+
 The compiler must deduplicate identical class descriptors.
 
 ---
@@ -2189,6 +2208,8 @@ Compatibility wrappers may keep their current names.
 `rb_reg_prepare_re()` remains the compatibility boundary for target-string preparation.
 
 Onibi must reuse the same encoding compatibility checks.
+
+Onibi calls this function before it selects an RSeq executor.
 
 The matching engine receives an already validated encoding combination.
 

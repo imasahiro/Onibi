@@ -771,7 +771,9 @@ class UnicodePropertyDifferentialTest < Minitest::Test
       mri = Regexp.new(pattern, Regexp::IGNORECASE).match(input)
       onibi = Onibi::Regexp.new(pattern, Regexp::IGNORECASE).match(input)
 
-      assert_equal mri && [mri[0], mri.offset(0)], onibi && [onibi[0], onibi.offset(0)]
+      expected = mri && [mri[0], mri.offset(0)]
+      actual = onibi && [onibi[0], onibi.offset(0)]
+      expected ? assert_equal(expected, actual) : assert_nil(actual)
     end
   end
 

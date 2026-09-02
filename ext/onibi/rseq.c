@@ -42,7 +42,6 @@ typedef struct {
     onibi_allocation_owner_t allocations;
     OnibiGirStateVector states;
     OnibiRSeqSubprogramVector subprograms;
-    OnibiRSeqClassPayloadVector class_payloads;
     OnibiRSeqLiteralPayloadVector literal_payloads;
     OnibiGActionVector actions;
     OnibiGActionVector pending_actions;
@@ -69,7 +68,6 @@ onibi_rseq_lower_fail_if(OnibiRSeqLowerOwner *owner, int phase)
 static void
 onibi_rseq_lower_owner_cleanup(OnibiRSeqLowerOwner *owner)
 {
-    onibi_rseq_class_payload_vector_free(&owner->class_payloads);
     onibi_rseq_literal_payload_vector_free(&owner->literal_payloads);
     onibi_g_action_vector_free(&owner->actions);
     onibi_g_action_vector_free(&owner->pending_actions);
@@ -95,7 +93,6 @@ onibi_rseq_lower_body(VALUE opaque)
     VALUE compiled = call->compiled;
 #define state_records (owner->states)
 #define subprogram_records (owner->subprograms)
-#define class_payloads (owner->class_payloads)
 #define literal_payloads (owner->literal_payloads)
 #define action_records (owner->actions)
 #define r_edge_records (owner->edges)
@@ -149,30 +146,17 @@ onibi_rseq_lower_body(VALUE opaque)
 		     "RSeq lowering received an invalid start edge");
     }
     onibi_allocation_owner_set_phase(&owner->allocations, 3);
-    onibi_rseq_class_payload_vector_init(&class_payloads);
-    onibi_rseq_class_payload_vector_bind(&class_payloads, &owner->allocations);
     for (size_t i = 0; i < state_records.count; i++) {
 	OnibiGirStateEntry *state = &state_records.entries[i];
 	if (state->opcode != ONIBI_G_CLASS) continue;
-	int found = 0;
-	size_t payload_index = class_payloads.count;
-	for (size_t j = 0; j < class_payloads.count; j++) {
-	    OnibiRSeqClassPayloadEntry *prior = &class_payloads.entries[j];
-	    if (memcmp(prior->bitmap, state->bitmap, sizeof(prior->bitmap)) ==
-		    0 &&
-		prior->negated ==
-		    ((state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0)) {
-		found = 1;
-		payload_index = j;
-		break;
-	    }
-	}
-	if (!found)
-	    onibi_rseq_class_payload_vector_push(&class_payloads, state);
-	state->payload_index = (uint32_t)payload_index;
+	if (state->value >= compiled_data->classes.count)
+	    rb_raise(rb_eArgError, "RSeq class index is out of range");
+	state->payload_index = state->value;
     }
     onibi_rseq_lower_fail_if(owner, 3);
-    uint32_t class_count = (uint32_t)class_payloads.count;
+    if (compiled_data->classes.count > UINT32_MAX)
+	rb_raise(eRegexpError, "RSeq has too many class descriptors");
+    uint32_t class_count = (uint32_t)compiled_data->classes.count;
     onibi_allocation_owner_set_phase(&owner->allocations, 4);
     onibi_g_action_vector_init(&action_records);
     onibi_g_action_vector_bind(&action_records, &owner->allocations);
@@ -263,7 +247,14 @@ onibi_rseq_lower_body(VALUE opaque)
     }
     uint32_t literal_count = (uint32_t)literal_payloads.count;
     uint64_t class_section_size =
-	(uint64_t)class_count * (sizeof(OnibiClassDesc) + 32U);
+	(uint64_t)class_count * sizeof(OnibiClassDesc);
+
+    for (size_t i = 0; i < compiled_data->classes.count; i++) {
+	if (UINT64_MAX - class_section_size <
+	    compiled_data->classes.entries[i].data_length)
+	    rb_raise(eRegexpError, "RSeq class section exceeds the size limit");
+	class_section_size += compiled_data->classes.entries[i].data_length;
+    }
     uint64_t literal_desc_size =
 	(uint64_t)literal_count * sizeof(OnibiLiteralDesc);
     uint64_t literal_data_size = 0;
@@ -421,6 +412,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	    rb_raise(eRegexpError, "RSeq state has too many outgoing edges");
 	physical_states[i].edge_base = (uint32_t)edge_base;
 	physical_states[i].edge_count = (uint16_t)edge_count;
+	physical_states[i].flags = state->flags;
 	if (opcode == ONIBI_G_CLASS || opcode == ONIBI_G_CHAR ||
 	    opcode == ONIBI_G_BACKREF)
 	    physical_states[i].payload = state->payload_index;
@@ -462,18 +454,18 @@ onibi_rseq_lower_body(VALUE opaque)
 				    &physical_actions[i]);
     OnibiClassDesc *class_descs =
 	(OnibiClassDesc *)(RSTRING_PTR(blob) + physical.classes_offset);
-    unsigned char *class_data = (unsigned char *)(class_descs + class_count);
+    uint32_t class_data_offset =
+	physical.classes_offset + class_count * sizeof(OnibiClassDesc);
     class_index = 0;
-    for (size_t i = 0; i < class_payloads.count; i++) {
-	OnibiRSeqClassPayloadEntry *entry = &class_payloads.entries[i];
-	class_descs[class_index].data_offset =
-	    (uint32_t)(physical.classes_offset +
-		       class_count * sizeof(OnibiClassDesc) +
-		       class_index * 32U);
-	class_descs[class_index].data_length = 32;
-	class_descs[class_index].kind = 0;
-	class_descs[class_index].flags = entry->negated ? 1 : 0;
-	memcpy(class_data + class_index * 32U, entry->bitmap, 32);
+    for (size_t i = 0; i < compiled_data->classes.count; i++) {
+	const OnibiSemanticClass *entry = &compiled_data->classes.entries[i];
+	class_descs[class_index].data_offset = class_data_offset;
+	class_descs[class_index].data_length = entry->data_length;
+	class_descs[class_index].kind = entry->kind;
+	class_descs[class_index].flags = entry->flags;
+	memcpy(RSTRING_PTR(blob) + class_data_offset, entry->data,
+	       entry->data_length);
+	class_data_offset += entry->data_length;
 	class_index++;
     }
     unsigned char *literal_data =
@@ -508,7 +500,6 @@ onibi_rseq_lower_body(VALUE opaque)
 	 remain compiler-owned and are released after lowering. */
     onibi_rseq_blob_validate(blob);
     onibi_rseq_lower_fail_if(owner, 7);
-    onibi_rseq_class_payload_vector_free(&class_payloads);
     onibi_rseq_literal_payload_vector_free(&literal_payloads);
     onibi_g_action_vector_free(&action_records);
     onibi_g_action_vector_free(&owner->pending_actions);
@@ -518,7 +509,6 @@ onibi_rseq_lower_body(VALUE opaque)
     onibi_rseq_subprogram_vector_free(&subprogram_records);
 #undef state_records
 #undef subprogram_records
-#undef class_payloads
 #undef literal_payloads
 #undef action_records
 #undef r_edge_records
@@ -998,12 +988,14 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
     rb_obj_freeze(obj->names);
     rb_obj_freeze(obj->named_captures);
-    OnibiProgramArgs program_args = {source, INT2NUM(opts), &tokens};
+    VALUE compilation_source = rb_str_dup(source);
+    rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
+    OnibiProgramArgs program_args = {compilation_source, INT2NUM(opts),
+				     &tokens};
     int program_state = 0;
     VALUE parsed = Qnil;
     VALUE program =
 	(ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-	 ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE) ||
 	 (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
 	    ? rb_protect(onibi_parse_program, (VALUE)(uintptr_t)&program_args,
 			 &program_state)
@@ -1011,12 +1003,10 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 			 &program_state);
     if (!program_state) {
 	parsed = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-		  ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE) ||
 		  (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
 		     ? program
 		     : rb_ary_entry(program, 0);
 	obj->rseq = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-		     ONIBI_FEATURE_P(obj, ONIBI_FEATURE_PROPERTY_ESCAPE) ||
 		     (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
 			? Qnil
 			: rb_ary_entry(program, 1);
@@ -1028,19 +1018,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    if (parsed_data->arena.root != ONIBI_AST_NONE)
 		onibi_ast_arena_free(&parsed_data->arena);
 	}
-	/* Keep constructs without a complete GIR lowering on MRI.  This test
-	   runs once during compilation.  Match calls do not inspect source. */
-	int encoded_literal_program =
-	    (opts & 16) && !(opts & (1 | 32)) &&
-	    source_encoding_index != rb_ascii8bit_encindex() &&
-	    !source_ascii_only &&
-	    ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_LITERAL) &&
-	    !(obj->feature_flags & ONIBI_FEATURE_WILDCARD) &&
-	    !(obj->feature_flags & ONIBI_FEATURE_ANCHOR) &&
-	    (!ONIBI_FEATURE_P(obj, ONIBI_FEATURE_NON_ASCII_CLASS) ||
-	     (obj->ast_flags & ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS) != 0);
-	if ((!onibi_ascii_pattern(source) && !encoded_literal_program) ||
-	    ((opts & 16) && !encoded_literal_program) || (opts & 32)) {
+	if (opts & 32) {
 	    parsed = obj->rseq = Qnil;
 	}
 	if (!NIL_P(obj->rseq)) {
