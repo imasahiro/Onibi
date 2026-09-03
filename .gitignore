@@ -8,3 +8,6 @@
 /*.gem
 Makefile
 coverage
+*.bundle
+*.bundle.dSYM
+*.o
