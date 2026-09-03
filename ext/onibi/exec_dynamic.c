@@ -436,30 +436,42 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
 		&view->subprograms[state->payload];
 	    uint32_t begin = state->edge_base;
 	    for (uint32_t e = state->edge_count; e > 0; e--) {
-		if (stack_size >= stack_capacity) break;
-		long *next_counters =
-		    counter_pool
-			? counter_pool + stack_size * header->counter_count
-			: NULL;
-		if (next_counters)
-		    memcpy(next_counters, frame.counters,
-			   header->counter_count * sizeof(long));
-		long *next_captures =
-		    capture_pool ? capture_pool + stack_size * capture_slots
-				 : NULL;
-		if (next_captures)
-		    memcpy(next_captures, frame.captures,
-			   capture_slots * sizeof(long));
-		uint32_t *next_returns =
-		    return_pool + stack_size * ONIBI_NATIVE_CALL_LIMIT;
-		if (frame.return_depth > 0)
-		    memcpy(next_returns, frame.returns,
-			   frame.return_depth * sizeof(uint32_t));
-		next_returns[frame.return_depth] = begin + (e - 1U);
-		stack[stack_size++] = (onibi_simple_frame_t){
-		    subprogram->entry, frame.pos,
-		    next_counters,     next_captures,
-		    next_returns,      (uint16_t)(frame.return_depth + 1U)};
+		for (uint32_t s = subprogram->entry_edge_count; s > 0; s--) {
+		    if (stack_size >= stack_capacity) break;
+		    const OnibiREdge *entry =
+			&edges[subprogram->entry_edge_base + (s - 1U)];
+		    long *next_counters =
+			counter_pool
+			    ? counter_pool + stack_size * header->counter_count
+			    : NULL;
+		    if (next_counters)
+			memcpy(next_counters, frame.counters,
+			       header->counter_count * sizeof(long));
+		    long *next_captures =
+			capture_pool ? capture_pool + stack_size * capture_slots
+				     : NULL;
+		    if (next_captures)
+			memcpy(next_captures, frame.captures,
+			       capture_slots * sizeof(long));
+		    uint32_t *next_returns =
+			return_pool + stack_size * ONIBI_NATIVE_CALL_LIMIT;
+		    if (frame.return_depth > 0)
+			memcpy(next_returns, frame.returns,
+			       frame.return_depth * sizeof(uint32_t));
+		    if (!onibi_rseq_edge_actions_ok(
+			    view, entry, str, frame.pos, search_origin,
+			    next_counters, header->counter_count, next_captures,
+			    capture_slots, encoding, encoding_mode))
+			continue;
+		    next_returns[frame.return_depth] = begin + (e - 1U);
+		    stack[stack_size++] = (onibi_simple_frame_t){
+			entry->destination,
+			frame.pos,
+			next_counters,
+			next_captures,
+			next_returns,
+			(uint16_t)(frame.return_depth + 1U)};
+		}
 	    }
 	    continue;
 	}

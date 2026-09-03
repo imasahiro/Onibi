@@ -135,6 +135,13 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	}
     }
     rb_hash_aset(result, ID2SYM(rb_intern("actions")), actions);
+    VALUE action_arg32 = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->action_count; i++)
+	    rb_ary_push(action_arg32,
+			UINT2NUM(obj->rseq_view.actions[i].arg32));
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("action_arg32")), action_arg32);
     VALUE edges = rb_ary_new();
     if (!NIL_P(obj->rseq)) {
 	for (uint32_t i = 0; i < obj->rseq_view.header->edge_count; i++) {
@@ -155,6 +162,50 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 	}
     }
     rb_hash_aset(result, ID2SYM(rb_intern("states")), states);
+    VALUE state_payloads = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->state_count; i++)
+	    rb_ary_push(state_payloads,
+			UINT2NUM(obj->rseq_view.states[i].payload));
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("state_payloads")), state_payloads);
+    VALUE subprograms = rb_ary_new();
+    VALUE lookbehind_widths = rb_ary_new();
+    if (!NIL_P(obj->rseq)) {
+	for (uint32_t i = 0; i < obj->rseq_view.header->subprogram_count; i++) {
+	    const OnibiSubprogramDesc *s = &obj->rseq_view.subprograms[i];
+	    VALUE record = rb_hash_new();
+	    rb_hash_aset(record, ID2SYM(rb_intern("entry")),
+			 UINT2NUM(s->entry));
+	    rb_hash_aset(record, ID2SYM(rb_intern("accept")),
+			 UINT2NUM(s->accept));
+	    rb_hash_aset(record, ID2SYM(rb_intern("kind")), INT2NUM(s->kind));
+	    rb_hash_aset(record, ID2SYM(rb_intern("effects")),
+			 UINT2NUM(s->effects));
+	    rb_hash_aset(record, ID2SYM(rb_intern("flags")),
+			 UINT2NUM(s->flags));
+	    rb_hash_aset(record, ID2SYM(rb_intern("options")),
+			 UINT2NUM(s->option_env.options));
+	    rb_hash_aset(record, ID2SYM(rb_intern("encoding_index")),
+			 INT2NUM(s->option_env.encoding_index));
+	    rb_hash_aset(record, ID2SYM(rb_intern("entry_edge_base")),
+			 UINT2NUM(s->entry_edge_base));
+	    rb_hash_aset(record, ID2SYM(rb_intern("entry_edge_count")),
+			 UINT2NUM(s->entry_edge_count));
+	    rb_hash_aset(record, ID2SYM(rb_intern("width_base")),
+			 UINT2NUM(s->width_base));
+	    rb_hash_aset(record, ID2SYM(rb_intern("width_count")),
+			 UINT2NUM(s->width_count));
+	    rb_ary_push(subprograms, record);
+	}
+	for (uint32_t i = 0; i < obj->rseq_view.header->lookbehind_width_count;
+	     i++)
+	    rb_ary_push(lookbehind_widths,
+			UINT2NUM(obj->rseq_view.lookbehind_widths[i]));
+    }
+    rb_hash_aset(result, ID2SYM(rb_intern("subprograms")), subprograms);
+    rb_hash_aset(result, ID2SYM(rb_intern("lookbehind_widths")),
+		 lookbehind_widths);
     VALUE class_kinds = rb_ary_new();
     if (!NIL_P(obj->rseq)) {
 	static const char *const names[] = {"ascii_bitmap", "codepoint_ranges",
@@ -330,13 +381,17 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiGirStateVector state_vector = {states, 4, 4, NULL};
     OnibiGirEdgeVector edge_vector = {edges, 2, 2, NULL};
     OnibiGirEdgeVector start_vector = {starts, 1, 1, NULL};
+    OnibiGirEdgeVector subprogram_entry_vector = {NULL, 0, 0, NULL};
     OnibiRSeqSubprogramVector subprogram_vector = {subprograms, 1, 2, NULL};
+    OnibiIdVector lookbehind_width_vector = {NULL, 0, 0, NULL};
     OnibiSemanticClassVector class_vector = {classes, 0, 1, NULL};
     OnibiIdVector progress_vector = {progress_slots, 0, 1, NULL};
     OnibiGIRView view = {&state_vector,
 			 &edge_vector,
 			 &start_vector,
+			 &subprogram_entry_vector,
 			 &subprogram_vector,
+			 &lookbehind_width_vector,
 			 &class_vector,
 			 &progress_vector,
 			 4,

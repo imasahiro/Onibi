@@ -60,11 +60,7 @@ typedef struct {
 } OnibiRSeqLiteralPayloadEntry;
 typedef ONIBI_VECTOR(OnibiRSeqLiteralPayloadEntry)
     OnibiRSeqLiteralPayloadVector;
-typedef struct {
-    OnibiStateId entry;
-    OnibiStateId accept;
-    uint32_t flags;
-} OnibiRSeqSubprogramEntry;
+typedef OnibiSubprogramDesc OnibiRSeqSubprogramEntry;
 typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
 typedef struct OnibiTaggedNfa OnibiTaggedNfa;
 typedef struct {
@@ -76,6 +72,8 @@ typedef struct {
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
     OnibiRSeqSubprogramVector subprograms;
+    OnibiGirEdgeVector subprogram_entries;
+    OnibiIdVector lookbehind_widths;
     OnibiSemanticClassVector classes;
     OnibiIdVector progress_slots;
     OnibiAstArena *ast;
@@ -95,7 +93,9 @@ typedef struct {
     const OnibiGirStateVector *states;
     const OnibiGirEdgeVector *edges;
     const OnibiGirEdgeVector *start_edges;
+    const OnibiGirEdgeVector *subprogram_entries;
     const OnibiRSeqSubprogramVector *subprograms;
+    const OnibiIdVector *lookbehind_widths;
     const OnibiSemanticClassVector *classes;
     const OnibiIdVector *progress_slots;
     long next_id;
@@ -403,7 +403,6 @@ typedef struct {
 typedef struct {
     onibi_allocation_owner_t allocations;
     unsigned char *physical_subprogram_references;
-    unsigned char *semantic_subprogram_references;
     unsigned char *progress_slot_states;
     OnibiGIREdgeIndexSlot *edge_index;
     size_t edge_index_capacity;
@@ -536,12 +535,22 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    action->assert_kind > ONIBI_RAP_LOOKBEHIND)
 	    onibi_gir_verification_error("assertion payload is invalid");
 	if (lookaround) {
-	    if (!action->has_arg32 || !action->has_subprogram ||
-		action->subprogram_id < view->subprograms->count ||
-		action->subprogram_id >= view->semantic_subprogram_count)
+	    if (action->has_arg32 || !action->has_subprogram ||
+		action->subprogram_id == 0 ||
+		action->subprogram_id >= view->subprograms->count)
 		onibi_gir_verification_error(
 		    "lookaround subprogram is invalid");
-	    owner->semantic_subprogram_references[action->subprogram_id] = 1;
+	    uint8_t required_kind = action->assert_kind == ONIBI_RAP_LOOKAHEAD
+					? ONIBI_SUBPROGRAM_LOOKAHEAD
+					: ONIBI_SUBPROGRAM_LOOKBEHIND;
+	    const OnibiRSeqSubprogramEntry *subprogram =
+		&view->subprograms->entries[action->subprogram_id];
+	    if (subprogram->kind != required_kind ||
+		((subprogram->effects & ONIBI_SUBPROGRAM_EFFECT_POSITIVE) !=
+		 0) != (action->positive != 0))
+		onibi_gir_verification_error(
+		    "lookaround subprogram is invalid");
+	    owner->physical_subprogram_references[action->subprogram_id] = 1;
 	}
 	else if (action->positive || action->has_arg32 ||
 		 action->has_subprogram) {
@@ -608,17 +617,11 @@ onibi_gir_verify_owner_initialize(const OnibiGIRView *view,
 				  OnibiGIRVerifyOwner *owner)
 {
     size_t physical_count = view->subprograms->count;
-    size_t semantic_count = view->semantic_subprogram_count;
     size_t counter_count = (size_t)view->counter_count;
     if (physical_count != 0) {
 	owner->physical_subprogram_references =
 	    onibi_owned_realloc(&owner->allocations, NULL, physical_count);
 	memset(owner->physical_subprogram_references, 0, physical_count);
-    }
-    if (semantic_count != 0) {
-	owner->semantic_subprogram_references =
-	    onibi_owned_realloc(&owner->allocations, NULL, semantic_count);
-	memset(owner->semantic_subprogram_references, 0, semantic_count);
     }
     if (counter_count != 0) {
 	owner->progress_slot_states =
@@ -717,12 +720,13 @@ onibi_gir_verify_body(VALUE opaque)
 				 ONIBI_OPT_MULTILINE | ONIBI_OPT_FIXEDENCODING |
 				 ONIBI_OPT_NOENCODING;
     if (!view || !view->states || !view->edges || !view->start_edges ||
-	!view->subprograms || !view->progress_slots)
+	!view->subprogram_entries || !view->subprograms ||
+	!view->lookbehind_widths || !view->progress_slots)
 	onibi_gir_verification_error("typed GIR input is incomplete");
     if (view->subprograms->count == 0 ||
 	view->subprograms->count > view->subprograms->capacity ||
 	view->subprograms->entries == NULL ||
-	view->semantic_subprogram_count < view->subprograms->count ||
+	view->semantic_subprogram_count != view->subprograms->count ||
 	view->semantic_subprogram_count > UINT32_MAX)
 	onibi_gir_verification_error("subprogram table is invalid");
     if (view->progress_slots->count > view->progress_slots->capacity ||
@@ -736,6 +740,14 @@ onibi_gir_verify_body(VALUE opaque)
 	view->start_edges->count > view->start_edges->capacity ||
 	view->start_edges->entries == NULL)
 	onibi_gir_verification_error("start edges are invalid");
+    if (view->subprogram_entries->count > view->subprogram_entries->capacity ||
+	(view->subprogram_entries->count != 0 &&
+	 view->subprogram_entries->entries == NULL))
+	onibi_gir_verification_error("subprogram entries are invalid");
+    if (view->lookbehind_widths->count > view->lookbehind_widths->capacity ||
+	(view->lookbehind_widths->count != 0 &&
+	 view->lookbehind_widths->entries == NULL))
+	onibi_gir_verification_error("lookbehind width set is invalid");
     if (view->capture_count < 0 ||
 	(uint64_t)view->capture_count > ONIBI_GIR_MAX_CAPTURE_COUNT)
 	onibi_gir_verification_error("capture count exceeds the operand limit");
@@ -818,8 +830,13 @@ onibi_gir_verify_body(VALUE opaque)
 		state->opcode == ONIBI_G_ATOMIC	  ? ONIBI_SUBPROGRAM_ATOMIC
 		: state->opcode == ONIBI_G_ABSENT ? ONIBI_SUBPROGRAM_ABSENT
 						  : 0;
+	    uint8_t required_kind =
+		state->opcode == ONIBI_G_ATOMIC ? ONIBI_SUBPROGRAM_ATOMIC_GROUP
+		: state->opcode == ONIBI_G_ABSENT ? ONIBI_SUBPROGRAM_ABSENCE
+						  : ONIBI_SUBPROGRAM_CALL;
 	    if (view->subprograms->entries[state->value].flags !=
-		required_flags)
+		    required_flags ||
+		view->subprograms->entries[state->value].kind != required_kind)
 		onibi_gir_verification_error(
 		    state->opcode == ONIBI_G_ATOMIC
 			? "atomic subprogram is invalid"
@@ -871,25 +888,65 @@ onibi_gir_verify_body(VALUE opaque)
     for (size_t i = 0; i < view->subprograms->count; i++) {
 	const OnibiRSeqSubprogramEntry *subprogram =
 	    &view->subprograms->entries[i];
+	uint8_t expected_effects =
+	    subprogram->kind == ONIBI_SUBPROGRAM_ATOMIC_GROUP
+		? ONIBI_SUBPROGRAM_EFFECT_FIRST_SUCCESS
+	    : ((subprogram->kind == ONIBI_SUBPROGRAM_LOOKAHEAD ||
+		subprogram->kind == ONIBI_SUBPROGRAM_LOOKBEHIND) &&
+	       (subprogram->effects & ONIBI_SUBPROGRAM_EFFECT_POSITIVE) != 0)
+		? ONIBI_SUBPROGRAM_EFFECT_POSITIVE |
+		      ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES
+		: 0;
 	if (subprogram->entry >= view->states->count ||
 	    subprogram->accept >= view->states->count ||
 	    view->states->entries[subprogram->accept].opcode !=
 		ONIBI_G_ACCEPT ||
+	    subprogram->kind > ONIBI_SUBPROGRAM_ABSENCE ||
+	    subprogram->effects != expected_effects ||
+	    subprogram->reserved != 0 ||
+	    (subprogram->option_env.options & ~option_mask) != 0 ||
+	    subprogram->option_env.encoding_index < 0 ||
 	    (subprogram->flags != 0 &&
 	     subprogram->flags != ONIBI_SUBPROGRAM_ATOMIC &&
 	     subprogram->flags != ONIBI_SUBPROGRAM_ABSENT))
 	    onibi_gir_verification_error("subprogram descriptor is invalid");
-	if (i == 0 && (subprogram->entry != (OnibiStateId)view->root_entry ||
-		       subprogram->accept != (OnibiStateId)view->accept ||
-		       subprogram->flags != 0))
+	if (i == 0 &&
+	    (subprogram->entry != (OnibiStateId)view->root_entry ||
+	     subprogram->accept != (OnibiStateId)view->accept ||
+	     subprogram->flags != 0 ||
+	     subprogram->kind != ONIBI_SUBPROGRAM_ROOT ||
+	     subprogram->entry_edge_count != 0 || subprogram->width_count != 0))
 	    onibi_gir_verification_error("root subprogram is invalid");
-	if (i != 0 && !owner->physical_subprogram_references[i])
-	    onibi_gir_verification_error("subprogram reference is missing");
+	if (i != 0) {
+	    if (subprogram->entry_edge_count == 0 ||
+		(uint64_t)subprogram->entry_edge_base +
+			subprogram->entry_edge_count >
+		    view->subprogram_entries->count ||
+		subprogram->entry != (OnibiStateId)view->subprogram_entries
+					 ->entries[subprogram->entry_edge_base]
+					 .to)
+		onibi_gir_verification_error("subprogram entry is invalid");
+	    for (uint32_t j = 0; j < subprogram->entry_edge_count; j++) {
+		const OnibiGirEdgeEntry *entry =
+		    &view->subprogram_entries
+			 ->entries[subprogram->entry_edge_base + j];
+		if (entry->from != (long)i || entry->to < 0 ||
+		    (size_t)entry->to >= view->states->count)
+		    onibi_gir_verification_error("subprogram entry is invalid");
+		onibi_gir_verify_action_vector(view, owner, &entry->actions, 1,
+					       entry->from, entry->to);
+	    }
+	}
+	if ((subprogram->kind == ONIBI_SUBPROGRAM_LOOKBEHIND) !=
+	    (subprogram->width_count != 0))
+	    onibi_gir_verification_error("lookbehind width set is invalid");
+	if ((uint64_t)subprogram->width_base + subprogram->width_count >
+	    view->lookbehind_widths->count)
+	    onibi_gir_verification_error("lookbehind width set is invalid");
     }
-    for (size_t i = view->subprograms->count;
-	 i < view->semantic_subprogram_count; i++)
-	if (!owner->semantic_subprogram_references[i])
-	    onibi_gir_verification_error("lookaround subprogram is missing");
+    for (size_t i = 1; i < view->subprograms->count; i++)
+	if (!owner->physical_subprogram_references[i])
+	    onibi_gir_verification_error("subprogram reference is missing");
 
     for (size_t i = 0; i < view->progress_slots->count; i++) {
 	uint32_t slot = view->progress_slots->entries[i];

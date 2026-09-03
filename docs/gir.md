@@ -1058,6 +1058,12 @@ enum OnibiRActionOp {
 
 `RA_ASSERT_POSITION.arg16` selects the position predicate.
 
+`RA_ASSERT_SUBPROGRAM.arg16` selects lookahead or lookbehind.
+
+`RA_ASSERT_SUBPROGRAM.arg32` stores a subprogram descriptor ID.
+
+The descriptor stores assertion polarity and capture publication behavior.
+
 `RA_ASSERT_SUBPROGRAM.flags` selects:
 
 ```text
@@ -1820,6 +1826,7 @@ struct OnibiRSeqHeader {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t lookbehind_width_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
@@ -1834,6 +1841,7 @@ struct OnibiRSeqHeader {
     uint32_t literals_offset;
     uint32_t descriptors_offset;
     uint32_t subprograms_offset;
+    uint32_t lookbehind_widths_offset;
 
     uint32_t blob_size;
 };
@@ -1932,6 +1940,59 @@ enum OnibiRStateOp {
 `RS_STRING`, `RS_RUN_CLASS`, and `RS_RUN_ANY` are lowering optimizations.
 
 They are not canonical G-IR operations.
+
+## 50.1 RSeq subprogram descriptors
+
+Each call, assertion, atomic group, and absence state uses a descriptor ID.
+
+The descriptor has this physical form:
+
+```c
+struct OnibiOptionEnv {
+    uint32_t options;
+    int32_t encoding_index;
+};
+
+struct OnibiSubprogramDesc {
+    uint32_t entry;
+    uint32_t accept;
+    uint32_t flags;
+    OnibiOptionEnv option_env;
+    uint32_t entry_edge_base;
+    uint32_t width_base;
+    uint16_t entry_edge_count;
+    uint16_t width_count;
+    uint8_t kind;
+    uint8_t effects;
+    uint16_t reserved;
+};
+```
+
+The descriptor size is 36 bytes.
+
+The entry edges are in priority order.
+
+They preserve all entry alternatives and their action programs.
+
+The option environment comes from the definition site.
+
+A caller cannot replace this environment.
+
+Positive assertions set the capture-publication effect.
+
+Negative assertions do not set this effect.
+
+Atomic descriptors set the first-success effect.
+
+Absence uses a dedicated descriptor kind.
+
+A lookbehind descriptor references an ordered `uint32_t` width set.
+
+Each width is in encoding characters.
+
+The executor uses encoding previous-character operations for these widths.
+
+All other descriptor kinds have an empty width set.
 
 ---
 

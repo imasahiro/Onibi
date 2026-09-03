@@ -19,11 +19,41 @@ typedef uint32_t OnibiCallFrameId;
 #define ONIBI_GIR_MAX_CAPTURE_COUNT UINT32_C(32768)
 #define ONIBI_GIR_MAX_COUNTER_COUNT UINT32_C(65536)
 
-/* Immutable entry metadata for a compiled subprogram. */
+/* Resolved lexical options for one definition. */
+typedef struct {
+    uint32_t options;
+    int32_t encoding_index;
+} OnibiOptionEnv;
+
+typedef enum {
+    ONIBI_SUBPROGRAM_ROOT = 0,
+    ONIBI_SUBPROGRAM_CALL,
+    ONIBI_SUBPROGRAM_LOOKAHEAD,
+    ONIBI_SUBPROGRAM_LOOKBEHIND,
+    ONIBI_SUBPROGRAM_ATOMIC_GROUP,
+    ONIBI_SUBPROGRAM_ABSENCE
+} OnibiSubprogramKind;
+
+enum {
+    ONIBI_SUBPROGRAM_EFFECT_POSITIVE = 1u << 0,
+    ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES = 1u << 1,
+    ONIBI_SUBPROGRAM_EFFECT_FIRST_SUCCESS = 1u << 2
+};
+
+/* Immutable entry metadata for a compiled subprogram. Entry edges and width
+   sets use offsets into their RSeq sections. */
 typedef struct {
     OnibiStateId entry;
     OnibiStateId accept;
     uint32_t flags;
+    OnibiOptionEnv option_env;
+    uint32_t entry_edge_base;
+    uint32_t width_base;
+    uint16_t entry_edge_count;
+    uint16_t width_count;
+    uint8_t kind;
+    uint8_t effects;
+    uint16_t reserved;
 } OnibiSubprogramDesc;
 
 /* Semantic call-frame shape.  Runtime storage is owned by the VM sidecar. */
@@ -289,6 +319,7 @@ typedef struct {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t lookbehind_width_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
@@ -301,6 +332,7 @@ typedef struct {
     uint32_t literals_offset;
     uint32_t descriptors_offset;
     uint32_t subprograms_offset;
+    uint32_t lookbehind_widths_offset;
     uint32_t blob_size;
     uint8_t first_bitmap[32];
     uint8_t prefix_length;
@@ -319,6 +351,7 @@ typedef struct {
     const OnibiClassDesc *classes;
     const OnibiLiteralDesc *literals;
     const OnibiSubprogramDesc *subprograms;
+    const uint32_t *lookbehind_widths;
     uint32_t class_stack_capacity;
     uint8_t regular_capable;
 } OnibiRSeqView;
@@ -332,8 +365,10 @@ typedef char
     onibi_class_expr_size_must_be_12[(sizeof(OnibiClassExpr) == 12) ? 1 : -1];
 typedef char
     onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
-typedef char onibi_subprogram_desc_size_must_be_12
-    [(sizeof(OnibiSubprogramDesc) == 12) ? 1 : -1];
+typedef char
+    onibi_option_env_size_must_be_8[(sizeof(OnibiOptionEnv) == 8) ? 1 : -1];
+typedef char onibi_subprogram_desc_size_must_be_36
+    [(sizeof(OnibiSubprogramDesc) == 36) ? 1 : -1];
 typedef char
     onibi_call_frame_size_must_be_20[(sizeof(OnibiCallFrame) == 20) ? 1 : -1];
 

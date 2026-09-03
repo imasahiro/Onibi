@@ -121,7 +121,7 @@ class GirVerifierTest < Minitest::Test
 
     assert_includes source, "onibi_gir_verify_edge_index_insert"
     assert_includes source, "physical_subprogram_references"
-    assert_includes source, "semantic_subprogram_references"
+    refute_includes source, "semantic_subprogram_references"
     assert_includes source, "progress_slot_states"
     assert_includes source, "rb_ensure(onibi_gir_verify_body"
     assert_includes source, "onibi_allocation_owner_cleanup"

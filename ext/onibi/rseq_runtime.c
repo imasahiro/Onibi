@@ -32,6 +32,8 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->subprograms =
 	(const OnibiSubprogramDesc *)(view->blob +
 				      view->header->subprograms_offset);
+    view->lookbehind_widths =
+	(const uint32_t *)(view->blob + view->header->lookbehind_widths_offset);
     view->class_stack_capacity = 0;
     view->regular_capable = 0;
     return 1;
@@ -177,6 +179,9 @@ onibi_rseq_blob_validate(VALUE blob)
     if (!onibi_rseq_view_init(blob, &view) || !RTEST(rb_obj_frozen_p(blob)))
 	rb_raise(rb_eArgError, "invalid Onibi RSeq blob");
     const OnibiRSeqHeader *header = view.header;
+    const uint32_t option_mask = ONIBI_OPT_IGNORECASE | ONIBI_OPT_EXTENDED |
+				 ONIBI_OPT_MULTILINE | ONIBI_OPT_FIXEDENCODING |
+				 ONIBI_OPT_NOENCODING;
     uint64_t states_end = (uint64_t)header->states_offset +
 			  (uint64_t)header->state_count * sizeof(OnibiRState);
     uint64_t edges_end = (uint64_t)header->edges_offset +
@@ -203,6 +208,9 @@ onibi_rseq_blob_validate(VALUE blob)
     uint64_t subprogram_end =
 	(uint64_t)header->subprograms_offset +
 	(uint64_t)header->subprogram_count * sizeof(OnibiSubprogramDesc);
+    uint64_t lookbehind_widths_end =
+	(uint64_t)header->lookbehind_widths_offset +
+	(uint64_t)header->lookbehind_width_count * sizeof(uint32_t);
     if (header->states_offset < sizeof(*header) ||
 	states_end > header->edges_offset ||
 	edges_end > header->actions_offset ||
@@ -210,7 +218,8 @@ onibi_rseq_blob_validate(VALUE blob)
 	class_desc_end > header->literals_offset ||
 	header->literals_offset > header->descriptors_offset ||
 	literal_desc_end > header->subprograms_offset ||
-	subprogram_end > header->blob_size ||
+	subprogram_end > header->lookbehind_widths_offset ||
+	lookbehind_widths_end > header->blob_size ||
 	header->start_edge_base > header->edge_count ||
 	header->start_edge_count > header->edge_count - header->start_edge_base)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq section layout");
@@ -226,6 +235,10 @@ onibi_rseq_blob_validate(VALUE blob)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq class payload");
 	if (state->op == ONIBI_RS_CHAR && state->payload >= literal_count)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq literal payload");
+	if ((state->op == ONIBI_RS_CALL || state->op == ONIBI_RS_ATOMIC ||
+	     state->op == ONIBI_RS_ABSENT) &&
+	    (state->payload == 0 || state->payload >= header->subprogram_count))
+	    rb_raise(rb_eArgError, "invalid Onibi RSeq subprogram reference");
     }
     for (uint32_t i = 0; i < header->edge_count; i++) {
 	const OnibiREdge *edge = &view.edges[i];
@@ -241,14 +254,51 @@ onibi_rseq_blob_validate(VALUE blob)
 		rb_raise(rb_eArgError, "invalid Onibi RSeq action offset");
 	}
     }
-    for (uint32_t i = 0; i < header->action_count; i++)
+    for (uint32_t i = 0; i < header->action_count; i++) {
 	if (view.actions[i].op > ONIBI_RA_PROGRESS)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
+	if (view.actions[i].op == ONIBI_RA_ASSERT_SUBPROGRAM &&
+	    (view.actions[i].arg32 == 0 ||
+	     view.actions[i].arg32 >= header->subprogram_count))
+	    rb_raise(rb_eArgError, "invalid Onibi RSeq assertion subprogram");
+    }
     for (uint32_t i = 0; i < header->subprogram_count; i++) {
 	const OnibiSubprogramDesc *subprogram = &view.subprograms[i];
+	uint8_t expected_effects =
+	    subprogram->kind == ONIBI_SUBPROGRAM_ATOMIC_GROUP
+		? ONIBI_SUBPROGRAM_EFFECT_FIRST_SUCCESS
+	    : ((subprogram->kind == ONIBI_SUBPROGRAM_LOOKAHEAD ||
+		subprogram->kind == ONIBI_SUBPROGRAM_LOOKBEHIND) &&
+	       (subprogram->effects & ONIBI_SUBPROGRAM_EFFECT_POSITIVE) != 0)
+		? ONIBI_SUBPROGRAM_EFFECT_POSITIVE |
+		      ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES
+		: 0;
 	if (subprogram->entry >= header->state_count ||
-	    subprogram->accept >= header->state_count)
+	    subprogram->accept >= header->state_count ||
+	    subprogram->kind > ONIBI_SUBPROGRAM_ABSENCE ||
+	    subprogram->effects != expected_effects ||
+	    subprogram->reserved != 0 ||
+	    (subprogram->option_env.options & ~option_mask) != 0 ||
+	    subprogram->option_env.encoding_index < 0 ||
+	    (uint64_t)subprogram->entry_edge_base +
+		    subprogram->entry_edge_count >
+		header->edge_count ||
+	    (uint64_t)subprogram->width_base + subprogram->width_count >
+		header->lookbehind_width_count ||
+	    ((subprogram->kind == ONIBI_SUBPROGRAM_LOOKBEHIND) !=
+	     (subprogram->width_count != 0)))
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq subprogram");
+	if (i == 0) {
+	    if (subprogram->kind != ONIBI_SUBPROGRAM_ROOT ||
+		subprogram->entry_edge_count != 0)
+		rb_raise(rb_eArgError, "invalid Onibi RSeq root subprogram");
+	}
+	else if (subprogram->entry_edge_count == 0 ||
+		 subprogram->entry_edge_base <
+		     header->start_edge_base + header->start_edge_count ||
+		 view.edges[subprogram->entry_edge_base].destination !=
+		     subprogram->entry)
+	    rb_raise(rb_eArgError, "invalid Onibi RSeq subprogram entry");
     }
     uint64_t class_data_cursor = class_desc_end;
     for (uint32_t i = 0; i < header->class_count; i++) {

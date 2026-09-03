@@ -20,7 +20,10 @@ onibi_rseq_serialize_action(const OnibiGAction *action,
 			    OnibiRAction *physical_action)
 {
     memset(physical_action, 0, sizeof(*physical_action));
-    physical_action->op = onibi_rseq_physical_action_op(action->code);
+    physical_action->op =
+	action->code == ONIBI_GA_ASSERT_POSITION && action->has_subprogram
+	    ? ONIBI_RA_ASSERT_SUBPROGRAM
+	    : onibi_rseq_physical_action_op(action->code);
     physical_action->flags = onibi_g_action_flags(action);
     physical_action->arg16 = action->has_assert_kind
 				 ? action->assert_kind
@@ -33,7 +36,10 @@ onibi_rseq_serialize_action(const OnibiGAction *action,
 				     ? (action->positive ? 1 : 2)
 				     : (action->positive ? 5 : 6);
     if (action->has_slot) physical_action->arg16 = action->slot;
-    if (action->has_arg32) physical_action->arg32 = action->arg32;
+    if (action->has_subprogram)
+	physical_action->arg32 = action->subprogram_id;
+    else if (action->has_arg32)
+	physical_action->arg32 = action->arg32;
 }
 
 /* RSeq lowering uses one scoped owner for all mutable lowering records.  The
@@ -42,6 +48,8 @@ typedef struct {
     onibi_allocation_owner_t allocations;
     OnibiGirStateVector states;
     OnibiRSeqSubprogramVector subprograms;
+    OnibiGirEdgeVector subprogram_entries;
+    OnibiIdVector lookbehind_widths;
     OnibiRSeqLiteralPayloadVector literal_payloads;
     OnibiGActionVector actions;
     OnibiGActionVector pending_actions;
@@ -75,6 +83,8 @@ onibi_rseq_lower_owner_cleanup(OnibiRSeqLowerOwner *owner)
     onibi_gir_edge_vector_free(&owner->start_edges);
     onibi_gir_state_vector_free(&owner->states);
     onibi_rseq_subprogram_vector_free(&owner->subprograms);
+    onibi_gir_edge_vector_free(&owner->subprogram_entries);
+    onibi_id_vector_free(&owner->lookbehind_widths);
     onibi_allocation_owner_cleanup(&owner->allocations);
 }
 
@@ -93,6 +103,8 @@ onibi_rseq_lower_body(VALUE opaque)
     VALUE compiled = call->compiled;
 #define state_records (owner->states)
 #define subprogram_records (owner->subprograms)
+#define subprogram_entry_records (owner->subprogram_entries)
+#define lookbehind_width_records (owner->lookbehind_widths)
 #define literal_payloads (owner->literal_payloads)
 #define action_records (owner->actions)
 #define r_edge_records (owner->edges)
@@ -128,6 +140,23 @@ onibi_rseq_lower_body(VALUE opaque)
     for (size_t i = 0; i < compiled_data->subprograms.count; i++)
 	onibi_rseq_subprogram_vector_push(
 	    &subprogram_records, compiled_data->subprograms.entries[i]);
+    onibi_gir_edge_vector_init(&subprogram_entry_records);
+    onibi_gir_edge_vector_bind(&subprogram_entry_records, &owner->allocations);
+    for (size_t i = 0; i < compiled_data->subprogram_entries.count; i++) {
+	const OnibiGirEdgeEntry *entry =
+	    &compiled_data->subprogram_entries.entries[i];
+	owner->pending_actions =
+	    onibi_g_action_vector_copy(&entry->actions, &owner->allocations);
+	onibi_gir_edge_vector_push(&subprogram_entry_records,
+				   (OnibiGirEdgeEntry){entry->from, entry->to,
+						       0,
+						       owner->pending_actions});
+	onibi_g_action_vector_init(&owner->pending_actions);
+    }
+    onibi_id_vector_init(&lookbehind_width_records);
+    onibi_id_vector_bind(&lookbehind_width_records, &owner->allocations);
+    onibi_id_vector_append(&lookbehind_width_records,
+			   &compiled_data->lookbehind_widths);
     onibi_rseq_lower_fail_if(owner, 2);
     long accept_state = compiled_data->accept;
     if (accept_state < 0 || (size_t)accept_state >= state_count)
@@ -181,6 +210,16 @@ onibi_rseq_lower_body(VALUE opaque)
 						       owner->pending_actions});
 	onibi_g_action_vector_init(&owner->pending_actions);
     }
+    for (size_t i = 0; i < subprogram_entry_records.count; i++) {
+	OnibiGirEdgeEntry *entry = &subprogram_entry_records.entries[i];
+	entry->action_offset =
+	    entry->actions.count == 0 ? 0 : (long)action_records.count;
+	onibi_g_action_vector_append(&action_records, &entry->actions);
+	if (entry->actions.count > 0)
+	    onibi_g_action_vector_push(
+		&action_records,
+		(OnibiGAction){ONIBI_GA_END, 0, 0, 0, 0, 0, 0, 0, 0});
+    }
     onibi_gir_edge_vector_group_by_from(&r_edge_records, (size_t)state_count);
     onibi_rseq_lower_fail_if(owner, 4);
     onibi_allocation_owner_set_phase(&owner->allocations, 5);
@@ -208,8 +247,9 @@ onibi_rseq_lower_body(VALUE opaque)
     int options = compiled_data->options;
     int ignorecase = (options & ONIBI_OPT_IGNORECASE) != 0;
     int multiline = (options & ONIBI_OPT_MULTILINE) != 0;
-    uint64_t physical_edge_count =
-	(uint64_t)r_edge_records.count + (uint64_t)r_start_edge_records.count;
+    uint64_t physical_edge_count = (uint64_t)r_edge_records.count +
+				   (uint64_t)r_start_edge_records.count +
+				   (uint64_t)subprogram_entry_records.count;
     onibi_allocation_owner_set_phase(&owner->allocations, 6);
     onibi_rseq_literal_payload_vector_init(&literal_payloads);
     onibi_rseq_literal_payload_vector_bind(&literal_payloads,
@@ -263,16 +303,20 @@ onibi_rseq_lower_body(VALUE opaque)
     literal_data_size = (literal_data_size + 3U) & ~UINT64_C(3);
     uint64_t subprogram_section_size =
 	(uint64_t)subprogram_records.count * sizeof(OnibiSubprogramDesc);
+    uint64_t lookbehind_width_section_size =
+	(uint64_t)lookbehind_width_records.count * sizeof(uint32_t);
     uint64_t physical_size =
 	sizeof(OnibiRSeqHeader) +
 	(uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count +
 	(uint64_t)sizeof(OnibiREdge) * physical_edge_count +
 	(uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count +
 	class_section_size + literal_desc_size + literal_data_size +
-	subprogram_section_size;
+	subprogram_section_size + lookbehind_width_section_size;
     if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
 	action_records.count > UINT32_MAX ||
-	subprogram_records.count > UINT32_MAX || physical_size > UINT32_MAX) {
+	subprogram_records.count > UINT32_MAX ||
+	lookbehind_width_records.count > UINT32_MAX ||
+	physical_size > UINT32_MAX) {
 	rb_raise(eRegexpError, "RSeq program exceeds the v1 size limit");
     }
     VerifiedGIRAnalysis analysis = compiled_data->analysis;
@@ -286,14 +330,14 @@ onibi_rseq_lower_body(VALUE opaque)
 		     (multiline ? ONIBI_RSEQ_HEADER_FLAG_MULTILINE : 0);
     physical.class_count = class_count;
     physical.subprogram_count = (uint32_t)subprogram_records.count;
+    physical.lookbehind_width_count = (uint32_t)lookbehind_width_records.count;
     physical.capture_count = capture_count;
     physical.semantic_capture_count = analysis.semantic_capture_count;
     physical.counter_count = counter_count;
     physical.exec_kind = (uint8_t)analysis.execution_kind;
     physical.start_edge_base = (uint32_t)r_edge_records.count;
     physical.state_count = (uint32_t)state_records.count;
-    physical.edge_count =
-	(uint32_t)(r_edge_records.count + r_start_edge_records.count);
+    physical.edge_count = (uint32_t)physical_edge_count;
     physical.action_count = (uint32_t)action_records.count;
     physical.start_edge_count = (uint32_t)r_start_edge_records.count;
     uint64_t offset = sizeof(OnibiRSeqHeader);
@@ -311,6 +355,8 @@ onibi_rseq_lower_body(VALUE opaque)
     offset += literal_desc_size;
     physical.subprograms_offset = (uint32_t)offset;
     offset += subprogram_section_size;
+    physical.lookbehind_widths_offset = (uint32_t)offset;
+    offset += lookbehind_width_section_size;
     physical.blob_size = (uint32_t)offset;
     int bitmap_valid = 1;
     int bitmap_have = 0;
@@ -437,6 +483,16 @@ onibi_rseq_lower_body(VALUE opaque)
 		: (uint32_t)(sizeof(OnibiRAction) *
 			     ((uint32_t)record->action_offset + 1));
     }
+    for (size_t i = 0; i < subprogram_entry_records.count; i++) {
+	OnibiGirEdgeEntry *record = &subprogram_entry_records.entries[i];
+	size_t index = r_edge_records.count + r_start_edge_records.count + i;
+	physical_edges[index].destination = (uint32_t)record->to;
+	physical_edges[index].action_offset =
+	    record->actions.count == 0
+		? 0
+		: (uint32_t)(sizeof(OnibiRAction) *
+			     ((uint32_t)record->action_offset + 1));
+    }
     for (size_t i = 0; i < r_start_edge_records.count; i++) {
 	OnibiGirEdgeEntry *record = &r_start_edge_records.entries[i];
 	size_t index = r_edge_records.count + i;
@@ -494,7 +550,23 @@ onibi_rseq_lower_body(VALUE opaque)
 	physical_subprograms[i].entry = record->entry;
 	physical_subprograms[i].accept = record->accept;
 	physical_subprograms[i].flags = record->flags;
+	physical_subprograms[i].option_env = record->option_env;
+	physical_subprograms[i].entry_edge_base =
+	    record->entry_edge_count == 0
+		? 0
+		: (uint32_t)(r_edge_records.count + r_start_edge_records.count +
+			     record->entry_edge_base);
+	physical_subprograms[i].width_base = record->width_base;
+	physical_subprograms[i].entry_edge_count = record->entry_edge_count;
+	physical_subprograms[i].width_count = record->width_count;
+	physical_subprograms[i].kind = record->kind;
+	physical_subprograms[i].effects = record->effects;
+	physical_subprograms[i].reserved = 0;
     }
+    uint32_t *physical_widths =
+	(uint32_t *)(RSTRING_PTR(blob) + physical.lookbehind_widths_offset);
+    for (size_t i = 0; i < lookbehind_width_records.count; i++)
+	physical_widths[i] = lookbehind_width_records.entries[i];
     rb_obj_freeze(blob);
     /* Validate once. Publish only the relocatable blob. The typed GIR vectors
 	 remain compiler-owned and are released after lowering. */
@@ -507,8 +579,12 @@ onibi_rseq_lower_body(VALUE opaque)
     onibi_gir_edge_vector_free(&r_start_edge_records);
     onibi_gir_state_vector_free(&state_records);
     onibi_rseq_subprogram_vector_free(&subprogram_records);
+    onibi_gir_edge_vector_free(&subprogram_entry_records);
+    onibi_id_vector_free(&lookbehind_width_records);
 #undef state_records
 #undef subprogram_records
+#undef subprogram_entry_records
+#undef lookbehind_width_records
 #undef literal_payloads
 #undef action_records
 #undef r_edge_records

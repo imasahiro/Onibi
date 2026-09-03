@@ -753,6 +753,17 @@ onibi_epsilon_eliminate_body(VALUE opaque)
 	onibi_nfa_emit_closure(&state_closure, owner->state_map[i], i, &empty);
     }
 
+    for (size_t i = 0; i < gir->subprogram_entries.count; i++) {
+	OnibiGirEdgeEntry *entry = &gir->subprogram_entries.entries[i];
+	if (entry->to < 0 || entry->to >= state_count)
+	    rb_raise(eRegexpError, "NFA subprogram entry is out of range");
+	long destination = owner->state_map[entry->to];
+	if (destination < 0)
+	    rb_raise(eRegexpError,
+		     "NFA subprogram entry maps to epsilon state");
+	entry->to = destination;
+    }
+
     for (size_t i = 1; i < gir->subprograms.count; i++) {
 	OnibiRSeqSubprogramEntry *subprogram = &gir->subprograms.entries[i];
 	if ((long)subprogram->entry >= state_count ||
@@ -764,6 +775,10 @@ onibi_epsilon_eliminate_body(VALUE opaque)
 	    rb_raise(eRegexpError, "NFA subprogram maps to epsilon state");
 	subprogram->entry = (OnibiStateId)entry;
 	subprogram->accept = (OnibiStateId)accept;
+	if (subprogram->entry_edge_count != 0)
+	    subprogram->entry = (OnibiStateId)gir->subprogram_entries
+				    .entries[subprogram->entry_edge_base]
+				    .to;
     }
     gir->next_id = next_gir_id;
     return Qnil;
