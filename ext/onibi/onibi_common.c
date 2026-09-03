@@ -237,6 +237,23 @@ typedef enum {
     ONIBI_EXEC_STATUS_FALLBACK = 2
 } OnibiExecStatus;
 
+enum {
+    ONIBI_EXEC_REQUIRE_TAGGED = 1u << 0,
+    ONIBI_EXEC_REQUIRE_DYNAMIC = 1u << 1
+};
+
+/* This is the only execution-class decision. The GIR classifier and the
+ * physical RSeq verifier provide facts to this helper. */
+static OnibiExecutionKind
+onibi_execution_kind_for_requirements(uint32_t requirements)
+{
+    if ((requirements & ONIBI_EXEC_REQUIRE_DYNAMIC) != 0)
+	return ONIBI_EXEC_DYNAMIC;
+    if ((requirements & ONIBI_EXEC_REQUIRE_TAGGED) != 0)
+	return ONIBI_EXEC_TAGGED;
+    return ONIBI_EXEC_REGULAR;
+}
+
 /* Test-only execution telemetry.  These counters are reset for each search
  * by the diagnostic entry point and are never used for matching decisions. */
 typedef struct {

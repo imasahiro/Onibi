@@ -427,6 +427,8 @@ onibi_rseq_lower_body(VALUE opaque)
     if (physical.prefix_length == 0)
 	memset(physical.prefix, 0, sizeof(physical.prefix));
     physical.features = features;
+    if ((physical.features & ONIBI_RSEQ_FEATURE_FIRST_BITMAP) == 0)
+	memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     onibi_allocation_owner_set_phase(&owner->allocations, 7);
     VALUE blob = rb_str_new(NULL, (long)offset);
     memset(RSTRING_PTR(blob), 0, (size_t)offset);
@@ -518,7 +520,10 @@ onibi_rseq_lower_body(VALUE opaque)
 	class_descs[class_index].data_offset = class_data_offset;
 	class_descs[class_index].data_length = entry->data_length;
 	class_descs[class_index].kind = entry->kind;
-	class_descs[class_index].flags = entry->flags;
+	class_descs[class_index].flags =
+	    entry->flags | (entry->incomplete_casefold
+				? ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD
+				: 0);
 	memcpy(RSTRING_PTR(blob) + class_data_offset, entry->data,
 	       entry->data_length);
 	class_data_offset += entry->data_length;
@@ -1112,11 +1117,14 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     onibi_token_vector_free(&tokens);
     if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) && !NIL_P(obj->rseq))
 	obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
-    obj->execution_kind = (obj->execution_flags & ONIBI_FEATURE_DYNAMIC)
-			      ? ONIBI_EXEC_DYNAMIC
-			      : ((obj->execution_flags & ONIBI_FEATURE_TAGGED)
-				     ? ONIBI_EXEC_TAGGED
-				     : ONIBI_EXEC_REGULAR);
+    uint32_t execution_requirements =
+	(obj->execution_flags & ONIBI_FEATURE_DYNAMIC
+	     ? ONIBI_EXEC_REQUIRE_DYNAMIC
+	     : 0) |
+	(obj->execution_flags & ONIBI_FEATURE_TAGGED ? ONIBI_EXEC_REQUIRE_TAGGED
+						     : 0);
+    obj->execution_kind =
+	onibi_execution_kind_for_requirements(execution_requirements);
     rb_obj_freeze(self);
     return self;
 }

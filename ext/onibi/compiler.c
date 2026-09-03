@@ -2276,9 +2276,9 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 			     const OnibiGirEdgeVector *start_edges,
 			     OnibiCompilerOwner *owner)
 {
-    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0,
-				  (uint32_t)builder->counter_count,
+    VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
 				  ONIBI_EXEC_REGULAR};
+    uint32_t execution_requirements = 0;
     unsigned char *semantic = NULL;
     if (builder->capture_count > 0) {
 	semantic = onibi_owned_realloc(builder->allocation_owner, NULL,
@@ -2310,74 +2310,63 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	if (state->opcode == ONIBI_G_GRAPHEME ||
 	    state->opcode == ONIBI_G_BACKREF || state->opcode == ONIBI_G_CALL ||
 	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
-	    result.execution_kind = ONIBI_EXEC_DYNAMIC;
+	    execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;
 	if (state->opcode == ONIBI_G_BACKREF)
 	    MARK_SEMANTIC_CAPTURE(state->value);
 	if (state->opcode == ONIBI_G_BACKREF)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }
-    for (size_t i = 0; i < builder->edges.count; i++) {
-	const OnibiGActionVector *actions = &builder->edges.entries[i].actions;
-	for (size_t j = 0; j < actions->count; j++) {
-	    const OnibiGAction *action = &actions->entries[j];
-	    switch (action->code) {
-	    case ONIBI_GA_TEST_CAPTURE:
-		MARK_SEMANTIC_CAPTURE(action->slot);
-		result.execution_kind = ONIBI_EXEC_DYNAMIC;
-		break;
-	    case ONIBI_GA_ASSERT_POSITION:
-		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
-		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
-		    action->assert_kind == ONIBI_RAP_LOOKBEHIND)
-		    result.rseq_features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
-		if (result.execution_kind == ONIBI_EXEC_REGULAR)
-		    result.execution_kind = ONIBI_EXEC_TAGGED;
-		break;
-	    case ONIBI_GA_MATCH_RESET:
-		result.rseq_features |= ONIBI_RSEQ_FEATURE_MATCH_RESET;
-		if (result.execution_kind == ONIBI_EXEC_REGULAR)
-		    result.execution_kind = ONIBI_EXEC_TAGGED;
-		break;
-	    case ONIBI_GA_COUNTER_INIT:
-		result.rseq_features |= ONIBI_RSEQ_FEATURE_COUNTER;
-		break;
-	    case ONIBI_GA_CAPTURE_OPEN:
-		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;
-		break;
-	    default: break;
-	    }
-	    if (action->code == ONIBI_GA_PROGRESS ||
-		action->code == ONIBI_GA_COUNTER_INIT ||
-		action->code == ONIBI_GA_COUNTER_INCREMENT ||
-		action->code == ONIBI_GA_TEST_COUNTER_LT ||
-		action->code == ONIBI_GA_TEST_COUNTER_GE) {
-		if (action->has_slot &&
-		    (uint32_t)action->slot + 1U > result.counter_count)
-		    result.counter_count = (uint32_t)action->slot + 1U;
-		if (result.execution_kind == ONIBI_EXEC_REGULAR)
-		    result.execution_kind = ONIBI_EXEC_TAGGED;
-	    }
-	}
-    }
-    for (size_t i = 0; i < start_edges->count; i++) {
-	const OnibiGActionVector *actions = &start_edges->entries[i].actions;
-	for (size_t j = 0; j < actions->count; j++) {
-	    const OnibiGAction *action = &actions->entries[j];
-	    if (action->code == ONIBI_GA_TEST_CAPTURE) {
-		MARK_SEMANTIC_CAPTURE(action->slot);
-		result.execution_kind = ONIBI_EXEC_DYNAMIC;
-	    }
-	    if (action->code == ONIBI_GA_ASSERT_POSITION) {
-		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;
-		if (action->assert_kind == ONIBI_RAP_LOOKAHEAD ||
-		    action->assert_kind == ONIBI_RAP_LOOKBEHIND)
-		    result.rseq_features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;
-		if (result.execution_kind == ONIBI_EXEC_REGULAR)
-		    result.execution_kind = ONIBI_EXEC_TAGGED;
-	    }
-	}
-    }
+#define CLASSIFY_ACTION_VECTOR(vector_pointer)                                 \
+    do {                                                                       \
+	const OnibiGActionVector *_actions = (vector_pointer);                 \
+	for (size_t _j = 0; _j < _actions->count; _j++) {                      \
+	    const OnibiGAction *_action = &_actions->entries[_j];              \
+	    switch (_action->code) {                                           \
+	    case ONIBI_GA_TEST_CAPTURE:                                        \
+		MARK_SEMANTIC_CAPTURE(_action->slot);                          \
+		execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;          \
+		break;                                                         \
+	    case ONIBI_GA_ASSERT_POSITION:                                     \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_ASSERTION;          \
+		if (_action->assert_kind == ONIBI_RAP_LOOKAHEAD ||             \
+		    _action->assert_kind == ONIBI_RAP_LOOKBEHIND)              \
+		    result.rseq_features |= ONIBI_RSEQ_FEATURE_LOOKAROUND;     \
+		execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;           \
+		break;                                                         \
+	    case ONIBI_GA_MATCH_RESET:                                         \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_MATCH_RESET;        \
+		execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;           \
+		break;                                                         \
+	    case ONIBI_GA_COUNTER_INIT:                                        \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_COUNTER;            \
+		break;                                                         \
+	    case ONIBI_GA_CAPTURE_OPEN:                                        \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;            \
+		break;                                                         \
+	    default: break;                                                    \
+	    }                                                                  \
+	    if (_action->code == ONIBI_GA_PROGRESS ||                          \
+		_action->code == ONIBI_GA_COUNTER_INIT ||                      \
+		_action->code == ONIBI_GA_COUNTER_INCREMENT ||                 \
+		_action->code == ONIBI_GA_TEST_COUNTER_LT ||                   \
+		_action->code == ONIBI_GA_TEST_COUNTER_GE) {                   \
+		if (_action->has_slot &&                                       \
+		    (uint32_t)_action->slot + 1U > result.counter_count)       \
+		    result.counter_count = (uint32_t)_action->slot + 1U;       \
+		execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;           \
+	    }                                                                  \
+	}                                                                      \
+    } while (0)
+    for (size_t i = 0; i < builder->edges.count; i++)
+	CLASSIFY_ACTION_VECTOR(&builder->edges.entries[i].actions);
+    for (size_t i = 0; i < start_edges->count; i++)
+	CLASSIFY_ACTION_VECTOR(&start_edges->entries[i].actions);
+    for (size_t i = 0; i < builder->subprogram_entries.count; i++)
+	CLASSIFY_ACTION_VECTOR(&builder->subprogram_entries.entries[i].actions);
+#undef CLASSIFY_ACTION_VECTOR
 #undef MARK_SEMANTIC_CAPTURE
+    result.execution_kind =
+	onibi_execution_kind_for_requirements(execution_requirements);
     onibi_compiler_fail_if(owner, 6);
     onibi_owned_free(builder->allocation_owner, semantic);
     return result;

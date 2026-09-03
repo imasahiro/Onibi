@@ -11,7 +11,7 @@
 | TASK-21 | R-04, A-08 | TASK-20 | sol/high | accepted | docs/gir.md; compiler.c, diagnostics.c, gir.c, onibi_ir.h, rseq.c; GIR verifier tests | Ruby 4 clean build; 94 runs/886 assertions passed with zero skips |
 | TASK-22 | R-07, E-01, E-02, E-05 | TASK-10, TASK-20 | sol/xhigh | accepted | docs/gir.md; compiler, GIR, NFA, RSeq, encoding runtime; descriptor and verifier tests | Ruby 4 clean build; 215 runs/3103 assertions passed; known scan byte-slice failure deferred to TASK-40 |
 | TASK-23 | R-01, A-03 | TASK-20 | sol/high | accepted | docs/gir.md; compiler, GIR, NFA, RSeq, runtime view; subprogram representation tests | clean warning build; 188 runs/1204 assertions passed; Ruby 4 legacy style failures remain outside this task |
-| TASK-24 | R-02 | TASK-21, TASK-22, TASK-23 | luna/high | pending | — | — |
+| TASK-24 | R-02 | TASK-21, TASK-22, TASK-23 | sol/xhigh | accepted | docs/gir.md; compiler.c, diagnostics.c, onibi_common.c, onibi_init.c, onibi_ir.h, rseq.c, rseq_runtime.c; physical verifier tests | Ruby 4 clean warning build; 74 runs/1515 assertions passed; broader syntax 192 runs/843 assertions with 2 confirmed baseline failures |
 | TASK-25 | P-05, P-06, P-07, P-08 | TASK-24 | luna/high | pending | — | — |
 | TASK-30 | A-07, A-08, P-03 | TASK-21, TASK-23 | sol/high | pending | — | — |
 | TASK-31 | A-05, A-09 | TASK-30 | sol/high | pending | — | — |
@@ -32,3 +32,4 @@
 TASK-15 route change: two root audit rejections found unowned allocations during non-local exits.
 TASK-20 route change: two root audit rejections found verifier performance and canonical action conflicts.
 TASK-22 route change: two root audit rejections found runtime case-fold architecture and later-phase scope conflicts.
+TASK-24 route change: Luna was unavailable; two root audit rejects required Sol/xhigh escalation.

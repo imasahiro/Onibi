@@ -125,7 +125,9 @@ enum {
     ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE = 1u << 0,
     ONIBI_RSEQ_HEADER_FLAG_IGNORECASE = 1u << 0,
     ONIBI_RSEQ_HEADER_FLAG_MULTILINE = 1u << 1,
-    ONIBI_RSEQ_CLASS_FLAG_NEGATED = 1u << 0
+    ONIBI_RSEQ_CLASS_FLAG_NEGATED = 1u << 0,
+    /* This physical marker lets the verifier prove the fallback feature. */
+    ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD = 1u << 1
 };
 
 typedef enum {

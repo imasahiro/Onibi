@@ -539,6 +539,180 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     return result;
 }
 
+/* This hook changes a private copy of a published blob. It exists only for
+ * verifier tests. Normal construction validates the original blob once. */
+static VALUE
+onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    if (NIL_P(obj->rseq_blob))
+	rb_raise(rb_eArgError,
+		 "RSeq verifier diagnostic requires an RSeq blob");
+    VALUE blob = rb_str_dup(obj->rseq_blob);
+    OnibiRSeqHeader *header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
+    OnibiRState *states =
+	(OnibiRState *)(RSTRING_PTR(blob) + header->states_offset);
+    OnibiREdge *edges =
+	(OnibiREdge *)(RSTRING_PTR(blob) + header->edges_offset);
+    OnibiRAction *actions =
+	(OnibiRAction *)(RSTRING_PTR(blob) + header->actions_offset);
+    OnibiClassDesc *classes =
+	(OnibiClassDesc *)(RSTRING_PTR(blob) + header->classes_offset);
+    OnibiLiteralDesc *literals =
+	(OnibiLiteralDesc *)(RSTRING_PTR(blob) + header->descriptors_offset);
+    OnibiSubprogramDesc *subprograms =
+	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
+    ID scenario = rb_to_id(scenario_value);
+    if (scenario == rb_intern("section_order"))
+	header->edges_offset = header->states_offset;
+    else if (scenario == rb_intern("section_alignment"))
+	header->states_offset += 2;
+    else if (scenario == rb_intern("section_overflow"))
+	header->blob_size = UINT32_MAX;
+    else if (scenario == rb_intern("state_edge_range"))
+	states[0].edge_base = header->start_edge_base;
+    else if (scenario == rb_intern("start_edge_count"))
+	header->start_edge_count = 0;
+    else if (scenario == rb_intern("state_opcode"))
+	states[0].op = UINT8_MAX;
+    else if (scenario == rb_intern("state_any_payload")) {
+	states[0].op = ONIBI_RS_ANY;
+	states[0].payload = 1;
+    }
+    else if (scenario == rb_intern("edge_destination"))
+	edges[0].destination = header->state_count;
+    else if (scenario == rb_intern("action_boundary")) {
+	uint32_t interior = UINT32_MAX;
+	for (uint32_t i = 1; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_END &&
+		actions[i - 1].op != ONIBI_RA_END) {
+		interior = i;
+		break;
+	    }
+	if (interior == UINT32_MAX)
+	    rb_raise(rb_eRuntimeError,
+		     "action-boundary diagnostic requires an interior action");
+	edges[0].action_offset =
+	    (interior + 1U) * (uint32_t)sizeof(OnibiRAction);
+    }
+    else if (scenario == rb_intern("action_termination"))
+	actions[header->action_count - 1].op = ONIBI_RA_CAPTURE;
+    else if (scenario == rb_intern("action_capture"))
+	actions[0] = (OnibiRAction){ONIBI_RA_CAPTURE, 2, 0, 0};
+    else if (scenario == rb_intern("action_match_reset"))
+	actions[0] = (OnibiRAction){ONIBI_RA_MATCH_RESET, 0, 1, 0};
+    else if (scenario == rb_intern("action_position"))
+	actions[0] = (OnibiRAction){ONIBI_RA_ASSERT_POSITION, 0,
+				    (uint16_t)ONIBI_RAP_LOOKAHEAD, 0};
+    else if (scenario == rb_intern("action_subprogram"))
+	actions[0] = (OnibiRAction){ONIBI_RA_ASSERT_SUBPROGRAM, 1,
+				    ONIBI_RAP_LOOKAHEAD, 0};
+    else if (scenario == rb_intern("action_test_capture"))
+	actions[0] =
+	    (OnibiRAction){ONIBI_RA_TEST_CAPTURE, ONIBI_RA_TEST_CAPTURE_SET,
+			   (uint16_t)header->capture_count, 0};
+    else if (scenario == rb_intern("action_counter_set"))
+	actions[0] = (OnibiRAction){ONIBI_RA_COUNTER_SET, 0, 0, 0};
+    else if (scenario == rb_intern("action_counter_add"))
+	actions[0] = (OnibiRAction){ONIBI_RA_COUNTER_ADD, 0, 0, 1};
+    else if (scenario == rb_intern("action_counter_test"))
+	actions[0] = (OnibiRAction){ONIBI_RA_COUNTER_TEST, 2, 0, 0};
+    else if (scenario == rb_intern("action_progress"))
+	actions[0] = (OnibiRAction){ONIBI_RA_PROGRESS, 0, 0, 1};
+    else if (scenario == rb_intern("class_descriptor"))
+	classes[0].kind = UINT8_MAX;
+    else if (scenario == rb_intern("class_ctype")) {
+	uint32_t invalid_ctype = UINT32_MAX;
+	if (classes[0].kind != ONIBI_CLASS_ENCODING_CTYPE)
+	    rb_raise(rb_eRuntimeError,
+		     "CTYPE diagnostic requires an encoding CTYPE class");
+	memcpy(RSTRING_PTR(blob) + classes[0].data_offset, &invalid_ctype,
+	       sizeof(invalid_ctype));
+    }
+    else if (scenario == rb_intern("mixed_ctype")) {
+	OnibiClassExpr *expr = NULL;
+	size_t count = 0;
+	for (uint32_t i = 0; i < header->class_count && expr == NULL; i++) {
+	    if (classes[i].kind != ONIBI_CLASS_MIXED) continue;
+	    OnibiClassExpr *candidate =
+		(OnibiClassExpr *)(RSTRING_PTR(blob) + classes[i].data_offset);
+	    size_t candidate_count =
+		classes[i].data_length / sizeof(*candidate);
+	    for (size_t j = 0; j < candidate_count; j++)
+		if (candidate[j].op == ONIBI_CLASS_EXPR_CTYPE) {
+		    expr = &candidate[j];
+		    count = candidate_count;
+		    break;
+		}
+	}
+	if (expr == NULL || count == 0)
+	    rb_raise(rb_eRuntimeError,
+		     "CTYPE diagnostic requires a mixed CTYPE class");
+	expr->arg0 = UINT32_MAX;
+    }
+    else if (scenario == rb_intern("literal_descriptor"))
+	literals[0].data_offset = header->descriptors_offset;
+    else if (scenario == rb_intern("subprogram_range"))
+	subprograms[1].entry_edge_base = header->edge_count;
+    else if (scenario == rb_intern("root_entry"))
+	subprograms[0].entry = subprograms[0].accept;
+    else if (scenario == rb_intern("subprogram_flags"))
+	subprograms[1].flags ^= 1U;
+    else if (scenario == rb_intern("subprogram_effects"))
+	subprograms[1].effects ^= ONIBI_SUBPROGRAM_EFFECT_POSITIVE;
+    else if (scenario == rb_intern("subprogram_entry"))
+	subprograms[1].entry = subprograms[1].accept;
+    else if (scenario == rb_intern("subprogram_width"))
+	subprograms[1].width_count = 0;
+    else if (scenario == rb_intern("subprogram_options"))
+	subprograms[1].option_env.options = UINT32_C(0x80000000);
+    else if (scenario == rb_intern("subprogram_encoding"))
+	subprograms[1].option_env.encoding_index = INT32_MAX;
+    else if (scenario == rb_intern("features"))
+	header->features ^= ONIBI_RSEQ_FEATURE_CAPTURE;
+    else if (scenario == rb_intern("zero_width_only"))
+	header->features ^= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
+    else if (scenario == rb_intern("counter_count_none")) {
+	if (header->counter_count != 0)
+	    rb_raise(rb_eRuntimeError,
+		     "unused-counter diagnostic requires no counters");
+	header->counter_count = 1;
+    }
+    else if (scenario == rb_intern("progress_counter_count")) {
+	int progress_seen = 0;
+	int other_counter_seen = 0;
+	uint32_t highest_progress_slot = 0;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op == ONIBI_RA_PROGRESS) {
+		progress_seen = 1;
+		if (actions[i].arg16 > highest_progress_slot)
+		    highest_progress_slot = actions[i].arg16;
+	    }
+	    else if (actions[i].op == ONIBI_RA_COUNTER_SET ||
+		     actions[i].op == ONIBI_RA_COUNTER_ADD ||
+		     actions[i].op == ONIBI_RA_COUNTER_TEST)
+		other_counter_seen = 1;
+	}
+	if (!progress_seen || other_counter_seen || header->counter_count < 2 ||
+	    header->counter_count != highest_progress_slot + 1U)
+	    rb_raise(rb_eRuntimeError,
+		     "progress diagnostic requires progress-only counters");
+	header->counter_count++;
+    }
+    else if (scenario == rb_intern("exec_kind"))
+	header->exec_kind = ONIBI_EXEC_DYNAMIC;
+    else if (scenario == rb_intern("first_bitmap"))
+	header->first_bitmap[0] ^= 1U;
+    else if (scenario == rb_intern("prefix"))
+	header->prefix[0] ^= 1U;
+    else
+	rb_raise(rb_eArgError, "unknown RSeq verifier diagnostic");
+    rb_obj_freeze(blob);
+    onibi_rseq_blob_validate(blob);
+    return Qtrue;
+}
+
 static VALUE
 onibi_compile_failure_diagnostic_call(VALUE opaque)
 {

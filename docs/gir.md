@@ -3275,6 +3275,21 @@ blob_size covers every section
 no integer arithmetic overflow occurred
 ```
 
+The physical verifier validates the complete immutable blob before it is
+published. It checks section ownership, action-program boundaries and endings,
+action operand forms, descriptor ranges, subprogram contracts, and metadata.
+
+Semantic feature bits and the execution class must agree with the physical
+records. Enabled search metadata must agree with the physical records.
+Executors can trust this verified contract. They do not repeat structural
+validation in match loops.
+
+The verifier gets `ZERO_WIDTH_ONLY` from states reachable by root start edges.
+It does not use consuming states that are private to assertion subprograms.
+The counter count equals the highest referenced action slot plus one.
+It is zero when no counter action refers to a slot. Progress actions also refer
+to counter slots. The verifier checks each encoding CTYPE operand before use.
+
 Debug builds must abort on an internal invariant failure.
 
 Release builds must return a normal internal compilation error.
