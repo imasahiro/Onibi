@@ -177,6 +177,8 @@ Init_onibi(void)
 			     onibi_match_p_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_internal_error_diagnostics__",
 			     onibi_internal_error_diagnostics, 1);
+    rb_define_private_method(cRegexp, "__onibi_semantic_state_diagnostics__",
+			     onibi_semantic_state_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_compile_failure_diagnostics__",
 			     onibi_compile_failure_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_nfa_diagnostics__",

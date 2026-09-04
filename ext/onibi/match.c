@@ -5,6 +5,7 @@ onibi_exec_ctx_release(OnibiExecCtx *ctx)
     ctx->tags.data = NULL;
     ctx->tags.count = 0;
     ctx->tags.capacity = 0;
+    onibi_semantic_arena_release(&ctx->semantic_arena);
     ruby_xfree(ctx->class_stack);
     ctx->class_stack = NULL;
     ctx->class_stack_capacity = 0;
@@ -48,6 +49,9 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
 	exec_ctx.class_stack_capacity = obj->rseq_view.class_stack_capacity;
 	if (exec_ctx.class_stack_capacity != 0)
 	    exec_ctx.class_stack = ruby_xmalloc(exec_ctx.class_stack_capacity);
+	if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_REGULAR)
+	    onibi_semantic_live_captures_prepare(&exec_ctx.semantic_arena,
+						 &obj->rseq_view);
 	for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
 	    exec_ctx.attempt_start = start;
 	    exec_ctx.reported_start = start;

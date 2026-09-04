@@ -13,7 +13,7 @@
 | TASK-23 | R-01, A-03 | TASK-20 | sol/high | accepted | docs/gir.md; compiler, GIR, NFA, RSeq, runtime view; subprogram representation tests | clean warning build; 188 runs/1204 assertions passed; Ruby 4 legacy style failures remain outside this task |
 | TASK-24 | R-02 | TASK-21, TASK-22, TASK-23 | sol/xhigh | accepted | docs/gir.md; compiler.c, diagnostics.c, onibi_common.c, onibi_init.c, onibi_ir.h, rseq.c, rseq_runtime.c; physical verifier tests | Ruby 4 clean warning build; 74 runs/1515 assertions passed; broader syntax 192 runs/843 assertions with 2 confirmed baseline failures |
 | TASK-25 | P-05, P-06, P-07, P-08 | TASK-24 | terra/high | accepted | compiler, GIR, RSeq, diagnostics; RSeq lowering scale tests | Ruby 4 clean warning build; 37 runs/1387 assertions passed; targeted RuboCop passed |
-| TASK-30 | A-07, A-08, P-03 | TASK-21, TASK-23 | sol/high | pending | — | — |
+| TASK-30 | A-07, A-08, P-03 | TASK-21, TASK-23 | sol/xhigh | accepted | exec_dynamic.c, match.c, onibi_common.c, onibi_init.c; semantic state tests | clean warning build; 17 runs/418 assertions passed; future executor matrix retains 2 expected failures |
 | TASK-31 | A-05, A-09 | TASK-30 | sol/high | pending | — | — |
 | TASK-32 | A-06, A-07, P-02, P-03 | TASK-30 | sol/high | pending | — | — |
 | TASK-33 | P-02, A-09 | TASK-31, TASK-32 | luna/high | pending | — | — |
@@ -34,3 +34,4 @@ TASK-20 route change: two root audit rejections found verifier performance and c
 TASK-22 route change: two root audit rejections found runtime case-fold architecture and later-phase scope conflicts.
 TASK-24 route change: Luna was unavailable; two root audit rejects required Sol/xhigh escalation.
 TASK-25 route change: Luna is unavailable in the collaboration runtime; Terra/high is the closest serialization route.
+TASK-30 route change: two root audit rejects found unsafe dedup bounds and full-state key scans.

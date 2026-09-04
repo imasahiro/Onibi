@@ -201,18 +201,110 @@ typedef struct {
     unsigned char *data;
     size_t count, capacity;
 } OnibiTagArena;
+
+/* Semantic state uses indexes into match-local append-only arenas.  A state
+ * value can be copied for a branch without copying any register file. */
 typedef struct {
-    long *values;
-    size_t count;
+    uint32_t parent;
+    uint32_t slot;
+    OnigPosition value;
+} OnibiSemanticRegisterDelta;
+typedef struct {
+    uint32_t root;
+    uint32_t slot_count;
+    uint64_t hash;
 } OnibiSemanticCaptureFile;
 typedef struct {
-    long *values;
-    size_t count;
+    uint32_t root;
+    uint32_t slot_count;
+    uint64_t hash;
 } OnibiCounterFile;
 typedef struct {
-    uint32_t *frames;
-    size_t count, capacity;
+    uint32_t root;
+    uint32_t slot_count;
+    uint64_t hash;
+} OnibiProgressState;
+typedef struct {
+    uint32_t parent;
+    OnibiCallFrame frame;
+    uint64_t hash;
+} OnibiOwnedCallFrame;
+typedef struct {
+    uint32_t root;
+    uint32_t depth;
 } OnibiCallStack;
+typedef struct {
+    uint32_t parent;
+    OnibiSubprogramId subprogram_id;
+    OnigPosition begin;
+    OnigPosition end;
+    OnibiTagEventId tag_history;
+    uint32_t flags;
+    uint64_t hash;
+} OnibiSemanticScope;
+typedef struct {
+    uint32_t root;
+    uint32_t depth;
+} OnibiAtomicState;
+typedef OnibiAtomicState OnibiAbsenceState;
+typedef struct {
+    OnibiTagEventId parent;
+    uint32_t slot;
+    OnigPosition position;
+    uint64_t hash;
+} OnibiSemanticTagEvent;
+typedef struct {
+    OnigPosition reported_start;
+    OnibiSemanticCaptureFile semantic_captures;
+    OnibiCounterFile counters;
+    OnibiProgressState progress;
+    OnibiCallStack calls;
+    OnibiAtomicState atomic;
+    OnibiAbsenceState absence;
+    OnibiTagEventId tag_history;
+} OnibiSemanticState;
+typedef struct {
+    uint32_t state_id;
+    OnigPosition position;
+    OnibiSemanticState semantic;
+    uint64_t hash;
+} OnibiDynamicThreadKey;
+typedef struct {
+    uint32_t state;
+    OnigPosition position;
+    OnibiSemanticState semantic;
+} OnibiDynamicFrame;
+typedef struct {
+    OnibiDynamicThreadKey key;
+    uint32_t generation;
+} OnibiDynamicKeyBucket;
+typedef struct {
+    OnibiSemanticRegisterDelta *registers;
+    size_t register_count, register_capacity;
+    OnibiSemanticTagEvent *tags;
+    size_t tag_count, tag_capacity;
+    OnibiOwnedCallFrame *calls;
+    size_t call_count, call_capacity;
+    OnibiSemanticScope *atomic;
+    size_t atomic_count, atomic_capacity;
+    OnibiSemanticScope *absence;
+    size_t absence_count, absence_capacity;
+    uint32_t *live_capture_slots;
+    size_t live_capture_count, live_capture_capacity;
+    unsigned char *live_capture_bitmap;
+    size_t live_capture_bitmap_capacity;
+    OnibiDynamicFrame *frames;
+    size_t frame_count, frame_capacity;
+    OnibiDynamicKeyBucket *key_buckets;
+    size_t key_count, key_capacity;
+    uint32_t key_generation;
+    size_t register_read_count;
+    size_t key_hash_count;
+} OnibiSemanticArena;
+typedef enum {
+    ONIBI_ACTION_FAIL = 0,
+    ONIBI_ACTION_SUCCESS = 1
+} OnibiActionResult;
 typedef struct {
     VALUE regexp;
     VALUE subject;
@@ -224,9 +316,7 @@ typedef struct {
     OnibiFrontier current;
     OnibiFrontier next;
     OnibiTagArena tags;
-    OnibiSemanticCaptureFile semantic_captures;
-    OnibiCounterFile counters;
-    OnibiCallStack calls;
+    OnibiSemanticArena semantic_arena;
     uint64_t work_before_poll;
     /* Ruby's private rb_hrtime_t is not public in this MRI release. */
     uint64_t timeout_deadline;
@@ -274,6 +364,8 @@ static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
 static int onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *view,
 					 VALUE subject, long start,
 					 long search_origin, long *matched_end,
+					 OnibiSemanticState *accepted_state,
+					 OnibiSemanticArena *semantic_arena,
 					 unsigned char *class_stack,
 					 size_t class_stack_capacity);
 static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
