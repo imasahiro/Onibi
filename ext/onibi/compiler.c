@@ -22,6 +22,7 @@ typedef struct {
     long counter_count;
     int options;
     VerifiedGIRAnalysis analysis;
+    OnibiLoweringWork lowering_work;
 } OnibiCompiled;
 
 /* A compile owner contains every mutable allocation that can outlive one
@@ -2533,6 +2534,7 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->capture_count = builder->capture_count;
     compiled_result->counter_count = analysis.counter_count;
     compiled_result->analysis = analysis;
+    compiled_result->lowering_work = builder->lowering_work;
     compiled_result->options = parsed_options;
     return result;
 }

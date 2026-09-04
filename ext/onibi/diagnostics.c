@@ -89,6 +89,18 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		     : onibi_diagnostic_search(self, subject, &start, &finish,
 					       capture_result);
     VALUE result = rb_hash_new();
+    VALUE lowering_work = rb_hash_new();
+    rb_hash_aset(lowering_work, ID2SYM(rb_intern("gir_class_probes")),
+		 ULL2NUM(obj->lowering_work.gir_class_probes));
+    rb_hash_aset(lowering_work, ID2SYM(rb_intern("rseq_class_probes")),
+		 ULL2NUM(obj->lowering_work.rseq_class_probes));
+    rb_hash_aset(lowering_work, ID2SYM(rb_intern("literal_probes")),
+		 ULL2NUM(obj->lowering_work.literal_probes));
+    rb_hash_aset(lowering_work, ID2SYM(rb_intern("action_probes")),
+		 ULL2NUM(obj->lowering_work.action_probes));
+    rb_hash_aset(lowering_work, ID2SYM(rb_intern("prefix_edges")),
+		 ULL2NUM(obj->lowering_work.prefix_edges));
+    rb_hash_aset(result, ID2SYM(rb_intern("lowering_work")), lowering_work);
     rb_hash_aset(result, ID2SYM(rb_intern("rseq")),
 		 NIL_P(obj->rseq) ? Qfalse : Qtrue);
     rb_hash_aset(result, ID2SYM(rb_intern("regular_capable")),

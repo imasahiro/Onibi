@@ -37,6 +37,14 @@ typedef struct onibi_owned_allocation {
 } onibi_owned_allocation_t;
 
 typedef struct {
+    uint64_t gir_class_probes;
+    uint64_t rseq_class_probes;
+    uint64_t literal_probes;
+    uint64_t action_probes;
+    uint64_t prefix_edges;
+} OnibiLoweringWork;
+
+typedef struct {
     size_t live_count;
 } OnibiAllocationAccounting;
 
@@ -460,6 +468,8 @@ typedef struct {
     unsigned int ast_flags;
     unsigned int execution_flags;
     unsigned int feature_flags;
+    /* Private compile telemetry. It records lowering work for focused tests. */
+    OnibiLoweringWork lowering_work;
     double timeout_seconds;
 } onibi_regexp_t;
 

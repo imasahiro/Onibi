@@ -54,6 +54,16 @@ typedef struct {
 } OnibiSemanticClass;
 typedef ONIBI_VECTOR(OnibiSemanticClass) OnibiSemanticClassVector;
 typedef struct {
+    uint64_t hash;
+    uint32_t index;
+    uint8_t used;
+} OnibiGIRClassHashSlot;
+typedef struct {
+    OnibiGIRClassHashSlot *slots;
+    size_t count;
+    size_t capacity;
+} OnibiGIRClassHash;
+typedef struct {
     unsigned char bytes[4];
     uint8_t length;
     int ignorecase;
@@ -75,6 +85,8 @@ typedef struct {
     OnibiGirEdgeVector subprogram_entries;
     OnibiIdVector lookbehind_widths;
     OnibiSemanticClassVector classes;
+    OnibiGIRClassHash class_hash;
+    OnibiLoweringWork lowering_work;
     OnibiIdVector progress_slots;
     OnibiAstArena *ast;
     const OnibiResolvedArena *semantics;
@@ -207,6 +219,57 @@ ONIBI_VECTOR_DEFINE(onibi_semantic_class_vector, OnibiSemanticClassVector,
 		    OnibiSemanticClass, 8,
 		    "GIR class descriptor vector is too large")
 
+static uint64_t
+onibi_gir_class_hash_bytes(uint64_t hash, const void *data, size_t length)
+{
+    const unsigned char *bytes = data;
+    for (size_t i = 0; i < length; i++) {
+	hash ^= bytes[i];
+	hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static uint64_t
+onibi_gir_class_hash(uint8_t kind, uint8_t flags, int casefolded,
+		     int incomplete_casefold, const void *data,
+		     size_t data_length)
+{
+    const unsigned char *bytes = data;
+    uint64_t hash = UINT64_C(1469598103934665603);
+    hash = onibi_gir_class_hash_bytes(hash, &kind, sizeof(kind));
+    hash = onibi_gir_class_hash_bytes(hash, &flags, sizeof(flags));
+    uint8_t folded = (uint8_t)casefolded;
+    uint8_t incomplete = (uint8_t)incomplete_casefold;
+    hash = onibi_gir_class_hash_bytes(hash, &folded, sizeof(folded));
+    hash = onibi_gir_class_hash_bytes(hash, &incomplete, sizeof(incomplete));
+    hash = onibi_gir_class_hash_bytes(hash, &data_length, sizeof(data_length));
+    return onibi_gir_class_hash_bytes(hash, bytes, data_length);
+}
+
+static void
+onibi_gir_class_hash_grow(onibi_gir_builder_t *builder)
+{
+    OnibiGIRClassHash *table = &builder->class_hash;
+    size_t next_capacity = table->capacity == 0 ? 16 : table->capacity * 2U;
+    if (next_capacity < table->capacity ||
+	next_capacity > SIZE_MAX / sizeof(*table->slots))
+	rb_raise(rb_eNoMemError, "GIR class hash table is too large");
+    OnibiGIRClassHashSlot *next = onibi_owned_realloc(
+	builder->allocation_owner, NULL, next_capacity * sizeof(*next));
+    memset(next, 0, next_capacity * sizeof(*next));
+    for (size_t i = 0; i < table->capacity; i++) {
+	if (!table->slots[i].used) continue;
+	size_t slot = (size_t)table->slots[i].hash & (next_capacity - 1U);
+	while (next[slot].used)
+	    slot = (slot + 1U) & (next_capacity - 1U);
+	next[slot] = table->slots[i];
+    }
+    onibi_owned_free(builder->allocation_owner, table->slots);
+    table->slots = next;
+    table->capacity = next_capacity;
+}
+
 static uint32_t
 onibi_semantic_class_add(onibi_gir_builder_t *builder, uint8_t kind,
 			 uint8_t flags, int casefolded, int incomplete_casefold,
@@ -216,14 +279,25 @@ onibi_semantic_class_add(onibi_gir_builder_t *builder, uint8_t kind,
 	rb_raise(eRegexpError, "class descriptor exceeds the v1 size limit");
     if (builder->classes.count >= UINT32_MAX)
 	rb_raise(eRegexpError, "too many GIR class descriptors");
-    for (size_t i = 0; i < builder->classes.count; i++) {
-	const OnibiSemanticClass *prior = &builder->classes.entries[i];
-	if (prior->kind == kind && prior->flags == flags &&
-	    prior->casefolded == casefolded &&
+    OnibiGIRClassHash *table = &builder->class_hash;
+    if (table->capacity == 0 ||
+	(table->count + 1U) * 10U > table->capacity * 7U)
+	onibi_gir_class_hash_grow(builder);
+    uint64_t hash = onibi_gir_class_hash(
+	kind, flags, casefolded, incomplete_casefold, data, data_length);
+    size_t slot = (size_t)hash & (table->capacity - 1U);
+    while (table->slots[slot].used) {
+	builder->lowering_work.gir_class_probes++;
+	const OnibiGIRClassHashSlot *prior_slot = &table->slots[slot];
+	const OnibiSemanticClass *prior =
+	    &builder->classes.entries[prior_slot->index];
+	if (prior_slot->hash == hash && prior->kind == kind &&
+	    prior->flags == flags && prior->casefolded == casefolded &&
 	    prior->incomplete_casefold == incomplete_casefold &&
 	    prior->data_length == data_length &&
 	    memcmp(prior->data, data, data_length) == 0)
-	    return (uint32_t)i;
+	    return prior_slot->index;
+	slot = (slot + 1U) & (table->capacity - 1U);
     }
     unsigned char *copy =
 	onibi_owned_realloc(builder->allocation_owner, NULL, data_length);
@@ -232,7 +306,10 @@ onibi_semantic_class_add(onibi_gir_builder_t *builder, uint8_t kind,
 	copy,  (uint16_t)data_length, kind,
 	flags, (uint8_t)casefolded,   (uint8_t)incomplete_casefold};
     onibi_semantic_class_vector_push(&builder->classes, entry);
-    return (uint32_t)(builder->classes.count - 1U);
+    uint32_t index = (uint32_t)(builder->classes.count - 1U);
+    table->slots[slot] = (OnibiGIRClassHashSlot){hash, index, 1};
+    table->count++;
+    return index;
 }
 
 static void
@@ -254,87 +331,6 @@ onibi_gir_edge_vector_push(OnibiGirEdgeVector *vector, OnibiGirEdgeEntry entry)
 {
     ONIBI_OWNED_VECTOR_PUSH(vector, OnibiGirEdgeEntry, entry, 8,
 			    "GIR edge vector is too large");
-}
-
-typedef struct {
-    OnibiGirEdgeVector *vector;
-    size_t state_count;
-    size_t *counts;
-    size_t *next;
-    OnibiGirEdgeEntry *ordered;
-} OnibiGirGroupOwner;
-
-static void
-onibi_gir_group_owner_cleanup(OnibiGirGroupOwner *owner)
-{
-    onibi_owned_free(owner->vector->allocation_owner, owner->counts);
-    onibi_owned_free(owner->vector->allocation_owner, owner->next);
-    onibi_owned_free(owner->vector->allocation_owner, owner->ordered);
-    owner->counts = NULL;
-    owner->next = NULL;
-    owner->ordered = NULL;
-}
-
-static VALUE
-onibi_gir_group_ensure(VALUE opaque)
-{
-    onibi_gir_group_owner_cleanup((OnibiGirGroupOwner *)(uintptr_t)opaque);
-    return Qnil;
-}
-
-static VALUE
-onibi_gir_edge_vector_group_by_from_body(VALUE opaque)
-{
-    OnibiGirGroupOwner *owner = (OnibiGirGroupOwner *)(uintptr_t)opaque;
-    OnibiGirEdgeVector *vector = owner->vector;
-    size_t state_count = owner->state_count;
-    if (vector->count < 2) return Qnil;
-    for (size_t i = 0; i < vector->count; i++) {
-	if (vector->entries[i].from < 0 ||
-	    (size_t)vector->entries[i].from >= state_count)
-	    rb_raise(rb_eArgError, "RSeq edge source is out of range");
-    }
-    if (state_count > SIZE_MAX / sizeof(size_t) ||
-	vector->count > SIZE_MAX / sizeof(*vector->entries))
-	rb_raise(rb_eNoMemError, "RSeq edge index is too large");
-    owner->counts = onibi_owned_realloc(vector->allocation_owner, NULL,
-					state_count * sizeof(size_t));
-    owner->next = onibi_owned_realloc(vector->allocation_owner, NULL,
-				      state_count * sizeof(size_t));
-    owner->ordered =
-	onibi_owned_realloc(vector->allocation_owner, NULL,
-			    vector->count * sizeof(OnibiGirEdgeEntry));
-    memset(owner->counts, 0, sizeof(*owner->counts) * state_count);
-    for (size_t i = 0; i < vector->count; i++)
-	owner->counts[vector->entries[i].from]++;
-    size_t offset = 0;
-    for (size_t i = 0; i < state_count; i++) {
-	owner->next[i] = offset;
-	offset += owner->counts[i];
-    }
-    for (size_t i = 0; i < vector->count; i++) {
-	size_t from = (size_t)vector->entries[i].from;
-	owner->ordered[owner->next[from]++] = vector->entries[i];
-    }
-    onibi_owned_free(vector->allocation_owner, vector->entries);
-    vector->entries = owner->ordered;
-    vector->capacity = vector->count;
-    owner->ordered = NULL;
-    return Qnil;
-}
-
-static void
-onibi_gir_edge_vector_group_by_from(OnibiGirEdgeVector *vector,
-				    size_t state_count)
-{
-    if (vector->count < 2) return;
-    OnibiGirGroupOwner owner;
-    memset(&owner, 0, sizeof(owner));
-    owner.vector = vector;
-    owner.state_count = state_count;
-    (void)rb_ensure(onibi_gir_edge_vector_group_by_from_body,
-		    (VALUE)(uintptr_t)&owner, onibi_gir_group_ensure,
-		    (VALUE)(uintptr_t)&owner);
 }
 
 static void
