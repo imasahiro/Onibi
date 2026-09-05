@@ -10,8 +10,8 @@ The gem provides `Onibi::Regexp` under the `Onibi` namespace.
 Its public API follows MRI `Regexp` behavior for each supported feature.
 The PoC does not replace MRI `Regexp` or modify MRI.
 
-The implementation supports MRI only.
-Do not add support for JRuby, TruffleRuby, or mruby.
+Build, test, and design for MRI only, using the repository-specified MRI toolchain.
+Do not add runtime support, CI, or acceptance checks for JRuby, TruffleRuby, or mruby.
 
 The PoC has three execution classes:
 
@@ -62,9 +62,9 @@ Add differential tests against MRI when public behavior becomes available.
 
 ## Implementation rules
 
-Put production matcher and compiler code in the C extension.
+Put all production matcher, compiler, and interpreter code in the C extension.
 Use Ruby only for gem loading, version data, and necessary public wrappers.
-Do not implement a second production matcher in Ruby.
+Never add, restore, or extend a production matcher in Ruby.
 
 Keep runtime dependencies at zero.
 Do not add FFI or an external regular-expression library.
@@ -98,8 +98,8 @@ Do not restore the Ruby matcher as production code.
 
 ## Verification
 
-Use the commands that the current `Rakefile` provides.
-Update this section when C extension tasks become available.
+Before verification, inspect the current `Rakefile` and `docs/development.md`.
+Run only the applicable commands and tasks they currently define.
 
 ```sh
 bundle install
@@ -107,7 +107,7 @@ bundle exec rubocop
 bundle exec rake build
 ```
 
-The legacy tests cannot run until the C extension adds a new loader.
+Treat legacy tests as historical reference, not C-path verification; do not run tests that require removed Ruby APIs unless the task explicitly targets their migration.
 
 For C changes, enable compiler warnings.
 Use ASAN and UBSAN when their build tasks become available.
@@ -120,4 +120,6 @@ Treat the complete suite as a progress report until its milestone makes it requi
 Commit every change as an atomic unit.
 Do not combine unrelated changes in one commit.
 Use a feature branch and a pull request.
+If the user requests a draft pull request, do not merge it or enable auto-merge.
+Merge only after every required CI check has completed successfully; blocked, skipped, pending, or post-merge checks are not sufficient.
 Update the active documents when architecture or milestone rules change.
