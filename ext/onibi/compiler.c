@@ -1502,55 +1502,217 @@ onibi_compile_repeat_atom(OnibiAstId atom, onibi_gir_builder_t *builder,
     return result;
 }
 
-/* Ruby 4.0.6 regcomp.c uses this byte-size test to decide whether a finite
- * repetition has a null check. Saturation keeps this analysis bounded. */
+/* MRI 4.0.6 selects the finite greedy expansion from the compiled target
+ * length.  This is an opcode-size reference calculation, not a character
+ * width rule.  Keep all values saturated because only the 50-byte decision
+ * boundary is observable here. */
+#define ONIBI_MRI_REPEAT_EXPAND_LIMIT 50L
+#define ONIBI_MRI_SIZE_OPCODE 1L
+#define ONIBI_MRI_SIZE_RELADDR ((long)sizeof(int32_t))
+#define ONIBI_MRI_SIZE_MEMNUM ((long)sizeof(int16_t))
+#define ONIBI_MRI_SIZE_LENGTH ((long)sizeof(int32_t))
+#define ONIBI_MRI_SIZE_PUSH (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_RELADDR)
+#define ONIBI_MRI_SIZE_JUMP (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_RELADDR)
+#define ONIBI_MRI_SIZE_REPEAT_INC                                              \
+    (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_MEMNUM)
+#define ONIBI_MRI_SIZE_NULL_CHECK                                              \
+    (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_MEMNUM)
+#define ONIBI_MRI_SIZE_MEMORY_START                                            \
+    (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_MEMNUM)
+#define ONIBI_MRI_SIZE_MEMORY_END                                              \
+    (ONIBI_MRI_SIZE_OPCODE + ONIBI_MRI_SIZE_MEMNUM)
+
+static long
+onibi_repeat_reference_add(long first, long second)
+{
+    if (first > ONIBI_MRI_REPEAT_EXPAND_LIMIT ||
+	second > ONIBI_MRI_REPEAT_EXPAND_LIMIT ||
+	first > ONIBI_MRI_REPEAT_EXPAND_LIMIT - second)
+	return ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L;
+    return first + second;
+}
+
+static long
+onibi_repeat_reference_multiply(long first, long second)
+{
+    if (first == 0 || second == 0) return 0;
+    if (first > ONIBI_MRI_REPEAT_EXPAND_LIMIT ||
+	second > ONIBI_MRI_REPEAT_EXPAND_LIMIT ||
+	first > ONIBI_MRI_REPEAT_EXPAND_LIMIT / second)
+	return ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L;
+    return first * second;
+}
+
+static long
+onibi_repeat_reference_string_size(long mb_len, long byte_len, int ignore_case)
+{
+    long characters =
+	mb_len > 0 ? byte_len / mb_len + (byte_len % mb_len != 0) : 0;
+    long size = ONIBI_MRI_SIZE_OPCODE + byte_len;
+
+    if (ignore_case) {
+	if (characters > 1)
+	    size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_LENGTH);
+    }
+    else if (mb_len >= 4)
+	size = onibi_repeat_reference_add(
+	    onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_LENGTH),
+	    ONIBI_MRI_SIZE_LENGTH);
+    else if (mb_len == 3 || (mb_len == 2 && characters > 3) ||
+	     (mb_len == 1 && byte_len > 5))
+	size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_LENGTH);
+    return size > ONIBI_MRI_REPEAT_EXPAND_LIMIT
+	       ? ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L
+	       : size;
+}
+
+static long
+onibi_repeat_reference_literal_size(OnibiAstId id,
+				    const onibi_gir_builder_t *builder)
+{
+    /* Mirror MRI's compile_length_string_node: the encoded run chooses an
+     * opcode form, and the result is the target program length. */
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    const OnibiResolvedNode *semantic = &builder->semantics->nodes[id];
+    rb_encoding *encoding = rb_enc_from_index(builder->encoding_index);
+    const unsigned char *bytes =
+	node->bytes.present ? builder->ast->bytes + node->bytes.offset : NULL;
+    size_t length = node->bytes.present ? node->bytes.length : 1U;
+    int ignore_case = (semantic->lexical_options & ONIBI_OPT_IGNORECASE) != 0;
+    if (bytes == NULL) {
+	return onibi_repeat_reference_string_size(1, 1, ignore_case);
+    }
+
+    long size = 0;
+    size_t offset = 0;
+    while (offset < length) {
+	const char *begin = (const char *)bytes + offset;
+	const char *end = (const char *)bytes + length;
+	int width = rb_enc_precise_mbclen(begin, end, encoding);
+	if (!MBCLEN_CHARFOUND_P(width) || MBCLEN_CHARFOUND_LEN(width) <= 0)
+	    return ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L;
+	size_t character_width = (size_t)MBCLEN_CHARFOUND_LEN(width);
+	size_t run = character_width;
+	offset += character_width;
+	while (offset < length) {
+	    const char *next = (const char *)bytes + offset;
+	    int next_width = rb_enc_precise_mbclen(next, end, encoding);
+	    if (!MBCLEN_CHARFOUND_P(next_width) ||
+		(!ignore_case &&
+		 (size_t)MBCLEN_CHARFOUND_LEN(next_width) != character_width))
+		break;
+	    run += (size_t)MBCLEN_CHARFOUND_LEN(next_width);
+	    offset += (size_t)MBCLEN_CHARFOUND_LEN(next_width);
+	}
+	long part = onibi_repeat_reference_string_size((long)character_width,
+						       (long)run, ignore_case);
+	size = onibi_repeat_reference_add(size, part);
+	if (size > ONIBI_MRI_REPEAT_EXPAND_LIMIT) return size;
+    }
+    return size;
+}
+
 static long
 onibi_repeat_reference_size(OnibiAstId id, const onibi_gir_builder_t *builder)
 {
     const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
     const OnibiResolvedNode *sem = &builder->semantics->nodes[id];
     long size = 0;
-    if (node->kind == ONIBI_AST_SEQUENCE ||
-	node->kind == ONIBI_AST_ALTERNATIVE) {
+    switch (node->kind) {
+    case ONIBI_AST_SEQUENCE:
+	for (size_t i = 0; i < node->child_count; i++)
+	    size = onibi_repeat_reference_add(
+		size, onibi_repeat_reference_size(node->children[i], builder));
+	break;
+    case ONIBI_AST_ALTERNATIVE:
 	for (size_t i = 0; i < node->child_count; i++) {
-	    size += onibi_repeat_reference_size(node->children[i], builder);
-	    if (node->kind == ONIBI_AST_ALTERNATIVE && i != 0) size += 10;
-	    if (size > 50) return 51;
+	    size = onibi_repeat_reference_add(
+		size, onibi_repeat_reference_size(node->children[i], builder));
+	    if (i != 0)
+		size = onibi_repeat_reference_add(
+		    size, ONIBI_MRI_SIZE_PUSH + ONIBI_MRI_SIZE_JUMP);
 	}
-    }
-    else if (node->kind == ONIBI_AST_CAPTURE)
-	size = 6 + onibi_repeat_reference_size(node->body, builder);
-    else if (node->kind == ONIBI_AST_GROUP ||
-	     node->kind == ONIBI_AST_OPTION_SCOPE)
+	break;
+    case ONIBI_AST_LITERAL:
+	size = onibi_repeat_reference_literal_size(id, builder);
+	break;
+    case ONIBI_AST_ESCAPE:
+    case ONIBI_AST_ANY:
+    case ONIBI_AST_ANCHOR: size = ONIBI_MRI_SIZE_OPCODE; break;
+    case ONIBI_AST_CHARACTER_CLASS:
+    case ONIBI_AST_CLASS_INTERSECTION:
+	size = ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L;
+	break;
+    case ONIBI_AST_CAPTURE:
+	size = onibi_repeat_reference_add(
+	    ONIBI_MRI_SIZE_MEMORY_START,
+	    onibi_repeat_reference_size(node->body, builder));
+	size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_MEMORY_END);
+	break;
+    case ONIBI_AST_GROUP:
+    case ONIBI_AST_OPTION_SCOPE:
 	size = onibi_repeat_reference_size(node->body, builder);
-    else if (node->kind == ONIBI_AST_LITERAL) {
-	size_t length = node->bytes.present ? node->bytes.length : 1;
-	size = (long)length + (length <= 5 ? 1 : 5);
-    }
-    else if (node->kind == ONIBI_AST_ANY || node->kind == ONIBI_AST_ANCHOR)
-	size = 1;
-    else if (node->kind == ONIBI_AST_CHARACTER_CLASS)
-	size = 33;
-    else if (node->kind == ONIBI_AST_QUANTIFIER) {
+	break;
+    case ONIBI_AST_QUANTIFIER: {
 	long body = onibi_repeat_reference_size(node->atom, builder);
-	long min = sem->repeat_min, max = sem->repeat_max;
+	long min = sem->repeat_min;
+	long max = sem->repeat_max;
 	int greedy = (sem->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
 	int nullable = (builder->semantics->nodes[node->atom].flags &
 			ONIBI_SEMANTIC_NULLABLE) != 0;
+	long modified = nullable ? onibi_repeat_reference_add(
+				       body, 2L * ONIBI_MRI_SIZE_NULL_CHECK)
+				 : body;
+	int infinite = max < 0;
 	if (max == 0)
 	    size = 0;
-	else if (max >= 0 && greedy && (max == 1 || max <= 50 / (body + 5)))
-	    size = body * min + (body + 5) * (max - min);
-	else if (max == 1 && min == 0 && !greedy)
-	    size = body + 10;
-	else if (max < 0 && (min <= 1 || (body && min <= 50 / body)))
-	    size = body * min + body + 10 + (nullable ? 6 : 0);
-	else
-	    size = body + 10 + (nullable ? 6 : 0);
+	else if (infinite &&
+		 (min <= 1 || onibi_repeat_reference_multiply(body, min) <=
+				  ONIBI_MRI_REPEAT_EXPAND_LIMIT)) {
+	    if (min == 1 && body > ONIBI_MRI_REPEAT_EXPAND_LIMIT)
+		size = ONIBI_MRI_SIZE_JUMP;
+	    else
+		size = onibi_repeat_reference_multiply(body, min);
+	    if (greedy) {
+		size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_PUSH);
+		size = onibi_repeat_reference_add(size, modified);
+		size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_JUMP);
+	    }
+	    else {
+		size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_JUMP);
+		size = onibi_repeat_reference_add(size, modified);
+		size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_PUSH);
+	    }
+	}
+	else if (!infinite && greedy &&
+		 (max == 1 ||
+		  onibi_repeat_reference_multiply(
+		      onibi_repeat_reference_add(body, ONIBI_MRI_SIZE_PUSH),
+		      max) <= ONIBI_MRI_REPEAT_EXPAND_LIMIT)) {
+	    size = onibi_repeat_reference_add(
+		onibi_repeat_reference_multiply(body, min),
+		onibi_repeat_reference_multiply(
+		    onibi_repeat_reference_add(body, ONIBI_MRI_SIZE_PUSH),
+		    max - min));
+	}
+	else if (!infinite && !greedy && max == 1 && min == 0) {
+	    size = onibi_repeat_reference_add(
+		ONIBI_MRI_SIZE_PUSH + ONIBI_MRI_SIZE_JUMP, body);
+	}
+	else {
+	    size =
+		onibi_repeat_reference_add(ONIBI_MRI_SIZE_REPEAT_INC, modified);
+	    size = onibi_repeat_reference_add(size, ONIBI_MRI_SIZE_OPCODE +
+							ONIBI_MRI_SIZE_RELADDR +
+							ONIBI_MRI_SIZE_MEMNUM);
+	}
+	break;
     }
-    else
-	size = 51;
-    return size > 50 ? 51 : size;
+    default: size = ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L; break;
+    }
+    return size > ONIBI_MRI_REPEAT_EXPAND_LIMIT
+	       ? ONIBI_MRI_REPEAT_EXPAND_LIMIT + 1L
+	       : size;
 }
 
 static size_t
@@ -2060,9 +2222,13 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	    max != min)
 	    rb_raise(eRegexpError,
 		     "variable possessive quantifier is not supported in RSeq");
-	long bytes = onibi_repeat_reference_size(atom, builder);
+	long reference_size = onibi_repeat_reference_size(atom, builder);
 	int expanded =
-	    max >= 0 && greedy && (max <= 1 || max <= 50 / (bytes + 5));
+	    max >= 0 && greedy &&
+	    (max <= 1 || onibi_repeat_reference_multiply(
+			     onibi_repeat_reference_add(reference_size,
+							ONIBI_MRI_SIZE_PUSH),
+			     max) <= ONIBI_MRI_REPEAT_EXPAND_LIMIT);
 	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
 	    (nullable && !expanded && max != 1))
 	    return onibi_compile_compact_repeat(atom, min,

@@ -10,8 +10,14 @@ class TaggedNullableUtf8RegressionTest < Minitest::Test
     ["two_byte_utf8_exact_bound_3", "two-byte UTF-8 exact bound 3", "^(é??){3}x", "éx"],
     ["three_byte_utf8_exact_bound_2", "three-byte UTF-8 exact bound 2", "^(あ??){2}x", "あx"],
     ["three_byte_utf8_exact_bound_3", "three-byte UTF-8 exact bound 3", "^(あ??){3}x", "あx"],
+    ["four_byte_utf8_exact_bound_2", "four-byte UTF-8 exact bound 2", "^(😀??){2}x", "😀x"],
     ["outer_optional_scope", "outer optional scope", "^(?:(あ??){2})?x", "あx"],
     ["outer_alternative_scope", "outer alternative scope", "^(?:(あ??){2}z|(あ))x", "あx"]
+  ].freeze
+
+  NO_MATCH_CASES = [
+    ["ascii_exact_bound_suffix_failure", "ASCII exact-bound suffix failure", "^(a??){2}y", "ax"],
+    ["utf8_exact_bound_suffix_failure", "UTF-8 exact-bound suffix failure", "^(あ??){2}y", "あx"]
   ].freeze
 
   CASES.each do |id, name, pattern, subject|
@@ -31,6 +37,23 @@ class TaggedNullableUtf8RegressionTest < Minitest::Test
       assert_equal 0, info[:dfs], name
       assert_equal 0, info[:fallback], name
       assert_equal capture_ranges(expected), info[:captures], name
+    end
+  end
+
+  NO_MATCH_CASES.each do |id, name, pattern, subject|
+    define_method("test_#{id}") do
+      expected = ::Regexp.new(pattern).match(subject)
+      info = Onibi::Regexp.new(pattern).send(:__onibi_diagnostics__, subject)
+
+      refute expected, name
+      assert info[:rseq], name
+      assert_equal 1, info[:exec_kind], name
+      assert_equal 0, info[:status], name
+      assert_equal 0, info[:regular], name
+      assert_operator info[:tagged], :>, 0, name
+      assert_equal 0, info[:dynamic], name
+      assert_equal 0, info[:dfs], name
+      assert_equal 0, info[:fallback], name
     end
   end
 
