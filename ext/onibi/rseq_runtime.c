@@ -221,6 +221,392 @@ typedef struct {
     onibi_allocation_owner_t allocations;
 } OnibiRSeqVerifyCall;
 
+typedef struct {
+    uint32_t from;
+    uint32_t to;
+    uint32_t action_offset;
+    size_t next_outgoing;
+    size_t next_incoming;
+} OnibiRSeqNullableEdgeIndex;
+
+typedef struct {
+    uint32_t to;
+    uint32_t action_offset;
+    size_t next;
+} OnibiRSeqNullableEntryIndex;
+
+typedef struct {
+    unsigned char *owner_bases;
+    unsigned char *reserved_slots;
+    uint32_t *owner_indices;
+    size_t owner_count;
+    size_t word_count;
+    uint64_t *all_owners;
+    uint64_t *state_in;
+    size_t *outgoing_heads;
+    size_t *incoming_heads;
+    size_t *entry_heads;
+    OnibiRSeqNullableEdgeIndex *edges;
+    OnibiRSeqNullableEntryIndex *entries;
+    size_t entry_count;
+    unsigned char *reachable;
+    unsigned char *queued;
+    uint32_t *worklist;
+} OnibiRSeqNullableVerify;
+
+static void
+onibi_rseq_nullable_set(uint64_t *state, uint32_t owner_index)
+{
+    state[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] |=
+	UINT64_C(1) << (owner_index % (sizeof(uint64_t) * CHAR_BIT));
+}
+
+static void
+onibi_rseq_nullable_clear(uint64_t *state, uint32_t owner_index)
+{
+    state[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] &=
+	~(UINT64_C(1) << (owner_index % (sizeof(uint64_t) * CHAR_BIT)));
+}
+
+static const OnibiRAction *
+onibi_rseq_action_program(const OnibiRSeqView *view, uint32_t action_offset,
+			  uint32_t *count)
+{
+    if (action_offset == 0) {
+	*count = 0;
+	return NULL;
+    }
+    uint32_t index = action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+    uint32_t length = 0;
+    while (index + length < view->header->action_count) {
+	if (view->actions[index + length].op == ONIBI_RA_END) {
+	    *count = length;
+	    return view->actions + index;
+	}
+	length++;
+    }
+    rb_raise(rb_eArgError, "unterminated Onibi RSeq action program");
+    return NULL;
+}
+
+static void
+onibi_rseq_nullable_collect_owner(const OnibiRSeqView *view,
+				  OnibiRSeqNullableVerify *nullable,
+				  uint32_t base)
+{
+    if ((uint32_t)base + 1U >= view->header->counter_count)
+	rb_raise(rb_eArgError, "invalid Onibi RSeq nullable owner range");
+    if (nullable->owner_bases[base]) return;
+    if (nullable->reserved_slots[base] || nullable->reserved_slots[base + 1U])
+	rb_raise(rb_eArgError,
+		 "overlapping Onibi RSeq nullable owner intervals");
+    nullable->owner_bases[base] = 1;
+    nullable->reserved_slots[base] = 1;
+    nullable->reserved_slots[base + 1U] = 1;
+    nullable->owner_indices[base] = (uint32_t)nullable->owner_count++;
+}
+
+static void
+onibi_rseq_nullable_transfer(const OnibiRSeqView *view,
+			     const OnibiRSeqNullableVerify *nullable,
+			     uint32_t action_offset, const uint64_t *input,
+			     uint64_t *output)
+{
+    uint32_t count;
+    const OnibiRAction *actions =
+	onibi_rseq_action_program(view, action_offset, &count);
+    if (output != input)
+	memcpy(output, input, nullable->word_count * sizeof(*output));
+    for (uint32_t i = 0; i < count; i++) {
+	const OnibiRAction *action = &actions[i];
+	if (action->op == ONIBI_RA_NULL_ENTER)
+	    onibi_rseq_nullable_set(output,
+				    nullable->owner_indices[action->arg16]);
+	else if (action->op == ONIBI_RA_NULL_CONTINUE ||
+		 action->op == ONIBI_RA_NULL_STOP)
+	    onibi_rseq_nullable_clear(output,
+				      nullable->owner_indices[action->arg16]);
+    }
+}
+
+static void
+onibi_rseq_nullable_validate_program(const OnibiRSeqView *view,
+				     const OnibiRSeqNullableVerify *nullable,
+				     uint32_t action_offset,
+				     const uint64_t *input, uint64_t *output)
+{
+    uint32_t count;
+    const OnibiRAction *actions =
+	onibi_rseq_action_program(view, action_offset, &count);
+    memcpy(output, input, nullable->word_count * sizeof(*output));
+    for (uint32_t i = 0; i < count; i++) {
+	const OnibiRAction *action = &actions[i];
+	if (action->op == ONIBI_RA_NULL_ENTER) {
+	    onibi_rseq_nullable_set(output,
+				    nullable->owner_indices[action->arg16]);
+	}
+	else if (action->op == ONIBI_RA_NULL_CAPTURE ||
+		 action->op == ONIBI_RA_NULL_CONTINUE ||
+		 action->op == ONIBI_RA_NULL_STOP) {
+	    uint32_t owner_index = nullable->owner_indices[action->arg16];
+	    if (!(output[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] &
+		  (UINT64_C(1)
+		   << (owner_index % (sizeof(uint64_t) * CHAR_BIT)))))
+		rb_raise(rb_eArgError,
+			 "Onibi RSeq nullable owner is not initialized");
+	    if (action->op == ONIBI_RA_NULL_CONTINUE ||
+		action->op == ONIBI_RA_NULL_STOP)
+		onibi_rseq_nullable_clear(output, owner_index);
+	}
+    }
+}
+
+static void
+onibi_rseq_nullable_meet(uint64_t *destination, const uint64_t *source,
+			 size_t word_count)
+{
+    for (size_t i = 0; i < word_count; i++)
+	destination[i] &= source[i];
+}
+
+static int
+onibi_rseq_nullable_update_state(const OnibiRSeqView *view,
+				 const OnibiRSeqNullableVerify *nullable,
+				 size_t state, uint64_t *next, uint64_t *output)
+{
+    int has_incoming = 0;
+    memcpy(next, nullable->all_owners, nullable->word_count * sizeof(*next));
+    for (size_t entry = nullable->entry_heads[state]; entry != SIZE_MAX;
+	 entry = nullable->entries[entry].next) {
+	const OnibiRSeqNullableEntryIndex *incoming = &nullable->entries[entry];
+	memset(output, 0, nullable->word_count * sizeof(*output));
+	onibi_rseq_nullable_transfer(view, nullable, incoming->action_offset,
+				     output, output);
+	if (!has_incoming) {
+	    memcpy(next, output, nullable->word_count * sizeof(*next));
+	    has_incoming = 1;
+	}
+	else
+	    onibi_rseq_nullable_meet(next, output, nullable->word_count);
+    }
+    for (size_t edge = nullable->incoming_heads[state]; edge != SIZE_MAX;
+	 edge = nullable->edges[edge].next_incoming) {
+	const OnibiRSeqNullableEdgeIndex *incoming = &nullable->edges[edge];
+	if (!nullable->reachable[incoming->from]) continue;
+	const uint64_t *input =
+	    nullable->state_in + (size_t)incoming->from * nullable->word_count;
+	onibi_rseq_nullable_transfer(view, nullable, incoming->action_offset,
+				     input, output);
+	if (!has_incoming) {
+	    memcpy(next, output, nullable->word_count * sizeof(*next));
+	    has_incoming = 1;
+	}
+	else
+	    onibi_rseq_nullable_meet(next, output, nullable->word_count);
+    }
+    if (!has_incoming) return 0;
+    uint64_t *current = nullable->state_in + state * nullable->word_count;
+    if (memcmp(next, current, nullable->word_count * sizeof(*next)) == 0)
+	return 0;
+    memcpy(current, next, nullable->word_count * sizeof(*next));
+    return 1;
+}
+
+static void
+onibi_rseq_nullable_verify_paths(const OnibiRSeqView *view,
+				 OnibiRSeqVerifyCall *call,
+				 OnibiRSeqNullableVerify *nullable)
+{
+    const OnibiRSeqHeader *header = view->header;
+    if (nullable->owner_count == 0) return;
+    size_t bit_count = sizeof(uint64_t) * CHAR_BIT;
+    nullable->word_count = (nullable->owner_count + bit_count - 1U) / bit_count;
+    nullable->all_owners = onibi_owned_realloc(
+	&call->allocations, NULL,
+	nullable->word_count * sizeof(*nullable->all_owners));
+    for (size_t i = 0; i < nullable->word_count; i++)
+	nullable->all_owners[i] = UINT64_MAX;
+
+    if (header->state_count > SIZE_MAX / sizeof(*nullable->outgoing_heads) ||
+	header->state_count >
+	    SIZE_MAX / sizeof(*nullable->state_in) / nullable->word_count)
+	rb_raise(rb_eArgError,
+		 "Onibi RSeq nullable verification index is too large");
+    nullable->outgoing_heads = onibi_owned_realloc(
+	&call->allocations, NULL,
+	(size_t)header->state_count * sizeof(*nullable->outgoing_heads));
+    nullable->incoming_heads = onibi_owned_realloc(
+	&call->allocations, NULL,
+	(size_t)header->state_count * sizeof(*nullable->incoming_heads));
+    nullable->entry_heads = onibi_owned_realloc(
+	&call->allocations, NULL,
+	(size_t)header->state_count * sizeof(*nullable->entry_heads));
+    nullable->state_in =
+	onibi_owned_realloc(&call->allocations, NULL,
+			    (size_t)header->state_count * nullable->word_count *
+				sizeof(*nullable->state_in));
+    nullable->reachable =
+	onibi_owned_realloc(&call->allocations, NULL, header->state_count);
+    nullable->queued =
+	onibi_owned_realloc(&call->allocations, NULL, header->state_count);
+    nullable->worklist = onibi_owned_realloc(&call->allocations, NULL,
+					     (size_t)header->state_count *
+						 sizeof(*nullable->worklist));
+    for (uint32_t i = 0; i < header->state_count; i++) {
+	nullable->outgoing_heads[i] = SIZE_MAX;
+	nullable->incoming_heads[i] = SIZE_MAX;
+	nullable->entry_heads[i] = SIZE_MAX;
+    }
+    memset(nullable->reachable, 0, header->state_count);
+    memset(nullable->queued, 0, header->state_count);
+
+    uint32_t normal_edge_count = header->start_edge_base;
+    nullable->edges = onibi_owned_realloc(&call->allocations, NULL,
+					  (size_t)normal_edge_count *
+					      sizeof(*nullable->edges));
+    uint32_t edge_cursor = 0;
+    for (uint32_t state = 0; state < header->state_count; state++) {
+	for (uint32_t i = 0; i < view->states[state].edge_count; i++) {
+	    const OnibiREdge *edge =
+		&view->edges[view->states[state].edge_base + i];
+	    OnibiRSeqNullableEdgeIndex *indexed = &nullable->edges[edge_cursor];
+	    indexed->from = state;
+	    indexed->to = edge->destination;
+	    indexed->action_offset = edge->action_offset;
+	    indexed->next_outgoing = nullable->outgoing_heads[state];
+	    indexed->next_incoming =
+		edge->destination == ONIBI_ACCEPT_STATE
+		    ? SIZE_MAX
+		    : nullable->incoming_heads[edge->destination];
+	    nullable->outgoing_heads[state] = edge_cursor;
+	    if (edge->destination != ONIBI_ACCEPT_STATE)
+		nullable->incoming_heads[edge->destination] = edge_cursor;
+	    edge_cursor++;
+	}
+    }
+    if (edge_cursor != normal_edge_count)
+	rb_raise(rb_eArgError, "invalid Onibi RSeq nullable edge index");
+
+    nullable->entry_count = header->edge_count - normal_edge_count;
+    nullable->entries =
+	onibi_owned_realloc(&call->allocations, NULL,
+			    nullable->entry_count * sizeof(*nullable->entries));
+    size_t entry = 0;
+    for (uint32_t i = 0; i < header->start_edge_count; i++, entry++) {
+	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
+	nullable->entries[entry].to = edge->destination;
+	nullable->entries[entry].action_offset = edge->action_offset;
+	nullable->entries[entry].next =
+	    edge->destination == ONIBI_ACCEPT_STATE
+		? SIZE_MAX
+		: nullable->entry_heads[edge->destination];
+	if (edge->destination != ONIBI_ACCEPT_STATE)
+	    nullable->entry_heads[edge->destination] = entry;
+    }
+    for (uint32_t i = 1; i < header->subprogram_count; i++) {
+	const OnibiSubprogramDesc *subprogram = &view->subprograms[i];
+	for (uint32_t j = 0; j < subprogram->entry_edge_count; j++, entry++) {
+	    const OnibiREdge *edge =
+		&view->edges[subprogram->entry_edge_base + j];
+	    nullable->entries[entry].to = edge->destination;
+	    nullable->entries[entry].action_offset = edge->action_offset;
+	    nullable->entries[entry].next =
+		edge->destination == ONIBI_ACCEPT_STATE
+		    ? SIZE_MAX
+		    : nullable->entry_heads[edge->destination];
+	    if (edge->destination != ONIBI_ACCEPT_STATE)
+		nullable->entry_heads[edge->destination] = entry;
+	}
+    }
+    if (entry != nullable->entry_count)
+	rb_raise(rb_eArgError, "invalid Onibi RSeq nullable entry index");
+
+    size_t queue_head = 0, queue_tail = 0, queue_count = 0;
+    for (size_t i = 0; i < nullable->entry_count; i++) {
+	uint32_t state = nullable->entries[i].to;
+	if (state == ONIBI_ACCEPT_STATE) continue;
+	if (nullable->reachable[state]) continue;
+	nullable->reachable[state] = 1;
+	if (queue_count == header->state_count)
+	    rb_raise(rb_eArgError,
+		     "Onibi RSeq nullable reachability queue is too large");
+	nullable->worklist[queue_tail++] = state;
+	if (queue_tail == header->state_count) queue_tail = 0;
+	queue_count++;
+    }
+    while (queue_count != 0) {
+	uint32_t state = nullable->worklist[queue_head++];
+	queue_count--;
+	if (queue_head == header->state_count) queue_head = 0;
+	for (size_t edge = nullable->outgoing_heads[state]; edge != SIZE_MAX;
+	     edge = nullable->edges[edge].next_outgoing) {
+	    uint32_t destination = nullable->edges[edge].to;
+	    if (destination == ONIBI_ACCEPT_STATE) continue;
+	    if (nullable->reachable[destination]) continue;
+	    nullable->reachable[destination] = 1;
+	    if (queue_count == header->state_count)
+		rb_raise(rb_eArgError,
+			 "Onibi RSeq nullable reachability queue is too large");
+	    nullable->worklist[queue_tail++] = destination;
+	    if (queue_tail == header->state_count) queue_tail = 0;
+	    queue_count++;
+	}
+    }
+
+    queue_head = queue_tail = queue_count = 0;
+    uint64_t *next = onibi_owned_realloc(&call->allocations, NULL,
+					 nullable->word_count * sizeof(*next));
+    uint64_t *output = onibi_owned_realloc(
+	&call->allocations, NULL, nullable->word_count * sizeof(*output));
+    for (uint32_t state = 0; state < header->state_count; state++) {
+	if (!nullable->reachable[state]) continue;
+	memcpy(nullable->state_in + (size_t)state * nullable->word_count,
+	       nullable->all_owners,
+	       nullable->word_count * sizeof(*nullable->all_owners));
+	if (queue_count == header->state_count)
+	    rb_raise(rb_eArgError, "Onibi RSeq nullable worklist is too large");
+	nullable->worklist[queue_tail++] = state;
+	if (queue_tail == header->state_count) queue_tail = 0;
+	nullable->queued[state] = 1;
+	queue_count++;
+    }
+    while (queue_count != 0) {
+	uint32_t state = nullable->worklist[queue_head++];
+	queue_count--;
+	nullable->queued[state] = 0;
+	if (queue_head == header->state_count) queue_head = 0;
+	if (!onibi_rseq_nullable_update_state(view, nullable, state, next,
+					      output))
+	    continue;
+	for (size_t edge = nullable->outgoing_heads[state]; edge != SIZE_MAX;
+	     edge = nullable->edges[edge].next_outgoing) {
+	    uint32_t destination = nullable->edges[edge].to;
+	    if (destination == ONIBI_ACCEPT_STATE) continue;
+	    if (nullable->queued[destination]) continue;
+	    if (queue_count == header->state_count)
+		rb_raise(rb_eArgError,
+			 "Onibi RSeq nullable worklist is too large");
+	    nullable->worklist[queue_tail++] = destination;
+	    if (queue_tail == header->state_count) queue_tail = 0;
+	    nullable->queued[destination] = 1;
+	    queue_count++;
+	}
+    }
+
+    memset(output, 0, nullable->word_count * sizeof(*output));
+    for (size_t i = 0; i < nullable->entry_count; i++)
+	onibi_rseq_nullable_validate_program(
+	    view, nullable, nullable->entries[i].action_offset, output, next);
+    for (uint32_t i = 0; i < normal_edge_count; i++) {
+	const OnibiRSeqNullableEdgeIndex *edge = &nullable->edges[i];
+	if (!nullable->reachable[edge->from]) continue;
+	const uint64_t *input =
+	    nullable->state_in + (size_t)edge->from * nullable->word_count;
+	onibi_rseq_nullable_validate_program(view, nullable,
+					     edge->action_offset, input, next);
+    }
+}
+
 static VALUE
 onibi_rseq_blob_validate_body(VALUE opaque)
 {
@@ -304,6 +690,22 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     if (action_boundaries) memset(action_boundaries, 0, header->action_count);
     memset(subprogram_references, 0, header->subprogram_count);
     subprogram_references[0] = 1;
+
+    OnibiRSeqNullableVerify nullable;
+    memset(&nullable, 0, sizeof(nullable));
+    if (header->counter_count != 0) {
+	nullable.owner_bases = onibi_owned_realloc(&call->allocations, NULL,
+						   header->counter_count);
+	nullable.reserved_slots = onibi_owned_realloc(&call->allocations, NULL,
+						      header->counter_count);
+	nullable.owner_indices = onibi_owned_realloc(
+	    &call->allocations, NULL,
+	    (size_t)header->counter_count * sizeof(*nullable.owner_indices));
+	memset(nullable.owner_bases, 0, header->counter_count);
+	memset(nullable.reserved_slots, 0, header->counter_count);
+	for (uint32_t i = 0; i < header->counter_count; i++)
+	    nullable.owner_indices[i] = UINT32_MAX;
+    }
 
     for (uint32_t i = 0; i < header->state_count; i++) {
 	const OnibiRState *state = &view.states[i];
@@ -492,6 +894,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 			 : action->arg32 != 0))
 		    rb_raise(rb_eArgError,
 			     "invalid Onibi RSeq nullable repeat action");
+		if (action->op == ONIBI_RA_NULL_ENTER)
+		    onibi_rseq_nullable_collect_owner(&view, &nullable,
+						      action->arg16);
 		if (action->op == ONIBI_RA_NULL_CAPTURE &&
 		    !semantic_captures[action->arg32]) {
 		    semantic_captures[action->arg32] = 1;
@@ -531,6 +936,26 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	counter_action_seen ? highest_counter_slot + 1U : 0;
     if (header->counter_count != expected_counter_count)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq counter count");
+
+    for (uint32_t i = 0; i < header->action_count; i++) {
+	const OnibiRAction *action = &view.actions[i];
+	if (action->op == ONIBI_RA_NULL_CAPTURE ||
+	    action->op == ONIBI_RA_NULL_CONTINUE ||
+	    action->op == ONIBI_RA_NULL_STOP) {
+	    if (nullable.owner_indices[action->arg16] == UINT32_MAX)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq nullable owner base");
+	}
+	if (action->op == ONIBI_RA_COUNTER_SET ||
+	    action->op == ONIBI_RA_COUNTER_ADD ||
+	    action->op == ONIBI_RA_COUNTER_TEST ||
+	    action->op == ONIBI_RA_PROGRESS) {
+	    if (nullable.reserved_slots != NULL &&
+		nullable.reserved_slots[action->arg16])
+		rb_raise(rb_eArgError,
+			 "Onibi RSeq counter aliases nullable owner");
+	}
+    }
 
     uint32_t entry_cursor = header->start_edge_base + header->start_edge_count;
     int root_encoding_index = view.subprograms[0].option_env.encoding_index;
@@ -710,6 +1135,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	    rb_raise(rb_eArgError, "unreferenced Onibi RSeq subprogram");
     if (semantic_capture_count != header->semantic_capture_count)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq semantic capture count");
+
+    onibi_rseq_nullable_verify_paths(&view, call, &nullable);
 
     uint32_t expected_features =
 	(header->capture_count != 0 ? ONIBI_RSEQ_FEATURE_CAPTURE : 0) |

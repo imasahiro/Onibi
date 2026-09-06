@@ -73,6 +73,71 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_invalid("(?:a|)*b(?:c|)*d", :progress_counter_count)
   end
 
+  def test_rejects_physical_nullable_owner_contract_violations
+    scenarios = %i[
+      nullable_owner_range nullable_owner_overlap nullable_owner_wrong_base
+      nullable_counter_alias nullable_progress_alias
+    ]
+
+    scenarios.each do |scenario|
+      pattern = "(?:a|)*b"
+      pattern = "(?:a|)*b(?:c|)*d" if scenario == :nullable_owner_overlap
+      assert_invalid(pattern, scenario)
+    end
+  end
+
+  def test_rejects_physical_nullable_initialization_violations
+    %i[nullable_uninitialized_all nullable_uninitialized_one_path
+       nullable_completed_read].each do |scenario|
+      regexp = Onibi::Regexp.new("(?:(a|))*b")
+      error = assert_raises(ArgumentError) do
+        regexp.send(:__onibi_rseq_verifier_diagnostics__, scenario)
+      end
+      assert_equal "Onibi RSeq nullable owner is not initialized", error.message
+    end
+  end
+
+  def test_physical_nullable_verifier_handles_bounded_branching
+    regexp = Onibi::Regexp.new("(?:(a?|b?|c?|d?)){9}")
+
+    assert regexp.send(:__onibi_rseq_verifier_diagnostics__,
+                       :nullable_bounded_branching)
+  end
+
+  def test_physical_nullable_verifier_keeps_owner_facts_compact
+    pattern = "(?:a|)*b{2,100}c{2,100}d{2,100}"
+    regexp = Onibi::Regexp.new(pattern)
+    diagnostics = regexp.send(:__onibi_diagnostics__, "")
+    owner_bases = diagnostics.fetch(:actions).filter_map do |op, _flags, base|
+      base if op == 10
+    end.uniq
+
+    assert_equal 1, owner_bases.length
+    assert_operator diagnostics.fetch(:counter_count), :>=, 6
+    assert regexp.send(:__onibi_rseq_verifier_diagnostics__,
+                       :nullable_compact_facts)
+  end
+
+  def test_valid_physical_nullable_owner_flows_remain_verified
+    ["(?:a|)*b", "(?:(a|))*b", "(?:(a?|b?)){9}"].each do |pattern|
+      regexp = Onibi::Regexp.new(pattern)
+      assert regexp.send(:__onibi_diagnostics__, "aa").fetch(:rseq), pattern
+    end
+  end
+
+  def test_physical_nullable_verifier_uses_bounded_owner_facts
+    source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
+
+    assert_includes source, "nullable->owner_count + bit_count - 1U"
+    assert_includes source, "nullable->outgoing_heads"
+    assert_includes source, "nullable->incoming_heads"
+    assert_includes source, "nullable->worklist"
+    assert_includes source, "Onibi RSeq nullable reachability queue is too large"
+    assert_includes source, "Onibi RSeq nullable worklist is too large"
+    refute_match(/for \(uint32_t state = 0; state < header->state_count; state\+\+\).*?
+                 view->edges/mx, source)
+  end
+
   def test_verifier_uses_owned_input_sized_work_arrays
     source = File.read(File.expand_path("../../../ext/onibi/rseq_runtime.c", __dir__))
 

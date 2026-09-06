@@ -115,6 +115,8 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		     UINT2NUM(obj->rseq_view.header->capture_count));
 	rb_hash_aset(result, ID2SYM(rb_intern("semantic_capture_count")),
 		     UINT2NUM(obj->rseq_view.header->semantic_capture_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("counter_count")),
+		     UINT2NUM(obj->rseq_view.header->counter_count));
 	rb_hash_aset(result, ID2SYM(rb_intern("start_edge_base")),
 		     UINT2NUM(obj->rseq_view.header->start_edge_base));
 	rb_hash_aset(result, ID2SYM(rb_intern("start_edge_count")),
@@ -762,6 +764,149 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	actions[0] = (OnibiRAction){ONIBI_RA_COUNTER_TEST, 2, 0, 0};
     else if (scenario == rb_intern("action_progress"))
 	actions[0] = (OnibiRAction){ONIBI_RA_PROGRESS, 0, 0, 1};
+    else if (scenario == rb_intern("nullable_owner_range")) {
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_ENTER) {
+		actions[i].arg16 = (uint16_t)(header->counter_count - 1U);
+		break;
+	    }
+    }
+    else if (scenario == rb_intern("nullable_owner_overlap")) {
+	uint16_t first = UINT16_MAX;
+	for (uint32_t i = 0; i < header->action_count; i++) {
+	    if (actions[i].op != ONIBI_RA_NULL_ENTER) continue;
+	    if (first == UINT16_MAX) {
+		first = actions[i].arg16;
+		continue;
+	    }
+	    if (actions[i].arg16 != first) {
+		actions[i].arg16 = (uint16_t)(first + 1U);
+		break;
+	    }
+	}
+    }
+    else if (scenario == rb_intern("nullable_owner_wrong_base")) {
+	uint16_t owner = UINT16_MAX;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_ENTER) {
+		owner = actions[i].arg16;
+		break;
+	    }
+	if (owner == UINT16_MAX)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a nullable owner");
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_CAPTURE ||
+		actions[i].op == ONIBI_RA_NULL_CONTINUE ||
+		actions[i].op == ONIBI_RA_NULL_STOP) {
+		actions[i].arg16 = (uint16_t)(owner + 1U);
+		break;
+	    }
+    }
+    else if (scenario == rb_intern("nullable_counter_alias")) {
+	uint16_t owner = UINT16_MAX;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_ENTER) {
+		owner = actions[i].arg16;
+		break;
+	    }
+	if (owner == UINT16_MAX)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a nullable owner");
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_COUNTER_SET ||
+		actions[i].op == ONIBI_RA_COUNTER_ADD ||
+		actions[i].op == ONIBI_RA_COUNTER_TEST) {
+		actions[i].arg16 = owner;
+		break;
+	    }
+    }
+    else if (scenario == rb_intern("nullable_progress_alias")) {
+	uint16_t owner = UINT16_MAX;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_ENTER) {
+		owner = actions[i].arg16;
+		break;
+	    }
+	if (owner == UINT16_MAX)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a nullable owner");
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_COUNTER_SET ||
+		actions[i].op == ONIBI_RA_COUNTER_ADD ||
+		actions[i].op == ONIBI_RA_COUNTER_TEST) {
+		actions[i].op = ONIBI_RA_PROGRESS;
+		actions[i].flags = 0;
+		actions[i].arg16 = (uint16_t)(owner + 1U);
+		actions[i].arg32 = 0;
+		break;
+	    }
+    }
+    else if (scenario == rb_intern("nullable_uninitialized_all")) {
+	int changed = 0;
+	uint32_t declaration = UINT32_MAX;
+	for (uint32_t i = 0; i < header->action_count; i++)
+	    if (actions[i].op == ONIBI_RA_NULL_ENTER) {
+		actions[i].op = ONIBI_RA_NULL_CAPTURE;
+		actions[i].arg32 = 0;
+		changed = 1;
+	    }
+	for (uint32_t i = header->action_count; i-- > 0;) {
+	    if (actions[i].op == ONIBI_RA_NULL_CAPTURE) {
+		declaration = i;
+		break;
+	    }
+	}
+	if (declaration != UINT32_MAX)
+	    actions[declaration].op = ONIBI_RA_NULL_ENTER;
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a nullable owner");
+    }
+    else if (scenario == rb_intern("nullable_uninitialized_one_path")) {
+	int changed = 0;
+	if (header->start_edge_count > 1) {
+	    uint32_t offset = edges[header->start_edge_base + 1U].action_offset;
+	    uint32_t index = offset / (uint32_t)sizeof(OnibiRAction) - 1U;
+	    while (index < header->action_count &&
+		   actions[index].op != ONIBI_RA_END) {
+		if (actions[index].op == ONIBI_RA_NULL_ENTER) {
+		    actions[index].op = ONIBI_RA_NULL_CAPTURE;
+		    actions[index].arg32 = 0;
+		    changed = 1;
+		    break;
+		}
+		index++;
+	    }
+	}
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a branched nullable owner");
+    }
+    else if (scenario == rb_intern("nullable_completed_read")) {
+	int changed = 0;
+	for (uint32_t i = 0; i + 1U < header->action_count; i++)
+	    if ((actions[i].op == ONIBI_RA_NULL_CONTINUE ||
+		 actions[i].op == ONIBI_RA_NULL_STOP) &&
+		(actions[i + 1U].op == ONIBI_RA_COUNTER_SET ||
+		 actions[i + 1U].op == ONIBI_RA_COUNTER_ADD ||
+		 actions[i + 1U].op == ONIBI_RA_COUNTER_TEST)) {
+		actions[i + 1U].arg16 = actions[i].arg16;
+		actions[i + 1U].op = ONIBI_RA_NULL_CAPTURE;
+		actions[i + 1U].flags = 0;
+		actions[i + 1U].arg32 = 0;
+		changed = 1;
+		break;
+	    }
+	if (!changed)
+	    rb_raise(rb_eRuntimeError,
+		     "nullable diagnostic requires a completed owner");
+    }
+    else if (scenario == rb_intern("nullable_bounded_branching") ||
+	     scenario == rb_intern("nullable_compact_facts")) {
+	/* Keep the private blob unchanged. The verifier run is the assertion.
+	 */
+    }
     else if (scenario == rb_intern("class_descriptor"))
 	classes[0].kind = UINT8_MAX;
     else if (scenario == rb_intern("class_ctype")) {
@@ -822,24 +967,33 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	header->counter_count = 1;
     }
     else if (scenario == rb_intern("progress_counter_count")) {
-	int progress_seen = 0;
-	int other_counter_seen = 0;
-	uint32_t highest_progress_slot = 0;
+	int counter_seen = 0;
+	uint32_t highest_counter_slot = 0;
 	for (uint32_t i = 0; i < header->action_count; i++) {
-	    if (actions[i].op == ONIBI_RA_PROGRESS) {
-		progress_seen = 1;
-		if (actions[i].arg16 > highest_progress_slot)
-		    highest_progress_slot = actions[i].arg16;
+	    uint32_t last = 0;
+	    switch (actions[i].op) {
+	    case ONIBI_RA_COUNTER_SET:
+	    case ONIBI_RA_COUNTER_ADD:
+	    case ONIBI_RA_COUNTER_TEST:
+	    case ONIBI_RA_PROGRESS:
+		last = actions[i].arg16;
+		counter_seen = 1;
+		break;
+	    case ONIBI_RA_NULL_ENTER:
+	    case ONIBI_RA_NULL_CAPTURE:
+	    case ONIBI_RA_NULL_CONTINUE:
+	    case ONIBI_RA_NULL_STOP:
+		last = (uint32_t)actions[i].arg16 + 1U;
+		counter_seen = 1;
+		break;
+	    default: continue;
 	    }
-	    else if (actions[i].op == ONIBI_RA_COUNTER_SET ||
-		     actions[i].op == ONIBI_RA_COUNTER_ADD ||
-		     actions[i].op == ONIBI_RA_COUNTER_TEST)
-		other_counter_seen = 1;
+	    if (last > highest_counter_slot) highest_counter_slot = last;
 	}
-	if (!progress_seen || other_counter_seen || header->counter_count < 2 ||
-	    header->counter_count != highest_progress_slot + 1U)
+	if (!counter_seen || header->counter_count == 0 ||
+	    header->counter_count != highest_counter_slot + 1U)
 	    rb_raise(rb_eRuntimeError,
-		     "progress diagnostic requires progress-only counters");
+		     "progress diagnostic requires a contiguous counter range");
 	header->counter_count++;
     }
     else if (scenario == rb_intern("exec_kind"))
