@@ -211,6 +211,19 @@ class TaggedOrderedDifferentialTest < Minitest::Test
     end
   end
 
+  def test_assertion_event_rollback_matches_mri_without_fallback
+    {
+      "^(?:(?=(a)z)b|a)" => %w[a],
+      "^(?:(?!(a)z)a|a)" => %w[a],
+      "^(?:(?!(a))a|a)" => %w[a],
+      "^(?:(?=(a))b|a)" => %w[a]
+    }.each do |pattern, subjects|
+      subjects.each do |subject|
+        assert_native_differential(pattern, subject)
+      end
+    end
+  end
+
   def test_lazy_nullable_capture_in_preferred_alternative_matches_mri
     [
       "^(?:(a??){9}|a+)b",

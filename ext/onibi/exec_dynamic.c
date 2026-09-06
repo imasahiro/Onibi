@@ -917,12 +917,29 @@ onibi_dynamic_stack_push(OnibiSemanticArena *arena, OnibiDynamicFrame frame)
 }
 
 typedef struct {
+    size_t capture_event_count;
     size_t register_count;
     size_t tag_count;
     size_t call_count;
     size_t atomic_count;
     size_t absence_count;
 } OnibiSemanticCheckpoint;
+
+static OnibiSemanticCheckpoint
+onibi_semantic_checkpoint_save(const OnibiSemanticArena *arena)
+{
+    return (OnibiSemanticCheckpoint){.capture_event_count =
+					 arena->capture_event_count,
+				     .register_count = arena->register_count,
+				     .tag_count = arena->tag_count,
+				     .call_count = arena->call_count,
+				     .atomic_count = arena->atomic_count,
+				     .absence_count = arena->absence_count};
+}
+
+static void
+onibi_semantic_checkpoint_restore(OnibiSemanticArena *arena,
+				  const OnibiSemanticCheckpoint *checkpoint);
 
 static OnibiActionResult onibi_tagged_assert_subprogram(
     OnibiExecCtx *ctx, const OnibiRAction *action, long position,
@@ -941,11 +958,8 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 			   const OnibiSemanticState *predecessor,
 			   OnibiSemanticState *successor, OnibiExecCtx *ctx)
 {
-    OnibiSemanticCheckpoint checkpoint = {
-	arena->register_count, arena->tag_count, arena->call_count,
-	arena->atomic_count, arena->absence_count};
+    OnibiSemanticCheckpoint checkpoint = onibi_semantic_checkpoint_save(arena);
     OnibiSemanticState working = *predecessor;
-    size_t capture_checkpoint = arena->capture_event_count;
     if (edge->action_offset == 0) {
 	*successor = working;
 	return ONIBI_ACTION_SUCCESS;
@@ -1082,13 +1096,150 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    goto fail;
     }
 fail:
-    arena->capture_event_count = capture_checkpoint;
-    arena->register_count = checkpoint.register_count;
-    arena->tag_count = checkpoint.tag_count;
-    arena->call_count = checkpoint.call_count;
-    arena->atomic_count = checkpoint.atomic_count;
-    arena->absence_count = checkpoint.absence_count;
+    onibi_semantic_checkpoint_restore(arena, &checkpoint);
     return ONIBI_ACTION_FAIL;
+}
+
+typedef enum {
+    ONIBI_ASSERT_DIAG_FAILED_TRIAL,
+    ONIBI_ASSERT_DIAG_NEGATIVE_SUCCESS,
+    ONIBI_ASSERT_DIAG_NEGATIVE_FAILURE,
+    ONIBI_ASSERT_DIAG_LOOKBEHIND_TRIAL,
+    ONIBI_ASSERT_DIAG_PARENT_FAILURE,
+    ONIBI_ASSERT_DIAG_POSITIVE_SUCCESS
+} OnibiAssertionDiagnosticKind;
+
+typedef struct {
+    OnibiActionResult status;
+    size_t capture_event_count;
+    long capture_begin;
+} OnibiAssertionDiagnostic;
+
+static OnibiAssertionDiagnostic
+onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
+{
+    int lookbehind = kind == ONIBI_ASSERT_DIAG_LOOKBEHIND_TRIAL;
+    int parent_failure = kind == ONIBI_ASSERT_DIAG_PARENT_FAILURE;
+    int failed_trial = kind == ONIBI_ASSERT_DIAG_FAILED_TRIAL ||
+		       kind == ONIBI_ASSERT_DIAG_NEGATIVE_SUCCESS;
+    int positive = kind != ONIBI_ASSERT_DIAG_NEGATIVE_SUCCESS &&
+		   kind != ONIBI_ASSERT_DIAG_NEGATIVE_FAILURE;
+    int direct_success = !failed_trial && !lookbehind;
+    OnibiAssertionDiagnostic diagnostic = {ONIBI_ACTION_FAIL, 0, -1};
+    OnibiExecCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    OnibiSemanticArena *arena = &ctx.semantic_arena;
+    OnibiFrontier frontiers[2];
+    memset(frontiers, 0, sizeof(frontiers));
+    OnibiRSeqHeader header;
+    memset(&header, 0, sizeof(header));
+    OnibiRState states[2];
+    memset(states, 0, sizeof(states));
+    OnibiREdge edges[4];
+    memset(edges, 0, sizeof(edges));
+    OnibiRAction actions[6] = {
+	{ONIBI_RA_ORDER, 0, 0, 0},
+	{ONIBI_RA_CAPTURE, ONIBI_RA_CAPTURE_OPEN_UNSCOPED, 0, 0},
+	{ONIBI_RA_END, 0, 0, 0},
+	{ONIBI_RA_ASSERT_SUBPROGRAM, positive ? 1 : 2,
+	 (uint16_t)(lookbehind ? ONIBI_RAP_LOOKBEHIND : ONIBI_RAP_LOOKAHEAD),
+	 1},
+	{ONIBI_RA_END, 0, 0, 0},
+	{ONIBI_RA_END, 0, 0, 0}};
+    OnibiSubprogramDesc subprograms[2];
+    memset(subprograms, 0, sizeof(subprograms));
+    uint32_t lookbehind_widths[2] = {1, 2};
+    OnibiLiteralDesc literal = {0, 1, 0};
+    unsigned char literal_blob[1] = {'b'};
+    VALUE subject = rb_str_new_cstr(lookbehind ? "ab" : "abc");
+    rb_encoding *encoding = rb_enc_get(subject);
+    long position = lookbehind ? 2 : 0;
+
+    if (parent_failure)
+	actions[4] = (OnibiRAction){ONIBI_RA_ASSERT_POSITION, 0,
+				    ONIBI_RAP_END_BUFFER, 0};
+    header.state_count = direct_success ? 1 : 2;
+    header.edge_count = direct_success ? 2 : lookbehind ? 4 : 3;
+    header.action_count = parent_failure ? 6 : 3;
+    header.subprogram_count = 2;
+    header.capture_count = 1;
+    header.lookbehind_width_count = lookbehind ? 2 : 0;
+    if (direct_success) {
+	edges[0] = (OnibiREdge){ONIBI_ACCEPT_STATE, sizeof(OnibiRAction)};
+	edges[1] = (OnibiREdge){ONIBI_ACCEPT_STATE, 4U * sizeof(OnibiRAction)};
+    }
+    else if (lookbehind) {
+	edges[0] = (OnibiREdge){0, 0};
+	edges[1] = (OnibiREdge){1, sizeof(OnibiRAction)};
+	edges[2] = (OnibiREdge){ONIBI_ACCEPT_STATE, 0};
+	edges[3] = (OnibiREdge){ONIBI_ACCEPT_STATE, 4U * sizeof(OnibiRAction)};
+	states[0] = (OnibiRState){1, 0, 1, ONIBI_RS_ANY, 0};
+	states[1] = (OnibiRState){2, 0, 1, ONIBI_RS_CHAR, 0};
+    }
+    else {
+	edges[0] = (OnibiREdge){0, 0};
+	edges[1] = (OnibiREdge){1, sizeof(OnibiRAction)};
+	edges[2] = (OnibiREdge){ONIBI_ACCEPT_STATE, 4U * sizeof(OnibiRAction)};
+	states[0] = (OnibiRState){1, 0, 1, ONIBI_RS_ANY, 0};
+	states[1] = (OnibiRState){0, 0, 0, ONIBI_RS_ANY, 0};
+    }
+    subprograms[1].entry = 0;
+    subprograms[1].accept = direct_success ? 0 : 1;
+    subprograms[1].entry_edge_base = 0;
+    subprograms[1].entry_edge_count = 1;
+    subprograms[1].width_count = lookbehind ? 2 : 0;
+    subprograms[1].kind =
+	lookbehind ? ONIBI_SUBPROGRAM_LOOKBEHIND : ONIBI_SUBPROGRAM_LOOKAHEAD;
+    subprograms[1].effects = positive
+				 ? ONIBI_SUBPROGRAM_EFFECT_POSITIVE |
+				       ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES
+				 : 0;
+
+    OnibiRSeqView view;
+    memset(&view, 0, sizeof(view));
+    view.blob = literal_blob;
+    view.header = &header;
+    view.states = states;
+    view.edges = edges;
+    view.actions = actions;
+    view.literals = &literal;
+    view.subprograms = subprograms;
+    view.lookbehind_widths = lookbehind_widths;
+    ctx.subject = subject;
+    ctx.view = &view;
+    ctx.search_origin = 0;
+    ctx.encoding = encoding;
+    ctx.encoding_mode = onibi_encoding_mode_for(subject, encoding);
+    ctx.assertion_frontiers = frontiers;
+    ctx.assertion_frontier_count = 2;
+    onibi_semantic_live_captures_begin(arena, 1);
+    onibi_semantic_live_capture_add(arena, 0);
+    OnibiSemanticState predecessor =
+	onibi_semantic_state_initial(arena, 0, 2, 0, 0);
+    OnibiSemanticState successor;
+    if (parent_failure) {
+	diagnostic.status = onibi_apply_action_program(
+	    &view, &edges[1], subject, position, 0, encoding, ctx.encoding_mode,
+	    arena, &predecessor, &successor, &ctx);
+    }
+    else {
+	diagnostic.status = onibi_tagged_assert_subprogram(
+	    &ctx, &actions[3], position, &predecessor, &successor);
+    }
+    diagnostic.capture_event_count = arena->capture_event_count;
+    if (diagnostic.status == ONIBI_ACTION_SUCCESS)
+	diagnostic.capture_begin = onibi_semantic_register_read(
+	    arena, successor.semantic_captures.root, 0, -1);
+
+    for (size_t i = 0; i < 2; i++) {
+	ruby_xfree(frontiers[i].states);
+	ruby_xfree(frontiers[i].semantics);
+	ruby_xfree(frontiers[i].hashes);
+	ruby_xfree(frontiers[i].key_buckets);
+	ruby_xfree(frontiers[i].membership);
+    }
+    onibi_semantic_arena_release(arena);
+    return diagnostic;
 }
 
 /* This private hook tests the native state contract.  Ruby hashes are only
@@ -1501,6 +1652,58 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	ruby_xfree(frontier.hashes);
 	ruby_xfree(frontier.key_buckets);
 	ruby_xfree(frontier.membership);
+	onibi_semantic_arena_release(&arena);
+	return result;
+    }
+
+    if (scenario == rb_intern("assertion_transactions")) {
+	OnibiAssertionDiagnostic failed_trial =
+	    onibi_assertion_event_diagnostic(ONIBI_ASSERT_DIAG_FAILED_TRIAL);
+	OnibiAssertionDiagnostic negative_success =
+	    onibi_assertion_event_diagnostic(
+		ONIBI_ASSERT_DIAG_NEGATIVE_SUCCESS);
+	OnibiAssertionDiagnostic negative_failure =
+	    onibi_assertion_event_diagnostic(
+		ONIBI_ASSERT_DIAG_NEGATIVE_FAILURE);
+	OnibiAssertionDiagnostic lookbehind_trial =
+	    onibi_assertion_event_diagnostic(
+		ONIBI_ASSERT_DIAG_LOOKBEHIND_TRIAL);
+	OnibiAssertionDiagnostic parent_failure =
+	    onibi_assertion_event_diagnostic(ONIBI_ASSERT_DIAG_PARENT_FAILURE);
+	OnibiAssertionDiagnostic positive_success =
+	    onibi_assertion_event_diagnostic(
+		ONIBI_ASSERT_DIAG_POSITIVE_SUCCESS);
+	rb_hash_aset(result, ID2SYM(rb_intern("failed_trial_failed")),
+		     failed_trial.status == ONIBI_ACTION_FAIL ? Qtrue : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("failed_trial_events")),
+		     SIZET2NUM(failed_trial.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("negative_success_succeeded")),
+		     negative_success.status == ONIBI_ACTION_SUCCESS ? Qtrue
+								     : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("negative_success_events")),
+		     SIZET2NUM(negative_success.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("negative_failure_failed")),
+		     negative_failure.status == ONIBI_ACTION_FAIL ? Qtrue
+								  : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("negative_failure_events")),
+		     SIZET2NUM(negative_failure.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("lookbehind_succeeded")),
+		     lookbehind_trial.status == ONIBI_ACTION_SUCCESS ? Qtrue
+								     : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("lookbehind_events")),
+		     SIZET2NUM(lookbehind_trial.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("parent_failure_failed")),
+		     parent_failure.status == ONIBI_ACTION_FAIL ? Qtrue
+								: Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("parent_failure_events")),
+		     SIZET2NUM(parent_failure.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("positive_success_succeeded")),
+		     positive_success.status == ONIBI_ACTION_SUCCESS ? Qtrue
+								     : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("positive_success_events")),
+		     SIZET2NUM(positive_success.capture_event_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("positive_capture_begin")),
+		     LONG2NUM(positive_success.capture_begin));
 	onibi_semantic_arena_release(&arena);
 	return result;
     }
@@ -2131,6 +2334,7 @@ static void
 onibi_semantic_checkpoint_restore(OnibiSemanticArena *arena,
 				  const OnibiSemanticCheckpoint *checkpoint)
 {
+    arena->capture_event_count = checkpoint->capture_event_count;
     arena->register_count = checkpoint->register_count;
     arena->tag_count = checkpoint->tag_count;
     arena->call_count = checkpoint->call_count;
@@ -2179,9 +2383,7 @@ onibi_tagged_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
     int positive = action->flags == 1 || action->flags == 5;
     int lookbehind = action->arg16 == ONIBI_RAP_LOOKBEHIND;
     OnibiSemanticArena *arena = &ctx->semantic_arena;
-    OnibiSemanticCheckpoint checkpoint = {
-	arena->register_count, arena->tag_count, arena->call_count,
-	arena->atomic_count, arena->absence_count};
+    OnibiSemanticCheckpoint checkpoint = onibi_semantic_checkpoint_save(arena);
     OnibiFrontier *frontiers = onibi_tagged_assertion_frontiers(ctx);
     if (frontiers == NULL) return ONIBI_ACTION_FAIL;
     ctx->assertion_depth++;

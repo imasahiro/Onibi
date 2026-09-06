@@ -138,6 +138,34 @@ class SemanticStateTest < Minitest::Test
     assert info[:state_rollback]
   end
 
+  def test_assertion_trials_rollback_capture_events
+    info = diagnostic(:assertion_transactions)
+
+    assert info[:failed_trial_failed]
+    assert_equal 0, info[:failed_trial_events]
+    assert info[:negative_success_succeeded]
+    assert_equal 0, info[:negative_success_events]
+    assert info[:lookbehind_succeeded]
+    assert_equal 1, info[:lookbehind_events]
+  end
+
+  def test_negative_failure_and_parent_failure_rollback_capture_events
+    info = diagnostic(:assertion_transactions)
+
+    assert info[:negative_failure_failed]
+    assert_equal 0, info[:negative_failure_events]
+    assert info[:parent_failure_failed]
+    assert_equal 0, info[:parent_failure_events]
+  end
+
+  def test_positive_assertion_publishes_its_capture_effects
+    info = diagnostic(:assertion_transactions)
+
+    assert info[:positive_success_succeeded]
+    assert_equal 1, info[:positive_success_events]
+    assert_equal 0, info[:positive_capture_begin]
+  end
+
   private
 
   def diagnostic(name)
