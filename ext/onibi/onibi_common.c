@@ -191,11 +191,17 @@ static _Thread_local uint64_t onibi_deadline_ns = 0;
 /* Match-local execution ABI.  The interpreter owns this object for the
  * complete search.  The pointer fields are storage owned by the context or
  * by its frontier arenas; they are never borrowed from Ruby objects. */
+typedef struct OnibiSemanticState OnibiSemanticState;
 typedef struct {
     uint32_t *states;
+    OnibiSemanticState *semantics;
+    uint64_t *hashes;
+    uint32_t *key_buckets;
     unsigned char *membership;
     size_t count;
     size_t capacity;
+    size_t key_capacity;
+    size_t membership_capacity;
 } OnibiFrontier;
 typedef struct {
     unsigned char *data;
@@ -253,7 +259,8 @@ typedef struct {
     OnigPosition position;
     uint64_t hash;
 } OnibiSemanticTagEvent;
-typedef struct {
+struct OnibiSemanticState {
+    uint32_t order;
     OnigPosition reported_start;
     OnibiSemanticCaptureFile semantic_captures;
     OnibiCounterFile counters;
@@ -262,7 +269,7 @@ typedef struct {
     OnibiAtomicState atomic;
     OnibiAbsenceState absence;
     OnibiTagEventId tag_history;
-} OnibiSemanticState;
+};
 typedef struct {
     uint32_t state_id;
     OnigPosition position;
@@ -279,6 +286,20 @@ typedef struct {
     uint32_t generation;
 } OnibiDynamicKeyBucket;
 typedef struct {
+    uint32_t parent[32];
+    uint32_t depth, label;
+} OnibiCaptureOrderNode;
+typedef struct {
+    uint32_t order, slot;
+    OnigPosition position;
+} OnibiUnscopedCaptureEvent;
+typedef struct {
+    OnibiCaptureOrderNode *order_nodes;
+    size_t order_count, order_capacity;
+    uint32_t *order_buckets;
+    size_t order_bucket_capacity;
+    OnibiUnscopedCaptureEvent *capture_events;
+    size_t capture_event_count, capture_event_capacity;
     OnibiSemanticRegisterDelta *registers;
     size_t register_count, register_capacity;
     OnibiSemanticTagEvent *tags;
@@ -315,6 +336,10 @@ typedef struct {
     OnigPosition current_position;
     OnibiFrontier current;
     OnibiFrontier next;
+    OnibiFrontier *assertion_frontiers;
+    size_t assertion_frontier_count;
+    size_t assertion_frontier_capacity;
+    size_t assertion_depth;
     OnibiTagArena tags;
     OnibiSemanticArena semantic_arena;
     uint64_t work_before_poll;

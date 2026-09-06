@@ -2,6 +2,8 @@ static uint8_t
 onibi_g_action_flags(const OnibiGAction *action)
 {
     if (action->code == ONIBI_GA_CAPTURE_CLOSE) return ONIBI_RA_CAPTURE_CLOSE;
+    if (action->code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED)
+	return ONIBI_RA_CAPTURE_OPEN_UNSCOPED;
     if (action->code == ONIBI_GA_TEST_CAPTURE)
 	return action->set ? ONIBI_RA_TEST_CAPTURE_SET
 			   : ONIBI_RA_TEST_CAPTURE_UNSET;
@@ -1423,22 +1425,16 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 				     &obj->lowering_work};
     int program_state = 0;
     VALUE parsed = Qnil;
+    int parse_only = (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE) != 0;
     VALUE program =
-	(ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-	 (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
+	parse_only
 	    ? rb_protect(onibi_parse_program, (VALUE)(uintptr_t)&program_args,
 			 &program_state)
 	    : rb_protect(onibi_build_program, (VALUE)(uintptr_t)&program_args,
 			 &program_state);
     if (!program_state) {
-	parsed = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-		  (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
-		     ? program
-		     : rb_ary_entry(program, 0);
-	obj->rseq = (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_LARGE_REPEAT) ||
-		     (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE))
-			? Qnil
-			: rb_ary_entry(program, 1);
+	parsed = parse_only ? program : rb_ary_entry(program, 0);
+	obj->rseq = parse_only ? Qnil : rb_ary_entry(program, 1);
 	if (!NIL_P(parsed)) {
 	    OnibiParsed *parsed_data = onibi_parsed_get(parsed);
 	    obj->ast_flags = parsed_data->ast_flags;

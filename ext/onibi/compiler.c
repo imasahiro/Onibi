@@ -1,6 +1,11 @@
 static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 
+#define ONIBI_FRAGMENT_EXIT_LAZY 1
+#define ONIBI_FRAGMENT_NULLABLE_LAZY 2
+#define ONIBI_FRAGMENT_LAZY_BOTH                                               \
+    (ONIBI_FRAGMENT_EXIT_LAZY | ONIBI_FRAGMENT_NULLABLE_LAZY)
+
 typedef struct {
     uint32_t rseq_features;
     uint32_t capture_count;
@@ -1274,14 +1279,16 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
     OnibiGActionVector nullable_actions = onibi_g_action_vector_concat(
 	&fragment->start_actions, &fragment->pending_actions,
 	builder->allocation_owner);
-    if (fragment->nullable && fragment->lazy)
+    if (fragment->nullable &&
+	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) != 0)
 	onibi_subprogram_entry_push(builder, subprogram_id,
 				    (OnibiStateId)accept, &nullable_actions);
     for (size_t i = 0; i < fragment->starts.count; i++)
 	onibi_subprogram_entry_push(builder, subprogram_id,
 				    fragment->starts.entries[i],
 				    &fragment->start_actions);
-    if (fragment->nullable && !fragment->lazy)
+    if (fragment->nullable &&
+	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) == 0)
 	onibi_subprogram_entry_push(builder, subprogram_id,
 				    (OnibiStateId)accept, &nullable_actions);
     onibi_g_action_vector_free(&nullable_actions);
@@ -1389,102 +1396,64 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 					   0, 0);
 }
 
+/* Give each fragment one explicit NFA entry and exit. In particular, an
+ * empty alternative keeps its actions and its place in the choice order. */
+static onibi_fragment_t
+onibi_fragment_explicit(onibi_fragment_t part, onibi_gir_builder_t *builder)
+{
+    long entry = onibi_nfa_epsilon_state(builder);
+    long exit = onibi_nfa_epsilon_state(builder);
+    OnibiGActionVector empty = onibi_g_action_vector_concat(
+	&part.start_actions, &part.pending_actions, builder->allocation_owner);
+    if (part.nullable && (part.lazy & ONIBI_FRAGMENT_NULLABLE_LAZY))
+	onibi_nfa_add_connection(builder, entry, exit, &empty, 0);
+    for (size_t i = 0; i < part.starts.count; i++)
+	onibi_nfa_add_connection(builder, entry, part.starts.entries[i],
+				 &part.start_actions, 0);
+    for (size_t i = 0; i < part.exits.count; i++)
+	onibi_nfa_add_connection(builder, part.exits.entries[i], exit,
+				 &part.pending_actions, 0);
+    if (part.nullable && !(part.lazy & ONIBI_FRAGMENT_NULLABLE_LAZY))
+	onibi_nfa_add_connection(builder, entry, exit, &empty, 0);
+    onibi_g_action_vector_free(&empty);
+    onibi_id_vector_free(&part.starts);
+    onibi_id_vector_free(&part.exits);
+    onibi_g_action_vector_free(&part.start_actions);
+    onibi_g_action_vector_free(&part.pending_actions);
+    part = onibi_fragment_empty(builder);
+    onibi_id_vector_single(&part.starts, (OnibiStateId)entry,
+			   builder->allocation_owner);
+    onibi_id_vector_single(&part.exits, (OnibiStateId)exit,
+			   builder->allocation_owner);
+    part.nullable = 0;
+    return part;
+}
+
+static void
+onibi_fragment_join(onibi_fragment_t *left, onibi_fragment_t right,
+		    onibi_gir_builder_t *builder)
+{
+    onibi_nfa_add_connection(builder, left->exits.entries[0],
+			     right.starts.entries[0], &(OnibiGActionVector){0},
+			     0);
+    onibi_id_vector_free(&left->exits);
+    left->exits = right.exits;
+    onibi_id_vector_free(&right.starts);
+    onibi_g_action_vector_free(&right.start_actions);
+    onibi_g_action_vector_free(&right.pending_actions);
+}
+
 static onibi_fragment_t
 onibi_compile_sequence(const OnibiAstNode *sequence,
 		       onibi_gir_builder_t *builder)
 {
-    onibi_fragment_t result = onibi_fragment_empty(builder);
-    int have_consuming = 0;
+    onibi_fragment_t result =
+	onibi_fragment_explicit(onibi_fragment_empty(builder), builder);
     for (size_t i = 0; i < sequence->child_count; i++) {
 	onibi_fragment_t part =
 	    onibi_compile_node(sequence->children[i], builder);
-	if (part.starts.count == 0) {
-	    if (have_consuming) {
-		onibi_fragment_append_actions(&result.pending_actions,
-					      &part.start_actions);
-		onibi_fragment_append_actions(&result.pending_actions,
-					      &part.pending_actions);
-	    }
-	    else {
-		onibi_fragment_append_actions(&result.start_actions,
-					      &part.start_actions);
-		onibi_fragment_append_actions(&result.start_actions,
-					      &part.pending_actions);
-	    }
-	    result.nullable = result.nullable && part.nullable;
-	    onibi_id_vector_free(&part.starts);
-	    onibi_id_vector_free(&part.exits);
-	    onibi_g_action_vector_free(&part.start_actions);
-	    onibi_g_action_vector_free(&part.pending_actions);
-	    continue;
-	}
-	if (!have_consuming) {
-	    onibi_id_vector_move(&result.starts, &part.starts);
-	    onibi_id_vector_move(&result.exits, &part.exits);
-	    onibi_fragment_append_actions(&result.start_actions,
-					  &part.start_actions);
-	    result.lazy = part.lazy;
-	    have_consuming = 1;
-	}
-	else {
-	    OnibiIdVector old_exits = result.exits;
-	    onibi_id_vector_init(&result.exits);
-	    onibi_id_vector_bind(&result.exits, builder->allocation_owner);
-	    if (result.nullable) {
-		if (result.lazy) {
-		    OnibiIdVector reordered;
-		    onibi_id_vector_init(&reordered);
-		    onibi_id_vector_bind(&reordered, builder->allocation_owner);
-		    onibi_id_vector_append(&reordered, &part.starts);
-		    onibi_id_vector_append(&reordered, &result.starts);
-		    onibi_id_vector_free(&result.starts);
-		    result.starts = reordered;
-		}
-		else
-		    onibi_id_vector_append(&result.starts, &part.starts);
-	    }
-	    /* Actions pending at the prior fragment are exit actions.  Store
-	     * them on the old exits so nullable continuations and the direct
-	     * bypass path both retain the same capture boundaries. */
-	    if (result.pending_actions.count > 0)
-		onibi_add_exit_guard_fragment(builder, &old_exits,
-					      &result.pending_actions);
-	    if (part.nullable && (part.start_actions.count > 0 ||
-				  part.pending_actions.count > 0)) {
-		/* A nullable continuation can also be bypassed from old_exits.
-		 * Preserve its empty-path actions on that bypass while
-		 * retaining the normal actions on the transition into the
-		 * continuation. */
-		OnibiGActionVector bypass_actions =
-		    onibi_g_action_vector_concat(&part.start_actions,
-						 &part.pending_actions,
-						 builder->allocation_owner);
-		onibi_add_exit_guard_fragment(builder, &old_exits,
-					      &bypass_actions);
-		onibi_g_action_vector_free(&bypass_actions);
-	    }
-	    OnibiGActionVector transition_actions = onibi_g_action_vector_copy(
-		&part.start_actions, builder->allocation_owner);
-	    onibi_connect_fragment_actions(builder, &old_exits, &part.starts,
-					   &transition_actions, result.lazy);
-	    onibi_g_action_vector_free(&transition_actions);
-	    onibi_id_vector_move(&result.exits, &part.exits);
-	    /* A prior exit can bypass this part only when this part is
-	     * nullable. */
-	    if (part.nullable)
-		onibi_id_vector_append(&result.exits, &old_exits);
-	    onibi_id_vector_free(&old_exits);
-	    onibi_g_action_vector_free(&result.pending_actions);
-	    onibi_g_action_vector_init(&result.pending_actions);
-	    onibi_g_action_vector_bind(&result.pending_actions,
-				       builder->allocation_owner);
-	    result.lazy = part.lazy;
-	}
-	onibi_fragment_append_actions(&result.pending_actions,
-				      &part.pending_actions);
-	onibi_g_action_vector_free(&part.start_actions);
-	onibi_g_action_vector_free(&part.pending_actions);
-	result.nullable = result.nullable && part.nullable;
+	part = onibi_fragment_explicit(part, builder);
+	onibi_fragment_join(&result, part, builder);
     }
     return result;
 }
@@ -1523,11 +1492,216 @@ onibi_compile_character_class(OnibiAstId node_id, int ignorecase,
 
 static onibi_fragment_t
 onibi_compile_repeat_atom(OnibiAstId atom, onibi_gir_builder_t *builder,
-			  int can_repeat)
+			  int can_repeat, int choice_scope)
 {
+    if (choice_scope) builder->ordered_choice_depth++;
     if (can_repeat) builder->casefold_repeat_depth++;
     onibi_fragment_t result = onibi_compile_node(atom, builder);
     if (can_repeat) builder->casefold_repeat_depth--;
+    if (choice_scope) builder->ordered_choice_depth--;
+    return result;
+}
+
+/* Ruby 4.0.6 regcomp.c uses this byte-size test to decide whether a finite
+ * repetition has a null check. Saturation keeps this analysis bounded. */
+static long
+onibi_repeat_reference_size(OnibiAstId id, const onibi_gir_builder_t *builder)
+{
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    const OnibiResolvedNode *sem = &builder->semantics->nodes[id];
+    long size = 0;
+    if (node->kind == ONIBI_AST_SEQUENCE ||
+	node->kind == ONIBI_AST_ALTERNATIVE) {
+	for (size_t i = 0; i < node->child_count; i++) {
+	    size += onibi_repeat_reference_size(node->children[i], builder);
+	    if (node->kind == ONIBI_AST_ALTERNATIVE && i != 0) size += 10;
+	    if (size > 50) return 51;
+	}
+    }
+    else if (node->kind == ONIBI_AST_CAPTURE)
+	size = 6 + onibi_repeat_reference_size(node->body, builder);
+    else if (node->kind == ONIBI_AST_GROUP ||
+	     node->kind == ONIBI_AST_OPTION_SCOPE)
+	size = onibi_repeat_reference_size(node->body, builder);
+    else if (node->kind == ONIBI_AST_LITERAL) {
+	size_t length = node->bytes.present ? node->bytes.length : 1;
+	size = (long)length + (length <= 5 ? 1 : 5);
+    }
+    else if (node->kind == ONIBI_AST_ANY || node->kind == ONIBI_AST_ANCHOR)
+	size = 1;
+    else if (node->kind == ONIBI_AST_CHARACTER_CLASS)
+	size = 33;
+    else if (node->kind == ONIBI_AST_QUANTIFIER) {
+	long body = onibi_repeat_reference_size(node->atom, builder);
+	long min = sem->repeat_min, max = sem->repeat_max;
+	int greedy = (sem->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
+	int nullable = (builder->semantics->nodes[node->atom].flags &
+			ONIBI_SEMANTIC_NULLABLE) != 0;
+	if (max == 0)
+	    size = 0;
+	else if (max >= 0 && greedy && (max == 1 || max <= 50 / (body + 5)))
+	    size = body * min + (body + 5) * (max - min);
+	else if (max == 1 && min == 0 && !greedy)
+	    size = body + 10;
+	else if (max < 0 && (min <= 1 || (body && min <= 50 / body)))
+	    size = body * min + body + 10 + (nullable ? 6 : 0);
+	else
+	    size = body + 10 + (nullable ? 6 : 0);
+    }
+    else
+	size = 51;
+    return size > 50 ? 51 : size;
+}
+
+static size_t
+onibi_repeat_capture_count(OnibiAstId id, const onibi_gir_builder_t *builder)
+{
+    const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
+    size_t count = node->kind == ONIBI_AST_CAPTURE ? 1U : 0U;
+    if (node->kind == ONIBI_AST_SEQUENCE ||
+	node->kind == ONIBI_AST_ALTERNATIVE) {
+	for (size_t i = 0; i < node->child_count; i++)
+	    count += onibi_repeat_capture_count(node->children[i], builder);
+    }
+    else if (node->kind == ONIBI_AST_QUANTIFIER)
+	count += onibi_repeat_capture_count(node->atom, builder);
+    else if (node->body != ONIBI_AST_NONE)
+	count += onibi_repeat_capture_count(node->body, builder);
+    return count;
+}
+
+static void
+onibi_repeat_link(onibi_gir_builder_t *builder, long from, long to,
+		  OnibiGAction action)
+{
+    OnibiGActionVector actions = {0};
+    onibi_g_action_vector_bind(&actions, builder->allocation_owner);
+    onibi_g_action_vector_push(&actions, action);
+    onibi_nfa_add_connection(builder, from, to, &actions, 0);
+    onibi_g_action_vector_free(&actions);
+}
+
+static void
+onibi_repeat_choice(onibi_gir_builder_t *builder, long choice, long body,
+		    long exit, long counter, long min, long max, int greedy)
+{
+    if (!greedy)
+	onibi_repeat_link(
+	    builder, choice, exit,
+	    onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter, 1, min));
+    onibi_repeat_link(
+	builder, choice, body,
+	onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter, 1, max));
+    if (greedy)
+	onibi_repeat_link(
+	    builder, choice, exit,
+	    onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter, 1, min));
+}
+
+/* An empty iteration either stops or converts a previous capture into an
+ * empty capture at this position. At most capture_count such conversions
+ * can occur before another character is consumed. Clone only the epsilon
+ * projection. All copies share the original consuming states. */
+static onibi_fragment_t
+onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
+			     int nullable, onibi_gir_builder_t *builder)
+{
+    long counter = onibi_gir_allocate_counter_slot(builder, 0);
+    long guard = nullable ? onibi_gir_allocate_counter_slot(builder, 0) : -1;
+    if (nullable) {
+	(void)onibi_gir_allocate_counter_slot(builder, 0);
+	if (builder->nullable_scope_count == 256)
+	    rb_raise(eRegexpError, "nullable repeat nesting is too deep");
+	builder->nullable_scopes[builder->nullable_scope_count++] =
+	    (uint16_t)guard;
+    }
+    size_t state_base = builder->nfa->states.count;
+    size_t edge_base = builder->nfa->edges.count;
+    onibi_fragment_t body =
+	onibi_compile_repeat_atom(atom, builder, 1, min != max);
+    body = onibi_fragment_explicit(body, builder);
+    if (nullable) builder->nullable_scope_count--;
+    size_t state_end = builder->nfa->states.count;
+    size_t edge_end = builder->nfa->edges.count;
+    long body_entry = body.starts.entries[0], body_exit = body.exits.entries[0];
+    long entry = onibi_nfa_epsilon_state(builder);
+    long exit = onibi_nfa_epsilon_state(builder);
+    size_t phases =
+	nullable ? onibi_repeat_capture_count(atom, builder) + 1U : 1U;
+    OnibiIdVector choices = {0};
+    onibi_id_vector_bind(&choices, builder->allocation_owner);
+    for (size_t phase = 0; phase < phases; phase++)
+	onibi_id_vector_push(&choices,
+			     (OnibiStateId)onibi_nfa_epsilon_state(builder));
+    OnibiGAction initialize =
+	onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter, 0, 0);
+    initialize.arg32 = 0;
+    onibi_repeat_link(builder, entry, choices.entries[0], initialize);
+    onibi_repeat_link(
+	builder, body_exit, choices.entries[0],
+	onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0, 0));
+    for (size_t phase = 0; phase < phases; phase++) {
+	long projected_entry = body_entry, projected_exit = body_exit;
+	{
+	    OnibiIdVector map = {0};
+	    onibi_id_vector_bind(&map, builder->allocation_owner);
+	    for (size_t i = state_base; i < state_end; i++) {
+		long target = (long)i;
+		if (builder->nfa->states.entries[i].kind ==
+		    ONIBI_NFA_STATE_EPSILON)
+		    target = onibi_nfa_epsilon_state(builder);
+		onibi_id_vector_push(&map, (OnibiStateId)target);
+	    }
+	    for (size_t i = edge_base; i < edge_end; i++) {
+		OnibiNfaEdge edge = builder->nfa->edges.entries[i];
+		if (edge.from < (long)state_base ||
+		    edge.from >= (long)state_end ||
+		    edge.to < (long)state_base || edge.to >= (long)state_end ||
+		    builder->nfa->states.entries[edge.from].kind !=
+			ONIBI_NFA_STATE_EPSILON)
+		    continue;
+		onibi_nfa_add_connection(
+		    builder, map.entries[edge.from - (long)state_base],
+		    map.entries[edge.to - (long)state_base], &edge.actions, 0);
+	    }
+	    projected_entry = map.entries[body_entry - (long)state_base];
+	    projected_exit = map.entries[body_exit - (long)state_base];
+	    onibi_id_vector_free(&map);
+	}
+	if (nullable) {
+	    long enter_guard = onibi_nfa_epsilon_state(builder);
+	    onibi_repeat_link(
+		builder, enter_guard, projected_entry,
+		onibi_counter_action(ONIBI_GA_NULL_ENTER, guard, 0, 0));
+	    projected_entry = enter_guard;
+	    if (phase + 1U < phases) {
+		long increment = onibi_nfa_epsilon_state(builder);
+		onibi_repeat_link(
+		    builder, projected_exit, increment,
+		    onibi_counter_action(ONIBI_GA_NULL_CONTINUE, guard, 0, 0));
+		onibi_repeat_link(
+		    builder, increment, choices.entries[phase + 1U],
+		    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0,
+					 0));
+	    }
+	    onibi_repeat_link(
+		builder, projected_exit, exit,
+		onibi_counter_action(ONIBI_GA_NULL_STOP, guard, 0, 0));
+	}
+	onibi_repeat_choice(builder, choices.entries[phase], projected_entry,
+			    exit, counter, min, max, greedy);
+    }
+    onibi_id_vector_free(&choices);
+    onibi_id_vector_free(&body.starts);
+    onibi_id_vector_free(&body.exits);
+    onibi_g_action_vector_free(&body.start_actions);
+    onibi_g_action_vector_free(&body.pending_actions);
+    onibi_fragment_t result = onibi_fragment_empty(builder);
+    onibi_id_vector_single(&result.starts, (OnibiStateId)entry,
+			   builder->allocation_owner);
+    onibi_id_vector_single(&result.exits, (OnibiStateId)exit,
+			   builder->allocation_owner);
+    result.nullable = 0;
     return result;
 }
 
@@ -1581,28 +1755,28 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
     if (type_code == ONIBI_AST_SEQUENCE)
 	return onibi_compile_sequence(c_node, builder);
     if (type_code == ONIBI_AST_ALTERNATIVE) {
-	onibi_fragment_t result = onibi_fragment_empty(builder);
-	result.nullable = 0;
+	long entry = onibi_nfa_epsilon_state(builder),
+	     exit = onibi_nfa_epsilon_state(builder);
 	for (size_t i = 0; i < c_node->child_count; i++) {
-	    onibi_fragment_t branch =
-		onibi_compile_node(c_node->children[i], builder);
-	    onibi_id_vector_append(&result.starts, &branch.starts);
-	    onibi_id_vector_append(&result.exits, &branch.exits);
-	    /* Preserve actions on each alternative edge.  A branch action
-	       cannot be lifted to the fragment because that would apply it to
-	       siblings. */
-	    if (branch.start_actions.count > 0)
-		onibi_add_capture_guard_fragment(builder, &branch.starts,
-						 &branch.start_actions);
-	    if (branch.pending_actions.count > 0)
-		onibi_add_exit_guard_fragment(builder, &branch.exits,
-					      &branch.pending_actions);
-	    result.nullable = result.nullable || branch.nullable;
+	    builder->ordered_choice_depth++;
+	    onibi_fragment_t branch = onibi_fragment_explicit(
+		onibi_compile_node(c_node->children[i], builder), builder);
+	    builder->ordered_choice_depth--;
+	    onibi_nfa_add_connection(builder, entry, branch.starts.entries[0],
+				     &(OnibiGActionVector){0}, 0);
+	    onibi_nfa_add_connection(builder, branch.exits.entries[0], exit,
+				     &(OnibiGActionVector){0}, 0);
 	    onibi_id_vector_free(&branch.starts);
 	    onibi_id_vector_free(&branch.exits);
 	    onibi_g_action_vector_free(&branch.start_actions);
 	    onibi_g_action_vector_free(&branch.pending_actions);
 	}
+	onibi_fragment_t result = onibi_fragment_empty(builder);
+	onibi_id_vector_single(&result.starts, (OnibiStateId)entry,
+			       builder->allocation_owner);
+	onibi_id_vector_single(&result.exits, (OnibiStateId)exit,
+			       builder->allocation_owner);
+	result.nullable = 0;
 	return result;
     }
     if (type_code == ONIBI_AST_LITERAL) {
@@ -1846,282 +2020,103 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_CAPTURE) {
-	if (resolved_node == NULL || resolved_node->capture_id < 0)
-	    rb_raise(eRegexpError, "unresolved capture");
 	long capture_id = resolved_node->capture_id;
-	onibi_fragment_t result = onibi_compile_node(c_node->body, builder);
-	OnibiGAction open = {ONIBI_GA_CAPTURE_OPEN,
-			     0,
-			     0,
-			     1,
-			     onibi_capture_boundary_slot(capture_id, 0),
-			     0,
-			     0,
-			     0,
-			     0};
-	OnibiGAction close = {ONIBI_GA_CAPTURE_CLOSE,
-			      0,
-			      0,
-			      1,
-			      onibi_capture_boundary_slot(capture_id, 1),
-			      0,
-			      0,
-			      0,
-			      0};
-	OnibiGActionVector starts;
-	onibi_g_action_vector_init(&starts);
-	onibi_g_action_vector_bind(&starts, builder->allocation_owner);
-	onibi_g_action_vector_push(&starts, open);
-	onibi_g_action_vector_append(&starts, &result.start_actions);
-	onibi_g_action_vector_free(&result.start_actions);
-	result.start_actions = starts;
+	onibi_fragment_t result = onibi_fragment_explicit(
+	    onibi_compile_node(c_node->body, builder), builder);
+	if (builder->ordered_choice_depth != 0) {
+	    for (size_t i = 0; i < builder->nullable_scope_count; i++) {
+		OnibiGAction test = onibi_counter_action(
+		    ONIBI_GA_NULL_CAPTURE, builder->nullable_scopes[i], 1,
+		    capture_id);
+		onibi_g_action_vector_push(&result.start_actions, test);
+	    }
+	}
+	OnibiGAction open = {0}, close = {0};
+	open.code = ONIBI_GA_CAPTURE_OPEN;
+	if (builder->ordered_choice_depth == 0 &&
+	    builder->casefold_repeat_depth > 0) {
+	    open.code = ONIBI_GA_CAPTURE_OPEN_UNSCOPED;
+	    builder->capture_order_required = 1;
+	}
+	open.has_slot = 1;
+	open.slot = onibi_capture_boundary_slot(capture_id, 0);
+	close.code = ONIBI_GA_CAPTURE_CLOSE;
+	close.has_slot = 1;
+	close.slot = onibi_capture_boundary_slot(capture_id, 1);
+	onibi_g_action_vector_push(&result.start_actions, open);
 	onibi_g_action_vector_push(&result.pending_actions, close);
-	if (result.nullable && result.starts.count > 0)
-	    onibi_fragment_append_actions(&result.start_actions,
-					  &result.pending_actions);
 	return result;
     }
     if (type_code == ONIBI_AST_GROUP)
 	return onibi_compile_node(c_node->body, builder);
     if (type_code == ONIBI_AST_QUANTIFIER) {
-	if (resolved_node == NULL ||
-	    !(resolved_node->flags & ONIBI_SEMANTIC_NORMALIZED))
-	    rb_raise(eRegexpError, "unnormalized repeat");
-	long min = resolved_node->repeat_min;
-	long normalized_max = resolved_node->repeat_max;
-	int can_repeat = normalized_max < 0 || normalized_max > 1;
-	int possessive =
-	    (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) != 0;
+	long min = resolved_node->repeat_min, max = resolved_node->repeat_max;
 	int greedy = (resolved_node->flags & ONIBI_SEMANTIC_REPEAT_GREEDY) != 0;
 	OnibiAstId atom = c_node->atom;
+	int nullable = (builder->semantics->nodes[atom].flags &
+			ONIBI_SEMANTIC_NULLABLE) != 0;
 	if (min == 0) builder->optional_seen = 1;
-	if (possessive && (normalized_max < 0 || normalized_max != min))
+	if ((resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) &&
+	    max != min)
 	    rb_raise(eRegexpError,
 		     "variable possessive quantifier is not supported in RSeq");
-	if (possessive && onibi_c_ast_has_capture(builder->ast, atom))
-	    rb_raise(eRegexpError,
-		     "possessive capture repeat is not supported in RSeq");
-	if (normalized_max >= 0 && min == 0 && normalized_max == 0)
-	    return onibi_fragment_empty(builder);
-	if (normalized_max >= 0 && min == 0 && normalized_max == 1) {
-	    onibi_fragment_t result =
-		onibi_compile_repeat_atom(atom, builder, can_repeat);
-	    /* The atom is one ordered branch of the optional.  Keep its tag
-	     * actions on that branch only.  Fragment-level start actions also
-	     * apply to the nullable bypass edge, which would incorrectly turn
-	     * an unset capture into an empty capture. */
-	    onibi_add_capture_guard_fragment(builder, &result.starts,
-					     &result.start_actions);
-	    onibi_add_exit_guard_fragment(builder, &result.exits,
-					  &result.pending_actions);
-	    onibi_g_action_vector_free(&result.start_actions);
-	    onibi_g_action_vector_free(&result.pending_actions);
-	    onibi_g_action_vector_init(&result.start_actions);
-	    onibi_g_action_vector_bind(&result.start_actions,
-				       builder->allocation_owner);
-	    onibi_g_action_vector_init(&result.pending_actions);
-	    onibi_g_action_vector_bind(&result.pending_actions,
-				       builder->allocation_owner);
-	    result.nullable = 1;
-	    result.lazy = !greedy;
-	    return result;
-	}
-	long counter_slot = -1;
-	if (normalized_max >= 0 && normalized_max != min)
-	    counter_slot = onibi_gir_allocate_counter_slot(builder, 0);
-	onibi_fragment_t result = onibi_fragment_empty(builder);
-	result.nullable = min == 0;
-	if (normalized_max >= 0 && normalized_max < min)
-	    rb_raise(eRegexpError, "invalid quantifier range");
-	long max = normalized_max;
-	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT)
-	    rb_raise(eRegexpError,
-		     "quantifier exceeds RSeq representation limit");
-	if (max >= 0 && max <= ONIBI_RSEQ_REPEAT_UNROLL_LIMIT && max != min) {
-	    /* Small finite repeats are structurally unrolled.  This keeps the
-	     * action-free subset on REGULAR_FAST and reserves counters for
-	     * larger repeats.  Fragment order preserves greedy/lazy edge
-	     * priority. */
-	    for (long i = 0; i < min; i++) {
-		onibi_fragment_t part =
-		    onibi_compile_repeat_atom(atom, builder, can_repeat);
-		if (i == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		else {
-		    OnibiGActionVector actions = onibi_g_action_vector_concat(
-			&result.pending_actions, &part.start_actions,
-			builder->allocation_owner);
-		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &part.starts, &actions, 0);
-		    onibi_g_action_vector_free(&actions);
-		}
-		onibi_id_vector_move(&result.exits, &part.exits);
-		onibi_fragment_append_actions(&result.pending_actions,
-					      &part.pending_actions);
-		onibi_fragment_append_actions(
-		    &result.start_actions,
-		    i == 0 ? &part.start_actions : &(OnibiGActionVector){0});
-		onibi_g_action_vector_free(&part.start_actions);
-		onibi_g_action_vector_free(&part.pending_actions);
-	    }
-	    for (long i = min; i < max; i++) {
-		onibi_fragment_t part =
-		    onibi_compile_repeat_atom(atom, builder, can_repeat);
-		if (result.starts.count == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		if (result.exits.count > 0) {
-		    OnibiGActionVector actions = onibi_g_action_vector_concat(
-			&result.pending_actions, &part.start_actions,
-			builder->allocation_owner);
-		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &part.starts, &actions, 0);
-		    onibi_g_action_vector_free(&actions);
-		}
-		onibi_id_vector_append(&result.exits, &part.exits);
-		onibi_fragment_append_actions(&result.pending_actions,
-					      &part.pending_actions);
-		onibi_g_action_vector_free(&part.start_actions);
-		onibi_g_action_vector_free(&part.pending_actions);
-	    }
-	    result.nullable = min == 0;
-	    result.lazy = !greedy;
-	    return result;
-	}
-	if (max >= 0 && max != min) {
-	    /* Counted repeats use one counter slot.  The first start edge
-	       initializes it.  Optional bodies use ordered test edges. */
-	    OnibiGAction init =
-		onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter_slot, 0, 0);
-	    init.arg32 = (uint32_t)(min > 0 ? 1 : 0);
-	    onibi_g_action_vector_push(&result.start_actions, init);
-	}
+	long bytes = onibi_repeat_reference_size(atom, builder);
+	int expanded =
+	    max >= 0 && greedy && (max <= 1 || max <= 50 / (bytes + 5));
+	if (max > ONIBI_RSEQ_REPEAT_UNROLL_LIMIT ||
+	    (nullable && !expanded && max != 1))
+	    return onibi_compile_compact_repeat(atom, min,
+						max < 0 ? UINT32_MAX : max,
+						greedy, nullable, builder);
+	onibi_fragment_t result =
+	    onibi_fragment_explicit(onibi_fragment_empty(builder), builder);
 	for (long i = 0; i < min; i++) {
-	    onibi_fragment_t part =
-		onibi_compile_repeat_atom(atom, builder, can_repeat);
-	    if (i == 0)
-		onibi_id_vector_move(&result.starts, &part.starts);
-	    else {
-		OnibiGActionVector actions;
-		onibi_g_action_vector_init(&actions);
-		onibi_g_action_vector_bind(&actions, builder->allocation_owner);
-		if (counter_slot >= 0)
-		    onibi_g_action_vector_push(
-			&actions,
-			onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
-					     counter_slot, 0, 0));
-		onibi_connect_fragment_actions(builder, &result.exits,
-					       &part.starts, &actions, 0);
-		onibi_g_action_vector_free(&actions);
-	    }
-	    onibi_id_vector_move(&result.exits, &part.exits);
+	    onibi_fragment_t part = onibi_fragment_explicit(
+		onibi_compile_repeat_atom(atom, builder, max < 0 || max > 1,
+					  min != max),
+		builder);
+	    onibi_fragment_join(&result, part, builder);
 	}
-	if (max >= 0 && max > min) {
-	    long optional = max - min;
-	    for (long i = 0; i < optional; i++) {
-		onibi_fragment_t part =
-		    onibi_compile_repeat_atom(atom, builder, can_repeat);
-		if (result.starts.count == 0)
-		    onibi_id_vector_move(&result.starts, &part.starts);
-		OnibiGActionVector repeat_actions;
-		onibi_g_action_vector_init(&repeat_actions);
-		onibi_g_action_vector_bind(&repeat_actions,
-					   builder->allocation_owner);
-		onibi_g_action_vector_push(
-		    &repeat_actions,
-		    onibi_counter_action(ONIBI_GA_TEST_COUNTER_LT, counter_slot,
-					 1, max));
-		onibi_g_action_vector_push(
-		    &repeat_actions,
-		    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT,
-					 counter_slot, 0, 0));
-		if (result.exits.count > 0)
-		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &part.starts,
-						   &repeat_actions, 0);
-		onibi_g_action_vector_free(&repeat_actions);
-		onibi_id_vector_append(&result.exits, &part.exits);
-		onibi_id_vector_free(&part.starts);
-		onibi_id_vector_free(&part.exits);
-	    }
-	    onibi_g_action_vector_push(
-		&result.pending_actions,
-		onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, counter_slot, 1,
-				     min));
+	if (max < 0) {
+	    onibi_fragment_t part = onibi_fragment_explicit(
+		onibi_compile_repeat_atom(atom, builder, 1, 1), builder);
+	    long choice = result.exits.entries[0],
+		 exit = onibi_nfa_epsilon_state(builder);
+	    if (!greedy)
+		onibi_nfa_add_connection(builder, choice, exit,
+					 &(OnibiGActionVector){0}, 0);
+	    onibi_nfa_add_connection(builder, choice, part.starts.entries[0],
+				     &(OnibiGActionVector){0}, 0);
+	    if (greedy)
+		onibi_nfa_add_connection(builder, choice, exit,
+					 &(OnibiGActionVector){0}, 0);
+	    onibi_nfa_add_connection(builder, part.exits.entries[0], choice,
+				     &(OnibiGActionVector){0}, 0);
+	    result.exits.entries[0] = (OnibiStateId)exit;
+	    onibi_id_vector_free(&part.starts);
+	    onibi_id_vector_free(&part.exits);
+	    onibi_g_action_vector_free(&part.start_actions);
+	    onibi_g_action_vector_free(&part.pending_actions);
 	}
-	else if (normalized_max < 0) {
-	    onibi_fragment_t repeat =
-		onibi_compile_repeat_atom(atom, builder, can_repeat);
-	    long progress_slot =
-		repeat.nullable ? onibi_gir_allocate_counter_slot(builder, 1)
-				: -1;
-	    if (min == 0 && !repeat.nullable) {
-		/* The repeated body is optional.  Its actions belong only to
-		 * body and loop edges, never to the zero-iteration accept edge.
-		 */
-		onibi_add_capture_guard_fragment(builder, &repeat.starts,
-						 &repeat.start_actions);
-		onibi_add_exit_guard_fragment(builder, &repeat.exits,
-					      &repeat.pending_actions);
-		onibi_g_action_vector_free(&repeat.start_actions);
-		onibi_g_action_vector_free(&repeat.pending_actions);
-		onibi_g_action_vector_init(&repeat.start_actions);
-		onibi_g_action_vector_bind(&repeat.start_actions,
-					   builder->allocation_owner);
-		onibi_g_action_vector_init(&repeat.pending_actions);
-		onibi_g_action_vector_bind(&repeat.pending_actions,
-					   builder->allocation_owner);
+	else if (max > min) {
+	    long exit = onibi_nfa_epsilon_state(builder);
+	    for (long i = min; i < max; i++) {
+		onibi_fragment_t part = onibi_fragment_explicit(
+		    onibi_compile_repeat_atom(atom, builder, max > 1, 1),
+		    builder);
+		long choice = result.exits.entries[0];
+		if (!greedy)
+		    onibi_nfa_add_connection(builder, choice, exit,
+					     &(OnibiGActionVector){0}, 0);
+		onibi_fragment_join(&result, part, builder);
+		if (greedy)
+		    onibi_nfa_add_connection(builder, choice, exit,
+					     &(OnibiGActionVector){0}, 0);
 	    }
-	    if (result.starts.count == 0)
-		onibi_id_vector_append(&result.starts, &repeat.starts);
-	    if (!repeat.nullable)
-		onibi_fragment_append_actions(&result.start_actions,
-					      &repeat.start_actions);
-	    if (result.exits.count > 0) {
-		if (repeat.nullable) {
-		    onibi_connect_fragment(builder, &result.exits,
-					   &repeat.starts);
-		}
-		else {
-		    OnibiGActionVector next_actions =
-			onibi_g_action_vector_concat(&repeat.pending_actions,
-						     &repeat.start_actions,
-						     builder->allocation_owner);
-		    onibi_connect_fragment_actions(builder, &result.exits,
-						   &repeat.starts,
-						   &next_actions, 0);
-		    onibi_g_action_vector_free(&next_actions);
-		}
-	    }
-	    if (repeat.nullable) {
-		OnibiGActionVector progress_actions;
-		onibi_g_action_vector_init(&progress_actions);
-		onibi_g_action_vector_bind(&progress_actions,
-					   builder->allocation_owner);
-		if (progress_slot >= 0)
-		    onibi_g_action_vector_push(
-			&progress_actions,
-			onibi_counter_action(ONIBI_GA_PROGRESS, progress_slot,
-					     0, 0));
-		onibi_connect_fragment_actions(builder, &repeat.exits,
-					       &repeat.starts,
-					       &progress_actions, 0);
-		onibi_g_action_vector_free(&progress_actions);
-	    }
-	    else {
-		OnibiGActionVector loop_actions = onibi_g_action_vector_concat(
-		    &repeat.pending_actions, &repeat.start_actions,
-		    builder->allocation_owner);
-		onibi_connect_fragment_actions(
-		    builder, &repeat.exits, &repeat.starts, &loop_actions, 0);
-		onibi_g_action_vector_free(&loop_actions);
-	    }
-	    onibi_fragment_append_actions(&result.pending_actions,
-					  &repeat.pending_actions);
-	    onibi_id_vector_append(&result.exits, &repeat.exits);
-	    onibi_id_vector_free(&repeat.starts);
-	    onibi_id_vector_free(&repeat.exits);
+	    onibi_nfa_add_connection(builder, result.exits.entries[0], exit,
+				     &(OnibiGActionVector){0}, 0);
+	    result.exits.entries[0] = (OnibiStateId)exit;
 	}
-	result.lazy = !greedy;
 	return result;
     }
     rb_raise(eRegexpError, "unsupported AST node");
@@ -2187,6 +2182,7 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     owner->nfa_active = 1;
     builder->nfa = nfa;
     owner->root_fragment = onibi_compile_node(parsed->arena.root, builder);
+    nfa->capture_order_required = builder->capture_order_required;
     owner->root_fragment_active = 1;
     onibi_fragment_t *fragment = &owner->root_fragment;
     long accept = builder->next_id++;
@@ -2194,13 +2190,15 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     onibi_id_vector_single(&owner->accept_starts, (OnibiStateId)accept,
 			   builder->allocation_owner);
     OnibiIdVector exit_ids = fragment->exits;
-    onibi_connect_fragment_actions(builder, &exit_ids, &owner->accept_starts,
-				   &fragment->pending_actions, fragment->lazy);
+    onibi_connect_fragment_actions(
+	builder, &exit_ids, &owner->accept_starts, &fragment->pending_actions,
+	(fragment->lazy & ONIBI_FRAGMENT_EXIT_LAZY) != 0);
     onibi_id_vector_free(&owner->accept_starts);
     onibi_id_vector_init(&fragment->exits);
     long root_entry =
 	fragment->starts.count > 0 ? (long)fragment->starts.entries[0] : accept;
-    if (fragment->nullable && fragment->lazy) {
+    if (fragment->nullable &&
+	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) != 0) {
 	owner->pending_actions = onibi_g_action_vector_concat(
 	    &fragment->start_actions, &fragment->pending_actions,
 	    builder->allocation_owner);
@@ -2220,7 +2218,8 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     onibi_id_vector_free(&start_ids);
     onibi_id_vector_free(&exit_ids);
     onibi_id_vector_init(&fragment->starts);
-    if (fragment->nullable && !fragment->lazy) {
+    if (fragment->nullable &&
+	(fragment->lazy & ONIBI_FRAGMENT_NULLABLE_LAZY) == 0) {
 	owner->pending_actions = onibi_g_action_vector_concat(
 	    &fragment->start_actions, &fragment->pending_actions,
 	    builder->allocation_owner);
@@ -2344,18 +2343,30 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    case ONIBI_GA_CAPTURE_OPEN:                                        \
 		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;            \
 		break;                                                         \
+	    case ONIBI_GA_CAPTURE_OPEN_UNSCOPED:                               \
+		result.rseq_features |= ONIBI_RSEQ_FEATURE_CAPTURE;            \
+		execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;           \
+		break;                                                         \
 	    default: break;                                                    \
 	    }                                                                  \
 	    if (_action->code == ONIBI_GA_PROGRESS ||                          \
 		_action->code == ONIBI_GA_COUNTER_INIT ||                      \
 		_action->code == ONIBI_GA_COUNTER_INCREMENT ||                 \
 		_action->code == ONIBI_GA_TEST_COUNTER_LT ||                   \
-		_action->code == ONIBI_GA_TEST_COUNTER_GE) {                   \
+		_action->code == ONIBI_GA_TEST_COUNTER_GE ||                   \
+		(_action->code >= ONIBI_GA_NULL_ENTER &&                       \
+		 _action->code <= ONIBI_GA_NULL_STOP)) {                       \
 		if (_action->has_slot &&                                       \
 		    (uint32_t)_action->slot + 1U > result.counter_count)       \
 		    result.counter_count = (uint32_t)_action->slot + 1U;       \
 		execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;           \
 	    }                                                                  \
+	    if (_action->code >= ONIBI_GA_NULL_ENTER &&                        \
+		_action->code <= ONIBI_GA_NULL_STOP &&                         \
+		(uint32_t)_action->slot + 2U > result.counter_count)           \
+		result.counter_count = (uint32_t)_action->slot + 2U;           \
+	    if (_action->code == ONIBI_GA_NULL_CAPTURE)                        \
+		MARK_SEMANTIC_CAPTURE(_action->arg32);                         \
 	}                                                                      \
     } while (0)
     for (size_t i = 0; i < builder->edges.count; i++)

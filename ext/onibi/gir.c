@@ -96,6 +96,10 @@ typedef struct {
     int encoding_index;
     int optional_seen;
     int casefold_repeat_depth;
+    int ordered_choice_depth;
+    uint16_t nullable_scopes[256];
+    size_t nullable_scope_count;
+    int capture_order_required;
     onibi_allocation_owner_t *allocation_owner;
     OnibiTaggedNfa *nfa;
 } onibi_gir_builder_t;
@@ -483,7 +487,7 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 			const OnibiGAction *action, int start_action,
 			long edge_from, long edge_to)
 {
-    if ((unsigned int)action->code > ONIBI_GA_PROGRESS ||
+    if ((unsigned int)action->code > ONIBI_GA_ORDER ||
 	action->code == ONIBI_GA_END)
 	onibi_gir_verification_error("action opcode is invalid");
     if (action->set > 1 || action->positive > 1 || action->has_slot > 1 ||
@@ -498,7 +502,8 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 
     switch (action->code) {
     case ONIBI_GA_CAPTURE_OPEN:
-    case ONIBI_GA_CAPTURE_CLOSE: {
+    case ONIBI_GA_CAPTURE_CLOSE:
+    case ONIBI_GA_CAPTURE_OPEN_UNSCOPED: {
 	uint32_t capture_slots = (uint32_t)view->capture_count * 2U;
 	if (!action->has_slot || action->has_assert_kind || action->has_arg32 ||
 	    action->has_subprogram || action->positive)
@@ -511,9 +516,9 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 		action->code == ONIBI_GA_CAPTURE_CLOSE
 		    ? "capture-close payload is invalid"
 		    : "capture-open payload is invalid");
+	int close = action->code == ONIBI_GA_CAPTURE_CLOSE;
 	if (action->slot >= capture_slots ||
-	    ((action->slot & 1U) !=
-	     (action->code == ONIBI_GA_CAPTURE_CLOSE ? 1U : 0U)))
+	    ((action->slot & 1U) != (close ? 1U : 0U)))
 	    onibi_gir_verification_error("capture slot is invalid");
 	break;
     }
@@ -590,6 +595,25 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    onibi_gir_verification_error("repeat progress is invalid");
 	owner->progress_slot_states[action->slot] = 2;
 	break;
+    case ONIBI_GA_NULL_ENTER:
+    case ONIBI_GA_NULL_CAPTURE:
+    case ONIBI_GA_NULL_CONTINUE:
+    case ONIBI_GA_NULL_STOP:
+	if (!action->has_slot ||
+	    (uint32_t)action->slot + 1U >= (uint32_t)view->counter_count ||
+	    action->has_assert_kind || action->has_subprogram || action->set ||
+	    action->positive ||
+	    (action->code == ONIBI_GA_NULL_CAPTURE
+		 ? !action->has_arg32 ||
+		       action->arg32 >= (uint32_t)view->capture_count
+		 : action->has_arg32))
+	    onibi_gir_verification_error("nullable repeat action is invalid");
+	break;
+    case ONIBI_GA_ORDER:
+	if (action->has_slot || !action->has_arg32 || action->has_assert_kind ||
+	    action->has_subprogram || action->set || action->positive)
+	    onibi_gir_verification_error("ordered capture action is invalid");
+	break;
     default: onibi_gir_verification_error("action opcode is invalid");
     }
 }
@@ -603,9 +627,10 @@ onibi_gir_verify_action_vector(const OnibiGIRView *view,
     if (actions->count > actions->capacity ||
 	(actions->count != 0 && actions->entries == NULL))
 	onibi_gir_verification_error("action vector is invalid");
-    for (size_t i = 0; i < actions->count; i++)
+    for (size_t i = 0; i < actions->count; i++) {
 	onibi_gir_verify_action(view, owner, &actions->entries[i], start_action,
 				edge_from, edge_to);
+    }
 }
 
 static void
@@ -975,19 +1000,26 @@ onibi_gir_verify(const OnibiGIRView *view)
 static uint8_t
 onibi_rseq_physical_action_op(OnibiGActionOp code)
 {
-    return (
-	uint8_t)(code == ONIBI_GA_CAPTURE_OPEN || code == ONIBI_GA_CAPTURE_CLOSE
-		     ? ONIBI_RA_CAPTURE
-		 : code == ONIBI_GA_MATCH_RESET	      ? ONIBI_RA_MATCH_RESET
-		 : code == ONIBI_GA_ASSERT_POSITION   ? ONIBI_RA_ASSERT_POSITION
-		 : code == ONIBI_GA_TEST_CAPTURE      ? ONIBI_RA_TEST_CAPTURE
-		 : code == ONIBI_GA_COUNTER_INIT      ? ONIBI_RA_COUNTER_SET
-		 : code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD
-		 : code == ONIBI_GA_TEST_COUNTER_LT ||
-			 code == ONIBI_GA_TEST_COUNTER_GE
-		     ? ONIBI_RA_COUNTER_TEST
-		 : code == ONIBI_GA_PROGRESS ? ONIBI_RA_PROGRESS
-					     : ONIBI_RA_END);
+    return (uint8_t)(code == ONIBI_GA_CAPTURE_OPEN ||
+			     code == ONIBI_GA_CAPTURE_CLOSE ||
+			     code == ONIBI_GA_CAPTURE_OPEN_UNSCOPED
+			 ? ONIBI_RA_CAPTURE
+		     : code == ONIBI_GA_MATCH_RESET ? ONIBI_RA_MATCH_RESET
+		     : code == ONIBI_GA_ASSERT_POSITION
+			 ? ONIBI_RA_ASSERT_POSITION
+		     : code == ONIBI_GA_TEST_CAPTURE ? ONIBI_RA_TEST_CAPTURE
+		     : code == ONIBI_GA_COUNTER_INIT ? ONIBI_RA_COUNTER_SET
+		     : code == ONIBI_GA_COUNTER_INCREMENT ? ONIBI_RA_COUNTER_ADD
+		     : code == ONIBI_GA_TEST_COUNTER_LT ||
+			     code == ONIBI_GA_TEST_COUNTER_GE
+			 ? ONIBI_RA_COUNTER_TEST
+		     : code == ONIBI_GA_PROGRESS      ? ONIBI_RA_PROGRESS
+		     : code == ONIBI_GA_NULL_ENTER    ? ONIBI_RA_NULL_ENTER
+		     : code == ONIBI_GA_NULL_CAPTURE  ? ONIBI_RA_NULL_CAPTURE
+		     : code == ONIBI_GA_NULL_CONTINUE ? ONIBI_RA_NULL_CONTINUE
+		     : code == ONIBI_GA_NULL_STOP     ? ONIBI_RA_NULL_STOP
+		     : code == ONIBI_GA_ORDER	      ? ONIBI_RA_ORDER
+						      : ONIBI_RA_END);
 }
 static void
 onibi_rseq_literal_payload_vector_init(OnibiRSeqLiteralPayloadVector *vector)

@@ -23,14 +23,18 @@ class ExecutorDispatchTest < Minitest::Test
     assert_equal 0, info[:fallback]
   end
 
-  def test_large_repeat_is_not_published_as_regular
+  def test_large_repeat_uses_tagged_counter_executor
     regexp = Onibi::Regexp.new("a{9}")
     info = regexp.send(:__onibi_diagnostics__, "aaaaaaaaa")
-    refute info[:rseq]
+
+    assert info[:rseq]
     refute info[:regular_capable]
-    refute_equal 0, info[:exec_kind]
+    assert_equal 1, info[:exec_kind]
+    assert_equal 1, info[:tagged]
+    assert_equal 0, info[:dynamic]
     assert_equal 0, info[:dfs]
-    assert_equal 2, info[:status]
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
   end
 
   def test_assertion_uses_tagged_executor
@@ -39,7 +43,9 @@ class ExecutorDispatchTest < Minitest::Test
     assert_equal 1, info[:exec_kind]
     refute info[:regular_capable]
     assert_equal 1, info[:tagged]
-    assert_equal 1, info[:dfs]
+    assert_equal 0, info[:dynamic]
+    assert_equal 0, info[:dfs]
+    assert_equal 0, info[:fallback]
   end
 
   def test_injected_executor_error_is_not_no_match

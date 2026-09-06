@@ -99,6 +99,45 @@ class SemanticStateTest < Minitest::Test
     assert info[:stack_valid]
   end
 
+  def test_tagged_frontier_keys_counter_and_progress_state
+    info = diagnostic(:tagged_frontier)
+
+    assert info[:action_success]
+    assert_equal 2, info[:frontier_count]
+    assert info[:distinct_counters_kept]
+    assert info[:duplicate_merged]
+    assert_equal 1, info[:first_counter]
+    assert_equal 2, info[:second_counter]
+    assert_operator info[:key_capacity], :>=, 64
+    assert_equal 0, info[:full_file_copies]
+  end
+
+  def test_tagged_actions_rollback_counter_and_progress_updates
+    info = diagnostic(:tagged_frontier)
+
+    assert info[:failed_transaction]
+    assert_equal 0, info[:failed_counter]
+    assert_equal(-1, info[:failed_progress])
+    assert info[:repeated_progress_rejected]
+  end
+
+  def test_tagged_frontier_keys_live_capture_state_with_equal_counters_and_progress
+    info = diagnostic(:tagged_capture_state)
+
+    assert_equal 2, info[:frontier_count]
+    assert info[:distinct_live_captures_kept]
+    assert info[:duplicate_merged]
+    assert info[:output_history_ignored]
+  end
+
+  def test_tagged_actions_rollback_capture_events_and_nullable_guard_state
+    info = diagnostic(:tagged_capture_state)
+
+    assert info[:failed_transaction]
+    assert info[:capture_event_rollback]
+    assert info[:state_rollback]
+  end
+
   private
 
   def diagnostic(name)

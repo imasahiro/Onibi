@@ -391,7 +391,7 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		    rb_raise(rb_eArgError, "invalid Onibi RSeq action end");
 		goto action_program_done;
 	    case ONIBI_RA_CAPTURE:
-		if (action->flags > ONIBI_RA_CAPTURE_CLOSE ||
+		if (action->flags > ONIBI_RA_CAPTURE_OPEN_UNSCOPED ||
 		    action->arg32 != 0 ||
 		    action->arg16 >= header->capture_count * 2U ||
 		    ((action->arg16 & 1U) !=
@@ -480,6 +480,30 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 		counter_action_seen = 1;
 		if (action->arg16 > highest_counter_slot)
 		    highest_counter_slot = action->arg16;
+		break;
+	    case ONIBI_RA_NULL_ENTER:
+	    case ONIBI_RA_NULL_CAPTURE:
+	    case ONIBI_RA_NULL_CONTINUE:
+	    case ONIBI_RA_NULL_STOP:
+		if (action->flags != 0 ||
+		    (uint32_t)action->arg16 + 1U >= header->counter_count ||
+		    (action->op == ONIBI_RA_NULL_CAPTURE
+			 ? action->arg32 >= header->capture_count
+			 : action->arg32 != 0))
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq nullable repeat action");
+		if (action->op == ONIBI_RA_NULL_CAPTURE &&
+		    !semantic_captures[action->arg32]) {
+		    semantic_captures[action->arg32] = 1;
+		    semantic_capture_count++;
+		}
+		counter_action_seen = 1;
+		if ((uint32_t)action->arg16 + 1U > highest_counter_slot)
+		    highest_counter_slot = (uint32_t)action->arg16 + 1U;
+		break;
+	    case ONIBI_RA_ORDER:
+		if (action->flags || action->arg16)
+		    rb_raise(rb_eArgError, "invalid Onibi RSeq order action");
 		break;
 	    default: rb_raise(rb_eArgError, "invalid Onibi RSeq action opcode");
 	    }
@@ -710,6 +734,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     for (uint32_t i = 0; i < header->action_count; i++)
 	if (view.actions[i].op == ONIBI_RA_TEST_CAPTURE)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;
+	else if (view.actions[i].op == ONIBI_RA_CAPTURE &&
+		 view.actions[i].flags >= ONIBI_RA_CAPTURE_OPEN_UNSCOPED)
+	    execution_requirements |= ONIBI_EXEC_REQUIRE_TAGGED;
     if (!root_consuming)
 	expected_features |= ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY;
     uint32_t semantic_feature_mask =

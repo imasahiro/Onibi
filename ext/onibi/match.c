@@ -1,6 +1,26 @@
 static void
+onibi_frontier_release(OnibiFrontier *frontier)
+{
+    ruby_xfree(frontier->states);
+    ruby_xfree(frontier->semantics);
+    ruby_xfree(frontier->hashes);
+    ruby_xfree(frontier->key_buckets);
+    ruby_xfree(frontier->membership);
+    memset(frontier, 0, sizeof(*frontier));
+}
+
+static void
 onibi_exec_ctx_release(OnibiExecCtx *ctx)
 {
+    onibi_frontier_release(&ctx->current);
+    onibi_frontier_release(&ctx->next);
+    for (size_t i = 0; i < ctx->assertion_frontier_count; i++)
+	onibi_frontier_release(&ctx->assertion_frontiers[i]);
+    ruby_xfree(ctx->assertion_frontiers);
+    ctx->assertion_frontiers = NULL;
+    ctx->assertion_frontier_count = 0;
+    ctx->assertion_frontier_capacity = 0;
+    ctx->assertion_depth = 0;
     ruby_xfree(ctx->tags.data);
     ctx->tags.data = NULL;
     ctx->tags.count = 0;

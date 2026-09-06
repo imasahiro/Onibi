@@ -293,6 +293,7 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    long marker = modifier->byte;
 	    long min = 0, max = 0;
 	    int has_max = 0;
+	    int fixed_interval = 0;
 	    int valid = 1;
 	    long close = i;
 	    if (marker == '*' || marker == '+' || marker == '?') {
@@ -343,6 +344,7 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 		    if (endptr != spec + length) valid = 0;
 		    max = min;
 		    has_max = 1;
+		    fixed_interval = 1;
 		}
 		if (valid && has_max && max < min)
 		    rb_raise(eRegexpError, "invalid quantifier range");
@@ -362,6 +364,33 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    else {
 		onibi_ast_add_child(arena, sequence, atom);
 		continue;
+	    }
+	    /* Onigmo parses a ? after {n} as a greedy optional exact repeat.
+	     * It is not the lazy suffix used by {n,n}? and other ranges. */
+	    if (marker == '{' && fixed_interval && i < end &&
+		onibi_token_at(tokens, i)->kind == ONIBI_TOKEN_QUANTIFIER &&
+		onibi_token_at(tokens, i)->byte == '?') {
+		OnibiAstId fixed =
+		    onibi_ast_arena_add(arena, ONIBI_AST_QUANTIFIER, modifier);
+		OnibiAstNode *fixed_node = onibi_ast_node_at(arena, fixed);
+		fixed_node->atom = atom;
+		fixed_node->min = min;
+		fixed_node->max = max;
+		fixed_node->end = onibi_token_at(tokens, close)->end;
+		fixed_node->flags |=
+		    ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX;
+
+		const OnibiTokenRecord *optional = onibi_token_at(tokens, i++);
+		OnibiAstId quantifier =
+		    onibi_ast_arena_add(arena, ONIBI_AST_QUANTIFIER, optional);
+		OnibiAstNode *node = onibi_ast_node_at(arena, quantifier);
+		node->atom = fixed;
+		node->min = 0;
+		node->max = 1;
+		node->start = modifier->start;
+		node->flags |= ONIBI_AST_NODE_GREEDY | ONIBI_AST_NODE_HAS_MAX;
+		atom = quantifier;
+		goto append_atom;
 	    }
 	    if (onibi_ast_node_const(arena, atom)->kind == ONIBI_AST_QUANTIFIER)
 		rb_raise(eRegexpError, "nested quantifier");
@@ -386,6 +415,7 @@ onibi_c_parse_range(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    }
 	    atom = quantifier;
 	}
+    append_atom:
 	onibi_ast_add_child(arena, sequence, atom);
     }
     return sequence;

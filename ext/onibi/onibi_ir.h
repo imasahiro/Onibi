@@ -196,7 +196,14 @@ typedef enum {
     ONIBI_GA_COUNTER_INCREMENT,
     ONIBI_GA_TEST_COUNTER_LT,
     ONIBI_GA_TEST_COUNTER_GE,
-    ONIBI_GA_PROGRESS
+    ONIBI_GA_PROGRESS,
+    /* MRI capture entries without a rollback record retain ordered opens. */
+    ONIBI_GA_CAPTURE_OPEN_UNSCOPED,
+    ONIBI_GA_NULL_ENTER,
+    ONIBI_GA_NULL_CAPTURE,
+    ONIBI_GA_NULL_CONTINUE,
+    ONIBI_GA_NULL_STOP,
+    ONIBI_GA_ORDER
 } OnibiGActionOp;
 
 typedef enum {
@@ -227,7 +234,12 @@ typedef enum {
     ONIBI_RA_COUNTER_SET,
     ONIBI_RA_COUNTER_ADD,
     ONIBI_RA_COUNTER_TEST,
-    ONIBI_RA_PROGRESS
+    ONIBI_RA_PROGRESS,
+    ONIBI_RA_NULL_ENTER,
+    ONIBI_RA_NULL_CAPTURE,
+    ONIBI_RA_NULL_CONTINUE,
+    ONIBI_RA_NULL_STOP,
+    ONIBI_RA_ORDER
 } OnibiRActionOp;
 
 typedef struct {
@@ -239,6 +251,7 @@ typedef struct {
 
 /* Flags preserve semantic action variants in the compact physical form. */
 #define ONIBI_RA_CAPTURE_CLOSE UINT8_C(1)
+#define ONIBI_RA_CAPTURE_OPEN_UNSCOPED UINT8_C(2)
 #define ONIBI_RA_TEST_CAPTURE_SET UINT8_C(1)
 #define ONIBI_RA_TEST_CAPTURE_UNSET UINT8_C(2)
 #define ONIBI_RA_COUNTER_GE UINT8_C(1)
