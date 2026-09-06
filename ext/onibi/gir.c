@@ -401,9 +401,37 @@ typedef struct {
 } OnibiGIREdgeIndexSlot;
 
 typedef struct {
+    long from;
+    long to;
+    const OnibiGActionVector *actions;
+    size_t next_outgoing;
+    size_t next_incoming;
+} OnibiGIRNullableEdgeIndex;
+
+typedef struct {
+    long to;
+    const OnibiGActionVector *actions;
+    size_t next;
+} OnibiGIRNullableEntryIndex;
+
+typedef struct {
     onibi_allocation_owner_t allocations;
     unsigned char *physical_subprogram_references;
     unsigned char *progress_slot_states;
+    unsigned char *nullable_owner_bases;
+    unsigned char *nullable_reserved_slots;
+    uint32_t *nullable_owner_indices;
+    uint64_t *nullable_state_in;
+    uint64_t *nullable_mask;
+    size_t nullable_word_count;
+    size_t nullable_state_count;
+    size_t nullable_owner_count;
+    size_t *nullable_outgoing_heads;
+    size_t *nullable_incoming_heads;
+    size_t *nullable_entry_heads;
+    OnibiGIRNullableEdgeIndex *nullable_edges;
+    OnibiGIRNullableEntryIndex *nullable_entries;
+    size_t nullable_entry_count;
     OnibiGIREdgeIndexSlot *edge_index;
     size_t edge_index_capacity;
 } OnibiGIRVerifyOwner;
@@ -480,6 +508,362 @@ onibi_gir_verify_edge_index_insert(const OnibiGIRView *view,
     }
     owner->edge_index[slot] =
 	(OnibiGIREdgeIndexSlot){hash, index, start ? 1 : 0, 1};
+}
+
+static void
+onibi_gir_nullable_set(uint64_t *state, uint32_t owner_index)
+{
+    state[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] |=
+	UINT64_C(1) << (owner_index % (sizeof(uint64_t) * CHAR_BIT));
+}
+
+static void
+onibi_gir_nullable_clear(uint64_t *state, uint32_t owner_index)
+{
+    state[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] &=
+	~(UINT64_C(1) << (owner_index % (sizeof(uint64_t) * CHAR_BIT)));
+}
+
+static void
+onibi_gir_nullable_transfer(const OnibiGIRVerifyOwner *owner,
+			    const OnibiGActionVector *actions,
+			    const uint64_t *input, uint64_t *output,
+			    size_t word_count)
+{
+    if (output != input) memcpy(output, input, word_count * sizeof(*output));
+    for (size_t i = 0; i < actions->count; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	if (action->code == ONIBI_GA_NULL_ENTER)
+	    onibi_gir_nullable_set(output,
+				   owner->nullable_owner_indices[action->slot]);
+	else if (action->code == ONIBI_GA_NULL_CONTINUE ||
+		 action->code == ONIBI_GA_NULL_STOP)
+	    onibi_gir_nullable_clear(
+		output, owner->nullable_owner_indices[action->slot]);
+    }
+}
+
+static void
+onibi_gir_nullable_meet(uint64_t *destination, const uint64_t *source,
+			size_t word_count)
+{
+    for (size_t i = 0; i < word_count; i++)
+	destination[i] &= source[i];
+}
+
+static int
+onibi_gir_nullable_bits_equal(const uint64_t *left, const uint64_t *right,
+			      size_t word_count)
+{
+    return memcmp(left, right, word_count * sizeof(*left)) == 0;
+}
+
+static void
+onibi_gir_nullable_collect_action(const OnibiGIRView *view,
+				  OnibiGIRVerifyOwner *owner,
+				  const OnibiGAction *action)
+{
+    if (action->code != ONIBI_GA_NULL_ENTER || !action->has_slot) return;
+    if ((uint32_t)action->slot + 1U >= (uint32_t)view->counter_count)
+	onibi_gir_verification_error("nullable owner range is invalid");
+    uint32_t base = action->slot;
+    if (owner->nullable_owner_bases[base]) return;
+    if (owner->nullable_reserved_slots[base] ||
+	owner->nullable_reserved_slots[base + 1U])
+	onibi_gir_verification_error("nullable owner intervals overlap");
+    owner->nullable_owner_bases[base] = 1;
+    owner->nullable_reserved_slots[base] = 1;
+    owner->nullable_reserved_slots[base + 1U] = 1;
+    owner->nullable_owner_indices[base] = (uint32_t)owner->nullable_owner_count;
+    owner->nullable_owner_count++;
+}
+
+static void
+onibi_gir_nullable_collect_vector(const OnibiGIRView *view,
+				  OnibiGIRVerifyOwner *owner,
+				  const OnibiGActionVector *actions)
+{
+    if (!actions || actions->count > actions->capacity ||
+	(actions->count != 0 && actions->entries == NULL))
+	onibi_gir_verification_error("action vector is invalid");
+    for (size_t i = 0; i < actions->count; i++)
+	onibi_gir_nullable_collect_action(view, owner, &actions->entries[i]);
+}
+
+static void
+onibi_gir_nullable_validate_action(const OnibiGIRVerifyOwner *owner,
+				   const OnibiGAction *action, uint64_t *state)
+{
+    if (action->code == ONIBI_GA_NULL_ENTER) {
+	onibi_gir_nullable_set(state,
+			       owner->nullable_owner_indices[action->slot]);
+	return;
+    }
+    if (action->code != ONIBI_GA_NULL_CAPTURE &&
+	action->code != ONIBI_GA_NULL_CONTINUE &&
+	action->code != ONIBI_GA_NULL_STOP) {
+	return;
+    }
+    uint32_t owner_index = owner->nullable_owner_indices[action->slot];
+    if (!(state[(size_t)owner_index / (sizeof(uint64_t) * CHAR_BIT)] &
+	  (UINT64_C(1) << (owner_index % (sizeof(uint64_t) * CHAR_BIT)))))
+	onibi_gir_verification_error("nullable owner is not initialized");
+    if (action->code == ONIBI_GA_NULL_CONTINUE ||
+	action->code == ONIBI_GA_NULL_STOP)
+	onibi_gir_nullable_clear(state,
+				 owner->nullable_owner_indices[action->slot]);
+}
+
+static void
+onibi_gir_nullable_validate_vector(const OnibiGIRVerifyOwner *owner,
+				   const OnibiGActionVector *actions,
+				   const uint64_t *input, uint64_t *output,
+				   size_t word_count)
+{
+    memcpy(output, input, word_count * sizeof(*output));
+    for (size_t i = 0; i < actions->count; i++)
+	onibi_gir_nullable_validate_action(owner, &actions->entries[i], output);
+}
+
+static void
+onibi_gir_nullable_build_index(const OnibiGIRView *view,
+			       OnibiGIRVerifyOwner *owner)
+{
+    size_t state_count = owner->nullable_state_count;
+    if (state_count > SIZE_MAX / sizeof(*owner->nullable_outgoing_heads) ||
+	view->edges->count > SIZE_MAX / sizeof(*owner->nullable_edges))
+	onibi_gir_verification_error(
+	    "nullable verification index is too large");
+    owner->nullable_outgoing_heads = onibi_owned_realloc(
+	&owner->allocations, NULL,
+	state_count * sizeof(*owner->nullable_outgoing_heads));
+    owner->nullable_incoming_heads = onibi_owned_realloc(
+	&owner->allocations, NULL,
+	state_count * sizeof(*owner->nullable_incoming_heads));
+    owner->nullable_entry_heads =
+	onibi_owned_realloc(&owner->allocations, NULL,
+			    state_count * sizeof(*owner->nullable_entry_heads));
+    for (size_t i = 0; i < state_count; i++) {
+	owner->nullable_outgoing_heads[i] = SIZE_MAX;
+	owner->nullable_incoming_heads[i] = SIZE_MAX;
+	owner->nullable_entry_heads[i] = SIZE_MAX;
+    }
+    if (view->edges->count != 0) {
+	owner->nullable_edges = onibi_owned_realloc(
+	    &owner->allocations, NULL,
+	    view->edges->count * sizeof(*owner->nullable_edges));
+	for (size_t i = 0; i < view->edges->count; i++) {
+	    const OnibiGirEdgeEntry *edge = &view->edges->entries[i];
+	    owner->nullable_edges[i] = (OnibiGIRNullableEdgeIndex){
+		edge->from, edge->to, &edge->actions,
+		owner->nullable_outgoing_heads[edge->from],
+		owner->nullable_incoming_heads[edge->to]};
+	    owner->nullable_outgoing_heads[edge->from] = i;
+	    owner->nullable_incoming_heads[edge->to] = i;
+	}
+    }
+    if (view->start_edges->count > SIZE_MAX - view->subprogram_entries->count)
+	onibi_gir_verification_error(
+	    "nullable verification index is too large");
+    owner->nullable_entry_count =
+	view->start_edges->count + view->subprogram_entries->count;
+    if (owner->nullable_entry_count >
+	SIZE_MAX / sizeof(*owner->nullable_entries))
+	onibi_gir_verification_error(
+	    "nullable verification index is too large");
+    if (owner->nullable_entry_count != 0) {
+	owner->nullable_entries = onibi_owned_realloc(
+	    &owner->allocations, NULL,
+	    owner->nullable_entry_count * sizeof(*owner->nullable_entries));
+	size_t entry = 0;
+	for (size_t i = 0; i < view->start_edges->count; i++, entry++) {
+	    const OnibiGirEdgeEntry *edge = &view->start_edges->entries[i];
+	    owner->nullable_entries[entry] = (OnibiGIRNullableEntryIndex){
+		edge->to, &edge->actions,
+		owner->nullable_entry_heads[edge->to]};
+	    owner->nullable_entry_heads[edge->to] = entry;
+	}
+	for (size_t i = 0; i < view->subprogram_entries->count; i++, entry++) {
+	    const OnibiGirEdgeEntry *edge =
+		&view->subprogram_entries->entries[i];
+	    owner->nullable_entries[entry] = (OnibiGIRNullableEntryIndex){
+		edge->to, &edge->actions,
+		owner->nullable_entry_heads[edge->to]};
+	    owner->nullable_entry_heads[edge->to] = entry;
+	}
+    }
+}
+
+static void
+onibi_gir_nullable_finalize_owners(OnibiGIRVerifyOwner *owner)
+{
+    if (owner->nullable_owner_count == 0) return;
+    size_t bit_count = sizeof(uint64_t) * CHAR_BIT;
+    owner->nullable_word_count =
+	(owner->nullable_owner_count + bit_count - 1U) / bit_count;
+    owner->nullable_mask = onibi_owned_realloc(
+	&owner->allocations, NULL,
+	owner->nullable_word_count * sizeof(*owner->nullable_mask));
+    for (size_t i = 0; i < owner->nullable_word_count; i++)
+	owner->nullable_mask[i] = UINT64_MAX;
+}
+
+static int
+onibi_gir_nullable_update_state(const OnibiGIRVerifyOwner *owner,
+				const unsigned char *reachable, size_t state,
+				uint64_t *next, uint64_t *output)
+{
+    size_t word_count = owner->nullable_word_count;
+    int has_incoming = 0;
+    memcpy(next, owner->nullable_mask, word_count * sizeof(*next));
+    for (size_t entry = owner->nullable_entry_heads[state]; entry != SIZE_MAX;
+	 entry = owner->nullable_entries[entry].next) {
+	const OnibiGIRNullableEntryIndex *incoming =
+	    &owner->nullable_entries[entry];
+	memset(output, 0, word_count * sizeof(*output));
+	onibi_gir_nullable_transfer(owner, incoming->actions, output, output,
+				    word_count);
+	if (!has_incoming) {
+	    memcpy(next, output, word_count * sizeof(*next));
+	    has_incoming = 1;
+	}
+	else {
+	    onibi_gir_nullable_meet(next, output, word_count);
+	}
+    }
+    for (size_t edge = owner->nullable_incoming_heads[state]; edge != SIZE_MAX;
+	 edge = owner->nullable_edges[edge].next_incoming) {
+	const OnibiGIRNullableEdgeIndex *incoming =
+	    &owner->nullable_edges[edge];
+	if (!reachable[incoming->from]) continue;
+	const uint64_t *input =
+	    owner->nullable_state_in + (size_t)incoming->from * word_count;
+	onibi_gir_nullable_transfer(owner, incoming->actions, input, output,
+				    word_count);
+	if (!has_incoming) {
+	    memcpy(next, output, word_count * sizeof(*next));
+	    has_incoming = 1;
+	}
+	else {
+	    onibi_gir_nullable_meet(next, output, word_count);
+	}
+    }
+    if (!has_incoming) return 0;
+    uint64_t *current = owner->nullable_state_in + state * word_count;
+    if (onibi_gir_nullable_bits_equal(next, current, word_count)) return 0;
+    memcpy(current, next, word_count * sizeof(*next));
+    return 1;
+}
+
+static void
+onibi_gir_nullable_validate_all_paths(const OnibiGIRView *view,
+				      OnibiGIRVerifyOwner *owner)
+{
+    if (owner->nullable_owner_count == 0) return;
+    size_t word_count = owner->nullable_word_count;
+    size_t state_count = owner->nullable_state_count;
+    if (state_count > SIZE_MAX / word_count / sizeof(*owner->nullable_state_in))
+	onibi_gir_verification_error(
+	    "nullable verification index is too large");
+    if (state_count > SIZE_MAX / sizeof(size_t))
+	onibi_gir_verification_error(
+	    "nullable verification index is too large");
+    onibi_gir_nullable_build_index(view, owner);
+    owner->nullable_state_in = onibi_owned_realloc(
+	&owner->allocations, NULL,
+	state_count * word_count * sizeof(*owner->nullable_state_in));
+    uint64_t *next = onibi_owned_realloc(&owner->allocations, NULL,
+					 word_count * sizeof(*next));
+    uint64_t *output = onibi_owned_realloc(&owner->allocations, NULL,
+					   word_count * sizeof(*output));
+    unsigned char *reachable =
+	onibi_owned_realloc(&owner->allocations, NULL, state_count);
+    unsigned char *queued =
+	onibi_owned_realloc(&owner->allocations, NULL, state_count);
+    size_t *worklist = onibi_owned_realloc(&owner->allocations, NULL,
+					   state_count * sizeof(*worklist));
+    memset(reachable, 0, state_count);
+    memset(queued, 0, state_count);
+    size_t queue_head = 0, queue_tail = 0, queue_count = 0;
+    for (size_t i = 0; i < owner->nullable_entry_count; i++) {
+	size_t state = (size_t)owner->nullable_entries[i].to;
+	if (reachable[state]) continue;
+	reachable[state] = 1;
+	if (queue_count == state_count)
+	    onibi_gir_verification_error(
+		"nullable reachability queue is too large");
+	worklist[queue_tail++] = state;
+	if (queue_tail == state_count) queue_tail = 0;
+	queue_count++;
+    }
+    while (queue_count != 0) {
+	size_t state = worklist[queue_head++];
+	queue_count--;
+	for (size_t edge = owner->nullable_outgoing_heads[state];
+	     edge != SIZE_MAX;
+	     edge = owner->nullable_edges[edge].next_outgoing) {
+	    size_t destination = (size_t)owner->nullable_edges[edge].to;
+	    if (reachable[destination]) continue;
+	    reachable[destination] = 1;
+	    if (queue_count == state_count)
+		onibi_gir_verification_error(
+		    "nullable reachability queue is too large");
+	    worklist[queue_tail++] = destination;
+	    if (queue_tail == state_count) queue_tail = 0;
+	    queue_count++;
+	}
+	if (queue_head == state_count) queue_head = 0;
+    }
+    queue_head = 0;
+    queue_tail = 0;
+    queue_count = 0;
+    for (size_t state = 0; state < state_count; state++)
+	if (reachable[state]) {
+	    memcpy(owner->nullable_state_in + state * word_count,
+		   owner->nullable_mask, word_count * sizeof(uint64_t));
+	    if (queue_count == state_count)
+		onibi_gir_verification_error("nullable worklist is too large");
+	    worklist[queue_tail++] = state;
+	    if (queue_tail == state_count) queue_tail = 0;
+	    queued[state] = 1;
+	    queue_count++;
+	}
+    while (queue_count != 0) {
+	size_t state = worklist[queue_head++];
+	queue_count--;
+	queued[state] = 0;
+	if (queue_head == state_count) queue_head = 0;
+	if (!onibi_gir_nullable_update_state(owner, reachable, state, next,
+					     output))
+	    continue;
+	for (size_t edge = owner->nullable_outgoing_heads[state];
+	     edge != SIZE_MAX;
+	     edge = owner->nullable_edges[edge].next_outgoing) {
+	    size_t destination = (size_t)owner->nullable_edges[edge].to;
+	    if (queued[destination]) continue;
+	    if (queue_count == state_count)
+		onibi_gir_verification_error("nullable worklist is too large");
+	    worklist[queue_tail++] = destination;
+	    queued[destination] = 1;
+	    queue_count++;
+	    if (queue_tail == state_count) queue_tail = 0;
+	}
+    }
+
+    memset(output, 0, word_count * sizeof(*output));
+    for (size_t i = 0; i < owner->nullable_entry_count; i++) {
+	const OnibiGIRNullableEntryIndex *edge = &owner->nullable_entries[i];
+	onibi_gir_nullable_validate_vector(owner, edge->actions, output, next,
+					   word_count);
+    }
+    for (size_t i = 0; i < view->edges->count; i++) {
+	const OnibiGirEdgeEntry *edge = &view->edges->entries[i];
+	if (!reachable[edge->from]) continue;
+	const uint64_t *input =
+	    owner->nullable_state_in + (size_t)edge->from * word_count;
+	onibi_gir_nullable_validate_vector(owner, &edge->actions, input, next,
+					   word_count);
+    }
 }
 
 static void
@@ -574,7 +958,8 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    action->slot >= (uint32_t)view->counter_count ||
 	    action->has_assert_kind || !action->has_arg32 ||
 	    action->has_subprogram ||
-	    owner->progress_slot_states[action->slot] != 0)
+	    owner->progress_slot_states[action->slot] != 0 ||
+	    owner->nullable_reserved_slots[action->slot] != 0)
 	    onibi_gir_verification_error("counter slot is invalid");
 	break;
     case ONIBI_GA_COUNTER_INCREMENT:
@@ -582,7 +967,8 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    action->slot >= (uint32_t)view->counter_count ||
 	    action->has_assert_kind || action->has_arg32 ||
 	    action->has_subprogram ||
-	    owner->progress_slot_states[action->slot] != 0)
+	    owner->progress_slot_states[action->slot] != 0 ||
+	    owner->nullable_reserved_slots[action->slot] != 0)
 	    onibi_gir_verification_error("counter slot is invalid");
 	break;
     case ONIBI_GA_PROGRESS:
@@ -591,7 +977,8 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 	    action->has_assert_kind || action->has_arg32 ||
 	    action->has_subprogram ||
 	    owner->progress_slot_states[action->slot] == 0 || start_action ||
-	    edge_to > edge_from)
+	    edge_to > edge_from ||
+	    owner->nullable_reserved_slots[action->slot] != 0)
 	    onibi_gir_verification_error("repeat progress is invalid");
 	owner->progress_slot_states[action->slot] = 2;
 	break;
@@ -608,6 +995,8 @@ onibi_gir_verify_action(const OnibiGIRView *view, OnibiGIRVerifyOwner *owner,
 		       action->arg32 >= (uint32_t)view->capture_count
 		 : action->has_arg32))
 	    onibi_gir_verification_error("nullable repeat action is invalid");
+	if (!owner->nullable_owner_bases[action->slot])
+	    onibi_gir_verification_error("nullable owner base is invalid");
 	break;
     case ONIBI_GA_ORDER:
 	if (action->has_slot || !action->has_arg32 || action->has_assert_kind ||
@@ -648,7 +1037,19 @@ onibi_gir_verify_owner_initialize(const OnibiGIRView *view,
 	owner->progress_slot_states =
 	    onibi_owned_realloc(&owner->allocations, NULL, counter_count);
 	memset(owner->progress_slot_states, 0, counter_count);
+	owner->nullable_owner_bases =
+	    onibi_owned_realloc(&owner->allocations, NULL, counter_count);
+	memset(owner->nullable_owner_bases, 0, counter_count);
+	owner->nullable_reserved_slots =
+	    onibi_owned_realloc(&owner->allocations, NULL, counter_count);
+	memset(owner->nullable_reserved_slots, 0, counter_count);
+	owner->nullable_owner_indices = onibi_owned_realloc(
+	    &owner->allocations, NULL,
+	    counter_count * sizeof(*owner->nullable_owner_indices));
+	for (size_t i = 0; i < counter_count; i++)
+	    owner->nullable_owner_indices[i] = UINT32_MAX;
     }
+    owner->nullable_state_count = view->states->count;
     size_t edge_count;
     if (view->edges->count > SIZE_MAX - view->start_edges->count)
 	onibi_gir_verification_error("verification index is too large");
@@ -790,12 +1191,26 @@ onibi_gir_verify_body(VALUE opaque)
 	onibi_gir_verify_class(&view->classes->entries[i]);
 
     onibi_gir_verify_owner_initialize(view, owner);
+    for (size_t i = 0; i < view->edges->count; i++)
+	onibi_gir_nullable_collect_vector(view, owner,
+					  &view->edges->entries[i].actions);
+    for (size_t i = 0; i < view->start_edges->count; i++)
+	onibi_gir_nullable_collect_vector(
+	    view, owner, &view->start_edges->entries[i].actions);
+    for (size_t i = 0; i < view->subprogram_entries->count; i++)
+	onibi_gir_nullable_collect_vector(
+	    view, owner, &view->subprogram_entries->entries[i].actions);
+
+    onibi_gir_nullable_finalize_owners(owner);
     for (size_t i = 0; i < view->progress_slots->count; i++) {
 	uint32_t slot = view->progress_slots->entries[i];
 	if (slot >= (uint32_t)view->counter_count)
 	    onibi_gir_verification_error("repeat progress is invalid");
 	if (owner->progress_slot_states[slot] != 0)
 	    onibi_gir_verification_error("repeat progress slot is duplicated");
+	if (owner->nullable_reserved_slots[slot] != 0)
+	    onibi_gir_verification_error(
+		"repeat progress aliases nullable owner");
 	owner->progress_slot_states[slot] = 1;
     }
 
@@ -974,6 +1389,7 @@ onibi_gir_verify_body(VALUE opaque)
 	if (owner->progress_slot_states[slot] != 2)
 	    onibi_gir_verification_error("repeat progress is invalid");
     }
+    onibi_gir_nullable_validate_all_paths(view, owner);
     return Qnil;
 }
 
@@ -985,7 +1401,7 @@ onibi_gir_verify_ensure(VALUE opaque)
     return Qnil;
 }
 
-static void
+static size_t
 onibi_gir_verify(const OnibiGIRView *view)
 {
     OnibiGIRVerifyCall call;
@@ -995,6 +1411,7 @@ onibi_gir_verify(const OnibiGIRView *view)
     onibi_allocation_owner_set_phase(&call.owner.allocations, 1);
     (void)rb_ensure(onibi_gir_verify_body, (VALUE)(uintptr_t)&call,
 		    onibi_gir_verify_ensure, (VALUE)(uintptr_t)&call);
+    return call.owner.nullable_word_count;
 }
 
 static uint8_t

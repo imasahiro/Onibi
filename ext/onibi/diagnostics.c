@@ -340,6 +340,15 @@ onibi_action_operand_diagnostics(void)
     return result;
 }
 
+static OnibiGAction
+onibi_nullable_diagnostic_action(OnibiGActionOp code, uint16_t slot,
+				 uint32_t capture)
+{
+    int has_capture = code == ONIBI_GA_NULL_CAPTURE;
+    return (OnibiGAction){code, 0,	     0,	      1, slot, 0,
+			  0,	has_capture, capture, 0, 0};
+}
+
 static VALUE
 onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 {
@@ -352,10 +361,10 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 				   (long)UINT32_MAX + 1L);
     }
     OnibiGirStateEntry states[4];
-    OnibiGirEdgeEntry edges[2];
-    OnibiGirEdgeEntry starts[1];
+    OnibiGirEdgeEntry edges[4];
+    OnibiGirEdgeEntry starts[4];
     OnibiRSeqSubprogramEntry subprograms[2];
-    OnibiGAction actions[2];
+    OnibiGAction actions[16];
     unsigned char class_bitmap[32];
     OnibiCodepointRange class_ranges[2] = {{10, 20}, {15, 30}};
     OnibiClassExpr class_expr[1] = {{0, 0, ONIBI_CLASS_EXPR_UNION, 0, 0}};
@@ -391,8 +400,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     starts[0].to = 0;
     subprograms[0] = (OnibiRSeqSubprogramEntry){0, 3, 0};
     OnibiGirStateVector state_vector = {states, 4, 4, NULL};
-    OnibiGirEdgeVector edge_vector = {edges, 2, 2, NULL};
-    OnibiGirEdgeVector start_vector = {starts, 1, 1, NULL};
+    OnibiGirEdgeVector edge_vector = {edges, 2, 4, NULL};
+    OnibiGirEdgeVector start_vector = {starts, 1, 4, NULL};
     OnibiGirEdgeVector subprogram_entry_vector = {NULL, 0, 0, NULL};
     OnibiRSeqSubprogramVector subprogram_vector = {subprograms, 1, 2, NULL};
     OnibiIdVector lookbehind_width_vector = {NULL, 0, 0, NULL};
@@ -446,6 +455,125 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	actions[0] =
 	    (OnibiGAction){ONIBI_GA_COUNTER_INIT, 0, 0, 1, 1, 0, 0, 1, 0};
 	edges[0].actions = (OnibiGActionVector){actions, 1, 2, NULL};
+    }
+    else if (scenario == rb_intern("nullable_owner_range")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 1, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_owner_overlap")) {
+	view.counter_count = 3;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 1, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 2, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_owner_wrong_base")) {
+	view.counter_count = 3;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 1, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 2, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_counter_alias")) {
+	view.counter_count = 3;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] = onibi_counter_action(ONIBI_GA_COUNTER_INIT, 1, 0, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 2, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_progress_alias")) {
+	view.counter_count = 3;
+	progress_slots[0] = 1;
+	progress_vector.count = 1;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	starts[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
+	actions[1] = onibi_counter_action(ONIBI_GA_PROGRESS, 1, 0, 0);
+	edges[1].from = 1;
+	edges[1].to = 0;
+	edges[1].actions = (OnibiGActionVector){actions + 1, 1, 1, NULL};
+    }
+    else if (scenario == rb_intern("nullable_uninitialized_all")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
+	actions[1] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	starts[1].from = -1;
+	starts[1].to = 2;
+	starts[1].actions = (OnibiGActionVector){actions + 1, 1, 1, NULL};
+	start_vector.count = 2;
+	start_vector.capacity = 2;
+	edges[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_uninitialized_one_path")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	starts[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
+	starts[1].to = 1;
+	starts[1].from = -1;
+	starts[1].actions = (OnibiGActionVector){NULL, 0, 0, NULL};
+	start_vector.count = 2;
+	start_vector.capacity = 2;
+	actions[1] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
+	edges[1].actions = (OnibiGActionVector){actions + 1, 1, 1, NULL};
+    }
+    else if (scenario == rb_intern("nullable_completed_read")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] = onibi_nullable_diagnostic_action(ONIBI_GA_NULL_STOP, 0, 0);
+	actions[2] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 3, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_valid_nested")) {
+	view.capture_count = 2;
+	view.counter_count = 4;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 2, 0);
+	actions[2] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 2, 1);
+	actions[3] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
+	actions[4] = onibi_nullable_diagnostic_action(ONIBI_GA_NULL_STOP, 2, 0);
+	actions[5] = onibi_nullable_diagnostic_action(ONIBI_GA_NULL_STOP, 0, 0);
+	starts[0].actions = (OnibiGActionVector){actions, 6, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_valid_repeated")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[1] = onibi_nullable_diagnostic_action(ONIBI_GA_NULL_STOP, 0, 0);
+	actions[2] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	actions[3] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
+	edges[0].actions = (OnibiGActionVector){actions, 4, 8, NULL};
+    }
+    else if (scenario == rb_intern("nullable_reachability_wrap")) {
+	view.counter_count = 2;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	starts[0].actions = (OnibiGActionVector){actions, 1, 16, NULL};
+	edges[0] = (OnibiGirEdgeEntry){0, 1, 0, {NULL, 0, 0, NULL}};
+	edges[1] = (OnibiGirEdgeEntry){0, 2, 0, {NULL, 0, 0, NULL}};
+	edges[2] = (OnibiGirEdgeEntry){0, 3, 0, {NULL, 0, 0, NULL}};
+	edge_vector.count = 3;
+    }
+    else if (scenario == rb_intern("nullable_compact_facts")) {
+	view.counter_count = ONIBI_GIR_MAX_COUNTER_COUNT;
+	actions[0] =
+	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
+	starts[0].actions = (OnibiGActionVector){actions, 1, 16, NULL};
     }
     else if (scenario == rb_intern("capture_count"))
 	view.capture_count = (long)ONIBI_GIR_MAX_CAPTURE_COUNT + 1;
@@ -542,12 +670,14 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	rb_raise(rb_eArgError, "unknown GIR verifier diagnostic");
     }
 
-    onibi_gir_verify(&view);
+    size_t nullable_fact_words = onibi_gir_verify(&view);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("capture_slot")),
 		 UINT2NUM(actions[0].slot));
     rb_hash_aset(result, ID2SYM(rb_intern("counter_slot")),
 		 UINT2NUM(actions[1].slot));
+    rb_hash_aset(result, ID2SYM(rb_intern("nullable_fact_words")),
+		 SIZET2NUM(nullable_fact_words));
     return result;
 }
 

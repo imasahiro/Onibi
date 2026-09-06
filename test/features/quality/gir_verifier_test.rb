@@ -18,6 +18,14 @@ class GirVerifierTest < Minitest::Test
     subprogram_reference: "subprogram reference is invalid",
     semantic_capture_reference: "semantic capture reference is invalid",
     repeat_progress: "repeat progress is invalid",
+    nullable_owner_range: "nullable owner range is invalid",
+    nullable_owner_overlap: "nullable owner intervals overlap",
+    nullable_owner_wrong_base: "nullable owner base is invalid",
+    nullable_counter_alias: "counter slot is invalid",
+    nullable_progress_alias: "repeat progress aliases nullable owner",
+    nullable_uninitialized_all: "nullable owner is not initialized",
+    nullable_uninitialized_one_path: "nullable owner is not initialized",
+    nullable_completed_read: "nullable owner is not initialized",
     start_edge: "start edge is invalid",
     accept_state: "accept state has an outgoing edge",
     lookaround_subprogram: "lookaround subprogram is invalid",
@@ -82,6 +90,33 @@ class GirVerifierTest < Minitest::Test
     assert_equal "counter value exceeds the GIR operand limit", error.message
   end
 
+  def test_valid_nested_nullable_owner_flow_passes
+    result = verifier_diagnostic(:nullable_valid_nested)
+
+    assert_equal 0, result.fetch(:capture_slot)
+  end
+
+  def test_valid_repeated_nullable_owner_flow_passes
+    result = verifier_diagnostic(:nullable_valid_repeated)
+
+    assert_equal 0, result.fetch(:capture_slot)
+  end
+
+  def test_nullable_reachability_worklist_wrap_stays_bounded
+    result = verifier_diagnostic(:nullable_reachability_wrap)
+
+    assert_equal 1, result.fetch(:nullable_fact_words)
+  end
+
+  def test_nullable_fact_width_uses_owner_count
+    result = verifier_diagnostic(:nullable_compact_facts)
+
+    assert_equal 1, result.fetch(:nullable_fact_words)
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
+    assert_includes source, "nullable_owner_count + bit_count - 1U"
+    refute_match(/nullable_word_count\s*=\s*\(counter_count/, source)
+  end
+
   def test_verification_precedes_classification_optimization_and_publication
     source = File.read(File.join(PROJECT_ROOT, "ext/onibi/compiler.c"))
     compile = source[/static VALUE\nonibi_compiler_compile_body.*?^}/m]
@@ -118,15 +153,26 @@ class GirVerifierTest < Minitest::Test
 
   def test_verifier_uses_owned_indexes_without_full_vector_rescans
     source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
+    nullable = source[/static void
+onibi_gir_nullable_validate_all_paths.*?^}/m]
 
     assert_includes source, "onibi_gir_verify_edge_index_insert"
     assert_includes source, "physical_subprogram_references"
     refute_includes source, "semantic_subprogram_references"
     assert_includes source, "progress_slot_states"
+    assert_includes source, "onibi_gir_nullable_build_index"
+    assert_includes source, "nullable_outgoing_heads"
+    assert_includes source, "nullable_incoming_heads"
+    assert_includes source, "worklist"
     assert_includes source, "rb_ensure(onibi_gir_verify_body"
     assert_includes source, "onibi_allocation_owner_cleanup"
     refute_includes source, "onibi_gir_state_references_subprogram"
     refute_includes source, "onibi_gir_progress_slot_p"
+    refute_nil nullable
+    assert_includes nullable, "nullable reachability queue is too large"
+    assert_includes nullable, "nullable worklist is too large"
+    refute_match(/for \(size_t state = 0; state < state_count; state\+\+\).*?
+                 view->edges->count/mx, nullable)
   end
 
   def test_progress_slot_owner_cleans_up_after_verifier_failure
@@ -139,7 +185,9 @@ class GirVerifierTest < Minitest::Test
 
   def test_production_gir_variants_pass_verification
     patterns = [
-      "a", "(a)", "a{2,3}", "(a)\\1", "(?<x>a)\\g<x>",
+      "a", "(a)", "a{2,3}", "(a?){9}", "(?:(a?){2}){2}",
+      "(?:(a?|b?)){9}",
+      "(a)\\1", "(?<x>a)\\g<x>",
       "(?>a)", "(?~a)", "(?=a)b", "(a)(?(1)b|c)"
     ]
 
