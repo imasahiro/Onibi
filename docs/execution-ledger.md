@@ -14,20 +14,31 @@
 | TASK-24 | R-02 | TASK-21, TASK-22, TASK-23 | sol/xhigh | accepted | docs/gir.md; compiler.c, diagnostics.c, onibi_common.c, onibi_init.c, onibi_ir.h, rseq.c, rseq_runtime.c; physical verifier tests | Ruby 4 clean warning build; 74 runs/1515 assertions passed; broader syntax 192 runs/843 assertions with 2 confirmed baseline failures |
 | TASK-25 | P-05, P-06, P-07, P-08 | TASK-24 | terra/high | accepted | compiler, GIR, RSeq, diagnostics; RSeq lowering scale tests | Ruby 4 clean warning build; 37 runs/1387 assertions passed; targeted RuboCop passed |
 | TASK-30 | A-07, A-08, P-03 | TASK-21, TASK-23 | sol/xhigh | accepted | exec_dynamic.c, match.c, onibi_common.c, onibi_init.c; semantic state tests | clean warning build; 17 runs/418 assertions passed; future executor matrix retains 2 expected failures |
-| TASK-31 | A-05, A-09 | TASK-30 | sol/high | pending | — | — |
-| TASK-32 | A-06, A-07, P-02, P-03 | TASK-30 | sol/high | pending | — | — |
+| TASK-31 | A-05, A-09 | TASK-30, TASK-31J | root gate | WIP checkpoint 29ad58dc; split; not accepted | compiler, GIR, NFA, RSeq, parser, executor, focused tests; docs/task-31-plan.md | root reconfirmed: build with 5 warnings; semantic 36/4983 pass; quality 71/576: 8 failures, 1 error; UTF-8 capture defect and resource risks remain |
+| TASK-31A | A-05 | TASK-30 | sol/high | accepted tests-only; known failure retained | test/features/compatibility/tagged_nullable_utf8_regression_test.rb | root: 8 runs/104 assertions; 7 pass; ^(あ??){2}x on あx gives [0,3], MRI [3,3]; native TAGGED only |
+| TASK-31B | A-05, A-08 | TASK-31A | sol/high | pending: nullable-action contract | — | — |
+| TASK-31C | A-05, E-01 | TASK-31B | sol/high | pending: encoding-dependent repeat lowering | — | — |
+| TASK-31P | A-03, A-05 | TASK-31A | sol/high | pending: fixed-interval parser acceptance | — | — |
+| TASK-31D | A-04, A-05 | TASK-31B, TASK-31C, TASK-31P | luna/medium | pending: epsilon-path invariant tests | — | — |
+| TASK-31E | R-03, R-04 | TASK-31B, TASK-31D | luna/high | pending: GIR nullable-action verifier | — | — |
+| TASK-31F | R-02, R-04 | TASK-31E | luna/high | pending: physical nullable-action verifier | — | — |
+| TASK-31G | A-07, A-08 | TASK-31B, TASK-31F | sol/high | pending: assertion event rollback | — | — |
+| TASK-31H | A-05, A-09 | TASK-31C, TASK-31D, TASK-31G | sol/high | pending: ordered frontier acceptance | — | — |
+| TASK-31I | A-09, P-03 | TASK-31H | luna/high | pending: order/event resource bounds | — | — |
+| TASK-31J | A-05, A-09 | TASK-31A, TASK-31B, TASK-31C, TASK-31P, TASK-31D, TASK-31E, TASK-31F, TASK-31G, TASK-31H, TASK-31I | root | pending: original TASK-31 integration gate | — | — |
+| TASK-32 | A-06, A-07, P-02, P-03 | TASK-30 | astra/high | pending | — | — |
 | TASK-33 | P-02, A-09 | TASK-31, TASK-32 | luna/high | pending | — | — |
 | TASK-34 | P-01 | TASK-31, TASK-32 | luna/high | pending | — | — |
-| TASK-40 | E-03, E-04 | TASK-31 | sol/high | pending | — | — |
-| TASK-41 | API-02 | TASK-30, TASK-40 | sol/high | pending | — | — |
-| TASK-42 | API-01, API-02 | TASK-41 | sol/high | pending | — | — |
+| TASK-40 | E-03, E-04 | TASK-31 | astra/high | pending | — | — |
+| TASK-41 | API-02 | TASK-30, TASK-40 | astra/high | pending | — | — |
+| TASK-42 | API-01, API-02 | TASK-41 | astra/high | pending | — | — |
 | TASK-43 | M-02, M-03 | TASK-24, TASK-31, TASK-32 | luna/medium | pending | — | — |
-| TASK-50 | API-03 | TASK-20, TASK-31, TASK-32 | sol/high | pending | — | — |
-| TASK-51 | P-04, P-05 | TASK-22, TASK-50 | sol/high | pending | — | — |
+| TASK-50 | API-03 | TASK-20, TASK-31, TASK-32 | astra/high | pending | — | — |
+| TASK-51 | P-04, P-05 | TASK-22, TASK-50 | astra/high | pending | — | — |
 | TASK-52 | P-10 | none | luna/medium | pending | — | — |
 | TASK-53 | C-01, C-02, C-03, C-04, C-05, C-06, C-07, C-08 | TASK-25 | luna/medium | pending | — | — |
 | TASK-54 | C-03, C-04, C-05 | none | luna/medium | pending | — | — |
-| TASK-55 | RC-01, M-04 | TASK-42, TASK-53 | sol/high | pending | — | — |
+| TASK-55 | RC-01, M-04 | TASK-42, TASK-53 | astra/high | pending | — | — |
 
 TASK-15 route change: two root audit rejections found unowned allocations during non-local exits.
 TASK-20 route change: two root audit rejections found verifier performance and canonical action conflicts.
@@ -35,3 +46,8 @@ TASK-22 route change: two root audit rejections found runtime case-fold architec
 TASK-24 route change: Luna was unavailable; two root audit rejects required Sol/xhigh escalation.
 TASK-25 route change: Luna is unavailable in the collaboration runtime; Terra/high is the closest serialization route.
 TASK-30 route change: two root audit rejects found unsafe dedup bounds and full-state key scans.
+TASK-31 route change: two root audit rejects found unstable nested frontiers and an unimplemented public counter path.
+TASK-31 route change: Sol/xhigh reached its usage limit; Terra/xhigh continues the same escalation.
+TASK-31 route change: user requested available GPT-6 Astra; repeated semantic audit failures retain xhigh effort.
+Pending Sol routes now use Astra at the same effort, as requested by the user; Luna routes stay unchanged.
+TASK-31 split: user requested smaller tasks; bounded semantic tasks return to Sol/high; TASK-31A uses Sol/high because Luna is not listed by the collaboration tool.
