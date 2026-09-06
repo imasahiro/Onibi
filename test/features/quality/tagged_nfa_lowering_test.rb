@@ -10,13 +10,6 @@ class TaggedNfaLoweringTest < Minitest::Test
     Onibi::Regexp.new(pattern).send(:__onibi_nfa_diagnostics__)
   end
 
-  def first_consuming_value(graph, edge)
-    consume = graph[:edges].find do |candidate|
-      candidate[:from] == edge[:to] && candidate[:kind] == :consume
-    end
-    graph[:states].find { |state| state[:id] == consume[:to] }[:value]
-  end
-
   def eliminated(pattern)
     nfa(pattern).fetch(:eliminated)
   end
@@ -26,8 +19,70 @@ class TaggedNfaLoweringTest < Minitest::Test
     edges.map { |edge| values.fetch(edge[:to]) }
   end
 
+  def ordered_entry_paths(graph, terminal_kinds: [:consume])
+    states = graph[:states].to_h { |state| [state[:id], state] }
+    paths = []
+    walk = lambda do |from, actions, visited|
+      graph[:edges].each do |edge|
+        next unless edge[:from] == from
+
+        destination = states.fetch(edge[:to])
+        combined = actions + edge[:actions]
+        if edge[:kind] == :consume
+          next unless terminal_kinds.include?(destination[:kind])
+
+          paths << { state: destination, actions: combined }
+        elsif terminal_kinds.include?(destination[:kind])
+          paths << { state: destination, actions: combined }
+        elsif !visited.include?(destination[:id])
+          walk.call(destination[:id], combined, visited | [destination[:id]])
+        end
+      end
+    end
+    walk.call(-1, [], [-1])
+    paths
+  end
+
+  def epsilon_path_actions(graph, start, target)
+    paths = []
+    walk = lambda do |from, actions, visited|
+      graph[:edges].each do |edge|
+        next unless edge[:from] == from && edge[:kind] == :epsilon
+
+        combined = actions + edge[:actions]
+        if edge[:to] == target
+          paths << combined
+        elsif !visited.include?(edge[:to])
+          walk.call(edge[:to], combined, visited | [edge[:to]])
+        end
+      end
+    end
+    walk.call(start, [], [start])
+    paths
+  end
+
+  def action_free_cycle_with_epsilon_and_consume?(graph)
+    walk = lambda do |state, active, edge_kinds|
+      graph[:edges].any? do |edge|
+        next false unless edge[:from] == state && edge[:actions].empty?
+
+        next_kinds = edge_kinds + [edge[:kind]]
+        cycle_start = active.index(edge[:to])
+        if cycle_start
+          cycle_kinds = next_kinds.drop(cycle_start)
+          next cycle_kinds.include?(:epsilon) && cycle_kinds.include?(:consume)
+        end
+        next false if active.include?(edge[:to])
+
+        walk.call(edge[:to], active + [edge[:to]], next_kinds)
+      end
+    end
+    walk.call(-1, [-1], [])
+  end
+
   def test_capture_actions_are_epsilon_transitions_before_elimination
-    edges = nfa("(a)")[:edges]
+    graph = nfa("(a)")
+    edges = graph[:edges]
     open_edge = edges.find { |edge| edge[:actions] == [:capture_open] }
     close_edge = edges.find { |edge| edge[:actions] == [:capture_close] }
 
@@ -35,31 +90,36 @@ class TaggedNfaLoweringTest < Minitest::Test
     refute_nil close_edge
     assert_equal :epsilon, open_edge[:kind]
     assert_equal :epsilon, close_edge[:kind]
-    assert_equal(-1, open_edge[:from])
+
+    entry = ordered_entry_paths(graph).fetch(0)
+    assert_equal [:capture_open], entry[:actions]
+    assert_equal [:capture_close],
+                 epsilon_path_actions(graph, entry[:state][:id], graph[:accept]).fetch(0)
   end
 
   def test_assertion_is_an_ordered_epsilon_transition
-    edges = nfa("^a")[:edges]
-    start_edge = edges.find { |edge| edge[:from] == -1 }
+    graph = nfa("^a")
+    start_edge = graph[:edges].find do |edge|
+      edge[:actions] == [:assert_position]
+    end
 
     assert_equal :epsilon, start_edge[:kind]
     assert_equal [:assert_position], start_edge[:actions]
-    assert_equal(-1, start_edge[:from])
+    assert_equal [:assert_position], ordered_entry_paths(graph).fetch(0)[:actions]
   end
 
   def test_zero_width_action_order_is_stable
-    first = nfa("(^a)")[:edges].find { |edge| edge[:from] == -1 }
-    second = nfa("(^a)")[:edges].find { |edge| edge[:from] == -1 }
+    first = ordered_entry_paths(nfa("(^a)")).fetch(0)
+    second = ordered_entry_paths(nfa("(^a)")).fetch(0)
 
     assert_equal %i[capture_open assert_position], first[:actions]
-    assert_equal first, second
+    assert_equal first[:actions], second[:actions]
   end
 
   def test_alternative_priority_is_visible_and_stable
     first = nfa("a|b")
     second = nfa("a|b")
-    starts = first[:edges].select { |edge| edge[:from] == -1 }
-    ordered_values = starts.map { |edge| first_consuming_value(first, edge) }
+    ordered_values = ordered_entry_paths(first).map { |path| path[:state][:value] }
 
     assert_equal ["a".ord, "b".ord], ordered_values
     assert_equal first[:edges], second[:edges]
@@ -71,34 +131,42 @@ class TaggedNfaLoweringTest < Minitest::Test
     star = nfa("a*")
 
     [optional, empty_group, star].each do |graph|
-      bypass = graph[:edges].find do |edge|
-        edge[:from] == -1 && edge[:to] == graph[:accept]
-      end
-      refute_nil bypass
-      assert_equal :epsilon, bypass[:kind]
-      assert_empty bypass[:actions]
+      nullable_paths = epsilon_path_actions(graph, -1, graph[:accept])
+      refute_empty nullable_paths
+      assert nullable_paths.any?(&:empty?)
     end
 
-    loop_edge = star[:edges].find do |edge|
-      edge[:from] >= 0 && edge[:kind] == :epsilon && edge[:actions].empty? &&
-        star[:states][edge[:to]][:kind] == :epsilon
-    end
-    refute_nil loop_edge
+    assert action_free_cycle_with_epsilon_and_consume?(star)
+  end
+
+  def test_nullable_cycle_requires_connected_epsilon_boundary
+    consuming_self_loop = {
+      states: [{ id: 0, kind: :consume }],
+      edges: [
+        { from: -1, to: 0, kind: :consume, actions: [] },
+        { from: 0, to: 0, kind: :consume, actions: [] }
+      ]
+    }
+    disconnected_epsilon_cycle = {
+      states: [{ id: 0, kind: :epsilon }, { id: 1, kind: :epsilon }],
+      edges: [
+        { from: 0, to: 1, kind: :epsilon, actions: [] },
+        { from: 1, to: 0, kind: :epsilon, actions: [] }
+      ]
+    }
+
+    refute action_free_cycle_with_epsilon_and_consume?(consuming_self_loop)
+    refute action_free_cycle_with_epsilon_and_consume?(disconnected_epsilon_cycle)
+    assert action_free_cycle_with_epsilon_and_consume?(nfa("a*"))
   end
 
   def test_empty_alternative_bypass_has_an_epsilon_boundary
     graph = nfa("(?:a|)b")
-    b_state = graph[:states].find { |state| state[:value] == "b".ord }
-    into_b = graph[:edges].select do |edge|
-      edge[:to] == b_state[:id] && edge[:kind] == :consume
-    end
-    bypass = graph[:edges].find do |edge|
-      edge[:from] == -1 && into_b.any? { |consume| consume[:from] == edge[:to] }
-    end
+    entries = ordered_entry_paths(graph)
+    values = entries.map { |path| path[:state][:value] }
 
-    refute_nil bypass
-    assert_equal :epsilon, bypass[:kind]
-    assert_empty bypass[:actions]
+    assert_equal ["a".ord, "b".ord], values
+    assert_empty entries.fetch(1)[:actions]
   end
 
   def test_eliminated_nullable_paths_match_mri
@@ -153,17 +221,23 @@ class TaggedNfaLoweringTest < Minitest::Test
     greedy = eliminated("(?:a|)*b")
     lazy = eliminated("(?:a|)*?b")
 
-    assert_equal ["a".ord, "b".ord],
+    assert_equal ["a".ord, "b".ord, "b".ord],
                  destination_values(greedy, greedy[:start_edges])
-    assert_equal ["b".ord, "a".ord],
+    assert_equal ["b".ord, "a".ord, "b".ord],
                  destination_values(lazy, lazy[:start_edges])
 
-    greedy_loop = greedy[:edges].find { |edge| edge[:from].zero? && edge[:to].zero? }
-    lazy_loop = lazy[:edges].find { |edge| edge[:from].zero? && edge[:to].zero? }
+    greedy_loop = greedy[:edges].find do |edge|
+      edge[:from] == edge[:to] &&
+        edge[:action_program].any? { |action| action[:op] == :null_enter }
+    end
+    lazy_loop = lazy[:edges].find do |edge|
+      edge[:from] == edge[:to] &&
+        edge[:action_program].any? { |action| action[:op] == :null_enter }
+    end
     greedy_ops = greedy_loop[:action_program].map { |action| action[:op] }
     lazy_ops = lazy_loop[:action_program].map { |action| action[:op] }
-    assert_equal [:progress], greedy_ops
-    assert_equal [:progress], lazy_ops
+    assert_equal %i[counter_increment test_counter_lt null_enter], greedy_ops
+    assert_equal %i[counter_increment test_counter_lt null_enter], lazy_ops
   end
 
   def test_duplicate_empty_paths_emit_one_first_priority_edge
@@ -198,8 +272,14 @@ class TaggedNfaLoweringTest < Minitest::Test
       edge[:action_program].map { |action| [action[:op], action[:slot]] }
     end
 
-    assert_equal [[], [[:capture_close, 1]], [[:capture_close, 3]]],
-                 programs.sort_by(&:length)
+    expected = [
+      [[:capture_open, 0], [:capture_close, 1]],
+      [[:capture_open, 2], [:capture_close, 3]],
+      [[:capture_close, 1]],
+      [[:capture_close, 3]]
+    ]
+    assert_equal expected.sort_by(&:to_s), programs.sort_by(&:to_s)
+    assert_equal programs.length, programs.uniq.length
   end
 
   def test_nullable_cycles_compile_and_match_mri
