@@ -766,6 +766,82 @@ onibi_semantic_scopes_hash(const OnibiSemanticArena *arena,
     return root < count ? nodes[root].hash : 0;
 }
 
+/* TAGGED identity excludes output-only tag history.  The semantic parts of
+ * call and scope stacks still affect future edges and therefore remain in the
+ * key.  Equality checks the complete linked state after the hash bucket
+ * matches. */
+static uint64_t
+onibi_tagged_calls_hash(const OnibiSemanticArena *arena, uint32_t root)
+{
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+    uint32_t depth = 0;
+    while (root != UINT32_MAX) {
+	if (root >= arena->call_count) return 0;
+	const OnibiCallFrame *frame = &arena->calls[root].frame;
+	hash = onibi_semantic_hash_value(hash, frame->subprogram_id);
+	hash = onibi_semantic_hash_value(hash, frame->continuation);
+	hash = onibi_semantic_hash_value(hash, frame->recursion_depth);
+	root = arena->calls[root].parent;
+	depth++;
+    }
+    return onibi_semantic_hash_value(hash, depth);
+}
+
+static int
+onibi_tagged_calls_equal(const OnibiSemanticArena *arena, uint32_t left,
+			 uint32_t right)
+{
+    while (left != UINT32_MAX && right != UINT32_MAX) {
+	if (left >= arena->call_count || right >= arena->call_count) return 0;
+	const OnibiCallFrame *a = &arena->calls[left].frame;
+	const OnibiCallFrame *b = &arena->calls[right].frame;
+	if (a->subprogram_id != b->subprogram_id ||
+	    a->continuation != b->continuation ||
+	    a->recursion_depth != b->recursion_depth)
+	    return 0;
+	left = arena->calls[left].parent;
+	right = arena->calls[right].parent;
+    }
+    return left == right;
+}
+
+static uint64_t
+onibi_tagged_scopes_hash(const OnibiSemanticScope *nodes, size_t count,
+			 uint32_t root, uint64_t domain)
+{
+    uint64_t hash =
+	onibi_semantic_hash_value(UINT64_C(0x84222325cbf29ce4), domain);
+    uint32_t depth = 0;
+    while (root != UINT32_MAX) {
+	if (root >= count) return 0;
+	const OnibiSemanticScope *scope = &nodes[root];
+	hash = onibi_semantic_hash_value(hash, scope->subprogram_id);
+	hash = onibi_semantic_hash_value(hash, (uint64_t)scope->begin);
+	hash = onibi_semantic_hash_value(hash, (uint64_t)scope->end);
+	hash = onibi_semantic_hash_value(hash, scope->flags);
+	root = scope->parent;
+	depth++;
+    }
+    return onibi_semantic_hash_value(hash, depth);
+}
+
+static int
+onibi_tagged_scopes_equal(const OnibiSemanticScope *nodes, size_t count,
+			  uint32_t left, uint32_t right)
+{
+    while (left != UINT32_MAX && right != UINT32_MAX) {
+	if (left >= count || right >= count) return 0;
+	const OnibiSemanticScope *a = &nodes[left];
+	const OnibiSemanticScope *b = &nodes[right];
+	if (a->subprogram_id != b->subprogram_id || a->begin != b->begin ||
+	    a->end != b->end || a->flags != b->flags)
+	    return 0;
+	left = a->parent;
+	right = b->parent;
+    }
+    return left == right;
+}
+
 static uint64_t
 onibi_dynamic_thread_key_hash(OnibiSemanticArena *arena,
 			      const OnibiDynamicThreadKey *key)
@@ -871,9 +947,9 @@ onibi_dynamic_key_seen(OnibiSemanticArena *arena, uint32_t state_id,
     }
 }
 
-/* TAGGED_ORDERED only keeps semantic values that can change a later edge.
- * Deferred opens, counter values, and progress values form state identity.
- * Ordinary output tags use the first path's priority. */
+/* TAGGED_ORDERED keeps every value that can change a later edge or the
+ * reported match.  Ordinary output tags and their order history use the first
+ * path's priority and do not split equivalent threads. */
 static uint64_t
 onibi_tagged_thread_key_hash(OnibiSemanticArena *arena,
 			     const OnibiDynamicThreadKey *key)
@@ -881,10 +957,25 @@ onibi_tagged_thread_key_hash(OnibiSemanticArena *arena,
     arena->key_hash_count++;
     uint64_t hash =
 	onibi_semantic_hash_value(UINT64_C(0xcbf29ce484222325), key->state_id);
+    hash =
+	onibi_semantic_hash_value(hash, (uint64_t)key->semantic.reported_start);
     hash = onibi_semantic_hash_value(hash, key->semantic.counters.hash);
     hash =
 	onibi_semantic_hash_value(hash, key->semantic.semantic_captures.hash);
-    return onibi_semantic_hash_value(hash, key->semantic.progress.hash);
+    hash = onibi_semantic_hash_value(hash, key->semantic.progress.hash);
+    hash = onibi_semantic_hash_value(hash, key->semantic.calls.depth);
+    hash = onibi_semantic_hash_value(
+	hash, onibi_tagged_calls_hash(arena, key->semantic.calls.root));
+    hash = onibi_semantic_hash_value(hash, key->semantic.atomic.depth);
+    hash = onibi_semantic_hash_value(
+	hash, onibi_tagged_scopes_hash(arena->atomic, arena->atomic_count,
+				       key->semantic.atomic.root,
+				       ONIBI_SEMANTIC_HASH_ATOMIC));
+    hash = onibi_semantic_hash_value(hash, key->semantic.absence.depth);
+    return onibi_semantic_hash_value(
+	hash, onibi_tagged_scopes_hash(arena->absence, arena->absence_count,
+				       key->semantic.absence.root,
+				       ONIBI_SEMANTIC_HASH_ABSENCE));
 }
 
 static int
@@ -895,8 +986,13 @@ onibi_tagged_thread_key_equal(OnibiSemanticArena *arena,
     const OnibiSemanticState *a = &left->semantic;
     const OnibiSemanticState *b = &right->semantic;
     return left->hash == right->hash && left->state_id == right->state_id &&
+	   a->reported_start == b->reported_start &&
+	   a->semantic_captures.slot_count == b->semantic_captures.slot_count &&
 	   a->counters.slot_count == b->counters.slot_count &&
 	   a->progress.slot_count == b->progress.slot_count &&
+	   a->calls.depth == b->calls.depth &&
+	   a->atomic.depth == b->atomic.depth &&
+	   a->absence.depth == b->absence.depth &&
 	   onibi_semantic_capture_file_equal(arena, &a->semantic_captures,
 					     &b->semantic_captures) &&
 	   onibi_semantic_register_file_equal(
@@ -904,7 +1000,12 @@ onibi_tagged_thread_key_equal(OnibiSemanticArena *arena,
 	       b->counters.hash, a->counters.slot_count, 0) &&
 	   onibi_semantic_register_file_equal(
 	       arena, a->progress.root, b->progress.root, a->progress.hash,
-	       b->progress.hash, a->progress.slot_count, -1);
+	       b->progress.hash, a->progress.slot_count, -1) &&
+	   onibi_tagged_calls_equal(arena, a->calls.root, b->calls.root) &&
+	   onibi_tagged_scopes_equal(arena->atomic, arena->atomic_count,
+				     a->atomic.root, b->atomic.root) &&
+	   onibi_tagged_scopes_equal(arena->absence, arena->absence_count,
+				     a->absence.root, b->absence.root);
 }
 
 static void
@@ -949,6 +1050,10 @@ static void onibi_tagged_frontier_reset(OnibiFrontier *frontier,
 static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
 				     OnibiSemanticArena *arena, uint32_t state,
 				     const OnibiSemanticState *semantic);
+static void onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
+					  const OnibiSemanticState *accepted,
+					  long *captures,
+					  uint32_t capture_slots);
 
 static OnibiActionResult
 onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
@@ -1656,6 +1761,134 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	return result;
     }
 
+    if (scenario == rb_intern("tagged_identity")) {
+	onibi_semantic_live_captures_begin(&arena, 1);
+	onibi_semantic_live_capture_add(&arena, 0);
+	predecessor = onibi_semantic_state_initial(&arena, 3, 2, 1, 1);
+	OnibiSemanticState variants[9];
+	variants[0] = predecessor;
+	variants[1] = predecessor;
+	variants[1].reported_start++;
+	variants[2] = predecessor;
+	onibi_semantic_capture_write(&arena, &variants[2].semantic_captures, 0,
+				     9);
+	variants[3] = predecessor;
+	onibi_semantic_counter_write(&arena, &variants[3].counters, 0, 1);
+	variants[4] = predecessor;
+	onibi_semantic_progress_write(&arena, &variants[4].progress, 0, 9);
+	variants[5] = predecessor;
+	OnibiCallFrame call = {1, 2, UINT32_MAX, 1, UINT32_MAX};
+	variants[5].calls.root =
+	    onibi_semantic_call_push(&arena, UINT32_MAX, &call);
+	variants[5].calls.depth = 1;
+	variants[6] = predecessor;
+	variants[6].atomic.root = onibi_semantic_scope_push(
+	    &arena, &arena.atomic, &arena.atomic_count, &arena.atomic_capacity,
+	    UINT32_MAX, 1, 2, 3, UINT32_MAX, 4, ONIBI_SEMANTIC_HASH_ATOMIC);
+	variants[6].atomic.depth = 1;
+	variants[7] = predecessor;
+	variants[7].absence.root = onibi_semantic_scope_push(
+	    &arena, &arena.absence, &arena.absence_count,
+	    &arena.absence_capacity, UINT32_MAX, 1, 2, 3, UINT32_MAX, 4,
+	    ONIBI_SEMANTIC_HASH_ABSENCE);
+	variants[7].absence.depth = 1;
+	variants[8] = predecessor;
+	variants[8].tag_history =
+	    onibi_semantic_tag_append(&arena, UINT32_MAX, 2, 9);
+	OnibiFrontier frontier = {0};
+	onibi_tagged_frontier_reset(&frontier, 16);
+	VALUE distinctions = rb_hash_new();
+	VALUE hash_distinctions = rb_hash_new();
+	const char *names[] = {"reported_start", "captures", "counters",
+			       "progress",	 "calls",    "atomic",
+			       "absence"};
+	for (size_t i = 1; i <= 7; i++) {
+	    OnibiDynamicThreadKey base_key = {7, 0, variants[0], 0};
+	    OnibiDynamicThreadKey variant_key = {7, 0, variants[i], 0};
+	    base_key.hash = onibi_tagged_thread_key_hash(&arena, &base_key);
+	    variant_key.hash =
+		onibi_tagged_thread_key_hash(&arena, &variant_key);
+	    rb_hash_aset(
+		distinctions, ID2SYM(rb_intern(names[i - 1])),
+		onibi_tagged_thread_key_equal(&arena, &base_key, &variant_key)
+		    ? Qfalse
+		    : Qtrue);
+	    rb_hash_aset(hash_distinctions, ID2SYM(rb_intern(names[i - 1])),
+			 base_key.hash != variant_key.hash ? Qtrue : Qfalse);
+	}
+	int base_added =
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[0]);
+	int state_added =
+	    onibi_tagged_frontier_add(&frontier, &arena, 8, &variants[0]);
+	for (size_t i = 2; i <= 7; i++)
+	    (void)onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[i]);
+	int output_added =
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[8]);
+	rb_hash_aset(result, ID2SYM(rb_intern("distinguishes")), distinctions);
+	rb_hash_aset(result, ID2SYM(rb_intern("hash_distinguishes")),
+		     hash_distinctions);
+	rb_hash_aset(result, ID2SYM(rb_intern("base_added")),
+		     base_added ? Qtrue : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("state_added")),
+		     state_added ? Qtrue : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("frontier_count")),
+		     SIZET2NUM(frontier.count));
+	rb_hash_aset(result, ID2SYM(rb_intern("output_history_merged")),
+		     output_added ? Qfalse : Qtrue);
+	rb_hash_aset(result, ID2SYM(rb_intern("key_capacity")),
+		     SIZET2NUM(frontier.key_capacity));
+	ruby_xfree(frontier.states);
+	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.hashes);
+	ruby_xfree(frontier.key_buckets);
+	ruby_xfree(frontier.membership);
+	onibi_semantic_arena_release(&arena);
+	return result;
+    }
+
+    if (scenario == rb_intern("tagged_output_priority")) {
+	onibi_semantic_live_captures_begin(&arena, 2);
+	predecessor = onibi_semantic_state_initial(&arena, 0, 4, 0, 0);
+	OnibiSemanticState first = predecessor;
+	OnibiSemanticState second = predecessor;
+	first.tag_history = onibi_semantic_tag_append(&arena, UINT32_MAX, 0, 0);
+	second.tag_history =
+	    onibi_semantic_tag_append(&arena, UINT32_MAX, 2, 1);
+	OnibiFrontier frontier = {0};
+	onibi_tagged_frontier_reset(&frontier, 8);
+	int first_added =
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
+	int second_added =
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second);
+	long captures[4];
+	if (frontier.count == 0)
+	    rb_raise(rb_eRuntimeError,
+		     "TAGGED output diagnostic lost its thread");
+	onibi_tagged_materialize_tags(&arena, &frontier.semantics[0], captures,
+				      4);
+	VALUE capture_ranges = rb_ary_new_capa(4);
+	for (size_t i = 0; i < 4; i++)
+	    rb_ary_push(capture_ranges, LONG2NUM(captures[i]));
+	rb_hash_aset(result, ID2SYM(rb_intern("frontier_count")),
+		     SIZET2NUM(frontier.count));
+	rb_hash_aset(result, ID2SYM(rb_intern("first_path_added")),
+		     first_added ? Qtrue : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("second_path_merged")),
+		     second_added ? Qfalse : Qtrue);
+	rb_hash_aset(result, ID2SYM(rb_intern("captures")), capture_ranges);
+	rb_hash_aset(result, ID2SYM(rb_intern("first_capture")),
+		     LONG2NUM(captures[0]));
+	rb_hash_aset(result, ID2SYM(rb_intern("second_capture")),
+		     LONG2NUM(captures[2]));
+	ruby_xfree(frontier.states);
+	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.hashes);
+	ruby_xfree(frontier.key_buckets);
+	ruby_xfree(frontier.membership);
+	onibi_semantic_arena_release(&arena);
+	return result;
+    }
+
     if (scenario == rb_intern("assertion_transactions")) {
 	OnibiAssertionDiagnostic failed_trial =
 	    onibi_assertion_event_diagnostic(ONIBI_ASSERT_DIAG_FAILED_TRIAL);
@@ -2114,15 +2347,16 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	    captures[event->slot] = event->position;
 	history = event->parent;
     }
-    /* Ordinary captures come from the accepted path. An unscoped MRI
-     * capture entry also sees earlier open events in conceptual edge order.
-     * This reduction does not change any frontier thread or its history. */
+    /* Unscoped capture entries use the accepted ordered path to preserve
+     * MRI's nullable-repeat boundary behavior. */
     uint32_t *latest = ruby_xmalloc((size_t)capture_slots * sizeof(*latest));
     for (uint32_t i = 0; i < capture_slots; i++)
 	latest[i] = UINT32_MAX;
     for (size_t i = 0; i < arena->capture_event_count; i++) {
 	const OnibiUnscopedCaptureEvent *event = &arena->capture_events[i];
-	if (event->slot >= capture_slots || event->order == UINT32_MAX ||
+	if (event->slot >= capture_slots ||
+	    onibi_semantic_capture_slot_live(arena, event->slot) ||
+	    event->order == UINT32_MAX ||
 	    onibi_capture_order_compare(arena, event->order, accepted->order) >
 		0)
 	    continue;

@@ -138,6 +138,28 @@ class SemanticStateTest < Minitest::Test
     assert info[:state_rollback]
   end
 
+  def test_tagged_frontier_key_keeps_future_observable_state_distinct
+    info = diagnostic(:tagged_identity)
+
+    assert info[:distinguishes].values.all?
+    assert info[:hash_distinguishes].values.all?
+    assert info[:base_added]
+    assert info[:state_added]
+    assert_equal 8, info[:frontier_count]
+    assert info[:output_history_merged]
+  end
+
+  def test_tagged_frontier_keeps_the_first_output_only_history
+    info = diagnostic(:tagged_output_priority)
+
+    assert_equal 1, info[:frontier_count]
+    assert info[:first_path_added]
+    assert info[:second_path_merged]
+    assert_equal [0, -1, -1, -1], info[:captures]
+    assert_equal 0, info[:first_capture]
+    assert_equal(-1, info[:second_capture])
+  end
+
   def test_assertion_trials_rollback_capture_events
     info = diagnostic(:assertion_transactions)
 
