@@ -201,6 +201,10 @@ class TaggedOrderedDifferentialTest < Minitest::Test
     end
   end
 
+  def test_nested_duplicate_frontier_keeps_capture_event_alternatives
+    assert_native_differential("^(?:(a?){2}){2}a$", "a")
+  end
+
   def test_assertions_keep_deferred_capture_state_local
     {
       "^(?=((a?){9}a))a" => %w[a aa ab],

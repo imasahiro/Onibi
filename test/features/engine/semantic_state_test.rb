@@ -160,6 +160,17 @@ class SemanticStateTest < Minitest::Test
     assert_equal(-1, info[:second_capture])
   end
 
+  def test_tagged_materialization_requires_accepted_path_lineage
+    info = diagnostic(:tagged_event_lineage)
+
+    assert info[:sibling_orders]
+    assert info[:accepted_has_no_tag_history]
+    assert info[:rejected_capture_unpublished]
+    assert_equal(-1, info[:capture])
+    assert info[:duplicate_owner_kept]
+    assert_equal 22, info[:merged_capture]
+  end
+
   def test_assertion_trials_rollback_capture_events
     info = diagnostic(:assertion_transactions)
 

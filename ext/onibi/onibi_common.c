@@ -195,6 +195,7 @@ typedef struct OnibiSemanticState OnibiSemanticState;
 typedef struct {
     uint32_t *states;
     OnibiSemanticState *semantics;
+    uint32_t *failure_owners;
     uint64_t *hashes;
     uint32_t *key_buckets;
     unsigned char *membership;
@@ -269,6 +270,8 @@ struct OnibiSemanticState {
     OnibiAtomicState atomic;
     OnibiAbsenceState absence;
     OnibiTagEventId tag_history;
+    uint32_t capture_event_history;
+    uint32_t capture_event_dependency;
 };
 typedef struct {
     uint32_t state_id;
@@ -290,9 +293,19 @@ typedef struct {
     uint32_t depth, label;
 } OnibiCaptureOrderNode;
 typedef struct {
+    uint32_t parent;
     uint32_t order, slot;
     OnigPosition position;
 } OnibiUnscopedCaptureEvent;
+typedef struct {
+    uint32_t history;
+    uint32_t next;
+} OnibiCaptureEventRoot;
+typedef struct {
+    uint32_t event_roots;
+    uint32_t resolved_owner;
+    uint8_t resolved;
+} OnibiCaptureEventOwner;
 typedef struct {
     OnibiCaptureOrderNode *order_nodes;
     size_t order_count, order_capacity;
@@ -300,6 +313,10 @@ typedef struct {
     size_t order_bucket_capacity;
     OnibiUnscopedCaptureEvent *capture_events;
     size_t capture_event_count, capture_event_capacity;
+    OnibiCaptureEventRoot *capture_event_roots;
+    size_t capture_event_root_count, capture_event_root_capacity;
+    OnibiCaptureEventOwner *capture_event_owners;
+    size_t capture_event_owner_count, capture_event_owner_capacity;
     OnibiSemanticRegisterDelta *registers;
     size_t register_count, register_capacity;
     OnibiSemanticTagEvent *tags;

@@ -222,6 +222,8 @@ onibi_semantic_arena_reset(OnibiSemanticArena *arena)
 {
     arena->order_count = 0;
     arena->capture_event_count = 0;
+    arena->capture_event_root_count = 0;
+    arena->capture_event_owner_count = 0;
     if (arena->order_buckets)
 	memset(arena->order_buckets, 0,
 	       arena->order_bucket_capacity * sizeof(uint32_t));
@@ -247,6 +249,8 @@ onibi_semantic_arena_release(OnibiSemanticArena *arena)
     ruby_xfree(arena->order_nodes);
     ruby_xfree(arena->order_buckets);
     ruby_xfree(arena->capture_events);
+    ruby_xfree(arena->capture_event_roots);
+    ruby_xfree(arena->capture_event_owners);
     ruby_xfree(arena->registers);
     ruby_xfree(arena->tags);
     ruby_xfree(arena->calls);
@@ -335,6 +339,21 @@ onibi_capture_order_append(OnibiSemanticArena *arena, uint32_t parent,
 }
 
 static int
+onibi_capture_order_is_ancestor(const OnibiSemanticArena *arena,
+				uint32_t ancestor, uint32_t descendant)
+{
+    if (ancestor == UINT32_MAX)
+	return descendant == UINT32_MAX || descendant < arena->order_count;
+    if (ancestor >= arena->order_count) return 0;
+    while (descendant != UINT32_MAX) {
+	if (descendant >= arena->order_count) return 0;
+	if (descendant == ancestor) return 1;
+	descendant = arena->order_nodes[descendant].parent[0];
+    }
+    return 0;
+}
+
+static int
 onibi_capture_order_compare(const OnibiSemanticArena *arena, uint32_t left,
 			    uint32_t right)
 {
@@ -342,7 +361,8 @@ onibi_capture_order_compare(const OnibiSemanticArena *arena, uint32_t left,
     if (left == UINT32_MAX) return -1;
     if (right == UINT32_MAX) return 1;
     uint32_t a = left, b = right;
-    uint32_t da = arena->order_nodes[a].depth, db = arena->order_nodes[b].depth;
+    uint32_t da = arena->order_nodes[a].depth;
+    uint32_t db = arena->order_nodes[b].depth;
     uint32_t difference = da > db ? da - db : db - da;
     for (unsigned i = 0; difference; i++, difference >>= 1U) {
 	if (!(difference & 1U)) continue;
@@ -353,8 +373,8 @@ onibi_capture_order_compare(const OnibiSemanticArena *arena, uint32_t left,
     }
     if (a == b) return da < db ? -1 : 1;
     for (int i = 31; i >= 0; i--) {
-	uint32_t pa = arena->order_nodes[a].parent[i],
-		 pb = arena->order_nodes[b].parent[i];
+	uint32_t pa = arena->order_nodes[a].parent[i];
+	uint32_t pb = arena->order_nodes[b].parent[i];
 	if (pa != pb) {
 	    a = pa;
 	    b = pb;
@@ -475,6 +495,8 @@ onibi_semantic_state_initial(const OnibiSemanticArena *arena,
     state.atomic = (OnibiAtomicState){UINT32_MAX, 0};
     state.absence = (OnibiAbsenceState){UINT32_MAX, 0};
     state.tag_history = UINT32_MAX;
+    state.capture_event_history = UINT32_MAX;
+    state.capture_event_dependency = UINT32_MAX;
     return state;
 }
 
@@ -571,6 +593,83 @@ onibi_semantic_tag_append(OnibiSemanticArena *arena, OnibiTagEventId parent,
     arena->tags[id] = (OnibiSemanticTagEvent){parent, slot, position, hash};
     onibi_diagnostics.tag_events++;
     return id;
+}
+
+static uint32_t
+onibi_semantic_capture_event_append(OnibiSemanticArena *arena, uint32_t parent,
+				    uint32_t order, uint32_t slot,
+				    OnigPosition position)
+{
+    arena->capture_events = onibi_semantic_arena_reserve(
+	arena->capture_events, &arena->capture_event_capacity,
+	arena->capture_event_count, sizeof(*arena->capture_events));
+    if (arena->capture_event_count >= UINT32_MAX) rb_memerror();
+    uint32_t id = (uint32_t)arena->capture_event_count++;
+    arena->capture_events[id] =
+	(OnibiUnscopedCaptureEvent){parent, order, slot, position};
+    return id;
+}
+
+static uint32_t
+onibi_semantic_capture_event_root_append(OnibiSemanticArena *arena,
+					 uint32_t history, uint32_t next)
+{
+    arena->capture_event_roots = onibi_semantic_arena_reserve(
+	arena->capture_event_roots, &arena->capture_event_root_capacity,
+	arena->capture_event_root_count, sizeof(*arena->capture_event_roots));
+    if (arena->capture_event_root_count >= UINT32_MAX) rb_memerror();
+    uint32_t id = (uint32_t)arena->capture_event_root_count++;
+    arena->capture_event_roots[id] = (OnibiCaptureEventRoot){history, next};
+    return id;
+}
+
+static uint32_t
+onibi_semantic_capture_event_owner_append(OnibiSemanticArena *arena,
+					  uint32_t event_history)
+{
+    arena->capture_event_owners = onibi_semantic_arena_reserve(
+	arena->capture_event_owners, &arena->capture_event_owner_capacity,
+	arena->capture_event_owner_count, sizeof(*arena->capture_event_owners));
+    if (arena->capture_event_owner_count >= UINT32_MAX) rb_memerror();
+    uint32_t id = (uint32_t)arena->capture_event_owner_count++;
+    uint32_t roots = event_history == UINT32_MAX
+			 ? UINT32_MAX
+			 : onibi_semantic_capture_event_root_append(
+			       arena, event_history, UINT32_MAX);
+    arena->capture_event_owners[id] =
+	(OnibiCaptureEventOwner){roots, UINT32_MAX, 0};
+    return id;
+}
+
+static int
+onibi_semantic_capture_event_owner_add(OnibiSemanticArena *arena,
+				       uint32_t owner, uint32_t history)
+{
+    if (history == UINT32_MAX || owner >= arena->capture_event_owner_count)
+	return 0;
+    uint32_t roots = arena->capture_event_owners[owner].event_roots;
+    if (roots != UINT32_MAX &&
+	arena->capture_event_roots[roots].history == history)
+	return 0;
+    arena->capture_event_owners[owner].event_roots =
+	onibi_semantic_capture_event_root_append(arena, history, roots);
+    return 1;
+}
+
+static int
+onibi_semantic_capture_event_owner_resolve(OnibiSemanticArena *arena,
+					   uint32_t owner,
+					   uint32_t failure_owner)
+{
+    if (owner >= arena->capture_event_owner_count ||
+	arena->capture_event_owners[owner].resolved)
+	return 0;
+    if (failure_owner != UINT32_MAX &&
+	failure_owner >= arena->capture_event_owner_count)
+	return 0;
+    arena->capture_event_owners[owner].resolved_owner = failure_owner;
+    arena->capture_event_owners[owner].resolved = 1;
+    return 1;
 }
 
 static uint32_t
@@ -1019,6 +1118,8 @@ onibi_dynamic_stack_push(OnibiSemanticArena *arena, OnibiDynamicFrame frame)
 
 typedef struct {
     size_t capture_event_count;
+    size_t capture_event_root_count;
+    size_t capture_event_owner_count;
     size_t register_count;
     size_t tag_count;
     size_t call_count;
@@ -1029,13 +1130,15 @@ typedef struct {
 static OnibiSemanticCheckpoint
 onibi_semantic_checkpoint_save(const OnibiSemanticArena *arena)
 {
-    return (OnibiSemanticCheckpoint){.capture_event_count =
-					 arena->capture_event_count,
-				     .register_count = arena->register_count,
-				     .tag_count = arena->tag_count,
-				     .call_count = arena->call_count,
-				     .atomic_count = arena->atomic_count,
-				     .absence_count = arena->absence_count};
+    return (OnibiSemanticCheckpoint){
+	.capture_event_count = arena->capture_event_count,
+	.capture_event_root_count = arena->capture_event_root_count,
+	.capture_event_owner_count = arena->capture_event_owner_count,
+	.register_count = arena->register_count,
+	.tag_count = arena->tag_count,
+	.call_count = arena->call_count,
+	.atomic_count = arena->atomic_count,
+	.absence_count = arena->absence_count};
 }
 
 static void
@@ -1049,11 +1152,12 @@ static void onibi_tagged_frontier_reset(OnibiFrontier *frontier,
 					uint32_t state_count);
 static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
 				     OnibiSemanticArena *arena, uint32_t state,
-				     const OnibiSemanticState *semantic);
-static void onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
-					  const OnibiSemanticState *accepted,
-					  long *captures,
-					  uint32_t capture_slots);
+				     const OnibiSemanticState *semantic,
+				     uint32_t *retained_owner);
+static int onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
+					 const OnibiSemanticState *accepted,
+					 long *captures,
+					 uint32_t capture_slots);
 
 static OnibiActionResult
 onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
@@ -1089,12 +1193,10 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    onibi_semantic_capture_write(arena, &working.semantic_captures,
 					 action->arg16, pos);
 	    if (action->flags == ONIBI_RA_CAPTURE_OPEN_UNSCOPED) {
-		arena->capture_events = onibi_semantic_arena_reserve(
-		    arena->capture_events, &arena->capture_event_capacity,
-		    arena->capture_event_count, sizeof(*arena->capture_events));
-		arena->capture_events[arena->capture_event_count++] =
-		    (OnibiUnscopedCaptureEvent){working.order, action->arg16,
-						pos};
+		working.capture_event_history =
+		    onibi_semantic_capture_event_append(
+			arena, working.capture_event_history, working.order,
+			action->arg16, pos);
 	    }
 	    working.tag_history = onibi_semantic_tag_append(
 		arena, working.tag_history, action->arg16, pos);
@@ -1339,6 +1441,7 @@ onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
     for (size_t i = 0; i < 2; i++) {
 	ruby_xfree(frontiers[i].states);
 	ruby_xfree(frontiers[i].semantics);
+	ruby_xfree(frontiers[i].failure_owners);
 	ruby_xfree(frontiers[i].hashes);
 	ruby_xfree(frontiers[i].key_buckets);
 	ruby_xfree(frontiers[i].membership);
@@ -1638,11 +1741,11 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	memset(&frontier, 0, sizeof(frontier));
 	onibi_tagged_frontier_reset(&frontier, 8);
 	int first_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 	int second_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second, NULL);
 	int duplicate_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 
 	OnibiSemanticState failed = predecessor;
 	OnibiActionResult failed_status = onibi_apply_action_program(
@@ -1687,6 +1790,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	rb_hash_aset(result, ID2SYM(rb_intern("full_file_copies")), INT2NUM(0));
 	ruby_xfree(frontier.states);
 	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.failure_owners);
 	ruby_xfree(frontier.hashes);
 	ruby_xfree(frontier.key_buckets);
 	ruby_xfree(frontier.membership);
@@ -1705,14 +1809,15 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	onibi_semantic_capture_write(&arena, &second.semantic_captures, 1, 1);
 	OnibiFrontier frontier = {0};
 	onibi_tagged_frontier_reset(&frontier, 8);
-	int a = onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
-	int b = onibi_tagged_frontier_add(&frontier, &arena, 7, &second);
-	int duplicate = onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
+	int a = onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
+	int b = onibi_tagged_frontier_add(&frontier, &arena, 7, &second, NULL);
+	int duplicate =
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 	OnibiSemanticState output = first;
 	output.tag_history =
 	    onibi_semantic_tag_append(&arena, first.tag_history, 0, 7);
 	int output_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &output);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &output, NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("frontier_count")),
 		     SIZET2NUM(frontier.count));
 	rb_hash_aset(result, ID2SYM(rb_intern("distinct_live_captures_kept")),
@@ -1754,6 +1859,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 			 : Qfalse);
 	ruby_xfree(frontier.states);
 	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.failure_owners);
 	ruby_xfree(frontier.hashes);
 	ruby_xfree(frontier.key_buckets);
 	ruby_xfree(frontier.membership);
@@ -1817,13 +1923,14 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 			 base_key.hash != variant_key.hash ? Qtrue : Qfalse);
 	}
 	int base_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[0]);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[0], NULL);
 	int state_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 8, &variants[0]);
+	    onibi_tagged_frontier_add(&frontier, &arena, 8, &variants[0], NULL);
 	for (size_t i = 2; i <= 7; i++)
-	    (void)onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[i]);
+	    (void)onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[i],
+					    NULL);
 	int output_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[8]);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &variants[8], NULL);
 	rb_hash_aset(result, ID2SYM(rb_intern("distinguishes")), distinctions);
 	rb_hash_aset(result, ID2SYM(rb_intern("hash_distinguishes")),
 		     hash_distinctions);
@@ -1839,6 +1946,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 		     SIZET2NUM(frontier.key_capacity));
 	ruby_xfree(frontier.states);
 	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.failure_owners);
 	ruby_xfree(frontier.hashes);
 	ruby_xfree(frontier.key_buckets);
 	ruby_xfree(frontier.membership);
@@ -1857,9 +1965,9 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiFrontier frontier = {0};
 	onibi_tagged_frontier_reset(&frontier, 8);
 	int first_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 	int second_added =
-	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second);
+	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second, NULL);
 	long captures[4];
 	if (frontier.count == 0)
 	    rb_raise(rb_eRuntimeError,
@@ -1882,9 +1990,71 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 		     LONG2NUM(captures[2]));
 	ruby_xfree(frontier.states);
 	ruby_xfree(frontier.semantics);
+	ruby_xfree(frontier.failure_owners);
 	ruby_xfree(frontier.hashes);
 	ruby_xfree(frontier.key_buckets);
 	ruby_xfree(frontier.membership);
+	onibi_semantic_arena_release(&arena);
+	return result;
+    }
+
+    if (scenario == rb_intern("tagged_event_lineage")) {
+	onibi_semantic_live_captures_begin(&arena, 1);
+	predecessor = onibi_semantic_state_initial(&arena, 0, 2, 0, 0);
+	OnibiSemanticState rejected = predecessor;
+	OnibiSemanticState accepted = predecessor;
+	rejected.order = onibi_capture_order_append(&arena, UINT32_MAX, 0);
+	accepted.order = onibi_capture_order_append(&arena, UINT32_MAX, 1);
+	rejected.capture_event_history = onibi_semantic_capture_event_append(
+	    &arena, UINT32_MAX, rejected.order, 0, 77);
+	long captures[2];
+	onibi_tagged_materialize_tags(&arena, &accepted, captures, 2);
+	rb_hash_aset(result, ID2SYM(rb_intern("sibling_orders")),
+		     !onibi_capture_order_is_ancestor(&arena, rejected.order,
+						      accepted.order)
+			 ? Qtrue
+			 : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("accepted_has_no_tag_history")),
+		     accepted.tag_history == UINT32_MAX ? Qtrue : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("capture")),
+		     LONG2NUM(captures[0]));
+	rb_hash_aset(result, ID2SYM(rb_intern("rejected_capture_unpublished")),
+		     captures[0] < 0 ? Qtrue : Qfalse);
+	OnibiSemanticState first = predecessor;
+	OnibiSemanticState second = predecessor;
+	first.order = onibi_capture_order_append(&arena, UINT32_MAX, 0);
+	first.capture_event_history = onibi_semantic_capture_event_append(
+	    &arena, UINT32_MAX, first.order, 0, 11);
+	second.order = onibi_capture_order_append(&arena, UINT32_MAX, 1);
+	second.capture_event_history = onibi_semantic_capture_event_append(
+	    &arena, UINT32_MAX, second.order, 0, 22);
+	OnibiFrontier merged_frontier = {0};
+	onibi_tagged_frontier_reset(&merged_frontier, 8);
+	uint32_t merged_owner = UINT32_MAX;
+	int first_inserted = onibi_tagged_frontier_add(
+	    &merged_frontier, &arena, 7, &first, &merged_owner);
+	int second_inserted = onibi_tagged_frontier_add(
+	    &merged_frontier, &arena, 7, &second, &merged_owner);
+	int owner_resolved = onibi_semantic_capture_event_owner_resolve(
+	    &arena, merged_owner, UINT32_MAX);
+	OnibiSemanticState merged = predecessor;
+	merged.order = onibi_capture_order_append(&arena, UINT32_MAX, 2);
+	merged.capture_event_dependency = merged_owner;
+	long merged_captures[2];
+	int merged_materialized =
+	    onibi_tagged_materialize_tags(&arena, &merged, merged_captures, 2);
+	rb_hash_aset(result, ID2SYM(rb_intern("duplicate_owner_kept")),
+		     first_inserted && !second_inserted && owner_resolved
+			 ? Qtrue
+			 : Qfalse);
+	rb_hash_aset(result, ID2SYM(rb_intern("merged_capture")),
+		     LONG2NUM(merged_materialized ? merged_captures[0] : -1));
+	ruby_xfree(merged_frontier.states);
+	ruby_xfree(merged_frontier.semantics);
+	ruby_xfree(merged_frontier.failure_owners);
+	ruby_xfree(merged_frontier.hashes);
+	ruby_xfree(merged_frontier.key_buckets);
+	ruby_xfree(merged_frontier.membership);
 	onibi_semantic_arena_release(&arena);
 	return result;
     }
@@ -2267,12 +2437,15 @@ onibi_tagged_frontier_reserve(OnibiFrontier *frontier)
     size_t capacity = frontier->capacity == 0 ? 32U : frontier->capacity * 2U;
     if (capacity < frontier->capacity ||
 	capacity > SIZE_MAX / sizeof(*frontier->states) ||
-	capacity > SIZE_MAX / sizeof(*frontier->semantics))
+	capacity > SIZE_MAX / sizeof(*frontier->semantics) ||
+	capacity > SIZE_MAX / sizeof(*frontier->failure_owners))
 	rb_memerror();
     frontier->states =
 	ruby_xrealloc(frontier->states, capacity * sizeof(*frontier->states));
     frontier->semantics = ruby_xrealloc(
 	frontier->semantics, capacity * sizeof(*frontier->semantics));
+    frontier->failure_owners = ruby_xrealloc(
+	frontier->failure_owners, capacity * sizeof(*frontier->failure_owners));
     frontier->hashes =
 	ruby_xrealloc(frontier->hashes, capacity * sizeof(*frontier->hashes));
     frontier->capacity = capacity;
@@ -2300,7 +2473,8 @@ onibi_tagged_frontier_key_grow(OnibiFrontier *frontier)
 
 static int
 onibi_tagged_frontier_add(OnibiFrontier *frontier, OnibiSemanticArena *arena,
-			  uint32_t state, const OnibiSemanticState *semantic)
+			  uint32_t state, const OnibiSemanticState *semantic,
+			  uint32_t *retained_owner)
 {
     unsigned char mask = (unsigned char)(1U << (state & 7));
     if (frontier->key_capacity == 0 ||
@@ -2317,57 +2491,137 @@ onibi_tagged_frontier_add(OnibiFrontier *frontier, OnibiSemanticArena *arena,
 	    frontier->states[index] == state) {
 	    OnibiDynamicThreadKey existing = {
 		state, 0, frontier->semantics[index], frontier->hashes[index]};
-	    if (onibi_tagged_thread_key_equal(arena, &existing, &candidate))
+	    if (onibi_tagged_thread_key_equal(arena, &existing, &candidate)) {
+		onibi_semantic_capture_event_owner_add(
+		    arena, frontier->failure_owners[index],
+		    ordered.capture_event_history);
+		if (retained_owner != NULL)
+		    *retained_owner = frontier->failure_owners[index];
 		return 0;
+	    }
 	}
 	slot = (slot + 1U) & (frontier->key_capacity - 1U);
     }
     if (frontier->count >= UINT32_MAX) rb_memerror();
     onibi_tagged_frontier_reserve(frontier);
+    uint32_t failure_owner = onibi_semantic_capture_event_owner_append(
+	arena, ordered.capture_event_history);
     frontier->states[frontier->count] = state;
     frontier->semantics[frontier->count] = ordered;
+    frontier->failure_owners[frontier->count] = failure_owner;
     frontier->hashes[frontier->count] = candidate.hash;
     frontier->key_buckets[slot] = (uint32_t)frontier->count + 1U;
     frontier->count++;
     frontier->membership[state >> 3] |= mask;
+    if (retained_owner != NULL) *retained_owner = failure_owner;
     return 1;
 }
 
-static void
+static int
+onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
+				     uint32_t history, long *captures,
+				     uint32_t capture_slots, uint32_t *orders,
+				     uint32_t accepted_order)
+{
+    if (history == UINT32_MAX) return 1;
+    while (history != UINT32_MAX) {
+	if (history >= arena->capture_event_count) return 0;
+	const OnibiUnscopedCaptureEvent *event =
+	    &arena->capture_events[history];
+	if (event->slot < capture_slots &&
+	    !onibi_semantic_capture_slot_live(arena, event->slot) &&
+	    event->order != UINT32_MAX &&
+	    (accepted_order == UINT32_MAX ||
+	     onibi_capture_order_compare(arena, event->order, accepted_order) <=
+		 0) &&
+	    (orders[event->slot] == UINT32_MAX ||
+	     onibi_capture_order_compare(arena, event->order,
+					 orders[event->slot]) > 0)) {
+	    orders[event->slot] = event->order;
+	    captures[event->slot] = event->position;
+	}
+	history = event->parent;
+    }
+    return 1;
+}
+
+static int
 onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 			      const OnibiSemanticState *accepted,
 			      long *captures, uint32_t capture_slots)
 {
+    int owns_captures = 0;
+    if (captures == NULL && capture_slots != 0) {
+	captures = ruby_xmalloc((size_t)capture_slots * sizeof(*captures));
+	owns_captures = 1;
+    }
     for (uint32_t i = 0; i < capture_slots; i++)
 	captures[i] = -1;
     OnibiTagEventId history = accepted->tag_history;
-    while (history != UINT32_MAX && history < arena->tag_count) {
+    while (history != UINT32_MAX) {
+	if (history >= arena->tag_count) {
+	    if (owns_captures) ruby_xfree(captures);
+	    return 0;
+	}
 	const OnibiSemanticTagEvent *event = &arena->tags[history];
 	if (event->slot < capture_slots && captures[event->slot] < 0)
 	    captures[event->slot] = event->position;
 	history = event->parent;
     }
-    /* Unscoped capture entries use the accepted ordered path to preserve
-     * MRI's nullable-repeat boundary behavior. */
-    uint32_t *latest = ruby_xmalloc((size_t)capture_slots * sizeof(*latest));
+
+    uint32_t *orders =
+	capture_slots == 0
+	    ? NULL
+	    : ruby_xmalloc((size_t)capture_slots * sizeof(*orders));
     for (uint32_t i = 0; i < capture_slots; i++)
-	latest[i] = UINT32_MAX;
-    for (size_t i = 0; i < arena->capture_event_count; i++) {
-	const OnibiUnscopedCaptureEvent *event = &arena->capture_events[i];
-	if (event->slot >= capture_slots ||
-	    onibi_semantic_capture_slot_live(arena, event->slot) ||
-	    event->order == UINT32_MAX ||
-	    onibi_capture_order_compare(arena, event->order, accepted->order) >
-		0)
-	    continue;
-	uint32_t previous = latest[event->slot];
-	if (previous != UINT32_MAX &&
-	    onibi_capture_order_compare(arena, previous, event->order) >= 0)
-	    continue;
-	latest[event->slot] = event->order;
-	captures[event->slot] = event->position;
+	orders[i] = UINT32_MAX;
+    if (!onibi_tagged_materialize_event_chain(
+	    arena, accepted->capture_event_history, captures, capture_slots,
+	    orders, accepted->order)) {
+	ruby_xfree(orders);
+	if (owns_captures) ruby_xfree(captures);
+	return 0;
     }
-    ruby_xfree(latest);
+
+    uint32_t owner = accepted->capture_event_dependency;
+    size_t owner_steps = 0;
+    while (owner != UINT32_MAX) {
+	if (owner >= arena->capture_event_owner_count ||
+	    ++owner_steps > arena->capture_event_owner_count) {
+	    ruby_xfree(orders);
+	    if (owns_captures) ruby_xfree(captures);
+	    return 0;
+	}
+	const OnibiCaptureEventOwner *cell =
+	    &arena->capture_event_owners[owner];
+	if (!cell->resolved) {
+	    ruby_xfree(orders);
+	    if (owns_captures) ruby_xfree(captures);
+	    return 0;
+	}
+	uint32_t root = cell->event_roots;
+	size_t root_steps = 0;
+	while (root != UINT32_MAX) {
+	    if (root >= arena->capture_event_root_count ||
+		++root_steps > arena->capture_event_root_count) {
+		ruby_xfree(orders);
+		if (owns_captures) ruby_xfree(captures);
+		return 0;
+	    }
+	    if (!onibi_tagged_materialize_event_chain(
+		    arena, arena->capture_event_roots[root].history, captures,
+		    capture_slots, orders, accepted->order)) {
+		ruby_xfree(orders);
+		if (owns_captures) ruby_xfree(captures);
+		return 0;
+	    }
+	    root = arena->capture_event_roots[root].next;
+	}
+	owner = cell->resolved_owner;
+    }
+    ruby_xfree(orders);
+    if (owns_captures) ruby_xfree(captures);
+    return 1;
 }
 
 static int
@@ -2409,12 +2663,15 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
     int have_best = 0;
     long best_end = start;
     OnibiSemanticState best = *initial;
+    uint32_t prior = initial->capture_event_dependency;
     for (uint32_t i = 0; i < edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[edge_base + i];
+	OnibiSemanticState predecessor = *initial;
+	predecessor.capture_event_dependency = prior;
 	OnibiSemanticState branch;
 	if (onibi_apply_action_program(view, edge, str, start,
 				       ctx->search_origin, ctx->encoding,
-				       ctx->encoding_mode, arena, initial,
+				       ctx->encoding_mode, arena, &predecessor,
 				       &branch, ctx) == ONIBI_ACTION_FAIL)
 	    continue;
 	if (edge->destination == ONIBI_ACCEPT_STATE) {
@@ -2425,12 +2682,15 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 		return 1;
 	    }
 	    have_best = 1;
+	    best_end = start;
 	    best = branch;
 	    break;
 	}
 	if (edge->destination >= header->state_count) return -1;
+	uint32_t retained_owner = UINT32_MAX;
 	(void)onibi_tagged_frontier_add(current, arena, edge->destination,
-					&branch);
+					&branch, &retained_owner);
+	prior = retained_owner;
     }
     if (current->count == 0) {
 	if (!have_best) return 0;
@@ -2456,15 +2716,30 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	    if (state_id >= header->state_count) return -1;
 	    const OnibiRState *state = &view->states[state_id];
 	    const OnibiSemanticState *semantic = &current->semantics[i];
-	    OnibiSemanticState ordered_semantic = *semantic;
+	    uint32_t source_owner = current->failure_owners[i];
+	    uint32_t source_prior = semantic->capture_event_dependency;
 	    if (state->op == 0) {
+		OnibiSemanticState predecessor = *semantic;
+		predecessor.capture_event_dependency = source_prior;
 		OnibiSemanticState accept_state;
 		if (!onibi_tagged_accept_state(
 			ctx, view, state, str, position, ctx->search_origin,
-			ctx->encoding, ctx->encoding_mode, arena,
-			&ordered_semantic, &accept_state))
+			ctx->encoding, ctx->encoding_mode, arena, &predecessor,
+			&accept_state)) {
+		    if (!onibi_semantic_capture_event_owner_resolve(
+			    arena, source_owner, source_prior))
+			return -1;
 		    continue;
-		if (required_end >= 0 && position != required_end) continue;
+		}
+		if (required_end >= 0 && position != required_end) {
+		    if (!onibi_semantic_capture_event_owner_resolve(
+			    arena, source_owner, source_prior))
+			return -1;
+		    continue;
+		}
+		if (!onibi_semantic_capture_event_owner_resolve(
+			arena, source_owner, source_prior))
+		    return -1;
 		if (next->count == 0) {
 		    *accepted = accept_state;
 		    *matched_end = position;
@@ -2482,25 +2757,36 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	    if (!onibi_rseq_consume_character(view, state, str, position,
 					      ctx->encoding, ctx->encoding_mode,
 					      &next_position, ctx->class_stack,
-					      ctx->class_stack_capacity))
+					      ctx->class_stack_capacity)) {
+		if (!onibi_semantic_capture_event_owner_resolve(
+			arena, source_owner, source_prior))
+		    return -1;
 		continue;
+	    }
 	    long width = next_position - position;
 	    if (step_width == 0)
 		step_width = width;
 	    else if (step_width != width)
 		return -1;
-	    OnibiSemanticState consumed = ordered_semantic;
+	    uint32_t edge_prior = source_prior;
+	    int have_child = 0;
 	    for (uint32_t e = 0; e < state->edge_count; e++) {
 		const OnibiREdge *edge = &view->edges[state->edge_base + e];
+		OnibiSemanticState predecessor = *semantic;
+		predecessor.capture_event_dependency =
+		    have_child ? edge_prior : source_prior;
 		OnibiSemanticState branch;
 		if (onibi_apply_action_program(
 			view, edge, str, next_position, ctx->search_origin,
-			ctx->encoding, ctx->encoding_mode, arena, &consumed,
+			ctx->encoding, ctx->encoding_mode, arena, &predecessor,
 			&branch, ctx) == ONIBI_ACTION_FAIL)
 		    continue;
 		if (edge->destination == ONIBI_ACCEPT_STATE) {
 		    if (required_end >= 0 && next_position != required_end)
 			continue;
+		    if (!onibi_semantic_capture_event_owner_resolve(
+			    arena, source_owner, edge_prior))
+			return -1;
 		    if (next->count == 0) {
 			*accepted = branch;
 			*matched_end = next_position;
@@ -2512,9 +2798,16 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 		    goto frontier_complete;
 		}
 		if (edge->destination >= header->state_count) return -1;
+		uint32_t retained_owner = UINT32_MAX;
 		(void)onibi_tagged_frontier_add(next, arena, edge->destination,
-						&branch);
+						&branch, &retained_owner);
+		edge_prior = retained_owner;
+		have_child = 1;
 	    }
+	    if (!onibi_semantic_capture_event_owner_resolve(
+		    arena, source_owner,
+		    have_child ? edge_prior : source_prior))
+		return -1;
 	}
     frontier_complete:
 	if (have_frontier_accept) {
@@ -2569,6 +2862,8 @@ onibi_semantic_checkpoint_restore(OnibiSemanticArena *arena,
 				  const OnibiSemanticCheckpoint *checkpoint)
 {
     arena->capture_event_count = checkpoint->capture_event_count;
+    arena->capture_event_root_count = checkpoint->capture_event_root_count;
+    arena->capture_event_owner_count = checkpoint->capture_event_owner_count;
     arena->register_count = checkpoint->register_count;
     arena->tag_count = checkpoint->tag_count;
     arena->call_count = checkpoint->call_count;
@@ -2656,6 +2951,10 @@ onibi_tagged_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
 		    assertion_result.semantic_captures;
 		successor->tag_history = assertion_result.tag_history;
 		successor->order = assertion_result.order;
+		successor->capture_event_history =
+		    assertion_result.capture_event_history;
+		successor->capture_event_dependency =
+		    assertion_result.capture_event_dependency;
 	    }
 	    return ONIBI_ACTION_SUCCESS;
 	}
@@ -2874,11 +3173,10 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
     if (result < 0) return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     if (result > 0) {
 	ctx->reported_start = accepted.reported_start;
-	if (onibi_regular_capture_result != NULL &&
-	    ctx->program->capture_count != 0)
-	    onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
-					  onibi_regular_capture_result,
-					  ctx->program->capture_count * 2U);
+	if (!onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
+					   onibi_regular_capture_result,
+					   ctx->program->capture_count * 2U))
+	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
     return result > 0 ? ONIBI_EXEC_STATUS_MATCH : ONIBI_EXEC_STATUS_NO_MATCH;
 }

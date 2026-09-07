@@ -3,6 +3,7 @@ onibi_frontier_release(OnibiFrontier *frontier)
 {
     ruby_xfree(frontier->states);
     ruby_xfree(frontier->semantics);
+    ruby_xfree(frontier->failure_owners);
     ruby_xfree(frontier->hashes);
     ruby_xfree(frontier->key_buckets);
     ruby_xfree(frontier->membership);
