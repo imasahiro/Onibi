@@ -1,125 +1,28 @@
-# Onibi Development Guide
+# Onibi
 
-Onibi is an MRI-only regular-expression engine.
-The active design is in [`docs/gir.md`](docs/gir.md).
-The current milestone is a Ruby gem with a C extension.
+Use ASD-STE100 Simplified Technical English.
+Keep sentences short and active.
 
-## Product scope
+Architectural sources of truth:
 
-The gem provides `Onibi::Regexp` under the `Onibi` namespace.
-Its public API follows MRI `Regexp` behavior for each supported feature.
-The PoC does not replace MRI `Regexp` or modify MRI.
+- docs/gir.md
+- docs/review-result.md
 
-Build, test, and design for MRI only, using the repository-specified MRI toolchain.
-Do not add runtime support, CI, or acceptance checks for JRuby, TruffleRuby, or mruby.
+Execution state:
 
-The PoC has three execution classes:
+- docs/execution-ledger.md
 
-- `REGULAR_FAST`;
-- `TAGGED_ORDERED`;
-- `DYNAMIC`.
+Development and verification:
 
-Implement each interpreter in C.
-Keep their shared program format and match results consistent.
+- docs/development.md
+- Rakefile
 
-ZJIT integration starts after the gem PoC is complete.
-Do not add a separate native-code generator during the PoC.
+Read only the sections that apply to the task.
 
-## Active pipeline
+Change control:
 
-```text
-pattern + options
-  -> parser -> AST
-  -> tagged epsilon NFA
-  -> epsilon elimination
-  -> G-IR
-  -> RSeq
-  -> execution-class dispatcher
-       -> REGULAR_FAST C interpreter
-       -> TAGGED_ORDERED C interpreter
-       -> DYNAMIC C interpreter
-```
-
-G-IR is the canonical semantic form.
-RSeq is the compact execution form.
-
-## Development rules
-
-Test-driven development is optional.
-A change can start with a test, an implementation, or a small experiment.
-
-Add focused tests for behavior that is ready for review.
-Run the smallest useful test set during development.
-Run broader checks when the change can affect more code.
-
-The complete legacy suite does not have to pass during early PoC work.
-Do not change a correct test only to hide an unsupported feature.
-Record unsupported behavior clearly in test names, filters, or milestone notes.
-
-Start with small unit tests.
-Good first cases include extension loading, object creation, literals, and simple match results.
-Add differential tests against MRI when public behavior becomes available.
-
-## Implementation rules
-
-Put all production matcher, compiler, and interpreter code in the C extension.
-Use Ruby only for gem loading, version data, and necessary public wrappers.
-Never add, restore, or extend a production matcher in Ruby.
-
-Keep runtime dependencies at zero.
-Do not add FFI or an external regular-expression library.
-Use MRI behavior as the compatibility reference.
-
-Preserve ordered choice, capture boundaries, byte offsets, encodings, interrupts, and timeouts as features become supported.
-Give each C allocation a clear owner and release path.
-Use immutable compiled programs after publication.
-
-Do not add ZJIT code during the PoC.
-Keep the RSeq contract suitable for later ZJIT compilation.
-
-## Repository direction
-
-The planned PoC layout is:
-
-```text
-ext/onibi/                 # C extension and extconf.rb
-lib/onibi.rb               # extension loader and public entry point
-lib/onibi/version.rb       # gem version
-test/unit/                 # focused compiler and interpreter tests
-test/compatibility/        # MRI differential API tests
-docs/gir.md                # active engine design
-docs/development.md        # milestones and verification policy
-```
-
-The Pure Ruby production files have been removed.
-Existing tests remain as legacy reference material.
-Git history retains the old code and documents.
-Do not restore the Ruby matcher as production code.
-
-## Verification
-
-Before verification, inspect the current `Rakefile` and `docs/development.md`.
-Run only the applicable commands and tasks they currently define.
-
-```sh
-bundle install
-bundle exec rubocop
-bundle exec rake build
-```
-
-Treat legacy tests as historical reference, not C-path verification; do not run tests that require removed Ruby APIs unless the task explicitly targets their migration.
-
-For C changes, enable compiler warnings.
-Use ASAN and UBSAN when their build tasks become available.
-
-Run focused tests before each commit.
-Treat the complete suite as a progress report until its milestone makes it required.
-
-## Change control
-
-Commit every change as an atomic unit.
-Do not combine unrelated changes in one commit.
-Use a feature branch and a pull request.
-If the user requests a draft pull request, do not merge it or enable auto-merge.
-Merge only after every required CI check has completed successfully; blocked, skipped, pending, or post-merge checks are not sufficient.
-Update the active documents when architecture or milestone rules change.
+- Make each commit atomic. Do not mix unrelated changes.
+- Use a feature branch and a pull request.
+- Do not merge or auto-merge a draft pull request.
+- Merge only after all required CI checks pass.
+- Update the documents when architecture or execution state changes.
