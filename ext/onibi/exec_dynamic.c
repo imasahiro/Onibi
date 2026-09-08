@@ -2521,11 +2521,15 @@ static int
 onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
 				     uint32_t history, long *captures,
 				     uint32_t capture_slots, uint32_t *orders,
-				     uint32_t accepted_order)
+				     uint32_t accepted_order,
+				     unsigned char *visited)
 {
     if (history == UINT32_MAX) return 1;
     while (history != UINT32_MAX) {
 	if (history >= arena->capture_event_count) return 0;
+	if (visited[history]) break;
+	visited[history] = 1;
+	onibi_diagnostics.materialization_event_visits++;
 	const OnibiUnscopedCaptureEvent *event =
 	    &arena->capture_events[history];
 	if (event->slot < capture_slots &&
@@ -2551,6 +2555,7 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 			      long *captures, uint32_t capture_slots)
 {
     int owns_captures = 0;
+    if (capture_slots > SIZE_MAX / sizeof(*captures)) return 0;
     if (captures == NULL && capture_slots != 0) {
 	captures = ruby_xmalloc((size_t)capture_slots * sizeof(*captures));
 	owns_captures = 1;
@@ -2573,12 +2578,22 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	capture_slots == 0
 	    ? NULL
 	    : ruby_xmalloc((size_t)capture_slots * sizeof(*orders));
+    if (arena->capture_event_count > SIZE_MAX / sizeof(unsigned char)) {
+	ruby_xfree(orders);
+	if (owns_captures) ruby_xfree(captures);
+	return 0;
+    }
+    unsigned char *visited =
+	arena->capture_event_count == 0
+	    ? NULL
+	    : ruby_xcalloc(arena->capture_event_count, sizeof(*visited));
     for (uint32_t i = 0; i < capture_slots; i++)
 	orders[i] = UINT32_MAX;
     if (!onibi_tagged_materialize_event_chain(
 	    arena, accepted->capture_event_history, captures, capture_slots,
-	    orders, accepted->order)) {
+	    orders, accepted->order, visited)) {
 	ruby_xfree(orders);
+	ruby_xfree(visited);
 	if (owns_captures) ruby_xfree(captures);
 	return 0;
     }
@@ -2589,6 +2604,7 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	if (owner >= arena->capture_event_owner_count ||
 	    ++owner_steps > arena->capture_event_owner_count) {
 	    ruby_xfree(orders);
+	    ruby_xfree(visited);
 	    if (owns_captures) ruby_xfree(captures);
 	    return 0;
 	}
@@ -2596,6 +2612,7 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	    &arena->capture_event_owners[owner];
 	if (!cell->resolved) {
 	    ruby_xfree(orders);
+	    ruby_xfree(visited);
 	    if (owns_captures) ruby_xfree(captures);
 	    return 0;
 	}
@@ -2605,13 +2622,15 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	    if (root >= arena->capture_event_root_count ||
 		++root_steps > arena->capture_event_root_count) {
 		ruby_xfree(orders);
+		ruby_xfree(visited);
 		if (owns_captures) ruby_xfree(captures);
 		return 0;
 	    }
 	    if (!onibi_tagged_materialize_event_chain(
 		    arena, arena->capture_event_roots[root].history, captures,
-		    capture_slots, orders, accepted->order)) {
+		    capture_slots, orders, accepted->order, visited)) {
 		ruby_xfree(orders);
+		ruby_xfree(visited);
 		if (owns_captures) ruby_xfree(captures);
 		return 0;
 	    }
@@ -2620,6 +2639,7 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	owner = cell->resolved_owner;
     }
     ruby_xfree(orders);
+    ruby_xfree(visited);
     if (owns_captures) ruby_xfree(captures);
     return 1;
 }
@@ -3170,6 +3190,12 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
     onibi_diagnostics.tagged++;
     OnibiSemanticState accepted;
     int result = onibi_rseq_tagged_match(ctx, &accepted);
+    onibi_diagnostics.order_nodes = ctx->semantic_arena.order_count;
+    onibi_diagnostics.capture_events = ctx->semantic_arena.capture_event_count;
+    onibi_diagnostics.capture_event_roots =
+	ctx->semantic_arena.capture_event_root_count;
+    onibi_diagnostics.capture_event_owners =
+	ctx->semantic_arena.capture_event_owner_count;
     if (result < 0) return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     if (result > 0) {
 	ctx->reported_start = accepted.reported_start;

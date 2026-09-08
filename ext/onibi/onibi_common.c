@@ -398,6 +398,11 @@ onibi_execution_kind_for_requirements(uint32_t requirements)
  * by the diagnostic entry point and are never used for matching decisions. */
 typedef struct {
     unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
+    size_t order_nodes;
+    size_t capture_events;
+    size_t capture_event_roots;
+    size_t capture_event_owners;
+    size_t materialization_event_visits;
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
 static _Thread_local long *onibi_regular_capture_result = NULL;

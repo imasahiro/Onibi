@@ -248,6 +248,16 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		 ULONG2NUM(onibi_diagnostics.fallback));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
 		 ULONG2NUM(onibi_diagnostics.tag_events));
+    rb_hash_aset(result, ID2SYM(rb_intern("order_nodes")),
+		 SIZET2NUM(onibi_diagnostics.order_nodes));
+    rb_hash_aset(result, ID2SYM(rb_intern("capture_events")),
+		 SIZET2NUM(onibi_diagnostics.capture_events));
+    rb_hash_aset(result, ID2SYM(rb_intern("capture_event_roots")),
+		 SIZET2NUM(onibi_diagnostics.capture_event_roots));
+    rb_hash_aset(result, ID2SYM(rb_intern("capture_event_owners")),
+		 SIZET2NUM(onibi_diagnostics.capture_event_owners));
+    rb_hash_aset(result, ID2SYM(rb_intern("materialization_event_visits")),
+		 SIZET2NUM(onibi_diagnostics.materialization_event_visits));
     return result;
 }
 
