@@ -29,10 +29,22 @@ class BackreferenceTest < Minitest::Test
   def test_duplicate_named_backreference_uses_the_first_matching_group
     regexp = Onibi::Regexp.new("(?<x>a)(?<x>b)\\k<x>")
 
-    match = regexp.match("aba")
-    assert_equal "aba", match[0]
-    assert_equal "a", match[1]
-    assert_equal "b", match[2]
+    %w[aba abb].each do |input|
+      match = regexp.match(input)
+      assert_equal input, match[0]
+      assert_equal "a", match[1]
+      assert_equal "b", match[2]
+    end
+  end
+
+  def test_duplicate_named_backreference_publishes_an_ordered_capture_list
+    info = Onibi::Regexp.new("(?<x>a)(?<x>b)\\k<x>").send(
+      :__onibi_diagnostics__, "abb"
+    )
+
+    assert_equal 2, info[:exec_kind]
+    assert_equal 1, info[:backref_count]
+    assert_equal [[[1, 0], 2, 0, 2]], info[:backref_descriptors]
   end
 
   def test_repeated_class_backreference_runs_in_the_vm

@@ -3,15 +3,15 @@
 require "test_helper"
 
 class ExecutorDispatchTest < Minitest::Test
-  def test_dynamic_fallback_is_visible
+  def test_dynamic_native_executor_is_visible
     regexp = Onibi::Regexp.new("(a)\\1")
     info = regexp.send(:__onibi_diagnostics__, "aa")
     assert_equal 2, info[:exec_kind]
     refute info[:regular_capable]
     assert_equal 1, info[:dynamic]
-    assert_equal 1, info[:dfs]
-    assert_equal 1, info[:fallback]
-    assert_equal 2, info[:status]
+    assert_equal 0, info[:dfs]
+    assert_equal 0, info[:fallback]
+    assert_equal 1, info[:status]
   end
 
   def test_regular_unsupported_path_never_enters_dfs

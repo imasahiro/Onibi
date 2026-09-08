@@ -236,8 +236,10 @@ class TaggedNfaLoweringTest < Minitest::Test
     end
     greedy_ops = greedy_loop[:action_program].map { |action| action[:op] }
     lazy_ops = lazy_loop[:action_program].map { |action| action[:op] }
-    assert_equal %i[counter_increment test_counter_lt null_enter], greedy_ops
-    assert_equal %i[counter_increment test_counter_lt null_enter], lazy_ops
+    expected_loop_ops =
+      %i[null_continue counter_increment test_counter_lt null_enter]
+    assert_equal expected_loop_ops, greedy_ops
+    assert_equal expected_loop_ops, lazy_ops
   end
 
   def test_duplicate_empty_paths_emit_one_first_priority_edge

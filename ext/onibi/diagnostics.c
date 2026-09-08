@@ -113,6 +113,8 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     if (!NIL_P(obj->rseq)) {
 	rb_hash_aset(result, ID2SYM(rb_intern("capture_count")),
 		     UINT2NUM(obj->rseq_view.header->capture_count));
+	rb_hash_aset(result, ID2SYM(rb_intern("backref_count")),
+		     UINT2NUM(obj->rseq_view.header->backref_count));
 	rb_hash_aset(result, ID2SYM(rb_intern("semantic_capture_count")),
 		     UINT2NUM(obj->rseq_view.header->semantic_capture_count));
 	rb_hash_aset(result, ID2SYM(rb_intern("counter_count")),
@@ -121,6 +123,28 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		     UINT2NUM(obj->rseq_view.header->start_edge_base));
 	rb_hash_aset(result, ID2SYM(rb_intern("start_edge_count")),
 		     UINT2NUM(obj->rseq_view.header->start_edge_count));
+	VALUE backref_descriptors =
+	    rb_ary_new_capa(obj->rseq_view.header->backref_count);
+	for (uint32_t i = 0; i < obj->rseq_view.header->backref_count; i++) {
+	    const OnibiBackrefDesc *descriptor = &obj->rseq_view.backrefs[i];
+	    VALUE capture_ids = rb_ary_new_capa(descriptor->capture_count);
+	    uint32_t list_index =
+		(descriptor->capture_list_off -
+		 obj->rseq_view.header->backref_lists_offset) /
+		(uint32_t)sizeof(uint32_t);
+	    for (uint16_t j = 0; j < descriptor->capture_count; j++)
+		rb_ary_push(
+		    capture_ids,
+		    UINT2NUM(
+			obj->rseq_view.backref_capture_ids[list_index + j]));
+	    rb_ary_push(backref_descriptors,
+			rb_ary_new_from_args(
+			    4, capture_ids, UINT2NUM(descriptor->capture_count),
+			    INT2NUM(descriptor->recursion_level),
+			    UINT2NUM(descriptor->flags)));
+	}
+	rb_hash_aset(result, ID2SYM(rb_intern("backref_descriptors")),
+		     backref_descriptors);
     }
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
@@ -376,6 +400,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiGirEdgeEntry edges[4];
     OnibiGirEdgeEntry starts[4];
     OnibiRSeqSubprogramEntry subprograms[2];
+    OnibiBackrefDesc backrefs[1];
+    OnibiStateId backref_capture_ids[1];
     OnibiGAction actions[16];
     unsigned char class_bitmap[32];
     OnibiCodepointRange class_ranges[2] = {{10, 20}, {15, 30}};
@@ -386,6 +412,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     memset(edges, 0, sizeof(edges));
     memset(starts, 0, sizeof(starts));
     memset(subprograms, 0, sizeof(subprograms));
+    memset(backrefs, 0, sizeof(backrefs));
+    memset(backref_capture_ids, 0, sizeof(backref_capture_ids));
     memset(actions, 0, sizeof(actions));
     memset(class_bitmap, 0, sizeof(class_bitmap));
     classes[0] = (OnibiSemanticClass){class_bitmap, sizeof(class_bitmap),
@@ -416,6 +444,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     OnibiGirEdgeVector start_vector = {starts, 1, 4, NULL};
     OnibiGirEdgeVector subprogram_entry_vector = {NULL, 0, 0, NULL};
     OnibiRSeqSubprogramVector subprogram_vector = {subprograms, 1, 2, NULL};
+    OnibiBackrefDescVector backref_vector = {backrefs, 0, 1, NULL};
+    OnibiIdVector backref_capture_vector = {backref_capture_ids, 0, 1, NULL};
     OnibiIdVector lookbehind_width_vector = {NULL, 0, 0, NULL};
     OnibiSemanticClassVector class_vector = {classes, 0, 1, NULL};
     OnibiIdVector progress_vector = {progress_slots, 0, 1, NULL};
@@ -424,6 +454,8 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 			 &start_vector,
 			 &subprogram_entry_vector,
 			 &subprogram_vector,
+			 &backref_vector,
+			 &backref_capture_vector,
 			 &lookbehind_width_vector,
 			 &class_vector,
 			 &progress_vector,
@@ -603,6 +635,27 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	states[0].literal[0] = 0;
 	states[0].literal_length = 0;
     }
+    else if (scenario == rb_intern("backref_descriptor_empty") ||
+	     scenario == rb_intern("backref_descriptor_flags") ||
+	     scenario == rb_intern("backref_descriptor_capture") ||
+	     scenario == rb_intern("backref_state_flags")) {
+	states[0].opcode = ONIBI_G_BACKREF;
+	states[0].value = 0;
+	states[0].literal[0] = 0;
+	states[0].literal_length = 0;
+	backref_vector.count = 1;
+	backref_capture_vector.count = 1;
+	backrefs[0] = (OnibiBackrefDesc){0, 1, 0, ONIBI_BACKREF_FLAG_NAMED};
+	backref_capture_ids[0] = 0;
+	if (scenario == rb_intern("backref_descriptor_empty"))
+	    backrefs[0].capture_count = 0;
+	else if (scenario == rb_intern("backref_descriptor_flags"))
+	    backrefs[0].flags = UINT16_C(0x8000);
+	else if (scenario == rb_intern("backref_descriptor_capture"))
+	    backref_capture_ids[0] = (OnibiStateId)view.capture_count;
+	else
+	    states[0].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+    }
     else if (scenario == rb_intern("repeat_progress"))
 	progress_vector.count = 1;
     else if (scenario == rb_intern("start_edge"))
@@ -715,6 +768,10 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	(OnibiClassDesc *)(RSTRING_PTR(blob) + header->classes_offset);
     OnibiLiteralDesc *literals =
 	(OnibiLiteralDesc *)(RSTRING_PTR(blob) + header->descriptors_offset);
+    OnibiBackrefDesc *backrefs =
+	(OnibiBackrefDesc *)(RSTRING_PTR(blob) + header->backrefs_offset);
+    uint32_t *backref_capture_ids =
+	(uint32_t *)(RSTRING_PTR(blob) + header->backref_lists_offset);
     OnibiSubprogramDesc *subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) + header->subprograms_offset);
     ID scenario = rb_to_id(scenario_value);
@@ -950,6 +1007,23 @@ onibi_rseq_verifier_diagnostics(VALUE self, VALUE scenario_value)
     }
     else if (scenario == rb_intern("literal_descriptor"))
 	literals[0].data_offset = header->descriptors_offset;
+    else if (scenario == rb_intern("backref_descriptor_empty"))
+	backrefs[0].capture_count = 0;
+    else if (scenario == rb_intern("backref_descriptor_offset"))
+	backrefs[0].capture_list_off = header->backref_lists_offset - 4U;
+    else if (scenario == rb_intern("backref_descriptor_list_range"))
+	backrefs[0].capture_list_off = header->subprograms_offset;
+    else if (scenario == rb_intern("backref_descriptor_flags"))
+	backrefs[0].flags = UINT16_C(0x8000);
+    else if (scenario == rb_intern("backref_descriptor_capture"))
+	backref_capture_ids[0] = header->capture_count;
+    else if (scenario == rb_intern("backref_state_flags")) {
+	for (uint32_t i = 0; i < header->state_count; i++) {
+	    if (states[i].op != ONIBI_RS_BACKREF) continue;
+	    states[i].flags = ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE;
+	    break;
+	}
+    }
     else if (scenario == rb_intern("subprogram_range"))
 	subprograms[1].entry_edge_base = header->edge_count;
     else if (scenario == rb_intern("root_entry"))

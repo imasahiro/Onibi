@@ -43,6 +43,14 @@ class RseqPhysicalVerifierTest < Minitest::Test
     assert_invalid("a", :literal_descriptor)
   end
 
+  def test_rejects_bad_backreference_descriptors
+    %i[backref_descriptor_empty backref_descriptor_offset
+       backref_descriptor_list_range backref_descriptor_flags
+       backref_descriptor_capture backref_state_flags].each do |scenario|
+      assert_invalid("(a)\\1", scenario)
+    end
+  end
+
   def test_rejects_bad_subprogram_contracts
     assert_invalid("a", :root_entry)
     assert_invalid("(?=a)b", :subprogram_range)

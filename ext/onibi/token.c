@@ -529,12 +529,13 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' &&
 		RSTRING_PTR(src)[i + 1] <= '9') {
 		long number = escaped - '0';
-		i++;
-		while (i + 1 < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[i + 1] >= '0' &&
-		       RSTRING_PTR(src)[i + 1] <= '9') {
+		long digit = i + 2;
+		while (digit < RSTRING_LEN(src) &&
+		       RSTRING_PTR(src)[digit] >= '0' &&
+		       RSTRING_PTR(src)[digit] <= '9') {
 		    number = onibi_checked_decimal_append(
-			number, (unsigned char)(RSTRING_PTR(src)[++i] - '0'));
+			number, (unsigned char)(RSTRING_PTR(src)[digit] - '0'));
+		    i = digit++;
 		}
 		kind = ONIBI_TOKEN_BACKREF;
 		capture_number = number;

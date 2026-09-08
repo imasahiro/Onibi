@@ -16,6 +16,8 @@ typedef struct {
 
 typedef struct {
     OnibiRSeqSubprogramVector subprograms;
+    OnibiBackrefDescVector backrefs;
+    OnibiIdVector backref_capture_ids;
     OnibiGirEdgeVector subprogram_entries;
     OnibiIdVector lookbehind_widths;
     OnibiSemanticClassVector classes;
@@ -599,6 +601,8 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
     if (!owner->gir_transferred) {
 	onibi_gir_edge_vector_free(&owner->start_edges);
 	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
+	onibi_backref_desc_vector_free(&owner->builder.backrefs);
+	onibi_id_vector_free(&owner->builder.backref_capture_ids);
 	onibi_gir_edge_vector_free(&owner->builder.subprogram_entries);
 	onibi_id_vector_free(&owner->builder.lookbehind_widths);
 	onibi_semantic_class_vector_free(&owner->builder.classes);
@@ -637,6 +641,8 @@ onibi_compiled_free(void *ptr)
     onibi_gir_edge_vector_free(&compiled->edges);
     onibi_gir_edge_vector_free(&compiled->start_edges);
     onibi_rseq_subprogram_vector_free(&compiled->subprograms);
+    onibi_backref_desc_vector_free(&compiled->backrefs);
+    onibi_id_vector_free(&compiled->backref_capture_ids);
     onibi_gir_edge_vector_free(&compiled->subprogram_entries);
     onibi_id_vector_free(&compiled->lookbehind_widths);
     for (size_t i = 0; i < compiled->classes.count; i++)
@@ -656,6 +662,9 @@ onibi_compiled_memsize(const void *ptr)
 	onibi_compiled_edge_vector_memsize(&compiled->start_edges) +
 	compiled->subprograms.capacity *
 	    sizeof(*compiled->subprograms.entries) +
+	compiled->backrefs.capacity * sizeof(*compiled->backrefs.entries) +
+	compiled->backref_capture_ids.capacity *
+	    sizeof(*compiled->backref_capture_ids.entries) +
 	onibi_compiled_edge_vector_memsize(&compiled->subprogram_entries) +
 	compiled->lookbehind_widths.capacity *
 	    sizeof(*compiled->lookbehind_widths.entries) +
@@ -797,6 +806,57 @@ onibi_resolved_numbered_capture(const OnibiResolvedArena *semantics,
     if ((size_t)(number - 1) < semantics->capture_by_number_count)
 	return semantics->capture_by_number[number - 1];
     return ONIBI_AST_NONE;
+}
+
+/* Build the immutable capture list used by one backreference.  Ruby resolves
+ * duplicate names in reverse source order and tests each currently set
+ * capture. */
+static uint32_t
+onibi_compile_backref_descriptor(const OnibiAstNode *node,
+				 const OnibiResolvedNode *resolved,
+				 onibi_gir_builder_t *builder)
+{
+    OnibiBackrefDesc descriptor;
+    memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.capture_list_off = (uint32_t)builder->backref_capture_ids.count;
+    if (node->name.present) descriptor.flags |= ONIBI_BACKREF_FLAG_NAMED;
+    if ((resolved->lexical_options & ONIBI_OPT_IGNORECASE) != 0)
+	descriptor.flags |= ONIBI_BACKREF_FLAG_IGNORE_CASE;
+
+    if (node->name.present) {
+	OnibiNameIndexEntry *entry = onibi_name_index_find(
+	    (OnibiResolvedArena *)builder->semantics, builder->ast, node->name);
+	if (entry == NULL || !entry->used || entry->definition_count == 0 ||
+	    entry->definition_count > UINT16_MAX)
+	    rb_raise(eRegexpError, "invalid GIR backreference capture list");
+	for (size_t i = entry->definition_count; i > 0; i--) {
+	    OnibiAstId definition = entry->definitions[i - 1];
+	    int32_t capture_id =
+		builder->semantics->nodes[definition].capture_id;
+	    if (capture_id < 0 ||
+		(uint64_t)capture_id >= (uint64_t)builder->capture_count)
+		rb_raise(eRegexpError, "invalid GIR backreference capture");
+	    onibi_id_vector_push(&builder->backref_capture_ids,
+				 (OnibiStateId)capture_id);
+	}
+    }
+    else {
+	if (resolved->capture_id < 0 ||
+	    (uint64_t)resolved->capture_id >= (uint64_t)builder->capture_count)
+	    rb_raise(eRegexpError, "invalid GIR backreference capture");
+	onibi_id_vector_push(&builder->backref_capture_ids,
+			     (OnibiStateId)resolved->capture_id);
+    }
+    size_t count = builder->backref_capture_ids.count -
+		   (size_t)descriptor.capture_list_off;
+    if (count == 0 || count > UINT16_MAX ||
+	descriptor.capture_list_off > UINT32_MAX ||
+	builder->backrefs.count >= UINT32_MAX)
+	rb_raise(eRegexpError, "GIR backreference descriptor is too large");
+    descriptor.capture_count = (uint16_t)count;
+    uint32_t id = (uint32_t)builder->backrefs.count;
+    onibi_backref_desc_vector_push(&builder->backrefs, descriptor);
+    return id;
 }
 
 static void
@@ -1716,19 +1776,42 @@ onibi_repeat_reference_size(OnibiAstId id, const onibi_gir_builder_t *builder)
 }
 
 static size_t
-onibi_repeat_capture_count(OnibiAstId id, const onibi_gir_builder_t *builder)
+onibi_repeat_capture_count_visit(OnibiAstId id,
+				 const onibi_gir_builder_t *builder,
+				 OnibiIdVector *visited)
 {
+    for (size_t i = 0; i < visited->count; i++)
+	if (visited->entries[i] == id) return 0;
+    onibi_id_vector_push(visited, (OnibiStateId)id);
     const OnibiAstNode *node = onibi_ast_node_const(builder->ast, id);
     size_t count = node->kind == ONIBI_AST_CAPTURE ? 1U : 0U;
-    if (node->kind == ONIBI_AST_SEQUENCE ||
-	node->kind == ONIBI_AST_ALTERNATIVE) {
-	for (size_t i = 0; i < node->child_count; i++)
-	    count += onibi_repeat_capture_count(node->children[i], builder);
+    if (node->kind == ONIBI_AST_SUBROUTINE) {
+	const OnibiResolvedNode *resolved = &builder->semantics->nodes[id];
+	if (resolved->reference_target != ONIBI_AST_NONE)
+	    count += onibi_repeat_capture_count_visit(
+		resolved->reference_target, builder, visited);
     }
-    else if (node->kind == ONIBI_AST_QUANTIFIER)
-	count += onibi_repeat_capture_count(node->atom, builder);
-    else if (node->body != ONIBI_AST_NONE)
-	count += onibi_repeat_capture_count(node->body, builder);
+    if (node->body != ONIBI_AST_NONE)
+	count += onibi_repeat_capture_count_visit(node->body, builder, visited);
+    if (node->atom != ONIBI_AST_NONE)
+	count += onibi_repeat_capture_count_visit(node->atom, builder, visited);
+    if (node->yes != ONIBI_AST_NONE)
+	count += onibi_repeat_capture_count_visit(node->yes, builder, visited);
+    if (node->no != ONIBI_AST_NONE)
+	count += onibi_repeat_capture_count_visit(node->no, builder, visited);
+    for (size_t i = 0; i < node->child_count; i++)
+	count += onibi_repeat_capture_count_visit(node->children[i], builder,
+						  visited);
+    return count;
+}
+
+static size_t
+onibi_repeat_capture_count(OnibiAstId id, const onibi_gir_builder_t *builder)
+{
+    OnibiIdVector visited = {0};
+    onibi_id_vector_bind(&visited, builder->allocation_owner);
+    size_t count = onibi_repeat_capture_count_visit(id, builder, &visited);
+    onibi_id_vector_free(&visited);
     return count;
 }
 
@@ -1799,9 +1882,29 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
 	onibi_counter_action(ONIBI_GA_COUNTER_INIT, counter, 0, 0);
     initialize.arg32 = 0;
     onibi_repeat_link(builder, entry, choices.entries[0], initialize);
-    onibi_repeat_link(
-	builder, body_exit, choices.entries[0],
-	onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0, 0));
+    if (nullable) {
+	/* The shared consuming path must complete the nullable owner's
+	 * decision before it restarts the repeat.  Without this guard, a
+	 * dynamic body can bypass NULL_CONTINUE/NULL_STOP after it consumes
+	 * through a shared RSeq state. */
+	long increment = onibi_nfa_epsilon_state(builder);
+	onibi_repeat_link(
+	    builder, body_exit, increment,
+	    onibi_counter_action(ONIBI_GA_NULL_CONTINUE, guard, 0, 0));
+	onibi_repeat_link(
+	    builder, increment, choices.entries[0],
+	    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0, 0));
+	onibi_repeat_link(
+	    builder, body_exit, exit,
+	    onibi_counter_action(ONIBI_GA_NULL_STOP, guard, 0, 0));
+	/* The phase projections below provide additional ordered empty paths.
+	 */
+    }
+    else {
+	onibi_repeat_link(
+	    builder, body_exit, choices.entries[0],
+	    onibi_counter_action(ONIBI_GA_COUNTER_INCREMENT, counter, 0, 0));
+    }
     for (size_t phase = 0; phase < phases; phase++) {
 	long projected_entry = body_entry, projected_exit = body_exit;
 	{
@@ -1989,9 +2092,10 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
     if (type_code == ONIBI_AST_BACKREF) {
 	if (resolved_node->capture_id < 0)
 	    rb_raise(eRegexpError, "invalid GIR backreference capture");
+	uint32_t descriptor =
+	    onibi_compile_backref_descriptor(c_node, resolved_node, builder);
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_BACKREF,
-			(uint32_t)resolved_node->capture_id,
+	onibi_nfa_state(builder, id, ONIBI_G_BACKREF, descriptor,
 			ignorecase ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE : 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
@@ -2012,6 +2116,12 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	long id = builder->next_id++;
 	onibi_nfa_state(builder, id, ONIBI_G_CALL, (uint32_t)subprogram_id, 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
+	for (size_t i = 0; i < builder->nullable_scope_count; i++)
+	    onibi_g_action_vector_push(
+		&result.start_actions,
+		onibi_counter_action(ONIBI_GA_NULL_CAPTURE,
+				     builder->nullable_scopes[i], 1,
+				     (uint32_t)resolved_node->capture_id));
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
@@ -2308,6 +2418,12 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
     onibi_rseq_subprogram_vector_bind(&builder->subprograms,
 				      builder->allocation_owner);
+    onibi_backref_desc_vector_init(&builder->backrefs);
+    onibi_backref_desc_vector_bind(&builder->backrefs,
+				   builder->allocation_owner);
+    onibi_id_vector_init(&builder->backref_capture_ids);
+    onibi_id_vector_bind(&builder->backref_capture_ids,
+			 builder->allocation_owner);
     onibi_rseq_subprogram_vector_push(&builder->subprograms,
 				      (OnibiRSeqSubprogramEntry){0, 0, 0});
     onibi_gir_edge_vector_init(&builder->subprogram_entries);
@@ -2423,6 +2539,8 @@ onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
 			 start_edges,
 			 &builder->subprogram_entries,
 			 &builder->subprograms,
+			 &builder->backrefs,
+			 &builder->backref_capture_ids,
 			 &builder->lookbehind_widths,
 			 &builder->classes,
 			 &builder->progress_slots,
@@ -2467,7 +2585,9 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    (state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD;
 	if (state->opcode == ONIBI_G_BACKREF &&
-	    (state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0)
+	    state->value < builder->backrefs.count &&
+	    (builder->backrefs.entries[state->value].flags &
+	     ONIBI_BACKREF_FLAG_IGNORE_CASE) != 0)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD;
 	if (state->opcode == ONIBI_G_CLASS &&
 	    state->value < builder->classes.count &&
@@ -2477,8 +2597,15 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 	    state->opcode == ONIBI_G_BACKREF || state->opcode == ONIBI_G_CALL ||
 	    state->opcode == ONIBI_G_ATOMIC || state->opcode == ONIBI_G_ABSENT)
 	    execution_requirements |= ONIBI_EXEC_REQUIRE_DYNAMIC;
-	if (state->opcode == ONIBI_G_BACKREF)
-	    MARK_SEMANTIC_CAPTURE(state->value);
+	if (state->opcode == ONIBI_G_BACKREF &&
+	    state->value < builder->backrefs.count) {
+	    const OnibiBackrefDesc *descriptor =
+		&builder->backrefs.entries[state->value];
+	    for (uint16_t j = 0; j < descriptor->capture_count; j++)
+		MARK_SEMANTIC_CAPTURE(
+		    builder->backref_capture_ids
+			.entries[descriptor->capture_list_off + j]);
+	}
 	if (state->opcode == ONIBI_G_BACKREF)
 	    result.rseq_features |= ONIBI_RSEQ_FEATURE_BACKREF;
     }
@@ -2617,6 +2744,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 					 &onibi_compiled_type, compiled_result);
     memset(compiled_result, 0, sizeof(*compiled_result));
     onibi_rseq_subprogram_vector_init(&compiled_result->subprograms);
+    onibi_backref_desc_vector_init(&compiled_result->backrefs);
+    onibi_id_vector_init(&compiled_result->backref_capture_ids);
     onibi_gir_edge_vector_init(&compiled_result->subprogram_entries);
     onibi_id_vector_init(&compiled_result->lookbehind_widths);
     onibi_semantic_class_vector_init(&compiled_result->classes);
@@ -2648,6 +2777,12 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
 			       start_edges->entries) ||
 	!onibi_owned_pointer_p(builder->allocation_owner,
 			       builder->subprograms.entries) ||
+	(builder->backrefs.count != 0 &&
+	 !onibi_owned_pointer_p(builder->allocation_owner,
+				builder->backrefs.entries)) ||
+	(builder->backref_capture_ids.count != 0 &&
+	 !onibi_owned_pointer_p(builder->allocation_owner,
+				builder->backref_capture_ids.entries)) ||
 	(builder->subprogram_entries.count != 0 &&
 	 !onibi_owned_pointer_p(builder->allocation_owner,
 				builder->subprogram_entries.entries)) ||
@@ -2677,6 +2812,12 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_owned_transfer(builder->allocation_owner, start_edges->entries);
     onibi_owned_transfer(builder->allocation_owner,
 			 builder->subprograms.entries);
+    if (builder->backrefs.entries)
+	onibi_owned_transfer(builder->allocation_owner,
+			     builder->backrefs.entries);
+    if (builder->backref_capture_ids.entries)
+	onibi_owned_transfer(builder->allocation_owner,
+			     builder->backref_capture_ids.entries);
     onibi_owned_transfer(builder->allocation_owner,
 			 builder->subprogram_entries.entries);
     if (builder->lookbehind_widths.entries)
@@ -2690,6 +2831,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     builder->edges.allocation_owner = NULL;
     start_edges->allocation_owner = NULL;
     builder->subprograms.allocation_owner = NULL;
+    builder->backrefs.allocation_owner = NULL;
+    builder->backref_capture_ids.allocation_owner = NULL;
     builder->subprogram_entries.allocation_owner = NULL;
     builder->lookbehind_widths.allocation_owner = NULL;
     builder->classes.allocation_owner = NULL;
@@ -2697,6 +2840,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     compiled_result->edges = builder->edges;
     compiled_result->start_edges = *start_edges;
     compiled_result->subprograms = builder->subprograms;
+    compiled_result->backrefs = builder->backrefs;
+    compiled_result->backref_capture_ids = builder->backref_capture_ids;
     compiled_result->subprogram_entries = builder->subprogram_entries;
     compiled_result->lookbehind_widths = builder->lookbehind_widths;
     compiled_result->classes = builder->classes;
@@ -2704,6 +2849,8 @@ onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
     onibi_gir_edge_vector_init(&builder->edges);
     onibi_gir_edge_vector_init(start_edges);
     onibi_rseq_subprogram_vector_init(&builder->subprograms);
+    onibi_backref_desc_vector_init(&builder->backrefs);
+    onibi_id_vector_init(&builder->backref_capture_ids);
     onibi_gir_edge_vector_init(&builder->subprogram_entries);
     onibi_id_vector_init(&builder->lookbehind_widths);
     onibi_semantic_class_vector_init(&builder->classes);

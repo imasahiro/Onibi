@@ -283,7 +283,12 @@ typedef struct {
     uint32_t state;
     OnigPosition position;
     OnibiSemanticState semantic;
+    uint32_t cycle_root;
 } OnibiDynamicFrame;
+typedef struct {
+    uint32_t parent;
+    OnibiDynamicThreadKey key;
+} OnibiDynamicCycleNode;
 typedef struct {
     OnibiDynamicThreadKey key;
     uint32_t generation;
@@ -331,8 +336,14 @@ typedef struct {
     size_t live_capture_count, live_capture_capacity;
     unsigned char *live_capture_bitmap;
     size_t live_capture_bitmap_capacity;
+    uint32_t *future_capture_slots;
+    size_t future_capture_count, future_capture_capacity;
+    unsigned char *future_capture_bitmap;
+    size_t future_capture_bitmap_capacity;
     OnibiDynamicFrame *frames;
     size_t frame_count, frame_capacity;
+    OnibiDynamicCycleNode *cycles;
+    size_t cycle_count, cycle_capacity;
     OnibiDynamicKeyBucket *key_buckets;
     size_t key_count, key_capacity;
     uint32_t key_generation;
@@ -408,18 +419,17 @@ static _Thread_local OnibiDiagnostics onibi_diagnostics;
 static _Thread_local long *onibi_regular_capture_result = NULL;
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
-static int onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *view,
-					 VALUE subject, long start,
-					 long search_origin, long *matched_end,
-					 OnibiSemanticState *accepted_state,
-					 OnibiSemanticArena *semantic_arena,
-					 unsigned char *class_stack,
-					 size_t class_stack_capacity);
+static int onibi_rseq_backtracking_match(
+    VALUE rseq, const OnibiRSeqView *view, VALUE subject, long start,
+    long search_origin, long *matched_end, OnibiSemanticState *accepted_state,
+    OnibiSemanticArena *semantic_arena, unsigned char *class_stack,
+    size_t class_stack_capacity, OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static _Thread_local int onibi_inject_internal_error = 0;
+static void onibi_exec_ctx_release(OnibiExecCtx *ctx);
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
     id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;
@@ -638,17 +648,21 @@ onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
     int subject_ascii_only = rb_enc_str_asciionly_p(str);
     if (!rb_enc_asciicompat(rb_enc_from_index(obj->source_encoding_index)))
 	return 0;
-    /* The verified RSeq feature records folds that still require DAG paths. */
-    if ((obj->rseq_view.header->features &
+    /* DYNAMIC executes all case-fold paths in the native interpreter. */
+    if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
+	(obj->rseq_view.header->features &
 	 ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD) != 0)
 	return 0;
-    if ((obj->rseq_view.header->features &
+    if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
+	(obj->rseq_view.header->features &
 	 ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD) != 0 &&
 	(!obj->source_ascii_only || !subject_ascii_only))
 	return 0;
-    /* Keep zero-width multibyte search on the existing API fallback path. */
-    if (!subject_ascii_only && (obj->rseq_view.header->features &
-				ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY) != 0)
+    /* DYNAMIC owns zero-width and multibyte transitions as well. */
+    if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
+	!subject_ascii_only &&
+	(obj->rseq_view.header->features &
+	 ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY) != 0)
 	return 0;
     /* A fixed-encoding regexp cannot consume non-ASCII bytes tagged as
      * ASCII-8BIT.  Let MRI report Encoding::CompatibilityError instead of

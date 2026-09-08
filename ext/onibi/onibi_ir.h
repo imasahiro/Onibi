@@ -306,6 +306,22 @@ typedef struct {
     uint32_t action_offset;
 } OnibiREdge;
 
+/* A backreference resolves to an ordered capture list at compile time.  The
+ * runtime reads this descriptor and never performs a name-table lookup. */
+typedef struct {
+    uint32_t capture_list_off;
+    uint16_t capture_count;
+    int16_t recursion_level;
+    uint16_t flags;
+} OnibiBackrefDesc;
+
+enum {
+    ONIBI_BACKREF_FLAG_IGNORE_CASE = 1u << 0,
+    ONIBI_BACKREF_FLAG_NAMED = 1u << 1,
+    ONIBI_BACKREF_FLAG_RELATIVE = 1u << 2,
+    ONIBI_BACKREF_FLAG_WITH_LEVEL = 1u << 3
+};
+
 typedef struct {
     uint32_t data_offset;
     uint16_t data_length;
@@ -346,6 +362,9 @@ typedef struct {
     uint32_t classes_offset;
     uint32_t literals_offset;
     uint32_t descriptors_offset;
+    uint32_t backref_count;
+    uint32_t backrefs_offset;
+    uint32_t backref_lists_offset;
     uint32_t subprograms_offset;
     uint32_t lookbehind_widths_offset;
     uint32_t blob_size;
@@ -365,6 +384,8 @@ typedef struct {
     const OnibiRAction *actions;
     const OnibiClassDesc *classes;
     const OnibiLiteralDesc *literals;
+    const OnibiBackrefDesc *backrefs;
+    const uint32_t *backref_capture_ids;
     const OnibiSubprogramDesc *subprograms;
     const uint32_t *lookbehind_widths;
     uint32_t class_stack_capacity;
@@ -380,6 +401,9 @@ typedef char
     onibi_class_expr_size_must_be_12[(sizeof(OnibiClassExpr) == 12) ? 1 : -1];
 typedef char
     onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
+typedef char onibi_backref_desc_size_must_be_12[(sizeof(OnibiBackrefDesc) == 12)
+						    ? 1
+						    : -1];
 typedef char
     onibi_option_env_size_must_be_8[(sizeof(OnibiOptionEnv) == 8) ? 1 : -1];
 typedef char onibi_subprogram_desc_size_must_be_36

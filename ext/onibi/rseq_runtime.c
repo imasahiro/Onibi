@@ -25,6 +25,8 @@ onibi_rseq_view_init(VALUE blob, OnibiRSeqView *view)
     view->actions = NULL;
     view->classes = NULL;
     view->literals = NULL;
+    view->backrefs = NULL;
+    view->backref_capture_ids = NULL;
     view->subprograms = NULL;
     view->lookbehind_widths = NULL;
     view->class_stack_capacity = 0;
@@ -46,6 +48,10 @@ onibi_rseq_view_bind(OnibiRSeqView *view)
 	(const OnibiClassDesc *)(view->blob + header->classes_offset);
     view->literals =
 	(const OnibiLiteralDesc *)(view->blob + header->descriptors_offset);
+    view->backrefs =
+	(const OnibiBackrefDesc *)(view->blob + header->backrefs_offset);
+    view->backref_capture_ids =
+	(const uint32_t *)(view->blob + header->backref_lists_offset);
     view->subprograms =
 	(const OnibiSubprogramDesc *)(view->blob + header->subprograms_offset);
     view->lookbehind_widths =
@@ -637,6 +643,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     uint64_t class_desc_end =
 	(uint64_t)header->classes_offset +
 	(uint64_t)header->class_count * sizeof(OnibiClassDesc);
+    uint64_t backref_end =
+	(uint64_t)header->backrefs_offset +
+	(uint64_t)header->backref_count * sizeof(OnibiBackrefDesc);
     uint64_t subprogram_end =
 	(uint64_t)header->subprograms_offset +
 	(uint64_t)header->subprogram_count * sizeof(OnibiSubprogramDesc);
@@ -654,7 +663,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	header->prefix_length > sizeof(header->prefix) ||
 	(header->states_offset | header->edges_offset | header->actions_offset |
 	 header->classes_offset | header->literals_offset |
-	 header->descriptors_offset | header->subprograms_offset |
+	 header->descriptors_offset | header->backrefs_offset |
+	 header->backref_lists_offset | header->subprograms_offset |
 	 header->lookbehind_widths_offset | header->blob_size) &
 	    3U ||
 	header->states_offset != sizeof(*header) ||
@@ -663,7 +673,11 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	actions_end != header->classes_offset ||
 	class_desc_end > header->literals_offset ||
 	header->literals_offset > header->descriptors_offset ||
-	header->descriptors_offset > header->subprograms_offset ||
+	header->descriptors_offset > header->backrefs_offset ||
+	backref_end != header->backref_lists_offset ||
+	header->backref_lists_offset > header->subprograms_offset ||
+	((header->subprograms_offset - header->backref_lists_offset) & 3U) !=
+	    0 ||
 	subprogram_end != header->lookbehind_widths_offset ||
 	widths_end != header->blob_size || header->start_edge_count == 0 ||
 	header->start_edge_base > header->edge_count ||
@@ -672,6 +686,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 
     onibi_rseq_view_bind(&view);
     uint32_t literal_count = 0;
+    uint32_t backref_list_count =
+	(header->subprograms_offset - header->backref_lists_offset) /
+	(uint32_t)sizeof(uint32_t);
     uint32_t state_edge_cursor = 0;
     uint32_t semantic_capture_count = 0;
     unsigned char *semantic_captures =
@@ -743,12 +760,42 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	    state->payload >= header->class_count)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq class payload");
 	if (state->op == ONIBI_RS_BACKREF) {
-	    if (state->payload >= header->capture_count ||
+	    if (state->payload >= header->backref_count ||
 		(state->flags & ~ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0)
 		rb_raise(rb_eArgError, "invalid Onibi RSeq backreference");
-	    if (!semantic_captures[state->payload]) {
-		semantic_captures[state->payload] = 1;
-		semantic_capture_count++;
+	    const OnibiBackrefDesc *descriptor = &view.backrefs[state->payload];
+	    if (descriptor->capture_count == 0 ||
+		(descriptor->flags &
+		 ~(ONIBI_BACKREF_FLAG_IGNORE_CASE | ONIBI_BACKREF_FLAG_NAMED |
+		   ONIBI_BACKREF_FLAG_RELATIVE |
+		   ONIBI_BACKREF_FLAG_WITH_LEVEL)) != 0 ||
+		(!(descriptor->flags & ONIBI_BACKREF_FLAG_WITH_LEVEL) &&
+		 descriptor->recursion_level != 0) ||
+		(((state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0) !=
+		 ((descriptor->flags & ONIBI_BACKREF_FLAG_IGNORE_CASE) != 0)) ||
+		descriptor->capture_list_off < header->backref_lists_offset ||
+		(descriptor->capture_list_off & 3U) != 0 ||
+		(uint64_t)descriptor->capture_list_off +
+			(uint64_t)descriptor->capture_count * sizeof(uint32_t) >
+		    (uint64_t)header->subprograms_offset)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq backreference descriptor");
+	    uint32_t list_index =
+		(descriptor->capture_list_off - header->backref_lists_offset) /
+		(uint32_t)sizeof(uint32_t);
+	    if (list_index > backref_list_count ||
+		descriptor->capture_count > backref_list_count - list_index)
+		rb_raise(rb_eArgError,
+			 "invalid Onibi RSeq backreference capture list");
+	    for (uint16_t j = 0; j < descriptor->capture_count; j++) {
+		uint32_t capture = view.backref_capture_ids[list_index + j];
+		if (capture >= header->capture_count)
+		    rb_raise(rb_eArgError,
+			     "invalid Onibi RSeq backreference capture list");
+		if (!semantic_captures[capture]) {
+		    semantic_captures[capture] = 1;
+		    semantic_capture_count++;
+		}
 	    }
 	}
 	if (state->op == ONIBI_RS_CALL || state->op == ONIBI_RS_ATOMIC ||
@@ -770,7 +817,7 @@ onibi_rseq_blob_validate_body(VALUE opaque)
     uint64_t literal_desc_end =
 	(uint64_t)header->descriptors_offset +
 	(uint64_t)literal_count * sizeof(OnibiLiteralDesc);
-    if (literal_desc_end != header->subprograms_offset)
+    if (literal_desc_end != header->backrefs_offset)
 	rb_raise(rb_eArgError, "invalid Onibi RSeq literal layout");
 
     uint32_t action_features = 0;
@@ -1119,7 +1166,9 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	if ((state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_STRING) &&
 	    view.literals[state->payload].flags != state->flags)
 	    rb_raise(rb_eArgError, "inconsistent Onibi RSeq literal flags");
-	if (state->op == ONIBI_RS_BACKREF && state->flags != 0)
+	if (state->op == ONIBI_RS_BACKREF &&
+	    (view.backrefs[state->payload].flags &
+	     ONIBI_BACKREF_FLAG_IGNORE_CASE) != 0)
 	    incomplete_casefold = 1;
     }
     for (uint32_t i = 0; i < header->class_count; i++)

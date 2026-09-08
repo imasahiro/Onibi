@@ -72,6 +72,7 @@ typedef ONIBI_VECTOR(OnibiRSeqLiteralPayloadEntry)
     OnibiRSeqLiteralPayloadVector;
 typedef OnibiSubprogramDesc OnibiRSeqSubprogramEntry;
 typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
+typedef ONIBI_VECTOR(OnibiBackrefDesc) OnibiBackrefDescVector;
 typedef struct OnibiTaggedNfa OnibiTaggedNfa;
 typedef struct {
     OnibiGirStateVector states;
@@ -82,6 +83,8 @@ typedef struct {
     OnibiGuardVector capture_guards;
     OnibiGuardVector exit_guards;
     OnibiRSeqSubprogramVector subprograms;
+    OnibiBackrefDescVector backrefs;
+    OnibiIdVector backref_capture_ids;
     OnibiGirEdgeVector subprogram_entries;
     OnibiIdVector lookbehind_widths;
     OnibiSemanticClassVector classes;
@@ -111,6 +114,8 @@ typedef struct {
     const OnibiGirEdgeVector *start_edges;
     const OnibiGirEdgeVector *subprogram_entries;
     const OnibiRSeqSubprogramVector *subprograms;
+    const OnibiBackrefDescVector *backrefs;
+    const OnibiIdVector *backref_capture_ids;
     const OnibiIdVector *lookbehind_widths;
     const OnibiSemanticClassVector *classes;
     const OnibiIdVector *progress_slots;
@@ -1189,6 +1194,37 @@ onibi_gir_verify_body(VALUE opaque)
 	onibi_gir_verification_error("class descriptor vector is invalid");
     for (size_t i = 0; i < view->classes->count; i++)
 	onibi_gir_verify_class(&view->classes->entries[i]);
+    if (!view->backrefs || view->backrefs->count > UINT32_MAX ||
+	view->backrefs->count > view->backrefs->capacity ||
+	(view->backrefs->count != 0 && view->backrefs->entries == NULL) ||
+	!view->backref_capture_ids ||
+	view->backref_capture_ids->count > UINT32_MAX ||
+	view->backref_capture_ids->count >
+	    view->backref_capture_ids->capacity ||
+	(view->backref_capture_ids->count != 0 &&
+	 view->backref_capture_ids->entries == NULL))
+	onibi_gir_verification_error(
+	    "backreference descriptor vector is invalid");
+    for (size_t i = 0; i < view->backrefs->count; i++) {
+	const OnibiBackrefDesc *descriptor = &view->backrefs->entries[i];
+	if (descriptor->capture_count == 0 ||
+	    descriptor->capture_list_off > view->backref_capture_ids->count ||
+	    descriptor->capture_count > view->backref_capture_ids->count -
+					    descriptor->capture_list_off ||
+	    (descriptor->flags &
+	     ~(ONIBI_BACKREF_FLAG_IGNORE_CASE | ONIBI_BACKREF_FLAG_NAMED |
+	       ONIBI_BACKREF_FLAG_RELATIVE | ONIBI_BACKREF_FLAG_WITH_LEVEL)) !=
+		0 ||
+	    (!(descriptor->flags & ONIBI_BACKREF_FLAG_WITH_LEVEL) &&
+	     descriptor->recursion_level != 0))
+	    onibi_gir_verification_error("backreference descriptor is invalid");
+	for (uint16_t j = 0; j < descriptor->capture_count; j++)
+	    if (view->backref_capture_ids
+		    ->entries[descriptor->capture_list_off + j] >=
+		(uint32_t)view->capture_count)
+		onibi_gir_verification_error(
+		    "backreference capture list is invalid");
+    }
 
     onibi_gir_verify_owner_initialize(view, owner);
     for (size_t i = 0; i < view->edges->count; i++)
@@ -1219,7 +1255,7 @@ onibi_gir_verify_body(VALUE opaque)
 	if (state->id != (long)i)
 	    onibi_gir_verification_error("state IDs are not contiguous");
 	if ((unsigned int)state->opcode > ONIBI_G_ABSENT ||
-	    state->payload_index != 0)
+	    (state->payload_index != 0 && state->opcode != ONIBI_G_BACKREF))
 	    onibi_gir_verification_error("state opcode payload is invalid");
 	uint8_t allowed_flags = 0;
 	if (state->opcode == ONIBI_G_CHAR || state->opcode == ONIBI_G_BACKREF)
@@ -1255,9 +1291,15 @@ onibi_gir_verify_body(VALUE opaque)
 		onibi_gir_verification_error("state opcode payload is invalid");
 	}
 	if (state->opcode == ONIBI_G_BACKREF &&
-	    state->value >= (uint32_t)view->capture_count)
+	    state->value >= view->backrefs->count)
 	    onibi_gir_verification_error(
-		"semantic capture reference is invalid");
+		"backreference descriptor reference is invalid");
+	if (state->opcode == ONIBI_G_BACKREF &&
+	    (((state->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0) !=
+	     ((view->backrefs->entries[state->value].flags &
+	       ONIBI_BACKREF_FLAG_IGNORE_CASE) != 0)))
+	    onibi_gir_verification_error(
+		"backreference option and descriptor flags do not agree");
 	if (state->opcode == ONIBI_G_CALL || state->opcode == ONIBI_G_ATOMIC ||
 	    state->opcode == ONIBI_G_ABSENT) {
 	    if (state->value == 0 || state->value >= view->subprograms->count)
@@ -1472,6 +1514,9 @@ onibi_rseq_literal_payload_vector_free(OnibiRSeqLiteralPayloadVector *vector)
 ONIBI_VECTOR_DEFINE(onibi_rseq_subprogram_vector, OnibiRSeqSubprogramVector,
 		    OnibiRSeqSubprogramEntry, 4,
 		    "RSeq subprogram vector is too large")
+ONIBI_VECTOR_DEFINE(onibi_backref_desc_vector, OnibiBackrefDescVector,
+		    OnibiBackrefDesc, 4,
+		    "GIR backreference descriptor vector is too large")
 
 static void
 onibi_rseq_subprogram_vector_store(OnibiRSeqSubprogramVector *vector,

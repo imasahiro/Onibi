@@ -632,6 +632,9 @@ onibi_rseq_lower_body(VALUE opaque)
 	state->payload_index = state->value;
     }
     uint32_t literal_count = (uint32_t)literal_payloads.count;
+    uint32_t backref_count = (uint32_t)compiled_data->backrefs.count;
+    uint32_t backref_list_count =
+	(uint32_t)compiled_data->backref_capture_ids.count;
     uint64_t class_section_size =
 	(uint64_t)class_count * sizeof(OnibiClassDesc);
 
@@ -643,6 +646,10 @@ onibi_rseq_lower_body(VALUE opaque)
     }
     uint64_t literal_desc_size =
 	(uint64_t)literal_count * sizeof(OnibiLiteralDesc);
+    uint64_t backref_desc_size =
+	(uint64_t)backref_count * sizeof(OnibiBackrefDesc);
+    uint64_t backref_list_size =
+	(uint64_t)backref_list_count * sizeof(uint32_t);
     uint64_t literal_data_size = 0;
     for (size_t i = 0; i < literal_payloads.count; i++)
 	literal_data_size += literal_payloads.entries[i].length;
@@ -657,9 +664,12 @@ onibi_rseq_lower_body(VALUE opaque)
 	(uint64_t)sizeof(OnibiREdge) * physical_edge_count +
 	(uint64_t)sizeof(OnibiRAction) * (uint64_t)action_records.count +
 	class_section_size + literal_desc_size + literal_data_size +
-	subprogram_section_size + lookbehind_width_section_size;
+	backref_desc_size + backref_list_size + subprogram_section_size +
+	lookbehind_width_section_size;
     if (state_records.count > UINT32_MAX || physical_edge_count > UINT32_MAX ||
 	action_records.count > UINT32_MAX ||
+	compiled_data->backrefs.count > UINT32_MAX ||
+	compiled_data->backref_capture_ids.count > UINT32_MAX ||
 	subprogram_records.count > UINT32_MAX ||
 	lookbehind_width_records.count > UINT32_MAX ||
 	physical_size > UINT32_MAX) {
@@ -686,6 +696,7 @@ onibi_rseq_lower_body(VALUE opaque)
     physical.edge_count = (uint32_t)physical_edge_count;
     physical.action_count = (uint32_t)action_records.count;
     physical.start_edge_count = (uint32_t)r_start_edge_records.count;
+    physical.backref_count = backref_count;
     uint64_t offset = sizeof(OnibiRSeqHeader);
     physical.states_offset = (uint32_t)offset;
     offset += (uint64_t)sizeof(OnibiRState) * (uint64_t)state_records.count;
@@ -699,6 +710,10 @@ onibi_rseq_lower_body(VALUE opaque)
     offset += literal_data_size;
     physical.descriptors_offset = (uint32_t)offset;
     offset += literal_desc_size;
+    physical.backrefs_offset = (uint32_t)offset;
+    offset += backref_desc_size;
+    physical.backref_lists_offset = (uint32_t)offset;
+    offset += backref_list_size;
     physical.subprograms_offset = (uint32_t)offset;
     offset += subprogram_section_size;
     physical.lookbehind_widths_offset = (uint32_t)offset;
@@ -883,6 +898,24 @@ onibi_rseq_lower_body(VALUE opaque)
 	literal_data_offset += entry->length;
 	literal_index++;
     }
+    OnibiBackrefDesc *physical_backrefs =
+	(OnibiBackrefDesc *)(RSTRING_PTR(blob) + physical.backrefs_offset);
+    for (size_t i = 0; i < compiled_data->backrefs.count; i++) {
+	const OnibiBackrefDesc *source = &compiled_data->backrefs.entries[i];
+	physical_backrefs[i] = *source;
+	uint64_t list_offset =
+	    (uint64_t)physical.backref_lists_offset +
+	    (uint64_t)source->capture_list_off * sizeof(uint32_t);
+	if (list_offset > UINT32_MAX)
+	    rb_raise(eRegexpError,
+		     "RSeq backreference list exceeds the size limit");
+	physical_backrefs[i].capture_list_off = (uint32_t)list_offset;
+    }
+    uint32_t *physical_backref_lists =
+	(uint32_t *)(RSTRING_PTR(blob) + physical.backref_lists_offset);
+    for (size_t i = 0; i < compiled_data->backref_capture_ids.count; i++)
+	physical_backref_lists[i] =
+	    compiled_data->backref_capture_ids.entries[i];
     OnibiSubprogramDesc *physical_subprograms =
 	(OnibiSubprogramDesc *)(RSTRING_PTR(blob) +
 				physical.subprograms_offset);
