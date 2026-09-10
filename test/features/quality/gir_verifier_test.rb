@@ -1,0 +1,213 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class GirVerifierTest < Minitest::Test
+  FAILURE_CASES = {
+    state_ids: "state IDs are not contiguous",
+    state_opcode_payload: "state opcode payload is invalid",
+    edge_state_range: "edge state is out of range",
+    edge_order: "ordered edges are not preserved",
+    action_opcode: "action opcode is invalid",
+    action_opcode_payload: "match-reset payload is invalid",
+    capture_slot: "capture slot is invalid",
+    capture_close_unused_payload: "capture-close payload is invalid",
+    counter_slot: "counter slot is invalid",
+    capture_count: "capture count exceeds the operand limit",
+    counter_count: "counter count exceeds the operand limit",
+    subprogram_reference: "subprogram reference is invalid",
+    semantic_capture_reference: "backreference descriptor reference is invalid",
+    backref_descriptor_empty: "backreference descriptor is invalid",
+    backref_state_flags: "backreference option and descriptor flags do not agree",
+    backref_descriptor_flags: "backreference descriptor is invalid",
+    backref_descriptor_capture: "backreference capture list is invalid",
+    repeat_progress: "repeat progress is invalid",
+    nullable_owner_range: "nullable owner range is invalid",
+    nullable_owner_overlap: "nullable owner intervals overlap",
+    nullable_owner_wrong_base: "nullable owner base is invalid",
+    nullable_counter_alias: "counter slot is invalid",
+    nullable_progress_alias: "repeat progress aliases nullable owner",
+    nullable_uninitialized_all: "nullable owner is not initialized",
+    nullable_uninitialized_one_path: "nullable owner is not initialized",
+    nullable_completed_read: "nullable owner is not initialized",
+    start_edge: "start edge is invalid",
+    accept_state: "accept state has an outgoing edge",
+    lookaround_subprogram: "lookaround subprogram is invalid",
+    atomic_subprogram: "atomic subprogram is invalid",
+    absence_subprogram: "absence subprogram is invalid",
+    resolved_options: "option environment is unresolved",
+    class_descriptor_kind: "class descriptor is invalid",
+    class_descriptor_shape: "class character type is invalid",
+    class_fold_metadata: "class descriptor is invalid",
+    class_range_order: "class range set is invalid",
+    class_mixed_stack: "mixed class stack is invalid",
+    class_reference: "class reference is invalid"
+  }.freeze
+
+  FAILURE_CASES.each do |scenario, message|
+    define_method("test_verifier_rejects_#{scenario}") do
+      error = assert_raises(Onibi::RegexpError) do
+        verifier_diagnostic(scenario)
+      end
+
+      assert_equal "GIR verification failed: #{message}", error.message
+    end
+  end
+
+  def test_current_physical_action_limits_do_not_narrow
+    result = verifier_diagnostic(:physical_limits)
+
+    assert_equal 65_535, result.fetch(:capture_slot)
+    assert_equal 65_535, result.fetch(:counter_slot)
+  end
+
+  def test_rseq_serialization_preserves_maximum_action_operands
+    result = verifier_diagnostic(:action_operand_limits)
+
+    assert_equal 65_535, result.fetch(:capture_boundary_slot)
+    assert_equal 32_767, result.fetch(:capture_reference)
+    assert_equal 65_535, result.fetch(:counter_slot)
+    assert_equal 4_294_967_295, result.fetch(:counter_value)
+  end
+
+  def test_capture_producer_rejects_the_first_value_above_its_limit
+    error = assert_raises(Onibi::RegexpError) do
+      verifier_diagnostic(:capture_operand_overflow)
+    end
+
+    assert_equal "capture slot exceeds the GIR operand limit", error.message
+  end
+
+  def test_counter_producer_rejects_the_first_value_above_its_limit
+    error = assert_raises(Onibi::RegexpError) do
+      verifier_diagnostic(:counter_operand_overflow)
+    end
+
+    assert_equal "counter slot exceeds the GIR operand limit", error.message
+  end
+
+  def test_counter_producer_rejects_the_first_value_above_uint32
+    error = assert_raises(Onibi::RegexpError) do
+      verifier_diagnostic(:counter_value_overflow)
+    end
+
+    assert_equal "counter value exceeds the GIR operand limit", error.message
+  end
+
+  def test_valid_nested_nullable_owner_flow_passes
+    result = verifier_diagnostic(:nullable_valid_nested)
+
+    assert_equal 0, result.fetch(:capture_slot)
+  end
+
+  def test_valid_repeated_nullable_owner_flow_passes
+    result = verifier_diagnostic(:nullable_valid_repeated)
+
+    assert_equal 0, result.fetch(:capture_slot)
+  end
+
+  def test_nullable_reachability_worklist_wrap_stays_bounded
+    result = verifier_diagnostic(:nullable_reachability_wrap)
+
+    assert_equal 1, result.fetch(:nullable_fact_words)
+  end
+
+  def test_nullable_fact_width_uses_owner_count
+    result = verifier_diagnostic(:nullable_compact_facts)
+
+    assert_equal 1, result.fetch(:nullable_fact_words)
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
+    assert_includes source, "nullable_owner_count + bit_count - 1U"
+    refute_match(/nullable_word_count\s*=\s*\(counter_count/, source)
+  end
+
+  def test_verification_precedes_classification_optimization_and_publication
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/compiler.c"))
+    compile = source[/static VALUE\nonibi_compiler_compile_body.*?^}/m]
+
+    refute_nil compile
+    assert_operator compile.index("onibi_compiler_pass_verify_gir"), :<,
+                    compile.index("onibi_compiler_pass_classify")
+    assert_operator compile.index("onibi_compiler_pass_classify"), :<,
+                    compile.index("onibi_compiler_pass_optimize")
+    assert_operator compile.index("onibi_compiler_pass_optimize"), :<,
+                    compile.index("onibi_compiler_pass_publish")
+  end
+
+  def test_rseq_lowering_accepts_only_published_verified_gir
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/rseq.c"))
+    lower = source[/static VALUE\nonibi_rseq_lower_body.*?^}/m]
+
+    refute_nil lower
+    assert_includes lower, "onibi_compiled_get(compiled)"
+    assert_includes lower, "RSeq lowering requires immutable GIR"
+  end
+
+  def test_typed_gir_records_contain_no_ruby_semantic_object
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
+    records = %w[OnibiGAction OnibiGirStateEntry OnibiGirEdgeEntry OnibiGIRView]
+
+    records.each do |name|
+      declaration = source[/typedef struct \{.*?\} #{name};/m]
+
+      refute_nil declaration, name
+      refute_match(/\bVALUE\b/, declaration, name)
+    end
+  end
+
+  def test_verifier_uses_owned_indexes_without_full_vector_rescans
+    source = File.read(File.join(PROJECT_ROOT, "ext/onibi/gir.c"))
+    nullable = source[/static void
+onibi_gir_nullable_validate_all_paths.*?^}/m]
+
+    assert_includes source, "onibi_gir_verify_edge_index_insert"
+    assert_includes source, "physical_subprogram_references"
+    refute_includes source, "semantic_subprogram_references"
+    assert_includes source, "progress_slot_states"
+    assert_includes source, "onibi_gir_nullable_build_index"
+    assert_includes source, "nullable_outgoing_heads"
+    assert_includes source, "nullable_incoming_heads"
+    assert_includes source, "worklist"
+    assert_includes source, "rb_ensure(onibi_gir_verify_body"
+    assert_includes source, "onibi_allocation_owner_cleanup"
+    refute_includes source, "onibi_gir_state_references_subprogram"
+    refute_includes source, "onibi_gir_progress_slot_p"
+    refute_nil nullable
+    assert_includes nullable, "nullable reachability queue is too large"
+    assert_includes nullable, "nullable worklist is too large"
+    refute_match(/for \(size_t state = 0; state < state_count; state\+\+\).*?
+                 view->edges->count/mx, nullable)
+  end
+
+  def test_progress_slot_owner_cleans_up_after_verifier_failure
+    regexp = Onibi::Regexp.new("(?:(?:a|))*")
+    result = regexp.send(:__onibi_compile_failure_diagnostics__, 5)
+
+    assert result.fetch(:raised)
+    assert_equal result.fetch(:allocations_before), result.fetch(:allocations_after)
+  end
+
+  def test_production_gir_variants_pass_verification
+    patterns = [
+      "a", "(a)", "a{2,3}", "(a?){9}", "(?:(a?){2}){2}",
+      "(?:(a?|b?)){9}",
+      "(a)\\1", "(?<x>a)\\g<x>",
+      "(?>a)", "(?~a)", "(?=a)b", "(a)(?(1)b|c)"
+    ]
+
+    patterns.each do |pattern|
+      regexp = Onibi::Regexp.new(pattern)
+      result = regexp.send(:__onibi_compile_failure_diagnostics__, 5)
+
+      assert result.fetch(:raised), pattern
+      assert_equal result.fetch(:allocations_before), result.fetch(:allocations_after), pattern
+    end
+  end
+
+  private
+
+  def verifier_diagnostic(scenario)
+    @regexp ||= Onibi::Regexp.new("a")
+    @regexp.send(:__onibi_gir_verifier_diagnostics__, scenario)
+  end
+end

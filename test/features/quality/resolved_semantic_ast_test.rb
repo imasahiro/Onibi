@@ -1,0 +1,140 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class ResolvedSemanticAstTest < Minitest::Test
+  ROOT = File.expand_path("../../..", __dir__)
+
+  def test_resolved_nodes_are_c_owned_and_hold_lowering_invariants
+    source = File.read(File.join(ROOT, "ext/onibi/onibi_common.c"))
+    node = source[/typedef struct \{\n    OnibiAstKind kind;.*?\n\} OnibiResolvedNode;/m]
+
+    refute_nil node
+    refute_includes node, "VALUE"
+    assert_includes node, "uint32_t lexical_options"
+    assert_includes node, "OnibiAstId reference_target"
+    assert_includes node, "OnibiSubprogramId subprogram_id"
+    assert_includes node, "int encoding_index"
+    assert_includes node, "int32_t assertion_kind"
+    assert_includes node, "long repeat_min"
+    assert_includes node, "long source_start"
+  end
+
+  def test_passes_establish_semantic_invariants_before_lowering
+    source = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    compile = source[/static VALUE\nonibi_compiler_compile.*?\n\}/m]
+
+    refute_nil compile
+    assert_operator compile.index("onibi_compiler_pass_resolve"), :<,
+                    compile.index("onibi_compiler_pass_normalize")
+    assert_operator compile.index("onibi_compiler_pass_normalize"), :<,
+                    compile.index("onibi_compiler_pass_analyze")
+    assert_operator compile.index("onibi_compiler_pass_analyze"), :<,
+                    compile.index("onibi_compiler_pass_lower")
+    assert_includes source, "semantic->lexical_options = options"
+    assert_includes source, "semantic->reference_target = target"
+    assert_includes source, "node->flags |= ONIBI_SEMANTIC_NORMALIZED"
+    assert_includes source, "semantic->flags |= ONIBI_SEMANTIC_ANALYZED"
+  end
+
+  def test_lowering_has_no_mutable_option_state
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    gir = File.read(File.join(ROOT, "ext/onibi/gir.c"))
+    builder = gir[/typedef struct \{\n    OnibiGirStateVector states;.*?\n\} onibi_gir_builder_t;/m]
+
+    refute_nil builder
+    refute_includes builder, "int ignorecase"
+    refute_includes builder, "int multiline"
+    refute_match(/builder->(?:ignorecase|multiline)/, compiler)
+    assert_includes compiler, "resolved_node->lexical_options"
+  end
+
+  def test_all_subprogram_ids_exist_before_lowering
+    source = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    lower = source[/static onibi_fragment_t\nonibi_compile_node.*?\n\}/m]
+
+    refute_nil lower
+    assert_includes source, "node->kind == ONIBI_AST_ATOMIC"
+    assert_includes source, "node->kind == ONIBI_AST_ABSENCE"
+    assert_includes source, "onibi_assign_lookaround_subprograms"
+    assert_includes source, "semantics->lowered_subprogram_count"
+    assert_includes lower, "resolved_node->subprogram_id"
+    refute_includes source, "onibi_compile_subprogram("
+    refute_includes lower, "onibi_rseq_subprogram_vector_push"
+  end
+
+  def test_production_gir_lowering_uses_typed_c_records
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    gir = File.read(File.join(ROOT, "ext/onibi/gir.c"))
+    rseq = File.read(File.join(ROOT, "ext/onibi/rseq.c"))
+
+    assert_includes compiler,
+                    "onibi_compile_node(OnibiAstId node_id"
+    refute_match(/onibi_compile_node\(VALUE/, compiler)
+    refute_includes compiler, "onibi_gir_payload_from_ast_terminal"
+    refute_match(/rb_(?:hash|ary|str_new)/, compiler)
+    refute_includes gir, "OnibiValueMap"
+    refute_match(/VALUE (?:payload|key|value);/, gir)
+    assert_includes rseq, "compiled_data->states.entries"
+    assert_includes rseq, "compiled_data->subprograms.entries"
+  end
+
+  def test_capture_indexes_are_typed_and_source_ordered
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    common = File.read(File.join(ROOT, "ext/onibi/onibi_common.c"))
+    assert_includes common, "capture_by_number"
+    assert_includes common, "OnibiNameIndexEntry"
+    assert_includes compiler, "entry->definitions[entry->definition_count++]"
+    assert_includes compiler, "return entry->definitions[0]"
+    refute_includes compiler, "duplicate named capture requires"
+  end
+
+  def test_name_and_subprogram_indexes_do_not_intern_source_text
+    token = File.read(File.join(ROOT, "ext/onibi/token.c"))
+    parser = File.read(File.join(ROOT, "ext/onibi/parser.c"))
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    refute_includes token, "rb_intern2"
+    refute_includes parser, "rb_intern2"
+    assert_includes token, "onibi_known_property_id"
+    assert_equal 1, token.scan(/rb_intern\(/).length
+    assert_equal 0, parser.scan(/rb_intern/).length
+    assert_includes File.read(File.join(ROOT, "ext/onibi/onibi_common.c")),
+                    "OnibiSubprogramId subprogram_id"
+    assert_includes compiler, "entry->subprogram_id"
+    assert_includes compiler, "onibi_resolved_named_subprogram"
+  end
+
+  def test_large_capture_name_corpus_uses_indexed_compile_paths
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    assert_includes compiler, "onibi_name_hash"
+    assert_includes compiler, "onibi_resolved_numbered_capture"
+    assert_includes compiler, "capture_by_number[number - 1]"
+    lookup = compiler[/static OnibiAstId\nonibi_resolved_named_capture.*?\n}\n/m]
+    refute_nil lookup
+    refute_match(/for \(size_t .*semantics->count/, lookup)
+    bounded = (0...10).map { |i| "(?<n#{i}>a)" }.join
+    regexp = Onibi::Regexp.new(bounded)
+    assert regexp.send(:__onibi_diagnostics__, "a" * 10)[:rseq]
+    large = (0...40).map { |i| "(?<n#{i}>a)" }.join
+    assert Onibi::Regexp.new(large)
+  end
+
+  def test_duplicate_names_keep_order_and_compile_to_rseq
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    assert_includes compiler, "entry->definitions[entry->definition_count++]"
+    regexp = Onibi::Regexp.new("(?<same>a)(?<same>b)\\k<same>")
+    assert regexp.send(:__onibi_diagnostics__, "aba")[:rseq]
+  end
+
+  def test_repeated_named_subroutine_compiles_to_rseq
+    regexp = Onibi::Regexp.new("(?<same>a)\\g<same>\\g<same>")
+    assert regexp.send(:__onibi_diagnostics__, "aaa")[:rseq]
+  end
+
+  def test_named_subroutine_uses_typed_index_directly
+    compiler = File.read(File.join(ROOT, "ext/onibi/compiler.c"))
+    branch = compiler[/else if \(node->kind == ONIBI_AST_SUBROUTINE\).*?\n    \}\n    else if/m]
+    refute_nil branch
+    assert_includes branch, "onibi_resolved_named_subprogram"
+  end
+end

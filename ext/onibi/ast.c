@@ -1,19 +1,4 @@
 /* C AST ownership and parser-result lifetime. */
-/* GIR payloads remain Ruby objects.  These accessors are only for that
- * semantic boundary.  The tokenizer and parser use OnibiTokenRecord. */
-static inline OnibiTokenKind
-onibi_token_kind_code(VALUE token)
-{
-    VALUE kind = onibi_hash_value_id(token, id_key_kind_code);
-    return NIL_P(kind) ? (OnibiTokenKind)-1 : (OnibiTokenKind)NUM2UINT(kind);
-}
-
-static inline ID
-onibi_token_name_id(VALUE token)
-{
-    VALUE name_id = onibi_hash_value_id(token, id_key_name_id);
-    return NIL_P(name_id) ? (ID)0 : (ID)NUM2ULONG(name_id);
-}
 
 static VALUE onibi_deep_freeze(VALUE value);
 
@@ -65,6 +50,7 @@ onibi_c_find_close(const OnibiTokenVector *tokens, long begin, long end,
 
 typedef struct {
     OnibiAstArena arena;
+    OnibiResolvedArena semantics;
     int options;
     int encoding_index;
     unsigned int ast_flags;
@@ -82,7 +68,11 @@ static void
 onibi_parsed_free(void *ptr)
 {
     OnibiParsed *parsed = (OnibiParsed *)ptr;
-    if (parsed != NULL) onibi_ast_arena_free(&parsed->arena);
+    if (parsed != NULL) {
+	onibi_ast_arena_free(&parsed->arena);
+	xfree(parsed->semantics.nodes);
+	onibi_resolved_indexes_free(&parsed->semantics);
+    }
     xfree(parsed);
 }
 static size_t
@@ -92,7 +82,13 @@ onibi_parsed_memsize(const void *ptr)
     if (parsed == NULL) return 0;
     size_t size = sizeof(*parsed) +
 		  parsed->arena.capacity * sizeof(OnibiAstNode) +
-		  parsed->arena.bytes_count;
+		  parsed->arena.bytes_count +
+		  parsed->semantics.count * sizeof(OnibiResolvedNode);
+    size += parsed->semantics.capture_by_number_count * sizeof(OnibiAstId);
+    size += parsed->semantics.name_index_capacity * sizeof(OnibiNameIndexEntry);
+    for (size_t i = 0; i < parsed->semantics.name_index_capacity; i++)
+	size += parsed->semantics.name_entries[i].definition_capacity *
+		sizeof(OnibiAstId);
     for (size_t i = 0; i < parsed->arena.count; i++) {
 	size += parsed->arena.nodes[i].child_capacity * sizeof(OnibiAstId);
 	size += parsed->arena.nodes[i].range_capacity * sizeof(OnibiAstRange);

@@ -28,4 +28,19 @@ class SubexpressionCallTest < Minitest::Test
     assert_equal expected.to_a, actual.to_a
     assert_equal expected.offset(1), actual.offset(1)
   end
+
+  def test_subexpression_call_uses_definition_site_ignorecase
+    pattern = "(?i:(?<letter>a))(?-i:\\g<letter>)"
+
+    assert_equal Regexp.new(pattern).match("aA").to_a,
+                 Onibi::Regexp.new(pattern).match("aA").to_a
+  end
+
+  def test_call_site_ignorecase_does_not_change_subexpression_definition
+    pattern = "(?-i:(?<letter>a))(?i:\\g<letter>)"
+
+    assert_nil Onibi::Regexp.new(pattern).match("aA")
+    assert_equal Regexp.new(pattern).match("aa").to_a,
+                 Onibi::Regexp.new(pattern).match("aa").to_a
+  end
 end

@@ -60,18 +60,18 @@ are diagnostic adapters and are not execution inputs.
 
 The compiler keeps the final GIR state and edge vectors in C. RSeq lowering
 reads these vectors directly. It does not rebuild GIR records from the Ruby
-debug mirror. Regular and action-free tagged execution read the relocatable
-RSeq blob through `OnibiRSeqView`. `Onibi::Regexp` creates this native view
-once during initialization. Match calls reuse the sidecar.
+debug mirror. All three interpreters read the relocatable RSeq blob through
+`OnibiRSeqView`. `Onibi::Regexp` creates this native view once during
+initialization. Match calls reuse the sidecar.
 
 RSeq publication validates section offsets, state ranges, edge destinations,
 action offsets, opcodes, and payload descriptors directly from the blob. The
 runtime validator does not compare the blob with the Ruby semantic mirror.
 
-The native blob walker executes ordered action-free cycles, classes,
-wildcards, graphemes, position assertions, captures that do not affect
-acceptance, and bounded-repeat counters. It keeps one counter vector for each
-native backtracking frame.
+The native interpreters execute ordered actions, cycles, classes, wildcards,
+graphemes, position assertions, captures, bounded-repeat counters,
+backreferences, conditions, calls, atomic groups, absence, and lookarounds.
+The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 
 ## Milestones
 
@@ -201,10 +201,9 @@ character classes, wildcard, grapheme clusters, assertions, repeat counters,
 captures, backreferences, conditionals, and subprogram calls. It uses a bounded
 C return stack for recursive calls.
 
-Atomic groups, absence groups, and lookaround predicates currently use the
-compiled MRI compatibility boundary. They do not create a Ruby execution
-graph. This boundary preserves public behavior until their C blob operations
-are complete.
+Atomic groups, absence groups, and lookaround predicates use compiled RSeq
+subprograms. They do not create a Ruby execution graph. The DYNAMIC
+interpreter applies their semantic transactions in native code.
 
 The runtime never creates `physical_graph`, `execution_graph`, or another
 Ruby state graph. Debug data must be generated only on request.

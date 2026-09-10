@@ -161,7 +161,7 @@ class AbsenceOperatorTest < Minitest::Test
 
   def test_absence_body_capture_presence_is_visible_to_conditionals
     [
-      ["(?~(a+))(?(1)a|b)", %w[a aa ab ba]],
+      ["(?~(a+))(?(1)a|b)", %w[a aa aaa aaaa ab ba aaba]],
       ["(?~(a|ab))(?(1)a|b)", %w[a aa ab ba]],
       ["(?~(?:(a|b)a))(?(1)a|b)", %w[a aa ab ba b]]
     ].each do |pattern, inputs|
@@ -169,8 +169,12 @@ class AbsenceOperatorTest < Minitest::Test
         expected = ::Regexp.new(pattern).match(input)
         actual = Onibi::Regexp.new(pattern).match(input)
 
-        assert_equal expected&.to_a, actual&.to_a, [pattern, input]
-        assert_equal expected && expected.offset(0), actual && actual.offset(0), [pattern, input]
+        if expected
+          assert_equal expected.to_a, actual&.to_a, [pattern, input]
+          assert_equal expected.offset(0), actual&.offset(0), [pattern, input]
+        else
+          assert_nil actual, [pattern, input]
+        end
       end
     end
   end
@@ -184,8 +188,12 @@ class AbsenceOperatorTest < Minitest::Test
         expected = ::Regexp.new(pattern).match(input)
         actual = Onibi::Regexp.new(pattern).match(input)
 
-        assert_equal expected&.to_a, actual&.to_a, [pattern, input]
-        assert_equal expected && expected.offset(0), actual && actual.offset(0), [pattern, input]
+        if expected
+          assert_equal expected.to_a, actual&.to_a, [pattern, input]
+          assert_equal expected.offset(0), actual&.offset(0), [pattern, input]
+        else
+          assert_nil actual, [pattern, input]
+        end
       end
     end
   end

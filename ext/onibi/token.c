@@ -55,6 +55,30 @@ onibi_quantifier_byte_p(unsigned char c)
     return c == '*' || c == '+' || c == '?' || c == '{' || c == '}';
 }
 
+/* Return an ID only for the bounded set of built-in property names.  User
+ * capture and subroutine names remain byte slices in the AST. */
+static ID
+onibi_known_property_id(const char *bytes, size_t length)
+{
+    static const char *const names[] = {
+	"ASCII",  "ASCII_Hex_Digit", "Digit", "Alpha", "alpha",
+	"Letter", "digit",	     "Alnum", "alnum", "Lower",
+	"lower",  "Upper",	     "upper", "Space", "space",
+	"Blank",  "blank",	     "Word",  "word",  "XDigit",
+	"xdigit", "Cntrl",	     "Print", "Graph", "Punct"};
+    static ID ids[sizeof(names) / sizeof(names[0])];
+    static int ready;
+    if (!ready) {
+	for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+	    ids[i] = rb_intern(names[i]);
+	ready = 1;
+    }
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+	if (strlen(names[i]) == length && memcmp(names[i], bytes, length) == 0)
+	    return ids[i];
+    return 0;
+}
+
 /* Append one decimal digit without ever evaluating a signed overflowing
  * multiply.  Numeric backreferences use this helper for every digit. */
 static long
@@ -211,14 +235,6 @@ onibi_ast_add_range(OnibiAstArena *arena, OnibiAstId parent,
     OnibiAstNode *node = onibi_ast_node_at(arena, parent);
     ONIBI_VECTOR_PUSH(node->ranges, node->range_count, node->range_capacity,
 		      OnibiAstRange, range, 4, "AST range vector is too large");
-}
-
-static VALUE
-onibi_ast_slice_string(const OnibiAstArena *arena, OnibiTokenSlice slice)
-{
-    if (!slice.present) return Qnil;
-    return rb_str_new((const char *)arena->bytes + slice.offset,
-		      (long)slice.length);
 }
 
 static OnibiTokenSlice
@@ -513,12 +529,13 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' &&
 		RSTRING_PTR(src)[i + 1] <= '9') {
 		long number = escaped - '0';
-		i++;
-		while (i + 1 < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[i + 1] >= '0' &&
-		       RSTRING_PTR(src)[i + 1] <= '9') {
+		long digit = i + 2;
+		while (digit < RSTRING_LEN(src) &&
+		       RSTRING_PTR(src)[digit] >= '0' &&
+		       RSTRING_PTR(src)[digit] <= '9') {
 		    number = onibi_checked_decimal_append(
-			number, (unsigned char)(RSTRING_PTR(src)[++i] - '0'));
+			number, (unsigned char)(RSTRING_PTR(src)[digit] - '0'));
+		    i = digit++;
 		}
 		kind = ONIBI_TOKEN_BACKREF;
 		capture_number = number;
@@ -707,9 +724,11 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		: onibi_token_vector_copy(
 		      tokens, RSTRING_PTR(src) + negative_name_start,
 		      (size_t)negative_name_length);
-	ID name_id = name_start < 0 ? 0
-				    : rb_intern2(RSTRING_PTR(src) + name_start,
-						 name_length);
+	ID name_id =
+	    name_start < 0
+		? 0
+		: onibi_known_property_id(RSTRING_PTR(src) + name_start,
+					  (size_t)name_length);
 	OnibiTokenRecord record = {
 	    kind,
 	    byte,

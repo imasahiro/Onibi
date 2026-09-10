@@ -314,6 +314,10 @@ Capture operations are represented by edge actions.
 
 Assertions are represented by edge predicates.
 
+G-IR MUST contain the nullable-repeat semantics defined in Sections 20, 21,
+and 29. RSeq MUST preserve these semantics, including resource ownership.
+An executor MUST NOT recover missing semantics from the source pattern.
+
 ---
 
 ## 7.3 RSeq
@@ -939,9 +943,30 @@ An action program runs after the source state consumes input and before the dest
 
 Initial edges can run actions before the first consuming state.
 
-Action execution is transactional.
+Each edge action program MUST execute as one transaction for one thread.
+Its input is that thread's current semantic state and capture-event history.
+Actions MUST run in program order against private transaction state.
+Later actions MUST see earlier writes in that transaction.
 
-If one predicate in an action program fails, the engine discards all modifications from that action program.
+The transaction MUST commit only when every predicate and action succeeds.
+Commit MUST publish the complete successor state and its capture-event history together.
+A failed predicate or action MUST publish neither state nor capture events.
+Failure MUST leave the input thread and all sibling threads unchanged.
+
+This rule includes captures, pending capture opens, match reset, counters,
+nullable guards, progress slots, call frames, and atomic or absence boundaries.
+Semantic state MUST belong to the thread, including its active call frames.
+It MUST NOT reside in mutable execution-global or thread-local storage.
+
+An assertion trial MUST use a child transaction.
+A successful positive assertion MUST return its specified capture effects to its parent transaction.
+A negative assertion MUST NOT return capture effects, even when the assertion succeeds.
+Failed assertion trials MUST discard their capture events and all other semantic writes.
+Failure later in the parent action program MUST discard earlier assertion effects.
+
+A successful edge does not commit the whole match.
+If its path later fails, that path's state and events MUST NOT reach another surviving path.
+Persistent histories, write logs, or copy-on-write state MAY implement these rules.
 
 ---
 
@@ -952,6 +977,7 @@ G-IR supports these semantic actions.
 ```text
 CAPTURE_OPEN
 CAPTURE_CLOSE
+CAPTURE_OPEN_UNSCOPED
 MATCH_RESET
 
 ASSERT_BEGIN_BUFFER
@@ -980,17 +1006,151 @@ TEST_COUNTER_GE
 
 PROGRESS_SAVE
 TEST_PROGRESS
+
+NULL_ENTER
+NULL_CAPTURE
+NULL_CONTINUE
+NULL_STOP
+ORDER
 ```
 
 Inline regexp options are not runtime actions.
 
 The compiler resolves them before G-IR generation.
 
+## 21.1 Nullable owner and observations
+
+A nullable owner is identified by its base slot `b` in the existing counter/progress slot namespace.
+It reserves exactly the adjacent slots `b` and `b + 1`.
+`NULL_ENTER(b)` declares that owner; all its NULL actions MUST use the same base.
+
+| Resource | Abstract value |
+| --- | --- |
+| Slot `b`: `entry_pos` | Uninitialized, or the iteration entry byte position |
+| Slot `b + 1`: `status` | Uninitialized, `EMPTY_SAME` (`1`), `CONTINUE` (`0`), or `EMPTY_OTHER` (`-1`) |
+| Capture boundary slots `2*g`, `2*g + 1` | Unset boundaries, a pending open, or a closed byte range for group `g` |
+| Capture-open observation | The immutable capture snapshot carried by one scoped open event in the current iteration |
+
+Input positions and closed ranges MUST use byte offsets within the subject.
+An unset capture has no range. A pending open has no matching close.
+A closed empty capture has equal begin and end positions.
+These three states MUST remain distinct.
+
+An observation belongs to a particular open event, not just a capture group number.
+It MUST retain that event's saved begin/end state, including an unset end.
+Later opens of the same group MUST NOT replace an earlier event's observation.
+The owner MAY retain these event snapshots or reduce them to `status` as Section 21.2 specifies.
+Snapshots and their reduction MUST remain per-thread transactional state.
+
+MRI creates a `STK_MEM_START` record for `OP_MEMORY_START_PUSH`.
+That new record saves the previous begin/end references in `u.mem.start` and `u.mem.end`.
+`STACK_NULL_CHECK_MEMST` examines those saved fields on records created after the current null-check start.
+It does not examine the new capture span or the latest public capture value.
+This distinction is required by the reference cases `(?:()a?)*` and `(?:()(a?))*` in Section 29.3.
+
+## 21.2 NULL action rules
+
+The compiler MUST emit `NULL_CAPTURE(b, g)` for each scoped capture open within owner `b`'s active iteration.
+This includes output-only captures and scoped opens in nested repeats or successful subprogram paths.
+Unscoped capture opens create no such observation.
+This rule follows the existing scoped/unscoped capture distinction; there is no optional observation mode.
+
+`NULL_CAPTURE` MUST immediately precede its matching scoped capture open.
+It MUST read the current thread's capture state before that open changes the public capture state.
+This value is the saved snapshot of the logical open event.
+For nested owners, their `NULL_CAPTURE` actions MUST form one contiguous block immediately before that open.
+The block MUST use outer-to-inner owner order.
+Each active enclosing owner MUST receive exactly one observation for that event.
+An event outside the current iteration MUST NOT be observed.
+A failed path or assertion trial MUST discard its observations under Section 20.
+
+The following table defines every action read and write.
+Invalid slots, missing initialization, or a missing associated open event are invalid programs.
+Both verifiers MUST reject these errors before execution.
+
+| Action | Reads | Successful writes | Ordinary failure |
+| --- | --- | --- | --- |
+| `NULL_ENTER(b)` | Current position `p` | Set `entry_pos = p`, `status = EMPTY_SAME`; start a fresh observation set | Never |
+| `NULL_CAPTURE(b, g)` | Initialized owner and current thread capture state for `g`, saved for the following scoped open | Accumulate the observation into `status` | Never |
+| `NULL_CONTINUE(b)` | Initialized `entry_pos`, `status`, and final position `p` | None | Unless the decision table permits continuation |
+| `NULL_STOP(b)` | Initialized `entry_pos`, `status`, and final position `p` | None | Unless the decision table permits stopping |
+
+Classify each observed snapshot as follows:
+
+| Saved snapshot | Observation |
+| --- | --- |
+| End is unset, including an unclosed capture | `CONTINUE` |
+| Begin and end differ | `CONTINUE` |
+| Empty range ends at `entry_pos` | `EMPTY_SAME` |
+| Empty range ends elsewhere | `EMPTY_OTHER` |
+
+`CONTINUE` dominates `EMPTY_OTHER`, which dominates `EMPTY_SAME`.
+The accumulated status MUST retain the highest of all current-iteration observations.
+No observations therefore leave `status = EMPTY_SAME`.
+A current public capture being unset does not itself create an observation.
+
+The decision table is exhaustive:
+
+| Condition, in precedence order | `NULL_CONTINUE` | `NULL_STOP` |
+| --- | --- | --- |
+| `p != entry_pos`, with any initialized status | Succeed | Fail |
+| `p == entry_pos` and status is `CONTINUE` | Succeed | Fail |
+| `p == entry_pos` and status is `EMPTY_SAME` | Fail | Succeed |
+| `p == entry_pos` and status is `EMPTY_OTHER` | Fail | Fail |
+
+Thus input progress wins over every capture observation.
+Without input progress, any unclosed or nonempty observed snapshot permits continuation.
+Otherwise, stopping requires every observed empty range to end at the final position.
+If any ends elsewhere, both actions fail.
+With no observations, only input position decides.
+Comparing empty ends with `entry_pos` during accumulation is sufficient: capture status matters only when final `p == entry_pos`.
+
+Failure MUST roll back the complete edge transaction, including captures, events, and nullable state.
+A successful stop MUST retain the captures on its successful body path.
+NULL actions MUST NOT test bounds or create priority; counters and ordered edges provide those rules.
+
+## 21.3 Slot verification and position-only progress
+
+Both verifiers MUST derive nullable owners from `NULL_ENTER` actions in the existing graph.
+For every owner, checked addition MUST establish `b + 1 < counter_count`.
+Different owner intervals MUST NOT overlap.
+Neither reserved slot MAY be used by an ordinary counter or progress action.
+A NULL action MUST reference a declared base, never another owner's status slot.
+These checks require no new blob section or owner table.
+
+The verifiers MUST follow action order and successful control-flow paths.
+They MUST track active iterations as a control-flow fact, without adding a serialized phase field.
+`NULL_ENTER` starts an iteration; a successful `NULL_CONTINUE` or `NULL_STOP` completes its decision.
+Every owner read MUST have a matching `NULL_ENTER` for the current iteration on every incoming path.
+A nested owner's entry MUST NOT initialize an outer owner, or the reverse.
+Initialization on a failed path MUST NOT reach a successor.
+Each observation block MUST bind the following scoped capture open for its stated capture ID within each owner's active iteration.
+The verifiers MUST check block adjacency, outer-to-inner owner order, and exactly one observation per active enclosing owner.
+The capture ID and both capture boundary slots MUST be within the declared capture count.
+Each new iteration MUST execute `NULL_ENTER` before recording or testing observations.
+An observation after the owner's completed decision MUST fail verification until the next `NULL_ENTER`.
+Recursive calls MUST keep separate owner instances in their per-thread call frames.
+
+`PROGRESS_SAVE` and `TEST_PROGRESS` describe the separate position-only mechanism.
+Its slot MUST be outside every nullable owner's reserved pair.
+The thread MUST initialize ordinary progress slots to `UNSEEN` before their first read.
+This is an initialized sentinel, not an uninitialized value.
+`TEST_PROGRESS` succeeds for `UNSEEN` or a position different from the saved position.
+`PROGRESS_SAVE` writes the current byte position.
+Physical `RA_PROGRESS` performs that test followed by that save as one action.
+The compiler MAY use it only when position-only rejection preserves MRI's observable repeat behavior.
+
+At each match attempt, public captures MUST start unset.
+Counter tests and increments MUST have an earlier `COUNTER_INIT` on every incoming path.
+Capture close MUST have the corresponding open in its active capture frame.
+Rollback MUST restore both boundaries, pending opens, and the capture-event history.
+Rollback to an unset predecessor MUST clear the abandoned capture without adding a new action opcode.
+
 ---
 
 # 22. Physical RSeq Action ISA
 
-RSeq uses a compact action instruction.
+RSeq uses the existing eight-byte action record:
 
 ```c
 struct OnibiRAction {
@@ -1001,50 +1161,67 @@ struct OnibiRAction {
 };
 ```
 
-Size:
+RSeq v1 uses checked 16-bit capture and counter/progress slots.
+The physical record and blob layout MUST NOT change for nullable owner verification.
 
 ```text
-8 bytes
+capture count                    0..32768
+capture boundary slot            0..65535
+capture reference                0..32767
+counter count                    0..65536
+counter or progress slot         0..65535
+counter value                    0..4294967295
+nullable owner base              0..65534, with base + 1 < counter_count
 ```
 
-The RSeq action operations are:
+The compiler and verifier MUST check operands before narrowing them.
 
 ```c
 enum OnibiRActionOp {
     RA_END = 0,
-
     RA_CAPTURE,
     RA_MATCH_RESET,
-
     RA_ASSERT_POSITION,
     RA_ASSERT_SUBPROGRAM,
-
     RA_TEST_CAPTURE,
-
     RA_COUNTER_SET,
     RA_COUNTER_ADD,
     RA_COUNTER_TEST,
-
-    RA_PROGRESS
+    RA_PROGRESS,
+    RA_NULL_ENTER,
+    RA_NULL_CAPTURE,
+    RA_NULL_CONTINUE,
+    RA_NULL_STOP,
+    RA_ORDER
 };
 ```
 
-`RA_CAPTURE.flags` selects open or close.
+`RA_CAPTURE.flags` is `0` for scoped open, `1` for close, or `2` for `RA_CAPTURE_OPEN_UNSCOPED`.
+`arg16` stores the capture boundary slot; `arg32` remains zero.
+Unscoped open MUST NOT weaken the transaction rule in Section 20.
 
 `RA_ASSERT_POSITION.arg16` selects the position predicate.
+`RA_ASSERT_SUBPROGRAM.arg16` selects lookahead or lookbehind; `arg32` stores the subprogram descriptor ID.
+Its existing flags and descriptor preserve polarity, direction, and capture publication behavior.
 
-`RA_ASSERT_SUBPROGRAM.flags` selects:
+`RA_TEST_CAPTURE.flags` selects set or unset; `arg16` stores the capture reference.
+Counter actions use `arg16` for the counter slot.
+Counter set and test actions use `arg32` for the counter value.
+`RA_PROGRESS.arg16` stores its progress slot; `flags` and `arg32` MUST remain zero.
 
-```text
-positive
-negative
-forward
-backward
-```
+| Nullable opcode | `arg16` | `flags` | `arg32` |
+| --- | --- | --- | --- |
+| `RA_NULL_ENTER` | Owner base `b` | `0` | `0` |
+| `RA_NULL_CAPTURE` | Owner base `b` | `0` | Capture ID |
+| `RA_NULL_CONTINUE` | Owner base `b` | `0` | `0` |
+| `RA_NULL_STOP` | Owner base `b` | `0` | `0` |
 
-`RA_TEST_CAPTURE.flags` selects set or unset.
+The verifier MUST reject other flags or unused nonzero operands.
+It MUST apply Section 21.3 ownership and initialization checks directly to decoded RSeq actions and edges.
 
-This compression reduces RSeq size without changing G-IR semantics.
+`RA_ORDER.flags` and `arg16` remain zero; `arg32` retains the existing order operand.
+This action records ordered-path information; it MUST NOT override graph edge priority.
+Serialization MUST preserve all accepted operands and ordered action sequences.
 
 ---
 
@@ -1131,6 +1308,11 @@ The compiler must normalize nullable repetition before epsilon elimination.
 
 The closure algorithm must detect epsilon cycles.
 
+Elimination MUST preserve each nullable action's owner and initialization order.
+It MUST NOT merge paths with different guard decisions, capture effects, or rollback behavior.
+If elimination combines actions on one edge, the combined program MUST obey Section 20.
+No intermediate write or capture event becomes visible before that program commits.
+
 ---
 
 # 26. Alternation Lowering
@@ -1176,6 +1358,11 @@ For a greedy quantifier, `a -> a` has higher priority.
 
 For a lazy quantifier, `a -> ACCEPT` has higher priority.
 
+The same ordering MUST apply at initial entry and after each completed iteration.
+The listed graph does not specify priority through its textual line order.
+The compiler MUST store priority in each source state's ordered edge list.
+Actions and executor-specific scheduling rules MUST NOT introduce another priority source.
+
 ---
 
 # 28. Bounded Repetition
@@ -1210,6 +1397,14 @@ A counter is thread semantic state.
 
 A large counted repeat therefore uses the ordered thread executor unless an RSeq optimization removes the counter.
 
+The counter MUST belong to that repeat and start at zero on each repeat invocation.
+A successful body iteration MUST increment it once, including an empty iteration.
+A failed body or edge transaction MUST NOT increment the surviving thread's counter.
+Continuation MUST obey the upper bound; exit MUST obey the lower bound.
+Nullable guards can reject a path before it reaches the lower bound.
+The compiler MUST NOT add empty iterations solely to make a rejected path satisfy that bound.
+Unrolled and counted forms MUST preserve the MRI reference behavior in Section 29.
+
 ---
 
 # 29. Nullable Repetition
@@ -1222,17 +1417,96 @@ Patterns such as:
 
 can execute an iteration without input progress.
 
-Onibi must prevent an infinite zero-progress cycle.
+## 29.1 Progress, live captures, and priority
 
-For every nullable repeated body, the compiler assigns a progress slot.
+Zero progress means equal input byte positions at body entry and body completion.
+A nullable guard MUST prevent an infinite cycle of identical zero-progress iterations.
+Input position alone MUST NOT define identical iterations when live capture state can change the repeat decision.
 
-The runtime stores the input position at iteration entry.
+Each active owner MUST observe every scoped capture-open event within its iteration, as Section 21.2 defines.
+This includes captures used only in the final match result.
+A skipped group creates no event and therefore no observation.
+The compiler MUST preserve the observation rule through nested repeats and successful subprogram paths.
+Failed and negative assertion transactions MUST discard their observations under Section 20.
 
-If an iteration completes at the same input position, the engine must not begin another identical zero-progress iteration.
+Capture state includes the boundaries and pending open defined in Section 21.1.
+An unset capture, an open capture, and a closed empty capture MUST remain distinct.
+Equal captured text alone MUST NOT establish equal live state.
+Threads with different future-observable guard or capture state MUST remain distinct.
+Output-only capture history MUST retain the first path under edge priority when equivalent threads merge.
 
-The exit path remains available according to normal priority.
+The compiler MUST express permitted body, continuation, and stop paths in G-IR.
+It MUST preserve MRI's capture effects when a zero-progress path stops, continues, or fails.
+An executor MUST NOT replace these paths with a traversal-count, byte-width, or capture-order heuristic.
+The Section 21.2 tables define every NULL action condition.
+Section 29.3 governs the compiler's choice of paths and scoped capture-open sites.
 
-This rule replaces Onigmo null-check bytecode.
+For a greedy repeat, the body path MUST precede its ordinary exit path.
+For a lazy repeat, the ordinary exit path MUST precede its body path.
+A zero-progress stop MUST retain the priority of the body path that produced it.
+It MUST NOT move ahead of an earlier alternative or a higher-priority lazy exit.
+A rejected continuation MUST leave other ordered paths available.
+Guard decisions and capture history length MUST NOT reorder those paths.
+
+## 29.2 Capture commit, overwrite, and clear rules
+
+A closed empty capture at byte position `p` has range `[p, p]`.
+An unset capture has no range and produces `nil`, not an empty string.
+
+A successful iteration MUST commit the capture actions on its surviving path.
+A later successful close of the same group MUST overwrite that group's previous range.
+This includes an empty range overwriting a nonempty range.
+A skipped group MUST retain its last surviving capture value unless path rollback restores an earlier value.
+Repeat entry, an untaken alternative, or a skipped optional group MUST NOT implicitly clear captures.
+
+A failed iteration MUST restore the state and capture-event history of its surviving predecessor.
+Rollback to an unset predecessor MUST clear the abandoned capture.
+Rollback to a set predecessor MUST restore that predecessor's range.
+Restoration MUST recover both the prior range and the prior pending open.
+It MUST also restore the prior event-history root, so abandoned closes cannot set the capture again.
+Clearing an abandoned capture MUST restore unset boundaries and remove its abandoned events in the same transaction.
+
+These rules apply to live registers and output capture history alike.
+Materialization MUST use only the accepted thread's surviving events.
+It MUST NOT replay events from failed edges, failed assertion trials, or abandoned iterations.
+
+## 29.3 MRI reference rule
+
+MRI 4.0.6 `Regexp` is the behavioral reference for observable nullable-repeat ambiguity.
+The reference includes match success, ordered choice, capture values, and capture byte ranges.
+Comparison MUST use the same pattern, options, subject bytes, and encodings.
+Internal positions and ranges MUST remain byte offsets, including for multibyte input.
+
+The following reference cases use `\A(?:pattern)\z` and UTF-8 input.
+Ranges show capture groups only. `unset` means `[nil, nil]` from `MatchData#byteoffset`.
+
+| Pattern | Input | Capture byte ranges |
+| --- | --- | --- |
+| `(a?)*` | empty | `[0, 0]` |
+| `(a?)*?` | empty | unset |
+| `(a?)*` | `a` | `[1, 1]` |
+| `(a?)*?` | `a` | `[0, 1]` |
+| `((a)?)*` | `a` | `[1, 1]`, `[0, 1]` |
+| `((a)?)*` | empty | `[0, 0]`, unset |
+| `(?:(a)\|(b))*` | `ab` | `[0, 1]`, `[1, 2]` |
+| `((a)?){2}` | `a` | `[1, 1]`, `[0, 1]` |
+| `(((a)?)?){9}` | `a` | `[1, 1]`, `[1, 1]`, `[0, 1]` |
+| `(?:(a)\|((b)?)){9}` | `ab` | `[0, 1]`, `[2, 2]`, `[1, 2]` |
+| `((a)?)*a` | `a` | `[0, 0]`, unset |
+| `(?:(a)\|(b)){1,3}b` | `ab` | `[0, 1]`, unset |
+| `(?:()a?)*` | `a` | `[0, 0]` |
+| `(?:()(a?))*` | `a` | `[1, 1]`, `[1, 1]` |
+| `(?:()a?())*` | `a` | `[0, 0]`, `[1, 1]` |
+| `((あ)?)*` | `あ` | `[3, 3]`, `[0, 3]` |
+| `(?:(a?)\|b)*` | `b` | `[0, 0]` |
+| `(?:(a?)\|b){3}` | `b` | no match |
+| `(?:(a?)\|あ){3}` | `あ` | `[3, 3]` |
+
+The last cases record different MRI results. They do not define a compiler byte-width rule.
+Compiler work MUST establish the required lowering from MRI evidence before selecting paths and scoped capture-open sites.
+It MUST NOT fit numeric thresholds to these examples or change the repeat unroll limit.
+Compiler changes for unresolved cases MUST include a focused MRI 4.0.6 probe before selecting lowering rules.
+G-IR MUST record the resulting semantics; RSeq and every executor MUST preserve them.
 
 ---
 
@@ -1565,6 +1839,25 @@ ENCODING_CTYPE
 MIXED
 ```
 
+`ASCII_BITMAP` data is one 256-bit bitmap.
+
+`CODEPOINT_RANGES` data is a sorted array of inclusive `uint32_t` pairs.
+
+`ENCODING_CTYPE` data is one MRI/Onigmo character-type identifier.
+
+`MIXED` data is a checked postfix program of range, ctype, union,
+intersection, and negation operations.
+
+Descriptor flags store whole-class negation.
+
+The compiler puts one-character case-fold closure in the descriptor data.
+
+The executor applies whole-class negation after descriptor evaluation.
+
+Verified GIR analysis marks folds that still need multi-character paths.
+
+The dispatcher keeps these programs on the MRI fallback path.
+
 The compiler must deduplicate identical class descriptors.
 
 ---
@@ -1766,6 +2059,7 @@ struct OnibiRSeqHeader {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t lookbehind_width_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
@@ -1780,6 +2074,7 @@ struct OnibiRSeqHeader {
     uint32_t literals_offset;
     uint32_t descriptors_offset;
     uint32_t subprograms_offset;
+    uint32_t lookbehind_widths_offset;
 
     uint32_t blob_size;
 };
@@ -1796,6 +2091,12 @@ All sections must have four-byte alignment.
 The blob must be smaller than 4 GiB.
 
 The compiler must raise `RegexpError` if representation limits are exceeded.
+
+RSeq v1 also uses the action limits in section 22.
+
+The first invalid capture count is `32769`.
+
+The first invalid counter count is `65537`.
 
 ---
 
@@ -1872,6 +2173,59 @@ enum OnibiRStateOp {
 `RS_STRING`, `RS_RUN_CLASS`, and `RS_RUN_ANY` are lowering optimizations.
 
 They are not canonical G-IR operations.
+
+## 50.1 RSeq subprogram descriptors
+
+Each call, assertion, atomic group, and absence state uses a descriptor ID.
+
+The descriptor has this physical form:
+
+```c
+struct OnibiOptionEnv {
+    uint32_t options;
+    int32_t encoding_index;
+};
+
+struct OnibiSubprogramDesc {
+    uint32_t entry;
+    uint32_t accept;
+    uint32_t flags;
+    OnibiOptionEnv option_env;
+    uint32_t entry_edge_base;
+    uint32_t width_base;
+    uint16_t entry_edge_count;
+    uint16_t width_count;
+    uint8_t kind;
+    uint8_t effects;
+    uint16_t reserved;
+};
+```
+
+The descriptor size is 36 bytes.
+
+The entry edges are in priority order.
+
+They preserve all entry alternatives and their action programs.
+
+The option environment comes from the definition site.
+
+A caller cannot replace this environment.
+
+Positive assertions set the capture-publication effect.
+
+Negative assertions do not set this effect.
+
+Atomic descriptors set the first-success effect.
+
+Absence uses a dedicated descriptor kind.
+
+A lookbehind descriptor references an ordered `uint32_t` width set.
+
+Each width is in encoding characters.
+
+The executor uses encoding previous-character operations for these widths.
+
+All other descriptor kinds have an empty width set.
 
 ---
 
@@ -2148,6 +2502,8 @@ Compatibility wrappers may keep their current names.
 `rb_reg_prepare_re()` remains the compatibility boundary for target-string preparation.
 
 Onibi must reuse the same encoding compatibility checks.
+
+Onibi calls this function before it selects an RSeq executor.
 
 The matching engine receives an already validated encoding combination.
 
@@ -3151,6 +3507,21 @@ all RSeq offsets are aligned
 blob_size covers every section
 no integer arithmetic overflow occurred
 ```
+
+The physical verifier validates the complete immutable blob before it is
+published. It checks section ownership, action-program boundaries and endings,
+action operand forms, descriptor ranges, subprogram contracts, and metadata.
+
+Semantic feature bits and the execution class must agree with the physical
+records. Enabled search metadata must agree with the physical records.
+Executors can trust this verified contract. They do not repeat structural
+validation in match loops.
+
+The verifier gets `ZERO_WIDTH_ONLY` from states reachable by root start edges.
+It does not use consuming states that are private to assertion subprograms.
+The counter count equals the highest referenced action slot plus one.
+It is zero when no counter action refers to a slot. Progress actions also refer
+to counter slots. The verifier checks each encoding CTYPE operand before use.
 
 Debug builds must abort on an internal invariant failure.
 

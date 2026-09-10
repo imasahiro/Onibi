@@ -14,11 +14,46 @@ typedef uint32_t OnibiSubprogramId;
 typedef uint32_t OnibiTagEventId;
 typedef uint32_t OnibiCallFrameId;
 
-/* Immutable entry metadata for a compiled subprogram. */
+/* GIR v1 uses checked 16-bit action slots.  Capture boundaries need two
+   slots. */
+#define ONIBI_GIR_MAX_CAPTURE_COUNT UINT32_C(32768)
+#define ONIBI_GIR_MAX_COUNTER_COUNT UINT32_C(65536)
+
+/* Resolved lexical options for one definition. */
+typedef struct {
+    uint32_t options;
+    int32_t encoding_index;
+} OnibiOptionEnv;
+
+typedef enum {
+    ONIBI_SUBPROGRAM_ROOT = 0,
+    ONIBI_SUBPROGRAM_CALL,
+    ONIBI_SUBPROGRAM_LOOKAHEAD,
+    ONIBI_SUBPROGRAM_LOOKBEHIND,
+    ONIBI_SUBPROGRAM_ATOMIC_GROUP,
+    ONIBI_SUBPROGRAM_ABSENCE
+} OnibiSubprogramKind;
+
+enum {
+    ONIBI_SUBPROGRAM_EFFECT_POSITIVE = 1u << 0,
+    ONIBI_SUBPROGRAM_EFFECT_PUBLISH_CAPTURES = 1u << 1,
+    ONIBI_SUBPROGRAM_EFFECT_FIRST_SUCCESS = 1u << 2
+};
+
+/* Immutable entry metadata for a compiled subprogram. Entry edges and width
+   sets use offsets into their RSeq sections. */
 typedef struct {
     OnibiStateId entry;
     OnibiStateId accept;
     uint32_t flags;
+    OnibiOptionEnv option_env;
+    uint32_t entry_edge_base;
+    uint32_t width_base;
+    uint16_t entry_edge_count;
+    uint16_t width_count;
+    uint8_t kind;
+    uint8_t effects;
+    uint16_t reserved;
 } OnibiSubprogramDesc;
 
 /* Semantic call-frame shape.  Runtime storage is owned by the VM sidecar. */
@@ -44,6 +79,13 @@ typedef enum {
     ONIBI_EXEC_TAGGED = 1,
     ONIBI_EXEC_DYNAMIC = 2
 } OnibiExecutionKind;
+
+typedef enum {
+    ONIBI_ENC_ASCII_7BIT = 0,
+    ONIBI_ENC_SINGLE_BYTE,
+    ONIBI_ENC_UTF8,
+    ONIBI_ENC_GENERIC_MB
+} OnibiEncodingMode;
 
 typedef enum {
     ONIBI_OPT_IGNORECASE = 1u << 0,
@@ -83,8 +125,40 @@ enum {
     ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE = 1u << 0,
     ONIBI_RSEQ_HEADER_FLAG_IGNORECASE = 1u << 0,
     ONIBI_RSEQ_HEADER_FLAG_MULTILINE = 1u << 1,
-    ONIBI_RSEQ_CLASS_FLAG_NEGATED = 1u << 0
+    ONIBI_RSEQ_CLASS_FLAG_NEGATED = 1u << 0,
+    /* This physical marker lets the verifier prove the fallback feature. */
+    ONIBI_RSEQ_CLASS_FLAG_INCOMPLETE_CASEFOLD = 1u << 1
 };
+
+typedef enum {
+    ONIBI_CLASS_ASCII_BITMAP = 0,
+    ONIBI_CLASS_CODEPOINT_RANGES,
+    ONIBI_CLASS_ENCODING_CTYPE,
+    ONIBI_CLASS_MIXED
+} OnibiClassKind;
+
+typedef enum {
+    ONIBI_CLASS_EXPR_RANGE = 1,
+    ONIBI_CLASS_EXPR_CTYPE,
+    ONIBI_CLASS_EXPR_UNION,
+    ONIBI_CLASS_EXPR_INTERSECTION,
+    ONIBI_CLASS_EXPR_NEGATE
+} OnibiClassExprOp;
+
+typedef struct {
+    uint32_t first;
+    uint32_t last;
+} OnibiCodepointRange;
+
+/* MIXED descriptors use a postfix program. Each operator consumes one or
+   two Boolean values. Leaf operators produce one Boolean value. */
+typedef struct {
+    uint32_t arg0;
+    uint32_t arg1;
+    uint8_t op;
+    uint8_t flags;
+    uint16_t reserved;
+} OnibiClassExpr;
 enum {
     ONIBI_RSEQ_FEATURE_BACKREF = 1u << 0,
     ONIBI_RSEQ_FEATURE_CAPTURE = 1u << 1,
@@ -92,7 +166,10 @@ enum {
     ONIBI_RSEQ_FEATURE_MATCH_RESET = 1u << 3,
     ONIBI_RSEQ_FEATURE_ASSERTION = 1u << 4,
     ONIBI_RSEQ_FEATURE_LOOKAROUND = 1u << 5,
-    ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6
+    ONIBI_RSEQ_FEATURE_FIRST_BITMAP = 1u << 6,
+    ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD = 1u << 7,
+    ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD = 1u << 8,
+    ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY = 1u << 9
 };
 
 typedef enum {
@@ -119,7 +196,14 @@ typedef enum {
     ONIBI_GA_COUNTER_INCREMENT,
     ONIBI_GA_TEST_COUNTER_LT,
     ONIBI_GA_TEST_COUNTER_GE,
-    ONIBI_GA_PROGRESS
+    ONIBI_GA_PROGRESS,
+    /* MRI capture entries without a rollback record retain ordered opens. */
+    ONIBI_GA_CAPTURE_OPEN_UNSCOPED,
+    ONIBI_GA_NULL_ENTER,
+    ONIBI_GA_NULL_CAPTURE,
+    ONIBI_GA_NULL_CONTINUE,
+    ONIBI_GA_NULL_STOP,
+    ONIBI_GA_ORDER
 } OnibiGActionOp;
 
 typedef enum {
@@ -150,7 +234,12 @@ typedef enum {
     ONIBI_RA_COUNTER_SET,
     ONIBI_RA_COUNTER_ADD,
     ONIBI_RA_COUNTER_TEST,
-    ONIBI_RA_PROGRESS
+    ONIBI_RA_PROGRESS,
+    ONIBI_RA_NULL_ENTER,
+    ONIBI_RA_NULL_CAPTURE,
+    ONIBI_RA_NULL_CONTINUE,
+    ONIBI_RA_NULL_STOP,
+    ONIBI_RA_ORDER
 } OnibiRActionOp;
 
 typedef struct {
@@ -162,6 +251,7 @@ typedef struct {
 
 /* Flags preserve semantic action variants in the compact physical form. */
 #define ONIBI_RA_CAPTURE_CLOSE UINT8_C(1)
+#define ONIBI_RA_CAPTURE_OPEN_UNSCOPED UINT8_C(2)
 #define ONIBI_RA_TEST_CAPTURE_SET UINT8_C(1)
 #define ONIBI_RA_TEST_CAPTURE_UNSET UINT8_C(2)
 #define ONIBI_RA_COUNTER_GE UINT8_C(1)
@@ -216,6 +306,22 @@ typedef struct {
     uint32_t action_offset;
 } OnibiREdge;
 
+/* A backreference resolves to an ordered capture list at compile time.  The
+ * runtime reads this descriptor and never performs a name-table lookup. */
+typedef struct {
+    uint32_t capture_list_off;
+    uint16_t capture_count;
+    int16_t recursion_level;
+    uint16_t flags;
+} OnibiBackrefDesc;
+
+enum {
+    ONIBI_BACKREF_FLAG_IGNORE_CASE = 1u << 0,
+    ONIBI_BACKREF_FLAG_NAMED = 1u << 1,
+    ONIBI_BACKREF_FLAG_RELATIVE = 1u << 2,
+    ONIBI_BACKREF_FLAG_WITH_LEVEL = 1u << 3
+};
+
 typedef struct {
     uint32_t data_offset;
     uint16_t data_length;
@@ -244,6 +350,7 @@ typedef struct {
     uint32_t action_count;
     uint32_t class_count;
     uint32_t subprogram_count;
+    uint32_t lookbehind_width_count;
     uint32_t capture_count;
     uint32_t semantic_capture_count;
     uint32_t counter_count;
@@ -255,7 +362,11 @@ typedef struct {
     uint32_t classes_offset;
     uint32_t literals_offset;
     uint32_t descriptors_offset;
+    uint32_t backref_count;
+    uint32_t backrefs_offset;
+    uint32_t backref_lists_offset;
     uint32_t subprograms_offset;
+    uint32_t lookbehind_widths_offset;
     uint32_t blob_size;
     uint8_t first_bitmap[32];
     uint8_t prefix_length;
@@ -273,7 +384,11 @@ typedef struct {
     const OnibiRAction *actions;
     const OnibiClassDesc *classes;
     const OnibiLiteralDesc *literals;
+    const OnibiBackrefDesc *backrefs;
+    const uint32_t *backref_capture_ids;
     const OnibiSubprogramDesc *subprograms;
+    const uint32_t *lookbehind_widths;
+    uint32_t class_stack_capacity;
     uint8_t regular_capable;
 } OnibiRSeqView;
 
@@ -283,9 +398,16 @@ typedef char onibi_raction_size_must_be_8[(sizeof(OnibiRAction) == 8) ? 1 : -1];
 typedef char
     onibi_class_desc_size_must_be_8[(sizeof(OnibiClassDesc) == 8) ? 1 : -1];
 typedef char
+    onibi_class_expr_size_must_be_12[(sizeof(OnibiClassExpr) == 12) ? 1 : -1];
+typedef char
     onibi_literal_desc_size_must_be_8[(sizeof(OnibiLiteralDesc) == 8) ? 1 : -1];
-typedef char onibi_subprogram_desc_size_must_be_12
-    [(sizeof(OnibiSubprogramDesc) == 12) ? 1 : -1];
+typedef char onibi_backref_desc_size_must_be_12[(sizeof(OnibiBackrefDesc) == 12)
+						    ? 1
+						    : -1];
+typedef char
+    onibi_option_env_size_must_be_8[(sizeof(OnibiOptionEnv) == 8) ? 1 : -1];
+typedef char onibi_subprogram_desc_size_must_be_36
+    [(sizeof(OnibiSubprogramDesc) == 36) ? 1 : -1];
 typedef char
     onibi_call_frame_size_must_be_20[(sizeof(OnibiCallFrame) == 20) ? 1 : -1];
 
