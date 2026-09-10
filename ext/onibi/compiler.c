@@ -598,6 +598,7 @@ onibi_compiler_owner_cleanup(OnibiCompilerOwner *owner)
     onibi_guard_vector_free(&owner->builder.capture_guards);
     onibi_guard_vector_free(&owner->builder.exit_guards);
     onibi_id_vector_free(&owner->builder.progress_slots);
+    onibi_subprogram_variant_vector_free(&owner->builder.subprogram_variants);
     if (!owner->gir_transferred) {
 	onibi_gir_edge_vector_free(&owner->start_edges);
 	onibi_rseq_subprogram_vector_free(&owner->builder.subprograms);
@@ -1286,6 +1287,8 @@ onibi_analyze_semantic_node(OnibiParsed *parsed, OnibiAstId id)
 	onibi_analyze_semantic_node(parsed, node->body);
 	min = 0;
 	max = -1;
+	/* The absence operator can succeed without consuming bytes.  Mark it
+	 * nullable so a repeat receives the same progress owner as MRI. */
 	nullable = 1;
 	break;
     case ONIBI_AST_LOOKAHEAD:
@@ -1375,8 +1378,96 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
     onibi_id_vector_free(&accept_starts);
     onibi_g_action_vector_free(&fragment->start_actions);
     onibi_g_action_vector_free(&fragment->pending_actions);
-    builder->subprogram_status[subprogram_id] = 2;
     return (long)subprogram_id;
+}
+
+static OnibiSubprogramId
+onibi_subprogram_variant_find(const onibi_gir_builder_t *builder,
+			      OnibiSubprogramId semantic_id)
+{
+    for (size_t i = 0; i < builder->subprogram_variants.count; i++) {
+	const OnibiSubprogramVariant *variant =
+	    &builder->subprogram_variants.entries[i];
+	if (variant->semantic_id != semantic_id ||
+	    variant->scope_count != builder->nullable_scope_count)
+	    continue;
+	if (variant->scope_count == 0 ||
+	    memcmp(variant->scopes, builder->nullable_scopes,
+		   variant->scope_count * sizeof(*variant->scopes)) == 0)
+	    return variant->physical_id;
+    }
+    return UINT32_MAX;
+}
+
+static OnibiSubprogramId
+onibi_subprogram_variant_find_active(const onibi_gir_builder_t *builder,
+				     OnibiSubprogramId semantic_id)
+{
+    for (size_t i = 0; i < builder->subprogram_variants.count; i++) {
+	const OnibiSubprogramVariant *variant =
+	    &builder->subprogram_variants.entries[i];
+	if (variant->semantic_id == semantic_id && variant->compiling)
+	    return variant->physical_id;
+    }
+    return UINT32_MAX;
+}
+
+static OnibiSubprogramId
+onibi_subprogram_variant_start(onibi_gir_builder_t *builder,
+			       OnibiSubprogramId semantic_id, int *compile)
+{
+    OnibiSubprogramId existing =
+	onibi_subprogram_variant_find(builder, semantic_id);
+    if (existing != UINT32_MAX) {
+	*compile = 0;
+	return existing;
+    }
+    OnibiSubprogramId active =
+	onibi_subprogram_variant_find_active(builder, semantic_id);
+    if (active != UINT32_MAX) {
+	*compile = 0;
+	return active;
+    }
+    if (builder->nullable_scope_count > 256)
+	rb_raise(eRegexpError, "nullable repeat nesting is too deep");
+    OnibiSubprogramId physical_id;
+    if (builder->subprogram_status[semantic_id] == 0)
+	physical_id = semantic_id;
+    else {
+	if (builder->subprograms.count >= UINT32_MAX)
+	    rb_raise(eRegexpError, "subprogram table exceeds the RSeq limit");
+	physical_id = (OnibiSubprogramId)builder->subprograms.count;
+	onibi_rseq_subprogram_vector_push(&builder->subprograms,
+					  (OnibiRSeqSubprogramEntry){0});
+    }
+    OnibiSubprogramVariant variant;
+    memset(&variant, 0, sizeof(variant));
+    variant.semantic_id = semantic_id;
+    variant.physical_id = physical_id;
+    variant.scope_count = (uint16_t)builder->nullable_scope_count;
+    variant.compiling = 1;
+    memcpy(variant.scopes, builder->nullable_scopes,
+	   variant.scope_count * sizeof(*variant.scopes));
+    onibi_subprogram_variant_vector_push(&builder->subprogram_variants,
+					 variant);
+    builder->subprogram_status[semantic_id] = 1;
+    *compile = 1;
+    return physical_id;
+}
+
+static void
+onibi_subprogram_variant_finish(onibi_gir_builder_t *builder,
+				OnibiSubprogramId physical_id)
+{
+    for (size_t i = 0; i < builder->subprogram_variants.count; i++) {
+	OnibiSubprogramVariant *variant =
+	    &builder->subprogram_variants.entries[i];
+	if (variant->physical_id != physical_id) continue;
+	variant->compiling = 0;
+	builder->subprogram_status[variant->semantic_id] = 2;
+	return;
+    }
+    rb_raise(eRegexpError, "subprogram variant is not active");
 }
 
 static long
@@ -1387,15 +1478,19 @@ onibi_compile_resolved_body_subprogram(
     uint16_t width_count)
 {
     if (subprogram_id == 0 ||
-	(size_t)subprogram_id >= builder->resolved_subprogram_count)
+	(size_t)subprogram_id >= builder->resolved_subprogram_count) {
 	rb_raise(eRegexpError, "resolved subprogram ID is invalid");
-    if (builder->subprogram_status[subprogram_id] != 0)
-	return (long)subprogram_id;
-    builder->subprogram_status[subprogram_id] = 1;
+    }
+    int compile;
+    OnibiSubprogramId physical_id =
+	onibi_subprogram_variant_start(builder, subprogram_id, &compile);
+    if (!compile) return (long)physical_id;
     onibi_fragment_t fragment = onibi_compile_node(body, builder);
-    return onibi_store_subprogram_fragment(&fragment, subprogram_id, builder,
-					   flags, kind, effects, option_env,
-					   width_base, width_count);
+    long result = onibi_store_subprogram_fragment(
+	&fragment, physical_id, builder, flags, kind, effects, option_env,
+	width_base, width_count);
+    onibi_subprogram_variant_finish(builder, physical_id);
+    return result;
 }
 
 static long
@@ -1404,11 +1499,13 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
 				  onibi_gir_builder_t *builder)
 {
     if (subprogram_id == 0 ||
-	(size_t)subprogram_id >= builder->resolved_subprogram_count)
+	(size_t)subprogram_id >= builder->resolved_subprogram_count) {
 	rb_raise(eRegexpError, "resolved subprogram ID is invalid");
-    if (builder->subprogram_status[subprogram_id] != 0)
-	return (long)subprogram_id;
-    builder->subprogram_status[subprogram_id] = 1;
+    }
+    int compile;
+    OnibiSubprogramId physical_id =
+	onibi_subprogram_variant_start(builder, subprogram_id, &compile);
+    if (!compile) return (long)physical_id;
     const OnibiAstNode *capture =
 	onibi_ast_node_const(builder->ast, capture_id);
     const OnibiResolvedNode *capture_semantic =
@@ -1451,9 +1548,11 @@ onibi_compile_resolved_subprogram(OnibiAstId capture_id,
     }
     OnibiOptionEnv option_env = {capture_semantic->lexical_options,
 				 capture_semantic->encoding_index};
-    return onibi_store_subprogram_fragment(&fragment, subprogram_id, builder, 0,
-					   ONIBI_SUBPROGRAM_CALL, 0, option_env,
-					   0, 0);
+    long result = onibi_store_subprogram_fragment(
+	&fragment, physical_id, builder, 0, ONIBI_SUBPROGRAM_CALL, 0,
+	option_env, 0, 0);
+    onibi_subprogram_variant_finish(builder, physical_id);
+    return result;
 }
 
 /* Give each fragment one explicit NFA entry and exit. In particular, an
@@ -2244,7 +2343,7 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			       builder->allocation_owner);
 	onibi_id_vector_single(&result.exits, (OnibiStateId)id,
 			       builder->allocation_owner);
-	result.nullable = 1;
+	result.nullable = 0;
 	return result;
     }
     if (type_code == ONIBI_AST_LOOKAHEAD || type_code == ONIBI_AST_LOOKBEHIND) {
@@ -2450,6 +2549,9 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
     onibi_guard_vector_bind(&builder->exit_guards, builder->allocation_owner);
     onibi_id_vector_init(&builder->progress_slots);
     onibi_id_vector_bind(&builder->progress_slots, builder->allocation_owner);
+    onibi_subprogram_variant_vector_init(&builder->subprogram_variants);
+    onibi_subprogram_variant_vector_bind(&builder->subprogram_variants,
+					 builder->allocation_owner);
 }
 
 /* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */

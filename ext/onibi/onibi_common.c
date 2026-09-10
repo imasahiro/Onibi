@@ -234,8 +234,17 @@ typedef struct {
 typedef struct {
     uint32_t parent;
     OnibiCallFrame frame;
+    OnibiTagEventId caller_tag_history;
+    OnibiSemanticCaptureFile caller_captures;
+    OnibiSemanticCaptureFile caller_condition_captures;
+    OnibiCounterFile caller_counters;
+    OnibiProgressState caller_progress;
     uint64_t hash;
 } OnibiOwnedCallFrame;
+typedef struct {
+    uint32_t slot_offset;
+    uint32_t slot_count;
+} OnibiSubprogramLocalSlots;
 typedef struct {
     uint32_t root;
     uint32_t depth;
@@ -264,6 +273,7 @@ struct OnibiSemanticState {
     uint32_t order;
     OnigPosition reported_start;
     OnibiSemanticCaptureFile semantic_captures;
+    OnibiSemanticCaptureFile condition_captures;
     OnibiCounterFile counters;
     OnibiProgressState progress;
     OnibiCallStack calls;
@@ -328,6 +338,16 @@ typedef struct {
     size_t tag_count, tag_capacity;
     OnibiOwnedCallFrame *calls;
     size_t call_count, call_capacity;
+    OnibiSubprogramLocalSlots *subprogram_local_slots;
+    uint32_t subprogram_local_count;
+    const OnibiRSeqHeader *subprogram_local_header;
+    uint32_t *local_slots;
+    size_t local_slot_count, local_slot_capacity;
+    unsigned char *local_slot_visited;
+    unsigned char *local_slot_queued;
+    uint32_t *local_slot_work;
+    unsigned char *local_slot_used;
+    unsigned char *local_slot_nullable;
     OnibiSemanticScope *atomic;
     size_t atomic_count, atomic_capacity;
     OnibiSemanticScope *absence;

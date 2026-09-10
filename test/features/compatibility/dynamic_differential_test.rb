@@ -21,6 +21,8 @@ class DynamicDifferentialTest < Minitest::Test
     ["numbered subexpression call", "(a)\\g<1>", %w[aa ab]],
     ["nested subexpression call", "(?<x>(?<y>ab))\\g<x>", %w[abab ab]],
     ["recursive subexpression call", "(?<x>a(?:\\g<x>)?)\\g<x>", %w[aaa aaaa ab]],
+    ["recursive nullable subexpression call",
+     "\\A(?<r>(?:a(?:\\g<r>){0,2}b|c))\\z", %w[aaacbcbb aaac]],
     ["converging conditional", "(?:(a?)|)(?(1)b|c)", %w[b c ab]],
     ["atomic group", "(?>a|ab)b", %w[ab abb]],
     ["absence", "(?~a)b", %w[ab bb aab]],
@@ -67,6 +69,55 @@ class DynamicDifferentialTest < Minitest::Test
         assert_equal 0, info[:dfs], [name, subject]
         assert_equal 0, info[:fallback], [name, subject]
       end
+    end
+  end
+
+  def test_absence_repeat_raw_captures_match_mri
+    pattern = "(?:(?~(?<q>a)|b))*c"
+    regexp = Onibi::Regexp.new(pattern)
+
+    %w[ca aca bca caa].each do |subject|
+      expected = ::Regexp.new(pattern).match(subject)
+      info = regexp.send(:__onibi_diagnostics__, subject)
+
+      assert_equal expected&.bytebegin(0) || 0, info[:match_start], subject
+      assert_equal expected&.byteend(0) || 0, info[:match_end], subject
+      assert_equal raw_capture_ranges(expected), info[:captures], subject
+    end
+  end
+
+  def test_repeated_absence_uses_one_nullable_progress_owner
+    pattern = "(?~(?<q>a))*"
+    regexp = Onibi::Regexp.new(pattern)
+    graph = regexp.send(:__onibi_diagnostics__, "")
+
+    absent_state_index = graph[:states].index { |state| state[0] == 8 }
+    refute_nil absent_state_index
+    absent_subprogram = graph[:state_payloads][absent_state_index]
+    assert_equal 5, graph[:subprograms][absent_subprogram][:kind]
+    assert_equal 3, graph[:counter_count]
+    nullable_actions = graph[:actions].select do |action|
+      (10..13).include?(action[0])
+    end
+    refute_empty nullable_actions
+    assert_equal [10, 11, 12, 13],
+                 nullable_actions.map { |action| action[0] }.uniq.sort
+    assert_equal [1], nullable_actions.map { |action| action[2] }.uniq
+    assert_operator graph[:actions].count { |action| action[0] == 1 }, :>, 0
+
+    ([""] + %w[a b ab ba bb]).each do |subject|
+      expected = ::Regexp.new(pattern).match(subject)
+      info = regexp.send(:__onibi_diagnostics__, subject)
+
+      assert_equal 2, info[:exec_kind], subject
+      assert_operator info[:dynamic], :>, 0, subject
+      assert_equal expected.nil? ? 0 : 1, info[:status], subject
+      assert_equal expected&.bytebegin(0) || 0, info[:match_start], subject
+      assert_equal expected&.byteend(0) || 0, info[:match_end], subject
+      assert_equal raw_capture_ranges(expected), info[:captures], subject
+      assert_equal 0, info[:dfs], subject
+      assert_equal 0, info[:fallback], subject
+      assert_operator info[:tag_events], :>, 0, subject
     end
   end
 
@@ -180,6 +231,83 @@ class DynamicDifferentialTest < Minitest::Test
         assert_equal expected_captures, info[:captures], [pattern, subject]
       end
     end
+  end
+
+  def test_nullable_repeat_subprogram_captures_stay_native
+    cases = [
+      ["atomic", "(?:(?>(?<q>a?)))*a", true],
+      ["positive assertion", "(?:(?=(?<q>a?)))*a", false],
+      ["negative assertion", "(?:(?!(?<q>b)))*a", false],
+      ["positive assertion backreference", "(?:(?=(a)\\1))*aa", true]
+    ]
+    subjects = [""] + (0..4).flat_map do |length|
+      %w[a b].repeated_permutation(length).map(&:join)
+    end
+
+    cases.each do |name, pattern, dynamic|
+      expected_regexp = ::Regexp.new(pattern)
+      actual_regexp = Onibi::Regexp.new(pattern)
+      subjects.each do |subject|
+        expected = Timeout.timeout(1) { expected_regexp.match(subject) }
+        info = Timeout.timeout(1) do
+          actual_regexp.send(:__onibi_diagnostics__, subject)
+        end
+
+        expected_captures = if expected
+                              raw_capture_ranges(expected)
+                            else
+                              unmatched_capture_ranges(info)
+                            end
+        assert info[:rseq], [name, subject]
+        assert_operator info[:dynamic], :>, 0, [name, subject] if dynamic
+        assert_equal expected.nil? ? 0 : 1, info[:status],
+                     [name, subject]
+        assert_equal expected&.bytebegin(0) || 0, info[:match_start],
+                     [name, subject]
+        assert_equal expected&.byteend(0) || 0, info[:match_end],
+                     [name, subject]
+        assert_equal expected_captures, info[:captures], [name, subject]
+        assert_equal 0, info[:dfs], [name, subject]
+        assert_equal 0, info[:fallback], [name, subject]
+      end
+    end
+  end
+
+  def test_named_subprogram_variants_keep_nullable_call_context
+    patterns = [
+      "(?<x>(?<inner>a)?b?)(?:(\\g<x>))*\\g<x>",
+      "(?<x>(?<inner>a)?b?)(\\g<x>)(?:(\\g<x>))*"
+    ]
+    subjects = ["", "a", "b", "ab", "aa", "bb", "aab", "abb"]
+
+    patterns.each do |pattern|
+      expected_regexp = ::Regexp.new(pattern)
+      actual_regexp = Onibi::Regexp.new(pattern)
+      subjects.each do |subject|
+        expected = expected_regexp.match(subject)
+        actual = actual_regexp.match(subject)
+
+        assert actual_regexp.send(:__onibi_diagnostics__, subject)[:rseq]
+        assert_equal expected&.to_a, actual&.to_a, [pattern, subject]
+        assert_equal expected&.bytebegin(0), actual&.bytebegin(0),
+                     [pattern, subject]
+        assert_equal expected&.byteend(0), actual&.byteend(0),
+                     [pattern, subject]
+      end
+    end
+  end
+
+  def test_recursive_empty_capture_context_matches_mri
+    pattern = "\\A(?<r>(?:a(?<e>)(?:\\g<r>){0,2}b|c))\\z"
+    subject = "aaacbcbb"
+    expected = ::Regexp.new(pattern).match(subject)
+    actual_regexp = Onibi::Regexp.new(pattern)
+    actual = actual_regexp.match(subject)
+
+    assert expected
+    assert_equal expected.to_a, actual&.to_a
+    assert_equal expected.byteoffset(2), actual&.byteoffset(2)
+    assert actual_regexp.send(:__onibi_diagnostics__, subject)[:rseq]
   end
 
   private

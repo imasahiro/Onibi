@@ -73,6 +73,17 @@ typedef ONIBI_VECTOR(OnibiRSeqLiteralPayloadEntry)
 typedef OnibiSubprogramDesc OnibiRSeqSubprogramEntry;
 typedef ONIBI_VECTOR(OnibiRSeqSubprogramEntry) OnibiRSeqSubprogramVector;
 typedef ONIBI_VECTOR(OnibiBackrefDesc) OnibiBackrefDescVector;
+typedef struct {
+    OnibiSubprogramId semantic_id;
+    OnibiSubprogramId physical_id;
+    uint16_t scope_count;
+    uint16_t scopes[256];
+    uint8_t compiling;
+} OnibiSubprogramVariant;
+typedef ONIBI_VECTOR(OnibiSubprogramVariant) OnibiSubprogramVariantVector;
+ONIBI_VECTOR_DEFINE(onibi_subprogram_variant_vector,
+		    OnibiSubprogramVariantVector, OnibiSubprogramVariant, 4,
+		    "subprogram variant vector is too large")
 typedef struct OnibiTaggedNfa OnibiTaggedNfa;
 typedef struct {
     OnibiGirStateVector states;
@@ -102,6 +113,7 @@ typedef struct {
     int ordered_choice_depth;
     uint16_t nullable_scopes[256];
     size_t nullable_scope_count;
+    OnibiSubprogramVariantVector subprogram_variants;
     int capture_order_required;
     onibi_allocation_owner_t *allocation_owner;
     OnibiTaggedNfa *nfa;
@@ -416,6 +428,8 @@ typedef struct {
 typedef struct {
     long to;
     const OnibiGActionVector *actions;
+    uint32_t subprogram_id;
+    uint8_t subprogram;
     size_t next;
 } OnibiGIRNullableEntryIndex;
 
@@ -436,6 +450,8 @@ typedef struct {
     size_t *nullable_entry_heads;
     OnibiGIRNullableEdgeIndex *nullable_edges;
     OnibiGIRNullableEntryIndex *nullable_entries;
+    uint64_t *nullable_entry_inputs;
+    unsigned char *nullable_entry_initialized;
     size_t nullable_entry_count;
     OnibiGIREdgeIndexSlot *edge_index;
     size_t edge_index_capacity;
@@ -684,7 +700,7 @@ onibi_gir_nullable_build_index(const OnibiGIRView *view,
 	for (size_t i = 0; i < view->start_edges->count; i++, entry++) {
 	    const OnibiGirEdgeEntry *edge = &view->start_edges->entries[i];
 	    owner->nullable_entries[entry] = (OnibiGIRNullableEntryIndex){
-		edge->to, &edge->actions,
+		edge->to, &edge->actions, 0, 0,
 		owner->nullable_entry_heads[edge->to]};
 	    owner->nullable_entry_heads[edge->to] = entry;
 	}
@@ -692,10 +708,28 @@ onibi_gir_nullable_build_index(const OnibiGIRView *view,
 	    const OnibiGirEdgeEntry *edge =
 		&view->subprogram_entries->entries[i];
 	    owner->nullable_entries[entry] = (OnibiGIRNullableEntryIndex){
-		edge->to, &edge->actions,
+		edge->to, &edge->actions, (uint32_t)edge->from, 1,
 		owner->nullable_entry_heads[edge->to]};
 	    owner->nullable_entry_heads[edge->to] = entry;
 	}
+	if (owner->nullable_entry_count >
+	    SIZE_MAX / owner->nullable_word_count /
+		sizeof(*owner->nullable_entry_inputs))
+	    onibi_gir_verification_error(
+		"nullable verification index is too large");
+	owner->nullable_entry_inputs = onibi_owned_realloc(
+	    &owner->allocations, NULL,
+	    owner->nullable_entry_count * owner->nullable_word_count *
+		sizeof(*owner->nullable_entry_inputs));
+	owner->nullable_entry_initialized = onibi_owned_realloc(
+	    &owner->allocations, NULL, owner->nullable_entry_count);
+	memset(owner->nullable_entry_inputs, 0,
+	       owner->nullable_entry_count * owner->nullable_word_count *
+		   sizeof(*owner->nullable_entry_inputs));
+	memset(owner->nullable_entry_initialized, 0,
+	       owner->nullable_entry_count);
+	for (size_t i = 0; i < view->start_edges->count; i++)
+	    owner->nullable_entry_initialized[i] = 1;
     }
 }
 
@@ -725,8 +759,10 @@ onibi_gir_nullable_update_state(const OnibiGIRVerifyOwner *owner,
 	 entry = owner->nullable_entries[entry].next) {
 	const OnibiGIRNullableEntryIndex *incoming =
 	    &owner->nullable_entries[entry];
-	memset(output, 0, word_count * sizeof(*output));
-	onibi_gir_nullable_transfer(owner, incoming->actions, output, output,
+	if (!owner->nullable_entry_initialized[entry]) continue;
+	const uint64_t *input =
+	    owner->nullable_entry_inputs + entry * word_count;
+	onibi_gir_nullable_transfer(owner, incoming->actions, input, output,
 				    word_count);
 	if (!has_incoming) {
 	    memcpy(next, output, word_count * sizeof(*next));
@@ -761,6 +797,135 @@ onibi_gir_nullable_update_state(const OnibiGIRVerifyOwner *owner,
 }
 
 static void
+onibi_gir_nullable_transfer_prefix(const OnibiGIRVerifyOwner *owner,
+				   const OnibiGActionVector *actions,
+				   size_t length, const uint64_t *input,
+				   uint64_t *output)
+{
+    if (output != input)
+	memcpy(output, input, owner->nullable_word_count * sizeof(*output));
+    for (size_t i = 0; i < length; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	if (action->code == ONIBI_GA_NULL_ENTER)
+	    onibi_gir_nullable_set(output,
+				   owner->nullable_owner_indices[action->slot]);
+	else if (action->code == ONIBI_GA_NULL_CONTINUE ||
+		 action->code == ONIBI_GA_NULL_STOP)
+	    onibi_gir_nullable_clear(
+		output, owner->nullable_owner_indices[action->slot]);
+    }
+}
+
+static int
+onibi_gir_nullable_seed_subprogram(const OnibiGIRView *view,
+				   OnibiGIRVerifyOwner *owner,
+				   uint32_t subprogram_id,
+				   const uint64_t *input)
+{
+    int changed = 0;
+    size_t word_count = owner->nullable_word_count;
+    for (size_t i = view->start_edges->count; i < owner->nullable_entry_count;
+	 i++) {
+	OnibiGIRNullableEntryIndex *entry = &owner->nullable_entries[i];
+	if (entry->subprogram_id != subprogram_id) continue;
+	uint64_t *destination = owner->nullable_entry_inputs + i * word_count;
+	if (!owner->nullable_entry_initialized[i]) {
+	    memcpy(destination, input, word_count * sizeof(*destination));
+	    owner->nullable_entry_initialized[i] = 1;
+	    changed = 1;
+	}
+	else if (!onibi_gir_nullable_bits_equal(destination, input,
+						word_count)) {
+	    for (size_t word = 0; word < word_count; word++) {
+		uint64_t value = destination[word] & input[word];
+		if (value != destination[word]) changed = 1;
+		destination[word] = value;
+	    }
+	}
+    }
+    return changed;
+}
+
+static int
+onibi_gir_nullable_seed_assertion(const OnibiGIRView *view,
+				  OnibiGIRVerifyOwner *owner,
+				  const OnibiGActionVector *actions,
+				  const uint64_t *input)
+{
+    int changed = 0;
+    for (size_t i = 0; i < actions->count; i++) {
+	const OnibiGAction *action = &actions->entries[i];
+	if (action->code != ONIBI_GA_ASSERT_POSITION ||
+	    !action->has_subprogram ||
+	    (action->assert_kind != ONIBI_RAP_LOOKAHEAD &&
+	     action->assert_kind != ONIBI_RAP_LOOKBEHIND))
+	    continue;
+	uint64_t *prefix =
+	    onibi_owned_realloc(&owner->allocations, NULL,
+				owner->nullable_word_count * sizeof(*prefix));
+	onibi_gir_nullable_transfer_prefix(owner, actions, i, input, prefix);
+	if (onibi_gir_nullable_seed_subprogram(view, owner,
+					       action->subprogram_id, prefix))
+	    changed = 1;
+	onibi_owned_free(&owner->allocations, prefix);
+    }
+    return changed;
+}
+
+static int
+onibi_gir_nullable_seed_entry_assertions(const OnibiGIRView *view,
+					 OnibiGIRVerifyOwner *owner)
+{
+    int changed = 0;
+    for (size_t i = 0; i < owner->nullable_entry_count; i++) {
+	if (!owner->nullable_entry_initialized[i]) continue;
+	const uint64_t *input =
+	    owner->nullable_entry_inputs + i * owner->nullable_word_count;
+	if (onibi_gir_nullable_seed_assertion(
+		view, owner, owner->nullable_entries[i].actions, input))
+	    changed = 1;
+    }
+    return changed;
+}
+
+static void
+onibi_gir_nullable_enqueue_state(OnibiGIRVerifyOwner *owner,
+				 unsigned char *reachable,
+				 unsigned char *queued, size_t *worklist,
+				 size_t *queue_tail, size_t *queue_count,
+				 size_t state, const char *overflow_message)
+{
+    if (reachable[state]) {
+	if (queued[state]) return;
+    }
+    else {
+	reachable[state] = 1;
+    }
+    if (*queue_count == owner->nullable_state_count)
+	onibi_gir_verification_error(overflow_message);
+    worklist[(*queue_tail)++] = state;
+    if (*queue_tail == owner->nullable_state_count) *queue_tail = 0;
+    queued[state] = 1;
+    (*queue_count)++;
+}
+
+static void
+onibi_gir_nullable_enqueue_entries(const OnibiGIRVerifyOwner *owner,
+				   unsigned char *reachable,
+				   unsigned char *queued, size_t *worklist,
+				   size_t *queue_tail, size_t *queue_count,
+				   const char *overflow_message)
+{
+    for (size_t i = 0; i < owner->nullable_entry_count; i++) {
+	const OnibiGIRNullableEntryIndex *entry = &owner->nullable_entries[i];
+	if (!owner->nullable_entry_initialized[i]) continue;
+	onibi_gir_nullable_enqueue_state(
+	    (OnibiGIRVerifyOwner *)owner, reachable, queued, worklist,
+	    queue_tail, queue_count, (size_t)entry->to, overflow_message);
+    }
+}
+
+static void
 onibi_gir_nullable_validate_all_paths(const OnibiGIRView *view,
 				      OnibiGIRVerifyOwner *owner)
 {
@@ -785,80 +950,82 @@ onibi_gir_nullable_validate_all_paths(const OnibiGIRView *view,
 	onibi_owned_realloc(&owner->allocations, NULL, state_count);
     unsigned char *queued =
 	onibi_owned_realloc(&owner->allocations, NULL, state_count);
+    unsigned char *expanded =
+	onibi_owned_realloc(&owner->allocations, NULL, state_count);
     size_t *worklist = onibi_owned_realloc(&owner->allocations, NULL,
 					   state_count * sizeof(*worklist));
+    for (size_t state = 0; state < state_count; state++)
+	memcpy(owner->nullable_state_in + state * word_count,
+	       owner->nullable_mask,
+	       word_count * sizeof(*owner->nullable_mask));
     memset(reachable, 0, state_count);
     memset(queued, 0, state_count);
+    memset(expanded, 0, state_count);
     size_t queue_head = 0, queue_tail = 0, queue_count = 0;
-    for (size_t i = 0; i < owner->nullable_entry_count; i++) {
-	size_t state = (size_t)owner->nullable_entries[i].to;
-	if (reachable[state]) continue;
-	reachable[state] = 1;
-	if (queue_count == state_count)
-	    onibi_gir_verification_error(
-		"nullable reachability queue is too large");
-	worklist[queue_tail++] = state;
-	if (queue_tail == state_count) queue_tail = 0;
-	queue_count++;
+    const char *reachability_overflow =
+	"nullable reachability queue is too large";
+    const char *worklist_overflow = "nullable worklist is too large";
+
+    /* Root entries are the only entries reachable before a call site runs. */
+    for (size_t i = 0; i < view->start_edges->count; i++) {
+	const OnibiGirEdgeEntry *entry = &view->start_edges->entries[i];
+	onibi_gir_nullable_seed_assertion(view, owner, &entry->actions,
+					  owner->nullable_entry_inputs +
+					      i * word_count);
     }
-    while (queue_count != 0) {
-	size_t state = worklist[queue_head++];
-	queue_count--;
-	for (size_t edge = owner->nullable_outgoing_heads[state];
-	     edge != SIZE_MAX;
-	     edge = owner->nullable_edges[edge].next_outgoing) {
-	    size_t destination = (size_t)owner->nullable_edges[edge].to;
-	    if (reachable[destination]) continue;
-	    reachable[destination] = 1;
-	    if (queue_count == state_count)
-		onibi_gir_verification_error(
-		    "nullable reachability queue is too large");
-	    worklist[queue_tail++] = destination;
-	    if (queue_tail == state_count) queue_tail = 0;
-	    queue_count++;
-	}
-	if (queue_head == state_count) queue_head = 0;
-    }
-    queue_head = 0;
-    queue_tail = 0;
-    queue_count = 0;
-    for (size_t state = 0; state < state_count; state++)
-	if (reachable[state]) {
-	    memcpy(owner->nullable_state_in + state * word_count,
-		   owner->nullable_mask, word_count * sizeof(uint64_t));
-	    if (queue_count == state_count)
-		onibi_gir_verification_error("nullable worklist is too large");
-	    worklist[queue_tail++] = state;
-	    if (queue_tail == state_count) queue_tail = 0;
-	    queued[state] = 1;
-	    queue_count++;
-	}
+    while (onibi_gir_nullable_seed_entry_assertions(view, owner))
+	;
+    onibi_gir_nullable_enqueue_entries(owner, reachable, queued, worklist,
+				       &queue_tail, &queue_count,
+				       reachability_overflow);
     while (queue_count != 0) {
 	size_t state = worklist[queue_head++];
 	queue_count--;
 	queued[state] = 0;
 	if (queue_head == state_count) queue_head = 0;
-	if (!onibi_gir_nullable_update_state(owner, reachable, state, next,
-					     output))
-	    continue;
+	int state_changed = onibi_gir_nullable_update_state(
+	    owner, reachable, state, next, output);
+	int first_visit = !expanded[state];
+	expanded[state] = 1;
+	const uint64_t *input = owner->nullable_state_in + state * word_count;
+	const OnibiGirStateEntry *state_entry = &view->states->entries[state];
+	int seed_changed = 0;
+	if ((state_changed || first_visit) &&
+	    (state_entry->opcode == ONIBI_G_CALL ||
+	     state_entry->opcode == ONIBI_G_ATOMIC ||
+	     state_entry->opcode == ONIBI_G_ABSENT))
+	    seed_changed |= onibi_gir_nullable_seed_subprogram(
+		view, owner, (uint32_t)state_entry->value, input);
+
 	for (size_t edge = owner->nullable_outgoing_heads[state];
 	     edge != SIZE_MAX;
 	     edge = owner->nullable_edges[edge].next_outgoing) {
-	    size_t destination = (size_t)owner->nullable_edges[edge].to;
-	    if (queued[destination]) continue;
-	    if (queue_count == state_count)
-		onibi_gir_verification_error("nullable worklist is too large");
-	    worklist[queue_tail++] = destination;
-	    queued[destination] = 1;
-	    queue_count++;
-	    if (queue_tail == state_count) queue_tail = 0;
+	    const OnibiGIRNullableEdgeIndex *indexed =
+		&owner->nullable_edges[edge];
+	    if (state_changed || first_visit) {
+		seed_changed |= onibi_gir_nullable_seed_assertion(
+		    view, owner, indexed->actions, input);
+	    }
+	    if (state_changed || first_visit) {
+		onibi_gir_nullable_enqueue_state(
+		    owner, reachable, queued, worklist, &queue_tail,
+		    &queue_count, (size_t)indexed->to, worklist_overflow);
+	    }
+	}
+	if (seed_changed) {
+	    while (onibi_gir_nullable_seed_entry_assertions(view, owner))
+		;
+	    onibi_gir_nullable_enqueue_entries(owner, reachable, queued,
+					       worklist, &queue_tail,
+					       &queue_count, worklist_overflow);
 	}
     }
 
-    memset(output, 0, word_count * sizeof(*output));
     for (size_t i = 0; i < owner->nullable_entry_count; i++) {
-	const OnibiGIRNullableEntryIndex *edge = &owner->nullable_entries[i];
-	onibi_gir_nullable_validate_vector(owner, edge->actions, output, next,
+	const OnibiGIRNullableEntryIndex *entry = &owner->nullable_entries[i];
+	if (!owner->nullable_entry_initialized[i]) continue;
+	const uint64_t *input = owner->nullable_entry_inputs + i * word_count;
+	onibi_gir_nullable_validate_vector(owner, entry->actions, input, next,
 					   word_count);
     }
     for (size_t i = 0; i < view->edges->count; i++) {
@@ -1153,7 +1320,7 @@ onibi_gir_verify_body(VALUE opaque)
     if (view->subprograms->count == 0 ||
 	view->subprograms->count > view->subprograms->capacity ||
 	view->subprograms->entries == NULL ||
-	view->semantic_subprogram_count != view->subprograms->count ||
+	view->semantic_subprogram_count > view->subprograms->count ||
 	view->semantic_subprogram_count > UINT32_MAX)
 	onibi_gir_verification_error("subprogram table is invalid");
     if (view->progress_slots->count > view->progress_slots->capacity ||

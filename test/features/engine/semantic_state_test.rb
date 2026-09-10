@@ -59,6 +59,19 @@ class SemanticStateTest < Minitest::Test
                  info[:representations]
   end
 
+  def test_capture_keys_ignore_output_only_condition_values
+    info = diagnostic(:capture_key_observability)
+
+    assert_equal 1, info[:live_capture_id]
+    %i[dynamic tagged].each do |executor|
+      key_info = info.fetch(executor)
+      assert key_info[:output_equal], executor
+      assert key_info[:output_hash_equal], executor
+      assert key_info[:condition_distinct], executor
+      assert key_info[:condition_hash_distinct], executor
+    end
+  end
+
   def test_branch_updates_store_only_changed_registers
     transaction = diagnostic(:transaction_success)
     scale = diagnostic(:dynamic_key)
