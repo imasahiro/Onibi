@@ -259,16 +259,6 @@ onibi_connect_fragment_actions(onibi_gir_builder_t *builder,
 }
 
 static void
-onibi_connect_fragment(onibi_gir_builder_t *builder, const OnibiIdVector *exits,
-		       const OnibiIdVector *starts)
-{
-    OnibiGActionVector empty;
-    onibi_g_action_vector_init(&empty);
-    onibi_g_action_vector_bind(&empty, builder->allocation_owner);
-    onibi_connect_fragment_actions(builder, exits, starts, &empty, 0);
-}
-
-static void
 onibi_nfa_add_start(onibi_gir_builder_t *builder, long destination,
 		    const OnibiGActionVector *actions)
 {

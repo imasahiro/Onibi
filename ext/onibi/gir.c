@@ -143,14 +143,6 @@ ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
 		    "GIR state vector is too large")
 
 static void
-onibi_id_vector_move(OnibiIdVector *destination, OnibiIdVector *source)
-{
-    onibi_id_vector_free(destination);
-    *destination = *source;
-    onibi_id_vector_init(source);
-}
-
-static void
 onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value,
 		       onibi_allocation_owner_t *owner)
 {
@@ -1760,24 +1752,6 @@ onibi_fragment_empty(onibi_gir_builder_t *builder)
     fragment.nullable = 1;
     fragment.lazy = 0;
     return fragment;
-}
-
-static void
-onibi_fragment_append_actions(OnibiGActionVector *destination,
-			      const OnibiGActionVector *source)
-{
-    onibi_g_action_vector_append(destination, source);
-}
-
-static void
-onibi_add_capture_guard_fragment(onibi_gir_builder_t *builder,
-				 const OnibiIdVector *starts,
-				 const OnibiGActionVector *guard)
-{
-    for (size_t i = 0; i < starts->count; i++) {
-	onibi_guard_vector_add(&builder->capture_guards, starts->entries[i],
-			       guard);
-    }
 }
 
 static void
