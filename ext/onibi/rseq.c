@@ -1573,9 +1573,9 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	    return Qnil;
 	}
     }
-    OnibiBytePos start = 0, end = 0;
+    OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
     OnibiExecStatus search_status =
-	onibi_vm_search(self, str, origin.byte, &start, &end);
+	onibi_vm_search(self, str, origin.byte, &raw_match);
     if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
 	rb_raise(eRegexpError, "Onibi execution failed");
     if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
@@ -1616,9 +1616,9 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	    origin = onibi_ruby_position(str, pos, 0);
 	    if (!origin.valid) return Qfalse;
 	}
-	OnibiBytePos start = 0, end = 0;
+	OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
 	OnibiExecStatus result =
-	    onibi_vm_search(self, str, origin.byte, &start, &end);
+	    onibi_vm_search(self, str, origin.byte, &raw_match);
 	if (result == ONIBI_EXEC_STATUS_MATCH ||
 	    result == ONIBI_EXEC_STATUS_NO_MATCH)
 	    return result == ONIBI_EXEC_STATUS_MATCH ? Qtrue : Qfalse;

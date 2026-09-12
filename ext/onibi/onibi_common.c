@@ -32,6 +32,16 @@
 typedef OnigPosition OnibiBytePos;
 typedef OnigPosition OnibiRegisterValue;
 
+/* The caller owns the register arrays.  A zero count requests only the full
+ * byte range. */
+typedef struct OnibiRawMatch {
+    OnibiBytePos begin_byte;
+    OnibiBytePos end_byte;
+    uint32_t num_regs;
+    OnibiBytePos *beg;
+    OnibiBytePos *end;
+} OnibiRawMatch;
+
 _Static_assert(sizeof(OnibiBytePos) == sizeof(OnigPosition),
 	       "byte positions must keep OnigPosition width");
 _Static_assert(sizeof(OnibiRegisterValue) == sizeof(OnigPosition),
@@ -414,6 +424,7 @@ typedef struct {
     unsigned char *class_stack;
     size_t class_stack_capacity;
     OnibiBytePos matched_end;
+    OnibiRawMatch *raw_match;
 } OnibiExecCtx;
 
 #define ONIBI_POLL_WORK 128
@@ -459,7 +470,55 @@ typedef struct {
     size_t materialization_event_visits;
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
-static _Thread_local OnibiBytePos *onibi_regular_capture_result = NULL;
+
+static int
+onibi_raw_match_reset(OnibiRawMatch *match)
+{
+    if (match == NULL ||
+	(match->num_regs != 0 && (match->beg == NULL || match->end == NULL)))
+	return 0;
+    match->begin_byte = -1;
+    match->end_byte = -1;
+    for (uint32_t i = 0; i < match->num_regs; i++) {
+	match->beg[i] = -1;
+	match->end[i] = -1;
+    }
+    return 1;
+}
+
+static int
+onibi_raw_match_capture_mode(const OnibiRawMatch *match, uint32_t capture_count)
+{
+    return match != NULL && match->beg != NULL && match->end != NULL &&
+	   capture_count < UINT32_MAX && match->num_regs == capture_count + 1U;
+}
+
+static void
+onibi_raw_match_capture_write(OnibiRawMatch *match, uint32_t slot,
+			      OnibiBytePos position)
+{
+    uint32_t reg = slot / 2U + 1U;
+    if ((slot & 1U) == 0)
+	match->beg[reg] = position;
+    else
+	match->end[reg] = position;
+}
+
+static int
+onibi_raw_match_record(OnibiRawMatch *match, OnibiBytePos begin,
+		       OnibiBytePos end)
+{
+    if (match == NULL) return 0;
+    if (match->num_regs != 0 && (match->beg == NULL || match->end == NULL))
+	return 0;
+    match->begin_byte = begin;
+    match->end_byte = end;
+    if (match->num_regs != 0) {
+	match->beg[0] = begin;
+	match->end[0] = end;
+    }
+    return 1;
+}
 
 /* REGULAR_FAST uses the same frontier storage as the ordered executors.
  * Keep state and membership storage on the match context.  A candidate
@@ -587,8 +646,7 @@ static ID id_kind_literal;
 static ID id_recursive_marker;
 static OnibiExecStatus onibi_vm_search(VALUE self, VALUE str,
 				       OnibiBytePos search_origin,
-				       OnibiBytePos *match_start,
-				       OnibiBytePos *match_end);
+				       OnibiRawMatch *raw_match);
 static inline VALUE
 onibi_hash_value_id(VALUE hash, ID key)
 {

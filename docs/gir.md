@@ -2365,7 +2365,7 @@ struct OnibiExecCtx {
     struct OnibiCounterFile counters;
     struct OnibiCallStack calls;
 
-    struct OnibiRawMatch best_match;
+    struct OnibiRawMatch *raw_match;
 
     uint64_t work_before_poll;
 
@@ -2385,19 +2385,22 @@ Use:
 
 ```c
 struct OnibiRawMatch {
-    OnigPosition begin;
-    OnigPosition end;
+    OnibiBytePos begin_byte;
+    OnibiBytePos end_byte;
 
     uint32_t num_regs;
 
-    OnigPosition *beg;
-    OnigPosition *end;
+    OnibiBytePos *beg;
+    OnibiBytePos *end;
 };
 ```
 
-The arrays contain byte offsets.
+The caller owns the arrays. `num_regs` includes register zero for the full
+match. The arrays contain byte offsets.
 
-The engine materializes these arrays only when the caller requires them.
+The caller sets `num_regs` to zero and both pointers to null when it does not
+require capture ranges. The engine materializes the arrays only when the
+caller requires them. All three interpreters write this result type.
 
 ---
 
