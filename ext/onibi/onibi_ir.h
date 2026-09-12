@@ -6,6 +6,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Repeat counts are signed because an unbounded maximum uses a negative
+   sentinel during compilation.  Keep the existing long width while giving
+   the value a distinct semantic type. */
+typedef long OnibiRepeatCount;
+
 /* These types contain semantic data only.  They do not contain Ruby values,
    subject pointers, or process-local addresses. */
 typedef uint32_t OnibiStateId;
@@ -68,7 +73,7 @@ typedef struct {
 /* Mutable repeat-counter state owned by a VM traversal frame.  The values
    are indexed by the immutable RSeq counter slots and contain no Ruby VALUE. */
 typedef struct {
-    long *values;
+    OnibiRepeatCount *values;
     uint32_t count;
 } OnibiCounterState;
 

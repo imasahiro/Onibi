@@ -27,6 +27,18 @@
 #include <string.h>
 #include <time.h>
 
+/* Subject offsets keep Onigmo's current width.  Register deltas keep the
+ * same width because one arena stores both positions and repeat counts. */
+typedef OnigPosition OnibiBytePos;
+typedef OnigPosition OnibiRegisterValue;
+
+_Static_assert(sizeof(OnibiBytePos) == sizeof(OnigPosition),
+	       "byte positions must keep OnigPosition width");
+_Static_assert(sizeof(OnibiRegisterValue) == sizeof(OnigPosition),
+	       "register values must keep OnigPosition width");
+_Static_assert(sizeof(OnibiRepeatCount) == sizeof(long),
+	       "repeat counts must keep long width");
+
 #define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 8L
 
 typedef struct onibi_owned_allocation {
@@ -216,7 +228,7 @@ typedef struct {
 typedef struct {
     uint32_t parent;
     uint32_t slot;
-    OnigPosition value;
+    OnibiRegisterValue value;
 } OnibiSemanticRegisterDelta;
 typedef struct {
     uint32_t root;
@@ -254,8 +266,8 @@ typedef struct {
 typedef struct {
     uint32_t parent;
     OnibiSubprogramId subprogram_id;
-    OnigPosition begin;
-    OnigPosition end;
+    OnibiBytePos begin;
+    OnibiBytePos end;
     OnibiTagEventId tag_history;
     uint32_t flags;
     uint64_t hash;
@@ -268,12 +280,12 @@ typedef OnibiAtomicState OnibiAbsenceState;
 typedef struct {
     OnibiTagEventId parent;
     uint32_t slot;
-    OnigPosition position;
+    OnibiBytePos position;
     uint64_t hash;
 } OnibiSemanticTagEvent;
 struct OnibiSemanticState {
     uint32_t order;
-    OnigPosition reported_start;
+    OnibiBytePos reported_start;
     OnibiSemanticCaptureFile semantic_captures;
     OnibiSemanticCaptureFile condition_captures;
     OnibiCounterFile counters;
@@ -287,13 +299,13 @@ struct OnibiSemanticState {
 };
 typedef struct {
     uint32_t state_id;
-    OnigPosition position;
+    OnibiBytePos position;
     OnibiSemanticState semantic;
     uint64_t hash;
 } OnibiDynamicThreadKey;
 typedef struct {
     uint32_t state;
-    OnigPosition position;
+    OnibiBytePos position;
     OnibiSemanticState semantic;
     uint32_t cycle_root;
 } OnibiDynamicFrame;
@@ -312,7 +324,7 @@ typedef struct {
 typedef struct {
     uint32_t parent;
     uint32_t order, slot;
-    OnigPosition position;
+    OnibiBytePos position;
 } OnibiUnscopedCaptureEvent;
 typedef struct {
     uint32_t history;
@@ -380,10 +392,10 @@ typedef struct {
     VALUE regexp;
     VALUE subject;
     const OnibiRSeqHeader *program;
-    OnigPosition search_origin;
-    OnigPosition attempt_start;
-    OnigPosition reported_start;
-    OnigPosition current_position;
+    OnibiBytePos search_origin;
+    OnibiBytePos attempt_start;
+    OnibiBytePos reported_start;
+    OnibiBytePos current_position;
     OnibiFrontier current;
     OnibiFrontier next;
     OnibiFrontier *assertion_frontiers;
@@ -401,7 +413,7 @@ typedef struct {
     OnibiEncodingMode encoding_mode;
     unsigned char *class_stack;
     size_t class_stack_capacity;
-    long matched_end;
+    OnibiBytePos matched_end;
 } OnibiExecCtx;
 
 #define ONIBI_POLL_WORK 128
@@ -447,7 +459,7 @@ typedef struct {
     size_t materialization_event_visits;
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
-static _Thread_local long *onibi_regular_capture_result = NULL;
+static _Thread_local OnibiBytePos *onibi_regular_capture_result = NULL;
 
 /* REGULAR_FAST uses the same frontier storage as the ordered executors.
  * Keep state and membership storage on the match context.  A candidate
@@ -502,10 +514,10 @@ onibi_regular_frontier_prepare(OnibiFrontier *frontier, size_t state_count,
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
 static int onibi_rseq_backtracking_match(
-    VALUE rseq, const OnibiRSeqView *view, VALUE subject, long start,
-    long search_origin, long *matched_end, OnibiSemanticState *accepted_state,
-    OnibiSemanticArena *semantic_arena, unsigned char *class_stack,
-    size_t class_stack_capacity, OnibiExecCtx *ctx);
+    VALUE rseq, const OnibiRSeqView *view, VALUE subject, OnibiBytePos start,
+    OnibiBytePos search_origin, OnibiBytePos *matched_end,
+    OnibiSemanticState *accepted_state, OnibiSemanticArena *semantic_arena,
+    unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
 static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
@@ -574,8 +586,9 @@ static ID id_anchor, id_anchor_start, id_anchor_end;
 static ID id_kind_literal;
 static ID id_recursive_marker;
 static OnibiExecStatus onibi_vm_search(VALUE self, VALUE str,
-				       long search_origin, long *match_start,
-				       long *match_end);
+				       OnibiBytePos search_origin,
+				       OnibiBytePos *match_start,
+				       OnibiBytePos *match_end);
 static inline VALUE
 onibi_hash_value_id(VALUE hash, ID key)
 {
@@ -624,11 +637,11 @@ onibi_hex_digit(unsigned char c)
 		      : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1));
 }
 
-static long
+static OnibiRepeatCount
 onibi_parse_count(const char *text, char **end)
 {
     errno = 0;
-    long value = strtol(text, end, 10);
+    OnibiRepeatCount value = strtol(text, end, 10);
     if (errno == ERANGE) rb_raise(eRegexpError, "quantifier is too large");
     return value;
 }
@@ -763,7 +776,7 @@ onibi_regexp_fixed_p(const onibi_regexp_t *obj)
 }
 
 static int
-onibi_character_boundary(VALUE str, long pos)
+onibi_character_boundary(VALUE str, OnibiBytePos pos)
 {
     const char *start = RSTRING_PTR(str);
     const char *current = start + pos;
@@ -945,8 +958,8 @@ typedef struct {
     long end;
     long byte;
     long capture;
-    long min;
-    long max;
+    OnibiRepeatCount min;
+    OnibiRepeatCount max;
     ID name_id;
     unsigned int flags;
     OnibiTokenSlice name;
@@ -995,8 +1008,8 @@ typedef struct {
     int encoding_index;
     int32_t capture_id;
     int32_t assertion_kind;
-    long repeat_min;
-    long repeat_max;
+    OnibiRepeatCount repeat_min;
+    OnibiRepeatCount repeat_max;
     long min_width;
     long max_width;
     long source_start;

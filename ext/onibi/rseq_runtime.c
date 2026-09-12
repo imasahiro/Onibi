@@ -1,8 +1,8 @@
 typedef struct {
     uint32_t state;
-    long pos;
-    long *counters;
-    long *captures;
+    OnibiBytePos pos;
+    OnibiRepeatCount *counters;
+    OnibiBytePos *captures;
     uint32_t *returns;
     uint16_t return_depth;
 } onibi_simple_frame_t;

@@ -35,9 +35,9 @@ onibi_unicode_ctype_id(ID property)
 typedef struct {
     VALUE self;
     VALUE subject;
-    long *start;
-    long *finish;
-    long *previous_capture_result;
+    OnibiBytePos *start;
+    OnibiBytePos *finish;
+    OnibiBytePos *previous_capture_result;
 } OnibiDiagnosticSearch;
 
 static VALUE
@@ -57,8 +57,8 @@ onibi_diagnostic_search_cleanup(VALUE opaque)
 }
 
 static int
-onibi_diagnostic_search(VALUE self, VALUE subject, long *start, long *finish,
-			long *capture_result)
+onibi_diagnostic_search(VALUE self, VALUE subject, OnibiBytePos *start,
+			OnibiBytePos *finish, OnibiBytePos *capture_result)
 {
     OnibiDiagnosticSearch call = {self, subject, start, finish,
 				  onibi_regular_capture_result};
@@ -78,12 +78,12 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
     uint32_t capture_slots =
 	!NIL_P(obj->rseq) ? obj->rseq_view.header->capture_count * 2U : 0;
-    long *capture_result =
-	capture_slots == 0 ? NULL : ALLOCA_N(long, capture_slots);
+    OnibiBytePos *capture_result =
+	capture_slots == 0 ? NULL : ALLOCA_N(OnibiBytePos, capture_slots);
     if (capture_result)
 	for (uint32_t i = 0; i < capture_slots; i++)
 	    capture_result[i] = -1;
-    long start = 0, finish = 0;
+    OnibiBytePos start = 0, finish = 0;
     int status = NIL_P(obj->rseq)
 		     ? ONIBI_EXEC_STATUS_FALLBACK
 		     : onibi_diagnostic_search(self, subject, &start, &finish,
@@ -306,7 +306,7 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
-    long start = 0, finish = 0;
+    OnibiBytePos start = 0, finish = 0;
     int status =
 	NIL_P(obj->rseq)
 	    ? ONIBI_EXEC_STATUS_FALLBACK

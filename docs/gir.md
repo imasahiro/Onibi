@@ -425,7 +425,11 @@ The compiler MAY classify a feature into a lower class if it can prove an equiva
 
 All engine-facing subject positions are byte offsets.
 
-Use `OnigPosition` for subject byte offsets.
+Use `OnibiBytePos` for subject byte offsets.  `OnibiBytePos` aliases
+`OnigPosition`, the MRI byte-position type.
+
+Use `OnibiRepeatCount` for repeat counters.  `OnibiRepeatCount` is a separate
+signed semantic type.  It aliases `long`, but it is not a subject position.
 
 Ruby public APIs keep MRI's character-index rules.  An optional `pos` value is
 a character index, including negative indexes.  The API adapter normalizes it

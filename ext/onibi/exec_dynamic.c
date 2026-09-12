@@ -20,7 +20,8 @@ onibi_casefold_bytes_equal(const unsigned char *left, long left_length,
 			   const unsigned char *right, long right_length,
 			   rb_encoding *encoding, int require_same_units,
 			   OnibiExecCtx *ctx, VALUE subject,
-			   long left_subject_offset, long right_subject_offset)
+			   OnibiBytePos left_subject_offset,
+			   OnibiBytePos right_subject_offset)
 {
     if (left_length < 0 || right_length < 0) return 0;
     const unsigned char *left_base = left;
@@ -162,9 +163,9 @@ onibi_rseq_class_hit(const OnibiRSeqView *view, const OnibiClassDesc *klass,
 }
 
 static int
-onibi_rseq_decode_character(VALUE str, long position, rb_encoding *encoding,
-			    OnibiEncodingMode mode, OnigCodePoint *codepoint,
-			    long *width)
+onibi_rseq_decode_character(VALUE str, OnibiBytePos position,
+			    rb_encoding *encoding, OnibiEncodingMode mode,
+			    OnigCodePoint *codepoint, long *width)
 {
     if (position < 0 || position >= RSTRING_LEN(str)) return 0;
     const unsigned char *begin =
@@ -187,9 +188,11 @@ onibi_rseq_decode_character(VALUE str, long position, rb_encoding *encoding,
 /* One semantic consume operation for the encoding-aware RSeq primitives. */
 static int
 onibi_rseq_consume_character(const OnibiRSeqView *view,
-			     const OnibiRState *state, VALUE str, long position,
-			     rb_encoding *encoding, OnibiEncodingMode mode,
-			     long *next_position, unsigned char *class_stack,
+			     const OnibiRState *state, VALUE str,
+			     OnibiBytePos position, rb_encoding *encoding,
+			     OnibiEncodingMode mode,
+			     OnibiBytePos *next_position,
+			     unsigned char *class_stack,
 			     size_t class_stack_capacity, OnibiExecCtx *ctx)
 {
     if (position < 0 || position >= RSTRING_LEN(str)) return 0;
@@ -208,7 +211,7 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 	/* A case-folded literal can consume a different number of bytes from
 	 * its source.  Try each character boundary until the full span folds.
 	 */
-	long candidate = position;
+	OnibiBytePos candidate = position;
 	while (candidate < RSTRING_LEN(str)) {
 	    OnigCodePoint codepoint;
 	    long width;
@@ -260,7 +263,7 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 }
 
 static int
-onibi_rseq_word_at(VALUE str, long position, rb_encoding *encoding,
+onibi_rseq_word_at(VALUE str, OnibiBytePos position, rb_encoding *encoding,
 		   OnibiEncodingMode mode)
 {
     OnigCodePoint codepoint;
@@ -271,7 +274,7 @@ onibi_rseq_word_at(VALUE str, long position, rb_encoding *encoding,
 }
 
 static int
-onibi_rseq_word_before(VALUE str, long position, rb_encoding *encoding,
+onibi_rseq_word_before(VALUE str, OnibiBytePos position, rb_encoding *encoding,
 		       OnibiEncodingMode mode)
 {
     if (position <= 0) return 0;
@@ -288,8 +291,9 @@ onibi_rseq_word_before(VALUE str, long position, rb_encoding *encoding,
 /* Compare two byte spans after encoding-aware case folding.  A folded
  * character can have a different width from its source character. */
 static int
-onibi_rseq_casefold_span_equal(VALUE str, long left, long left_end, long right,
-			       long right_end, rb_encoding *encoding,
+onibi_rseq_casefold_span_equal(VALUE str, OnibiBytePos left,
+			       OnibiBytePos left_end, OnibiBytePos right,
+			       OnibiBytePos right_end, rb_encoding *encoding,
 			       OnibiExecCtx *ctx)
 {
     if (left < 0 || left_end < left || right < 0 || right_end < right ||
@@ -301,10 +305,11 @@ onibi_rseq_casefold_span_equal(VALUE str, long left, long left_end, long right,
 }
 
 static int
-onibi_rseq_backref_consume(VALUE str, long position, long capture_begin,
-			   long capture_end, rb_encoding *encoding,
-			   OnibiEncodingMode mode, int ignorecase,
-			   long *next_position, OnibiExecCtx *ctx)
+onibi_rseq_backref_consume(VALUE str, OnibiBytePos position,
+			   OnibiBytePos capture_begin, OnibiBytePos capture_end,
+			   rb_encoding *encoding, OnibiEncodingMode mode,
+			   int ignorecase, OnibiBytePos *next_position,
+			   OnibiExecCtx *ctx)
 {
     if (!ignorecase) {
 	long length = capture_end - capture_begin;
@@ -332,7 +337,7 @@ onibi_rseq_backref_consume(VALUE str, long position, long capture_begin,
 	*next_position = position;
 	return 1;
     }
-    long candidate = position;
+    OnibiBytePos candidate = position;
     while (candidate < RSTRING_LEN(str)) {
 	OnigCodePoint codepoint;
 	long width;
@@ -352,9 +357,9 @@ onibi_rseq_backref_consume(VALUE str, long position, long capture_begin,
 }
 
 static int
-onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str, long pos,
-				  long search_origin, rb_encoding *encoding,
-				  OnibiEncodingMode mode)
+onibi_rseq_position_assertion_hit(OnibiRAssertKind kind, VALUE str,
+				  OnibiBytePos pos, OnibiBytePos search_origin,
+				  rb_encoding *encoding, OnibiEncodingMode mode)
 {
     int hit = 0;
     switch (kind) {
@@ -679,7 +684,7 @@ onibi_semantic_hash_value(uint64_t hash, uint64_t value)
 
 static uint64_t
 onibi_semantic_register_base_hash(uint64_t domain, uint32_t slot_count,
-				  OnigPosition default_value)
+				  OnibiRegisterValue default_value)
 {
     uint64_t hash =
 	onibi_semantic_hash_value(UINT64_C(0xcbf29ce484222325), domain);
@@ -689,7 +694,7 @@ onibi_semantic_register_base_hash(uint64_t domain, uint32_t slot_count,
 
 static uint64_t
 onibi_semantic_register_slot_hash(uint64_t domain, uint32_t slot,
-				  OnigPosition value)
+				  OnibiRegisterValue value)
 {
     uint64_t hash =
 	onibi_semantic_hash_value(UINT64_C(0x84222325cbf29ce4), domain);
@@ -699,7 +704,7 @@ onibi_semantic_register_slot_hash(uint64_t domain, uint32_t slot,
 
 static OnibiSemanticState
 onibi_semantic_state_initial(const OnibiSemanticArena *arena,
-			     OnigPosition reported_start,
+			     OnibiBytePos reported_start,
 			     uint32_t capture_slots, uint32_t counter_slots,
 			     uint32_t progress_slots)
 {
@@ -735,9 +740,9 @@ onibi_semantic_state_initial(const OnibiSemanticArena *arena,
     return state;
 }
 
-static OnigPosition
+static OnibiRegisterValue
 onibi_semantic_register_read(OnibiSemanticArena *arena, uint32_t root,
-			     uint32_t slot, OnigPosition default_value)
+			     uint32_t slot, OnibiRegisterValue default_value)
 {
     arena->register_read_count++;
     while (root != UINT32_MAX) {
@@ -751,7 +756,7 @@ onibi_semantic_register_read(OnibiSemanticArena *arena, uint32_t root,
 
 static uint32_t
 onibi_semantic_register_append(OnibiSemanticArena *arena, uint32_t parent,
-			       uint32_t slot, OnigPosition value)
+			       uint32_t slot, OnibiRegisterValue value)
 {
     arena->registers = onibi_semantic_arena_reserve(
 	arena->registers, &arena->register_capacity, arena->register_count,
@@ -764,16 +769,36 @@ onibi_semantic_register_append(OnibiSemanticArena *arena, uint32_t parent,
 static void
 onibi_semantic_register_file_write(OnibiSemanticArena *arena, uint32_t *root,
 				   uint64_t *hash, uint64_t domain,
-				   uint32_t slot, OnigPosition value,
-				   OnigPosition default_value, int hash_slot)
+				   uint32_t slot, OnibiRegisterValue value,
+				   OnibiRegisterValue default_value,
+				   int hash_slot)
 {
-    OnigPosition old_value =
+    OnibiRegisterValue old_value =
 	onibi_semantic_register_read(arena, *root, slot, default_value);
     if (old_value == value) return;
     *root = onibi_semantic_register_append(arena, *root, slot, value);
     if (!hash_slot) return;
     *hash ^= onibi_semantic_register_slot_hash(domain, slot, old_value);
     *hash ^= onibi_semantic_register_slot_hash(domain, slot, value);
+}
+
+/* The linked register arena stores one neutral signed value type.  These
+ * helpers keep subject positions and repeat counts distinct at each file
+ * boundary while preserving the compact shared representation. */
+static OnibiBytePos
+onibi_semantic_position_read(OnibiSemanticArena *arena, uint32_t root,
+			     uint32_t slot, OnibiBytePos default_value)
+{
+    return (OnibiBytePos)onibi_semantic_register_read(
+	arena, root, slot, (OnibiRegisterValue)default_value);
+}
+
+static OnibiRepeatCount
+onibi_semantic_counter_read(OnibiSemanticArena *arena, uint32_t root,
+			    uint32_t slot, OnibiRepeatCount default_value)
+{
+    return (OnibiRepeatCount)onibi_semantic_register_read(
+	arena, root, slot, (OnibiRegisterValue)default_value);
 }
 
 static int
@@ -787,7 +812,7 @@ onibi_semantic_capture_slot_live(const OnibiSemanticArena *arena, uint32_t slot)
 static void
 onibi_semantic_capture_write(OnibiSemanticArena *arena,
 			     OnibiSemanticCaptureFile *file, uint32_t slot,
-			     OnigPosition value)
+			     OnibiBytePos value)
 {
     onibi_semantic_register_file_write(
 	arena, &file->root, &file->hash, ONIBI_SEMANTIC_HASH_CAPTURE, slot,
@@ -797,7 +822,7 @@ onibi_semantic_capture_write(OnibiSemanticArena *arena,
 static void
 onibi_semantic_condition_capture_write(OnibiSemanticArena *arena,
 				       OnibiSemanticCaptureFile *file,
-				       uint32_t slot, OnigPosition value)
+				       uint32_t slot, OnibiBytePos value)
 {
     onibi_semantic_register_file_write(
 	arena, &file->root, &file->hash, ONIBI_SEMANTIC_HASH_CAPTURE, slot,
@@ -806,7 +831,7 @@ onibi_semantic_condition_capture_write(OnibiSemanticArena *arena,
 
 static void
 onibi_semantic_counter_write(OnibiSemanticArena *arena, OnibiCounterFile *file,
-			     uint32_t slot, OnigPosition value)
+			     uint32_t slot, OnibiRepeatCount value)
 {
     onibi_semantic_register_file_write(arena, &file->root, &file->hash,
 				       ONIBI_SEMANTIC_HASH_COUNTER, slot, value,
@@ -816,7 +841,7 @@ onibi_semantic_counter_write(OnibiSemanticArena *arena, OnibiCounterFile *file,
 static void
 onibi_semantic_progress_write(OnibiSemanticArena *arena,
 			      OnibiProgressState *file, uint32_t slot,
-			      OnigPosition value)
+			      OnibiBytePos value)
 {
     onibi_semantic_register_file_write(arena, &file->root, &file->hash,
 				       ONIBI_SEMANTIC_HASH_PROGRESS, slot,
@@ -825,7 +850,7 @@ onibi_semantic_progress_write(OnibiSemanticArena *arena,
 
 static OnibiTagEventId
 onibi_semantic_tag_append(OnibiSemanticArena *arena, OnibiTagEventId parent,
-			  uint32_t slot, OnigPosition position)
+			  uint32_t slot, OnibiBytePos position)
 {
     arena->tags =
 	onibi_semantic_arena_reserve(arena->tags, &arena->tag_capacity,
@@ -843,7 +868,7 @@ onibi_semantic_tag_append(OnibiSemanticArena *arena, OnibiTagEventId parent,
 static uint32_t
 onibi_semantic_capture_event_append(OnibiSemanticArena *arena, uint32_t parent,
 				    uint32_t order, uint32_t slot,
-				    OnigPosition position)
+				    OnibiBytePos position)
 {
     arena->capture_events = onibi_semantic_arena_reserve(
 	arena->capture_events, &arena->capture_event_capacity,
@@ -1093,10 +1118,10 @@ onibi_semantic_local_slots_restore(OnibiSemanticArena *arena,
 	uint32_t slot = arena->local_slots[slots->slot_offset + i];
 	onibi_semantic_counter_write(
 	    arena, &state->counters, slot,
-	    onibi_semantic_register_read(arena, caller_counters.root, slot, 0));
+	    onibi_semantic_counter_read(arena, caller_counters.root, slot, 0));
 	onibi_semantic_progress_write(
 	    arena, &state->progress, slot,
-	    onibi_semantic_register_read(arena, caller_progress.root, slot,
+	    onibi_semantic_position_read(arena, caller_progress.root, slot,
 					 -1));
     }
 }
@@ -1125,12 +1150,12 @@ onibi_semantic_restore_active_captures(OnibiSemanticArena *arena,
 	 capture * 2U + 1U < state->semantic_captures.slot_count; capture++) {
 	uint32_t begin_slot = capture * 2U;
 	uint32_t end_slot = begin_slot + 1U;
-	OnigPosition begin =
-	    onibi_semantic_register_read(arena, caller->root, begin_slot, -1);
+	OnibiBytePos begin =
+	    onibi_semantic_position_read(arena, caller->root, begin_slot, -1);
 	if (onibi_semantic_capture_is_active(arena, caller_tag_history,
 					     begin_slot, end_slot)) {
-	    OnigPosition end =
-		onibi_semantic_register_read(arena, caller->root, end_slot, -1);
+	    OnibiBytePos end =
+		onibi_semantic_position_read(arena, caller->root, end_slot, -1);
 	    onibi_semantic_capture_write(arena, &state->semantic_captures,
 					 begin_slot, begin);
 	    onibi_semantic_capture_write(arena, &state->semantic_captures,
@@ -1153,11 +1178,11 @@ onibi_semantic_restore_active_conditions(OnibiSemanticArena *arena,
 					     begin_slot, end_slot)) {
 	    onibi_semantic_condition_capture_write(
 		arena, &state->condition_captures, begin_slot,
-		onibi_semantic_register_read(arena, caller->root, begin_slot,
+		onibi_semantic_position_read(arena, caller->root, begin_slot,
 					     -1));
 	    onibi_semantic_condition_capture_write(
 		arena, &state->condition_captures, end_slot,
-		onibi_semantic_register_read(arena, caller->root, end_slot,
+		onibi_semantic_position_read(arena, caller->root, end_slot,
 					     -1));
 	}
     }
@@ -1171,8 +1196,8 @@ onibi_semantic_restore_active_capture_tags(
     for (uint32_t capture = 0;
 	 capture * 2U + 1U < state->semantic_captures.slot_count; capture++) {
 	uint32_t slot = capture * 2U;
-	OnigPosition begin =
-	    onibi_semantic_register_read(arena, caller->root, slot, -1);
+	OnibiBytePos begin =
+	    onibi_semantic_position_read(arena, caller->root, slot, -1);
 	if (onibi_semantic_capture_is_active(arena, caller_tag_history, slot,
 					     slot + 1U))
 	    state->tag_history = onibi_semantic_tag_append(
@@ -1226,8 +1251,8 @@ onibi_semantic_call_push(OnibiSemanticArena *arena, uint32_t parent,
 static uint32_t
 onibi_semantic_scope_push(OnibiSemanticArena *arena, OnibiSemanticScope **nodes,
 			  size_t *count, size_t *capacity, uint32_t parent,
-			  OnibiSubprogramId subprogram_id, OnigPosition begin,
-			  OnigPosition end, OnibiTagEventId tag_history,
+			  OnibiSubprogramId subprogram_id, OnibiBytePos begin,
+			  OnibiBytePos end, OnibiTagEventId tag_history,
 			  uint32_t flags, uint64_t domain)
 {
     *nodes =
@@ -1252,7 +1277,7 @@ static int
 onibi_semantic_register_file_equal(OnibiSemanticArena *arena, uint32_t left,
 				   uint32_t right, uint64_t left_hash,
 				   uint64_t right_hash, uint32_t slot_count,
-				   OnigPosition default_value)
+				   OnibiRegisterValue default_value)
 {
     if (left_hash != right_hash) return 0;
     if (left == right) return 1;
@@ -1292,8 +1317,8 @@ onibi_semantic_capture_file_equal(OnibiSemanticArena *arena,
     if (left->root == right->root) return 1;
     for (size_t i = 0; i < arena->live_capture_count; i++) {
 	uint32_t slot = arena->live_capture_slots[i];
-	if (onibi_semantic_register_read(arena, left->root, slot, -1) !=
-	    onibi_semantic_register_read(arena, right->root, slot, -1))
+	if (onibi_semantic_position_read(arena, left->root, slot, -1) !=
+	    onibi_semantic_position_read(arena, right->root, slot, -1))
 	    return 0;
     }
     return 1;
@@ -1309,8 +1334,8 @@ onibi_semantic_condition_capture_file_equal(
     if (left->root == right->root) return 1;
     for (size_t i = 0; i < arena->live_capture_count; i++) {
 	uint32_t slot = arena->live_capture_slots[i];
-	if (onibi_semantic_register_read(arena, left->root, slot, -1) !=
-	    onibi_semantic_register_read(arena, right->root, slot, -1))
+	if (onibi_semantic_position_read(arena, left->root, slot, -1) !=
+	    onibi_semantic_position_read(arena, right->root, slot, -1))
 	    return 0;
     }
     return 1;
@@ -1324,8 +1349,8 @@ onibi_semantic_future_capture_file_equal(OnibiSemanticArena *arena,
     if (left->root == right->root) return 1;
     for (size_t i = 0; i < arena->future_capture_count; i++) {
 	uint32_t slot = arena->future_capture_slots[i];
-	if (onibi_semantic_register_read(arena, left->root, slot, -1) !=
-	    onibi_semantic_register_read(arena, right->root, slot, -1))
+	if (onibi_semantic_position_read(arena, left->root, slot, -1) !=
+	    onibi_semantic_position_read(arena, right->root, slot, -1))
 	    return 0;
     }
     return 1;
@@ -1556,7 +1581,7 @@ onibi_dynamic_key_set_grow(OnibiSemanticArena *arena)
 
 static int
 onibi_dynamic_key_seen(OnibiSemanticArena *arena, uint32_t state_id,
-		       OnigPosition position,
+		       OnibiBytePos position,
 		       const OnibiSemanticState *semantic)
 {
     if (arena->key_capacity == 0 ||
@@ -1786,19 +1811,20 @@ onibi_semantic_checkpoint_restore(OnibiSemanticArena *arena,
 				  const OnibiSemanticCheckpoint *checkpoint);
 
 static OnibiActionResult onibi_tagged_assert_subprogram(
-    OnibiExecCtx *ctx, const OnibiRAction *action, long position,
+    OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
     const OnibiSemanticState *predecessor, OnibiSemanticState *successor);
 static OnibiActionResult onibi_dynamic_assert_subprogram(
-    OnibiExecCtx *ctx, const OnibiRAction *action, long position,
+    OnibiExecCtx *ctx, const OnibiRAction *action, OnibiBytePos position,
     const OnibiSemanticState *predecessor, OnibiSemanticState *successor);
 static int onibi_dynamic_absence_consume(
-    VALUE rseq, const OnibiRSeqView *view, VALUE str, long position,
+    VALUE rseq, const OnibiRSeqView *view, VALUE str, OnibiBytePos position,
     uint32_t subprogram_id, const OnibiSemanticState *input,
     OnibiSemanticArena *arena, unsigned char *class_stack,
-    size_t class_stack_capacity, OnibiExecCtx *ctx, long *next_position,
-    long *minimum_position, OnibiSemanticState *output);
-static int onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, long position,
-					 uint32_t width, long *start);
+    size_t class_stack_capacity, OnibiExecCtx *ctx, OnibiBytePos *next_position,
+    OnibiBytePos *minimum_position, OnibiSemanticState *output);
+static int onibi_tagged_lookbehind_start(OnibiExecCtx *ctx,
+					 OnibiBytePos position, uint32_t width,
+					 OnibiBytePos *start);
 static void onibi_tagged_frontier_reset(OnibiFrontier *frontier,
 					uint32_t state_count);
 static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
@@ -1807,7 +1833,7 @@ static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
 				     uint32_t *retained_owner);
 static int onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 					 const OnibiSemanticState *accepted,
-					 long *captures,
+					 OnibiBytePos *captures,
 					 uint32_t capture_slots);
 
 static OnibiTagEventId
@@ -1875,9 +1901,9 @@ onibi_dynamic_absence_filter_captures(OnibiSemanticArena *arena,
 
 static OnibiActionResult
 onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
-			   VALUE str, long pos, long search_origin,
-			   rb_encoding *encoding, OnibiEncodingMode mode,
-			   OnibiSemanticArena *arena,
+			   VALUE str, OnibiBytePos pos,
+			   OnibiBytePos search_origin, rb_encoding *encoding,
+			   OnibiEncodingMode mode, OnibiSemanticArena *arena,
 			   const OnibiSemanticState *predecessor,
 			   OnibiSemanticState *successor, OnibiExecCtx *ctx)
 {
@@ -1905,7 +1931,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    if (action->arg16 >= working.semantic_captures.slot_count)
 		goto fail;
 	    uint32_t previous_capture_root = working.semantic_captures.root;
-	    OnigPosition previous_condition = onibi_semantic_register_read(
+	    OnibiBytePos previous_condition = onibi_semantic_position_read(
 		arena, working.condition_captures.root, action->arg16, -1);
 	    onibi_semantic_capture_write(arena, &working.semantic_captures,
 					 action->arg16, pos);
@@ -1942,7 +1968,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    action->op <= ONIBI_RA_NULL_STOP) {
 	    uint32_t slot = action->arg16;
 	    if (slot + 1U >= working.progress.slot_count) goto fail;
-	    OnigPosition status = onibi_semantic_register_read(
+	    OnibiBytePos status = onibi_semantic_position_read(
 		arena, working.progress.root, slot + 1U, -1);
 	    if (action->op == ONIBI_RA_NULL_ENTER) {
 		onibi_semantic_progress_write(arena, &working.progress, slot,
@@ -1952,9 +1978,9 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    }
 	    else if (action->op == ONIBI_RA_NULL_CAPTURE) {
 		uint32_t capture = action->arg32 * 2U;
-		OnigPosition begin = onibi_semantic_register_read(
+		OnibiBytePos begin = onibi_semantic_position_read(
 		    arena, working.semantic_captures.root, capture, -1);
-		OnigPosition end = onibi_semantic_register_read(
+		OnibiBytePos end = onibi_semantic_position_read(
 		    arena, working.semantic_captures.root, capture + 1U, -1);
 		if (status != 0) {
 		    if (end < 0 || begin != end)
@@ -1966,7 +1992,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 		}
 	    }
 	    else {
-		OnigPosition entry = onibi_semantic_register_read(
+		OnibiBytePos entry = onibi_semantic_position_read(
 		    arena, working.progress.root, slot, -1);
 		int continuing = entry != pos || status == 0;
 		if ((entry == pos && status < 0) ||
@@ -1980,9 +2006,9 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    uint32_t begin = (uint32_t)action->arg16 * 2U;
 	    if (begin + 1U >= working.semantic_captures.slot_count) goto fail;
 	    int set =
-		onibi_semantic_register_read(
+		onibi_semantic_position_read(
 		    arena, working.condition_captures.root, begin, -1) >= 0 &&
-		onibi_semantic_register_read(arena,
+		onibi_semantic_position_read(arena,
 					     working.condition_captures.root,
 					     begin + 1U, -1) >= 0;
 	    if ((action->flags == ONIBI_RA_TEST_CAPTURE_SET && !set) ||
@@ -1996,7 +2022,7 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	}
 	if (action->op == ONIBI_RA_PROGRESS) {
 	    if (action->arg16 >= working.progress.slot_count) goto fail;
-	    if (onibi_semantic_register_read(arena, working.progress.root,
+	    if (onibi_semantic_position_read(arena, working.progress.root,
 					     action->arg16, -1) == pos)
 		goto fail;
 	    onibi_semantic_progress_write(arena, &working.progress,
@@ -2007,19 +2033,19 @@ onibi_apply_action_program(const OnibiRSeqView *view, const OnibiREdge *edge,
 	    action->op == ONIBI_RA_COUNTER_ADD ||
 	    action->op == ONIBI_RA_COUNTER_TEST) {
 	    if (action->arg16 >= working.counters.slot_count) goto fail;
-	    OnigPosition current = onibi_semantic_register_read(
+	    OnibiRepeatCount current = onibi_semantic_counter_read(
 		arena, working.counters.root, action->arg16, 0);
 	    if (action->op == ONIBI_RA_COUNTER_SET)
 		onibi_semantic_counter_write(arena, &working.counters,
 					     action->arg16,
-					     (OnigPosition)action->arg32);
+					     (OnibiRepeatCount)action->arg32);
 	    else if (action->op == ONIBI_RA_COUNTER_ADD)
 		onibi_semantic_counter_write(arena, &working.counters,
 					     action->arg16, current + 1);
 	    else {
 		int hit = action->flags == ONIBI_RA_COUNTER_GE
-			      ? current >= (OnigPosition)action->arg32
-			      : current < (OnigPosition)action->arg32;
+			      ? current >= (OnibiRepeatCount)action->arg32
+			      : current < (OnibiRepeatCount)action->arg32;
 		if (!hit) goto fail;
 	    }
 	    continue;
@@ -2060,7 +2086,7 @@ typedef enum {
 typedef struct {
     OnibiActionResult status;
     size_t capture_event_count;
-    long capture_begin;
+    OnibiBytePos capture_begin;
 } OnibiAssertionDiagnostic;
 
 static OnibiAssertionDiagnostic
@@ -2101,7 +2127,7 @@ onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
     unsigned char literal_blob[1] = {'b'};
     VALUE subject = rb_str_new_cstr(lookbehind ? "ab" : "abc");
     rb_encoding *encoding = rb_enc_get(subject);
-    long position = lookbehind ? 2 : 0;
+    OnibiBytePos position = lookbehind ? 2 : 0;
 
     if (parent_failure)
 	actions[4] = (OnibiRAction){ONIBI_RA_ASSERT_POSITION, 0,
@@ -2176,7 +2202,7 @@ onibi_assertion_event_diagnostic(OnibiAssertionDiagnosticKind kind)
     }
     diagnostic.capture_event_count = arena->capture_event_count;
     if (diagnostic.status == ONIBI_ACTION_SUCCESS)
-	diagnostic.capture_begin = onibi_semantic_register_read(
+	diagnostic.capture_begin = onibi_semantic_position_read(
 	    arena, successor.semantic_captures.root, 0, -1);
 
     for (size_t i = 0; i < 2; i++) {
@@ -2241,19 +2267,19 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	rb_hash_aset(result, ID2SYM(rb_intern("successor_reported_start")),
 		     LONG2NUM(successor.reported_start));
 	rb_hash_aset(result, ID2SYM(rb_intern("predecessor_capture")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_position_read(
 			 &arena, predecessor.semantic_captures.root, 0, -1)));
 	rb_hash_aset(result, ID2SYM(rb_intern("sibling_capture")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_position_read(
 			 &arena, sibling.semantic_captures.root, 0, -1)));
 	rb_hash_aset(result, ID2SYM(rb_intern("successor_capture")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_position_read(
 			 &arena, successor.semantic_captures.root, 0, -1)));
 	rb_hash_aset(result, ID2SYM(rb_intern("successor_counter")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_counter_read(
 			 &arena, successor.counters.root, 0, 0)));
 	rb_hash_aset(result, ID2SYM(rb_intern("successor_progress")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_position_read(
 			 &arena, successor.progress.root, 0, -1)));
 	rb_hash_aset(result, ID2SYM(rb_intern("register_delta_count")),
 		     SIZET2NUM(arena.register_count));
@@ -2467,7 +2493,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	for (uint32_t i = 0; i < THREAD_COUNT; i++) {
 	    OnibiSemanticState semantic = predecessor;
 	    onibi_semantic_counter_write(&arena, &semantic.counters, 0,
-					 (OnigPosition)i + 1);
+					 (OnibiRepeatCount)i + 1);
 	    if (!onibi_dynamic_key_seen(&arena, 7, 11, &semantic)) inserted++;
 	    onibi_dynamic_stack_push(
 		&arena, (OnibiDynamicFrame){7, 11, semantic, UINT32_MAX});
@@ -2479,9 +2505,9 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	     i++) {
 	    if (arena.frames[i].state != 7 || arena.frames[i].position != 11)
 		same_location = 0;
-	    if (onibi_semantic_register_read(
+	    if (onibi_semantic_counter_read(
 		    &arena, arena.frames[i].semantic.counters.root, 0, 0) !=
-		(OnigPosition)i + 1)
+		(OnibiRepeatCount)i + 1)
 		stack_valid = 0;
 	}
 	int duplicate_seen = onibi_dynamic_key_seen(&arena, 7, 11, &last);
@@ -2579,18 +2605,18 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	rb_hash_aset(result, ID2SYM(rb_intern("duplicate_merged")),
 		     duplicate_added ? Qfalse : Qtrue);
 	rb_hash_aset(result, ID2SYM(rb_intern("first_counter")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_counter_read(
 			 &arena, first.counters.root, 0, 0)));
 	rb_hash_aset(result, ID2SYM(rb_intern("second_counter")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_counter_read(
 			 &arena, second.counters.root, 0, 0)));
 	rb_hash_aset(result, ID2SYM(rb_intern("failed_transaction")),
 		     failed_status == ONIBI_ACTION_FAIL ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("failed_counter")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_counter_read(
 			 &arena, failed.counters.root, 0, 0)));
 	rb_hash_aset(result, ID2SYM(rb_intern("failed_progress")),
-		     LONG2NUM(onibi_semantic_register_read(
+		     LONG2NUM(onibi_semantic_position_read(
 			 &arena, failed.progress.root, 0, -1)));
 	rb_hash_aset(result, ID2SYM(rb_intern("repeated_progress_rejected")),
 		     repeated_status == ONIBI_ACTION_FAIL ? Qtrue : Qfalse);
@@ -2779,7 +2805,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 	int second_added =
 	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second, NULL);
-	long captures[4];
+	OnibiBytePos captures[4];
 	if (frontier.count == 0)
 	    rb_raise(rb_eRuntimeError,
 		     "TAGGED output diagnostic lost its thread");
@@ -2818,7 +2844,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	accepted.order = onibi_capture_order_append(&arena, UINT32_MAX, 1);
 	rejected.capture_event_history = onibi_semantic_capture_event_append(
 	    &arena, UINT32_MAX, rejected.order, 0, 77);
-	long captures[2];
+	OnibiBytePos captures[2];
 	onibi_tagged_materialize_tags(&arena, &accepted, captures, 2);
 	rb_hash_aset(result, ID2SYM(rb_intern("sibling_orders")),
 		     !onibi_capture_order_is_ancestor(&arena, rejected.order,
@@ -2851,7 +2877,7 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState merged = predecessor;
 	merged.order = onibi_capture_order_append(&arena, UINT32_MAX, 2);
 	merged.capture_event_dependency = merged_owner;
-	long merged_captures[2];
+	OnibiBytePos merged_captures[2];
 	int merged_materialized =
 	    onibi_tagged_materialize_tags(&arena, &merged, merged_captures, 2);
 	rb_hash_aset(result, ID2SYM(rb_intern("duplicate_owner_kept")),
@@ -2927,11 +2953,12 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 
 static int
 onibi_rseq_dynamic_run(
-    VALUE rseq, const OnibiRSeqView *cached_view, VALUE str, long start,
-    long search_origin, uint32_t entry_edge_base, uint32_t entry_edge_count,
-    uint32_t local_subprogram_id, long required_end, int force_exhaustion,
+    VALUE rseq, const OnibiRSeqView *cached_view, VALUE str, OnibiBytePos start,
+    OnibiBytePos search_origin, uint32_t entry_edge_base,
+    uint32_t entry_edge_count, uint32_t local_subprogram_id,
+    OnibiBytePos required_end, int force_exhaustion,
     const OnibiSemanticState *initial_state, OnibiSemanticState *failed_state,
-    long *failed_position, int reset_arena, long *matched_end,
+    OnibiBytePos *failed_position, int reset_arena, OnibiBytePos *matched_end,
     OnibiSemanticState *accepted_state, OnibiSemanticArena *semantic_arena,
     unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx)
 {
@@ -3072,7 +3099,7 @@ onibi_rseq_dynamic_run(
 	if (onibi_dynamic_key_seen(arena, frame.state, frame.position,
 				   &frame.semantic))
 	    continue;
-	long next_position = frame.position;
+	OnibiBytePos next_position = frame.position;
 	int hit = 1;
 	if (state->op == 0) {
 	    if (frame.semantic.calls.depth == 0) {
@@ -3179,7 +3206,7 @@ onibi_rseq_dynamic_run(
 	}
 	OnibiSemanticState transition_semantic = frame.semantic;
 	if (state->op == ONIBI_RS_ABSENT) {
-	    long minimum_position = frame.position;
+	    OnibiBytePos minimum_position = frame.position;
 	    int absence_status = onibi_dynamic_absence_consume(
 		rseq, view, str, frame.position, state->payload,
 		&frame.semantic, arena, class_stack, class_stack_capacity, ctx,
@@ -3195,7 +3222,7 @@ onibi_rseq_dynamic_run(
 		next_position > RSTRING_LEN(str))
 		ONIBI_DYNAMIC_RUN_RETURN(-1);
 	    size_t child_frame_base = arena->frame_count;
-	    for (long candidate = minimum_position;; candidate++) {
+	    for (OnibiBytePos candidate = minimum_position;; candidate++) {
 		if (ctx) ctx->current_position = candidate;
 		onibi_exec_charge_work(ctx, 1);
 		int forced_failure = 0;
@@ -3253,7 +3280,7 @@ onibi_rseq_dynamic_run(
 	    OnibiSemanticCheckpoint checkpoint =
 		onibi_semantic_checkpoint_save(arena);
 	    OnibiSemanticState atomic_result;
-	    long atomic_end = frame.position;
+	    OnibiBytePos atomic_end = frame.position;
 	    int atomic_status = onibi_rseq_dynamic_run(
 		rseq, view, str, frame.position, search_origin,
 		subprogram->entry_edge_base, subprogram->entry_edge_count,
@@ -3290,9 +3317,9 @@ onibi_rseq_dynamic_run(
 		uint32_t begin = capture * 2U;
 		if (begin + 1U >= frame.semantic.semantic_captures.slot_count)
 		    continue;
-		OnigPosition capture_begin = onibi_semantic_register_read(
+		OnibiBytePos capture_begin = onibi_semantic_position_read(
 		    arena, frame.semantic.semantic_captures.root, begin, -1);
-		OnigPosition capture_end = onibi_semantic_register_read(
+		OnibiBytePos capture_end = onibi_semantic_position_read(
 		    arena, frame.semantic.semantic_captures.root, begin + 1U,
 		    -1);
 		if (capture_begin < 0 || capture_end < capture_begin) continue;
@@ -3353,13 +3380,11 @@ onibi_rseq_dynamic_run(
 }
 
 static int
-onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
-			      VALUE str, long start, long search_origin,
-			      long *matched_end,
-			      OnibiSemanticState *accepted_state,
-			      OnibiSemanticArena *semantic_arena,
-			      unsigned char *class_stack,
-			      size_t class_stack_capacity, OnibiExecCtx *ctx)
+onibi_rseq_backtracking_match(
+    VALUE rseq, const OnibiRSeqView *cached_view, VALUE str, OnibiBytePos start,
+    OnibiBytePos search_origin, OnibiBytePos *matched_end,
+    OnibiSemanticState *accepted_state, OnibiSemanticArena *semantic_arena,
+    unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx)
 {
     const OnibiRSeqView *view = cached_view;
     OnibiRSeqView local_view;
@@ -3384,40 +3409,38 @@ onibi_rseq_backtracking_match(VALUE rseq, const OnibiRSeqView *cached_view,
  * hit limits the complement to the byte before that hit.  The caller keeps
  * every endpoint in that range so a following edge can backtrack. */
 static int
-onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
-			      long position, uint32_t subprogram_id,
-			      const OnibiSemanticState *input,
-			      OnibiSemanticArena *arena,
-			      unsigned char *class_stack,
-			      size_t class_stack_capacity, OnibiExecCtx *ctx,
-			      long *next_position, long *minimum_position,
-			      OnibiSemanticState *output)
+onibi_dynamic_absence_consume(
+    VALUE rseq, const OnibiRSeqView *view, VALUE str, OnibiBytePos position,
+    uint32_t subprogram_id, const OnibiSemanticState *input,
+    OnibiSemanticArena *arena, unsigned char *class_stack,
+    size_t class_stack_capacity, OnibiExecCtx *ctx, OnibiBytePos *next_position,
+    OnibiBytePos *minimum_position, OnibiSemanticState *output)
 {
     if (view->header->subprogram_count == 0) return -1;
     if (subprogram_id == 0 || subprogram_id >= view->header->subprogram_count)
 	return -1;
     const OnibiSubprogramDesc *subprogram = &view->subprograms[subprogram_id];
-    long limit = RSTRING_LEN(str);
-    long absence_end = limit;
-    long first_zero = -1;
-    long first_nonzero = -1;
-    long next_zero = -1;
-    long first_positive_probe = -1;
+    OnibiBytePos limit = RSTRING_LEN(str);
+    OnibiBytePos absence_end = limit;
+    OnibiBytePos first_zero = -1;
+    OnibiBytePos first_nonzero = -1;
+    OnibiBytePos next_zero = -1;
+    OnibiBytePos first_positive_probe = -1;
     OnibiSemanticState first_zero_state = *input;
     OnibiSemanticState first_positive_state = *input;
     OnibiSemanticState furthest_failure_state = *input;
-    long furthest_failure_position = -1;
+    OnibiBytePos furthest_failure_position = -1;
     int zero_at_position = 0;
 
-    for (long probe = position; probe <= limit; probe++) {
+    for (OnibiBytePos probe = position; probe <= limit; probe++) {
 	if (ctx) ctx->current_position = probe;
 	onibi_exec_charge_work(ctx, 1);
 	if (probe > absence_end) break;
 	if (probe < limit && !onibi_character_boundary(str, probe)) continue;
 	OnibiSemanticState body_result;
 	OnibiSemanticState failed_result = *input;
-	long body_end = probe;
-	long failed_end = probe;
+	OnibiBytePos body_end = probe;
+	OnibiBytePos failed_end = probe;
 	int result = onibi_rseq_dynamic_run(
 	    rseq, view, str, probe, ctx->search_origin,
 	    subprogram->entry_edge_base, subprogram->entry_edge_count,
@@ -3427,8 +3450,8 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 	if (result < 0) return -1;
 	if (result > 0) {
 	    OnibiSemanticState terminal_state = *input;
-	    long terminal_position = probe;
-	    long forced_end = body_end;
+	    OnibiBytePos terminal_position = probe;
+	    OnibiBytePos forced_end = body_end;
 	    OnibiSemanticState forced_accept;
 	    int forced_status = onibi_rseq_dynamic_run(
 		rseq, view, str, probe, ctx->search_origin,
@@ -3445,15 +3468,15 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 		 * greatest endpoint that is still inside the narrowed range. */
 		if (body_end > absence_end) {
 		    int bounded = 0;
-		    for (long candidate = absence_end; candidate > probe;
-			 candidate--) {
+		    for (OnibiBytePos candidate = absence_end;
+			 candidate > probe; candidate--) {
 			if (candidate < limit &&
 			    !onibi_character_boundary(str, candidate))
 			    continue;
 			OnibiSemanticState bounded_result;
 			OnibiSemanticState bounded_failed = *input;
-			long bounded_end = candidate;
-			long bounded_failed_end = candidate;
+			OnibiBytePos bounded_end = candidate;
+			OnibiBytePos bounded_failed_end = candidate;
 			int bounded_status = onibi_rseq_dynamic_run(
 			    rseq, view, str, probe, ctx->search_origin,
 			    subprogram->entry_edge_base,
@@ -3475,7 +3498,8 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 		if (result > 0) {
 		    if (first_positive_probe < 0) first_positive_probe = probe;
 		    first_positive_state = body_result;
-		    long previous = body_end > 0 ? body_end - 1 : body_end;
+		    OnibiBytePos previous =
+			body_end > 0 ? body_end - 1 : body_end;
 		    while (previous > 0 &&
 			   !onibi_character_boundary(str, previous))
 			previous--;
@@ -3522,8 +3546,9 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 	    /* A zero-width body defines a shifted interval.  Leave the
 	     * current attempt to the outer search when a later point does
 	     * not match the body. */
-	    long shifted_start = first_nonzero >= 0 ? first_nonzero : limit;
-	    long shifted_end = shifted_start;
+	    OnibiBytePos shifted_start =
+		first_nonzero >= 0 ? first_nonzero : limit;
+	    OnibiBytePos shifted_end = shifted_start;
 	    if (shifted_start < limit) {
 		shifted_end = next_zero >= 0 ? next_zero : limit;
 	    }
@@ -3550,7 +3575,7 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
 
 static OnibiActionResult
 onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
-				long position,
+				OnibiBytePos position,
 				const OnibiSemanticState *predecessor,
 				OnibiSemanticState *successor)
 {
@@ -3565,8 +3590,8 @@ onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
     OnibiSemanticCheckpoint checkpoint = onibi_semantic_checkpoint_save(arena);
     uint32_t trial_count = lookbehind ? subprogram->width_count : 1U;
     for (uint32_t i = 0; i < trial_count; i++) {
-	long trial_start = position;
-	long required_end = -1;
+	OnibiBytePos trial_start = position;
+	OnibiBytePos required_end = -1;
 	if (lookbehind) {
 	    uint32_t width =
 		ctx->view->lookbehind_widths[subprogram->width_base + i];
@@ -3576,7 +3601,7 @@ onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
 	    required_end = position;
 	}
 	OnibiSemanticState assertion_result;
-	long assertion_end = trial_start;
+	OnibiBytePos assertion_end = trial_start;
 	int result = onibi_rseq_dynamic_run(
 	    ctx->rseq, ctx->view, ctx->subject, trial_start, ctx->search_origin,
 	    subprogram->entry_edge_base, subprogram->entry_edge_count,
@@ -3621,7 +3646,7 @@ onibi_dynamic_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
 typedef struct {
     uint32_t parent;
     uint32_t slot;
-    long position;
+    OnibiBytePos position;
 } onibi_regular_tag_event_t;
 
 typedef struct {
@@ -3649,7 +3674,7 @@ onibi_regular_tag_arena_grow(OnibiTagArena *arena)
 
 static uint32_t
 onibi_regular_tag_append(OnibiTagArena *arena, uint32_t parent, uint32_t slot,
-			 long position)
+			 OnibiBytePos position)
 {
     if (arena->count >= UINT32_MAX) rb_memerror();
     if (arena->count == arena->capacity) onibi_regular_tag_arena_grow(arena);
@@ -3662,11 +3687,11 @@ onibi_regular_tag_append(OnibiTagArena *arena, uint32_t parent, uint32_t slot,
 
 static int
 onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
-			    VALUE str, long position, long search_origin,
-			    rb_encoding *encoding, OnibiEncodingMode mode,
-			    uint32_t parent, uint32_t capture_slots,
-			    int capture_mode, OnibiTagArena *arena,
-			    uint32_t *history)
+			    VALUE str, OnibiBytePos position,
+			    OnibiBytePos search_origin, rb_encoding *encoding,
+			    OnibiEncodingMode mode, uint32_t parent,
+			    uint32_t capture_slots, int capture_mode,
+			    OnibiTagArena *arena, uint32_t *history)
 {
     onibi_regular_action_transaction_t transaction = {arena->count, parent};
     if (edge->action_offset == 0) {
@@ -3705,7 +3730,7 @@ onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
 
 static void
 onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
-			       long *captures, uint32_t capture_slots)
+			       OnibiBytePos *captures, uint32_t capture_slots)
 {
     const onibi_regular_tag_event_t *events =
 	(const onibi_regular_tag_event_t *)arena->data;
@@ -3721,11 +3746,12 @@ onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
 
 static int
 onibi_regular_accept_history(const OnibiRSeqView *view,
-			     const OnibiRState *state, VALUE str, long position,
-			     long search_origin, rb_encoding *encoding,
-			     OnibiEncodingMode mode, uint32_t parent,
-			     uint32_t capture_slots, int capture_mode,
-			     OnibiTagArena *arena, uint32_t *history)
+			     const OnibiRState *state, VALUE str,
+			     OnibiBytePos position, OnibiBytePos search_origin,
+			     rb_encoding *encoding, OnibiEncodingMode mode,
+			     uint32_t parent, uint32_t capture_slots,
+			     int capture_mode, OnibiTagArena *arena,
+			     uint32_t *history)
 {
     for (uint32_t i = 0; i < state->edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[state->edge_base + i];
@@ -3844,7 +3870,7 @@ onibi_tagged_frontier_add(OnibiFrontier *frontier, OnibiSemanticArena *arena,
 
 static int
 onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
-				     uint32_t history, long *captures,
+				     uint32_t history, OnibiBytePos *captures,
 				     uint32_t capture_slots, uint32_t *orders,
 				     uint32_t accepted_order,
 				     unsigned char *visited)
@@ -3877,7 +3903,7 @@ onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
 static int
 onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 			      const OnibiSemanticState *accepted,
-			      long *captures, uint32_t capture_slots)
+			      OnibiBytePos *captures, uint32_t capture_slots)
 {
     int owns_captures = 0;
     if (capture_slots > SIZE_MAX / sizeof(*captures)) return 0;
@@ -3971,9 +3997,10 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 
 static int
 onibi_tagged_accept_state(OnibiExecCtx *ctx, const OnibiRSeqView *view,
-			  const OnibiRState *state, VALUE str, long position,
-			  long search_origin, rb_encoding *encoding,
-			  OnibiEncodingMode mode, OnibiSemanticArena *arena,
+			  const OnibiRState *state, VALUE str,
+			  OnibiBytePos position, OnibiBytePos search_origin,
+			  rb_encoding *encoding, OnibiEncodingMode mode,
+			  OnibiSemanticArena *arena,
 			  const OnibiSemanticState *predecessor,
 			  OnibiSemanticState *accepted)
 {
@@ -3993,10 +4020,11 @@ onibi_tagged_accept_state(OnibiExecCtx *ctx, const OnibiRSeqView *view,
 
 static int
 onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
-		      uint32_t edge_count, long start, long required_end,
+		      uint32_t edge_count, OnibiBytePos start,
+		      OnibiBytePos required_end,
 		      const OnibiSemanticState *initial, OnibiFrontier *current,
 		      OnibiFrontier *next, OnibiSemanticState *accepted,
-		      long *matched_end)
+		      OnibiBytePos *matched_end)
 {
     const OnibiRSeqView *view = ctx->view;
     const OnibiRSeqHeader *header = view->header;
@@ -4006,7 +4034,7 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
     onibi_tagged_frontier_reset(current, header->state_count);
 
     int have_best = 0;
-    long best_end = start;
+    OnibiBytePos best_end = start;
     OnibiSemanticState best = *initial;
     uint32_t prior = initial->capture_event_dependency;
     for (uint32_t i = 0; i < edge_count; i++) {
@@ -4044,11 +4072,11 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	return 1;
     }
 
-    long position = start;
+    OnibiBytePos position = start;
     for (;;) {
 	onibi_tagged_frontier_reset(next, header->state_count);
 	int have_frontier_accept = 0;
-	long frontier_accept_end = position;
+	OnibiBytePos frontier_accept_end = position;
 	OnibiSemanticState frontier_accept = *initial;
 	long step_width = 0;
 	for (size_t i = 0; i < current->count; i++) {
@@ -4095,7 +4123,7 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	    if (state->op != ONIBI_RS_CHAR && state->op != ONIBI_RS_CLASS &&
 		state->op != ONIBI_RS_ANY)
 		return -1;
-	    long next_position = position;
+	    OnibiBytePos next_position = position;
 	    if (!onibi_rseq_consume_character(view, state, str, position,
 					      ctx->encoding, ctx->encoding_mode,
 					      &next_position, ctx->class_stack,
@@ -4224,10 +4252,10 @@ onibi_tagged_assertion_frontiers(OnibiExecCtx *ctx)
 }
 
 static int
-onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, long position, uint32_t width,
-			      long *start)
+onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, OnibiBytePos position,
+			      uint32_t width, OnibiBytePos *start)
 {
-    long current_position = position;
+    OnibiBytePos current_position = position;
     for (uint32_t i = 0; i < width; i++) {
 	ctx->current_position = current_position;
 	onibi_exec_charge_work(ctx, 1);
@@ -4245,7 +4273,7 @@ onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, long position, uint32_t width,
 
 static OnibiActionResult
 onibi_tagged_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
-			       long position,
+			       OnibiBytePos position,
 			       const OnibiSemanticState *predecessor,
 			       OnibiSemanticState *successor)
 {
@@ -4263,8 +4291,8 @@ onibi_tagged_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
     ctx->assertion_depth++;
     uint32_t trial_count = lookbehind ? subprogram->width_count : 1U;
     for (uint32_t i = 0; i < trial_count; i++) {
-	long start = position;
-	long required_end = -1;
+	OnibiBytePos start = position;
+	OnibiBytePos required_end = -1;
 	if (lookbehind) {
 	    uint32_t width =
 		ctx->view->lookbehind_widths[subprogram->width_base + i];
@@ -4273,7 +4301,7 @@ onibi_tagged_assert_subprogram(OnibiExecCtx *ctx, const OnibiRAction *action,
 	    required_end = position;
 	}
 	OnibiSemanticState assertion_result;
-	long assertion_end = start;
+	OnibiBytePos assertion_end = start;
 	int result = onibi_rseq_tagged_run(
 	    ctx, subprogram->entry_edge_base, subprogram->entry_edge_count,
 	    start, required_end, predecessor, &frontiers[0], &frontiers[1],
@@ -4322,7 +4350,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
     uint32_t count = header->state_count;
     if (count == 0) return 0;
     VALUE str = ctx->subject;
-    long start = ctx->attempt_start;
+    OnibiBytePos start = ctx->attempt_start;
     uint32_t capture_slots = header->capture_count * 2U;
     int capture_mode =
 	onibi_regular_capture_result != NULL && capture_slots != 0;
@@ -4337,7 +4365,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
     unsigned char *current_bits = ctx->current.membership;
     unsigned char *next_bits = ctx->next.membership;
     size_t current_count = 0;
-    long best_end = -1;
+    OnibiBytePos best_end = -1;
     uint32_t best_history = UINT32_MAX;
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
@@ -4365,13 +4393,13 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    current_count++;
 	}
     }
-    long position = start;
+    OnibiBytePos position = start;
     for (;;) {
 	long step_width = 1;
 	size_t next_count = 0;
 	memset(next_bits, 0, bits_size);
 	int have_fallback = 0;
-	long fallback_end = 0;
+	OnibiBytePos fallback_end = 0;
 	uint32_t fallback_history = UINT32_MAX;
 	for (size_t i = 0; i < current_count; i++) {
 	    uint32_t state_id = current[i];
@@ -4406,7 +4434,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 		goto frontier_complete;
 	    }
 	    if (position >= RSTRING_LEN(str)) continue;
-	    long next_position = position;
+	    OnibiBytePos next_position = position;
 	    int hit = onibi_rseq_consume_character(
 		view, state, str, position, ctx->encoding, ctx->encoding_mode,
 		&next_position, ctx->class_stack, ctx->class_stack_capacity,

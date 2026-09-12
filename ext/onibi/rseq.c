@@ -1511,7 +1511,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
  * byte offset never reaches an MRI character-index argument. */
 typedef struct {
     long character;
-    long byte;
+    OnibiBytePos byte;
     int valid;
 } OnibiRubyPosition;
 
@@ -1542,7 +1542,7 @@ onibi_ruby_position(VALUE str, VALUE position, int clamp_to_end)
 }
 
 static long
-onibi_ruby_character_position(VALUE str, long byte_position)
+onibi_ruby_character_position(VALUE str, OnibiBytePos byte_position)
 {
     return rb_str_sublen(str, byte_position);
 }
@@ -1573,7 +1573,7 @@ onibi_match(int argc, VALUE *argv, VALUE self)
 	    return Qnil;
 	}
     }
-    long start = 0, end = 0;
+    OnibiBytePos start = 0, end = 0;
     OnibiExecStatus search_status =
 	onibi_vm_search(self, str, origin.byte, &start, &end);
     if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
@@ -1616,7 +1616,7 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	    origin = onibi_ruby_position(str, pos, 0);
 	    if (!origin.valid) return Qfalse;
 	}
-	long start = 0, end = 0;
+	OnibiBytePos start = 0, end = 0;
 	OnibiExecStatus result =
 	    onibi_vm_search(self, str, origin.byte, &start, &end);
 	if (result == ONIBI_EXEC_STATUS_MATCH ||

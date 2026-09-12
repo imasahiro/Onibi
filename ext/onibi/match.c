@@ -34,7 +34,7 @@ onibi_exec_ctx_release(OnibiExecCtx *ctx)
 }
 
 static VALUE
-onibi_byte_slice(VALUE str, long start, long end)
+onibi_byte_slice(VALUE str, OnibiBytePos start, OnibiBytePos end)
 {
     if (start < 0 || end < start || end > RSTRING_LEN(str))
 	rb_raise(eRegexpError, "Onibi returned an invalid byte range");
@@ -42,8 +42,8 @@ onibi_byte_slice(VALUE str, long start, long end)
 }
 
 static OnibiExecStatus
-onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
-		     long *match_start, long *match_end)
+onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
+		     OnibiBytePos *match_start, OnibiBytePos *match_end)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -82,7 +82,8 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
 	if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_REGULAR)
 	    onibi_semantic_live_captures_prepare(&exec_ctx.semantic_arena,
 						 &obj->rseq_view);
-	for (long start = search_origin; start <= RSTRING_LEN(str); start++) {
+	for (OnibiBytePos start = search_origin; start <= RSTRING_LEN(str);
+	     start++) {
 	    exec_ctx.attempt_start = start;
 	    exec_ctx.reported_start = start;
 	    exec_ctx.current_position = start;
@@ -147,8 +148,8 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
 
 typedef struct {
     VALUE self, subject;
-    long origin;
-    long *match_start, *match_end;
+    OnibiBytePos origin;
+    OnibiBytePos *match_start, *match_end;
     OnibiExecCtx *previous_ctx;
     uint64_t previous_deadline;
 } OnibiSearchEnsure;
@@ -173,8 +174,8 @@ onibi_vm_search_ensure_cleanup(VALUE opaque)
 }
 
 static OnibiExecStatus
-onibi_vm_search(VALUE self, VALUE str, long search_origin, long *match_start,
-		long *match_end)
+onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
+		OnibiBytePos *match_start, OnibiBytePos *match_end)
 {
     OnibiSearchEnsure call = {self,
 			      str,
@@ -200,9 +201,9 @@ onibi_scan(VALUE self, VALUE str)
 				 ? obj->rseq_view.header->capture_count
 				 : 0;
     VALUE plain_subject = capture_count > 0 ? rb_str_dup(str) : str;
-    long origin = 0;
+    OnibiBytePos origin = 0;
     for (;;) {
-	long start = 0, end = 0;
+	OnibiBytePos start = 0, end = 0;
 	OnibiExecStatus status =
 	    onibi_vm_search(self, str, origin, &start, &end);
 	if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
@@ -245,7 +246,7 @@ static VALUE
 onibi_case_equal(VALUE self, VALUE other)
 {
     if (!RB_TYPE_P(other, T_STRING)) return Qfalse;
-    long start = 0, end = 0;
+    OnibiBytePos start = 0, end = 0;
     OnibiExecStatus status = onibi_vm_search(self, other, 0, &start, &end);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
@@ -280,7 +281,7 @@ onibi_tilde(VALUE self)
 {
     VALUE input = rb_gv_get("$_");
     if (!RB_TYPE_P(input, T_STRING)) return Qnil;
-    long start = 0, end = 0;
+    OnibiBytePos start = 0, end = 0;
     OnibiExecStatus status = onibi_vm_search(self, input, 0, &start, &end);
     if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
 	rb_backref_set(Qnil);
@@ -322,9 +323,9 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
     }
     VALUE result = rb_str_buf_new(RSTRING_LEN(str));
     rb_enc_associate(result, rb_enc_get(str));
-    long origin = 0, copied = 0;
+    OnibiBytePos origin = 0, copied = 0;
     for (;;) {
-	long start = 0, end = 0;
+	OnibiBytePos start = 0, end = 0;
 	OnibiExecStatus status =
 	    onibi_vm_search(self, str, origin, &start, &end);
 	if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
