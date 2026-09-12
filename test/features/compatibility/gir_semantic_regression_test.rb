@@ -38,6 +38,19 @@ class GirSemanticRegressionTest < Minitest::Test
     assert_match_differential("éx", "あéx", position: 1)
   end
 
+  def test_match_question_positions_use_character_offsets
+    input = "あéx"
+    pattern = "é"
+    expected = ::Regexp.new(pattern)
+    actual = Onibi::Regexp.new(pattern)
+
+    [2, -2].each do |position|
+      assert_equal expected.match?(input, position),
+                   actual.match?(input, position),
+                   "position #{position}"
+    end
+  end
+
   def test_scan_slices_multibyte_matches_by_byte_range
     input = "xéあy"
     pattern = "[éあ]"

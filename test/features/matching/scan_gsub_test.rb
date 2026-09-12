@@ -7,6 +7,24 @@ class ScanGsubTest < Minitest::Test
     assert_equal [%w[a 1], %w[b 2]], Onibi::Regexp.new("([a-z])([0-9])").scan("a1 b2")
   end
 
+  def test_scan_rematerializes_captures_from_a_byte_match_start
+    input = "あéx"
+    pattern = "(é)"
+    expected = input.scan(::Regexp.new(pattern))
+    actual = Onibi::Regexp.new(pattern).scan(input)
+
+    assert_equal expected, actual
+  end
+
+  def test_gsub_block_receives_a_byte_slice_for_multibyte_input
+    input = "xéあy"
+    pattern = "[éあ]"
+    expected = input.gsub(::Regexp.new(pattern)) { |value| "<#{value}>" }
+    actual = Onibi::Regexp.new(pattern).gsub(input) { |value| "<#{value}>" }
+
+    assert_equal expected, actual
+  end
+
   def test_scan_handles_empty_matches_without_looping
     assert_equal ["", "", ""], Onibi::Regexp.new("(?=a)").scan("aaa")
     assert_equal [""], Onibi::Regexp.new("(?=a)").scan("ba")

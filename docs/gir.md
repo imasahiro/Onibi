@@ -423,9 +423,22 @@ The compiler MAY classify a feature into a lower class if it can prove an equiva
 
 # 9. Input Position Model
 
-All externally visible positions are byte offsets.
+All engine-facing subject positions are byte offsets.
 
 Use `OnigPosition` for subject byte offsets.
+
+Ruby public APIs keep MRI's character-index rules.  An optional `pos` value is
+a character index, including negative indexes.  The API adapter normalizes it
+against the subject's character length and converts it to one byte offset
+before it calls the VM.  The VM never receives a Ruby character index.
+
+When a Ruby API returns a position, the adapter converts the selected byte
+offset back to a character index.  This applies to `Regexp#~` and other APIs
+that expose a character position.  Match ranges and capture ranges remain
+byte offsets until MRI materializes `MatchData`.
+
+Use byte slicing for VM ranges.  Do not pass a VM byte offset to an MRI API
+that expects a character index.
 
 Do not use `uint32_t` for subject offsets.
 
@@ -4670,7 +4683,8 @@ Edge array order is semantic priority order.
 
 ### Position invariant
 
-Externally visible offsets are subject byte offsets.
+Engine-facing and raw-match offsets are subject byte offsets.  Ruby position
+APIs use character indexes through the adapter described in section 9.
 
 ### Capture invariant
 
