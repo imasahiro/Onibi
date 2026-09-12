@@ -937,6 +937,11 @@ onibi_semantic_local_slots_prepare(OnibiSemanticArena *arena,
     arena->local_slot_used = NULL;
     arena->local_slot_nullable = NULL;
 
+    if (header->subprogram_count >
+	    SIZE_MAX / sizeof(*arena->subprogram_local_slots) ||
+	(header->state_count != 0 &&
+	 (size_t)header->state_count > SIZE_MAX / sizeof(uint32_t)))
+	rb_memerror();
     arena->subprogram_local_slots = ruby_xcalloc(
 	header->subprogram_count, sizeof(*arena->subprogram_local_slots));
     arena->local_slot_visited =
@@ -3748,7 +3753,8 @@ onibi_tagged_frontier_reserve(OnibiFrontier *frontier)
     if (capacity < frontier->capacity ||
 	capacity > SIZE_MAX / sizeof(*frontier->states) ||
 	capacity > SIZE_MAX / sizeof(*frontier->semantics) ||
-	capacity > SIZE_MAX / sizeof(*frontier->failure_owners))
+	capacity > SIZE_MAX / sizeof(*frontier->failure_owners) ||
+	capacity > SIZE_MAX / sizeof(*frontier->hashes))
 	rb_memerror();
     frontier->states =
 	ruby_xrealloc(frontier->states, capacity * sizeof(*frontier->states));
@@ -4311,18 +4317,18 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
     int capture_mode =
 	onibi_regular_capture_result != NULL && capture_slots != 0;
     ctx->tags.count = 0;
-    size_t bits_size = ((size_t)count + 7U) / 8U;
-    uint32_t *current = ALLOCA_N(uint32_t, count);
-    uint32_t *next = ALLOCA_N(uint32_t, count);
-    uint32_t *current_histories =
-	capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
-    uint32_t *next_histories = capture_mode ? ALLOCA_N(uint32_t, count) : NULL;
-    unsigned char *current_bits = ALLOCA_N(unsigned char, bits_size);
-    unsigned char *next_bits = ALLOCA_N(unsigned char, bits_size);
+    onibi_regular_frontier_prepare(&ctx->current, (size_t)count, capture_mode);
+    onibi_regular_frontier_prepare(&ctx->next, (size_t)count, capture_mode);
+    size_t bits_size = (size_t)count / 8U + ((count % 8U) == 0 ? 0U : 1U);
+    uint32_t *current = ctx->current.states;
+    uint32_t *next = ctx->next.states;
+    uint32_t *current_histories = capture_mode ? ctx->current.histories : NULL;
+    uint32_t *next_histories = capture_mode ? ctx->next.histories : NULL;
+    unsigned char *current_bits = ctx->current.membership;
+    unsigned char *next_bits = ctx->next.membership;
     size_t current_count = 0;
     long best_end = -1;
     uint32_t best_history = UINT32_MAX;
-    memset(current_bits, 0, bits_size);
     for (uint32_t i = 0; i < header->start_edge_count; i++) {
 	const OnibiREdge *edge = &view->edges[header->start_edge_base + i];
 	if (edge->destination == ONIBI_ACCEPT_STATE) {

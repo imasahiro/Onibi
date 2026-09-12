@@ -199,6 +199,8 @@ typedef struct {
     uint64_t *hashes;
     uint32_t *key_buckets;
     unsigned char *membership;
+    /* REGULAR_FAST capture history for the state slots above. */
+    uint32_t *histories;
     size_t count;
     size_t capacity;
     size_t key_capacity;
@@ -401,6 +403,7 @@ typedef struct {
     size_t class_stack_capacity;
     long matched_end;
 } OnibiExecCtx;
+
 typedef enum {
     ONIBI_EXEC_STATUS_NO_MATCH = 0,
     ONIBI_EXEC_STATUS_MATCH = 1,
@@ -429,6 +432,9 @@ onibi_execution_kind_for_requirements(uint32_t requirements)
  * by the diagnostic entry point and are never used for matching decisions. */
 typedef struct {
     unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
+    unsigned long regular_candidate_starts;
+    unsigned long regular_buffer_grows;
+    unsigned long regular_buffer_reuses;
     size_t order_nodes;
     size_t capture_events;
     size_t capture_event_roots;
@@ -437,6 +443,57 @@ typedef struct {
 } OnibiDiagnostics;
 static _Thread_local OnibiDiagnostics onibi_diagnostics;
 static _Thread_local long *onibi_regular_capture_result = NULL;
+
+/* REGULAR_FAST uses the same frontier storage as the ordered executors.
+ * Keep state and membership storage on the match context.  A candidate
+ * start clears only the logical contents and keeps the allocated capacity. */
+static void
+onibi_regular_frontier_prepare(OnibiFrontier *frontier, size_t state_count,
+			       int capture_mode)
+{
+    int grew = 0;
+    if (state_count > frontier->capacity) {
+	size_t capacity = frontier->capacity == 0 ? 32U : frontier->capacity;
+	while (capacity < state_count) {
+	    if (capacity > SIZE_MAX / 2U) rb_memerror();
+	    capacity *= 2U;
+	}
+	if (capacity > SIZE_MAX / sizeof(*frontier->states) ||
+	    (capture_mode &&
+	     capacity > SIZE_MAX / sizeof(*frontier->histories)))
+	    rb_memerror();
+	frontier->states = ruby_xrealloc(frontier->states,
+					 capacity * sizeof(*frontier->states));
+	if (capture_mode)
+	    frontier->histories = ruby_xrealloc(
+		frontier->histories, capacity * sizeof(*frontier->histories));
+	frontier->capacity = capacity;
+	grew = 1;
+    }
+
+    if (state_count > SIZE_MAX - 7U) rb_memerror();
+    size_t membership_size = (state_count + 7U) / 8U;
+    if (membership_size > frontier->membership_capacity) {
+	size_t capacity = frontier->membership_capacity == 0
+			      ? 32U
+			      : frontier->membership_capacity;
+	while (capacity < membership_size) {
+	    if (capacity > SIZE_MAX / 2U) rb_memerror();
+	    capacity *= 2U;
+	}
+	frontier->membership = ruby_xrealloc(frontier->membership, capacity);
+	frontier->membership_capacity = capacity;
+	grew = 1;
+    }
+
+    if (grew)
+	onibi_diagnostics.regular_buffer_grows++;
+    else
+	onibi_diagnostics.regular_buffer_reuses++;
+    frontier->count = 0;
+    if (membership_size != 0) memset(frontier->membership, 0, membership_size);
+}
+
 static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
 static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
 static int onibi_rseq_backtracking_match(
