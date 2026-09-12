@@ -404,6 +404,8 @@ typedef struct {
     long matched_end;
 } OnibiExecCtx;
 
+#define ONIBI_POLL_WORK 128
+
 typedef enum {
     ONIBI_EXEC_STATUS_NO_MATCH = 0,
     ONIBI_EXEC_STATUS_MATCH = 1,
@@ -432,6 +434,9 @@ onibi_execution_kind_for_requirements(uint32_t requirements)
  * by the diagnostic entry point and are never used for matching decisions. */
 typedef struct {
     unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
+    unsigned long poll_count;
+    uint64_t work_charged;
+    uint64_t max_charged_work;
     unsigned long regular_candidate_starts;
     unsigned long regular_buffer_grows;
     unsigned long regular_buffer_reuses;
@@ -507,6 +512,7 @@ static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static _Thread_local int onibi_inject_internal_error = 0;
 static void onibi_exec_ctx_release(OnibiExecCtx *ctx);
+static void onibi_dynamic_poll_interrupts(OnibiExecCtx *ctx);
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
     id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;
@@ -639,14 +645,60 @@ static void
 onibi_check_deadline(void)
 {
     if (onibi_active_exec_ctx) {
-	if (onibi_active_exec_ctx->work_before_poll > 0)
-	    onibi_active_exec_ctx->work_before_poll--;
 	if (onibi_active_exec_ctx->timeout_deadline != 0 &&
 	    onibi_now_ns() >= onibi_active_exec_ctx->timeout_deadline)
 	    rb_raise(eTimeoutError, "regexp match timeout");
     }
     if (onibi_deadline_ns != 0 && onibi_now_ns() >= onibi_deadline_ns)
 	rb_raise(eTimeoutError, "regexp match timeout");
+}
+
+/* The caller stores a coherent byte position before charging work.  A poll
+ * can raise, so no subject-derived pointer can live across this function. */
+static void
+onibi_exec_charge_work(OnibiExecCtx *ctx, uint64_t units)
+{
+    if (ctx == NULL || units == 0) return;
+    while (units != 0) {
+	if (ctx->work_before_poll == 0) onibi_dynamic_poll_interrupts(ctx);
+	uint64_t charge =
+	    units < ctx->work_before_poll ? units : ctx->work_before_poll;
+	ctx->work_before_poll -= charge;
+	units -= charge;
+	onibi_diagnostics.work_charged += charge;
+	if (charge > onibi_diagnostics.max_charged_work)
+	    onibi_diagnostics.max_charged_work = charge;
+	if (ctx->work_before_poll == 0) onibi_dynamic_poll_interrupts(ctx);
+    }
+}
+
+static VALUE
+onibi_dynamic_poll_call(VALUE unused)
+{
+    (void)unused;
+    onibi_check_deadline();
+    rb_thread_check_ints();
+    return Qnil;
+}
+
+/* Keep exception cleanup inside the protected poll boundary. */
+static void
+onibi_dynamic_poll_interrupts(OnibiExecCtx *ctx)
+{
+    int state = 0;
+    rb_protect(onibi_dynamic_poll_call, Qnil, &state);
+    if (state == 0) {
+	if (ctx != NULL) {
+	    ctx->work_before_poll = ONIBI_POLL_WORK;
+	    onibi_diagnostics.poll_count++;
+	}
+	return;
+    }
+    if (ctx != NULL) {
+	onibi_exec_ctx_release(ctx);
+	if (onibi_active_exec_ctx == ctx) onibi_active_exec_ctx = NULL;
+    }
+    rb_jump_tag(state);
 }
 
 static void
