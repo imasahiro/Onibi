@@ -46,6 +46,12 @@ class WorkBudgetPollTest < Minitest::Test
     assert_equal 0, info[:fallback]
   end
 
+  def test_synthetic_context_cannot_enter_owned_poll_path
+    source = File.read(File.expand_path("../../../ext/onibi/onibi_common.c", __dir__))
+
+    assert_match(/ctx != onibi_active_exec_ctx.*units == 0/, source)
+  end
+
   def test_regular_timeout_interrupts_one_candidate
     input = "a" * 20_000_000
     regexp = Onibi::Regexp.new("a*", timeout: 0.001)

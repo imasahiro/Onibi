@@ -658,7 +658,10 @@ onibi_check_deadline(void)
 static void
 onibi_exec_charge_work(OnibiExecCtx *ctx, uint64_t units)
 {
-    if (ctx == NULL || units == 0) return;
+    /* Only the registered match context has owned cleanup for poll errors.
+     * Synthetic diagnostic contexts can use the same interpreter helpers,
+     * but must not enter this safepoint. */
+    if (ctx == NULL || ctx != onibi_active_exec_ctx || units == 0) return;
     while (units != 0) {
 	if (ctx->work_before_poll == 0) onibi_exec_poll_interrupts(ctx);
 	uint64_t charge =
