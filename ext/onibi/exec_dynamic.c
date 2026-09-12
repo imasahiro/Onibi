@@ -1833,7 +1833,7 @@ static int onibi_tagged_frontier_add(OnibiFrontier *frontier,
 				     uint32_t *retained_owner);
 static int onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 					 const OnibiSemanticState *accepted,
-					 OnibiBytePos *captures,
+					 OnibiRawMatch *raw_match,
 					 uint32_t capture_slots);
 
 static OnibiTagEventId
@@ -2805,15 +2805,22 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_tagged_frontier_add(&frontier, &arena, 7, &first, NULL);
 	int second_added =
 	    onibi_tagged_frontier_add(&frontier, &arena, 7, &second, NULL);
-	OnibiBytePos captures[4];
+	OnibiBytePos capture_beg[3], capture_end[3];
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = 3,
+				   .beg = capture_beg,
+				   .end = capture_end};
 	if (frontier.count == 0)
 	    rb_raise(rb_eRuntimeError,
 		     "TAGGED output diagnostic lost its thread");
-	onibi_tagged_materialize_tags(&arena, &frontier.semantics[0], captures,
-				      4);
+	onibi_tagged_materialize_tags(&arena, &frontier.semantics[0],
+				      &raw_match, 4);
 	VALUE capture_ranges = rb_ary_new_capa(4);
-	for (size_t i = 0; i < 4; i++)
-	    rb_ary_push(capture_ranges, LONG2NUM(captures[i]));
+	for (uint32_t i = 1; i < raw_match.num_regs; i++) {
+	    rb_ary_push(capture_ranges, LONG2NUM(raw_match.beg[i]));
+	    rb_ary_push(capture_ranges, LONG2NUM(raw_match.end[i]));
+	}
 	rb_hash_aset(result, ID2SYM(rb_intern("frontier_count")),
 		     SIZET2NUM(frontier.count));
 	rb_hash_aset(result, ID2SYM(rb_intern("first_path_added")),
@@ -2822,9 +2829,9 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 		     second_added ? Qfalse : Qtrue);
 	rb_hash_aset(result, ID2SYM(rb_intern("captures")), capture_ranges);
 	rb_hash_aset(result, ID2SYM(rb_intern("first_capture")),
-		     LONG2NUM(captures[0]));
+		     LONG2NUM(raw_match.beg[1]));
 	rb_hash_aset(result, ID2SYM(rb_intern("second_capture")),
-		     LONG2NUM(captures[2]));
+		     LONG2NUM(raw_match.beg[2]));
 	ruby_xfree(frontier.states);
 	ruby_xfree(frontier.semantics);
 	ruby_xfree(frontier.failure_owners);
@@ -2844,8 +2851,13 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	accepted.order = onibi_capture_order_append(&arena, UINT32_MAX, 1);
 	rejected.capture_event_history = onibi_semantic_capture_event_append(
 	    &arena, UINT32_MAX, rejected.order, 0, 77);
-	OnibiBytePos captures[2];
-	onibi_tagged_materialize_tags(&arena, &accepted, captures, 2);
+	OnibiBytePos capture_beg[2], capture_end[2];
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = 2,
+				   .beg = capture_beg,
+				   .end = capture_end};
+	onibi_tagged_materialize_tags(&arena, &accepted, &raw_match, 2);
 	rb_hash_aset(result, ID2SYM(rb_intern("sibling_orders")),
 		     !onibi_capture_order_is_ancestor(&arena, rejected.order,
 						      accepted.order)
@@ -2854,9 +2866,9 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	rb_hash_aset(result, ID2SYM(rb_intern("accepted_has_no_tag_history")),
 		     accepted.tag_history == UINT32_MAX ? Qtrue : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("capture")),
-		     LONG2NUM(captures[0]));
+		     LONG2NUM(raw_match.beg[1]));
 	rb_hash_aset(result, ID2SYM(rb_intern("rejected_capture_unpublished")),
-		     captures[0] < 0 ? Qtrue : Qfalse);
+		     raw_match.beg[1] < 0 ? Qtrue : Qfalse);
 	OnibiSemanticState first = predecessor;
 	OnibiSemanticState second = predecessor;
 	first.order = onibi_capture_order_append(&arena, UINT32_MAX, 0);
@@ -2877,15 +2889,20 @@ onibi_semantic_state_diagnostics(VALUE self, VALUE scenario_value)
 	OnibiSemanticState merged = predecessor;
 	merged.order = onibi_capture_order_append(&arena, UINT32_MAX, 2);
 	merged.capture_event_dependency = merged_owner;
-	OnibiBytePos merged_captures[2];
+	OnibiBytePos merged_beg[2], merged_end[2];
+	OnibiRawMatch merged_match = {.begin_byte = -1,
+				      .end_byte = -1,
+				      .num_regs = 2,
+				      .beg = merged_beg,
+				      .end = merged_end};
 	int merged_materialized =
-	    onibi_tagged_materialize_tags(&arena, &merged, merged_captures, 2);
+	    onibi_tagged_materialize_tags(&arena, &merged, &merged_match, 2);
 	rb_hash_aset(result, ID2SYM(rb_intern("duplicate_owner_kept")),
 		     first_inserted && !second_inserted && owner_resolved
 			 ? Qtrue
 			 : Qfalse);
 	rb_hash_aset(result, ID2SYM(rb_intern("merged_capture")),
-		     LONG2NUM(merged_materialized ? merged_captures[0] : -1));
+		     LONG2NUM(merged_materialized ? merged_match.beg[1] : -1));
 	ruby_xfree(merged_frontier.states);
 	ruby_xfree(merged_frontier.semantics);
 	ruby_xfree(merged_frontier.failure_owners);
@@ -3730,16 +3747,25 @@ onibi_regular_apply_actions(const OnibiRSeqView *view, const OnibiREdge *edge,
 
 static void
 onibi_regular_materialize_tags(const OnibiTagArena *arena, uint32_t history,
-			       OnibiBytePos *captures, uint32_t capture_slots)
+			       OnibiRawMatch *raw_match, uint32_t capture_slots)
 {
     const onibi_regular_tag_event_t *events =
 	(const onibi_regular_tag_event_t *)arena->data;
-    for (uint32_t i = 0; i < capture_slots; i++)
-	captures[i] = -1;
+    for (uint32_t i = 1; i < raw_match->num_regs; i++) {
+	raw_match->beg[i] = -1;
+	raw_match->end[i] = -1;
+    }
     while (history != UINT32_MAX && history < arena->count) {
 	const onibi_regular_tag_event_t *event = &events[history];
-	if (event->slot < capture_slots && captures[event->slot] < 0)
-	    captures[event->slot] = event->position;
+	if (event->slot < capture_slots) {
+	    uint32_t reg = event->slot / 2U + 1U;
+	    OnibiBytePos position = (event->slot & 1U) == 0
+					? raw_match->beg[reg]
+					: raw_match->end[reg];
+	    if (position < 0)
+		onibi_raw_match_capture_write(raw_match, event->slot,
+					      event->position);
+	}
 	history = event->parent;
     }
 }
@@ -3870,7 +3896,7 @@ onibi_tagged_frontier_add(OnibiFrontier *frontier, OnibiSemanticArena *arena,
 
 static int
 onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
-				     uint32_t history, OnibiBytePos *captures,
+				     uint32_t history, OnibiRawMatch *raw_match,
 				     uint32_t capture_slots, uint32_t *orders,
 				     uint32_t accepted_order,
 				     unsigned char *visited)
@@ -3893,7 +3919,8 @@ onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
 	     onibi_capture_order_compare(arena, event->order,
 					 orders[event->slot]) > 0)) {
 	    orders[event->slot] = event->order;
-	    captures[event->slot] = event->position;
+	    onibi_raw_match_capture_write(raw_match, event->slot,
+					  event->position);
 	}
 	history = event->parent;
     }
@@ -3903,25 +3930,28 @@ onibi_tagged_materialize_event_chain(const OnibiSemanticArena *arena,
 static int
 onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 			      const OnibiSemanticState *accepted,
-			      OnibiBytePos *captures, uint32_t capture_slots)
+			      OnibiRawMatch *raw_match, uint32_t capture_slots)
 {
-    int owns_captures = 0;
-    if (capture_slots > SIZE_MAX / sizeof(*captures)) return 0;
-    if (captures == NULL && capture_slots != 0) {
-	captures = ruby_xmalloc((size_t)capture_slots * sizeof(*captures));
-	owns_captures = 1;
+    if (capture_slots > SIZE_MAX / sizeof(uint32_t)) return 0;
+    for (uint32_t i = 1; i < raw_match->num_regs; i++) {
+	raw_match->beg[i] = -1;
+	raw_match->end[i] = -1;
     }
-    for (uint32_t i = 0; i < capture_slots; i++)
-	captures[i] = -1;
     OnibiTagEventId history = accepted->tag_history;
     while (history != UINT32_MAX) {
 	if (history >= arena->tag_count) {
-	    if (owns_captures) ruby_xfree(captures);
 	    return 0;
 	}
 	const OnibiSemanticTagEvent *event = &arena->tags[history];
-	if (event->slot < capture_slots && captures[event->slot] < 0)
-	    captures[event->slot] = event->position;
+	if (event->slot < capture_slots) {
+	    uint32_t reg = event->slot / 2U + 1U;
+	    OnibiBytePos position = (event->slot & 1U) == 0
+					? raw_match->beg[reg]
+					: raw_match->end[reg];
+	    if (position < 0)
+		onibi_raw_match_capture_write(raw_match, event->slot,
+					      event->position);
+	}
 	history = event->parent;
     }
 
@@ -3931,7 +3961,6 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	    : ruby_xmalloc((size_t)capture_slots * sizeof(*orders));
     if (arena->capture_event_count > SIZE_MAX / sizeof(unsigned char)) {
 	ruby_xfree(orders);
-	if (owns_captures) ruby_xfree(captures);
 	return 0;
     }
     unsigned char *visited =
@@ -3941,11 +3970,10 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
     for (uint32_t i = 0; i < capture_slots; i++)
 	orders[i] = UINT32_MAX;
     if (!onibi_tagged_materialize_event_chain(
-	    arena, accepted->capture_event_history, captures, capture_slots,
+	    arena, accepted->capture_event_history, raw_match, capture_slots,
 	    orders, accepted->order, visited)) {
 	ruby_xfree(orders);
 	ruby_xfree(visited);
-	if (owns_captures) ruby_xfree(captures);
 	return 0;
     }
 
@@ -3956,7 +3984,6 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	    ++owner_steps > arena->capture_event_owner_count) {
 	    ruby_xfree(orders);
 	    ruby_xfree(visited);
-	    if (owns_captures) ruby_xfree(captures);
 	    return 0;
 	}
 	const OnibiCaptureEventOwner *cell =
@@ -3964,7 +3991,6 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 	if (!cell->resolved) {
 	    ruby_xfree(orders);
 	    ruby_xfree(visited);
-	    if (owns_captures) ruby_xfree(captures);
 	    return 0;
 	}
 	uint32_t root = cell->event_roots;
@@ -3974,15 +4000,13 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
 		++root_steps > arena->capture_event_root_count) {
 		ruby_xfree(orders);
 		ruby_xfree(visited);
-		if (owns_captures) ruby_xfree(captures);
 		return 0;
 	    }
 	    if (!onibi_tagged_materialize_event_chain(
-		    arena, arena->capture_event_roots[root].history, captures,
+		    arena, arena->capture_event_roots[root].history, raw_match,
 		    capture_slots, orders, accepted->order, visited)) {
 		ruby_xfree(orders);
 		ruby_xfree(visited);
-		if (owns_captures) ruby_xfree(captures);
 		return 0;
 	    }
 	    root = arena->capture_event_roots[root].next;
@@ -3991,7 +4015,6 @@ onibi_tagged_materialize_tags(OnibiSemanticArena *arena,
     }
     ruby_xfree(orders);
     ruby_xfree(visited);
-    if (owns_captures) ruby_xfree(captures);
     return 1;
 }
 
@@ -4353,7 +4376,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
     OnibiBytePos start = ctx->attempt_start;
     uint32_t capture_slots = header->capture_count * 2U;
     int capture_mode =
-	onibi_regular_capture_result != NULL && capture_slots != 0;
+	onibi_raw_match_capture_mode(ctx->raw_match, header->capture_count) &&
+	capture_slots != 0;
     ctx->tags.count = 0;
     onibi_regular_frontier_prepare(&ctx->current, (size_t)count, capture_mode);
     onibi_regular_frontier_prepare(&ctx->next, (size_t)count, capture_mode);
@@ -4419,8 +4443,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 		if (!next_count) {
 		    if (capture_mode)
 			onibi_regular_materialize_tags(
-			    &ctx->tags, accept_history,
-			    onibi_regular_capture_result, capture_slots);
+			    &ctx->tags, accept_history, ctx->raw_match,
+			    capture_slots);
 		    ctx->matched_end = position;
 		    return 1;
 		}
@@ -4457,8 +4481,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 		    if (next_count == 0) {
 			if (capture_mode)
 			    onibi_regular_materialize_tags(
-				&ctx->tags, accept_history,
-				onibi_regular_capture_result, capture_slots);
+				&ctx->tags, accept_history, ctx->raw_match,
+				capture_slots);
 			ctx->matched_end = next_position;
 			return 1;
 		    }
@@ -4494,7 +4518,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    if (have_fallback) {
 		if (capture_mode)
 		    onibi_regular_materialize_tags(&ctx->tags, fallback_history,
-						   onibi_regular_capture_result,
+						   ctx->raw_match,
 						   capture_slots);
 		ctx->matched_end = fallback_end;
 		return 1;
@@ -4502,7 +4526,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    if (best_end >= 0) {
 		if (capture_mode)
 		    onibi_regular_materialize_tags(&ctx->tags, best_history,
-						   onibi_regular_capture_result,
+						   ctx->raw_match,
 						   capture_slots);
 		ctx->matched_end = best_end;
 		return 1;
@@ -4539,8 +4563,10 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
     }
     if (result > 0) {
 	ctx->reported_start = accepted.reported_start;
-	if (!onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
-					   onibi_regular_capture_result,
+	if (onibi_raw_match_capture_mode(ctx->raw_match,
+					 ctx->program->capture_count) &&
+	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
+					   ctx->raw_match,
 					   ctx->program->capture_count * 2U))
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
@@ -4562,8 +4588,10 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
     if (result < 0) return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     if (result > 0) {
 	ctx->reported_start = accepted.reported_start;
-	if (!onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
-					   onibi_regular_capture_result,
+	if (onibi_raw_match_capture_mode(ctx->raw_match,
+					 ctx->program->capture_count) &&
+	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
+					   ctx->raw_match,
 					   ctx->program->capture_count * 2U))
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
@@ -4577,11 +4605,17 @@ onibi_execute(OnibiExecCtx *ctx)
 	onibi_inject_internal_error = 0;
 	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
+    OnibiExecStatus status;
     switch ((OnibiExecutionKind)ctx->program->exec_kind) {
-    case ONIBI_EXEC_REGULAR: return onibi_exec_regular(ctx);
-    case ONIBI_EXEC_TAGGED: return onibi_exec_tagged(ctx);
-    case ONIBI_EXEC_DYNAMIC: return onibi_exec_dynamic(ctx);
+    case ONIBI_EXEC_REGULAR: status = onibi_exec_regular(ctx); break;
+    case ONIBI_EXEC_TAGGED: status = onibi_exec_tagged(ctx); break;
+    case ONIBI_EXEC_DYNAMIC: status = onibi_exec_dynamic(ctx); break;
     default: return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
+    if (status == ONIBI_EXEC_STATUS_MATCH &&
+	!onibi_raw_match_record(ctx->raw_match, ctx->reported_start,
+				ctx->matched_end))
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    return status;
 }
 /* DYNAMIC interpreter. */

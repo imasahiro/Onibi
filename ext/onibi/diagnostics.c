@@ -32,43 +32,6 @@ onibi_unicode_ctype_id(ID property)
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
-typedef struct {
-    VALUE self;
-    VALUE subject;
-    OnibiBytePos *start;
-    OnibiBytePos *finish;
-    OnibiBytePos *previous_capture_result;
-} OnibiDiagnosticSearch;
-
-static VALUE
-onibi_diagnostic_search_call(VALUE opaque)
-{
-    OnibiDiagnosticSearch *call = (OnibiDiagnosticSearch *)(uintptr_t)opaque;
-    return INT2NUM(onibi_vm_search(call->self, call->subject, 0, call->start,
-				   call->finish));
-}
-
-static VALUE
-onibi_diagnostic_search_cleanup(VALUE opaque)
-{
-    OnibiDiagnosticSearch *call = (OnibiDiagnosticSearch *)(uintptr_t)opaque;
-    onibi_regular_capture_result = call->previous_capture_result;
-    return Qnil;
-}
-
-static int
-onibi_diagnostic_search(VALUE self, VALUE subject, OnibiBytePos *start,
-			OnibiBytePos *finish, OnibiBytePos *capture_result)
-{
-    OnibiDiagnosticSearch call = {self, subject, start, finish,
-				  onibi_regular_capture_result};
-    onibi_regular_capture_result = capture_result;
-    VALUE status =
-	rb_ensure(onibi_diagnostic_search_call, (VALUE)(uintptr_t)&call,
-		  onibi_diagnostic_search_cleanup, (VALUE)(uintptr_t)&call);
-    return NUM2INT(status);
-}
-
 static VALUE
 onibi_diagnostics_for(VALUE self, VALUE subject)
 {
@@ -76,18 +39,23 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
-    uint32_t capture_slots =
-	!NIL_P(obj->rseq) ? obj->rseq_view.header->capture_count * 2U : 0;
-    OnibiBytePos *capture_result =
-	capture_slots == 0 ? NULL : ALLOCA_N(OnibiBytePos, capture_slots);
-    if (capture_result)
-	for (uint32_t i = 0; i < capture_slots; i++)
-	    capture_result[i] = -1;
-    OnibiBytePos start = 0, finish = 0;
+    uint32_t capture_count =
+	!NIL_P(obj->rseq) ? obj->rseq_view.header->capture_count : 0;
+    if (capture_count == UINT32_MAX)
+	rb_raise(eRegexpError, "Onibi capture count is out of range");
+    uint32_t num_regs = capture_count + 1U;
+    OnibiBytePos *beg = ALLOCA_N(OnibiBytePos, num_regs);
+    OnibiBytePos *end = ALLOCA_N(OnibiBytePos, num_regs);
+    OnibiRawMatch raw_match = {.begin_byte = -1,
+			       .end_byte = -1,
+			       .num_regs = num_regs,
+			       .beg = beg,
+			       .end = end};
+    if (!onibi_raw_match_reset(&raw_match))
+	rb_raise(eRegexpError, "Onibi raw match setup failed");
     int status = NIL_P(obj->rseq)
 		     ? ONIBI_EXEC_STATUS_FALLBACK
-		     : onibi_diagnostic_search(self, subject, &start, &finish,
-					       capture_result);
+		     : onibi_vm_search(self, subject, 0, &raw_match);
     VALUE result = rb_hash_new();
     VALUE lowering_work = rb_hash_new();
     rb_hash_aset(lowering_work, ID2SYM(rb_intern("gir_class_probes")),
@@ -147,22 +115,33 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		     backref_descriptors);
     }
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
-    rb_hash_aset(result, ID2SYM(rb_intern("match_start")), LONG2NUM(start));
-    rb_hash_aset(result, ID2SYM(rb_intern("match_end")), LONG2NUM(finish));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("match_start")),
+	LONG2NUM(status == ONIBI_EXEC_STATUS_MATCH ? raw_match.begin_byte : 0));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("match_end")),
+	LONG2NUM(status == ONIBI_EXEC_STATUS_MATCH ? raw_match.end_byte : 0));
+    rb_hash_aset(result, ID2SYM(rb_intern("raw_num_regs")),
+		 UINT2NUM(raw_match.num_regs));
     VALUE captures = rb_ary_new_capa(
 	NIL_P(obj->rseq) ? 0 : obj->rseq_view.header->capture_count);
-    for (uint32_t i = 0; i < capture_slots / 2U; i++) {
-	if ((capture_result[2U * i] >= 0 && capture_result[2U * i + 1U] < 0) ||
-	    (capture_result[2U * i] < 0 && capture_result[2U * i + 1U] >= 0)) {
-	    capture_result[2U * i] = -1;
-	    capture_result[2U * i + 1U] = -1;
+    for (uint32_t i = 1; i < raw_match.num_regs; i++) {
+	if ((raw_match.beg[i] >= 0 && raw_match.end[i] < 0) ||
+	    (raw_match.beg[i] < 0 && raw_match.end[i] >= 0)) {
+	    raw_match.beg[i] = -1;
+	    raw_match.end[i] = -1;
 	}
-	VALUE range =
-	    rb_ary_new_from_args(2, LONG2NUM(capture_result[2U * i]),
-				 LONG2NUM(capture_result[2U * i + 1U]));
+	VALUE range = rb_ary_new_from_args(2, LONG2NUM(raw_match.beg[i]),
+					   LONG2NUM(raw_match.end[i]));
 	rb_ary_push(captures, range);
     }
     rb_hash_aset(result, ID2SYM(rb_intern("captures")), captures);
+    VALUE raw_registers = rb_ary_new_capa(raw_match.num_regs);
+    for (uint32_t i = 0; i < raw_match.num_regs; i++)
+	rb_ary_push(raw_registers,
+		    rb_ary_new_from_args(2, LONG2NUM(raw_match.beg[i]),
+					 LONG2NUM(raw_match.end[i])));
+    rb_hash_aset(result, ID2SYM(rb_intern("raw_registers")), raw_registers);
     VALUE actions = rb_ary_new();
     if (!NIL_P(obj->rseq)) {
 	for (uint32_t i = 0; i < obj->rseq_view.header->action_count; i++) {
@@ -306,11 +285,10 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
-    OnibiBytePos start = 0, finish = 0;
-    int status =
-	NIL_P(obj->rseq)
-	    ? ONIBI_EXEC_STATUS_FALLBACK
-	    : onibi_diagnostic_search(self, subject, &start, &finish, NULL);
+    OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
+    int status = NIL_P(obj->rseq)
+		     ? ONIBI_EXEC_STATUS_FALLBACK
+		     : onibi_vm_search(self, subject, 0, &raw_match);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),

@@ -26,6 +26,7 @@ class RuntimePositionTypeTest < Minitest::Test
       assert_includes context, "OnibiBytePos #{field};"
     end
     assert_includes context, "OnibiBytePos matched_end;"
+    assert_includes context, "OnibiRawMatch *raw_match;"
     refute_match(/\blong\b/, context)
   end
 
@@ -49,14 +50,14 @@ class RuntimePositionTypeTest < Minitest::Test
     [declaration_text, body].each do |api|
       refute_nil api
       assert_match(/OnibiBytePos\s+search_origin/, api)
-      assert_match(/OnibiBytePos\s+\*match_start/, api)
-      assert_match(/OnibiBytePos\s+\*match_end/, api)
+      assert_match(/OnibiRawMatch\s+\*raw_match/, api)
+      refute_match(/match_(?:start|end)/, api)
       refute_match(/\blong\b/, api)
     end
 
     refute_nil ensure_state
     assert_includes ensure_state, "OnibiBytePos origin;"
-    assert_includes ensure_state, "OnibiBytePos *match_start, *match_end;"
+    assert_includes ensure_state, "OnibiRawMatch *raw_match;"
     refute_match(/\blong\b/, ensure_state)
   end
 
@@ -68,11 +69,19 @@ class RuntimePositionTypeTest < Minitest::Test
     match = source("match.c")
     captures = [common, dynamic, diagnostics, runtime, match].join("\n")
 
-    assert_match(/OnibiBytePos\s*\*\s*onibi_regular_capture_result/, common)
+    raw_match = common[/typedef struct OnibiRawMatch \{.*?\} OnibiRawMatch;/m]
+
+    refute_nil raw_match
+    assert_includes raw_match, "OnibiBytePos begin_byte;"
+    assert_includes raw_match, "OnibiBytePos end_byte;"
+    assert_includes raw_match, "OnibiBytePos *beg;"
+    assert_includes raw_match, "OnibiBytePos *end;"
+    refute_match(/onibi_regular_capture_result/, common)
     assert_match(/OnibiBytePos\s*\*\s*captures/, captures)
-    assert_match(/OnibiBytePos\s+captures\[/, dynamic)
-    assert_match(/OnibiBytePos\s*\*\s*capture_result/, diagnostics)
-    %w[captures capture_result match_start match_end].each do |name|
+    assert_match(/OnibiBytePos\s+capture_beg\[/, dynamic)
+    assert_match(/OnibiBytePos\s*\*\s*beg/, diagnostics)
+    assert_match(/OnibiBytePos\s*\*\s*end/, diagnostics)
+    %w[captures capture_result match_start match_end beg].each do |name|
       refute_match(/\blong\s*\*+\s*#{name}\b/, captures)
       refute_match(/\blong\s+#{name}\b/, captures)
     end
