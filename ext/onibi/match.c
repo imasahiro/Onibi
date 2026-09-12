@@ -235,8 +235,8 @@ onibi_scan(VALUE self, VALUE str)
 	else {
 	    if (end >= RSTRING_LEN(str)) break;
 	    origin = end + rb_enc_mbclen(RSTRING_PTR(str) + end,
-				       RSTRING_PTR(str) + RSTRING_LEN(str),
-				       rb_enc_get(str));
+					 RSTRING_PTR(str) + RSTRING_LEN(str),
+					 rb_enc_get(str));
 	}
     }
     return result;
@@ -295,9 +295,8 @@ onibi_tilde(VALUE self)
 	return NIL_P(match)
 		   ? Qnil
 		   : LONG2NUM(onibi_ruby_character_position(
-			 input,
-			 NUM2LONG(rb_funcall(match, id_bytebegin, 1,
-					     INT2NUM(0)))));
+			 input, NUM2LONG(rb_funcall(match, id_bytebegin, 1,
+						    INT2NUM(0)))));
     }
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
@@ -342,9 +341,8 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
 	rb_str_buf_cat(result, RSTRING_PTR(str) + copied, start - copied);
 	VALUE replacement_value =
-	    rb_block_given_p()
-		? rb_yield(onibi_byte_slice(str, start, end))
-		: replacement;
+	    rb_block_given_p() ? rb_yield(onibi_byte_slice(str, start, end))
+			       : replacement;
 	StringValue(replacement_value);
 	rb_str_buf_cat(result, RSTRING_PTR(replacement_value),
 		       RSTRING_LEN(replacement_value));
@@ -354,8 +352,8 @@ onibi_gsub(int argc, VALUE *argv, VALUE self)
 	else {
 	    if (end >= RSTRING_LEN(str)) break;
 	    origin = end + rb_enc_mbclen(RSTRING_PTR(str) + end,
-				       RSTRING_PTR(str) + RSTRING_LEN(str),
-				       rb_enc_get(str));
+					 RSTRING_PTR(str) + RSTRING_LEN(str),
+					 rb_enc_get(str));
 	}
     }
     rb_str_buf_cat(result, RSTRING_PTR(str) + copied,

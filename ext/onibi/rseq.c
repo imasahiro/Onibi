@@ -1610,14 +1610,13 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	return Qfalse;
     }
     if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
-
     {
-	long start = 0, end = 0;
 	OnibiRubyPosition origin = {0, 0, 1};
 	if (!NIL_P(pos)) {
 	    origin = onibi_ruby_position(str, pos, 0);
 	    if (!origin.valid) return Qfalse;
 	}
+	long start = 0, end = 0;
 	OnibiExecStatus result =
 	    onibi_vm_search(self, str, origin.byte, &start, &end);
 	if (result == ONIBI_EXEC_STATUS_MATCH ||
