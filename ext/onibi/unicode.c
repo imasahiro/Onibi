@@ -1,6 +1,6 @@
 /* Use MRI's Onigmo grapheme implementation as the Unicode source of truth. */
 static long
-onibi_grapheme_width(VALUE str, long pos)
+onibi_grapheme_width(VALUE str, OnibiBytePos pos)
 {
     if (pos < 0 || pos >= RSTRING_LEN(str)) return 0;
     VALUE previous = rb_backref_get();
