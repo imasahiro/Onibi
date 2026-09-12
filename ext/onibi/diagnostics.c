@@ -272,6 +272,14 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		 ULONG2NUM(onibi_diagnostics.tagged));
     rb_hash_aset(result, ID2SYM(rb_intern("dynamic")),
 		 ULONG2NUM(onibi_diagnostics.dynamic));
+    rb_hash_aset(result, ID2SYM(rb_intern("poll_count")),
+		 ULONG2NUM(onibi_diagnostics.poll_count));
+    rb_hash_aset(result, ID2SYM(rb_intern("work_polls")),
+		 ULONG2NUM(onibi_diagnostics.poll_count));
+    rb_hash_aset(result, ID2SYM(rb_intern("work_charged")),
+		 ULL2NUM(onibi_diagnostics.work_charged));
+    rb_hash_aset(result, ID2SYM(rb_intern("max_charged_work")),
+		 ULL2NUM(onibi_diagnostics.max_charged_work));
     rb_hash_aset(result, ID2SYM(rb_intern("dfs")),
 		 ULONG2NUM(onibi_diagnostics.dfs));
     rb_hash_aset(result, ID2SYM(rb_intern("fallback")),
@@ -307,6 +315,14 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
 		 ULONG2NUM(onibi_diagnostics.tag_events));
+    rb_hash_aset(result, ID2SYM(rb_intern("poll_count")),
+		 ULONG2NUM(onibi_diagnostics.poll_count));
+    rb_hash_aset(result, ID2SYM(rb_intern("work_polls")),
+		 ULONG2NUM(onibi_diagnostics.poll_count));
+    rb_hash_aset(result, ID2SYM(rb_intern("work_charged")),
+		 ULL2NUM(onibi_diagnostics.work_charged));
+    rb_hash_aset(result, ID2SYM(rb_intern("max_charged_work")),
+		 ULL2NUM(onibi_diagnostics.max_charged_work));
     return result;
 }
 

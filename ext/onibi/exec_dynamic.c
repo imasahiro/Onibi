@@ -13,85 +13,82 @@ onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
     return 1;
 }
 
-/* DYNAMIC can spend a long time in native backtracking.  Keep its protected
- * interrupt boundary local to this interpreter.  The context lives in the
- * caller's stack frame, so release it before the exception leaves that frame.
- */
-static VALUE
-onibi_dynamic_poll_call(VALUE unused)
-{
-    (void)unused;
-    rb_thread_check_ints();
-    onibi_check_deadline();
-    return Qnil;
-}
-
-static void
-onibi_dynamic_poll_interrupts(OnibiExecCtx *ctx)
-{
-    int state = 0;
-    rb_protect(onibi_dynamic_poll_call, Qnil, &state);
-    if (state == 0) return;
-    if (ctx != NULL) {
-	onibi_exec_ctx_release(ctx);
-	if (onibi_active_exec_ctx == ctx) onibi_active_exec_ctx = NULL;
-    }
-    rb_jump_tag(state);
-}
-
 /* Compare two complete byte spans after encoding-aware case folding.  The
  * caller can require equal source codepoint counts for backreferences. */
 static int
 onibi_casefold_bytes_equal(const unsigned char *left, long left_length,
 			   const unsigned char *right, long right_length,
-			   rb_encoding *encoding, int require_same_units)
+			   rb_encoding *encoding, int require_same_units,
+			   OnibiExecCtx *ctx, VALUE subject,
+			   long left_subject_offset, long right_subject_offset)
 {
     if (left_length < 0 || right_length < 0) return 0;
-    const OnigUChar *left_pointer = (const OnigUChar *)left;
-    const OnigUChar *right_pointer = (const OnigUChar *)right;
-    const OnigUChar *left_limit = left_pointer + left_length;
-    const OnigUChar *right_limit = right_pointer + right_length;
+    const unsigned char *left_base = left;
+    const unsigned char *right_base = right;
+    long left_consumed = 0, right_consumed = 0;
     unsigned char left_fold[ONIGENC_MBC_CASE_FOLD_MAXLEN];
     unsigned char right_fold[ONIGENC_MBC_CASE_FOLD_MAXLEN];
     int left_fold_length = 0, right_fold_length = 0;
     int left_offset = 0, right_offset = 0;
     size_t left_units = 0, right_units = 0;
-    while (left_pointer < left_limit || left_fold_length > left_offset) {
+    while (left_consumed < left_length || left_fold_length > left_offset) {
 	if (left_fold_length == left_offset) {
-	    const OnigUChar *before = left_pointer;
+	    onibi_exec_charge_work(ctx, 1);
+	    const unsigned char *left_pointer =
+		left_subject_offset >= 0
+		    ? (const unsigned char *)RSTRING_PTR(subject) +
+			  left_subject_offset + left_consumed
+		    : left_base + left_consumed;
+	    const OnigUChar *left_cursor = (const OnigUChar *)left_pointer;
+	    const OnigUChar *left_limit =
+		left_cursor + (left_length - left_consumed);
+	    const OnigUChar *before = left_cursor;
 	    left_fold_length =
 		ONIGENC_MBC_CASE_FOLD(encoding,
 				      ONIGENC_CASE_FOLD_DEFAULT |
 					  INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR,
-				      &left_pointer, left_limit, left_fold);
+				      &left_cursor, left_limit, left_fold);
 	    left_offset = 0;
 	    left_units++;
-	    if (left_fold_length <= 0 || left_pointer <= before) return 0;
+	    if (left_fold_length <= 0 || left_cursor <= before) return 0;
+	    left_consumed += (long)(left_cursor - before);
 	}
 	if (right_fold_length == right_offset) {
-	    if (right_pointer >= right_limit) return 0;
-	    const OnigUChar *before = right_pointer;
+	    if (right_consumed >= right_length) return 0;
+	    onibi_exec_charge_work(ctx, 1);
+	    const unsigned char *right_pointer =
+		right_subject_offset >= 0
+		    ? (const unsigned char *)RSTRING_PTR(subject) +
+			  right_subject_offset + right_consumed
+		    : right_base + right_consumed;
+	    const OnigUChar *right_cursor = (const OnigUChar *)right_pointer;
+	    const OnigUChar *right_limit =
+		right_cursor + (right_length - right_consumed);
+	    const OnigUChar *before = right_cursor;
 	    right_fold_length =
 		ONIGENC_MBC_CASE_FOLD(encoding,
 				      ONIGENC_CASE_FOLD_DEFAULT |
 					  INTERNAL_ONIGENC_CASE_FOLD_MULTI_CHAR,
-				      &right_pointer, right_limit, right_fold);
+				      &right_cursor, right_limit, right_fold);
 	    right_offset = 0;
 	    right_units++;
-	    if (right_fold_length <= 0 || right_pointer <= before) return 0;
+	    if (right_fold_length <= 0 || right_cursor <= before) return 0;
+	    right_consumed += (long)(right_cursor - before);
 	}
 	int left_available = left_fold_length - left_offset;
 	int right_available = right_fold_length - right_offset;
 	int count =
 	    left_available < right_available ? left_available : right_available;
+	onibi_exec_charge_work(ctx, (uint64_t)count);
 	if (memcmp(left_fold + left_offset, right_fold + right_offset,
 		   (size_t)count) != 0)
 	    return 0;
 	left_offset += count;
 	right_offset += count;
     }
-    return left_pointer == left_limit && left_fold_length == left_offset &&
-	   right_pointer == right_limit && right_fold_length == right_offset &&
+    return left_consumed == left_length && left_fold_length == left_offset &&
+	   right_consumed == right_length &&
+	   right_fold_length == right_offset &&
 	   (!require_same_units || left_units == right_units);
 }
 
@@ -193,17 +190,17 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 			     const OnibiRState *state, VALUE str, long position,
 			     rb_encoding *encoding, OnibiEncodingMode mode,
 			     long *next_position, unsigned char *class_stack,
-			     size_t class_stack_capacity)
+			     size_t class_stack_capacity, OnibiExecCtx *ctx)
 {
     if (position < 0 || position >= RSTRING_LEN(str)) return 0;
-    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
     if (state->op == ONIBI_RS_CHAR) {
 	const OnibiLiteralDesc *literal = &view->literals[state->payload];
 	const unsigned char *literal_bytes = view->blob + literal->data_offset;
 	if ((literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) == 0) {
 	    if (position + literal->data_length > RSTRING_LEN(str) ||
-		!onibi_ascii_literal_equal(bytes + position, literal_bytes,
-					   literal->data_length, 0))
+		!onibi_ascii_literal_equal(
+		    (const unsigned char *)RSTRING_PTR(str) + position,
+		    literal_bytes, literal->data_length, 0))
 		return 0;
 	    *next_position = position + literal->data_length;
 	    return 1;
@@ -221,8 +218,8 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 	    (void)codepoint;
 	    candidate += width;
 	    if (onibi_casefold_bytes_equal(literal_bytes, literal->data_length,
-					   bytes + position,
-					   candidate - position, encoding, 0)) {
+					   NULL, candidate - position, encoding,
+					   0, ctx, str, -1, position)) {
 		*next_position = candidate;
 		return 1;
 	    }
@@ -251,8 +248,10 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 	int multiline =
 	    (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0 ||
 	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0;
-	if (!multiline && ONIGENC_IS_MBC_NEWLINE(encoding, bytes + position,
-						 bytes + RSTRING_LEN(str)))
+	if (!multiline &&
+	    ONIGENC_IS_MBC_NEWLINE(
+		encoding, (const unsigned char *)RSTRING_PTR(str) + position,
+		(const unsigned char *)RSTRING_PTR(str) + RSTRING_LEN(str)))
 	    return 0;
 	*next_position = position + width;
 	return 1;
@@ -290,30 +289,42 @@ onibi_rseq_word_before(VALUE str, long position, rb_encoding *encoding,
  * character can have a different width from its source character. */
 static int
 onibi_rseq_casefold_span_equal(VALUE str, long left, long left_end, long right,
-			       long right_end, rb_encoding *encoding)
+			       long right_end, rb_encoding *encoding,
+			       OnibiExecCtx *ctx)
 {
     if (left < 0 || left_end < left || right < 0 || right_end < right ||
 	left_end > RSTRING_LEN(str) || right_end > RSTRING_LEN(str))
 	return 0;
-    return onibi_casefold_bytes_equal(
-	(const unsigned char *)RSTRING_PTR(str) + left, left_end - left,
-	(const unsigned char *)RSTRING_PTR(str) + right, right_end - right,
-	encoding, 1);
+    return onibi_casefold_bytes_equal(NULL, left_end - left, NULL,
+				      right_end - right, encoding, 1, ctx, str,
+				      left, right);
 }
 
 static int
 onibi_rseq_backref_consume(VALUE str, long position, long capture_begin,
 			   long capture_end, rb_encoding *encoding,
 			   OnibiEncodingMode mode, int ignorecase,
-			   long *next_position)
+			   long *next_position, OnibiExecCtx *ctx)
 {
     if (!ignorecase) {
 	long length = capture_end - capture_begin;
-	if (length < 0 || position < 0 ||
-	    position + length > RSTRING_LEN(str) ||
-	    memcmp(RSTRING_PTR(str) + position,
-		   RSTRING_PTR(str) + capture_begin, (size_t)length) != 0)
+	if (length < 0 || position < 0 || position + length > RSTRING_LEN(str))
 	    return 0;
+	for (long offset = 0; offset < length;) {
+	    long remaining = length - offset;
+	    long chunk =
+		remaining < ONIBI_POLL_WORK ? remaining : ONIBI_POLL_WORK;
+	    if (ctx) ctx->current_position = position + offset;
+	    onibi_exec_charge_work(ctx, (uint64_t)chunk);
+	    /* Reload both subject pointers after each bounded charge. */
+	    if (memcmp((const unsigned char *)RSTRING_PTR(str) + position +
+			   offset,
+		       (const unsigned char *)RSTRING_PTR(str) + capture_begin +
+			   offset,
+		       (size_t)chunk) != 0)
+		return 0;
+	    offset += chunk;
+	}
 	*next_position = position + length;
 	return 1;
     }
@@ -329,8 +340,9 @@ onibi_rseq_backref_consume(VALUE str, long position, long capture_begin,
 					 &codepoint, &width))
 	    return 0;
 	candidate += width;
-	int equal = onibi_rseq_casefold_span_equal(
-	    str, capture_begin, capture_end, position, candidate, encoding);
+	int equal =
+	    onibi_rseq_casefold_span_equal(str, capture_begin, capture_end,
+					   position, candidate, encoding, ctx);
 	if (equal) {
 	    *next_position = candidate;
 	    return 1;
@@ -2982,7 +2994,6 @@ onibi_rseq_dynamic_run(
 	return (value);                                                        \
     } while (0)
 
-    uint64_t work = 0;
     if (entry_edge_base == UINT32_MAX) {
 	if (header->subprogram_count == 0 ||
 	    view->subprograms[0].entry >= header->state_count)
@@ -3013,9 +3024,8 @@ onibi_rseq_dynamic_run(
 
     while (arena->frame_count > frame_base) {
 	OnibiDynamicFrame frame = arena->frames[--arena->frame_count];
-	if ((++work & UINT64_C(1023)) == 0) {
-	    onibi_dynamic_poll_interrupts(ctx);
-	}
+	if (ctx) ctx->current_position = frame.position;
+	onibi_exec_charge_work(ctx, 1);
 	if (frame.state == ONIBI_ACCEPT_STATE) {
 	    if (force_exhaustion && required_end >= 0 &&
 		frame.position == required_end)
@@ -3186,9 +3196,8 @@ onibi_rseq_dynamic_run(
 		ONIBI_DYNAMIC_RUN_RETURN(-1);
 	    size_t child_frame_base = arena->frame_count;
 	    for (long candidate = minimum_position;; candidate++) {
-		if (((uint64_t)(candidate - minimum_position) &
-		     UINT64_C(1023)) == 0)
-		    onibi_dynamic_poll_interrupts(ctx);
+		if (ctx) ctx->current_position = candidate;
+		onibi_exec_charge_work(ctx, 1);
 		int forced_failure = 0;
 		if (candidate == frame.position) {
 		    for (uint32_t i = 0; i < state->edge_count; i++)
@@ -3292,7 +3301,7 @@ onibi_rseq_dynamic_run(
 			encoding, encoding_mode,
 			(descriptor->flags & ONIBI_BACKREF_FLAG_IGNORE_CASE) !=
 			    0,
-			&next_position)) {
+			&next_position, ctx)) {
 		    hit = 1;
 		    break;
 		}
@@ -3302,7 +3311,7 @@ onibi_rseq_dynamic_run(
 		 state->op == ONIBI_RS_ANY) {
 	    hit = onibi_rseq_consume_character(
 		view, state, str, frame.position, encoding, encoding_mode,
-		&next_position, class_stack, class_stack_capacity);
+		&next_position, class_stack, class_stack_capacity, ctx);
 	}
 	else
 	    hit = 0;
@@ -3401,8 +3410,8 @@ onibi_dynamic_absence_consume(VALUE rseq, const OnibiRSeqView *view, VALUE str,
     int zero_at_position = 0;
 
     for (long probe = position; probe <= limit; probe++) {
-	if (((uint64_t)(probe - position) & UINT64_C(1023)) == 0)
-	    onibi_dynamic_poll_interrupts(ctx);
+	if (ctx) ctx->current_position = probe;
+	onibi_exec_charge_work(ctx, 1);
 	if (probe > absence_end) break;
 	if (probe < limit && !onibi_character_boundary(str, probe)) continue;
 	OnibiSemanticState body_result;
@@ -4036,7 +4045,6 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
     }
 
     long position = start;
-    uint64_t work = 0;
     for (;;) {
 	onibi_tagged_frontier_reset(next, header->state_count);
 	int have_frontier_accept = 0;
@@ -4044,9 +4052,8 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	OnibiSemanticState frontier_accept = *initial;
 	long step_width = 0;
 	for (size_t i = 0; i < current->count; i++) {
-	    if ((++work & UINT64_C(1023)) == 0) {
-		onibi_dynamic_poll_interrupts(ctx);
-	    }
+	    ctx->current_position = position;
+	    onibi_exec_charge_work(ctx, 1);
 	    uint32_t state_id = current->states[i];
 	    if (state_id >= header->state_count) return -1;
 	    const OnibiRState *state = &view->states[state_id];
@@ -4092,7 +4099,7 @@ onibi_rseq_tagged_run(OnibiExecCtx *ctx, uint32_t edge_base,
 	    if (!onibi_rseq_consume_character(view, state, str, position,
 					      ctx->encoding, ctx->encoding_mode,
 					      &next_position, ctx->class_stack,
-					      ctx->class_stack_capacity)) {
+					      ctx->class_stack_capacity, ctx)) {
 		if (!onibi_semantic_capture_event_owner_resolve(
 			arena, source_owner, source_prior))
 		    return -1;
@@ -4220,16 +4227,19 @@ static int
 onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, long position, uint32_t width,
 			      long *start)
 {
-    const char *begin = RSTRING_PTR(ctx->subject);
-    const char *end = begin + RSTRING_LEN(ctx->subject);
-    const char *current = begin + position;
+    long current_position = position;
     for (uint32_t i = 0; i < width; i++) {
+	ctx->current_position = current_position;
+	onibi_exec_charge_work(ctx, 1);
+	const char *begin = RSTRING_PTR(ctx->subject);
+	const char *end = begin + RSTRING_LEN(ctx->subject);
+	const char *current = begin + current_position;
 	const char *previous =
 	    rb_enc_prev_char(begin, current, end, ctx->encoding);
 	if (previous == NULL) return 0;
-	current = previous;
+	current_position = previous - begin;
     }
-    *start = current - begin;
+    *start = current_position;
     return 1;
 }
 
@@ -4367,6 +4377,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    uint32_t state_id = current[i];
 	    uint32_t thread_history =
 		capture_mode ? current_histories[i] : UINT32_MAX;
+	    ctx->current_position = position;
+	    onibi_exec_charge_work(ctx, 1);
 	    const OnibiRState *state = &view->states[state_id];
 	    if (state->op == 0) {
 		uint32_t accept_history;
@@ -4397,7 +4409,8 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 	    long next_position = position;
 	    int hit = onibi_rseq_consume_character(
 		view, state, str, position, ctx->encoding, ctx->encoding_mode,
-		&next_position, ctx->class_stack, ctx->class_stack_capacity);
+		&next_position, ctx->class_stack, ctx->class_stack_capacity,
+		ctx);
 	    if (hit) step_width = next_position - position;
 	    if (!hit) continue;
 	    uint32_t base = state->edge_base;

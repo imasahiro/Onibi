@@ -78,6 +78,7 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
 	    exec_ctx.attempt_start = start;
 	    exec_ctx.reported_start = start;
 	    exec_ctx.current_position = start;
+	    exec_ctx.work_before_poll = ONIBI_POLL_WORK;
 	    exec_ctx.program = obj->rseq_view.header;
 	    exec_ctx.rseq = obj->rseq;
 	    exec_ctx.view = &obj->rseq_view;
