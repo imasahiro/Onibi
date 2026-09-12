@@ -262,6 +262,12 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     rb_hash_aset(result, ID2SYM(rb_intern("class_flags")), class_flags);
     rb_hash_aset(result, ID2SYM(rb_intern("regular")),
 		 ULONG2NUM(onibi_diagnostics.regular));
+    rb_hash_aset(result, ID2SYM(rb_intern("regular_candidate_starts")),
+		 ULONG2NUM(onibi_diagnostics.regular_candidate_starts));
+    rb_hash_aset(result, ID2SYM(rb_intern("regular_buffer_grows")),
+		 ULONG2NUM(onibi_diagnostics.regular_buffer_grows));
+    rb_hash_aset(result, ID2SYM(rb_intern("regular_buffer_reuses")),
+		 ULONG2NUM(onibi_diagnostics.regular_buffer_reuses));
     rb_hash_aset(result, ID2SYM(rb_intern("tagged")),
 		 ULONG2NUM(onibi_diagnostics.tagged));
     rb_hash_aset(result, ID2SYM(rb_intern("dynamic")),

@@ -7,6 +7,7 @@ onibi_frontier_release(OnibiFrontier *frontier)
     ruby_xfree(frontier->hashes);
     ruby_xfree(frontier->key_buckets);
     ruby_xfree(frontier->membership);
+    ruby_xfree(frontier->histories);
     memset(frontier, 0, sizeof(*frontier));
 }
 
@@ -96,6 +97,8 @@ onibi_vm_search_body(VALUE self, VALUE str, long search_origin,
 		 memcmp(RSTRING_PTR(str) + start, exec_ctx.program->prefix,
 			exec_ctx.program->prefix_length) != 0))
 		continue;
+	    if (obj->rseq_view.header->exec_kind == ONIBI_EXEC_REGULAR)
+		onibi_diagnostics.regular_candidate_starts++;
 	    rb_thread_check_ints();
 	    onibi_check_deadline();
 	    OnibiExecStatus result = onibi_execute(&exec_ctx);
