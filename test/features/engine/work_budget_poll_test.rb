@@ -34,6 +34,18 @@ class WorkBudgetPollTest < Minitest::Test
     assert_equal 0, info[:fallback]
   end
 
+  def test_casefold_backreference_polls_with_reloaded_subject_offsets
+    subject = "#{"A" * 128}z"
+    pattern = "(?i:(?<x>a{64})\\k<x>)z"
+    info = Onibi::Regexp.new(pattern).send(:__onibi_diagnostics__, subject)
+
+    assert_equal 2, info[:exec_kind]
+    assert_equal 1, info[:status]
+    assert_operator info[:poll_count], :>, 0
+    assert_operator info[:max_charged_work], :<=, 128
+    assert_equal 0, info[:fallback]
+  end
+
   def test_regular_timeout_interrupts_one_candidate
     input = "a" * 20_000_000
     regexp = Onibi::Regexp.new("a*", timeout: 0.001)

@@ -193,14 +193,14 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 			     size_t class_stack_capacity, OnibiExecCtx *ctx)
 {
     if (position < 0 || position >= RSTRING_LEN(str)) return 0;
-    const unsigned char *bytes = (const unsigned char *)RSTRING_PTR(str);
     if (state->op == ONIBI_RS_CHAR) {
 	const OnibiLiteralDesc *literal = &view->literals[state->payload];
 	const unsigned char *literal_bytes = view->blob + literal->data_offset;
 	if ((literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) == 0) {
 	    if (position + literal->data_length > RSTRING_LEN(str) ||
-		!onibi_ascii_literal_equal(bytes + position, literal_bytes,
-					   literal->data_length, 0))
+		!onibi_ascii_literal_equal(
+		    (const unsigned char *)RSTRING_PTR(str) + position,
+		    literal_bytes, literal->data_length, 0))
 		return 0;
 	    *next_position = position + literal->data_length;
 	    return 1;
@@ -218,9 +218,8 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 	    (void)codepoint;
 	    candidate += width;
 	    if (onibi_casefold_bytes_equal(literal_bytes, literal->data_length,
-					   bytes + position,
-					   candidate - position, encoding, 0,
-					   ctx, str, -1, position)) {
+					   NULL, candidate - position, encoding,
+					   0, ctx, str, -1, position)) {
 		*next_position = candidate;
 		return 1;
 	    }
@@ -249,8 +248,10 @@ onibi_rseq_consume_character(const OnibiRSeqView *view,
 	int multiline =
 	    (state->flags & ONIBI_RSEQ_STATE_FLAG_NEGATED) != 0 ||
 	    (view->header->flags & ONIBI_RSEQ_HEADER_FLAG_MULTILINE) != 0;
-	if (!multiline && ONIGENC_IS_MBC_NEWLINE(encoding, bytes + position,
-						 bytes + RSTRING_LEN(str)))
+	if (!multiline &&
+	    ONIGENC_IS_MBC_NEWLINE(
+		encoding, (const unsigned char *)RSTRING_PTR(str) + position,
+		(const unsigned char *)RSTRING_PTR(str) + RSTRING_LEN(str)))
 	    return 0;
 	*next_position = position + width;
 	return 1;
@@ -294,10 +295,9 @@ onibi_rseq_casefold_span_equal(VALUE str, long left, long left_end, long right,
     if (left < 0 || left_end < left || right < 0 || right_end < right ||
 	left_end > RSTRING_LEN(str) || right_end > RSTRING_LEN(str))
 	return 0;
-    return onibi_casefold_bytes_equal(
-	(const unsigned char *)RSTRING_PTR(str) + left, left_end - left,
-	(const unsigned char *)RSTRING_PTR(str) + right, right_end - right,
-	encoding, 1, ctx, str, left, right);
+    return onibi_casefold_bytes_equal(NULL, left_end - left, NULL,
+				      right_end - right, encoding, 1, ctx, str,
+				      left, right);
 }
 
 static int
@@ -4227,16 +4227,19 @@ static int
 onibi_tagged_lookbehind_start(OnibiExecCtx *ctx, long position, uint32_t width,
 			      long *start)
 {
-    const char *begin = RSTRING_PTR(ctx->subject);
-    const char *end = begin + RSTRING_LEN(ctx->subject);
-    const char *current = begin + position;
+    long current_position = position;
     for (uint32_t i = 0; i < width; i++) {
+	ctx->current_position = current_position;
+	onibi_exec_charge_work(ctx, 1);
+	const char *begin = RSTRING_PTR(ctx->subject);
+	const char *end = begin + RSTRING_LEN(ctx->subject);
+	const char *current = begin + current_position;
 	const char *previous =
 	    rb_enc_prev_char(begin, current, end, ctx->encoding);
 	if (previous == NULL) return 0;
-	current = previous;
+	current_position = previous - begin;
     }
-    *start = current - begin;
+    *start = current_position;
     return 1;
 }
 
