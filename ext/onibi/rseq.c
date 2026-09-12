@@ -1506,6 +1506,47 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     return self;
 }
 
+/* Ruby's public regexp position is a character index.  The VM receives only
+ * byte offsets.  Keep both values while crossing this API boundary so that a
+ * byte offset never reaches an MRI character-index argument. */
+typedef struct {
+    long character;
+    long byte;
+    int valid;
+} OnibiRubyPosition;
+
+static OnibiRubyPosition
+onibi_ruby_position(VALUE str, VALUE position, int clamp_to_end)
+{
+    long character_length = rb_str_strlen(str);
+    long character = NUM2LONG(position);
+    OnibiRubyPosition result = {0, 0, 1};
+
+    if (character < 0) {
+	if (character < -character_length) {
+	    result.valid = 0;
+	    return result;
+	}
+	character += character_length;
+    }
+    else if (character > character_length) {
+	if (!clamp_to_end) {
+	    result.valid = 0;
+	    return result;
+	}
+	character = character_length;
+    }
+    result.character = character;
+    result.byte = rb_str_offset(str, character);
+    return result;
+}
+
+static long
+onibi_ruby_character_position(VALUE str, long byte_position)
+{
+    return rb_str_sublen(str, byte_position);
+}
+
 static VALUE
 onibi_match(int argc, VALUE *argv, VALUE self)
 {
@@ -1524,16 +1565,17 @@ onibi_match(int argc, VALUE *argv, VALUE self)
     }
     if (SYMBOL_P(str)) str = rb_sym2str(str);
     if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
-    long origin = 0;
+    OnibiRubyPosition origin = {0, 0, 1};
     if (!NIL_P(pos)) {
-	origin = NUM2LONG(pos);
-	if (origin < 0) origin += RSTRING_LEN(str);
-	if (origin < 0) return Qnil;
-	if (origin > RSTRING_LEN(str)) origin = RSTRING_LEN(str);
+	origin = onibi_ruby_position(str, pos, 1);
+	if (!origin.valid) {
+	    rb_backref_set(Qnil);
+	    return Qnil;
+	}
     }
     long start = 0, end = 0;
     OnibiExecStatus search_status =
-	onibi_vm_search(self, str, origin, &start, &end);
+	onibi_vm_search(self, str, origin.byte, &start, &end);
     if (search_status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
 	rb_raise(eRegexpError, "Onibi execution failed");
     if (search_status == ONIBI_EXEC_STATUS_NO_MATCH) {
@@ -1546,7 +1588,7 @@ onibi_match(int argc, VALUE *argv, VALUE self)
      * capture offsets from the same source regexp for API compatibility. */
     VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
 			     : rb_funcall(obj->regexp, id_match, 2, str,
-					  LONG2NUM(origin));
+					  LONG2NUM(origin.character));
     if (NIL_P(match)) return Qnil;
     return rb_block_given_p() ? rb_yield(match) : match;
 }
@@ -1556,20 +1598,28 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 {
     VALUE str, pos = Qnil;
     rb_scan_args(argc, argv, "11", &str, &pos);
+    if (argc == 2 && NIL_P(pos))
+	rb_raise(rb_eTypeError, "no implicit conversion from nil to integer");
+    if (argc == 2 && RB_TYPE_P(pos, T_STRING))
+	rb_raise(rb_eTypeError,
+		 "no implicit conversion of String into Integer");
     if (SYMBOL_P(str)) str = rb_sym2str(str);
-    if (NIL_P(str))
-	rb_raise(rb_eTypeError, "no implicit conversion from nil to String");
+    if (NIL_P(str)) {
+	if (argc == 1) return Qfalse;
+	(void)NUM2LONG(pos);
+	return Qfalse;
+    }
     if (!RB_TYPE_P(str, T_STRING)) StringValue(str);
+
     {
-	long origin = 0;
-	if (!NIL_P(pos)) {
-	    origin = NUM2LONG(pos);
-	    if (origin < 0) origin += RSTRING_LEN(str);
-	    if (origin < 0) return Qfalse;
-	}
 	long start = 0, end = 0;
+	OnibiRubyPosition origin = {0, 0, 1};
+	if (!NIL_P(pos)) {
+	    origin = onibi_ruby_position(str, pos, 0);
+	    if (!origin.valid) return Qfalse;
+	}
 	OnibiExecStatus result =
-	    onibi_vm_search(self, str, origin, &start, &end);
+	    onibi_vm_search(self, str, origin.byte, &start, &end);
 	if (result == ONIBI_EXEC_STATUS_MATCH ||
 	    result == ONIBI_EXEC_STATUS_NO_MATCH)
 	    return result == ONIBI_EXEC_STATUS_MATCH ? Qtrue : Qfalse;
@@ -1578,10 +1628,11 @@ onibi_match_p(int argc, VALUE *argv, VALUE self)
 	if (result == ONIBI_EXEC_STATUS_FALLBACK) {
 	    onibi_regexp_t *obj;
 	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-	    VALUE match = NIL_P(pos) ? rb_funcall(obj->regexp, id_match, 1, str)
-				     : rb_funcall(obj->regexp, id_match, 2, str,
-						  LONG2NUM(origin));
-	    return NIL_P(match) ? Qfalse : Qtrue;
+	    ID id_match_question = rb_intern_const("match?");
+	    return NIL_P(pos)
+		       ? rb_funcall(obj->regexp, id_match_question, 1, str)
+		       : rb_funcall(obj->regexp, id_match_question, 2, str,
+				    LONG2NUM(origin.character));
 	}
     }
     return Qfalse;

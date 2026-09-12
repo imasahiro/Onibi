@@ -90,6 +90,34 @@ class MatchApiTest < Minitest::Test
     assert_nil regexp.match("a", 2)
   end
 
+  def test_match_position_uses_character_offsets_for_multibyte_input
+    input = "あéx"
+    expected = ::Regexp.new("é")
+    actual = Onibi::Regexp.new("é")
+
+    [2, -2].each do |position|
+      expected_match = expected.match(input, position)
+      actual_match = actual.match(input, position)
+      if expected_match
+        assert_equal expected_match.offset(0), actual_match&.offset(0),
+                     "position #{position}"
+      else
+        assert_nil actual_match, "position #{position}"
+      end
+    end
+  end
+
+  def test_tilde_returns_character_position_for_multibyte_input
+    input = "あéx"
+    expected = ::Regexp.new("é")
+    actual = Onibi::Regexp.new("é")
+    $_ = input
+
+    assert_equal(~expected, ~actual)
+  ensure
+    $_ = nil
+  end
+
   def test_match_question_uses_string_length_not_overridden_length
     input_class = Class.new(String) do
       def length
