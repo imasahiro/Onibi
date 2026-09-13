@@ -38,8 +38,8 @@ static const char *const onibi_compile_error_names[] = {
     "ok",	  "unsupported", "invalid_pattern", "internal",
     "allocation", "verifier",	 "unexpected"};
 static const char *const onibi_unsupported_reason_names[] = {
-    "none",  "meta_escape", "escape",	     "grapheme",	 "class",
-    "limit", "possessive",  "multiline_any", "zero_width_repeat"};
+    "none",  "meta_escape", "escape",	  "grapheme",
+    "class", "limit",	    "possessive", "zero_width_repeat"};
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */

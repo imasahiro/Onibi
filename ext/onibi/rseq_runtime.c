@@ -850,7 +850,8 @@ onibi_rseq_blob_validate_body(VALUE opaque)
 	if (state->op == ONIBI_RS_GRAPHEME && state->payload != 0)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq state payload");
 	else if (state->op != ONIBI_RS_CHAR && state->op != ONIBI_RS_STRING &&
-		 state->op != ONIBI_RS_BACKREF && state->op != 0 &&
+		 state->op != ONIBI_RS_BACKREF && state->op != ONIBI_RS_ANY &&
+		 state->op != ONIBI_RS_RUN_ANY && state->op != 0 &&
 		 state->flags != 0)
 	    rb_raise(rb_eArgError, "invalid Onibi RSeq state flags");
 	if ((state->op == ONIBI_RS_CHAR || state->op == ONIBI_RS_STRING) &&

@@ -46,11 +46,30 @@ class RegularFastAsciiTest < Minitest::Test
 
   def test_any_respects_multiline_option
     _plain, plain_info = diagnostics(".", "\n")
-    _multi, multi_info = diagnostics(".", "\n", Onibi::Regexp::MULTILINE)
+    global, global_info = diagnostics(".", "\n", Onibi::Regexp::MULTILINE)
+    scoped, scoped_info = diagnostics("(?m:.)", "\n")
+
     assert_equal 0, plain_info[:status]
-    assert_equal 1, multi_info[:status]
     assert_equal 0, plain_info[:dfs]
-    assert_equal 0, multi_info[:dfs]
+
+    [
+      [global, global_info, Regexp.new(".", Onibi::Regexp::MULTILINE)],
+      [scoped, scoped_info, Regexp.new("(?m:.)")]
+    ].each do |regexp, info, expected_regexp|
+      expected = expected_regexp.match("\n")
+
+      assert_equal 1, info[:status]
+      assert_equal 0, info[:dfs]
+      assert info[:rseq]
+      assert info[:regular_capable]
+      assert_equal 0, info[:exec_kind]
+      assert_equal 0, info[:fallback]
+      assert_equal :ok, info[:compile_error_kind]
+      assert_equal :none, info[:unsupported_reason]
+      assert_equal [expected.begin(0), expected.end(0)],
+                   [info[:match_start], info[:match_end]]
+      assert regexp.match?("\n")
+    end
   end
 
   def test_lazy_repeat_keeps_first_accept

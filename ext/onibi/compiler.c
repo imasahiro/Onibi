@@ -2210,14 +2210,9 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_ANY) {
-	if (multiline) {
-	    onibi_compiler_mark_unsupported(builder,
-					    ONIBI_UNSUPPORTED_MULTILINE_ANY);
-	    rb_raise(eRegexpError,
-		     "multiline wildcard is not supported in RSeq");
-	}
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0, 0);
+	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0,
+			multiline ? ONIBI_RSEQ_STATE_FLAG_NEGATED : 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
