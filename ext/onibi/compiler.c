@@ -2713,6 +2713,8 @@ onibi_compiler_pass_classify(const onibi_gir_builder_t *builder,
 			     const OnibiGirEdgeVector *start_edges,
 			     OnibiCompilerOwner *owner)
 {
+    /* This pass runs after GIR verification.  Its execution_kind is the one
+     * semantic class that lowering may serialize for a compiled program. */
     VerifiedGIRAnalysis result = {0, (uint32_t)builder->capture_count, 0, 0,
 				  ONIBI_EXEC_REGULAR};
     uint32_t execution_requirements = 0;

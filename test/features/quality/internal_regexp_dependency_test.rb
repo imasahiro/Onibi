@@ -100,8 +100,8 @@ class InternalRegexpDependencyTest < Minitest::Test
     assert_includes regexp_struct, "OnibiRSeqView rseq_view;"
     assert_includes regexp_struct, "OnibiExecutionKind execution_kind;"
     assert_includes regexp_struct, "unsigned int ast_flags;"
-    assert_includes regexp_struct, "unsigned int execution_flags;"
     assert_includes regexp_struct, "unsigned int feature_flags;"
+    refute_includes regexp_struct, "execution_flags"
     refute_match(/VALUE\s+(?:tokens|ast|graph|states|edges|actions);/, regexp_struct)
   end
 
@@ -341,7 +341,7 @@ class InternalRegexpDependencyTest < Minitest::Test
     initialize = source_for("rseq.c")
     match = source_for("match.c")
     common = source_for("onibi_common.c")
-    eligibility = common[/static int\s+onibi_vm_input_eligible\(.*?\n}\n/m]
+    eligibility = common[/static (?:int|OnibiRuntimeFallbackReason)\s+onibi_vm_input_eligible\(.*?\n}\n/m]
 
     assert_includes initialize, "int source_encoding_index = rb_enc_get_index(source);"
     assert_includes initialize, "obj->source_encoding_index = source_encoding_index;"

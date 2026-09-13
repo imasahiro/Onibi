@@ -1068,7 +1068,6 @@ onibi_compile_outcome_select_fallback(onibi_regexp_t *obj,
     obj->compile_error_kind = outcome->error_kind;
     obj->unsupported_reason = outcome->unsupported_reason;
     obj->fallback_reason = outcome->unsupported_reason;
-    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
     return 1;
 }
 
@@ -1129,9 +1128,8 @@ onibi_make_mri_regexp(VALUE argument)
     return rb_funcall(rb_cRegexp, id_new, 2, source, options);
 }
 
-/* Compute all dispatch/compiler feature bits in one pass over the immutable
-   token stream.  Runtime entry points use these bits and never rescan source.
- */
+/* Compute token diagnostics and initialization metadata in one pass over the
+   immutable token stream.  These bits never select an execution class. */
 static void
 onibi_token_features(const OnibiTokenVector *feature_tokens,
 		     onibi_regexp_t *obj)
@@ -1155,7 +1153,6 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	  ONIBI_FEATURE_INLINE_IGNORECASE);
     obj->ast_flags = 0;
     obj->feature_flags = 0;
-    obj->execution_flags = 0;
     for (size_t i = 0; i < feature_tokens->count; i++) {
 	const OnibiTokenRecord *token = &feature_tokens->items[i];
 	OnibiTokenKind kind_code = token->kind;
@@ -1228,16 +1225,14 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	    obj->feature_flags |= ONIBI_FEATURE_CLASS_INTERSECTION;
 	if (kind_code == ONIBI_TOKEN_SUBROUTINE) {
 	    obj->feature_flags |= ONIBI_FEATURE_SUBROUTINE;
-	    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
 	}
 	else if (kind_code == ONIBI_TOKEN_BACKREF ||
 		 kind_code == ONIBI_TOKEN_ATOMIC_START ||
 		 kind_code == ONIBI_TOKEN_ABSENCE_START) {
-	    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
 	    if (kind_code == ONIBI_TOKEN_BACKREF)
 		obj->feature_flags |= ONIBI_FEATURE_BACKREF;
 	    if (kind_code == ONIBI_TOKEN_ATOMIC_START)
-		obj->execution_flags |= ONIBI_FEATURE_ATOMIC;
+		obj->feature_flags |= ONIBI_FEATURE_ATOMIC;
 	    if (kind_code == ONIBI_TOKEN_ABSENCE_START)
 		obj->feature_flags |= ONIBI_FEATURE_ABSENCE;
 	}
@@ -1249,7 +1244,6 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	else if (kind_code == ONIBI_TOKEN_ESCAPE) {
 	    if (token->byte == 'X') {
 		obj->feature_flags |= ONIBI_FEATURE_GRAPHEME;
-		obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
 	    }
 	    if (token->byte == 'p' || token->byte == 'P') {
 		if (token->property_kind != ONIBI_ASCII_PROP_UNKNOWN) {
@@ -1264,7 +1258,6 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 		}
 		else {
 		    obj->feature_flags |= ONIBI_FEATURE_PROPERTY_ESCAPE;
-		    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
 		}
 	    }
 	    if (token->byte == 'u')
@@ -1272,11 +1265,6 @@ onibi_token_features(const OnibiTokenVector *feature_tokens,
 	}
 	else if (kind_code == ONIBI_TOKEN_META_ESCAPE) {
 	    obj->feature_flags |= ONIBI_FEATURE_META_ESCAPE;
-	    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
-	}
-	else if (kind_code == ONIBI_TOKEN_GROUP_START ||
-		 (kind_code == ONIBI_TOKEN_QUANTIFIER && token->byte == '{')) {
-	    obj->execution_flags |= ONIBI_FEATURE_TAGGED;
 	}
 	previous = token;
     }
@@ -1558,7 +1546,14 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    obj->rseq_blob = obj->rseq;
 	    obj->rseq_view_valid =
 		onibi_rseq_view_init(obj->rseq_blob, &obj->rseq_view) ? 1 : 0;
-	    if (obj->rseq_view_valid) onibi_rseq_view_prepare(&obj->rseq_view);
+	    if (obj->rseq_view_valid) {
+		onibi_rseq_view_prepare(&obj->rseq_view);
+		/* The physical verifier accepted this header before
+		   publication. Copy its class. Token metadata is not an
+		   execution input. */
+		obj->execution_kind =
+		    (OnibiExecutionKind)obj->rseq_view.header->exec_kind;
+	    }
 	}
     }
     if (!onibi_compile_outcome_select_fallback(obj, &compile_outcome,
@@ -1568,16 +1563,6 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	rb_jump_tag(program_state);
     }
     onibi_token_vector_free(&tokens);
-    if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) && !NIL_P(obj->rseq))
-	obj->execution_flags &= ~ONIBI_FEATURE_DYNAMIC;
-    uint32_t execution_requirements =
-	(obj->execution_flags & ONIBI_FEATURE_DYNAMIC
-	     ? ONIBI_EXEC_REQUIRE_DYNAMIC
-	     : 0) |
-	(obj->execution_flags & ONIBI_FEATURE_TAGGED ? ONIBI_EXEC_REQUIRE_TAGGED
-						     : 0);
-    obj->execution_kind =
-	onibi_execution_kind_for_requirements(execution_requirements);
     rb_obj_freeze(self);
     return self;
 }
@@ -1894,12 +1879,11 @@ onibi_regexp_linear_time_p(VALUE klass, VALUE pattern)
     VALUE regexp = rb_funcall(klass, id_new, 1, pattern);
     onibi_regexp_t *obj;
     TypedData_Get_Struct(regexp, onibi_regexp_t, &onibi_type, obj);
-    return (!(obj->execution_flags &
-	      (ONIBI_FEATURE_DYNAMIC | ONIBI_FEATURE_ATOMIC)) &&
-	    !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_BACKREF) &&
-	    !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) &&
-	    !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_ABSENCE) &&
-	    !ONIBI_FEATURE_P(obj, ONIBI_FEATURE_CONDITIONAL))
-	       ? Qtrue
-	       : Qfalse;
+    if (!NIL_P(obj->rseq) && obj->rseq_view_valid)
+	return obj->execution_kind == ONIBI_EXEC_DYNAMIC ? Qfalse : Qtrue;
+
+    /* Unsupported compilation stays at the MRI compatibility boundary.  The
+     * native Regexp class owns linear_time? semantics for that path. */
+    return rb_funcall(rb_cRegexp, rb_intern_const("linear_time?"), 1,
+		      obj->regexp);
 }
