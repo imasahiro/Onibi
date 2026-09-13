@@ -26,28 +26,6 @@ onibi_deep_freeze(VALUE value)
     return value;
 }
 
-static long
-onibi_c_find_close(const OnibiTokenVector *tokens, long begin, long end,
-		   OnibiTokenKind open, OnibiTokenKind close)
-{
-    long depth = 0;
-    for (long i = begin; i < end; i++) {
-	OnibiTokenKind kind = onibi_token_at(tokens, i)->kind;
-	if (kind == open || kind == ONIBI_TOKEN_GROUP_START ||
-	    kind == ONIBI_TOKEN_NONCAPTURE_START ||
-	    kind == ONIBI_TOKEN_ATOMIC_START ||
-	    kind == ONIBI_TOKEN_LOOKAHEAD_START ||
-	    kind == ONIBI_TOKEN_LOOKBEHIND_START ||
-	    kind == ONIBI_TOKEN_OPTION_SCOPE_START ||
-	    kind == ONIBI_TOKEN_ABSENCE_START ||
-	    kind == ONIBI_TOKEN_CONDITIONAL_START)
-	    depth++;
-	else if (kind == close && --depth == 0)
-	    return i;
-    }
-    return -1;
-}
-
 typedef struct {
     OnibiAstArena arena;
     OnibiResolvedArena semantics;

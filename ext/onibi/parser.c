@@ -48,9 +48,8 @@ onibi_c_parse_class_part(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	    continue;
 	}
 	if (token->kind == ONIBI_TOKEN_CLASS_START) {
-	    long close = onibi_c_find_close(
-		tokens, i, end, ONIBI_TOKEN_CLASS_START, ONIBI_TOKEN_CLASS_END);
-	    if (close < 0)
+	    long close = token->matching;
+	    if (close < 0 || close >= end)
 		rb_raise(eRegexpError, "unterminated nested character class");
 	    OnibiAstId nested =
 		onibi_c_parse_class_part(tokens, arena, token, i + 1, close);
@@ -147,9 +146,9 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	group_kind = ONIBI_AST_CAPTURE;
 
     if (group_kind != ONIBI_AST_UNKNOWN) {
-	long close = onibi_c_find_close(tokens, *index, end, token_kind,
-					ONIBI_TOKEN_GROUP_END);
-	if (close < 0) rb_raise(eRegexpError, "unterminated regexp group");
+	long close = token->matching;
+	if (close < 0 || close >= end)
+	    rb_raise(eRegexpError, "unterminated regexp group");
 	OnibiAstId id = onibi_ast_arena_add(arena, group_kind, token);
 	OnibiAstNode *node = onibi_ast_node_at(arena, id);
 	node->end = onibi_token_at(tokens, close)->end;
@@ -207,10 +206,9 @@ onibi_c_parse_atom(const OnibiTokenVector *tokens, OnibiAstArena *arena,
 	return id;
     }
     if (token_kind == ONIBI_TOKEN_CLASS_START) {
-	long close =
-	    onibi_c_find_close(tokens, *index, end, ONIBI_TOKEN_CLASS_START,
-			       ONIBI_TOKEN_CLASS_END);
-	if (close < 0) rb_raise(eRegexpError, "unterminated character class");
+	long close = token->matching;
+	if (close < 0 || close >= end)
+	    rb_raise(eRegexpError, "unterminated character class");
 	OnibiAstId id =
 	    onibi_c_parse_class_part(tokens, arena, token, *index + 1, close);
 	onibi_ast_node_at(arena, id)->end = onibi_token_at(tokens, close)->end;
