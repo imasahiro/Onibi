@@ -94,6 +94,7 @@ typedef struct {
     unsigned char byte;
     long start;
     long end;
+    long matching;
     OnibiTokenSlice name;
     OnibiTokenSlice negative_name;
     OnibiTokenSlice bytes;
@@ -257,6 +258,70 @@ onibi_token_record_push(OnibiTokenVector *vector, OnibiTokenRecord record)
     ONIBI_VECTOR_PUSH(vector->items, vector->count, vector->capacity,
 		      OnibiTokenRecord, record, 16,
 		      "token vector is too large");
+}
+
+static int
+onibi_group_start_p(OnibiTokenKind kind)
+{
+    return kind == ONIBI_TOKEN_GROUP_START ||
+	   kind == ONIBI_TOKEN_NONCAPTURE_START ||
+	   kind == ONIBI_TOKEN_ATOMIC_START ||
+	   kind == ONIBI_TOKEN_ABSENCE_START ||
+	   kind == ONIBI_TOKEN_CONDITIONAL_START ||
+	   kind == ONIBI_TOKEN_LOOKAHEAD_START ||
+	   kind == ONIBI_TOKEN_LOOKBEHIND_START ||
+	   kind == ONIBI_TOKEN_OPTION_SCOPE_START;
+}
+
+/* Pair delimiters once, after tokenization.  Parser recursion only reads the
+ * recorded index and never scans a token range for its closing delimiter. */
+static void
+onibi_token_index_delimiters(OnibiTokenVector *tokens)
+{
+    long group_top = -1;
+    long class_top = -1;
+
+    for (size_t i = 0; i < tokens->count; i++) {
+	OnibiTokenRecord *token = &tokens->items[i];
+	token->matching = -1;
+	if (onibi_group_start_p(token->kind)) {
+	    token->matching = group_top;
+	    group_top = (long)i;
+	}
+	else if (token->kind == ONIBI_TOKEN_GROUP_END) {
+	    if (group_top >= 0) {
+		long open = group_top;
+		group_top = tokens->items[open].matching;
+		tokens->items[open].matching = (long)i;
+		token->matching = open;
+	    }
+	}
+	else if (token->kind == ONIBI_TOKEN_CLASS_START) {
+	    token->matching = class_top;
+	    class_top = (long)i;
+	}
+	else if (token->kind == ONIBI_TOKEN_CLASS_END) {
+	    if (class_top >= 0) {
+		long open = class_top;
+		class_top = tokens->items[open].matching;
+		tokens->items[open].matching = (long)i;
+		token->matching = open;
+	    }
+	}
+    }
+
+    /* Unmatched opens still contain their linked-stack predecessor.  Clear
+     * those links so parser lookups report the original unterminated error. */
+    while (group_top >= 0) {
+	long open = group_top;
+	group_top = tokens->items[open].matching;
+	tokens->items[open].matching = -1;
+    }
+    while (class_top >= 0) {
+	long open = class_top;
+	class_top = tokens->items[open].matching;
+	tokens->items[open].matching = -1;
+    }
 }
 
 static void
@@ -734,6 +799,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	    byte,
 	    start,
 	    i + 1,
+	    -1,
 	    name_slice,
 	    negative_name_slice,
 	    literal_slice,
@@ -752,4 +818,5 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	    if (prior_extended >= 0) extended = prior_extended;
 	}
     }
+    onibi_token_index_delimiters(tokens);
 }
