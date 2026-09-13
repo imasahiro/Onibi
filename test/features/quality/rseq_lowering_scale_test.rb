@@ -42,6 +42,16 @@ class RseqLoweringScaleTest < Minitest::Test
     assert_equal 31, info[:lowering_work][:prefix_edges]
   end
 
+  def test_prefix_work_does_not_scale_with_later_edge_fanout
+    linear = diagnostics("a" * 64)
+    prefix = "a" * 64
+    fanout = diagnostics("#{prefix}(?:b0|c0|d0|e0|f0|g0|h0|i0)")
+
+    assert_operator fanout[:edges].length, :>, linear[:edges].length
+    assert_equal linear[:lowering_work][:prefix_edges],
+                 fanout[:lowering_work][:prefix_edges]
+  end
+
   def test_large_repeated_action_programs_serialize_once
     count = 128
     info = diagnostics(Array.new(count, "\\ba").join("|"))
