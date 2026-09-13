@@ -16,6 +16,21 @@ class RuntimeOutcomeTest < Minitest::Test
     assert_equal :none, info[:executor_error_kind]
   end
 
+  def test_noencoding_is_a_runtime_fallback_reason
+    regexp = Onibi::Regexp.new("a", Onibi::Regexp::NOENCODING)
+    subject = "a"
+    info = regexp.send(:__onibi_diagnostics__, subject)
+
+    assert_equal Regexp.new("a", Regexp::NOENCODING).match?(subject),
+                 regexp.match?(subject)
+    assert_equal 2, info[:status]
+    assert_equal 1, info[:fallback]
+    assert_equal :ok, info[:compile_error_kind]
+    assert_equal :none, info[:unsupported_reason]
+    assert_equal :noencoding, info[:fallback_reason]
+    assert_equal :none, info[:executor_error_kind]
+  end
+
   def test_executor_failure_is_typed_as_internal_error
     info = Onibi::Regexp.new("a").send(
       :__onibi_internal_error_diagnostics__, "a"

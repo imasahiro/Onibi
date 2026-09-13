@@ -48,8 +48,7 @@ typedef enum {
     ONIBI_UNSUPPORTED_LIMIT,
     ONIBI_UNSUPPORTED_POSSESSIVE,
     ONIBI_UNSUPPORTED_MULTILINE_ANY,
-    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT,
-    ONIBI_UNSUPPORTED_NOENCODING
+    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT
 } OnibiUnsupportedReason;
 
 typedef struct {
@@ -71,7 +70,8 @@ typedef enum {
  * reasons remain stored in onibi_regexp_t and use OnibiUnsupportedReason. */
 typedef enum {
     ONIBI_RUNTIME_FALLBACK_NONE = 0,
-    ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE
+    ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE,
+    ONIBI_RUNTIME_FALLBACK_NOENCODING
 } OnibiRuntimeFallbackReason;
 
 /* Subject offsets keep Onigmo's current width.  Register deltas keep the
@@ -913,7 +913,7 @@ onibi_character_boundary(VALUE str, OnibiBytePos pos)
 	   current;
 }
 
-static int
+static OnibiRuntimeFallbackReason
 onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
 {
     int encoding = rb_enc_get_index(str);

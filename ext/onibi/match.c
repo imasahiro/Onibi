@@ -84,6 +84,9 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 
     /* Select MRI only before the first executor call. */
     if (NIL_P(obj->rseq)) {
+	if ((obj->options & ONIBI_OPT_NOENCODING) != 0)
+	    onibi_diagnostics.runtime_fallback_reason =
+		ONIBI_RUNTIME_FALLBACK_NOENCODING;
 	onibi_diagnostics.fallback++;
 	onibi_exec_ctx_release(&exec_ctx);
 	onibi_deadline_ns = 0;

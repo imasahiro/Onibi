@@ -32,14 +32,14 @@ onibi_unicode_ctype_id(ID property)
 
 static const char *const onibi_executor_error_names[] = {
     "none", "contract", "allocation", "malformed_program", "unexpected"};
-static const char *const onibi_runtime_fallback_names[] = {"none",
-							   "input_ineligible"};
+static const char *const onibi_runtime_fallback_names[] = {
+    "none", "input_ineligible", "noencoding"};
 static const char *const onibi_compile_error_names[] = {
     "ok",	  "unsupported", "invalid_pattern", "internal",
     "allocation", "verifier",	 "unexpected"};
 static const char *const onibi_unsupported_reason_names[] = {
-    "none",  "meta_escape", "escape",	     "grapheme",	  "class",
-    "limit", "possessive",  "multiline_any", "zero_width_repeat", "noencoding"};
+    "none",  "meta_escape", "escape",	     "grapheme",	 "class",
+    "limit", "possessive",  "multiline_any", "zero_width_repeat"};
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
