@@ -40,4 +40,22 @@ class ExecutionClassAuthorityTest < Minitest::Test
 
     assert_equal expected, Onibi::Regexp.linear_time?(pattern)
   end
+
+  def test_uncompiled_patterns_have_no_native_execution_class
+    unsupported = Onibi::Regexp.new("\\X")
+    unsupported_info = unsupported.send(:__onibi_diagnostics__, "")
+
+    refute unsupported_info.fetch(:rseq)
+    assert_nil unsupported_info.fetch(:exec_kind)
+    assert_equal :unsupported, unsupported_info.fetch(:compile_error_kind)
+    assert_equal :grapheme, unsupported_info.fetch(:fallback_reason)
+
+    noencoding = Onibi::Regexp.new("a", Onibi::Regexp::NOENCODING)
+    noencoding_info = noencoding.send(:__onibi_diagnostics__, "a")
+
+    refute noencoding_info.fetch(:rseq)
+    assert_nil noencoding_info.fetch(:exec_kind)
+    assert_equal :ok, noencoding_info.fetch(:compile_error_kind)
+    assert_equal :noencoding, noencoding_info.fetch(:fallback_reason)
+  end
 end

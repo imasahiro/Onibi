@@ -87,7 +87,9 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
     /* This field was copied from the verified physical header during
      * initialization.  Token metadata is not a classification source. */
     rb_hash_aset(result, ID2SYM(rb_intern("exec_kind")),
-		 UINT2NUM(obj->execution_kind));
+		 (!NIL_P(obj->rseq) && obj->rseq_view_valid)
+		     ? UINT2NUM(obj->execution_kind)
+		     : Qnil);
     if (!NIL_P(obj->rseq)) {
 	rb_hash_aset(result, ID2SYM(rb_intern("capture_count")),
 		     UINT2NUM(obj->rseq_view.header->capture_count));
