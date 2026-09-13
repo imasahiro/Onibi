@@ -884,7 +884,8 @@ typedef struct {
     int source_encoding_index;
     unsigned char source_ascii_only;
     unsigned int ast_flags;
-    unsigned int execution_flags;
+    /* Token-derived bits are diagnostic metadata only.  They never select an
+     * execution class. */
     unsigned int feature_flags;
     OnibiCompileErrorKind compile_error_kind;
     OnibiUnsupportedReason unsupported_reason;
