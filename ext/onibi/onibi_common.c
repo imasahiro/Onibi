@@ -27,6 +27,35 @@
 #include <string.h>
 #include <time.h>
 
+/* Compilation has one explicit boundary between supported programs and
+ * failures. Callers may select MRI compatibility only for UNSUPPORTED. */
+typedef enum {
+    ONIBI_COMPILE_OK = 0,
+    ONIBI_COMPILE_UNSUPPORTED,
+    ONIBI_COMPILE_INVALID_PATTERN,
+    ONIBI_COMPILE_INTERNAL_ERROR,
+    ONIBI_COMPILE_ALLOCATION_ERROR,
+    ONIBI_COMPILE_VERIFIER_ERROR,
+    ONIBI_COMPILE_UNEXPECTED_ERROR
+} OnibiCompileErrorKind;
+
+typedef enum {
+    ONIBI_UNSUPPORTED_NONE = 0,
+    ONIBI_UNSUPPORTED_META_ESCAPE,
+    ONIBI_UNSUPPORTED_ESCAPE,
+    ONIBI_UNSUPPORTED_GRAPHEME,
+    ONIBI_UNSUPPORTED_CLASS,
+    ONIBI_UNSUPPORTED_LIMIT,
+    ONIBI_UNSUPPORTED_POSSESSIVE,
+    ONIBI_UNSUPPORTED_MULTILINE_ANY,
+    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT
+} OnibiUnsupportedReason;
+
+typedef struct {
+    OnibiCompileErrorKind error_kind;
+    OnibiUnsupportedReason unsupported_reason;
+} OnibiCompileOutcome;
+
 /* Subject offsets keep Onigmo's current width.  Register deltas keep the
  * same width because one arena stores both positions and repeat counts. */
 typedef OnigPosition OnibiBytePos;
@@ -79,6 +108,7 @@ struct onibi_allocation_owner {
     int failure_raised;
     int *failure_fired;
     OnibiAllocationAccounting *accounting;
+    OnibiCompileOutcome *compile_outcome;
 };
 
 static void
@@ -93,6 +123,22 @@ static void
 onibi_allocation_owner_set_phase(onibi_allocation_owner_t *owner, int phase)
 {
     owner->active_phase = phase;
+}
+
+static void
+onibi_compile_outcome_unsupported(OnibiCompileOutcome *outcome,
+				  OnibiUnsupportedReason reason)
+{
+    if (!outcome) return;
+    outcome->error_kind = ONIBI_COMPILE_UNSUPPORTED;
+    outcome->unsupported_reason = reason;
+}
+
+static void
+onibi_compile_outcome_verifier_error(onibi_allocation_owner_t *owner)
+{
+    if (owner && owner->compile_outcome)
+	owner->compile_outcome->error_kind = ONIBI_COMPILE_VERIFIER_ERROR;
 }
 
 static void
@@ -820,6 +866,9 @@ typedef struct {
     unsigned int ast_flags;
     unsigned int execution_flags;
     unsigned int feature_flags;
+    OnibiCompileErrorKind compile_error_kind;
+    OnibiUnsupportedReason unsupported_reason;
+    OnibiUnsupportedReason fallback_reason;
     /* Private compile telemetry. It records lowering work for focused tests. */
     OnibiLoweringWork lowering_work;
     double timeout_seconds;

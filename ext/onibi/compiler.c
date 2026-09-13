@@ -47,12 +47,22 @@ typedef struct {
     int gir_transferred;
     int failure_phase;
     int *failure_fired;
+    OnibiCompileOutcome *compile_outcome;
 } OnibiCompilerOwner;
 typedef struct {
     OnibiCompilerOwner *owner;
     VALUE parsed;
     int nfa_diagnostics;
 } OnibiCompilerCall;
+
+static void
+onibi_compiler_mark_unsupported(const onibi_gir_builder_t *builder,
+				OnibiUnsupportedReason reason)
+{
+    if (builder && builder->allocation_owner)
+	onibi_compile_outcome_unsupported(
+	    builder->allocation_owner->compile_outcome, reason);
+}
 
 static void
 onibi_compiler_fail_if(OnibiCompilerOwner *owner, int phase)
@@ -113,6 +123,9 @@ static void
 onibi_class_expr_push(OnibiClassExprVector *expr, OnibiClassExprOp op,
 		      uint32_t arg0, uint32_t arg1)
 {
+    if (expr->count >= UINT16_MAX / sizeof(OnibiClassExpr))
+	onibi_compile_outcome_unsupported(
+	    expr->allocation_owner->compile_outcome, ONIBI_UNSUPPORTED_LIMIT);
     if (expr->count >= UINT16_MAX / sizeof(OnibiClassExpr))
 	rb_raise(eRegexpError, "class descriptor exceeds the v1 size limit");
     OnibiClassExpr item = {arg0, arg1, (uint8_t)op, 0, 0};
@@ -247,8 +260,10 @@ onibi_class_expr_escape(onibi_gir_builder_t *builder, const OnibiAstNode *node,
     else {
 	unsigned char raw = (unsigned char)node->byte;
 	unsigned char code = onibi_ascii_fold(raw);
-	if (code != 'd' && code != 's' && code != 'w' && code != 'h')
+	if (code != 'd' && code != 's' && code != 'w' && code != 'h') {
+	    onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_CLASS);
 	    rb_raise(eRegexpError, "escape is not supported in RSeq class");
+	}
 	onibi_class_expr_ascii_escape(expr, code);
 	if (raw >= 'A' && raw <= 'Z') negated = !negated;
 	if (negated) onibi_class_expr_push(expr, ONIBI_CLASS_EXPR_NEGATE, 0, 0);
@@ -332,6 +347,7 @@ onibi_class_expr_ast(onibi_gir_builder_t *builder, OnibiAstId id,
 	    onibi_class_expr_ast(builder, node->children[i], expr);
 	}
 	else {
+	    onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_CLASS);
 	    rb_raise(eRegexpError, "unsupported character class token");
 	}
 	onibi_class_expr_combine(expr, &operands, ONIBI_CLASS_EXPR_UNION);
@@ -1357,6 +1373,8 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
     onibi_g_action_vector_free(&nullable_actions);
     size_t entry_count = builder->subprogram_entries.count - entry_base;
     if (entry_count == 0 || entry_count > UINT16_MAX || entry_base > UINT32_MAX)
+	onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
+    if (entry_count == 0 || entry_count > UINT16_MAX || entry_base > UINT32_MAX)
 	rb_raise(eRegexpError, "subprogram entry set exceeds the RSeq limit");
     OnibiRSeqSubprogramEntry descriptor;
     memset(&descriptor, 0, sizeof(descriptor));
@@ -1428,14 +1446,18 @@ onibi_subprogram_variant_start(onibi_gir_builder_t *builder,
 	*compile = 0;
 	return active;
     }
-    if (builder->nullable_scope_count > 256)
+    if (builder->nullable_scope_count > 256) {
+	onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
 	rb_raise(eRegexpError, "nullable repeat nesting is too deep");
+    }
     OnibiSubprogramId physical_id;
     if (builder->subprogram_status[semantic_id] == 0)
 	physical_id = semantic_id;
     else {
-	if (builder->subprograms.count >= UINT32_MAX)
+	if (builder->subprograms.count >= UINT32_MAX) {
+	    onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
 	    rb_raise(eRegexpError, "subprogram table exceeds the RSeq limit");
+	}
 	physical_id = (OnibiSubprogramId)builder->subprograms.count;
 	onibi_rseq_subprogram_vector_push(&builder->subprograms,
 					  (OnibiRSeqSubprogramEntry){0});
@@ -1954,8 +1976,10 @@ onibi_compile_compact_repeat(OnibiAstId atom, long min, long max, int greedy,
     long guard = nullable ? onibi_gir_allocate_counter_slot(builder, 0) : -1;
     if (nullable) {
 	(void)onibi_gir_allocate_counter_slot(builder, 0);
-	if (builder->nullable_scope_count == 256)
+	if (builder->nullable_scope_count == 256) {
+	    onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
 	    rb_raise(eRegexpError, "nullable repeat nesting is too deep");
+	}
 	builder->nullable_scopes[builder->nullable_scope_count++] =
 	    (uint16_t)guard;
     }
@@ -2082,12 +2106,16 @@ onibi_store_lookbehind_widths(OnibiAstId body, onibi_gir_builder_t *builder,
 	    node = child;
 	}
     }
-    if (builder->lookbehind_widths.count > UINT32_MAX)
+    if (builder->lookbehind_widths.count > UINT32_MAX) {
+	onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
 	rb_raise(eRegexpError, "lookbehind width set exceeds the RSeq limit");
+    }
     *width_base = (uint32_t)builder->lookbehind_widths.count;
     size_t count = node->kind == ONIBI_AST_ALTERNATIVE ? node->child_count : 1;
-    if (count == 0 || count > UINT16_MAX)
+    if (count == 0 || count > UINT16_MAX) {
+	onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_LIMIT);
 	rb_raise(eRegexpError, "lookbehind width set exceeds the RSeq limit");
+    }
     for (size_t i = 0; i < count; i++) {
 	OnibiAstId branch =
 	    node->kind == ONIBI_AST_ALTERNATIVE ? node->children[i] : body;
@@ -2159,11 +2187,16 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 			   onibi_ascii_property_name_p(c_node->name_id);
 	int code = name_length == 1 ? onibi_ascii_fold(name_byte) : 0;
 	if (!class_escape && name_length <= 1 &&
-	    (code == 'r' || code == 'p' || code == 'u'))
+	    (code == 'r' || code == 'p' || code == 'u')) {
+	    onibi_compiler_mark_unsupported(builder, ONIBI_UNSUPPORTED_ESCAPE);
 	    rb_raise(eRegexpError, "escape is not supported in RSeq");
-	if (code == 'x')
+	}
+	if (code == 'x') {
+	    onibi_compiler_mark_unsupported(builder,
+					    ONIBI_UNSUPPORTED_GRAPHEME);
 	    rb_raise(eRegexpError,
 		     "grapheme matching is not available in this PoC");
+	}
 	long id = builder->next_id++;
 	uint32_t class_index =
 	    onibi_compiler_normalize_class(builder, node_id, ignorecase);
@@ -2177,9 +2210,14 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	return result;
     }
     if (type_code == ONIBI_AST_ANY) {
+	if (multiline) {
+	    onibi_compiler_mark_unsupported(builder,
+					    ONIBI_UNSUPPORTED_MULTILINE_ANY);
+	    rb_raise(eRegexpError,
+		     "multiline wildcard is not supported in RSeq");
+	}
 	long id = builder->next_id++;
-	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0,
-			multiline ? ONIBI_RSEQ_STATE_FLAG_NEGATED : 0);
+	onibi_nfa_state(builder, id, ONIBI_G_ANY, 0, 0);
 	onibi_fragment_t result = onibi_fragment_empty(builder);
 	onibi_id_vector_single(&result.starts, (OnibiStateId)id,
 			       builder->allocation_owner);
@@ -2426,12 +2464,25 @@ onibi_compile_node(OnibiAstId node_id, onibi_gir_builder_t *builder)
 	OnibiAstId atom = c_node->atom;
 	int nullable = (builder->semantics->nodes[atom].flags &
 			ONIBI_SEMANTIC_NULLABLE) != 0;
+	long reference_size = onibi_repeat_reference_size(atom, builder);
+	const OnibiAstNode *atom_node =
+	    onibi_ast_node_const(builder->ast, atom);
+	if (nullable &&
+	    (reference_size == 0 || atom_node->kind == ONIBI_AST_LOOKAHEAD ||
+	     atom_node->kind == ONIBI_AST_LOOKBEHIND)) {
+	    onibi_compiler_mark_unsupported(
+		builder, ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT);
+	    rb_raise(eRegexpError,
+		     "zero-width repeat is not supported in RSeq");
+	}
 	if (min == 0) builder->optional_seen = 1;
 	if ((resolved_node->flags & ONIBI_SEMANTIC_REPEAT_POSSESSIVE) &&
-	    max != min)
+	    max != min) {
+	    onibi_compiler_mark_unsupported(builder,
+					    ONIBI_UNSUPPORTED_POSSESSIVE);
 	    rb_raise(eRegexpError,
 		     "variable possessive quantifier is not supported in RSeq");
-	long reference_size = onibi_repeat_reference_size(atom, builder);
+	}
 	int expanded =
 	    max >= 0 && greedy &&
 	    (max <= 1 || onibi_repeat_reference_multiply(
@@ -2974,6 +3025,8 @@ onibi_compiler_compile_body(VALUE opaque)
     OnibiParsed *parsed_data = onibi_parsed_get(parsed);
     if (parsed_data->arena.root == ONIBI_AST_NONE)
 	rb_raise(rb_eArgError, "compiler requires parser output");
+    if (owner->compile_outcome)
+	owner->compile_outcome->error_kind = ONIBI_COMPILE_INTERNAL_ERROR;
     OnibiParseOutput parse = {parsed_data, parsed_data->options};
     onibi_allocation_owner_set_phase(&owner->allocations, 1);
     OnibiResolveOutput resolve = onibi_compiler_pass_resolve(parse, owner);
@@ -3016,6 +3069,7 @@ onibi_compiler_compile_body(VALUE opaque)
     onibi_rseq_subprogram_vector_store(&owner->builder.subprograms, 0,
 				       root_descriptor);
     onibi_allocation_owner_set_phase(&owner->allocations, 5);
+    onibi_compile_outcome_verifier_error(&owner->allocations);
     onibi_compiler_pass_verify_gir(&owner->builder, &owner->start_edges, accept,
 				   root_entry, parsed_options, owner);
     onibi_allocation_owner_set_phase(&owner->allocations, 6);
@@ -3030,8 +3084,33 @@ onibi_compiler_compile_body(VALUE opaque)
 	&owner->builder, &owner->start_edges, accept, root_entry,
 	analysis.counter_count, parsed_options, analysis, owner);
     owner->gir_transferred = 1;
+    if (owner->compile_outcome) {
+	owner->compile_outcome->error_kind = ONIBI_COMPILE_OK;
+	owner->compile_outcome->unsupported_reason = ONIBI_UNSUPPORTED_NONE;
+    }
     rb_obj_freeze(result);
     return result;
+}
+
+static VALUE
+onibi_compiler_compile_with_failure_and_outcome(
+    VALUE parsed, int failure_phase, int *failure_fired,
+    OnibiAllocationAccounting *accounting, OnibiCompileOutcome *outcome)
+{
+    OnibiCompilerOwner owner;
+    memset(&owner, 0, sizeof(owner));
+    onibi_allocation_owner_init(&owner.allocations, accounting);
+    owner.failure_phase = failure_phase;
+    owner.failure_fired = failure_fired;
+    owner.compile_outcome = outcome;
+    owner.allocations.failure_phase = failure_phase;
+    owner.allocations.failure_fired = failure_fired;
+    owner.allocations.compile_outcome = outcome;
+    onibi_gir_edge_vector_init(&owner.start_edges);
+    onibi_gir_edge_vector_bind(&owner.start_edges, &owner.allocations);
+    OnibiCompilerCall call = {&owner, parsed, 0};
+    return rb_ensure(onibi_compiler_compile_body, (VALUE)(uintptr_t)&call,
+		     onibi_compiler_owner_ensure, (VALUE)(uintptr_t)&owner);
 }
 
 static VALUE
@@ -3039,18 +3118,15 @@ onibi_compiler_compile_with_failure(VALUE parsed, int failure_phase,
 				    int *failure_fired,
 				    OnibiAllocationAccounting *accounting)
 {
-    OnibiCompilerOwner owner;
-    memset(&owner, 0, sizeof(owner));
-    onibi_allocation_owner_init(&owner.allocations, accounting);
-    owner.failure_phase = failure_phase;
-    owner.failure_fired = failure_fired;
-    owner.allocations.failure_phase = failure_phase;
-    owner.allocations.failure_fired = failure_fired;
-    onibi_gir_edge_vector_init(&owner.start_edges);
-    onibi_gir_edge_vector_bind(&owner.start_edges, &owner.allocations);
-    OnibiCompilerCall call = {&owner, parsed, 0};
-    return rb_ensure(onibi_compiler_compile_body, (VALUE)(uintptr_t)&call,
-		     onibi_compiler_owner_ensure, (VALUE)(uintptr_t)&owner);
+    return onibi_compiler_compile_with_failure_and_outcome(
+	parsed, failure_phase, failure_fired, accounting, NULL);
+}
+
+static VALUE
+onibi_compiler_compile_with_outcome(VALUE parsed, OnibiCompileOutcome *outcome)
+{
+    return onibi_compiler_compile_with_failure_and_outcome(parsed, 0, NULL,
+							   NULL, outcome);
 }
 
 static VALUE
@@ -3064,11 +3140,4 @@ onibi_compiler_nfa_diagnostics(VALUE parsed)
     OnibiCompilerCall call = {&owner, parsed, 1};
     return rb_ensure(onibi_compiler_compile_body, (VALUE)(uintptr_t)&call,
 		     onibi_compiler_owner_ensure, (VALUE)(uintptr_t)&owner);
-}
-
-static VALUE
-onibi_compiler_compile(VALUE self, VALUE parsed)
-{
-    (void)self;
-    return onibi_compiler_compile_with_failure(parsed, 0, NULL, NULL);
 }

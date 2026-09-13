@@ -263,6 +263,21 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		 ULONG2NUM(onibi_diagnostics.dfs));
     rb_hash_aset(result, ID2SYM(rb_intern("fallback")),
 		 ULONG2NUM(onibi_diagnostics.fallback));
+    static const char *const compile_error_names[] = {
+	"ok",	      "unsupported", "invalid_pattern", "internal",
+	"allocation", "verifier",    "unexpected"};
+    static const char *const unsupported_reason_names[] = {
+	"none",	 "meta_escape", "escape",	 "grapheme",	     "class",
+	"limit", "possessive",	"multiline_any", "zero_width_repeat"};
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("compile_error_kind")),
+	ID2SYM(rb_intern(compile_error_names[obj->compile_error_kind])));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("unsupported_reason")),
+	ID2SYM(rb_intern(unsupported_reason_names[obj->unsupported_reason])));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("fallback_reason")),
+	ID2SYM(rb_intern(unsupported_reason_names[obj->fallback_reason])));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
 		 ULONG2NUM(onibi_diagnostics.tag_events));
     rb_hash_aset(result, ID2SYM(rb_intern("order_nodes")),
@@ -1162,6 +1177,30 @@ onibi_internal_error_diagnostics(VALUE self, VALUE subject)
 {
     onibi_inject_internal_error = 1;
     return onibi_diagnostics_for(self, subject);
+}
+
+static VALUE
+onibi_compile_outcome_raise_internal(VALUE opaque)
+{
+    (void)opaque;
+    rb_raise(eRegexpError, "injected internal compile failure");
+}
+
+static VALUE
+onibi_compile_outcome_internal_diagnostics(VALUE self)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    OnibiCompileOutcome outcome = {ONIBI_COMPILE_INTERNAL_ERROR,
+				   ONIBI_UNSUPPORTED_NONE};
+    int state = 0;
+    rb_protect(onibi_compile_outcome_raise_internal, Qnil, &state);
+    if (onibi_compile_outcome_select_fallback(obj, &outcome, state))
+	rb_raise(eRegexpError, "internal compile failure selected fallback");
+    if (!state)
+	rb_raise(eRegexpError, "internal compile failure did not raise");
+    rb_jump_tag(state);
+    return Qnil;
 }
 /* Diagnostic and compatibility payload adapters.  Ruby Hash records created
  * here are never canonical compiler or runtime state. */
