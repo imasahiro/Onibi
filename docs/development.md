@@ -22,11 +22,11 @@ repeats, bounded repeats, captures, boundary assertions, and match reset.
 Other syntax remains outside this subset.
 
 The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
-unit that includes `token.c`, `ast.c`, `parser.c`, `nfa.c`, `gir.c`,
-`compiler.c`, `rseq.c`, `rseq_verify.c`, the three execution modules, and
-`match.c`. The include order is the dependency order. Passes use C vectors.
-The compiler publishes one immutable RSeq blob without a Ruby graph mirror.
-No legacy `#if 0` code remains in these modules.
+unit. It includes the current implementation files in dependency order.
+`rseq_runtime.c` owns RSeq validation. `exec_dynamic.c` contains the three C
+interpreter entry points. Passes use C vectors. The compiler publishes one
+immutable RSeq blob without a Ruby graph mirror. No legacy `#if 0` code remains
+in these modules.
 
 ## Execution engines
 

@@ -375,12 +375,14 @@ class MatchApiTest < Minitest::Test
     assert Onibi::Regexp.new("é", Onibi::Regexp::FIXEDENCODING).match?("xxéyy")
   end
 
-  def test_bytecode_program_is_compiler_output
+  def test_native_compiler_pipeline_is_not_a_ruby_api
     regexp = Onibi::Regexp.new("ab+")
-    program = regexp.send(:bytecode_program)
 
-    assert_instance_of Onibi::IRGen::YARVIR::Program, program
-    assert_equal [2, 5], Onibi::IRGen::YARVIR.execute(program, "xxabbyy", 0)
-    refute_instance_of Onibi::AST::Sequence, program.flags[:semantic_root]
+    assert_equal [2, 5], regexp.match("xxabbyy").offset(0)
+    refute regexp.respond_to?(:bytecode_program, true)
+
+    %i[AST IRGen Interpreter].each do |name|
+      refute Onibi.const_defined?(name, false), "unexpected Ruby pipeline constant: #{name}"
+    end
   end
 end
