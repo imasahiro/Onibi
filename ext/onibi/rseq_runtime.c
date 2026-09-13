@@ -70,73 +70,9 @@ onibi_rseq_view_prepare(OnibiRSeqView *view)
 	if (count > view->class_stack_capacity)
 	    view->class_stack_capacity = count;
     }
-    view->regular_capable = onibi_rseq_regular_capable(view);
-}
-
-static int
-onibi_rseq_regular_edge_capable(const OnibiRSeqView *view,
-				const OnibiREdge *edge)
-{
-    if (edge->action_offset == 0) return 1;
-    uint32_t index = edge->action_offset / (uint32_t)sizeof(OnibiRAction) - 1U;
-    if (index >= view->header->action_count) return 0;
-    for (; index < view->header->action_count; index++) {
-	const OnibiRAction *action = &view->actions[index];
-	if (action->op == ONIBI_RA_END) return 1;
-	if (action->op == ONIBI_RA_CAPTURE) continue;
-	if (action->op == ONIBI_RA_ASSERT_POSITION &&
-	    (action->arg16 == ONIBI_RAP_WORD_BOUNDARY ||
-	     action->arg16 == ONIBI_RAP_NONWORD_BOUNDARY))
-	    continue;
-	return 0;
-    }
-    return 0;
-}
-
-static int
-onibi_rseq_regular_capable(const OnibiRSeqView *view)
-{
-    const OnibiRSeqHeader *header = view->header;
-    if ((header->features & ONIBI_RSEQ_FEATURE_LOOKAROUND) != 0 ||
-	header->state_count == 0 || header->start_edge_count == 0 ||
-	header->counter_count != 0 || header->subprogram_count != 1)
-	return 0;
-    for (uint32_t i = 0; i < header->state_count; i++) {
-	const OnibiRState *state = &view->states[i];
-	if (state->flags != 0) {
-	    uint8_t allowed =
-		state->op == ONIBI_RS_CHAR ? ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE
-		: (state->op == ONIBI_RS_CLASS || state->op == ONIBI_RS_ANY)
-		    ? ONIBI_RSEQ_STATE_FLAG_NEGATED
-		    : 0;
-	    if ((state->flags & ~allowed) != 0) return 0;
-	}
-	if (state->op != 0 && state->op != ONIBI_RS_CHAR &&
-	    state->op != ONIBI_RS_CLASS && state->op != ONIBI_RS_ANY)
-	    return 0;
-	if (state->op == ONIBI_RS_CLASS &&
-	    (view->classes[state->payload].flags &
-	     ~ONIBI_RSEQ_CLASS_FLAG_NEGATED) != 0)
-	    return 0;
-	if (state->op == ONIBI_RS_CHAR) {
-	    const OnibiLiteralDesc *literal = &view->literals[state->payload];
-	    if ((literal->flags & ONIBI_RSEQ_LITERAL_FLAG_IGNORECASE) != 0) {
-		const unsigned char *bytes = view->blob + literal->data_offset;
-		for (uint32_t j = 0; j < literal->data_length; j++)
-		    if (bytes[j] >= 0x80) return 0;
-	    }
-	}
-	if (state->op == ONIBI_RS_CALL) return 0;
-	for (uint32_t e = 0; e < state->edge_count; e++) {
-	    const OnibiREdge *edge = &view->edges[state->edge_base + e];
-	    if (!onibi_rseq_regular_edge_capable(view, edge)) return 0;
-	}
-    }
-    for (uint32_t i = 0; i < header->start_edge_count; i++)
-	if (!onibi_rseq_regular_edge_capable(
-		view, &view->edges[header->start_edge_base + i]))
-	    return 0;
-    return 1;
+    /* The physical verifier checked the class contract before publication.
+     * Keep this view fact derived from the verified header only. */
+    view->regular_capable = view->header->exec_kind == ONIBI_EXEC_REGULAR;
 }
 
 static int

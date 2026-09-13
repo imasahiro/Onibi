@@ -34,6 +34,17 @@ class ExecutionClassAuthorityTest < Minitest::Test
     refute_match(/FEATURE_SUBROUTINE.*execution_kind/m, initialize)
   end
 
+  def test_runtime_view_keeps_the_verified_header_class
+    source = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "rseq_runtime.c"))
+    prepare = source[/static void\s+onibi_rseq_view_prepare\(.*?^}\n/m]
+
+    refute_nil prepare
+    assert_includes prepare, "view->header->exec_kind"
+    refute_includes source, "onibi_rseq_regular_capable"
+    refute_match(/onibi_rseq_regular_edge_capable/, source)
+    refute_match(/header->(?:state_count|action_count).*?return 0/s, prepare)
+  end
+
   def test_unsupported_compilation_uses_mri_linear_time_boundary
     pattern = "\\X"
     expected = ::Regexp.linear_time?(::Regexp.new(pattern))
