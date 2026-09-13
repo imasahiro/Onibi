@@ -30,6 +30,17 @@ onibi_unicode_ctype_id(ID property)
     return -1;
 }
 
+static const char *const onibi_executor_error_names[] = {
+    "none", "contract", "allocation", "malformed_program", "unexpected"};
+static const char *const onibi_runtime_fallback_names[] = {"none",
+							   "input_ineligible"};
+static const char *const onibi_compile_error_names[] = {
+    "ok",	  "unsupported", "invalid_pattern", "internal",
+    "allocation", "verifier",	 "unexpected"};
+static const char *const onibi_unsupported_reason_names[] = {
+    "none",  "meta_escape", "escape",	     "grapheme",	  "class",
+    "limit", "possessive",  "multiline_any", "zero_width_repeat", "noencoding"};
+
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
 static VALUE
@@ -53,9 +64,7 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 			       .end = end};
     if (!onibi_raw_match_reset(&raw_match))
 	rb_raise(eRegexpError, "Onibi raw match setup failed");
-    int status = NIL_P(obj->rseq)
-		     ? ONIBI_EXEC_STATUS_FALLBACK
-		     : onibi_vm_search(self, subject, 0, &raw_match);
+    int status = onibi_vm_search(self, subject, 0, &raw_match);
     VALUE result = rb_hash_new();
     VALUE lowering_work = rb_hash_new();
     rb_hash_aset(lowering_work, ID2SYM(rb_intern("gir_class_probes")),
@@ -263,21 +272,24 @@ onibi_diagnostics_for(VALUE self, VALUE subject)
 		 ULONG2NUM(onibi_diagnostics.dfs));
     rb_hash_aset(result, ID2SYM(rb_intern("fallback")),
 		 ULONG2NUM(onibi_diagnostics.fallback));
-    static const char *const compile_error_names[] = {
-	"ok",	      "unsupported", "invalid_pattern", "internal",
-	"allocation", "verifier",    "unexpected"};
-    static const char *const unsupported_reason_names[] = {
-	"none",	 "meta_escape", "escape",	 "grapheme",	     "class",
-	"limit", "possessive",	"multiline_any", "zero_width_repeat"};
     rb_hash_aset(
 	result, ID2SYM(rb_intern("compile_error_kind")),
-	ID2SYM(rb_intern(compile_error_names[obj->compile_error_kind])));
-    rb_hash_aset(
-	result, ID2SYM(rb_intern("unsupported_reason")),
-	ID2SYM(rb_intern(unsupported_reason_names[obj->unsupported_reason])));
+	ID2SYM(rb_intern(onibi_compile_error_names[obj->compile_error_kind])));
+    rb_hash_aset(result, ID2SYM(rb_intern("unsupported_reason")),
+		 ID2SYM(rb_intern(
+		     onibi_unsupported_reason_names[obj->unsupported_reason])));
     rb_hash_aset(
 	result, ID2SYM(rb_intern("fallback_reason")),
-	ID2SYM(rb_intern(unsupported_reason_names[obj->fallback_reason])));
+	ID2SYM(rb_intern(
+	    onibi_diagnostics.runtime_fallback_reason !=
+		    ONIBI_RUNTIME_FALLBACK_NONE
+		? onibi_runtime_fallback_names[onibi_diagnostics
+						   .runtime_fallback_reason]
+		: onibi_unsupported_reason_names[obj->fallback_reason])));
+    rb_hash_aset(result, ID2SYM(rb_intern("executor_error_kind")),
+		 ID2SYM(rb_intern(
+		     onibi_executor_error_names[onibi_diagnostics
+						    .executor_error_kind])));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
 		 ULONG2NUM(onibi_diagnostics.tag_events));
     rb_hash_aset(result, ID2SYM(rb_intern("order_nodes")),
@@ -301,11 +313,21 @@ onibi_match_p_diagnostics(VALUE self, VALUE subject)
     StringValue(subject);
     memset(&onibi_diagnostics, 0, sizeof(onibi_diagnostics));
     OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-    int status = NIL_P(obj->rseq)
-		     ? ONIBI_EXEC_STATUS_FALLBACK
-		     : onibi_vm_search(self, subject, 0, &raw_match);
+    int status = onibi_vm_search(self, subject, 0, &raw_match);
     VALUE result = rb_hash_new();
     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(status));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("fallback_reason")),
+	ID2SYM(rb_intern(
+	    onibi_diagnostics.runtime_fallback_reason !=
+		    ONIBI_RUNTIME_FALLBACK_NONE
+		? onibi_runtime_fallback_names[onibi_diagnostics
+						   .runtime_fallback_reason]
+		: onibi_unsupported_reason_names[obj->fallback_reason])));
+    rb_hash_aset(result, ID2SYM(rb_intern("executor_error_kind")),
+		 ID2SYM(rb_intern(
+		     onibi_executor_error_names[onibi_diagnostics
+						    .executor_error_kind])));
     rb_hash_aset(result, ID2SYM(rb_intern("tag_events")),
 		 ULONG2NUM(onibi_diagnostics.tag_events));
     rb_hash_aset(result, ID2SYM(rb_intern("poll_count")),

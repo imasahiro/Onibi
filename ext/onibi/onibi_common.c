@@ -48,13 +48,31 @@ typedef enum {
     ONIBI_UNSUPPORTED_LIMIT,
     ONIBI_UNSUPPORTED_POSSESSIVE,
     ONIBI_UNSUPPORTED_MULTILINE_ANY,
-    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT
+    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT,
+    ONIBI_UNSUPPORTED_NOENCODING
 } OnibiUnsupportedReason;
 
 typedef struct {
     OnibiCompileErrorKind error_kind;
     OnibiUnsupportedReason unsupported_reason;
 } OnibiCompileOutcome;
+
+/* An executor never selects MRI.  These values explain an internal
+ * executor failure after the pre-execution fallback gate has passed. */
+typedef enum {
+    ONIBI_EXECUTOR_ERROR_NONE = 0,
+    ONIBI_EXECUTOR_ERROR_CONTRACT,
+    ONIBI_EXECUTOR_ERROR_ALLOCATION,
+    ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM,
+    ONIBI_EXECUTOR_ERROR_UNEXPECTED
+} OnibiExecutorErrorKind;
+
+/* Runtime fallback is a pre-execution decision.  Compile-time unsupported
+ * reasons remain stored in onibi_regexp_t and use OnibiUnsupportedReason. */
+typedef enum {
+    ONIBI_RUNTIME_FALLBACK_NONE = 0,
+    ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE
+} OnibiRuntimeFallbackReason;
 
 /* Subject offsets keep Onigmo's current width.  Register deltas keep the
  * same width because one arena stores both positions and repeat counts. */
@@ -503,6 +521,8 @@ onibi_execution_kind_for_requirements(uint32_t requirements)
  * by the diagnostic entry point and are never used for matching decisions. */
 typedef struct {
     unsigned long regular, tagged, dynamic, dfs, fallback, tag_events;
+    OnibiExecutorErrorKind executor_error_kind;
+    OnibiRuntimeFallbackReason runtime_fallback_reason;
     unsigned long poll_count;
     uint64_t work_charged;
     uint64_t max_charged_work;
@@ -899,31 +919,34 @@ onibi_vm_input_eligible(const onibi_regexp_t *obj, VALUE str)
     int encoding = rb_enc_get_index(str);
     int subject_ascii_only = rb_enc_str_asciionly_p(str);
     if (!rb_enc_asciicompat(rb_enc_from_index(obj->source_encoding_index)))
-	return 0;
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
     /* DYNAMIC executes all case-fold paths in the native interpreter. */
     if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
 	(obj->rseq_view.header->features &
 	 ONIBI_RSEQ_FEATURE_INCOMPLETE_CASEFOLD) != 0)
-	return 0;
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
     if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
 	(obj->rseq_view.header->features &
 	 ONIBI_RSEQ_FEATURE_LITERAL_CASEFOLD) != 0 &&
 	(!obj->source_ascii_only || !subject_ascii_only))
-	return 0;
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
     /* DYNAMIC owns zero-width and multibyte transitions as well. */
     if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_DYNAMIC &&
 	!subject_ascii_only &&
 	(obj->rseq_view.header->features &
 	 ONIBI_RSEQ_FEATURE_ZERO_WIDTH_ONLY) != 0)
-	return 0;
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
     /* A fixed-encoding regexp cannot consume non-ASCII bytes tagged as
      * ASCII-8BIT.  Let MRI report Encoding::CompatibilityError instead of
      * entering the byte-oriented RSeq path. */
     if (onibi_regexp_fixed_p(obj) && encoding == rb_ascii8bit_encindex() &&
 	!rb_enc_str_asciionly_p(str))
-	return 0;
-    if (rb_enc_compatible(str, obj->source) == NULL) return 0;
-    return subject_ascii_only || onibi_valid_encoding(str);
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
+    if (rb_enc_compatible(str, obj->source) == NULL)
+	return ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
+    return subject_ascii_only || onibi_valid_encoding(str)
+	       ? ONIBI_RUNTIME_FALLBACK_NONE
+	       : ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
 }
 
 static void

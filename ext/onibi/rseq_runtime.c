@@ -1482,13 +1482,14 @@ onibi_exec_regular(OnibiExecCtx *ctx)
 {
     onibi_diagnostics.regular++;
     int result = onibi_rseq_regular_match(ctx);
-    if (result == -2) {
-	onibi_diagnostics.fallback++;
-	return ONIBI_EXEC_STATUS_FALLBACK;
+    if (result < 0) {
+	onibi_diagnostics.executor_error_kind =
+	    ctx->view != NULL && !ctx->view->regular_capable
+		? ONIBI_EXECUTOR_ERROR_CONTRACT
+		: ONIBI_EXECUTOR_ERROR_UNEXPECTED;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
-    return result > 0	? ONIBI_EXEC_STATUS_MATCH
-	   : result < 0 ? ONIBI_EXEC_STATUS_INTERNAL_ERROR
-			: ONIBI_EXEC_STATUS_NO_MATCH;
+    return result > 0 ? ONIBI_EXEC_STATUS_MATCH : ONIBI_EXEC_STATUS_NO_MATCH;
 }
 
 /* Execute the action-free regular subset directly from the immutable RSeq

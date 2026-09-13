@@ -62,8 +62,10 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
     exec_ctx.regexp = self;
     exec_ctx.subject = str;
     exec_ctx.raw_match = raw_match;
-    if (!onibi_raw_match_reset(raw_match))
+    if (!onibi_raw_match_reset(raw_match)) {
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_CONTRACT;
 	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
     exec_ctx.search_origin = search_origin < 0 ? 0 : search_origin;
     exec_ctx.reported_start = exec_ctx.search_origin;
     onibi_set_deadline(obj->timeout_seconds);
@@ -80,9 +82,39 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
     if (!(obj->options & ONIBI_OPT_NOENCODING) && !NIL_P(obj->rseq))
 	(void)rb_reg_prepare_re(obj->regexp, str);
 
-    if (!(obj->options & ONIBI_OPT_NOENCODING) && !NIL_P(obj->rseq) &&
-	obj->rseq_view_valid && onibi_vm_input_eligible(obj, str) &&
-	(rb_enc_str_asciionly_p(str) || onibi_valid_encoding(str))) {
+    /* Select MRI only before the first executor call. */
+    if (NIL_P(obj->rseq)) {
+	onibi_diagnostics.fallback++;
+	onibi_exec_ctx_release(&exec_ctx);
+	onibi_deadline_ns = 0;
+	onibi_active_exec_ctx = NULL;
+	return ONIBI_EXEC_STATUS_FALLBACK;
+    }
+    if (!obj->rseq_view_valid || obj->rseq_view.header == NULL) {
+	onibi_diagnostics.executor_error_kind =
+	    ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM;
+	onibi_exec_ctx_release(&exec_ctx);
+	onibi_deadline_ns = 0;
+	onibi_active_exec_ctx = NULL;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
+    OnibiRuntimeFallbackReason input_reason = onibi_vm_input_eligible(obj, str);
+    if ((obj->options & ONIBI_OPT_NOENCODING) != 0 ||
+	input_reason != ONIBI_RUNTIME_FALLBACK_NONE ||
+	(!rb_enc_str_asciionly_p(str) && !onibi_valid_encoding(str))) {
+	/* Input eligibility is the only runtime fallback decision. */
+	onibi_diagnostics.runtime_fallback_reason =
+	    input_reason != ONIBI_RUNTIME_FALLBACK_NONE
+		? input_reason
+		: ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE;
+	onibi_diagnostics.fallback++;
+	onibi_exec_ctx_release(&exec_ctx);
+	onibi_deadline_ns = 0;
+	onibi_active_exec_ctx = NULL;
+	return ONIBI_EXEC_STATUS_FALLBACK;
+    }
+
+    {
 	/* The immutable RSeq was validated and its physical execution view was
 	   built during initialize.  Do not rescan the program on each match. */
 	exec_ctx.encoding = rb_enc_get(str);
@@ -136,24 +168,12 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 		onibi_active_exec_ctx = NULL;
 		return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
 	    }
-	    if (result == ONIBI_EXEC_STATUS_FALLBACK) {
-		onibi_exec_ctx_release(&exec_ctx);
-		onibi_deadline_ns = 0;
-		onibi_active_exec_ctx = NULL;
-		return ONIBI_EXEC_STATUS_FALLBACK;
-	    }
 	}
 	onibi_exec_ctx_release(&exec_ctx);
 	onibi_deadline_ns = 0;
 	onibi_active_exec_ctx = NULL;
 	return ONIBI_EXEC_STATUS_NO_MATCH;
     }
-
-    onibi_exec_ctx_release(&exec_ctx);
-    onibi_deadline_ns = 0;
-    onibi_active_exec_ctx = NULL;
-    /* No RSeq program is available for this input or feature set. */
-    return ONIBI_EXEC_STATUS_FALLBACK;
 }
 
 typedef struct {

@@ -1534,8 +1534,9 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    if (parsed_data->arena.root != ONIBI_AST_NONE)
 		onibi_ast_arena_free(&parsed_data->arena);
 	}
-	if (opts & 32) {
+	if (opts & ONIBI_OPT_NOENCODING) {
 	    parsed = obj->rseq = Qnil;
+	    obj->fallback_reason = ONIBI_UNSUPPORTED_NOENCODING;
 	}
 	if (!NIL_P(obj->rseq)) {
 	    obj->rseq_blob = obj->rseq;
