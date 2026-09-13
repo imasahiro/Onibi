@@ -64,3 +64,4 @@ TASK-31B route change: the Sol agent hit its usage limit; the user requested ava
 Pending Sol routes now use Astra at the same effort, as requested by the user; Luna routes stay unchanged.
 TASK-31 split: user requested smaller tasks; bounded semantic tasks return to Sol/high; TASK-31A uses Sol/high because Luna is not listed by the collaboration tool.
 TASK-32 review split resolved: the accepted key uses future-observable captures. Absence uses semantic nullability and keeps its physical subprogram.
+TASK-42A integration: PR #412 is open. Ruby and Cross-runtime CI cannot start because repository Actions policy blocks required external actions. Do not merge; allow the required actions and rerun CI.
