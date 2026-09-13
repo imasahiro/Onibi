@@ -61,4 +61,18 @@ class CompileOutcomeTest < Minitest::Test
       refute diagnostics.fetch(:rseq), pattern
     end
   end
+
+  def test_mri_valid_unsupported_posix_classes_keep_typed_fallback_reasons
+    %w[graph print].each do |property|
+      pattern = "[[:#{property}:]]"
+      Regexp.new(pattern)
+      regexp = Onibi::Regexp.new(pattern)
+      diagnostics = regexp.send(:__onibi_diagnostics__, "")
+
+      assert_equal :unsupported, diagnostics.fetch(:compile_error_kind), pattern
+      assert_equal :class, diagnostics.fetch(:unsupported_reason), pattern
+      assert_equal :class, diagnostics.fetch(:fallback_reason), pattern
+      refute diagnostics.fetch(:rseq), pattern
+    end
+  end
 end

@@ -1031,6 +1031,18 @@ typedef struct {
 } OnibiProgramArgs;
 
 static int
+onibi_tokens_have_unsupported_posix(const OnibiTokenVector *tokens)
+{
+    for (size_t i = 0; i < tokens->count; i++) {
+	const OnibiTokenRecord *token = onibi_token_at(tokens, (long)i);
+	if (token->kind == ONIBI_TOKEN_POSIX_CLASS &&
+	    onibi_posix_kind_id(token->name_id) == ONIBI_POSIX_UNKNOWN)
+	    return 1;
+    }
+    return 0;
+}
+
+static int
 onibi_tokens_have_nested_possessive(const OnibiTokenVector *tokens)
 {
     for (size_t i = 1; i < tokens->count; i++) {
@@ -1081,6 +1093,11 @@ onibi_build_program(VALUE argument)
     VALUE source = args->source;
     VALUE options = args->options;
     const OnibiTokenVector *tokens = args->tokens;
+    if (onibi_tokens_have_unsupported_posix(tokens)) {
+	onibi_compile_outcome_unsupported(args->compile_outcome,
+					  ONIBI_UNSUPPORTED_CLASS);
+	rb_raise(eRegexpError, "unknown POSIX character class");
+    }
     VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
     VALUE compiled =
 	onibi_compiler_compile_with_outcome(parsed, args->compile_outcome);
@@ -1534,7 +1551,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    if (parsed_data->arena.root != ONIBI_AST_NONE)
 		onibi_ast_arena_free(&parsed_data->arena);
 	}
-	if (opts & 32) {
+	if (opts & ONIBI_OPT_NOENCODING) {
 	    parsed = obj->rseq = Qnil;
 	}
 	if (!NIL_P(obj->rseq)) {

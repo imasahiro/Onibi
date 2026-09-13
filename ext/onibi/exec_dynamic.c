@@ -4369,7 +4369,7 @@ onibi_rseq_regular_match(OnibiExecCtx *ctx)
 {
     const OnibiRSeqView *view = ctx->view;
     const OnibiRSeqHeader *header = view->header;
-    if (!view->regular_capable) return -2;
+    if (!view->regular_capable) return -1;
     uint32_t count = header->state_count;
     if (count == 0) return 0;
     VALUE str = ctx->subject;
@@ -4559,6 +4559,7 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
 	ctx->search_origin, &ctx->matched_end, &accepted, &ctx->semantic_arena,
 	ctx->class_stack, ctx->class_stack_capacity, ctx);
     if (result < 0) {
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_UNEXPECTED;
 	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
     if (result > 0) {
@@ -4567,8 +4568,11 @@ onibi_exec_dynamic(OnibiExecCtx *ctx)
 					 ctx->program->capture_count) &&
 	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
 					   ctx->raw_match,
-					   ctx->program->capture_count * 2U))
+					   ctx->program->capture_count * 2U)) {
+	    onibi_diagnostics.executor_error_kind =
+		ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM;
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+	}
     }
     return result > 0 ? ONIBI_EXEC_STATUS_MATCH : ONIBI_EXEC_STATUS_NO_MATCH;
 }
@@ -4585,15 +4589,21 @@ onibi_exec_tagged(OnibiExecCtx *ctx)
 	ctx->semantic_arena.capture_event_root_count;
     onibi_diagnostics.capture_event_owners =
 	ctx->semantic_arena.capture_event_owner_count;
-    if (result < 0) return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    if (result < 0) {
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_UNEXPECTED;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
     if (result > 0) {
 	ctx->reported_start = accepted.reported_start;
 	if (onibi_raw_match_capture_mode(ctx->raw_match,
 					 ctx->program->capture_count) &&
 	    !onibi_tagged_materialize_tags(&ctx->semantic_arena, &accepted,
 					   ctx->raw_match,
-					   ctx->program->capture_count * 2U))
+					   ctx->program->capture_count * 2U)) {
+	    onibi_diagnostics.executor_error_kind =
+		ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM;
 	    return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+	}
     }
     return result > 0 ? ONIBI_EXEC_STATUS_MATCH : ONIBI_EXEC_STATUS_NO_MATCH;
 }
@@ -4603,6 +4613,7 @@ onibi_execute(OnibiExecCtx *ctx)
 {
     if (onibi_inject_internal_error) {
 	onibi_inject_internal_error = 0;
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_UNEXPECTED;
 	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
     OnibiExecStatus status;
@@ -4610,12 +4621,24 @@ onibi_execute(OnibiExecCtx *ctx)
     case ONIBI_EXEC_REGULAR: status = onibi_exec_regular(ctx); break;
     case ONIBI_EXEC_TAGGED: status = onibi_exec_tagged(ctx); break;
     case ONIBI_EXEC_DYNAMIC: status = onibi_exec_dynamic(ctx); break;
-    default: return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    default:
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_CONTRACT;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
     }
     if (status == ONIBI_EXEC_STATUS_MATCH &&
 	!onibi_raw_match_record(ctx->raw_match, ctx->reported_start,
-				ctx->matched_end))
+				ctx->matched_end)) {
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_CONTRACT;
 	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
+    if (status != ONIBI_EXEC_STATUS_MATCH &&
+	status != ONIBI_EXEC_STATUS_INTERNAL_ERROR &&
+	status != ONIBI_EXEC_STATUS_NO_MATCH) {
+	/* An executor cannot select MRI.  A violation is an internal contract
+	 * error, not another compatibility decision. */
+	onibi_diagnostics.executor_error_kind = ONIBI_EXECUTOR_ERROR_CONTRACT;
+	return ONIBI_EXEC_STATUS_INTERNAL_ERROR;
+    }
     return status;
 }
 /* DYNAMIC interpreter. */
