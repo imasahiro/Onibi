@@ -250,7 +250,11 @@ class InternalRegexpDependencyTest < Minitest::Test
 
     refute_nil search
     assert_includes search, "exec_ctx.search_origin = search_origin < 0 ? 0 : search_origin;"
-    assert_match(/for \(OnibiBytePos start = search_origin;/, search)
+    assert_equal 1, search.scan("exec_ctx.search_origin =").length
+    assert_includes search, "OnibiBytePos start = search_origin;"
+    assert_includes search, "int candidate_valid = onibi_search_candidate_origin("
+    assert_includes search, "exec_ctx.attempt_start = start;"
+    assert_includes search, "candidate_valid = onibi_search_candidate_next("
     refute_match(/exec_ctx\.search_origin\s*=\s*start/, search)
   end
 
