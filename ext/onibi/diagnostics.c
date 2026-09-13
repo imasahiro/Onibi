@@ -425,6 +425,8 @@ onibi_nullable_diagnostic_action(OnibiGActionOp code, uint16_t slot,
 			  0,	has_capture, capture, 0, 0};
 }
 
+static VALUE onibi_vector_diagnostics(VALUE self, VALUE scenario_value);
+
 static VALUE
 onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 {
@@ -432,6 +434,23 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     ID scenario = rb_to_id(scenario_value);
     if (scenario == rb_intern("action_operand_limits"))
 	return onibi_action_operand_diagnostics();
+    if (scenario == rb_intern("vector_self_append"))
+	return onibi_vector_diagnostics(self, ID2SYM(rb_intern("self_append")));
+    if (scenario == rb_intern("vector_slice_append"))
+	return onibi_vector_diagnostics(self,
+					ID2SYM(rb_intern("slice_append")));
+    if (scenario == rb_intern("vector_invalid_insert"))
+	return onibi_vector_diagnostics(self,
+					ID2SYM(rb_intern("invalid_insert")));
+    if (scenario == rb_intern("owned_vector_self_append"))
+	return onibi_vector_diagnostics(self,
+					ID2SYM(rb_intern("owned_self_append")));
+    if (scenario == rb_intern("owned_vector_slice_append"))
+	return onibi_vector_diagnostics(
+	    self, ID2SYM(rb_intern("owned_slice_append")));
+    if (scenario == rb_intern("owned_vector_invalid_insert"))
+	return onibi_vector_diagnostics(
+	    self, ID2SYM(rb_intern("owned_invalid_insert")));
     if (scenario == rb_intern("counter_value_overflow")) {
 	(void)onibi_counter_action(ONIBI_GA_TEST_COUNTER_GE, 0, 1,
 				   (long)UINT32_MAX + 1L);
@@ -1226,6 +1245,88 @@ onibi_compile_outcome_internal_diagnostics(VALUE self)
 	rb_raise(eRegexpError, "internal compile failure did not raise");
     rb_jump_tag(state);
     return Qnil;
+}
+
+typedef ONIBI_VECTOR(int) OnibiVectorDiagnostic;
+
+typedef struct {
+    OnibiVectorDiagnostic vector;
+    ID scenario;
+} OnibiVectorDiagnosticCall;
+
+static VALUE
+onibi_vector_diagnostic_body(VALUE opaque)
+{
+    OnibiVectorDiagnosticCall *call =
+	(OnibiVectorDiagnosticCall *)(uintptr_t)opaque;
+    if (call->scenario == rb_intern("self_append")) {
+	ONIBI_VECTOR_APPEND(call->vector.entries, call->vector.count,
+			    call->vector.capacity, int, call->vector.entries,
+			    call->vector.count, 4,
+			    "vector diagnostic allocation failed");
+    }
+    else if (call->scenario == rb_intern("owned_self_append")) {
+	ONIBI_OWNED_VECTOR_APPEND(&call->vector, int, call->vector.entries,
+				  call->vector.count, 4,
+				  "vector diagnostic allocation failed");
+    }
+    else if (call->scenario == rb_intern("slice_append")) {
+	ONIBI_VECTOR_APPEND(call->vector.entries, call->vector.count,
+			    call->vector.capacity, int,
+			    call->vector.entries + 1, 2, 4,
+			    "vector diagnostic allocation failed");
+    }
+    else if (call->scenario == rb_intern("owned_slice_append")) {
+	ONIBI_OWNED_VECTOR_APPEND(&call->vector, int, call->vector.entries + 1,
+				  2, 4, "vector diagnostic allocation failed");
+    }
+    else if (call->scenario == rb_intern("invalid_insert")) {
+	ONIBI_VECTOR_INSERT(call->vector.entries, call->vector.count,
+			    call->vector.capacity, int, call->vector.count + 1,
+			    0, 4, "vector diagnostic allocation failed");
+    }
+    else if (call->scenario == rb_intern("owned_invalid_insert")) {
+	ONIBI_OWNED_VECTOR_INSERT(&call->vector, int, call->vector.count + 1, 0,
+				  4, "vector diagnostic allocation failed");
+    }
+    else
+	rb_raise(rb_eArgError, "unknown vector diagnostic");
+
+    VALUE result = rb_ary_new_capa(call->vector.count);
+    for (size_t i = 0; i < call->vector.count; i++)
+	rb_ary_push(result, INT2NUM(call->vector.entries[i]));
+    return result;
+}
+
+static VALUE
+onibi_vector_diagnostic_cleanup(VALUE opaque)
+{
+    OnibiVectorDiagnosticCall *call =
+	(OnibiVectorDiagnosticCall *)(uintptr_t)opaque;
+    ONIBI_VECTOR_RELEASE(call->vector.entries, call->vector.count,
+			 call->vector.capacity);
+    return Qnil;
+}
+
+static VALUE
+onibi_vector_diagnostics(VALUE self, VALUE scenario_value)
+{
+    (void)self;
+    OnibiVectorDiagnosticCall call = {0};
+    ONIBI_VECTOR_INIT(call.vector.entries, call.vector.count,
+		      call.vector.capacity);
+    call.scenario = rb_to_id(scenario_value);
+    ONIBI_VECTOR_PUSH(call.vector.entries, call.vector.count,
+		      call.vector.capacity, int, 1, 4,
+		      "vector diagnostic allocation failed");
+    ONIBI_VECTOR_PUSH(call.vector.entries, call.vector.count,
+		      call.vector.capacity, int, 2, 4,
+		      "vector diagnostic allocation failed");
+    ONIBI_VECTOR_PUSH(call.vector.entries, call.vector.count,
+		      call.vector.capacity, int, 3, 4,
+		      "vector diagnostic allocation failed");
+    return rb_ensure(onibi_vector_diagnostic_body, (VALUE)(uintptr_t)&call,
+		     onibi_vector_diagnostic_cleanup, (VALUE)(uintptr_t)&call);
 }
 /* Diagnostic and compatibility payload adapters.  Ruby Hash records created
  * here are never canonical compiler or runtime state. */

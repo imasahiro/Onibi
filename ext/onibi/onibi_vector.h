@@ -1,6 +1,9 @@
 #ifndef ONIBI_VECTOR_H
 #define ONIBI_VECTOR_H
 
+/* Vector allocation and invariant errors use the Ruby extension API. */
+#include "ruby.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -15,9 +18,36 @@ static int onibi_owned_pointer_p(onibi_allocation_owner_t *owner,
 static void onibi_owned_transfer(onibi_allocation_owner_t *owner,
 				 void *pointer);
 
-/* Declare a typed vector without generating one implementation for each
- * element type.  A vector owns its entries.  An element can own more memory,
- * but its caller must release that memory before ONIBI_VECTOR_RELEASE. */
+/* Return 1 when the complete source range is inside destination storage, 0
+ * when the ranges do not overlap, and -1 for a partial overlap or overflow.
+ * Use integer addresses here.  Relational comparisons between pointers to
+ * different objects have undefined behavior in C. */
+static inline int
+onibi_vector_alias_offset(const void *destination, size_t capacity,
+			  size_t element_size, const void *source,
+			  size_t source_count, size_t *offset)
+{
+    if (source_count == 0 || !destination || !source) return 0;
+    if (element_size == 0 || capacity > SIZE_MAX / element_size ||
+	source_count > SIZE_MAX / element_size)
+	return -1;
+
+    size_t destination_bytes = capacity * element_size;
+    size_t source_bytes = source_count * element_size;
+    uintptr_t destination_address = (uintptr_t)destination;
+    uintptr_t source_address = (uintptr_t)source;
+    if (source_address < destination_address) return 0;
+    uintptr_t byte_offset = source_address - destination_address;
+    if (byte_offset >= destination_bytes || byte_offset > SIZE_MAX) return 0;
+    size_t offset_value = (size_t)byte_offset;
+    if (source_bytes > destination_bytes - offset_value) return -1;
+    *offset = offset_value;
+    return 1;
+}
+
+/* A vector owns its contiguous entry storage.  Vector operations copy entry
+ * values only.  Resources referenced by an entry remain caller-owned, and
+ * the caller must release them before ONIBI_VECTOR_RELEASE. */
 #define ONIBI_VECTOR(Type)                                                     \
     struct {                                                                   \
 	Type *entries;                                                         \
@@ -86,10 +116,26 @@ onibi_vector_next_capacity(size_t count, size_t capacity, size_t additional,
 			    SourceCount, Initial, Error)                       \
     do {                                                                       \
 	size_t onibi_vector_source_count_ = (SourceCount);                     \
+	const Type *onibi_vector_source_data_ = NULL;                          \
+	size_t onibi_vector_source_offset_ = 0;                                \
+	int onibi_vector_source_alias_ = 0;                                    \
+	if (onibi_vector_source_count_ != 0) {                                 \
+	    onibi_vector_source_data_ = (SourceData);                          \
+	    onibi_vector_source_alias_ = onibi_vector_alias_offset(            \
+		(Data), (Capacity), sizeof(Type), onibi_vector_source_data_,   \
+		onibi_vector_source_count_, &onibi_vector_source_offset_);     \
+	    if (onibi_vector_source_alias_ < 0)                                \
+		rb_raise(rb_eRuntimeError,                                     \
+			 "vector append source overlaps destination storage"); \
+	}                                                                      \
 	ONIBI_VECTOR_RESERVE((Data), (Count), (Capacity), Type,                \
 			     onibi_vector_source_count_, (Initial), (Error));  \
+	if (onibi_vector_source_alias_ > 0)                                    \
+	    onibi_vector_source_data_ =                                        \
+		(const Type *)((const unsigned char *)(Data) +                 \
+			       onibi_vector_source_offset_);                   \
 	if (onibi_vector_source_count_ != 0)                                   \
-	    memmove((Data) + (Count), (SourceData),                            \
+	    memmove((Data) + (Count), onibi_vector_source_data_,               \
 		    onibi_vector_source_count_ * sizeof(Type));                \
 	(Count) += onibi_vector_source_count_;                                 \
     } while (0)
@@ -98,7 +144,8 @@ onibi_vector_next_capacity(size_t count, size_t capacity, size_t additional,
 			    Initial, Error)                                    \
     do {                                                                       \
 	size_t onibi_vector_index_ = (Index);                                  \
-	if (onibi_vector_index_ > (Count)) onibi_vector_index_ = (Count);      \
+	if (onibi_vector_index_ > (Count))                                     \
+	    rb_raise(rb_eArgError, "vector insert index is out of range");     \
 	ONIBI_VECTOR_RESERVE((Data), (Count), (Capacity), Type, 1, (Initial),  \
 			     (Error));                                         \
 	memmove((Data) + onibi_vector_index_ + 1,                              \
@@ -141,12 +188,30 @@ onibi_vector_next_capacity(size_t count, size_t capacity, size_t additional,
 				  Initial, Error)                              \
     do {                                                                       \
 	size_t onibi_vector_source_count_ = (SourceCount);                     \
+	const Type *onibi_vector_source_data_ = NULL;                          \
+	size_t onibi_vector_source_offset_ = 0;                                \
+	int onibi_vector_source_alias_ = 0;                                    \
+	if (onibi_vector_source_count_ != 0) {                                 \
+	    onibi_vector_source_data_ = (SourceData);                          \
+	    onibi_vector_source_alias_ = onibi_vector_alias_offset(            \
+		(Destination)->entries, (Destination)->capacity, sizeof(Type), \
+		onibi_vector_source_data_, onibi_vector_source_count_,         \
+		&onibi_vector_source_offset_);                                 \
+	    if (onibi_vector_source_alias_ < 0)                                \
+		rb_raise(rb_eRuntimeError,                                     \
+			 "vector append source overlaps destination storage"); \
+	}                                                                      \
 	ONIBI_OWNED_VECTOR_RESERVE((Destination), Type,                        \
 				   onibi_vector_source_count_, (Initial),      \
 				   (Error));                                   \
+	if (onibi_vector_source_alias_ > 0)                                    \
+	    onibi_vector_source_data_ =                                        \
+		(const Type *)((const unsigned char *)(Destination)->entries + \
+			       onibi_vector_source_offset_);                   \
 	if (onibi_vector_source_count_ != 0)                                   \
 	    memmove((Destination)->entries + (Destination)->count,             \
-		    (SourceData), onibi_vector_source_count_ * sizeof(Type));  \
+		    onibi_vector_source_data_,                                 \
+		    onibi_vector_source_count_ * sizeof(Type));                \
 	(Destination)->count += onibi_vector_source_count_;                    \
     } while (0)
 
@@ -154,7 +219,7 @@ onibi_vector_next_capacity(size_t count, size_t capacity, size_t additional,
     do {                                                                       \
 	size_t onibi_vector_index_ = (Index);                                  \
 	if (onibi_vector_index_ > (Vector)->count)                             \
-	    onibi_vector_index_ = (Vector)->count;                             \
+	    rb_raise(rb_eArgError, "vector insert index is out of range");     \
 	ONIBI_OWNED_VECTOR_RESERVE((Vector), Type, 1, (Initial), (Error));     \
 	memmove((Vector)->entries + onibi_vector_index_ + 1,                   \
 		(Vector)->entries + onibi_vector_index_,                       \
