@@ -41,6 +41,15 @@ onibi_byte_slice(VALUE str, OnibiBytePos start, OnibiBytePos end)
     return rb_str_subseq(str, start, end - start);
 }
 
+static uint32_t
+onibi_public_capture_count(const onibi_regexp_t *obj)
+{
+    if (obj == NULL || NIL_P(obj->rseq) || !obj->rseq_view_valid ||
+	obj->rseq_view.header == NULL)
+	return 0;
+    return obj->rseq_view.header->capture_count;
+}
+
 static OnibiExecStatus
 onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 		     OnibiRawMatch *raw_match)
@@ -190,46 +199,57 @@ onibi_vm_search(VALUE self, VALUE str, OnibiBytePos search_origin,
     return NUM2INT(result);
 }
 
+typedef struct {
+    VALUE self;
+    VALUE str;
+    VALUE result;
+    uint32_t capture_count;
+    uint32_t num_regs;
+    OnibiBytePos *ranges;
+    OnibiBytePos *beg;
+    OnibiBytePos *end;
+} OnibiScanCall;
+
 static VALUE
-onibi_scan(VALUE self, VALUE str)
+onibi_scan_body(VALUE opaque)
 {
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    StringValue(str);
-    VALUE result = rb_ary_new();
-    uint32_t capture_count = (!NIL_P(obj->rseq) && obj->rseq_view_valid)
-				 ? obj->rseq_view.header->capture_count
-				 : 0;
-    VALUE plain_subject = capture_count > 0 ? rb_str_dup(str) : str;
+    OnibiScanCall *call = (OnibiScanCall *)(uintptr_t)opaque;
+    VALUE str = call->str;
+    OnibiBytePos *beg = call->beg;
+    OnibiBytePos *end = call->end;
     OnibiBytePos origin = 0;
+
     for (;;) {
-	OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
-	OnibiExecStatus status = onibi_vm_search(self, str, origin, &raw_match);
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = call->num_regs,
+				   .beg = call->beg,
+				   .end = call->end};
+	OnibiExecStatus status =
+	    onibi_vm_search(call->self, str, origin, &raw_match);
 	if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
 	    rb_raise(eRegexpError, "Onibi execution failed");
 	if (status == ONIBI_EXEC_STATUS_FALLBACK) {
 	    onibi_regexp_t *obj;
-	    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-	    VALUE plain = rb_str_dup(str);
+	    TypedData_Get_Struct(call->self, onibi_regexp_t, &onibi_type, obj);
+	    VALUE plain = rb_str_dup(call->str);
 	    return rb_funcall(plain, id_scan, 1, obj->regexp);
 	}
 	if (status == ONIBI_EXEC_STATUS_NO_MATCH) break;
-	if (capture_count == 0) {
-	    rb_ary_push(result, onibi_byte_slice(str, raw_match.begin_byte,
-						 raw_match.end_byte));
+	if (call->capture_count == 0) {
+	    rb_ary_push(call->result,
+			onibi_byte_slice(str, raw_match.begin_byte,
+					 raw_match.end_byte));
 	}
 	else {
-	    /* VM selects the candidate.  MRI only materializes its capture
-	     * values until direct RMatch construction is available. */
-	    long character_start = onibi_ruby_character_position(
-		plain_subject, raw_match.begin_byte);
-	    VALUE match = rb_funcall(obj->regexp, id_match, 2, plain_subject,
-				     LONG2NUM(character_start));
-	    VALUE captures = rb_ary_new_capa(capture_count);
-	    for (uint32_t i = 0; i < capture_count; i++)
-		rb_ary_push(captures,
-			    rb_funcall(match, id_aref, 1, UINT2NUM(i + 1U)));
-	    rb_ary_push(result, captures);
+	    VALUE captures = rb_ary_new_capa(call->capture_count);
+	    for (uint32_t i = 1; i <= call->capture_count; i++) {
+		VALUE capture = (beg[i] < 0 || end[i] < 0)
+				    ? Qnil
+				    : onibi_byte_slice(str, beg[i], end[i]);
+		rb_ary_push(captures, capture);
+	    }
+	    rb_ary_push(call->result, captures);
 	}
 	if (raw_match.end_byte > raw_match.begin_byte)
 	    origin = raw_match.end_byte;
@@ -241,7 +261,47 @@ onibi_scan(VALUE self, VALUE str)
 				   rb_enc_get(str));
 	}
     }
-    return result;
+    return call->result;
+}
+
+static VALUE
+onibi_scan_ensure_cleanup(VALUE opaque)
+{
+    OnibiScanCall *call = (OnibiScanCall *)(uintptr_t)opaque;
+    ruby_xfree(call->ranges);
+    call->ranges = NULL;
+    call->beg = NULL;
+    call->end = NULL;
+    return Qnil;
+}
+
+static VALUE
+onibi_scan(VALUE self, VALUE str)
+{
+    onibi_regexp_t *obj;
+    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+    StringValue(str);
+    uint32_t capture_count = onibi_public_capture_count(obj);
+    if (capture_count == UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi capture count is too large");
+    uint32_t num_regs = capture_count + 1U;
+
+    if ((size_t)num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    size_t range_bytes = (size_t)num_regs * sizeof(OnibiBytePos) * 2U;
+
+    OnibiScanCall call = {.self = self,
+			  .str = str,
+			  .result = rb_ary_new(),
+			  .capture_count = capture_count,
+			  .num_regs = num_regs,
+			  .ranges = ruby_xmalloc(range_bytes),
+			  .beg = NULL,
+			  .end = NULL};
+    call.beg = call.ranges;
+    call.end = call.ranges + num_regs;
+    return rb_ensure(onibi_scan_body, (VALUE)(uintptr_t)&call,
+		     onibi_scan_ensure_cleanup, (VALUE)(uintptr_t)&call);
 }
 static VALUE
 onibi_case_equal(VALUE self, VALUE other)
