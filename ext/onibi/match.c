@@ -1,3 +1,61 @@
+/* The search loop receives byte offsets, but a multibyte subject has only
+ * character boundaries as valid candidate starts.  The input eligibility
+ * gate rejects broken multibyte strings before this helper runs. */
+static int
+onibi_search_candidate_origin(VALUE str, OnibiBytePos *origin,
+			      rb_encoding *encoding,
+			      OnibiEncodingMode encoding_mode)
+{
+    OnibiBytePos length = RSTRING_LEN(str);
+    if (*origin > length) return 0;
+    if (*origin == length || encoding_mode == ONIBI_ENC_ASCII_7BIT ||
+	encoding_mode == ONIBI_ENC_SINGLE_BYTE ||
+	onibi_character_boundary(str, *origin))
+	return 1;
+
+    const char *begin = RSTRING_PTR(str);
+    const char *current = begin + *origin;
+    const char *end = begin + length;
+    const char *next = rb_enc_right_char_head(begin, current, end, encoding);
+    if (next > current && next <= end) {
+	*origin = (OnibiBytePos)(next - begin);
+	return 1;
+    }
+
+    /* This is unreachable after onibi_vm_input_eligible accepted the input.
+     * Do not enter an interior byte if an encoding callback violates that
+     * contract. */
+    return 0;
+}
+
+static int
+onibi_search_candidate_next(VALUE str, OnibiBytePos *start,
+			    rb_encoding *encoding,
+			    OnibiEncodingMode encoding_mode)
+{
+    OnibiBytePos length = RSTRING_LEN(str);
+    if (*start >= length) return 0;
+    if (encoding_mode == ONIBI_ENC_ASCII_7BIT ||
+	encoding_mode == ONIBI_ENC_SINGLE_BYTE) {
+	*start += 1;
+	return 1;
+    }
+
+    OnigCodePoint codepoint;
+    long width;
+    if (onibi_rseq_decode_character(str, *start, encoding, encoding_mode,
+				    &codepoint, &width) &&
+	width > 0) {
+	*start += width;
+	return 1;
+    }
+
+    /* Broken input is rejected before native execution.  Skip the rest if an
+     * encoding callback still fails, so this loop never visits an interior
+     * byte in a character encoding. */
+    return 0;
+}
+
 static void
 onibi_frontier_release(OnibiFrontier *frontier)
 {
@@ -129,8 +187,12 @@ onibi_vm_search_body(VALUE self, VALUE str, OnibiBytePos search_origin,
 	if (obj->rseq_view.header->exec_kind != ONIBI_EXEC_REGULAR)
 	    onibi_semantic_live_captures_prepare(&exec_ctx.semantic_arena,
 						 &obj->rseq_view);
-	for (OnibiBytePos start = search_origin; start <= RSTRING_LEN(str);
-	     start++) {
+	OnibiBytePos start = search_origin;
+	int candidate_valid = onibi_search_candidate_origin(
+	    str, &start, exec_ctx.encoding, exec_ctx.encoding_mode);
+	for (; candidate_valid;
+	     candidate_valid = onibi_search_candidate_next(
+		 str, &start, exec_ctx.encoding, exec_ctx.encoding_mode)) {
 	    exec_ctx.attempt_start = start;
 	    exec_ctx.reported_start = start;
 	    exec_ctx.current_position = start;
