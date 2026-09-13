@@ -431,6 +431,7 @@ typedef struct {
     OnibiLoweringWork *result_work;
     int failure_phase;
     int *failure_fired;
+    OnibiCompileOutcome *compile_outcome;
 } OnibiRSeqLowerOwner;
 typedef struct {
     OnibiRSeqLowerOwner *owner;
@@ -445,6 +446,14 @@ onibi_rseq_lower_fail_if(OnibiRSeqLowerOwner *owner, int phase)
 	rb_raise(eRegexpError, "injected RSeq lowering failure at pass %d",
 		 phase);
     }
+}
+
+static void
+onibi_rseq_mark_unsupported(OnibiRSeqLowerOwner *owner,
+			    OnibiUnsupportedReason reason)
+{
+    if (owner && owner->compile_outcome)
+	onibi_compile_outcome_unsupported(owner->compile_outcome, reason);
 }
 
 static void
@@ -977,13 +986,15 @@ static VALUE
 onibi_rseq_lower_with_work(VALUE compiled, int failure_phase,
 			   int *failure_fired,
 			   OnibiAllocationAccounting *accounting,
-			   OnibiLoweringWork *result_work)
+			   OnibiLoweringWork *result_work,
+			   OnibiCompileOutcome *compile_outcome)
 {
     OnibiRSeqLowerOwner owner;
     memset(&owner, 0, sizeof(owner));
     onibi_allocation_owner_init(&owner.allocations, accounting);
     owner.failure_phase = failure_phase;
     owner.failure_fired = failure_fired;
+    owner.compile_outcome = compile_outcome;
     owner.result_work = result_work;
     owner.allocations.failure_phase = failure_phase;
     owner.allocations.failure_fired = failure_fired;
@@ -998,7 +1009,7 @@ onibi_rseq_lower_with_failure(VALUE compiled, int failure_phase,
 			      OnibiAllocationAccounting *accounting)
 {
     return onibi_rseq_lower_with_work(compiled, failure_phase, failure_fired,
-				      accounting, NULL);
+				      accounting, NULL, NULL);
 }
 
 static VALUE
@@ -1016,7 +1027,38 @@ typedef struct {
     VALUE options;
     const OnibiTokenVector *tokens;
     OnibiLoweringWork *lowering_work;
+    OnibiCompileOutcome *compile_outcome;
 } OnibiProgramArgs;
+
+static int
+onibi_tokens_have_nested_possessive(const OnibiTokenVector *tokens)
+{
+    for (size_t i = 1; i < tokens->count; i++) {
+	const OnibiTokenRecord *previous = &tokens->items[i - 1];
+	const OnibiTokenRecord *current = &tokens->items[i];
+	if (previous->kind == ONIBI_TOKEN_QUANTIFIER &&
+	    current->kind == ONIBI_TOKEN_QUANTIFIER &&
+	    (current->byte == '+' || current->byte == '*'))
+	    return 1;
+    }
+    return 0;
+}
+
+/* Apply the one compatibility decision used by initialization. A protected
+ * failure can select MRI only when the compiler marked it unsupported. */
+static int
+onibi_compile_outcome_select_fallback(onibi_regexp_t *obj,
+				      const OnibiCompileOutcome *outcome,
+				      int program_state)
+{
+    if (outcome->error_kind != ONIBI_COMPILE_UNSUPPORTED) return 0;
+    if (program_state) rb_set_errinfo(Qnil);
+    obj->compile_error_kind = outcome->error_kind;
+    obj->unsupported_reason = outcome->unsupported_reason;
+    obj->fallback_reason = outcome->unsupported_reason;
+    obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
+    return 1;
+}
 
 typedef struct {
     VALUE source;
@@ -1040,9 +1082,10 @@ onibi_build_program(VALUE argument)
     VALUE options = args->options;
     const OnibiTokenVector *tokens = args->tokens;
     VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
-    VALUE compiled = onibi_compiler_compile(Qnil, parsed);
-    VALUE rseq = onibi_rseq_lower_with_work(compiled, 0, NULL, NULL,
-					    args->lowering_work);
+    VALUE compiled =
+	onibi_compiler_compile_with_outcome(parsed, args->compile_outcome);
+    VALUE rseq = onibi_rseq_lower_with_work(
+	compiled, 0, NULL, NULL, args->lowering_work, args->compile_outcome);
     onibi_ast_arena_free(&onibi_parsed_get(parsed)->arena);
     return rb_ary_new_from_args(2, parsed, rseq);
 }
@@ -1054,7 +1097,10 @@ onibi_parse_program(VALUE argument)
     VALUE source = args->source;
     VALUE options = args->options;
     const OnibiTokenVector *tokens = args->tokens;
-    return onibi_parser_parse_internal(source, options, tokens);
+    VALUE parsed = onibi_parser_parse_internal(source, options, tokens);
+    onibi_compile_outcome_unsupported(args->compile_outcome,
+				      ONIBI_UNSUPPORTED_META_ESCAPE);
+    return parsed;
 }
 
 static VALUE
@@ -1436,7 +1482,8 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	opts |= 16;
 	obj->options = opts;
     }
-    OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), NULL, NULL};
+    OnibiProgramArgs regexp_args = {regexp_source, INT2NUM(opts), NULL, NULL,
+				    NULL};
     int regexp_state = 0;
     obj->regexp = rb_protect(onibi_make_mri_regexp,
 			     (VALUE)(uintptr_t)&regexp_args, &regexp_state);
@@ -1454,17 +1501,28 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     VALUE compilation_source = rb_str_dup(source);
     rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));
+    OnibiCompileOutcome compile_outcome = {ONIBI_COMPILE_OK,
+					   ONIBI_UNSUPPORTED_NONE};
     OnibiProgramArgs program_args = {compilation_source, INT2NUM(opts), &tokens,
-				     &obj->lowering_work};
+				     &obj->lowering_work, &compile_outcome};
     int program_state = 0;
     VALUE parsed = Qnil;
     int parse_only = (obj->feature_flags & ONIBI_FEATURE_META_ESCAPE) != 0;
-    VALUE program =
-	parse_only
-	    ? rb_protect(onibi_parse_program, (VALUE)(uintptr_t)&program_args,
-			 &program_state)
-	    : rb_protect(onibi_build_program, (VALUE)(uintptr_t)&program_args,
-			 &program_state);
+    VALUE program;
+    if (onibi_tokens_have_nested_possessive(&tokens)) {
+	onibi_compile_outcome_unsupported(&compile_outcome,
+					  ONIBI_UNSUPPORTED_POSSESSIVE);
+	program_state = 1;
+	program = Qnil;
+    }
+    else {
+	program =
+	    parse_only
+		? rb_protect(onibi_parse_program,
+			     (VALUE)(uintptr_t)&program_args, &program_state)
+		: rb_protect(onibi_build_program,
+			     (VALUE)(uintptr_t)&program_args, &program_state);
+    }
     if (!program_state) {
 	parsed = parse_only ? program : rb_ary_entry(program, 0);
 	obj->rseq = parse_only ? Qnil : rb_ary_entry(program, 1);
@@ -1486,10 +1544,11 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
 	    if (obj->rseq_view_valid) onibi_rseq_view_prepare(&obj->rseq_view);
 	}
     }
-    else {
-	rb_set_errinfo(Qnil);
-	/* Keep a failed lowering on the dynamic MRI boundary. */
-	obj->execution_flags |= ONIBI_FEATURE_DYNAMIC;
+    if (!onibi_compile_outcome_select_fallback(obj, &compile_outcome,
+					       program_state) &&
+	program_state) {
+	onibi_token_vector_free(&tokens);
+	rb_jump_tag(program_state);
     }
     onibi_token_vector_free(&tokens);
     if (ONIBI_FEATURE_P(obj, ONIBI_FEATURE_SUBROUTINE) && !NIL_P(obj->rseq))
