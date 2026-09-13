@@ -1547,6 +1547,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     if (!onibi_compile_outcome_select_fallback(obj, &compile_outcome,
 					       program_state) &&
 	program_state) {
+	onibi_token_vector_free(&tokens);
 	rb_jump_tag(program_state);
     }
     onibi_token_vector_free(&tokens);
