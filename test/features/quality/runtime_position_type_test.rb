@@ -7,10 +7,11 @@ class RuntimePositionTypeTest < Minitest::Test
 
   def test_position_and_repeat_aliases_keep_their_contracts
     common = source("onibi_common.c")
+    execution = source("onibi_exec_internal.h")
     ir = source("onibi_ir.h")
 
-    assert_includes common, "typedef OnigPosition OnibiBytePos;"
-    assert_includes common, "typedef OnigPosition OnibiRegisterValue;"
+    assert_includes execution, "typedef OnigPosition OnibiBytePos;"
+    assert_includes execution, "typedef OnigPosition OnibiRegisterValue;"
     assert_includes ir, "typedef long OnibiRepeatCount;"
     assert_includes common, "sizeof(OnibiBytePos) == sizeof(OnigPosition)"
     assert_includes common, "sizeof(OnibiRegisterValue) == sizeof(OnigPosition)"
@@ -19,7 +20,7 @@ class RuntimePositionTypeTest < Minitest::Test
   end
 
   def test_execution_context_uses_byte_positions
-    context = declaration(source("onibi_common.c"), "OnibiExecCtx")
+    context = declaration(source("onibi_exec_internal.h"), "OnibiExecCtx")
 
     refute_nil context
     %w[search_origin attempt_start reported_start current_position].each do |field|
@@ -63,13 +64,14 @@ class RuntimePositionTypeTest < Minitest::Test
 
   def test_capture_arrays_use_byte_positions
     common = source("onibi_common.c")
+    execution = source("onibi_exec_internal.h")
     dynamic = source("exec_dynamic.c")
     diagnostics = source("diagnostics.c")
     runtime = source("rseq_runtime.c")
     match = source("match.c")
-    captures = [common, dynamic, diagnostics, runtime, match].join("\n")
+    captures = [common, execution, dynamic, diagnostics, runtime, match].join("\n")
 
-    raw_match = common[/typedef struct OnibiRawMatch \{.*?\} OnibiRawMatch;/m]
+    raw_match = execution[/typedef struct OnibiRawMatch \{.*?\} OnibiRawMatch;/m]
 
     refute_nil raw_match
     assert_includes raw_match, "OnibiBytePos begin_byte;"
@@ -107,14 +109,13 @@ class RuntimePositionTypeTest < Minitest::Test
 
   def test_byte_lengths_and_ruby_character_indexes_keep_long
     dynamic = source("exec_dynamic.c")
-    match = source("match.c")
     rseq = source("rseq.c")
     unicode = source("unicode.c")
 
     assert_match(/long\s+\*width/, dynamic)
     assert_includes dynamic, "long step_width"
     assert_match(/long\s+character(?:_length)?/, rseq)
-    assert_includes match, "long character_start"
+    assert_includes rseq, "long character;"
     assert_match(/static long\s+onibi_grapheme_width\(VALUE str, OnibiBytePos pos\)/,
                  unicode)
   end

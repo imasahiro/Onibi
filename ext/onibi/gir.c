@@ -1,5 +1,6 @@
 #include "onibi_ast_internal.h"
 #include "onibi_gir_internal.h"
+#include "onibi_nfa_internal.h"
 
 /* GIR builder, fragment records, and mutable graph construction. */
 typedef struct {
@@ -17,15 +18,15 @@ typedef struct {
 } OnibiGAction;
 typedef ONIBI_VECTOR(OnibiGAction) OnibiGActionVector;
 typedef struct {
-    OnibiIdVector starts;
-    OnibiIdVector exits;
+    OnibiNfaStateIdVector starts;
+    OnibiNfaStateIdVector exits;
     OnibiGActionVector start_actions;
     OnibiGActionVector pending_actions;
     int nullable;
     int lazy;
 } onibi_fragment_t;
 typedef struct {
-    OnibiStateId state;
+    OnibiNfaStateId state;
     OnibiGActionVector actions;
 } OnibiGuardEntry;
 typedef ONIBI_VECTOR(OnibiGuardEntry) OnibiGuardVector;
@@ -145,15 +146,6 @@ typedef struct {
 ONIBI_VECTOR_DEFINE(onibi_id_vector, OnibiIdVector, OnibiStateId, 8,
 		    "GIR state vector is too large")
 
-static void
-onibi_id_vector_single(OnibiIdVector *vector, OnibiStateId value,
-		       onibi_allocation_owner_t *owner)
-{
-    onibi_id_vector_init(vector);
-    onibi_id_vector_bind(vector, owner);
-    onibi_id_vector_push(vector, value);
-}
-
 ONIBI_VECTOR_DEFINE(onibi_g_action_vector, OnibiGActionVector, OnibiGAction, 8,
 		    "GIR action vector is too large")
 
@@ -197,7 +189,7 @@ onibi_guard_vector_bind(OnibiGuardVector *vector,
 
 static const OnibiGuardEntry *
 onibi_guard_vector_find_entry(const OnibiGuardVector *vector,
-			      OnibiStateId state)
+			      OnibiNfaStateId state)
 {
     for (size_t i = 0; i < vector->count; i++)
 	if (vector->entries[i].state == state) return &vector->entries[i];
@@ -205,7 +197,7 @@ onibi_guard_vector_find_entry(const OnibiGuardVector *vector,
 }
 
 static void
-onibi_guard_vector_add(OnibiGuardVector *vector, OnibiStateId state,
+onibi_guard_vector_add(OnibiGuardVector *vector, OnibiNfaStateId state,
 		       const OnibiGActionVector *actions)
 {
     for (size_t i = 0; i < vector->count; i++) {
@@ -1742,10 +1734,10 @@ static onibi_fragment_t
 onibi_fragment_empty(onibi_gir_builder_t *builder)
 {
     onibi_fragment_t fragment;
-    onibi_id_vector_init(&fragment.starts);
-    onibi_id_vector_bind(&fragment.starts, builder->allocation_owner);
-    onibi_id_vector_init(&fragment.exits);
-    onibi_id_vector_bind(&fragment.exits, builder->allocation_owner);
+    onibi_nfa_state_id_vector_init(&fragment.starts);
+    onibi_nfa_state_id_vector_bind(&fragment.starts, builder->allocation_owner);
+    onibi_nfa_state_id_vector_init(&fragment.exits);
+    onibi_nfa_state_id_vector_bind(&fragment.exits, builder->allocation_owner);
     onibi_g_action_vector_init(&fragment.start_actions);
     onibi_g_action_vector_bind(&fragment.start_actions,
 			       builder->allocation_owner);
@@ -1759,7 +1751,7 @@ onibi_fragment_empty(onibi_gir_builder_t *builder)
 
 static void
 onibi_add_exit_guard_fragment(onibi_gir_builder_t *builder,
-			      const OnibiIdVector *exits,
+			      const OnibiNfaStateIdVector *exits,
 			      const OnibiGActionVector *actions)
 {
     for (size_t i = 0; i < exits->count; i++) {
