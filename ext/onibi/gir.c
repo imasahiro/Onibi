@@ -1,3 +1,6 @@
+#include "onibi_ast_internal.h"
+#include "onibi_gir_internal.h"
+
 /* GIR builder, fragment records, and mutable graph construction. */
 typedef struct {
     OnibiGActionOp code;

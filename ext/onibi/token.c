@@ -1,3 +1,5 @@
+#include "onibi_ast_internal.h"
+
 /* These sets are lexer grammar, not user data.  Keep them as direct
  * predicates so tokenization does not call a string-search routine for each
  * source byte. */
@@ -106,7 +108,7 @@ typedef struct {
     unsigned char negative;
 } OnibiTokenRecord;
 
-typedef struct {
+typedef struct OnibiTokenVector {
     OnibiTokenRecord *items;
     size_t count;
     size_t capacity;

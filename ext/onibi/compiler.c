@@ -1,3 +1,7 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_gir_internal.h"
+
 static onibi_fragment_t onibi_compile_node(OnibiAstId node_id,
 					   onibi_gir_builder_t *builder);
 

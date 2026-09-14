@@ -1,3 +1,9 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_rseq_internal.h"
+#include "onibi_ruby_api_internal.h"
+
 static uint8_t
 onibi_g_action_flags(const OnibiGAction *action)
 {

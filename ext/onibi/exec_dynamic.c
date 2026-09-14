@@ -1,3 +1,7 @@
+#include "onibi_encoding_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_rseq_internal.h"
+
 static int
 onibi_ascii_literal_equal(const unsigned char *left, const unsigned char *right,
 			  size_t length, int fold)

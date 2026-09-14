@@ -1,3 +1,6 @@
+#include "onibi_ast_internal.h"
+#include "onibi_gir_internal.h"
+
 /* Tagged epsilon-NFA intermediate representation. */
 typedef enum {
     ONIBI_NFA_EPSILON = 0,
