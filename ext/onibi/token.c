@@ -297,6 +297,12 @@ typedef struct {
     int has_capture_number;
 } OnibiEscapeRecognition;
 
+typedef struct {
+    OnibiTokenKind kind;
+    long name_start;
+    long name_length;
+} OnibiClassRecognition;
+
 static int
 onibi_group_start_p(OnibiTokenKind kind)
 {
@@ -660,6 +666,74 @@ onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
     return 1;
 }
 
+/* Recognize one complete character-class structural token.  This helper
+ * owns class state transitions and consumes POSIX class delimiters. */
+static int
+onibi_token_scan_class(OnibiTokenScanState *scan, long *cursor,
+		       OnibiTokenKind current_kind, unsigned char byte,
+		       OnibiClassRecognition *recognition)
+{
+    const char *source = scan->bytes;
+    long i = *cursor;
+    recognition->kind = ONIBI_TOKEN_LITERAL;
+    recognition->name_start = -1;
+    recognition->name_length = 0;
+    if (scan->in_class && byte == '[' && i + 2 < scan->length &&
+	source[i + 1] == ':') {
+	long close = i + 2;
+	while (close + 1 < scan->length &&
+	       !(source[close] == ':' && source[close + 1] == ']'))
+	    close++;
+	if (close + 1 < scan->length) {
+	    recognition->kind = ONIBI_TOKEN_POSIX_CLASS;
+	    recognition->name_start = i + 2;
+	    recognition->name_length = close - (i + 2);
+	    *cursor = close + 1;
+	    return 1;
+	}
+    }
+    if (byte == '[' && !scan->in_class) {
+	recognition->kind = ONIBI_TOKEN_CLASS_START;
+	scan->in_class = 1;
+	scan->class_depth = 1;
+	scan->class_body_start = i + 1;
+	return 1;
+    }
+    if (current_kind == ONIBI_TOKEN_LITERAL && byte == '[' && scan->in_class) {
+	recognition->kind = ONIBI_TOKEN_CLASS_START;
+	if (scan->class_depth >= (long)(sizeof(scan->class_body_starts) /
+					sizeof(scan->class_body_starts[0])))
+	    rb_raise(eRegexpError,
+		     "regexp character class nesting is too deep");
+	scan->class_body_starts[scan->class_depth - 1] = scan->class_body_start;
+	scan->class_depth++;
+	scan->class_body_start = i + 1;
+	return 1;
+    }
+    if (byte == ']' && scan->in_class && scan->class_depth > 1) {
+	recognition->kind = ONIBI_TOKEN_CLASS_END;
+	scan->class_depth--;
+	scan->class_body_start = scan->class_body_starts[scan->class_depth - 1];
+	return 1;
+    }
+    if (byte == ']' && scan->in_class) {
+	recognition->kind = ONIBI_TOKEN_CLASS_END;
+	scan->in_class = 0;
+	scan->class_depth = 0;
+	return 1;
+    }
+    if (scan->in_class) {
+	if (byte == '-' && i > scan->class_body_start)
+	    recognition->kind = ONIBI_TOKEN_CLASS_RANGE;
+	else if (byte == '^' && i == scan->class_body_start)
+	    recognition->kind = ONIBI_TOKEN_CLASS_NEGATE;
+	else
+	    return 0;
+	return 1;
+    }
+    return 0;
+}
+
 /* Pair delimiters once, after tokenization.  Parser recursion only reads the
  * recorded index and never scans a token range for its closing delimiter. */
 static void
@@ -758,19 +832,11 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 	    option_negative = recognition.option_negative;
 	    option_scope_x = recognition.option_scope_x;
 	}
-	if (scan.in_class && byte == '[' && i + 2 < RSTRING_LEN(src) &&
-	    RSTRING_PTR(src)[i + 1] == ':') {
-	    long close = i + 2;
-	    while (close + 1 < RSTRING_LEN(src) &&
-		   !(RSTRING_PTR(src)[close] == ':' &&
-		     RSTRING_PTR(src)[close + 1] == ']'))
-		close++;
-	    if (close + 1 < RSTRING_LEN(src)) {
-		kind = ONIBI_TOKEN_POSIX_CLASS;
-		name_start = i + 2;
-		name_length = close - (i + 2);
-		i = close + 1;
-	    }
+	OnibiClassRecognition class_recognition;
+	if (onibi_token_scan_class(&scan, &i, kind, byte, &class_recognition)) {
+	    kind = class_recognition.kind;
+	    name_start = class_recognition.name_start;
+	    name_length = class_recognition.name_length;
 	}
 	if (byte == '\\') {
 	    OnibiEscapeRecognition escape;
@@ -784,41 +850,7 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		has_capture_number = escape.has_capture_number;
 	    }
 	}
-	else if (byte == '[' && !scan.in_class) {
-	    kind = ONIBI_TOKEN_CLASS_START;
-	    scan.in_class = 1;
-	    scan.class_depth = 1;
-	    scan.class_body_start = i + 1;
-	}
-	else if (kind == ONIBI_TOKEN_LITERAL && byte == '[' && scan.in_class) {
-	    kind = ONIBI_TOKEN_CLASS_START;
-	    if (scan.class_depth >= (long)(sizeof(scan.class_body_starts) /
-					   sizeof(scan.class_body_starts[0])))
-		rb_raise(eRegexpError,
-			 "regexp character class nesting is too deep");
-	    scan.class_body_starts[scan.class_depth - 1] =
-		scan.class_body_start;
-	    scan.class_depth++;
-	    scan.class_body_start = i + 1;
-	}
-	else if (byte == ']' && scan.in_class && scan.class_depth > 1) {
-	    kind = ONIBI_TOKEN_CLASS_END;
-	    scan.class_depth--;
-	    scan.class_body_start =
-		scan.class_body_starts[scan.class_depth - 1];
-	}
-	else if (byte == ']' && scan.in_class) {
-	    kind = ONIBI_TOKEN_CLASS_END;
-	    scan.in_class = 0;
-	    scan.class_depth = 0;
-	}
-	else if (scan.in_class) {
-	    if (byte == '-' && i > scan.class_body_start)
-		kind = ONIBI_TOKEN_CLASS_RANGE;
-	    else if (byte == '^' && i == scan.class_body_start)
-		kind = ONIBI_TOKEN_CLASS_NEGATE;
-	}
-	else if (byte == '|')
+	else if (!scan.in_class && byte == '|')
 	    kind = ONIBI_TOKEN_ALTERNATION;
 	else if (kind == ONIBI_TOKEN_LITERAL && byte == '(')
 	    kind = ONIBI_TOKEN_GROUP_START;
