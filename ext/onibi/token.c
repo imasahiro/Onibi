@@ -287,6 +287,16 @@ typedef struct {
     int option_scope_x;
 } OnibiTokenRecognition;
 
+typedef struct {
+    OnibiTokenKind kind;
+    unsigned char byte;
+    OnibiTokenSlice literal_slice;
+    long name_start;
+    long name_length;
+    long capture_number;
+    int has_capture_number;
+} OnibiEscapeRecognition;
+
 static int
 onibi_group_start_p(OnibiTokenKind kind)
 {
@@ -442,6 +452,214 @@ onibi_token_scan_group(OnibiTokenScanState *scan, long *cursor,
     return 0;
 }
 
+/* Recognize one complete escape token.  This includes named and numeric
+ * references, byte decoding, meta/control forms, properties, and anchors.
+ * The helper owns the cursor advance so no escape prefix is re-scanned by
+ * the outer tokenizer. */
+static int
+onibi_token_scan_escape(OnibiTokenScanState *scan, long *cursor,
+			OnibiTokenVector *tokens,
+			OnibiEscapeRecognition *recognition)
+{
+    const char *source = scan->bytes;
+    long i = *cursor;
+    if (i >= scan->length || source[i] != '\\') return 0;
+
+    memset(recognition, 0, sizeof(*recognition));
+    recognition->kind = ONIBI_TOKEN_LITERAL;
+    recognition->byte = '\\';
+    recognition->name_start = -1;
+    if (!scan->in_class && i + 3 < scan->length && source[i + 1] == 'k' &&
+	source[i + 2] == '<') {
+	long close = i + 3;
+	while (close < scan->length && source[close] != '>')
+	    close++;
+	if (close < scan->length) {
+	    recognition->kind = ONIBI_TOKEN_BACKREF;
+	    recognition->byte = 'k';
+	    recognition->name_start = i + 3;
+	    recognition->name_length = close - (i + 3);
+	    *cursor = close;
+	    return 1;
+	}
+    }
+    if (!scan->in_class && i + 2 < scan->length && source[i + 1] == 'g' &&
+	source[i + 2] == '<') {
+	long close = i + 3;
+	while (close < scan->length && source[close] != '>')
+	    close++;
+	if (close < scan->length) {
+	    recognition->kind = ONIBI_TOKEN_SUBROUTINE;
+	    recognition->byte = 'g';
+	    recognition->name_start = i + 3;
+	    recognition->name_length = close - (i + 3);
+	    *cursor = close;
+	    return 1;
+	}
+    }
+    if (i + 2 < scan->length &&
+	(source[i + 1] == 'M' || source[i + 1] == 'C') &&
+	source[i + 2] == '-') {
+	if (source[i + 1] == 'C' && i + 3 < scan->length) {
+	    recognition->byte = (unsigned char)source[i + 3] & 0x1f;
+	    i += 3;
+	}
+	else {
+	    recognition->kind = ONIBI_TOKEN_META_ESCAPE;
+	    recognition->byte = (unsigned char)source[i + 1];
+	    i += 2;
+	}
+	*cursor = i;
+	return 1;
+    }
+    if (i + 1 >= scan->length) return 0;
+
+    unsigned char escaped = (unsigned char)source[i + 1];
+    int hex_literal = 0;
+    int octal_literal = 0;
+    recognition->byte = escaped;
+    if (escaped == 'c' && i + 2 < scan->length) {
+	recognition->byte = (unsigned char)source[i + 2] & 0x1f;
+	i += 2;
+    }
+    if (escaped == 'x' && i + 3 < scan->length) {
+	int hi = onibi_hex_digit((unsigned char)source[i + 2]);
+	int lo = onibi_hex_digit((unsigned char)source[i + 3]);
+	if (hi >= 0 && lo >= 0) {
+	    unsigned char decoded_byte = (unsigned char)((hi << 4) | lo);
+	    size_t decoded_offset = tokens->bytes_count;
+	    size_t decoded_length = 1;
+	    (void)onibi_token_vector_copy(tokens, (const char *)&decoded_byte,
+					  1);
+	    recognition->byte = decoded_byte;
+	    i += 3;
+	    hex_literal = 1;
+	    while (i + 4 < scan->length && source[i + 1] == '\\' &&
+		   source[i + 2] == 'x') {
+		int next_hi = onibi_hex_digit((unsigned char)source[i + 3]);
+		int next_lo = onibi_hex_digit((unsigned char)source[i + 4]);
+		if (next_hi < 0 || next_lo < 0) break;
+		unsigned char next_byte =
+		    (unsigned char)((next_hi << 4) | next_lo);
+		(void)onibi_token_vector_copy(tokens, (const char *)&next_byte,
+					      1);
+		decoded_length++;
+		i += 4;
+	    }
+	    if (decoded_length > 1)
+		recognition->literal_slice =
+		    (OnibiTokenSlice){decoded_offset, decoded_length, 1};
+	}
+    }
+    /* Three octal digits form one byte.  Resolve this form before the
+     * numeric backreference rule. */
+    int three_digit_octal = escaped >= '1' && escaped <= '7' &&
+			    i + 2 < scan->length && source[i + 2] >= '0' &&
+			    source[i + 2] <= '7' && i + 3 < scan->length &&
+			    source[i + 3] >= '0' && source[i + 3] <= '7';
+    if (!three_digit_octal && escaped >= '1' && escaped <= '9' &&
+	i + 1 < scan->length && source[i + 1] >= '0' && source[i + 1] <= '9') {
+	long number = escaped - '0';
+	long digit = i + 2;
+	while (digit < scan->length && source[digit] >= '0' &&
+	       source[digit] <= '9') {
+	    number = onibi_checked_decimal_append(
+		number, (unsigned char)(source[digit] - '0'));
+	    i = digit++;
+	}
+	recognition->kind = ONIBI_TOKEN_BACKREF;
+	recognition->capture_number = number;
+	recognition->has_capture_number = 1;
+    }
+    if (!recognition->has_capture_number && escaped >= '1' && escaped <= '7' &&
+	i + 2 < scan->length && source[i + 2] >= '0' && source[i + 2] <= '7') {
+	size_t decoded_offset = tokens->bytes_count;
+	size_t decoded_length = 0;
+	int value = 0;
+	int digits = 0;
+	while (digits < 3 && i + 1 < scan->length && source[i + 1] >= '0' &&
+	       source[i + 1] <= '7') {
+	    value = (value << 3) | (source[i + 1] - '0');
+	    i++;
+	    digits++;
+	}
+	unsigned char first_byte = (unsigned char)value;
+	(void)onibi_token_vector_copy(tokens, (const char *)&first_byte, 1);
+	decoded_length++;
+	while (i + 2 < scan->length && source[i + 1] == '\\' &&
+	       source[i + 2] >= '0' && source[i + 2] <= '7') {
+	    long next_cursor = i + 2;
+	    int next_value = 0;
+	    int next_digits = 0;
+	    while (next_digits < 3 && next_cursor < scan->length &&
+		   source[next_cursor] >= '0' && source[next_cursor] <= '7') {
+		next_value = (next_value << 3) | (source[next_cursor] - '0');
+		next_cursor++;
+		next_digits++;
+	    }
+	    unsigned char next_byte = (unsigned char)next_value;
+	    (void)onibi_token_vector_copy(tokens, (const char *)&next_byte, 1);
+	    decoded_length++;
+	    i = next_cursor - 1;
+	}
+	recognition->byte = first_byte;
+	octal_literal = 1;
+	if (decoded_length > 1)
+	    recognition->literal_slice =
+		(OnibiTokenSlice){decoded_offset, decoded_length, 1};
+    }
+    if (escaped == '0') {
+	int value = 0;
+	int digits = 0;
+	while (digits < 3 && i + 1 < scan->length && source[i + 1] >= '0' &&
+	       source[i + 1] <= '7') {
+	    value = (value << 3) | (source[i + 1] - '0');
+	    i++;
+	    digits++;
+	}
+	recognition->byte = (unsigned char)value;
+	octal_literal = 1;
+    }
+    if (escaped == 'n')
+	recognition->byte = '\n';
+    else if (escaped == 'r')
+	recognition->byte = '\r';
+    else if (escaped == 't')
+	recognition->byte = '\t';
+    else if (escaped == 'f')
+	recognition->byte = '\f';
+    else if (escaped == 'v')
+	recognition->byte = '\v';
+    else if (escaped == 'a')
+	recognition->byte = '\a';
+    else if (escaped == 'e')
+	recognition->byte = 0x1b;
+    if (hex_literal || octal_literal)
+	recognition->kind = ONIBI_TOKEN_LITERAL;
+    else if (!scan->in_class && onibi_anchor_escape_p(escaped))
+	recognition->kind = ONIBI_TOKEN_ANCHOR;
+    else if (!scan->in_class && escaped == 'K')
+	recognition->kind = ONIBI_TOKEN_MATCH_RESET;
+    else if (!scan->in_class && escaped >= '1' && escaped <= '9')
+	recognition->kind = ONIBI_TOKEN_BACKREF;
+    else if (onibi_class_escape_p(escaped))
+	recognition->kind = ONIBI_TOKEN_ESCAPE;
+    i++;
+    if ((escaped == 'p' || escaped == 'P') && i + 1 < scan->length &&
+	source[i + 1] == '{') {
+	long close = i + 2;
+	while (close < scan->length && source[close] != '}')
+	    close++;
+	if (close < scan->length) {
+	    recognition->name_start = i + 2;
+	    recognition->name_length = close - (i + 2);
+	    i = close;
+	}
+    }
+    *cursor = i;
+    return 1;
+}
+
 /* Pair delimiters once, after tokenization.  Parser recursion only reads the
  * recorded index and never scans a token range for its closing delimiter. */
 static void
@@ -554,212 +772,16 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
 		i = close + 1;
 	    }
 	}
-	if (!scan.in_class && byte == '\\' && i + 3 < RSTRING_LEN(src) &&
-	    RSTRING_PTR(src)[i + 1] == 'k' && RSTRING_PTR(src)[i + 2] == '<') {
-	    long close = i + 3;
-	    while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>')
-		close++;
-	    if (close < RSTRING_LEN(src)) {
-		kind = ONIBI_TOKEN_BACKREF;
-		byte = 'k';
-		name_start = i + 3;
-		name_length = close - (i + 3);
-		i = close;
-	    }
-	}
-	if (kind == ONIBI_TOKEN_LITERAL && !scan.in_class && byte == '\\' &&
-	    i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == 'g' &&
-	    RSTRING_PTR(src)[i + 2] == '<') {
-	    long close = i + 3;
-	    while (close < RSTRING_LEN(src) && RSTRING_PTR(src)[close] != '>')
-		close++;
-	    if (close < RSTRING_LEN(src)) {
-		kind = ONIBI_TOKEN_SUBROUTINE;
-		byte = 'g';
-		name_start = i + 3;
-		name_length = close - (i + 3);
-		i = close;
-	    }
-	}
-	if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' &&
-	    i + 2 < RSTRING_LEN(src) &&
-	    (RSTRING_PTR(src)[i + 1] == 'M' ||
-	     RSTRING_PTR(src)[i + 1] == 'C') &&
-	    RSTRING_PTR(src)[i + 2] == '-') {
-	    if (RSTRING_PTR(src)[i + 1] == 'C' && i + 3 < RSTRING_LEN(src)) {
-		kind = ONIBI_TOKEN_LITERAL;
-		byte = (unsigned char)RSTRING_PTR(src)[i + 3] & 0x1f;
-		i += 3;
-	    }
-	    else {
-		kind = ONIBI_TOKEN_META_ESCAPE;
-		byte = (unsigned char)RSTRING_PTR(src)[i + 1];
-		i += 2;
-	    }
-	}
-	if (kind == ONIBI_TOKEN_LITERAL && byte == '\\' &&
-	    i + 1 < RSTRING_LEN(src)) {
-	    unsigned char escaped = (unsigned char)RSTRING_PTR(src)[i + 1];
-	    int hex_literal = 0;
-	    int octal_literal = 0;
-	    byte = escaped;
-	    if (escaped == 'c' && i + 2 < RSTRING_LEN(src)) {
-		byte = (unsigned char)RSTRING_PTR(src)[i + 2] & 0x1f;
-		i += 2;
-	    }
-	    if (escaped == 'x' && i + 3 < RSTRING_LEN(src)) {
-		int hi =
-		    onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 2]);
-		int lo =
-		    onibi_hex_digit((unsigned char)RSTRING_PTR(src)[i + 3]);
-		if (hi >= 0 && lo >= 0) {
-		    unsigned char decoded_byte =
-			(unsigned char)((hi << 4) | lo);
-		    size_t decoded_offset = tokens->bytes_count;
-		    size_t decoded_length = 1;
-		    (void)onibi_token_vector_copy(
-			tokens, (const char *)&decoded_byte, 1);
-		    byte = decoded_byte;
-		    i += 3;
-		    hex_literal = 1;
-		    while (i + 4 < RSTRING_LEN(src) &&
-			   RSTRING_PTR(src)[i + 1] == '\\' &&
-			   RSTRING_PTR(src)[i + 2] == 'x') {
-			int next_hi = onibi_hex_digit(
-			    (unsigned char)RSTRING_PTR(src)[i + 3]);
-			int next_lo = onibi_hex_digit(
-			    (unsigned char)RSTRING_PTR(src)[i + 4]);
-			if (next_hi < 0 || next_lo < 0) break;
-			unsigned char next_byte =
-			    (unsigned char)((next_hi << 4) | next_lo);
-			(void)onibi_token_vector_copy(
-			    tokens, (const char *)&next_byte, 1);
-			decoded_length++;
-			i += 4;
-		    }
-		    if (decoded_length > 1)
-			literal_slice = (OnibiTokenSlice){decoded_offset,
-							  decoded_length, 1};
-		}
-	    }
-	    /* Three octal digits form one byte.  Resolve this form before the
-	       numeric backreference rule.  The parser must not receive \101 as
-	       capture number 101. */
-	    int three_digit_octal =
-		escaped >= '1' && escaped <= '7' && i + 2 < RSTRING_LEN(src) &&
-		RSTRING_PTR(src)[i + 2] >= '0' &&
-		RSTRING_PTR(src)[i + 2] <= '7' && i + 3 < RSTRING_LEN(src) &&
-		RSTRING_PTR(src)[i + 3] >= '0' &&
-		RSTRING_PTR(src)[i + 3] <= '7';
-	    if (!three_digit_octal && escaped >= '1' && escaped <= '9' &&
-		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] >= '0' &&
-		RSTRING_PTR(src)[i + 1] <= '9') {
-		long number = escaped - '0';
-		long digit = i + 2;
-		while (digit < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[digit] >= '0' &&
-		       RSTRING_PTR(src)[digit] <= '9') {
-		    number = onibi_checked_decimal_append(
-			number, (unsigned char)(RSTRING_PTR(src)[digit] - '0'));
-		    i = digit++;
-		}
-		kind = ONIBI_TOKEN_BACKREF;
-		capture_number = number;
-		has_capture_number = 1;
-	    }
-	    if (!has_capture_number && escaped >= '1' && escaped <= '7' &&
-		i + 2 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 2] >= '0' &&
-		RSTRING_PTR(src)[i + 2] <= '7') {
-		size_t decoded_offset = tokens->bytes_count;
-		size_t decoded_length = 0;
-		int value = 0;
-		int digits = 0;
-		while (digits < 3 && i + 1 < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[i + 1] >= '0' &&
-		       RSTRING_PTR(src)[i + 1] <= '7') {
-		    value = (value << 3) | (RSTRING_PTR(src)[i + 1] - '0');
-		    i++;
-		    digits++;
-		}
-		unsigned char first_byte = (unsigned char)value;
-		(void)onibi_token_vector_copy(tokens, (const char *)&first_byte,
-					      1);
-		decoded_length++;
-		while (i + 2 < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[i + 1] == '\\' &&
-		       RSTRING_PTR(src)[i + 2] >= '0' &&
-		       RSTRING_PTR(src)[i + 2] <= '7') {
-		    long cursor = i + 2;
-		    int next_value = 0;
-		    int next_digits = 0;
-		    while (next_digits < 3 && cursor < RSTRING_LEN(src) &&
-			   RSTRING_PTR(src)[cursor] >= '0' &&
-			   RSTRING_PTR(src)[cursor] <= '7') {
-			next_value = (next_value << 3) |
-				     (RSTRING_PTR(src)[cursor] - '0');
-			cursor++;
-			next_digits++;
-		    }
-		    unsigned char next_byte = (unsigned char)next_value;
-		    (void)onibi_token_vector_copy(tokens,
-						  (const char *)&next_byte, 1);
-		    decoded_length++;
-		    i = cursor - 1;
-		}
-		byte = first_byte;
-		octal_literal = 1;
-		if (decoded_length > 1)
-		    literal_slice =
-			(OnibiTokenSlice){decoded_offset, decoded_length, 1};
-	    }
-	    if (escaped == '0') {
-		int value = 0, digits = 0;
-		while (digits < 3 && i + 1 < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[i + 1] >= '0' &&
-		       RSTRING_PTR(src)[i + 1] <= '7') {
-		    value = (value << 3) | (RSTRING_PTR(src)[i + 1] - '0');
-		    i++;
-		    digits++;
-		}
-		byte = (unsigned char)value;
-		octal_literal = 1;
-	    }
-	    if (escaped == 'n')
-		byte = '\n';
-	    else if (escaped == 'r')
-		byte = '\r';
-	    else if (escaped == 't')
-		byte = '\t';
-	    else if (escaped == 'f')
-		byte = '\f';
-	    else if (escaped == 'v')
-		byte = '\v';
-	    else if (escaped == 'a')
-		byte = '\a';
-	    else if (escaped == 'e')
-		byte = 0x1b;
-	    if (hex_literal || octal_literal)
-		kind = ONIBI_TOKEN_LITERAL;
-	    else if (!scan.in_class && onibi_anchor_escape_p(escaped))
-		kind = ONIBI_TOKEN_ANCHOR;
-	    else if (!scan.in_class && escaped == 'K')
-		kind = ONIBI_TOKEN_MATCH_RESET;
-	    else if (!scan.in_class && escaped >= '1' && escaped <= '9')
-		kind = ONIBI_TOKEN_BACKREF;
-	    else if (onibi_class_escape_p(escaped))
-		kind = ONIBI_TOKEN_ESCAPE;
-	    i++;
-	    if ((escaped == 'p' || escaped == 'P') &&
-		i + 1 < RSTRING_LEN(src) && RSTRING_PTR(src)[i + 1] == '{') {
-		long close = i + 2;
-		while (close < RSTRING_LEN(src) &&
-		       RSTRING_PTR(src)[close] != '}')
-		    close++;
-		if (close < RSTRING_LEN(src)) {
-		    name_start = i + 2;
-		    name_length = close - (i + 2);
-		    i = close;
-		}
+	if (byte == '\\') {
+	    OnibiEscapeRecognition escape;
+	    if (onibi_token_scan_escape(&scan, &i, tokens, &escape)) {
+		kind = escape.kind;
+		byte = escape.byte;
+		literal_slice = escape.literal_slice;
+		name_start = escape.name_start;
+		name_length = escape.name_length;
+		capture_number = escape.capture_number;
+		has_capture_number = escape.has_capture_number;
 	    }
 	}
 	else if (byte == '[' && !scan.in_class) {
