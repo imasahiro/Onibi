@@ -93,8 +93,8 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regexp_state_keeps_rseq_view_and_numeric_flags_in_c
-    source = extension_source
-    regexp_struct = source[/typedef struct \{.*?\} onibi_regexp_t;/m]
+    source = source_for("onibi_common.c")
+    regexp_struct = source[/struct onibi_regexp_t \{.*?\};/m]
 
     refute_nil regexp_struct
     assert_includes regexp_struct, "OnibiRSeqView rseq_view;"
@@ -106,10 +106,11 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_token_and_ast_records_are_c_owned
-    source = extension_source
-    token = source[/typedef struct \{\s*OnibiTokenKind kind;.*?\} OnibiTokenRecord;/m]
-    ast = source[/typedef struct \{\s*OnibiAstKind kind;.*?\} OnibiAstNode;/m]
-    arena = source[/typedef struct \{\s*OnibiAstNode \*nodes;.*?\} OnibiAstArena;/m]
+    token_source = source_for("token.c")
+    ast_source = source_for("onibi_common.c")
+    token = token_source[/typedef struct \{\s*OnibiTokenKind kind;.*?\} OnibiTokenRecord;/m]
+    ast = ast_source[/typedef struct \{\s*OnibiAstKind kind;.*?\} OnibiAstNode;/m]
+    arena = ast_source[/typedef struct OnibiAstArena \{.*?\} OnibiAstArena;/m]
 
     [token, ast, arena].each { |declaration| refute_nil declaration }
     refute_match(/\bVALUE\b/, token)
@@ -259,16 +260,16 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_regexp_state_has_no_legacy_boolean_feature_fields
-    source = extension_source
-    regexp_struct = source[/typedef struct \{[^}]*\} onibi_regexp_t;/m]
+    source = source_for("onibi_common.c")
+    regexp_struct = source[/struct onibi_regexp_t \{[^}]*\};/m]
 
     refute_nil regexp_struct
     refute_match(/\bhas_[a-z_]+\b/, regexp_struct)
   end
 
   def test_regexp_state_owns_exact_ruby_values_and_marks_each_value
-    source = extension_source
-    regexp_struct = source[/typedef struct \{[^}]*\} onibi_regexp_t;/m]
+    source = source_for("onibi_common.c")
+    regexp_struct = source[/struct onibi_regexp_t \{[^}]*\};/m]
     marker = source[/static void\s+onibi_mark\(.*?\n}\n/m]
 
     refute_nil regexp_struct
@@ -378,7 +379,7 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_one_native_execution_classifier_dispatches_three_c_interpreters
-    source = extension_source
+    source = source_for("onibi_common.c")
     dispatcher = source_for("exec_dynamic.c")[/static OnibiExecStatus\s+onibi_execute\(OnibiExecCtx \*ctx\).*?\n}\n/m]
 
     refute_nil dispatcher
@@ -392,8 +393,8 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_executor_state_uses_c_structures_and_typed_byte_positions
-    source = extension_source
-    context = source[/typedef struct \{.*?\} OnibiExecCtx;/m]
+    source = source_for("onibi_exec_internal.h")
+    context = source[/typedef struct OnibiExecCtx \{.*?\} OnibiExecCtx;/m]
     dynamic = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "exec_dynamic.c"))
 
     refute_nil context
@@ -414,14 +415,14 @@ class InternalRegexpDependencyTest < Minitest::Test
   end
 
   def test_byte_position_contract_is_explicit_in_native_sources
-    common = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "onibi_common.c"))
+    execution = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "onibi_exec_internal.h"))
     header = File.read(File.join(PROJECT_ROOT, "ext", "onibi", "onibi_ir.h"))
 
-    assert_includes common, "typedef OnigPosition OnibiBytePos;"
-    assert_includes common, "OnibiBytePos begin_byte;"
-    assert_includes common, "OnibiBytePos end_byte;"
+    assert_includes execution, "typedef OnigPosition OnibiBytePos;"
+    assert_includes execution, "OnibiBytePos begin_byte;"
+    assert_includes execution, "OnibiBytePos end_byte;"
     assert_includes header, "typedef long OnibiRepeatCount;"
-    refute_match(/long\s+(?:search_origin|current_position|matched_end)/, common)
+    refute_match(/long\s+(?:search_origin|current_position|matched_end)/, execution)
   end
 
   def test_diagnostic_ruby_values_are_not_execution_state

@@ -1,3 +1,5 @@
+#include "onibi_ast_internal.h"
+
 /* Parser implementation: token ranges become typed AST node IDs. */
 static OnibiAstId onibi_c_parse_range(const OnibiTokenVector *tokens,
 				      OnibiAstArena *arena, long begin,

@@ -1,3 +1,5 @@
+#include "onibi_ruby_api_internal.h"
+
 Init_onibi(void)
 {
     id_initialize = rb_intern("initialize");

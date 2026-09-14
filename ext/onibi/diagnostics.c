@@ -1,3 +1,9 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_gir_internal.h"
+#include "onibi_rseq_internal.h"
+
 static int
 onibi_unicode_ctype_id(ID property)
 {

@@ -1,3 +1,7 @@
+#include "onibi_ast_internal.h"
+#include "onibi_compiler_internal.h"
+#include "onibi_encoding_internal.h"
+#include "onibi_exec_internal.h"
 #include "onibi_ir.h"
 #include "ruby.h"
 #include "ruby/encoding.h"
@@ -5,17 +9,6 @@
 #include "ruby/re.h"
 #include "ruby/thread.h"
 
-#define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
-#define ONIBI_SUBPROGRAM_ABSENT UINT32_C(2)
-#define ONIBI_AST_FLAG_SAFE_MULTIBYTE_CLASS (1U << 0)
-#define ONIBI_AST_FLAG_ANCHOR_REPEAT (1U << 1)
-#define ONIBI_AST_FLAG_NULLABLE_ABSENCE (1U << 2)
-#define ONIBI_AST_FLAG_NULLABLE_CAPTURE (1U << 3)
-#define ONIBI_AST_ANALYSIS_HAS_CAPTURE (1U << 0)
-#define ONIBI_AST_ANALYSIS_NULLABLE_CAPTURE (1U << 1)
-#define ONIBI_AST_ANALYSIS_NULLABLE_ABSENCE (1U << 2)
-#define ONIBI_AST_ANALYSIS_HAS_ANCHOR (1U << 3)
-#define ONIBI_AST_ANALYSIS_ANCHOR_REPEAT (1U << 4)
 #define ONIBI_FEATURE_P(obj, flag) (((obj)->feature_flags & (flag)) != 0)
 #include <alloca.h>
 #include <ctype.h>
@@ -27,67 +20,7 @@
 #include <string.h>
 #include <time.h>
 
-/* Compilation has one explicit boundary between supported programs and
- * failures. Callers may select MRI compatibility only for UNSUPPORTED. */
-typedef enum {
-    ONIBI_COMPILE_OK = 0,
-    ONIBI_COMPILE_UNSUPPORTED,
-    ONIBI_COMPILE_INVALID_PATTERN,
-    ONIBI_COMPILE_INTERNAL_ERROR,
-    ONIBI_COMPILE_ALLOCATION_ERROR,
-    ONIBI_COMPILE_VERIFIER_ERROR,
-    ONIBI_COMPILE_UNEXPECTED_ERROR
-} OnibiCompileErrorKind;
-
-typedef enum {
-    ONIBI_UNSUPPORTED_NONE = 0,
-    ONIBI_UNSUPPORTED_META_ESCAPE,
-    ONIBI_UNSUPPORTED_ESCAPE,
-    ONIBI_UNSUPPORTED_GRAPHEME,
-    ONIBI_UNSUPPORTED_CLASS,
-    ONIBI_UNSUPPORTED_LIMIT,
-    ONIBI_UNSUPPORTED_POSSESSIVE,
-    ONIBI_UNSUPPORTED_ZERO_WIDTH_REPEAT
-} OnibiUnsupportedReason;
-
-typedef struct {
-    OnibiCompileErrorKind error_kind;
-    OnibiUnsupportedReason unsupported_reason;
-} OnibiCompileOutcome;
-
-/* An executor never selects MRI.  These values explain an internal
- * executor failure after the pre-execution fallback gate has passed. */
-typedef enum {
-    ONIBI_EXECUTOR_ERROR_NONE = 0,
-    ONIBI_EXECUTOR_ERROR_CONTRACT,
-    ONIBI_EXECUTOR_ERROR_ALLOCATION,
-    ONIBI_EXECUTOR_ERROR_MALFORMED_PROGRAM,
-    ONIBI_EXECUTOR_ERROR_UNEXPECTED
-} OnibiExecutorErrorKind;
-
-/* Runtime fallback is a pre-execution decision.  Compile-time unsupported
- * reasons remain stored in onibi_regexp_t and use OnibiUnsupportedReason. */
-typedef enum {
-    ONIBI_RUNTIME_FALLBACK_NONE = 0,
-    ONIBI_RUNTIME_FALLBACK_INPUT_INELIGIBLE,
-    ONIBI_RUNTIME_FALLBACK_NOENCODING
-} OnibiRuntimeFallbackReason;
-
-/* Subject offsets keep Onigmo's current width.  Register deltas keep the
- * same width because one arena stores both positions and repeat counts. */
-typedef OnigPosition OnibiBytePos;
-typedef OnigPosition OnibiRegisterValue;
-
-/* The caller owns the register arrays.  A zero count requests only the full
- * byte range. */
-typedef struct OnibiRawMatch {
-    OnibiBytePos begin_byte;
-    OnibiBytePos end_byte;
-    uint32_t num_regs;
-    OnibiBytePos *beg;
-    OnibiBytePos *end;
-} OnibiRawMatch;
-
+/* Subject offsets and register deltas use Onigmo's current width. */
 _Static_assert(sizeof(OnibiBytePos) == sizeof(OnigPosition),
 	       "byte positions must keep OnigPosition width");
 _Static_assert(sizeof(OnibiRegisterValue) == sizeof(OnigPosition),
@@ -95,26 +28,12 @@ _Static_assert(sizeof(OnibiRegisterValue) == sizeof(OnigPosition),
 _Static_assert(sizeof(OnibiRepeatCount) == sizeof(long),
 	       "repeat counts must keep long width");
 
-#define ONIBI_RSEQ_REPEAT_UNROLL_LIMIT 8L
-
 typedef struct onibi_owned_allocation {
     struct onibi_owned_allocation *next;
     struct onibi_owned_allocation *previous;
     void *pointer;
     size_t size;
 } onibi_owned_allocation_t;
-
-typedef struct {
-    uint64_t gir_class_probes;
-    uint64_t rseq_class_probes;
-    uint64_t literal_probes;
-    uint64_t action_probes;
-    uint64_t prefix_edges;
-} OnibiLoweringWork;
-
-typedef struct {
-    size_t live_count;
-} OnibiAllocationAccounting;
 
 struct onibi_allocation_owner {
     onibi_owned_allocation_t *first;
@@ -273,237 +192,6 @@ static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 
-/* Match-local execution ABI.  The interpreter owns this object for the
- * complete search.  The pointer fields are storage owned by the context or
- * by its frontier arenas; they are never borrowed from Ruby objects. */
-typedef struct OnibiSemanticState OnibiSemanticState;
-typedef struct {
-    uint32_t *states;
-    OnibiSemanticState *semantics;
-    uint32_t *failure_owners;
-    uint64_t *hashes;
-    uint32_t *key_buckets;
-    unsigned char *membership;
-    /* REGULAR_FAST capture history for the state slots above. */
-    uint32_t *histories;
-    size_t count;
-    size_t capacity;
-    size_t key_capacity;
-    size_t membership_capacity;
-} OnibiFrontier;
-typedef struct {
-    unsigned char *data;
-    size_t count, capacity;
-} OnibiTagArena;
-
-/* Semantic state uses indexes into match-local append-only arenas.  A state
- * value can be copied for a branch without copying any register file. */
-typedef struct {
-    uint32_t parent;
-    uint32_t slot;
-    OnibiRegisterValue value;
-} OnibiSemanticRegisterDelta;
-typedef struct {
-    uint32_t root;
-    uint32_t slot_count;
-    uint64_t hash;
-} OnibiSemanticCaptureFile;
-typedef struct {
-    uint32_t root;
-    uint32_t slot_count;
-    uint64_t hash;
-} OnibiCounterFile;
-typedef struct {
-    uint32_t root;
-    uint32_t slot_count;
-    uint64_t hash;
-} OnibiProgressState;
-typedef struct {
-    uint32_t parent;
-    OnibiCallFrame frame;
-    OnibiTagEventId caller_tag_history;
-    OnibiSemanticCaptureFile caller_captures;
-    OnibiSemanticCaptureFile caller_condition_captures;
-    OnibiCounterFile caller_counters;
-    OnibiProgressState caller_progress;
-    uint64_t hash;
-} OnibiOwnedCallFrame;
-typedef struct {
-    uint32_t slot_offset;
-    uint32_t slot_count;
-} OnibiSubprogramLocalSlots;
-typedef struct {
-    uint32_t root;
-    uint32_t depth;
-} OnibiCallStack;
-typedef struct {
-    uint32_t parent;
-    OnibiSubprogramId subprogram_id;
-    OnibiBytePos begin;
-    OnibiBytePos end;
-    OnibiTagEventId tag_history;
-    uint32_t flags;
-    uint64_t hash;
-} OnibiSemanticScope;
-typedef struct {
-    uint32_t root;
-    uint32_t depth;
-} OnibiAtomicState;
-typedef OnibiAtomicState OnibiAbsenceState;
-typedef struct {
-    OnibiTagEventId parent;
-    uint32_t slot;
-    OnibiBytePos position;
-    uint64_t hash;
-} OnibiSemanticTagEvent;
-struct OnibiSemanticState {
-    uint32_t order;
-    OnibiBytePos reported_start;
-    OnibiSemanticCaptureFile semantic_captures;
-    OnibiSemanticCaptureFile condition_captures;
-    OnibiCounterFile counters;
-    OnibiProgressState progress;
-    OnibiCallStack calls;
-    OnibiAtomicState atomic;
-    OnibiAbsenceState absence;
-    OnibiTagEventId tag_history;
-    uint32_t capture_event_history;
-    uint32_t capture_event_dependency;
-};
-typedef struct {
-    uint32_t state_id;
-    OnibiBytePos position;
-    OnibiSemanticState semantic;
-    uint64_t hash;
-} OnibiDynamicThreadKey;
-typedef struct {
-    uint32_t state;
-    OnibiBytePos position;
-    OnibiSemanticState semantic;
-    uint32_t cycle_root;
-} OnibiDynamicFrame;
-typedef struct {
-    uint32_t parent;
-    OnibiDynamicThreadKey key;
-} OnibiDynamicCycleNode;
-typedef struct {
-    OnibiDynamicThreadKey key;
-    uint32_t generation;
-} OnibiDynamicKeyBucket;
-typedef struct {
-    uint32_t parent[32];
-    uint32_t depth, label;
-} OnibiCaptureOrderNode;
-typedef struct {
-    uint32_t parent;
-    uint32_t order, slot;
-    OnibiBytePos position;
-} OnibiUnscopedCaptureEvent;
-typedef struct {
-    uint32_t history;
-    uint32_t next;
-} OnibiCaptureEventRoot;
-typedef struct {
-    uint32_t event_roots;
-    uint32_t resolved_owner;
-    uint8_t resolved;
-} OnibiCaptureEventOwner;
-typedef struct {
-    OnibiCaptureOrderNode *order_nodes;
-    size_t order_count, order_capacity;
-    uint32_t *order_buckets;
-    size_t order_bucket_capacity;
-    OnibiUnscopedCaptureEvent *capture_events;
-    size_t capture_event_count, capture_event_capacity;
-    OnibiCaptureEventRoot *capture_event_roots;
-    size_t capture_event_root_count, capture_event_root_capacity;
-    OnibiCaptureEventOwner *capture_event_owners;
-    size_t capture_event_owner_count, capture_event_owner_capacity;
-    OnibiSemanticRegisterDelta *registers;
-    size_t register_count, register_capacity;
-    OnibiSemanticTagEvent *tags;
-    size_t tag_count, tag_capacity;
-    OnibiOwnedCallFrame *calls;
-    size_t call_count, call_capacity;
-    OnibiSubprogramLocalSlots *subprogram_local_slots;
-    uint32_t subprogram_local_count;
-    const OnibiRSeqHeader *subprogram_local_header;
-    uint32_t *local_slots;
-    size_t local_slot_count, local_slot_capacity;
-    unsigned char *local_slot_visited;
-    unsigned char *local_slot_queued;
-    uint32_t *local_slot_work;
-    unsigned char *local_slot_used;
-    unsigned char *local_slot_nullable;
-    OnibiSemanticScope *atomic;
-    size_t atomic_count, atomic_capacity;
-    OnibiSemanticScope *absence;
-    size_t absence_count, absence_capacity;
-    uint32_t *live_capture_slots;
-    size_t live_capture_count, live_capture_capacity;
-    unsigned char *live_capture_bitmap;
-    size_t live_capture_bitmap_capacity;
-    uint32_t *future_capture_slots;
-    size_t future_capture_count, future_capture_capacity;
-    unsigned char *future_capture_bitmap;
-    size_t future_capture_bitmap_capacity;
-    OnibiDynamicFrame *frames;
-    size_t frame_count, frame_capacity;
-    OnibiDynamicCycleNode *cycles;
-    size_t cycle_count, cycle_capacity;
-    OnibiDynamicKeyBucket *key_buckets;
-    size_t key_count, key_capacity;
-    uint32_t key_generation;
-    size_t register_read_count;
-    size_t key_hash_count;
-} OnibiSemanticArena;
-typedef enum {
-    ONIBI_ACTION_FAIL = 0,
-    ONIBI_ACTION_SUCCESS = 1
-} OnibiActionResult;
-typedef struct {
-    VALUE regexp;
-    VALUE subject;
-    const OnibiRSeqHeader *program;
-    OnibiBytePos search_origin;
-    OnibiBytePos attempt_start;
-    OnibiBytePos reported_start;
-    OnibiBytePos current_position;
-    OnibiFrontier current;
-    OnibiFrontier next;
-    OnibiFrontier *assertion_frontiers;
-    size_t assertion_frontier_count;
-    size_t assertion_frontier_capacity;
-    size_t assertion_depth;
-    OnibiTagArena tags;
-    OnibiSemanticArena semantic_arena;
-    uint64_t work_before_poll;
-    /* Ruby's private rb_hrtime_t is not public in this MRI release. */
-    uint64_t timeout_deadline;
-    VALUE rseq;
-    const OnibiRSeqView *view;
-    rb_encoding *encoding;
-    OnibiEncodingMode encoding_mode;
-    unsigned char *class_stack;
-    size_t class_stack_capacity;
-    OnibiBytePos matched_end;
-    OnibiRawMatch *raw_match;
-} OnibiExecCtx;
-
-#define ONIBI_POLL_WORK 128
-
-typedef enum {
-    ONIBI_EXEC_STATUS_NO_MATCH = 0,
-    ONIBI_EXEC_STATUS_MATCH = 1,
-    ONIBI_EXEC_STATUS_INTERNAL_ERROR = -1,
-    ONIBI_EXEC_STATUS_FALLBACK = 2
-} OnibiExecStatus;
-
-enum {
-    ONIBI_EXEC_REQUIRE_TAGGED = 1u << 0,
-    ONIBI_EXEC_REQUIRE_DYNAMIC = 1u << 1
-};
-
 /* This is the only execution-class decision. The GIR classifier and the
  * physical RSeq verifier provide facts to this helper. */
 static OnibiExecutionKind
@@ -635,20 +323,8 @@ onibi_regular_frontier_prepare(OnibiFrontier *frontier, size_t state_count,
     if (membership_size != 0) memset(frontier->membership, 0, membership_size);
 }
 
-static OnibiExecStatus onibi_exec_regular(OnibiExecCtx *ctx);
-static int onibi_rseq_regular_match(OnibiExecCtx *ctx);
-static int onibi_rseq_backtracking_match(
-    VALUE rseq, const OnibiRSeqView *view, VALUE subject, OnibiBytePos start,
-    OnibiBytePos search_origin, OnibiBytePos *matched_end,
-    OnibiSemanticState *accepted_state, OnibiSemanticArena *semantic_arena,
-    unsigned char *class_stack, size_t class_stack_capacity, OnibiExecCtx *ctx);
-static OnibiExecStatus onibi_exec_tagged(OnibiExecCtx *ctx);
-static OnibiExecStatus onibi_exec_dynamic(OnibiExecCtx *ctx);
-static OnibiExecStatus onibi_execute(OnibiExecCtx *ctx);
 static _Thread_local OnibiExecCtx *onibi_active_exec_ctx = NULL;
 static _Thread_local int onibi_inject_internal_error = 0;
-static void onibi_exec_ctx_release(OnibiExecCtx *ctx);
-static void onibi_exec_poll_interrupts(OnibiExecCtx *ctx);
 static ID id_initialize, id_source, id_options, id_inspect, id_to_s, id_new,
     id_match, id_aref;
 static ID id_instance_method, id_bind, id_call;
@@ -720,7 +396,7 @@ static int onibi_option_mask(VALUE options);
 static int onibi_ascii_property_name_p(ID name_id);
 static int onibi_valid_encoding(VALUE str);
 static int onibi_unicode_ctype_id(ID property);
-typedef enum {
+typedef enum OnibiPosixKind {
     ONIBI_POSIX_UNKNOWN = 0,
     ONIBI_POSIX_ALPHA,
     ONIBI_POSIX_DIGIT,
@@ -866,7 +542,7 @@ onibi_timeout_value(VALUE value)
     return isinf(seconds) ? (double)UINT64_MAX / 1e9 : seconds;
 }
 
-typedef struct {
+struct onibi_regexp_t {
     /* Ruby-visible MRI compatibility values. */
     VALUE regexp;
     VALUE source;
@@ -891,7 +567,7 @@ typedef struct {
     /* Private compile telemetry. It records lowering work for focused tests. */
     OnibiLoweringWork lowering_work;
     double timeout_seconds;
-} onibi_regexp_t;
+};
 
 static int
 onibi_regexp_fixed_p(const onibi_regexp_t *obj)
@@ -1006,7 +682,7 @@ typedef enum {
     ONIBI_TOKEN_WILDCARD
 } OnibiTokenKind;
 
-typedef enum {
+typedef enum OnibiAsciiProperty {
     ONIBI_ASCII_PROP_UNKNOWN = -1,
     ONIBI_ASCII_PROP_ASCII = 0,
     ONIBI_ASCII_PROP_HEX,
@@ -1058,7 +734,6 @@ typedef enum {
     ONIBI_AST_MATCH_RESET
 } OnibiAstKind;
 
-typedef uint32_t OnibiAstId;
 #define ONIBI_AST_NONE UINT32_MAX
 
 enum {
@@ -1106,7 +781,7 @@ typedef struct {
     size_t range_capacity;
 } OnibiAstNode;
 
-typedef struct {
+typedef struct OnibiAstArena {
     OnibiAstNode *nodes;
     size_t count;
     size_t capacity;

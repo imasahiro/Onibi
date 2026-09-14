@@ -1,3 +1,7 @@
+#include "onibi_encoding_internal.h"
+#include "onibi_exec_internal.h"
+#include "onibi_ruby_api_internal.h"
+
 /* The search loop receives byte offsets, but a multibyte subject has only
  * character boundaries as valid candidate starts.  The input eligibility
  * gate rejects broken multibyte strings before this helper runs. */
