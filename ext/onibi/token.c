@@ -265,7 +265,6 @@ onibi_token_record_push(OnibiTokenVector *vector, OnibiTokenRecord record)
 /* The scanner has one cursor.  Group recognition advances that cursor over
  * the complete prefix decision.  Keep mutable lexical state in one record. */
 typedef struct {
-    VALUE source;
     const char *bytes;
     long length;
     int extended;
@@ -500,9 +499,15 @@ onibi_tokenize_internal(VALUE src, int extended, OnibiTokenVector *tokens)
     onibi_token_vector_init(tokens);
     /* One escape is one semantic token.  Do not let an escaped metacharacter
        enter the AST as syntax. */
-    OnibiTokenScanState scan = {
-	src, RSTRING_PTR(src), RSTRING_LEN(src), extended, 0, 0, -1, {0}, {0},
-	0};
+    OnibiTokenScanState scan = {.bytes = RSTRING_PTR(src),
+				.length = RSTRING_LEN(src),
+				.extended = extended,
+				.in_class = 0,
+				.class_depth = 0,
+				.class_body_start = -1,
+				.class_body_starts = {0},
+				.extended_stack = {0},
+				.extended_depth = 0};
     for (long i = 0; i < scan.length; i++) {
 	long start = i;
 	OnibiTokenKind kind = ONIBI_TOKEN_LITERAL;
