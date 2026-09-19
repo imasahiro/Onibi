@@ -1146,6 +1146,28 @@ onibi_make_mri_regexp(VALUE argument)
     return rb_funcall(rb_cRegexp, id_new, 2, source, options);
 }
 
+static int
+onibi_freeze_named_capture(VALUE key, VALUE value, VALUE unused)
+{
+    (void)unused;
+    rb_obj_freeze(key);
+    rb_obj_freeze(value);
+    return ST_CONTINUE;
+}
+
+/* Keep the metadata retained by the typed object immutable.  Getters copy the
+ * mutable containers and strings below, while frozen hash keys are safe to
+ * share with MRI and across getter calls. */
+static void
+onibi_freeze_metadata(onibi_regexp_t *obj)
+{
+    for (long i = 0; i < RARRAY_LEN(obj->names); i++)
+	rb_obj_freeze(rb_ary_entry(obj->names, i));
+    rb_obj_freeze(obj->names);
+    rb_hash_foreach(obj->named_captures, onibi_freeze_named_capture, Qnil);
+    rb_obj_freeze(obj->named_captures);
+}
+
 /* Compute token diagnostics and initialization metadata in one pass over the
    immutable token stream.  These bits never select an execution class. */
 static void
@@ -1519,8 +1541,7 @@ onibi_initialize(int argc, VALUE *argv, VALUE self)
     }
     obj->names = rb_funcall(obj->regexp, id_names, 0);
     obj->named_captures = rb_funcall(obj->regexp, id_named_captures, 0);
-    rb_obj_freeze(obj->names);
-    rb_obj_freeze(obj->named_captures);
+    onibi_freeze_metadata(obj);
     VALUE compilation_source = rb_str_dup(source);
     rb_enc_associate(compilation_source, rb_enc_get(obj->regexp));
     memset(&obj->lowering_work, 0, sizeof(obj->lowering_work));
@@ -1730,14 +1751,33 @@ onibi_names(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return obj->names;
+    VALUE names = rb_ary_new_capa(RARRAY_LEN(obj->names));
+    for (long i = 0; i < RARRAY_LEN(obj->names); i++)
+	rb_ary_push(names, rb_str_dup(rb_ary_entry(obj->names, i)));
+    return names;
 }
+
+typedef struct {
+    VALUE target;
+} OnibiNamedCapturesCopy;
+
+static int
+onibi_copy_named_capture(VALUE key, VALUE value, VALUE opaque)
+{
+    OnibiNamedCapturesCopy *copy = (OnibiNamedCapturesCopy *)(uintptr_t)opaque;
+    rb_hash_aset(copy->target, key, rb_ary_dup(value));
+    return ST_CONTINUE;
+}
+
 static VALUE
 onibi_named_captures(VALUE self)
 {
     onibi_regexp_t *obj;
     TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    return obj->named_captures;
+    OnibiNamedCapturesCopy copy = {rb_hash_new()};
+    rb_hash_foreach(obj->named_captures, onibi_copy_named_capture,
+		    (VALUE)(uintptr_t)&copy);
+    return copy.target;
 }
 static VALUE
 onibi_casefold_p(VALUE self)
