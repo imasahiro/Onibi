@@ -231,9 +231,10 @@ typedef enum {
     ONIBI_ACTION_SUCCESS = 1
 } OnibiActionResult;
 
-/* Match-local execution ABI.  The interpreter owns this object for the
- * complete search.  Pointer fields refer to storage owned by this context or
- * its frontier arenas.  They never borrow storage from Ruby objects. */
+/* Match-local execution ABI.  The search keeps this struct on the C stack;
+ * diagnostic probes use the same stack-local form.  Frontier, tag, semantic,
+ * and class storage is allocated for this context and released by its owner.
+ * Ruby VALUEs and the cached RSeq view are borrowed for the call lifetime. */
 typedef struct OnibiExecCtx {
     VALUE regexp;
     VALUE subject;

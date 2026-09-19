@@ -16,10 +16,11 @@ The PoC must not depend on ZJIT or MRI source-tree changes.
 
 The current C pipeline includes tokenization, parsing, a tagged epsilon-NFA,
 epsilon elimination, ordered G-IR states and edges, RSeq lowering, and three VM
-entry points for a tested ASCII subset. The
-VM covers literals, alternation, character classes, wildcard sequences, wildcard
-repeats, bounded repeats, captures, boundary assertions, and match reset.
-Other syntax remains outside this subset.
+entry points. The native path handles literals, alternation, character classes,
+wildcards, graphemes, assertions, captures, bounded repeats, backreferences,
+conditions, calls, atomic and absence groups, lookarounds, and match reset when
+the compiler marks a pattern supported. Unsupported patterns or input use the
+documented MRI compatibility path.
 
 The C source is split into pipeline modules. `onibi.c` is an amalgamated entry
 unit. It includes the current implementation files in dependency order.
@@ -40,17 +41,21 @@ Each class has one C interpreter.
 | `DYNAMIC` | Backreferences, calls, conditions, and other runtime semantic state |
 
 All interpreters execute RSeq and return one common raw match result.
-The public API converts that result to `Onibi` objects.
+`scan` builds Ruby strings or capture arrays from those native byte ranges.
+`match` still asks the source MRI regexp to materialize `MatchData` after the
+native VM selects the match.
 
 ### MatchData migration debt
 
 The native matcher produces raw byte ranges before any Ruby `MatchData`
 materialization. MRI 4.0.6 does not provide a supported extension API to create
 an `RMatch` from external `re_registers`; its public header also prohibits
-manual construction. Until such an API is available, `match` and capture-aware
-`scan` use MRI only as a temporary materialization adapter. Native diagnostics
-and capture tests compare the raw Onibi ranges with MRI before this adapter is
-used. The adapter must not decide match existence or match priority.
+manual construction. `match` therefore uses MRI as a temporary `MatchData`
+adapter after native execution selects the match. Native `scan` materializes
+its Ruby strings and capture arrays directly from the same raw ranges; it uses
+MRI only when the native path reports an explicit fallback. Native diagnostics
+and capture tests compare raw Onibi ranges with MRI. The adapter must not decide
+match existence or match priority.
 
 Compilation is an initialization-time operation. The tokenizer reads the
 source once. The parser, GIR compiler, and RSeq lowerer consume that token
@@ -70,7 +75,8 @@ runtime validator does not compare the blob with the Ruby semantic mirror.
 
 The native interpreters execute ordered actions, cycles, classes, wildcards,
 graphemes, position assertions, captures, bounded-repeat counters,
-backreferences, conditions, calls, atomic groups, absence, and lookarounds.
+backreferences, conditions, calls, atomic groups, absence, and lookarounds for
+patterns that pass the native support checks.
 The DYNAMIC interpreter keeps semantic state in each explicit C stack frame.
 
 ## Milestones

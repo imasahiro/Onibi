@@ -830,9 +830,9 @@ onibi_resolved_numbered_capture(const OnibiResolvedArena *semantics,
     return ONIBI_AST_NONE;
 }
 
-/* Build the immutable capture list used by one backreference.  Ruby resolves
- * duplicate names in reverse source order and tests each currently set
- * capture. */
+/* Build the immutable capture list used by one backreference.  The resolver
+ * records duplicate definitions in AST order; this descriptor stores them in
+ * reverse order so the native executor tests each currently set capture. */
 static uint32_t
 onibi_compile_backref_descriptor(const OnibiAstNode *node,
 				 const OnibiResolvedNode *resolved,
@@ -2593,7 +2593,8 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 					 builder->allocation_owner);
 }
 
-/* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
+/* Lower a tagged NFA, then eliminate its epsilon edges before publishing GIR.
+ * The published GIR edge vectors do not retain the NFA epsilon edges. */
 static void
 onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 			  OnibiGirEdgeVector *start_edges,
@@ -3053,8 +3054,8 @@ onibi_compiler_compile_body(VALUE opaque)
 
     OnibiLowerNfaOutput lower_nfa = {&owner->builder, &owner->start_edges,
 				     accept, root_entry};
-    /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon-elimination
-     * boundary.  Keep the result contract explicit for later split passes. */
+    /* onibi_compiler_pass_lower owns the tagged-NFA and epsilon elimination.
+     * Its result is the epsilon-free GIR input for the later split passes. */
     (void)lower_nfa;
     OnibiGirOutput gir = {&owner->builder};
     (void)gir;
