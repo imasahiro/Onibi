@@ -188,7 +188,7 @@ onibi_allocation_owner_cleanup(onibi_allocation_owner_t *owner)
     }
 }
 
-static VALUE mOnibi, cRegexp, eRegexpError, eTimeoutError;
+static VALUE mOnibi, cRegexp, cMatchData, eRegexpError, eTimeoutError;
 static double onibi_default_timeout = 0.0;
 static _Thread_local uint64_t onibi_deadline_ns = 0;
 

@@ -141,6 +141,12 @@ Init_onibi(void)
     cRegexp = rb_define_class_under(mOnibi, "Regexp", rb_cObject);
     eTimeoutError =
 	rb_define_class_under(cRegexp, "TimeoutError", eRegexpError);
+    cMatchData = rb_define_class_under(mOnibi, "MatchData", rb_cObject);
+    rb_define_alloc_func(cMatchData, onibi_matchdata_alloc);
+    rb_define_private_method(cMatchData, "__onibi_match_data_diagnostics__",
+			     onibi_matchdata_summary, 0);
+    rb_define_private_method(rb_singleton_class(cMatchData), "__onibi_new__",
+			     onibi_matchdata_factory, -1);
     rb_define_singleton_method(cRegexp, "timeout=", onibi_timeout_set, 1);
     rb_define_singleton_method(cRegexp, "timeout", onibi_timeout_default, 0);
     rb_define_singleton_method(cRegexp, "escape", onibi_regexp_escape, 1);
@@ -175,6 +181,13 @@ Init_onibi(void)
     rb_define_method(cRegexp, "gsub", onibi_gsub, -1);
     rb_define_private_method(cRegexp, "__onibi_diagnostics__",
 			     onibi_diagnostics_for, 1);
+    rb_define_private_method(cRegexp, "__onibi_match_data_diagnostics__",
+			     onibi_matchdata_payload_diagnostics, -1);
+    rb_define_private_method(cRegexp, "__onibi_match_data_payload__",
+			     onibi_matchdata_payload_new, -1);
+    rb_define_private_method(cRegexp,
+			     "__onibi_match_data_failure_diagnostics__",
+			     onibi_matchdata_failure_diagnostics, -1);
     rb_define_private_method(cRegexp, "__onibi_match_p_diagnostics__",
 			     onibi_match_p_diagnostics, 1);
     rb_define_private_method(cRegexp, "__onibi_internal_error_diagnostics__",

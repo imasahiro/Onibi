@@ -2,6 +2,7 @@
 #include "onibi_compiler_internal.h"
 #include "onibi_exec_internal.h"
 #include "onibi_gir_internal.h"
+#include "onibi_matchdata_internal.h"
 #include "onibi_rseq_internal.h"
 
 static int
@@ -46,6 +47,174 @@ static const char *const onibi_compile_error_names[] = {
 static const char *const onibi_unsupported_reason_names[] = {
     "none",  "meta_escape", "escape",	  "grapheme",
     "class", "limit",	    "possessive", "zero_width_repeat"};
+
+typedef struct {
+    VALUE self;
+    VALUE subject;
+    VALUE ranges;
+    OnibiBytePos *storage;
+    uint32_t num_regs;
+} OnibiMatchDataDiagnosticCall;
+
+static VALUE
+onibi_matchdata_payload_body(VALUE opaque)
+{
+    OnibiMatchDataDiagnosticCall *call =
+	(OnibiMatchDataDiagnosticCall *)(uintptr_t)opaque;
+    StringValue(call->subject);
+    if (NIL_P(call->ranges)) {
+	onibi_regexp_t *obj;
+	TypedData_Get_Struct(call->self, onibi_regexp_t, &onibi_type, obj);
+	if (NIL_P(obj->rseq) || !obj->rseq_view_valid ||
+	    obj->rseq_view.header == NULL)
+	    rb_raise(eRegexpError,
+		     "Onibi cannot build MatchData for an unsupported regexp");
+	uint32_t capture_count = obj->rseq_view.header->capture_count;
+	if (capture_count == UINT32_MAX)
+	    rb_raise(rb_eRangeError, "Onibi capture count is too large");
+	call->num_regs = capture_count + 1U;
+	if ((size_t)call->num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	    rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+	call->storage =
+	    ruby_xmalloc((size_t)call->num_regs * sizeof(OnibiBytePos) * 2U);
+	OnibiBytePos *beg = call->storage;
+	OnibiBytePos *end = beg + call->num_regs;
+	OnibiRawMatch raw_match = {.begin_byte = -1,
+				   .end_byte = -1,
+				   .num_regs = call->num_regs,
+				   .beg = beg,
+				   .end = end};
+	if (!onibi_raw_match_reset(&raw_match))
+	    rb_raise(eRegexpError, "Onibi raw match setup failed");
+	int status = onibi_vm_search(call->self, call->subject, 0, &raw_match);
+	if (status != ONIBI_EXEC_STATUS_MATCH)
+	    rb_raise(eRegexpError, "Onibi did not produce a native match");
+	return onibi_matchdata_new(call->self, call->subject, &raw_match);
+    }
+
+    if (!RB_TYPE_P(call->ranges, T_ARRAY) || RARRAY_LEN(call->ranges) == 0)
+	rb_raise(rb_eArgError, "Onibi raw ranges must be a non-empty array");
+    long count = RARRAY_LEN(call->ranges);
+    if ((uint64_t)count > UINT32_MAX)
+	rb_raise(rb_eRangeError, "Onibi raw range count is too large");
+    call->num_regs = (uint32_t)count;
+    if ((size_t)call->num_regs > SIZE_MAX / sizeof(OnibiBytePos) / 2U)
+	rb_raise(rb_eRangeError, "Onibi capture ranges are too large");
+    call->storage =
+	ruby_xmalloc((size_t)call->num_regs * sizeof(OnibiBytePos) * 2U);
+    OnibiBytePos *beg = call->storage;
+    OnibiBytePos *end = beg + call->num_regs;
+    for (uint32_t i = 0; i < call->num_regs; i++) {
+	VALUE pair = rb_ary_entry(call->ranges, (long)i);
+	if (!RB_TYPE_P(pair, T_ARRAY) || RARRAY_LEN(pair) != 2)
+	    rb_raise(rb_eArgError, "Onibi raw ranges must contain pairs");
+	beg[i] = NUM2LONG(rb_ary_entry(pair, 0));
+	end[i] = NUM2LONG(rb_ary_entry(pair, 1));
+    }
+    OnibiRawMatch raw_match = {.begin_byte = beg[0],
+			       .end_byte = end[0],
+			       .num_regs = call->num_regs,
+			       .beg = beg,
+			       .end = end};
+    return onibi_matchdata_new(call->self, call->subject, &raw_match);
+}
+
+static VALUE
+onibi_matchdata_payload_cleanup(VALUE opaque)
+{
+    OnibiMatchDataDiagnosticCall *call =
+	(OnibiMatchDataDiagnosticCall *)(uintptr_t)opaque;
+    ruby_xfree(call->storage);
+    call->storage = NULL;
+    return Qnil;
+}
+
+static VALUE
+onibi_matchdata_payload_from_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE subject, ranges = Qnil;
+    rb_scan_args(argc, argv, "11", &subject, &ranges);
+    OnibiMatchDataDiagnosticCall call = {self, subject, ranges, NULL, 0};
+    return rb_ensure(onibi_matchdata_payload_body, (VALUE)(uintptr_t)&call,
+		     onibi_matchdata_payload_cleanup, (VALUE)(uintptr_t)&call);
+}
+
+static VALUE
+onibi_matchdata_payload_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE payload = onibi_matchdata_payload_from_diagnostics(argc, argv, self);
+    return onibi_matchdata_summary(payload);
+}
+
+static VALUE
+onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self)
+{
+    return onibi_matchdata_payload_from_diagnostics(argc, argv, self);
+}
+
+typedef struct {
+    VALUE self;
+    VALUE subject;
+    VALUE ranges;
+} OnibiMatchDataFailureProbe;
+
+static VALUE
+onibi_matchdata_failure_probe_body(VALUE opaque)
+{
+    OnibiMatchDataFailureProbe *probe =
+	(OnibiMatchDataFailureProbe *)(uintptr_t)opaque;
+    VALUE args[2] = {probe->subject, probe->ranges};
+    return onibi_matchdata_payload_new(2, args, probe->self);
+}
+
+static VALUE
+onibi_matchdata_failure_diagnostics(int argc, VALUE *argv, VALUE self)
+{
+    VALUE subject, ranges, stage_value;
+    rb_scan_args(argc, argv, "21", &subject, &ranges, &stage_value);
+    int stage = NUM2INT(stage_value);
+    size_t before = onibi_matchdata_live_allocations();
+    OnibiMatchDataFailureProbe probe = {self, subject, ranges};
+    int previous_stage = onibi_matchdata_failure_stage();
+    onibi_matchdata_set_failure_stage(stage);
+    int state = 0;
+    VALUE payload = rb_protect(onibi_matchdata_failure_probe_body,
+			       (VALUE)(uintptr_t)&probe, &state);
+    onibi_matchdata_set_failure_stage(previous_stage);
+    VALUE result = rb_hash_new();
+    rb_hash_aset(result, ID2SYM(rb_intern("stage")), INT2NUM(stage));
+    rb_hash_aset(result, ID2SYM(rb_intern("before")),
+		 ULL2NUM((unsigned long long)before));
+    rb_hash_aset(
+	result, ID2SYM(rb_intern("after")),
+	ULL2NUM((unsigned long long)onibi_matchdata_live_allocations()));
+    rb_hash_aset(result, ID2SYM(rb_intern("raised")),
+		 state == 0 ? Qfalse : Qtrue);
+    if (state != 0) {
+	VALUE error = rb_errinfo();
+	rb_hash_aset(result, ID2SYM(rb_intern("error")), rb_obj_class(error));
+	rb_set_errinfo(Qnil);
+    }
+    else {
+	rb_hash_aset(result, ID2SYM(rb_intern("payload")),
+		     onibi_matchdata_summary(payload));
+    }
+    return result;
+}
+
+static VALUE
+onibi_matchdata_factory(int argc, VALUE *argv, VALUE klass)
+{
+    (void)klass;
+    if (argc < 2 || argc > 3)
+	rb_raise(rb_eArgError,
+		 "wrong number of arguments (given %d, expected 2..3)", argc);
+    VALUE regexp = argv[0];
+    if (!rb_obj_is_kind_of(regexp, cRegexp))
+	rb_raise(rb_eTypeError, "expected an Onibi::Regexp");
+    VALUE args[2] = {argv[1], argc == 3 ? argv[2] : Qnil};
+    return onibi_matchdata_payload_new(2, args, regexp);
+}
 
 /* Internal test hook.  It reports the compiled contract and the executor
  * selected for one search.  The hook does not call MRI to obtain a result. */
