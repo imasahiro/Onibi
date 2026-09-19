@@ -61,6 +61,7 @@
 | TASK-53D | C-08 | TASK-53A, TASK-53B3, TASK-53C2 | luna/high | accepted: current architecture comments and documentation | ext/onibi comments and docs/development.md | root warning build; module contracts 4/122 pass; comment-only diff verified; exact evidence in docs/task-53d-audit.md |
 | TASK-54  | C-03, C-04, C-05                               | none                                                                                               | luna/high            | accepted: explicit vector safety invariants                                        | `ext/onibi/onibi_vector.h`; focused tests                                        | commit `3da080a3`; root Ruby 4.0.6 build; 126/24066 pass; standalone header compile, alias append, and invalid insert verified                                                                                                                                                   |
 | TASK-55A | RC-01, M-04 | TASK-53; final gate still needs TASK-42B | luna/high | accepted: current-state audit only | docs/task-55a-audit.md; probe evidence retained in worker worktree | warning build passes; exact Ractor isolation probes pass; three harness fault probes reject and reap; invocation-state baseline has 6 stale API errors |
+| TASK-55B | RC-01, MRI metadata semantics | TASK-55A | luna/max | accepted: immutable retained metadata and isolated public getter copies | rseq.c; regexp_metadata_isolation_test.rb; docs/task-55b-evidence.md | worker 163618f3; root ownership review; MRI 4.0.6 warning build; focused 4/43 and existing 43/171 pass; zero native fallback; format checks pass |
 | TASK-55  | RC-01, M-04                                    | TASK-42, TASK-53                                                                                   | luna/high            | pending: Ractor/shareability audit                                       | —                                                                               | —                                                                                                                                                   |
 
 
@@ -140,3 +141,15 @@ Dispatch stop: five-hour account window reached 90% used on 2026-09-19.
 No new worker was opened. TASK-42B remains blocked; TASK-55 is not accepted.
 Next action after reset: dispatch TASK-55B (Luna/Max) to define and test MRI-compatible metadata getter isolation for stored names/named_captures, without enabling Ractor-safe methods or changing MatchData integration.
 Scope the unit to retained metadata ownership and fresh public return values. Use the TASK-55A nested-mutation reproduction and MRI expected behavior.
+
+TASK-55B accepted on 2026-09-20 at worker commit `163618f3`.
+Root verified the durable relay digest, source/workspace, ownership diff, MRI probes, and exact check logs.
+Retained names and capture metadata are immutable; getters copy mutable containers and values.
+No Ractor enablement, execution classification change, or MatchData adapter change occurred.
+Keep probe logs in `/Users/masa/.codex/worktrees/0167/Onibi/.task-55b-logs/`.
+
+Remaining dependency frontier: TASK-42B is blocked on a supported MRI MatchData register-transfer API; TASK-42 remains partial.
+Final TASK-55 depends on TASK-42B and remains pending. TASK-55A/B do not remove that dependency.
+No additional implementation unit is ready under the current MRI-only gem scope.
+Next action: obtain a supported MRI transfer API or explicitly approve a separate MRI-integration scope before resuming TASK-42B.
+Do not construct RMatch manually, rerun MRI as the native implementation, or mark the blocked parents complete.
