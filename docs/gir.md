@@ -2422,6 +2422,22 @@ Search-start preference does not affect the boolean result.
 
 # 58. `Regexp#match` and `=~`
 
+## Gem PoC contract
+
+Supported native `Onibi::Regexp#match` results use a C `Onibi::MatchData` object.
+The object copies native raw capture ranges and owns a frozen subject snapshot.
+Its supported methods follow MRI results, errors, encodings, and copy behavior.
+It is not an MRI `MatchData`; its `regexp` method returns the owning `Onibi::Regexp`.
+The native path must not rerun MRI to materialize the result.
+Existing explicit unsupported-pattern and input-ineligibility fallback remains permitted.
+
+The custom object must never enter MRI backreference storage or `RMATCH_REGS` consumers.
+Exact MRI type identity and caller-local VM backreferences are outside the gem contract.
+Do not emulate these properties with type overrides or unsafe `rb_backref_set` calls.
+The gem implementation is tracked in the execution ledger.
+
+## Later MRI integration
+
 Methods that expose captures or update backreference state must use ordered semantics.
 
 Before returning, Onibi materializes the capture region.
@@ -2444,6 +2460,14 @@ $2
 ---
 
 # 59. MatchData Integration
+
+For the gem PoC, the transfer is `OnibiRawMatch -> Onibi::MatchData`.
+Byte registers are copied before search cleanup. Character offsets remain lazy.
+Names retain ordered capture-index lists for duplicate-name lookup.
+Select the last participating capture; preserve unmatched and empty capture distinctions.
+The subject, raw registers, and metadata have explicit GC and allocation ownership.
+
+The following `RMatch` transfer applies to later MRI integration.
 
 `RMatch` stores byte-offset register data.
 

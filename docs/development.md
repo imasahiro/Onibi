@@ -47,6 +47,13 @@ native VM selects the match.
 
 ### MatchData migration debt
 
+The accepted gem design will replace the supported-path adapter with native
+`Onibi::MatchData`. Implementation is pending. The custom object will preserve
+method behavior, but not MRI type identity or caller-local VM backreferences.
+It must never enter MRI backreference storage. See
+[`task-42b1-matchdata-design.md`](task-42b1-matchdata-design.md).
+The paragraphs below describe the current implementation until routing changes.
+
 The native matcher produces raw byte ranges before any Ruby `MatchData`
 materialization. MRI 4.0.6 does not provide a supported extension API to create
 an `RMatch` from external `re_registers`; its public header also prohibits

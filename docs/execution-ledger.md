@@ -157,3 +157,11 @@ Do not construct RMatch manually, rerun MRI as the native implementation, or mar
 TASK-42B1 design review 1: repair requested, Luna/High worker `01a0bbee-0ef4-7ab0-9a55-5bc899962299`.
 Keep native Onibi::MatchData proposal. Correct duplicate-name representation, string/nil metadata semantics, and forbid custom-object injection into MRI backreference storage.
 Split accessor implementation by independent invariant before adoption. User authorized consideration of an Onibi-owned compatible implementation on 2026-09-20.
+
+TASK-42B1 accepted on 2026-09-20: native Onibi::MatchData gem design.
+Root reproduced all 68 MRI probe observations byte-for-byte and reviewed duplicate-name and backreference boundaries.
+The new gem contract in GIR sections 58-59 removes the external RMatch constructor dependency for gem implementation only.
+Exact MRI type identity, C consumers, and VM backreferences remain later MRI-integration requirements.
+TASK-42B is now split for gem implementation; it is not complete. The earlier blocked frontier is superseded by this accepted contract.
+Next: TASK-42B2, Luna/High, native payload/lifetime only; later units implement numeric access, named lookup, offsets, value behavior, and public routing.
+Keep the probe and output at `/Users/masa/.codex/worktrees/f7d9/Onibi/.task-42b1-logs/`.
