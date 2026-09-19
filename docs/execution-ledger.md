@@ -153,3 +153,7 @@ Final TASK-55 depends on TASK-42B and remains pending. TASK-55A/B do not remove 
 No additional implementation unit is ready under the current MRI-only gem scope.
 Next action: obtain a supported MRI transfer API or explicitly approve a separate MRI-integration scope before resuming TASK-42B.
 Do not construct RMatch manually, rerun MRI as the native implementation, or mark the blocked parents complete.
+
+TASK-42B1 design review 1: repair requested, Luna/High worker `01a0bbee-0ef4-7ab0-9a55-5bc899962299`.
+Keep native Onibi::MatchData proposal. Correct duplicate-name representation, string/nil metadata semantics, and forbid custom-object injection into MRI backreference storage.
+Split accessor implementation by independent invariant before adoption. User authorized consideration of an Onibi-owned compatible implementation on 2026-09-20.
