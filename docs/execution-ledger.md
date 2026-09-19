@@ -165,3 +165,7 @@ Exact MRI type identity, C consumers, and VM backreferences remain later MRI-int
 TASK-42B is now split for gem implementation; it is not complete. The earlier blocked frontier is superseded by this accepted contract.
 Next: TASK-42B2, Luna/High, native payload/lifetime only; later units implement numeric access, named lookup, offsets, value behavior, and public routing.
 Keep the probe and output at `/Users/masa/.codex/worktrees/f7d9/Onibi/.task-42b1-logs/`.
+
+TASK-42B2 review 1: repair requested from Luna/High worker `01a0bbfa-5d2c-7912-afdc-ee07f34d9583`.
+Keep payload ownership design; replace input-sized diagnostic stack arrays with ensured heap ownership.
+Required remaining evidence: explicit validation errors, coercion-failure cleanup, GC compaction, MRI capture-outside-group0 example, and restored diagnostic injection state.
