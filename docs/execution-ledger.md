@@ -60,6 +60,7 @@
 | TASK-53C2 | C-07 | TASK-53A, TASK-53C1 | luna/max | accepted: fixed-width GIR builder IDs | GIR, NFA, compiler, RSeq, diagnostics, focused ID tests | root deep review; MRI 4.0.6 warning build; quality 106/640 and semantic 40/19259 pass; exact commands below |
 | TASK-53D | C-08 | TASK-53A, TASK-53B3, TASK-53C2 | luna/high | accepted: current architecture comments and documentation | ext/onibi comments and docs/development.md | root warning build; module contracts 4/122 pass; comment-only diff verified; exact evidence in docs/task-53d-audit.md |
 | TASK-54  | C-03, C-04, C-05                               | none                                                                                               | luna/high            | accepted: explicit vector safety invariants                                        | `ext/onibi/onibi_vector.h`; focused tests                                        | commit `3da080a3`; root Ruby 4.0.6 build; 126/24066 pass; standalone header compile, alias append, and invalid insert verified                                                                                                                                                   |
+| TASK-55A | RC-01, M-04 | TASK-53; final gate still needs TASK-42B | luna/high | accepted: current-state audit only | docs/task-55a-audit.md; probe evidence retained in worker worktree | warning build passes; exact Ractor isolation probes pass; three harness fault probes reject and reap; invocation-state baseline has 6 stale API errors |
 | TASK-55  | RC-01, M-04                                    | TASK-42, TASK-53                                                                                   | luna/high            | pending: Ractor/shareability audit                                       | —                                                                               | —                                                                                                                                                   |
 
 
@@ -128,3 +129,14 @@ TASK-55A review 2: source/getter correction retained; process harness still reje
 After scope reassessment, the same Luna/High worker owns only the bounded harness correction.
 Required proof: deadline through process exit after pipe EOF, exact expected exit status, and self-checks through normal rejection logic.
 At this review the five-hour usage window was 84% used; start no large semantic task and stabilize active work first.
+
+TASK-55A review 3: ACCEPT current-state audit at worker commit `d63d1dcb`.
+Root inspected corrected process-lifetime deadlines, exact exit classification, separate match/scan probes, source/getter isolation, and recorded outputs.
+Production behavior is unchanged. Onibi objects remain non-shareable and child-Ractor C calls remain unsafe.
+Audit driver and complete outputs remain at `/Users/masa/.codex/worktrees/d64e/Onibi/.task-55a-logs/`; keep this worktree.
+Required invocation-state checks retain 6 baseline NameErrors for removed Ruby internals; these are not native test passes.
+
+Dispatch stop: five-hour account window reached 90% used on 2026-09-19.
+No new worker was opened. TASK-42B remains blocked; TASK-55 is not accepted.
+Next action after reset: dispatch TASK-55B (Luna/Max) to define and test MRI-compatible metadata getter isolation for stored names/named_captures, without enabling Ractor-safe methods or changing MatchData integration.
+Scope the unit to retained metadata ownership and fresh public return values. Use the TASK-55A nested-mutation reproduction and MRI expected behavior.
