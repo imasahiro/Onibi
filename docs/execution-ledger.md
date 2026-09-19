@@ -123,3 +123,8 @@ TASK-55A review 1: rejected audit evidence; keep source findings and correct the
 Worker: `01a0b9f3-81e4-7b80-a864-b6ac8069cdd8`, Luna/High, worktree `/Users/masa/.codex/worktrees/d64e/Onibi`.
 Required corrections: reject timeouts and unexpected errors, isolate each probe in a bounded process, test scan separately, and distinguish retained values from getter returns.
 TASK-55 remains pending. No runtime changes or shareability enablement are authorized by this audit.
+
+TASK-55A review 2: source/getter correction retained; process harness still rejected.
+After scope reassessment, the same Luna/High worker owns only the bounded harness correction.
+Required proof: deadline through process exit after pipe EOF, exact expected exit status, and self-checks through normal rejection logic.
+At this review the five-hour usage window was 84% used; start no large semantic task and stabilize active work first.
