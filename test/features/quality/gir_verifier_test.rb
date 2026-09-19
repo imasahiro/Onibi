@@ -5,6 +5,8 @@ require "test_helper"
 class GirVerifierTest < Minitest::Test
   FAILURE_CASES = {
     state_ids: "state IDs are not contiguous",
+    state_id_reserved: "state IDs are not contiguous",
+    state_id_exhaustion: "state IDs are not contiguous",
     state_opcode_payload: "state opcode payload is invalid",
     edge_state_range: "edge state is out of range",
     edge_order: "ordered edges are not preserved",

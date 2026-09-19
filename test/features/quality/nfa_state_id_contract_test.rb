@@ -6,9 +6,7 @@ class NfaStateIdContractTest < Minitest::Test
   ROOT = File.expand_path("../../..", __dir__)
   CONVERSION_HELPERS = %w[
     onibi_nfa_state_id_to_gir_id
-    onibi_gir_id_to_nfa_state_id
     onibi_gir_state_id_to_nfa_state_id
-    onibi_gir_state_id_from_long
   ].freeze
 
   def test_nfa_uses_a_fixed_width_id_and_reserved_sentinel
@@ -31,20 +29,15 @@ class NfaStateIdContractTest < Minitest::Test
     source = sources.fetch("nfa.c")
 
     assert_match(
-      /onibi_gir_id_to_nfa_state_id\(long id, size_t state_count\).*?\n\}/m,
+      /onibi_gir_state_id_to_nfa_state_id\(OnibiGirStateId id, size_t state_count\).*?\n\}/m,
       source
     )
     assert_includes source, "onibi_nfa_state_id_to_gir_id"
     assert_includes source, "onibi_gir_state_id_to_nfa_state_id"
-    assert_includes source, "onibi_gir_state_id_from_long"
     gir = File.read(File.join(ROOT, "ext", "onibi", "gir.c"))
     refute_includes gir, "ONIBI_VECTOR_DEFINE(onibi_nfa_state_id_vector"
     assert_match(
-      /if \(id < 0 \|\| \(uint64_t\)id >= \(uint64_t\)state_count/,
-      source
-    )
-    assert_match(
-      /if \(id == ONIBI_NFA_STATE_NONE \|\| \(uint64_t\)id >=/,
+      /if \(id == ONIBI_GIR_STATE_NONE \|\| id == ONIBI_NFA_STATE_NONE \|\|/,
       source
     )
 

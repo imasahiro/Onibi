@@ -53,8 +53,8 @@ onibi_rseq_serialize_action(const OnibiGAction *action,
 /* These records exist only while lowering.  They keep semantic GIR action
  * storage immutable and put physical action offsets in the RSeq records. */
 typedef struct {
-    long from;
-    long to;
+    OnibiGirStateId from;
+    OnibiGirStateId to;
     uint32_t action_offset;
     uint32_t action_count;
 } OnibiRSeqEdgeEntry;
@@ -375,7 +375,7 @@ onibi_rseq_edge_group_body(VALUE opaque)
 			    vector->count * sizeof(*owner->ordered));
     memset(owner->counts, 0, owner->state_count * sizeof(*owner->counts));
     for (size_t i = 0; i < vector->count; i++) {
-	if (vector->entries[i].from < 0 ||
+	if (vector->entries[i].from == ONIBI_GIR_STATE_NONE ||
 	    (size_t)vector->entries[i].from >= owner->state_count)
 	    rb_raise(rb_eArgError, "RSeq edge source is out of range");
 	owner->counts[vector->entries[i].from]++;
@@ -516,6 +516,8 @@ onibi_rseq_lower_body(VALUE opaque)
 	rb_raise(rb_eArgError, "RSeq capture count is out of range");
     uint32_t capture_count = (uint32_t)gir_capture_count;
     size_t state_count = compiled_data->states.count;
+    if (state_count >= (size_t)ONIBI_GIR_STATE_NONE)
+	rb_raise(rb_eArgError, "RSeq lowering received too many GIR states");
     onibi_allocation_owner_set_phase(&owner->allocations, 1);
     onibi_gir_state_vector_init(&state_records);
     onibi_gir_state_vector_bind(&state_records, &owner->allocations);
@@ -541,19 +543,21 @@ onibi_rseq_lower_body(VALUE opaque)
     onibi_id_vector_append(&lookbehind_width_records,
 			   &compiled_data->lookbehind_widths);
     onibi_rseq_lower_fail_if(owner, 2);
-    long accept_state = compiled_data->accept;
-    if (accept_state < 0 || (size_t)accept_state >= state_count)
+    OnibiGirStateId accept_state = compiled_data->accept;
+    if (accept_state == ONIBI_GIR_STATE_NONE ||
+	(size_t)accept_state >= state_count)
 	rb_raise(rb_eArgError,
 		 "RSeq lowering received an invalid accept state");
     for (size_t i = 0; i < compiled_data->edges.count; i++) {
 	const OnibiGirEdgeEntry *edge = &compiled_data->edges.entries[i];
-	if (edge->from < 0 || (size_t)edge->from >= state_count ||
-	    edge->to < 0 || (size_t)edge->to >= state_count)
+	if (edge->from == ONIBI_GIR_STATE_NONE ||
+	    (size_t)edge->from >= state_count ||
+	    edge->to == ONIBI_GIR_STATE_NONE || (size_t)edge->to >= state_count)
 	    rb_raise(rb_eArgError, "RSeq lowering received an invalid edge");
     }
     for (size_t i = 0; i < compiled_data->start_edges.count; i++) {
-	long to = compiled_data->start_edges.entries[i].to;
-	if (to < 0 || (size_t)to >= state_count)
+	OnibiGirStateId to = compiled_data->start_edges.entries[i].to;
+	if (to == ONIBI_GIR_STATE_NONE || (size_t)to >= state_count)
 	    rb_raise(rb_eArgError,
 		     "RSeq lowering received an invalid start edge");
     }
@@ -617,7 +621,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	    &owner->lowering_work, edge_actions);
 	onibi_rseq_edge_vector_push(
 	    &r_start_edge_records,
-	    (OnibiRSeqEdgeEntry){-1, edge->to, action_offset,
+	    (OnibiRSeqEdgeEntry){ONIBI_GIR_STATE_NONE, edge->to, action_offset,
 				 (uint32_t)edge_actions->count});
     }
     onibi_rseq_lower_fail_if(owner, 5);
@@ -739,7 +743,8 @@ onibi_rseq_lower_body(VALUE opaque)
     memset(physical.first_bitmap, 0, sizeof(physical.first_bitmap));
     for (size_t i = 0; i < r_start_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *edge = &r_start_edge_records.entries[i];
-	if (edge->to < 0 || (size_t)edge->to >= state_records.count) {
+	if (edge->to == ONIBI_GIR_STATE_NONE ||
+	    (size_t)edge->to >= state_records.count) {
 	    bitmap_valid = 0;
 	    continue;
 	}
@@ -792,7 +797,8 @@ onibi_rseq_lower_body(VALUE opaque)
 						   : 0xff);
 	size_t edge_base = physical_edge_index;
 	while (physical_edge_index < r_edge_records.count &&
-	       r_edge_records.entries[physical_edge_index].from == (long)i)
+	       r_edge_records.entries[physical_edge_index].from ==
+		   (OnibiGirStateId)i)
 	    physical_edge_index++;
 	size_t edge_count = physical_edge_index - edge_base;
 	if (edge_count > UINT16_MAX)
@@ -813,8 +819,9 @@ onibi_rseq_lower_body(VALUE opaque)
     OnibiRSeqHeader *physical_header = (OnibiRSeqHeader *)RSTRING_PTR(blob);
     if (!ignorecase && r_start_edge_records.count == 1 &&
 	r_start_edge_records.entries[0].action_count == 0) {
-	long current = r_start_edge_records.entries[0].to;
-	while (current >= 0 && (size_t)current < state_records.count &&
+	OnibiGirStateId current = r_start_edge_records.entries[0].to;
+	while (current != ONIBI_GIR_STATE_NONE &&
+	       (size_t)current < state_records.count &&
 	       physical_header->prefix_length <
 		   sizeof(physical_header->prefix)) {
 	    OnibiGirStateEntry *state = &state_records.entries[current];
@@ -832,7 +839,7 @@ onibi_rseq_lower_body(VALUE opaque)
 	    OnibiRSeqEdgeEntry *next =
 		&r_edge_records.entries[physical_state->edge_base];
 	    owner->lowering_work.prefix_edges++;
-	    if (next->action_count != 0 || next->to < 0 ||
+	    if (next->action_count != 0 || next->to == ONIBI_GIR_STATE_NONE ||
 		(size_t)next->to >= state_records.count)
 		break;
 	    current = next->to;
@@ -842,8 +849,9 @@ onibi_rseq_lower_body(VALUE opaque)
 	(OnibiREdge *)(RSTRING_PTR(blob) + physical.edges_offset);
     for (size_t i = 0; i < r_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &r_edge_records.entries[i];
-	uint32_t destination = (uint32_t)record->to;
-	if (destination == (uint32_t)(state_records.count - 1))
+	OnibiStateId destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
+	if (destination == (OnibiStateId)(state_records.count - 1))
 	    destination = ONIBI_ACCEPT_STATE;
 	physical_edges[i].destination = destination;
 	physical_edges[i].action_offset =
@@ -855,7 +863,8 @@ onibi_rseq_lower_body(VALUE opaque)
     for (size_t i = 0; i < subprogram_entry_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &subprogram_entry_records.entries[i];
 	size_t index = r_edge_records.count + r_start_edge_records.count + i;
-	physical_edges[index].destination = (uint32_t)record->to;
+	physical_edges[index].destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
 	physical_edges[index].action_offset =
 	    record->action_count == 0
 		? 0
@@ -865,7 +874,8 @@ onibi_rseq_lower_body(VALUE opaque)
     for (size_t i = 0; i < r_start_edge_records.count; i++) {
 	OnibiRSeqEdgeEntry *record = &r_start_edge_records.entries[i];
 	size_t index = r_edge_records.count + i;
-	physical_edges[index].destination = (uint32_t)record->to;
+	physical_edges[index].destination =
+	    onibi_gir_state_id_to_rseq_state_id(record->to);
 	physical_edges[index].action_offset =
 	    record->action_count == 0
 		? 0
@@ -936,8 +946,10 @@ onibi_rseq_lower_body(VALUE opaque)
 				physical.subprograms_offset);
     for (size_t i = 0; i < subprogram_records.count; i++) {
 	OnibiRSeqSubprogramEntry *record = &subprogram_records.entries[i];
-	physical_subprograms[i].entry = record->entry;
-	physical_subprograms[i].accept = record->accept;
+	physical_subprograms[i].entry =
+	    onibi_gir_state_id_to_rseq_state_id(record->entry);
+	physical_subprograms[i].accept =
+	    onibi_gir_state_id_to_rseq_state_id(record->accept);
 	physical_subprograms[i].flags = record->flags;
 	physical_subprograms[i].option_env = record->option_env;
 	physical_subprograms[i].entry_edge_base =

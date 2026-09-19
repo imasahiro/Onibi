@@ -56,44 +56,24 @@ onibi_nfa_state_id_next(onibi_gir_builder_t *builder)
     return (OnibiNfaStateId)nfa->states.count;
 }
 
-/* Convert a checked NFA ID to the signed GIR builder ID representation. */
-static long
+/* Convert a checked NFA ID to the fixed-width GIR builder ID representation. */
+static OnibiGirStateId
 onibi_nfa_state_id_to_gir_id(OnibiNfaStateId id)
 {
-    if (id == ONIBI_NFA_STATE_NONE || (uint64_t)id > (uint64_t)LONG_MAX)
+    if (id == ONIBI_NFA_STATE_NONE || id == ONIBI_GIR_STATE_NONE)
 	rb_raise(eRegexpError, "NFA state ID cannot be represented by GIR");
-    return (long)id;
+    return (OnibiGirStateId)id;
 }
 
-/* Convert the temporary signed GIR edge representation back to an NFA ID.
- * The caller supplies the NFA state count because the conversion also checks
- * that the value names an existing state before any narrowing operation. */
+/* Convert a GIR ID back to an NFA ID.  The caller supplies the NFA state
+ * count because the conversion also checks the named state before narrowing. */
 static OnibiNfaStateId
-onibi_gir_id_to_nfa_state_id(long id, size_t state_count)
+onibi_gir_state_id_to_nfa_state_id(OnibiGirStateId id, size_t state_count)
 {
-    if (id < 0 || (uint64_t)id >= (uint64_t)state_count ||
-	(uint64_t)id >= (uint64_t)ONIBI_NFA_STATE_NONE)
+    if (id == ONIBI_GIR_STATE_NONE || id == ONIBI_NFA_STATE_NONE ||
+	(uint64_t)id >= (uint64_t)state_count)
 	rb_raise(eRegexpError, "GIR state ID cannot be represented by NFA");
     return (OnibiNfaStateId)id;
-}
-
-/* Convert an already materialized fixed-width GIR ID without first narrowing
- * it through signed long.  This matters on platforms where long is 32 bits. */
-static OnibiNfaStateId
-onibi_gir_state_id_to_nfa_state_id(OnibiStateId id, size_t state_count)
-{
-    if (id == ONIBI_NFA_STATE_NONE || (uint64_t)id >= (uint64_t)state_count)
-	rb_raise(eRegexpError, "GIR state ID cannot be represented by NFA");
-    return (OnibiNfaStateId)id;
-}
-
-/* Convert a compact GIR ID to the public fixed-width GIR state ID. */
-static OnibiStateId
-onibi_gir_state_id_from_long(long id)
-{
-    if (id < 0 || (uint64_t)id >= (uint64_t)ONIBI_NFA_STATE_NONE)
-	rb_raise(eRegexpError, "GIR state ID exceeds the fixed-width range");
-    return (OnibiStateId)id;
 }
 
 static void
@@ -347,11 +327,11 @@ typedef struct {
     const OnibiTaggedNfa *nfa;
     const OnibiNfaAdjacency *adjacency;
     OnibiGirEdgeVector *out;
-    const long *state_map;
+    const OnibiGirStateId *state_map;
     size_t *visiting_action_bases;
     OnibiNfaDedup *dedup;
     size_t state_count;
-    long output_origin;
+    OnibiGirStateId output_origin;
 } OnibiNfaClosure;
 
 static void onibi_nfa_emit_closure(OnibiNfaClosure *closure,
@@ -382,8 +362,8 @@ onibi_nfa_closure_call_ensure(VALUE opaque)
 
 typedef struct {
     OnibiGirEdgeVector *out;
-    long from;
-    long to;
+    OnibiGirStateId from;
+    OnibiGirStateId to;
     OnibiGActionVector actions;
     int transferred;
 } OnibiNfaOutputEdgeCall;
@@ -418,7 +398,8 @@ onibi_nfa_hash_bytes(uint64_t hash, const void *data, size_t length)
 }
 
 static uint64_t
-onibi_nfa_edge_key_hash(long destination, const OnibiGActionVector *actions)
+onibi_nfa_edge_key_hash(OnibiGirStateId destination,
+			const OnibiGActionVector *actions)
 {
     uint64_t hash = UINT64_C(1469598103934665603);
     hash = onibi_nfa_hash_bytes(hash, &destination, sizeof(destination));
@@ -489,8 +470,9 @@ onibi_nfa_dedup_reserve(OnibiNfaDedup *dedup, onibi_allocation_owner_t *owner)
 
 static int
 onibi_nfa_dedup_find(const OnibiNfaDedup *dedup, const OnibiGirEdgeVector *out,
-		     long destination, const OnibiGActionVector *actions,
-		     uint64_t hash, size_t *slot_out)
+		     OnibiGirStateId destination,
+		     const OnibiGActionVector *actions, uint64_t hash,
+		     size_t *slot_out)
 {
     size_t slot = (size_t)hash & (dedup->capacity - 1);
     while (dedup->slots[slot].used) {
@@ -505,19 +487,19 @@ onibi_nfa_dedup_find(const OnibiNfaDedup *dedup, const OnibiGirEdgeVector *out,
     return 0;
 }
 
-static long
-onibi_nfa_state_id_map_to_gir_id(const long *state_map, size_t state_count,
-				 OnibiNfaStateId state)
+static OnibiGirStateId
+onibi_nfa_state_id_map_to_gir_id(const OnibiGirStateId *state_map,
+				 size_t state_count, OnibiNfaStateId state)
 {
     if (state == ONIBI_NFA_STATE_NONE || (size_t)state >= state_count)
 	rb_raise(eRegexpError, "NFA closure state is out of range");
-    long mapped = state_map[(size_t)state];
-    if (mapped < 0)
+    OnibiGirStateId mapped = state_map[(size_t)state];
+    if (mapped == ONIBI_GIR_STATE_NONE)
 	rb_raise(eRegexpError, "NFA closure reached an epsilon state");
     return mapped;
 }
 
-static long
+static OnibiGirStateId
 onibi_nfa_state_id_mapped_to_gir_id(const OnibiNfaClosure *closure,
 				    OnibiNfaStateId state)
 {
@@ -529,9 +511,8 @@ static void
 onibi_nfa_emit_edge(OnibiNfaClosure *closure, OnibiNfaStateId destination,
 		    OnibiGActionVector actions)
 {
-    long mapped = onibi_nfa_state_id_mapped_to_gir_id(closure, destination);
-    if (closure->output_origin < -1)
-	rb_raise(eRegexpError, "NFA closure has an invalid GIR origin");
+    OnibiGirStateId mapped =
+	onibi_nfa_state_id_mapped_to_gir_id(closure, destination);
     onibi_nfa_dedup_reserve(closure->dedup, closure->out->allocation_owner);
     uint64_t hash = onibi_nfa_edge_key_hash(mapped, &actions);
     size_t slot;
@@ -653,15 +634,15 @@ typedef struct {
     onibi_gir_builder_t *gir;
     OnibiGirEdgeVector *start_edges;
     OnibiNfaStateId root_entry;
-    long *state_map;
+    OnibiGirStateId *state_map;
     size_t *visiting_action_bases;
     OnibiNfaAdjacency adjacency;
     size_t *adjacency_next;
     OnibiNfaDedup dedup;
     OnibiGirEdgeVector expanded_subprogram_entries;
     int expanded_subprogram_entries_active;
-    long mapped_accept;
-    long mapped_root;
+    OnibiGirStateId mapped_accept;
+    OnibiGirStateId mapped_root;
 } OnibiNfaEliminateOwner;
 
 static VALUE
@@ -826,7 +807,7 @@ onibi_nfa_expand_subprogram_entries(OnibiNfaEliminateOwner *owner,
 	for (uint32_t j = 0; j < count; j++) {
 	    const OnibiGirEdgeEntry *entry = &original.entries[base + j];
 	    OnibiNfaStateId destination =
-		onibi_gir_id_to_nfa_state_id(entry->to, state_count);
+		onibi_gir_state_id_to_nfa_state_id(entry->to, state_count);
 	    onibi_nfa_dedup_reset(&owner->dedup);
 	    OnibiNfaClosure closure = {nfa,
 				       &owner->adjacency,
@@ -865,8 +846,6 @@ onibi_epsilon_eliminate_body(VALUE opaque)
     OnibiTaggedNfa *nfa = owner->nfa;
     onibi_gir_builder_t *gir = owner->gir;
     size_t state_count = nfa->states.count;
-    if (state_count > (size_t)LONG_MAX)
-	rb_raise(rb_eNoMemError, "NFA state map is too large");
     onibi_nfa_build_adjacency(owner);
     if (state_count > SIZE_MAX / sizeof(*owner->state_map))
 	rb_raise(rb_eNoMemError, "NFA state map is too large");
@@ -892,14 +871,14 @@ onibi_epsilon_eliminate_body(VALUE opaque)
     onibi_gir_edge_vector_init(owner->start_edges);
     onibi_gir_edge_vector_bind(owner->start_edges, gir->allocation_owner);
 
-    long next_gir_id = 0;
+    OnibiGirStateId next_gir_id = 0;
     for (size_t i = 0; i < state_count; i++) {
 	const OnibiNfaState *state = &nfa->states.entries[i];
 	if (state->kind == ONIBI_NFA_STATE_EPSILON) {
-	    owner->state_map[i] = -1;
+	    owner->state_map[i] = ONIBI_GIR_STATE_NONE;
 	    continue;
 	}
-	if (next_gir_id == LONG_MAX)
+	if (next_gir_id == ONIBI_GIR_STATE_NONE)
 	    rb_raise(rb_eNoMemError, "GIR state ID range is exhausted");
 	owner->state_map[i] = next_gir_id;
 	OnibiGirStateEntry finalized;
@@ -931,7 +910,7 @@ onibi_epsilon_eliminate_body(VALUE opaque)
 				     owner->visiting_action_bases,
 				     &owner->dedup,
 				     state_count,
-				     -1};
+				     ONIBI_GIR_STATE_NONE};
     onibi_nfa_dedup_reset(&owner->dedup);
     onibi_nfa_emit_closure(&start_closure, ONIBI_NFA_STATE_NONE, &empty);
     for (size_t i = 0; i < state_count; i++) {
@@ -957,17 +936,17 @@ onibi_epsilon_eliminate_body(VALUE opaque)
 	OnibiRSeqSubprogramEntry *subprogram = &gir->subprograms.entries[i];
 	OnibiNfaStateId nfa_accept =
 	    onibi_gir_state_id_to_nfa_state_id(subprogram->accept, state_count);
-	long accept = owner->state_map[(size_t)nfa_accept];
-	if (accept < 0)
+	OnibiGirStateId accept = owner->state_map[(size_t)nfa_accept];
+	if (accept == ONIBI_GIR_STATE_NONE)
 	    rb_raise(eRegexpError, "NFA subprogram maps to epsilon state");
-	subprogram->accept = onibi_gir_state_id_from_long(accept);
+	subprogram->accept = accept;
 	if (subprogram->entry_edge_count == 0 ||
 	    (uint64_t)subprogram->entry_edge_base +
 		    subprogram->entry_edge_count >
 		gir->subprogram_entries.count)
 	    rb_raise(eRegexpError, "NFA subprogram entry range is invalid");
-	subprogram->entry = onibi_gir_state_id_from_long(
-	    gir->subprogram_entries.entries[subprogram->entry_edge_base].to);
+	subprogram->entry =
+	    gir->subprogram_entries.entries[subprogram->entry_edge_base].to;
     }
     gir->next_id = next_gir_id;
     return Qnil;
@@ -976,31 +955,34 @@ onibi_epsilon_eliminate_body(VALUE opaque)
 static void
 onibi_epsilon_eliminate(OnibiTaggedNfa *nfa, onibi_gir_builder_t *gir,
 			OnibiGirEdgeVector *start_edges,
-			OnibiNfaStateId root_entry, long *accept_out,
-			long *root_entry_out)
+			OnibiNfaStateId root_entry, OnibiGirStateId *accept_out,
+			OnibiGirStateId *root_entry_out)
 {
     OnibiNfaEliminateOwner owner;
     memset(&owner, 0, sizeof(owner));
+    owner.mapped_accept = ONIBI_GIR_STATE_NONE;
+    owner.mapped_root = ONIBI_GIR_STATE_NONE;
     owner.nfa = nfa;
     owner.gir = gir;
     owner.start_edges = start_edges;
     owner.root_entry = root_entry;
     (void)rb_ensure(onibi_epsilon_eliminate_body, (VALUE)(uintptr_t)&owner,
 		    onibi_nfa_eliminate_ensure, (VALUE)(uintptr_t)&owner);
-    if (owner.mapped_accept < 0)
+    if (owner.mapped_accept == ONIBI_GIR_STATE_NONE)
 	rb_raise(eRegexpError, "NFA root accept maps to epsilon state");
-    long mapped_root = owner.mapped_root;
-    if (mapped_root < 0) {
+    OnibiGirStateId mapped_root = owner.mapped_root;
+    if (mapped_root == ONIBI_GIR_STATE_NONE) {
 	/* A compact repeat can use a private epsilon entry. The first
 	 * non-accept start edge remains the canonical root consuming state. */
 	for (size_t i = 0; i < start_edges->count; i++) {
-	    long destination = start_edges->entries[i].to;
+	    OnibiGirStateId destination = start_edges->entries[i].to;
 	    if (destination != owner.mapped_accept) {
 		mapped_root = destination;
 		break;
 	    }
 	}
-	if (mapped_root < 0) mapped_root = owner.mapped_accept;
+	if (mapped_root == ONIBI_GIR_STATE_NONE)
+	    mapped_root = owner.mapped_accept;
     }
     *accept_out = owner.mapped_accept;
     *root_entry_out = mapped_root;
@@ -1121,8 +1103,10 @@ onibi_nfa_gir_edge_diagnostics(const OnibiGirEdgeVector *edges)
     for (size_t i = 0; i < edges->count; i++) {
 	const OnibiGirEdgeEntry *edge = &edges->entries[i];
 	VALUE record = rb_hash_new();
-	rb_hash_aset(record, ID2SYM(rb_intern("from")), LONG2NUM(edge->from));
-	rb_hash_aset(record, ID2SYM(rb_intern("to")), LONG2NUM(edge->to));
+	rb_hash_aset(record, ID2SYM(rb_intern("from")),
+		     edge->from == ONIBI_GIR_STATE_NONE ? LONG2NUM(-1)
+							: UINT2NUM(edge->from));
+	rb_hash_aset(record, ID2SYM(rb_intern("to")), UINT2NUM(edge->to));
 	rb_hash_aset(record, ID2SYM(rb_intern("action_program")),
 		     onibi_nfa_action_program_diagnostics(&edge->actions));
 	rb_ary_push(records, record);
@@ -1141,7 +1125,7 @@ onibi_nfa_add_elimination_diagnostics(VALUE result,
     for (size_t i = 0; i < gir->states.count; i++) {
 	const OnibiGirStateEntry *state = &gir->states.entries[i];
 	VALUE record = rb_hash_new();
-	rb_hash_aset(record, ID2SYM(rb_intern("id")), LONG2NUM(state->id));
+	rb_hash_aset(record, ID2SYM(rb_intern("id")), UINT2NUM(state->id));
 	rb_hash_aset(
 	    record, ID2SYM(rb_intern("kind")),
 	    ID2SYM(rb_intern(state->opcode == ONIBI_G_ACCEPT ? "accept"

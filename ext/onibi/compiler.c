@@ -29,7 +29,7 @@ typedef struct {
     OnibiGirStateVector states;
     OnibiGirEdgeVector edges;
     OnibiGirEdgeVector start_edges;
-    long accept;
+    OnibiGirStateId accept;
     long capture_count;
     long counter_count;
     int options;
@@ -104,8 +104,8 @@ typedef struct {
 typedef struct {
     onibi_gir_builder_t *builder;
     OnibiGirEdgeVector *start_edges;
-    long accept;
-    long root_entry;
+    OnibiGirStateId accept;
+    OnibiGirStateId root_entry;
 } OnibiLowerNfaOutput;
 typedef struct {
     onibi_gir_builder_t *builder;
@@ -1340,7 +1340,7 @@ onibi_subprogram_entry_push(onibi_gir_builder_t *builder,
 	builder, ONIBI_NFA_STATE_NONE, destination, actions);
     onibi_gir_edge_vector_push(
 	&builder->subprogram_entries,
-	(OnibiGirEdgeEntry){(long)subprogram_id,
+	(OnibiGirEdgeEntry){(OnibiGirStateId)subprogram_id,
 			    onibi_nfa_state_id_to_gir_id(destination), 0,
 			    composed});
 }
@@ -1385,10 +1385,8 @@ onibi_store_subprogram_fragment(onibi_fragment_t *fragment,
 	rb_raise(eRegexpError, "subprogram entry set exceeds the RSeq limit");
     OnibiRSeqSubprogramEntry descriptor;
     memset(&descriptor, 0, sizeof(descriptor));
-    descriptor.entry = onibi_gir_state_id_from_long(
-	builder->subprogram_entries.entries[entry_base].to);
-    descriptor.accept =
-	onibi_gir_state_id_from_long(onibi_nfa_state_id_to_gir_id(accept));
+    descriptor.entry = builder->subprogram_entries.entries[entry_base].to;
+    descriptor.accept = onibi_nfa_state_id_to_gir_id(accept);
     descriptor.flags = flags;
     descriptor.option_env = option_env;
     descriptor.entry_edge_base = (uint32_t)entry_base;
@@ -2598,8 +2596,10 @@ onibi_compiler_pass_init_builder(onibi_gir_builder_t *builder,
 /* Lower NFA pass, followed by the explicit epsilon-elimination boundary. */
 static void
 onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
-			  OnibiGirEdgeVector *start_edges, long *accept_out,
-			  long *root_entry_out, VALUE *nfa_diagnostics_out)
+			  OnibiGirEdgeVector *start_edges,
+			  OnibiGirStateId *accept_out,
+			  OnibiGirStateId *root_entry_out,
+			  VALUE *nfa_diagnostics_out)
 {
     onibi_gir_builder_t *builder = &owner->builder;
     OnibiTaggedNfa *nfa = &owner->nfa;
@@ -2662,8 +2662,8 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
     owner->root_fragment_active = 0;
     nfa->accept = accept;
     if (nfa_diagnostics_out) *nfa_diagnostics_out = onibi_nfa_diagnostics(nfa);
-    long gir_accept;
-    long gir_root_entry;
+    OnibiGirStateId gir_accept;
+    OnibiGirStateId gir_root_entry;
     onibi_epsilon_eliminate(nfa, builder, start_edges, root_entry, &gir_accept,
 			    &gir_root_entry);
     if (nfa_diagnostics_out)
@@ -2679,7 +2679,8 @@ onibi_compiler_pass_lower(OnibiParsed *parsed, OnibiCompilerOwner *owner,
 static void
 onibi_compiler_pass_verify_gir(const onibi_gir_builder_t *builder,
 			       const OnibiGirEdgeVector *start_edges,
-			       long accept, long root_entry, int options,
+			       OnibiGirStateId accept,
+			       OnibiGirStateId root_entry, int options,
 			       OnibiCompilerOwner *owner)
 {
     OnibiGIRView view = {&builder->states,
@@ -2883,9 +2884,10 @@ onibi_compiler_pass_analyze(OnibiNormalizeOutput normalize,
 /* Publish pass: transfer verified immutable GIR records to the result. */
 static VALUE
 onibi_compiler_pass_publish(onibi_gir_builder_t *builder,
-			    OnibiGirEdgeVector *start_edges, long accept,
-			    long root_entry, long counter_count,
-			    int parsed_options, VerifiedGIRAnalysis analysis,
+			    OnibiGirEdgeVector *start_edges,
+			    OnibiGirStateId accept, OnibiGirStateId root_entry,
+			    long counter_count, int parsed_options,
+			    VerifiedGIRAnalysis analysis,
 			    OnibiCompilerOwner *owner)
 {
     onibi_compiler_fail_if(owner, 8);
@@ -3038,8 +3040,8 @@ onibi_compiler_compile_body(VALUE opaque)
     OnibiAnalyzeOutput analyze =
 	onibi_compiler_pass_analyze(normalize, &owner->builder, owner);
     owner->builder.capture_count = analyze.capture_count;
-    long accept;
-    long root_entry;
+    OnibiGirStateId accept;
+    OnibiGirStateId root_entry;
     VALUE nfa_diagnostics = Qnil;
 
     onibi_allocation_owner_set_phase(&owner->allocations, 4);
@@ -3058,8 +3060,8 @@ onibi_compiler_compile_body(VALUE opaque)
     (void)gir;
     OnibiRSeqSubprogramEntry root_descriptor;
     memset(&root_descriptor, 0, sizeof(root_descriptor));
-    root_descriptor.entry = onibi_gir_state_id_from_long(root_entry);
-    root_descriptor.accept = onibi_gir_state_id_from_long(accept);
+    root_descriptor.entry = root_entry;
+    root_descriptor.accept = accept;
     root_descriptor.option_env =
 	(OnibiOptionEnv){(uint32_t)parsed_options, parsed_data->encoding_index};
     root_descriptor.kind = ONIBI_SUBPROGRAM_ROOT;

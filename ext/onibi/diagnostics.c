@@ -501,7 +501,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
     edges[0].to = 1;
     edges[1].from = 1;
     edges[1].to = 3;
-    starts[0].from = -1;
+    starts[0].from = ONIBI_GIR_STATE_NONE;
     starts[0].to = 0;
     subprograms[0] = (OnibiRSeqSubprogramEntry){0, 3, 0};
     OnibiGirStateVector state_vector = {states, 4, 4, NULL};
@@ -534,6 +534,10 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 
     if (scenario == rb_intern("state_ids"))
 	states[1].id = 2;
+    else if (scenario == rb_intern("state_id_reserved"))
+	states[1].id = ONIBI_GIR_STATE_NONE;
+    else if (scenario == rb_intern("state_id_exhaustion"))
+	view.next_id = ONIBI_GIR_STATE_NONE;
     else if (scenario == rb_intern("state_opcode_payload"))
 	states[0].literal_length = 0;
     else if (scenario == rb_intern("edge_state_range"))
@@ -612,7 +616,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_CAPTURE, 0, 0);
 	actions[1] =
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
-	starts[1].from = -1;
+	starts[1].from = ONIBI_GIR_STATE_NONE;
 	starts[1].to = 2;
 	starts[1].actions = (OnibiGActionVector){actions + 1, 1, 1, NULL};
 	start_vector.count = 2;
@@ -625,7 +629,7 @@ onibi_gir_verifier_diagnostics(VALUE self, VALUE scenario_value)
 	    onibi_nullable_diagnostic_action(ONIBI_GA_NULL_ENTER, 0, 0);
 	starts[0].actions = (OnibiGActionVector){actions, 1, 8, NULL};
 	starts[1].to = 1;
-	starts[1].from = -1;
+	starts[1].from = ONIBI_GIR_STATE_NONE;
 	starts[1].actions = (OnibiGActionVector){NULL, 0, 0, NULL};
 	start_vector.count = 2;
 	start_vector.capacity = 2;

@@ -7,6 +7,11 @@
 /* Private GIR contract.  The compiler publishes typed states, edges,
  * actions, classes, and subprogram descriptors to RSeq lowering. */
 
+/* GIR builder IDs are separate from NFA and serialized RSeq IDs.  The top
+ * value is reserved for a missing edge source and is never a state ID. */
+typedef uint32_t OnibiGirStateId;
+#define ONIBI_GIR_STATE_NONE UINT32_MAX
+
 #define ONIBI_SUBPROGRAM_ATOMIC UINT32_C(1)
 #define ONIBI_SUBPROGRAM_ABSENT UINT32_C(2)
 

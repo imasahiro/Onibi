@@ -51,12 +51,13 @@
 | TASK-51A | P-04                                           | TASK-22, TASK-50                                                                                   | luna/max              | accepted: character-aware search candidate iteration                       | `ext/onibi/match.c`; focused tests                                                | commits `814835c1`, `221a7935`; root Ruby 4.0.6 build; 100/24174 pass; width steps, byte modes, order, and end candidate verified                                                                    |
 | TASK-51B | P-05                                           | TASK-51A                                                                                           | luna/high             | accepted: grouped-edge prefix analysis                                | compiler and RSeq lowering; focused tests                                        | commit `842861b3`; root 47/493 pass; grouped edge ranges and fanout-independent prefix work verified                                                                                                        |
 | TASK-52  | P-10                                           | none                                                                                               | luna/high            | accepted: one-pass parser delimiter indexing                                       | `ext/onibi/ast.c`; `parser.c`; `token.c`; focused test                                  | commit `2591a518`; root Ruby 4.0.6 build; 17/120 focused pass; four broader baseline failures match clean `main`                                                                                                                                                   |
-| TASK-53  | C-01, C-02, C-03, C-04, C-05, C-06, C-07, C-08 | TASK-25                                                                                            | split                | partial: TASK-53A/B/C1 accepted; GIR IDs and C-08 remain                  | draft PR #421; module contracts, tokenizer, and fixed-width NFA IDs accepted          | next: TASK-53C2 fixed-width GIR builder IDs after usage reset                                                                                     |
+| TASK-53  | C-01, C-02, C-03, C-04, C-05, C-06, C-07, C-08 | TASK-25                                                                                            | split                | partial: TASK-53A/B/C1/C2 accepted; C-08 remains                  | draft PR #421; module contracts, tokenizer, and fixed-width NFA IDs accepted          | next: bounded C-08 audit of comments against current implementation                                                                                     |
 | TASK-53A | C-01, C-02                                     | TASK-25, TASK-54                                                                                   | luna/high            | accepted: explicit private C module contracts                            | commit `b2a087b0`; seven private headers, module includes, structural tests         | root Ruby 4.0.6 build; contract 4/112, safety 2/314, GIR 53/177, physical 18/91, semantic 19/114, dynamic 10/19008 pass; dependency 34/418 has one known GC error |
 | TASK-53B1 | C-06                                          | TASK-52, TASK-53A                                                                                  | luna/high            | accepted: grouped token and inline-option recognition                    | commits `995603e1`, `4781e92b`; `ext/onibi/token.c`                                | root Ruby 4.0.6 build; 76/449 focused pass; syntax contract 3/50 pass; inline 20/33 and lookahead 60/141 match source baseline failures             |
 | TASK-53B2 | C-06                                          | TASK-53B1                                                                                          | luna/high            | accepted: complete escape token recognition                              | commit `91ba5f23`; `ext/onibi/token.c`                                              | root: 33/19112 focused pass; Unicode 7/19 and lexer boundary 6/85 match exact source baseline failures                                             |
 | TASK-53B3 | C-06                                          | TASK-53B2                                                                                          | luna/high            | accepted: character-class structural recognition                        | commit `7cbc851e`; `ext/onibi/token.c`                                              | root: class 2/7, delimiter 4/19, syntax contract 3/50 pass; syntax 6/16, differential 3/28, Unicode 7/19 match exact source baseline failures       |
 | TASK-53C1 | C-07                                          | TASK-53A                                                                                           | luna/max             | accepted: fixed-width NFA state identifiers                              | commit `c6e822bf`; NFA contract, compiler boundary conversions, focused tests        | root Ruby 4.0.6 build; 111/19662 focused pass; reserved sentinel and checked GIR conversions verified                                             |
+| TASK-53C2 | C-07 | TASK-53A, TASK-53C1 | luna/max | accepted: fixed-width GIR builder IDs | GIR, NFA, compiler, RSeq, diagnostics, focused ID tests | root deep review; MRI 4.0.6 warning build; quality 106/640 and semantic 40/19259 pass; exact commands below |
 | TASK-54  | C-03, C-04, C-05                               | none                                                                                               | luna/high            | accepted: explicit vector safety invariants                                        | `ext/onibi/onibi_vector.h`; focused tests                                        | commit `3da080a3`; root Ruby 4.0.6 build; 126/24066 pass; standalone header compile, alias append, and invalid insert verified                                                                                                                                                   |
 | TASK-55  | RC-01, M-04                                    | TASK-42, TASK-53                                                                                   | luna/high            | pending: Ractor/shareability audit                                       | —                                                                               | —                                                                                                                                                   |
 
@@ -77,3 +78,35 @@ Pending Sol routes now use Astra at the same effort, as requested by the user; L
 TASK-31 split: user requested smaller tasks; bounded semantic tasks return to Sol/high; TASK-31A uses Sol/high because Luna is not listed by the collaboration tool.
 TASK-32 review split resolved: the accepted key uses future-observable captures. Absence uses semantic nullability and keeps its physical subprogram.
 TASK-42A integration: PR #412 is open. Ruby and Cross-runtime CI cannot start because repository Actions policy blocks required external actions. Do not merge; allow the required actions and rerun CI.
+
+## TASK-53C2 acceptance evidence
+
+Root accepted this unit on 2026-09-19 after source review and final checks.
+Source: `ab0449e2` plus TASK-53C2 changes on `codex/task-53c2-gir-ids`.
+Workspace: `/Users/masa/.codex/worktrees/b71a/Onibi`.
+
+GIR state identities use `OnibiGirStateId` (`uint32_t`).
+`UINT32_MAX` is reserved. Allocation checks prevent ID wrap.
+NFA/GIR conversions check reserved values and state bounds where required.
+RSeq lowering preserves the physical layout and converts verified GIR IDs explicitly.
+Start-edge diagnostics retain `-1`. Executors and fallback behavior are unchanged.
+
+Exact root commands:
+
+```sh
+export PATH=/opt/homebrew/opt/ruby/bin:$PATH
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+ruby -v
+(cd ext/onibi && ruby extconf.rb && make)
+ruby -Ilib -Itest -e 'ARGV.each { |f| require_relative f }' test/features/quality/gir_state_id_contract_test.rb test/features/quality/nfa_state_id_contract_test.rb test/features/quality/module_interface_contract_test.rb test/features/quality/gir_verifier_test.rb test/features/quality/rseq_physical_verifier_test.rb test/features/quality/tagged_nfa_lowering_test.rb test/features/quality/rseq_subprogram_representation_test.rb
+ruby -Ilib -Itest -e 'ARGV.each { |f| require_relative f }' test/features/engine/semantic_state_test.rb test/features/compatibility/dynamic_differential_test.rb test/features/compatibility/tagged_nullable_utf8_regression_test.rb
+git diff --check
+(cd ext/onibi && make distclean)
+```
+
+All commands exited 0. Ruby reported MRI 4.0.6.
+The build enabled `-Wall` and `-Wextra` and reported two existing warnings:
+`onibi_c_ast_has_capture` and `onibi_rseq_mark_unsupported`.
+Quality checks passed: 106 runs, 640 assertions, no failures, errors, or skips.
+Semantic checks passed: 40 runs, 19,259 assertions, no failures, errors, or skips.
+Cleanup removed the generated extension.
