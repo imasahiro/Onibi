@@ -118,3 +118,8 @@ Publication and remote merge still require explicit authorization.
 
 TASK-55 next action: audit the current object graph and Ractor behavior as TASK-55A (Luna/High).
 This audit can identify independent defects before TASK-42B. Final TASK-55 acceptance still depends on TASK-42.
+
+TASK-55A review 1: rejected audit evidence; keep source findings and correct the probe harness.
+Worker: `01a0b9f3-81e4-7b80-a864-b6ac8069cdd8`, Luna/High, worktree `/Users/masa/.codex/worktrees/d64e/Onibi`.
+Required corrections: reject timeouts and unexpected errors, isolate each probe in a bounded process, test scan separately, and distinguish retained values from getter returns.
+TASK-55 remains pending. No runtime changes or shareability enablement are authorized by this audit.
