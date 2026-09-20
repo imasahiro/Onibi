@@ -191,3 +191,11 @@ Keep byte slicing and snapshot ownership. Correct per-form coercion and add real
 TASK-42B3 review 2: narrow correction remains for explicit nil-length Range dispatch.
 MRI `m[1..2, nil]` returns the range slice; current scalar-only nil branch raises TypeError.
 After reassessment, preserve all corrected numeric work and repair only this dispatch path with differential cases. Same Luna/High worker.
+
+TASK-42B3 ACCEPT: numeric capture and snapshot string access at worker commit `6e4da9df`.
+Root verified relay identity, final source, explicit nil-length Range dispatch, and exact check logs.
+MRI differential tests passed: 5 runs, 81 assertions. Regression checks passed: 23 runs, 242 assertions.
+Build, RuboCop, C formatting, diff check, and build cleanup passed. Only the two known compiler warnings remain.
+Exact commands are in docs/task-42b3-evidence.md; logs remain in `/Users/masa/.codex/worktrees/6391/Onibi/.task-42b3-logs/`.
+Getters use copied registers and frozen subject bytes without MRI execution. Public routing remains unchanged.
+Next: TASK-42B4, Luna/High, named capture lookup and metadata return isolation only.
