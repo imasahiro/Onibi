@@ -183,3 +183,7 @@ At the review boundary the five-hour window was 88% used, near the 90% stop thre
 Next after reset: TASK-42B3, Luna/High, numeric capture/string access only.
 Scope: match_data.c, private header, method registration, focused MRI differential tests; implement numeric [], captures, to_a, size/length, to_s, string, pre_match/post_match, and regexp without public Regexp#match routing.
 Use private payload creation for differential fixtures. Keep named lookup, character offsets, value/copy/deconstruction, and routing as separate later units.
+
+TASK-42B3 review 1: REJECT numeric semantics; same Luna/High worker `01a0bd16-430d-74c0-b74a-a947d5af44a4`.
+MRI evidence: single index -num_regs returns nil; +/-2**40 raises int-conversion RangeError; two-argument String index raises TypeError.
+Keep byte slicing and snapshot ownership. Correct per-form coercion and add real runtime MRI differential coverage.
