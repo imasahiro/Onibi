@@ -257,3 +257,13 @@ The initial pre-build distclean had no Makefile; the post-build cleanup passed. 
 
 Next: TASK-42B6B, Luna/High, dup/clone and deconstruction/deconstruct_keys only.
 Keep match, values_at, public routing, and MRI integration separate.
+
+TASK-42B6B ACCEPT at worker commit `078539ef`: native dup, clone, deconstruct, and deconstruct_keys.
+Root verified callback identity, independent register/cache ownership, freeze and singleton behavior, fresh deconstruction values, and key validation.
+Focused checks passed: 4 runs, 19 assertions. Required regression group passed: 50 runs, 665 assertions.
+Command Line Tools build, RuboCop, C formatting, diff check, and cleanup passed with the two known warnings.
+The default Xcode wrapper remains blocked by its local license state; the documented Command Line Tools build passed.
+Evidence is in docs/task-42b6b-evidence.md. Public match routing remains separate.
+
+Next: TASK-42C, Luna/Max, native Regexp#match routing and backreference integration boundary.
+Before dispatch, split routing and integration if the source review shows independent invariants.
