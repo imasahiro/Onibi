@@ -57,8 +57,8 @@ class BackreferenceBoundaryAuditTest < Minitest::Test
     %i[sub gsub].each do |method|
       assert_raises(TypeError) { "a".public_send(method, regexp, "x") }
     end
-    assert_raises(NoMethodError) { regexp =~ "a" }
-    assert_raises(NoMethodError) { "a" =~ regexp }
+    assert_equal 0, regexp =~ "a"
+    assert_equal 0, "a" =~ regexp
     assert_raises(TypeError) { "a"[regexp] }
   end
 

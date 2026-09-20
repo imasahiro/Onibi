@@ -9,6 +9,7 @@
 static VALUE onibi_alloc(VALUE klass);
 static VALUE onibi_initialize(int argc, VALUE *argv, VALUE self);
 static VALUE onibi_match(int argc, VALUE *argv, VALUE self);
+static VALUE onibi_match_operator(VALUE self, VALUE input);
 static VALUE onibi_match_p(int argc, VALUE *argv, VALUE self);
 static VALUE onibi_source(VALUE self);
 static VALUE onibi_options(VALUE self);

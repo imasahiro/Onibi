@@ -193,6 +193,7 @@ Init_onibi(void)
     rb_define_method(cRegexp, "initialize", onibi_initialize, -1);
     rb_define_method(cRegexp, "match", onibi_match, -1);
     rb_define_method(cRegexp, "===", onibi_case_equal, 1);
+    rb_define_method(cRegexp, "=~", onibi_match_operator, 1);
     rb_define_method(cRegexp, "~", onibi_tilde, 0);
     rb_define_method(cRegexp, "match?", onibi_match_p, -1);
     rb_define_method(cRegexp, "source", onibi_source, 0);

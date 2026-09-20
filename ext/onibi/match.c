@@ -424,6 +424,30 @@ onibi_last_match(int argc, VALUE *argv, VALUE klass)
     return NIL_P(match) ? Qnil : rb_funcallv(match, id_aref, 1, argv);
 }
 static VALUE
+onibi_match_operator(VALUE self, VALUE input)
+{
+    if (NIL_P(input)) {
+	rb_backref_set(Qnil);
+	return Qnil;
+    }
+    if (SYMBOL_P(input)) input = rb_sym2str(input);
+    StringValue(input);
+    OnibiRawMatch raw_match = {.begin_byte = -1, .end_byte = -1};
+    OnibiExecStatus status = onibi_vm_search(self, input, 0, &raw_match);
+    if (status == ONIBI_EXEC_STATUS_NO_MATCH) {
+	rb_backref_set(Qnil);
+	return Qnil;
+    }
+    if (status == ONIBI_EXEC_STATUS_INTERNAL_ERROR)
+	rb_raise(eRegexpError, "Onibi execution failed");
+    if (status == ONIBI_EXEC_STATUS_FALLBACK) {
+	onibi_regexp_t *obj;
+	TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
+	return rb_reg_match(obj->regexp, input);
+    }
+    return LONG2NUM(onibi_ruby_character_position(input, raw_match.begin_byte));
+}
+static VALUE
 onibi_tilde(VALUE self)
 {
     VALUE input = rb_gv_get("$_");
