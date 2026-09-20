@@ -29,6 +29,9 @@ static VALUE onibi_matchdata_string(VALUE self);
 static VALUE onibi_matchdata_pre_match(VALUE self);
 static VALUE onibi_matchdata_post_match(VALUE self);
 static VALUE onibi_matchdata_regexp(VALUE self);
+static VALUE onibi_matchdata_bytebegin(VALUE self, VALUE selector);
+static VALUE onibi_matchdata_byteend(VALUE self, VALUE selector);
+static VALUE onibi_matchdata_byteoffset(VALUE self, VALUE selector);
 static VALUE onibi_matchdata_payload_diagnostics(int argc, VALUE *argv,
 						 VALUE self);
 static VALUE onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self);

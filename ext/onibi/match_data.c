@@ -602,3 +602,56 @@ onibi_matchdata_regexp(VALUE self)
 {
     return onibi_matchdata_get(self)->regexp;
 }
+
+static long
+onibi_matchdata_byte_index(OnibiMatchData *data, VALUE selector)
+{
+    if (RB_TYPE_P(selector, T_STRING) || SYMBOL_P(selector))
+	return onibi_matchdata_named_capture_index(data, selector);
+
+    long index = rb_num2int(selector);
+
+    if (index < 0 || (uint32_t)index >= data->num_regs) {
+	rb_raise(rb_eIndexError, "index %ld out of matches", index);
+    }
+    return index;
+}
+
+static int
+onibi_matchdata_byte_range(OnibiMatchData *data, VALUE selector,
+			   OnibiBytePos *begin, OnibiBytePos *end)
+{
+    long index = onibi_matchdata_byte_index(data, selector);
+    if (index < 0) return 0;
+    *begin = data->beg[index];
+    *end = data->end[index];
+    return *begin >= 0 && *end >= 0;
+}
+
+static VALUE
+onibi_matchdata_bytebegin(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    OnibiBytePos begin, end;
+    if (!onibi_matchdata_byte_range(data, selector, &begin, &end)) return Qnil;
+    return LONG2NUM(begin);
+}
+
+static VALUE
+onibi_matchdata_byteend(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    OnibiBytePos begin, end;
+    if (!onibi_matchdata_byte_range(data, selector, &begin, &end)) return Qnil;
+    return LONG2NUM(end);
+}
+
+static VALUE
+onibi_matchdata_byteoffset(VALUE self, VALUE selector)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    OnibiBytePos begin, end;
+    if (!onibi_matchdata_byte_range(data, selector, &begin, &end))
+	return rb_ary_new_from_args(2, Qnil, Qnil);
+    return rb_ary_new_from_args(2, LONG2NUM(begin), LONG2NUM(end));
+}
