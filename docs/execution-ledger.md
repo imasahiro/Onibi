@@ -244,3 +244,6 @@ No public match routing or fallback behavior changed.
 
 Next: TASK-42B6, Luna/High, remaining MatchData values and selector APIs, split by invariant if needed.
 Keep match/values_at, copy/value/deconstruction, inspect, public routing, and TASK-55 integration separate.
+
+TASK-42B5B review boundary: value and copy work must split before dispatch.
+Next TASK-42B6A covers inspect, equality, eql?, and hash only. TASK-42B6B will cover dup/clone and deconstruction after A is accepted.
