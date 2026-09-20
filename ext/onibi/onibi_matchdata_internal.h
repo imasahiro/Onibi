@@ -36,6 +36,10 @@ static VALUE onibi_matchdata_begin(VALUE self, VALUE selector);
 static VALUE onibi_matchdata_end(VALUE self, VALUE selector);
 static VALUE onibi_matchdata_offset(VALUE self, VALUE selector);
 static VALUE onibi_matchdata_match_length(VALUE self, VALUE selector);
+static VALUE onibi_matchdata_inspect(VALUE self);
+static VALUE onibi_matchdata_equal(VALUE self, VALUE other);
+static VALUE onibi_matchdata_eql(VALUE self, VALUE other);
+static VALUE onibi_matchdata_hash(VALUE self);
 static VALUE onibi_matchdata_payload_diagnostics(int argc, VALUE *argv,
 						 VALUE self);
 static VALUE onibi_matchdata_payload_new(int argc, VALUE *argv, VALUE self);

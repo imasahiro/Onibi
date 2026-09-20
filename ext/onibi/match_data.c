@@ -779,3 +779,101 @@ onibi_matchdata_match_length(VALUE self, VALUE selector)
     if (!onibi_matchdata_char_range(data, selector, &begin, &end)) return Qnil;
     return LONG2NUM(end - begin);
 }
+
+static void
+onibi_matchdata_inspect_append(VALUE target, VALUE value)
+{
+    VALUE inspected = rb_inspect(value);
+    rb_str_buf_cat(target, RSTRING_PTR(inspected), RSTRING_LEN(inspected));
+}
+
+static VALUE
+onibi_matchdata_name_for_index(OnibiMatchData *data, uint32_t index)
+{
+    for (long i = 0; i < RARRAY_LEN(data->names); i++) {
+	VALUE name = rb_ary_entry(data->names, i);
+	VALUE indices = rb_hash_lookup(data->named_index, name);
+	if (NIL_P(indices)) continue;
+	for (long j = 0; j < RARRAY_LEN(indices); j++) {
+	    if ((uint32_t)NUM2UINT(rb_ary_entry(indices, j)) == index)
+		return name;
+	}
+    }
+    return Qnil;
+}
+
+static VALUE
+onibi_matchdata_inspect(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    VALUE full = onibi_matchdata_capture(self, 0);
+    VALUE full_inspected = rb_inspect(full);
+    VALUE result = rb_str_buf_new(RSTRING_LEN(full_inspected) + 32);
+    rb_enc_associate(result, rb_enc_get(full_inspected));
+    rb_str_buf_cat2(result, "#<MatchData ");
+    rb_str_buf_cat(result, RSTRING_PTR(full_inspected),
+		   RSTRING_LEN(full_inspected));
+
+    for (uint32_t i = 1; i < data->num_regs; i++) {
+	VALUE label = onibi_matchdata_name_for_index(data, i);
+	rb_str_buf_cat2(result, " ");
+	if (NIL_P(label)) {
+	    VALUE index = rb_inspect(UINT2NUM(i));
+	    rb_str_buf_cat(result, RSTRING_PTR(index), RSTRING_LEN(index));
+	}
+	else {
+	    rb_str_buf_cat(result, RSTRING_PTR(label), RSTRING_LEN(label));
+	}
+	rb_str_buf_cat2(result, ":");
+	onibi_matchdata_inspect_append(result,
+				       onibi_matchdata_capture(self, i));
+    }
+
+    rb_str_buf_cat2(result, ">");
+    return result;
+}
+
+static int
+onibi_matchdata_values_equal(const OnibiMatchData *left,
+			     const OnibiMatchData *right)
+{
+    if (left->num_regs != right->num_regs) return 0;
+    if (!RTEST(rb_equal(left->regexp, right->regexp))) return 0;
+    if (!RTEST(rb_equal(left->subject_snapshot, right->subject_snapshot)))
+	return 0;
+    for (uint32_t i = 0; i < left->num_regs; i++) {
+	if (left->beg[i] != right->beg[i] || left->end[i] != right->end[i])
+	    return 0;
+    }
+    return 1;
+}
+
+static VALUE
+onibi_matchdata_equal(VALUE self, VALUE other)
+{
+    if (!rb_obj_is_kind_of(other, cMatchData)) return Qfalse;
+    OnibiMatchData *left = onibi_matchdata_get(self);
+    OnibiMatchData *right = onibi_matchdata_get(other);
+    return onibi_matchdata_values_equal(left, right) ? Qtrue : Qfalse;
+}
+
+static VALUE
+onibi_matchdata_eql(VALUE self, VALUE other)
+{
+    return onibi_matchdata_equal(self, other);
+}
+
+static VALUE
+onibi_matchdata_hash(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    st_index_t hash = rb_hash_start(0);
+    hash = rb_hash_uint(hash, (st_data_t)NUM2ULL(rb_hash(data->regexp)));
+    hash = rb_hash_uint(hash, (st_data_t)rb_str_hash(data->subject_snapshot));
+    hash = rb_hash_uint32(hash, data->num_regs);
+    for (uint32_t i = 0; i < data->num_regs; i++) {
+	hash = rb_hash_uint(hash, (st_data_t)data->beg[i]);
+	hash = rb_hash_uint(hash, (st_data_t)data->end[i]);
+    }
+    return ST2FIX(rb_hash_end(hash));
+}
