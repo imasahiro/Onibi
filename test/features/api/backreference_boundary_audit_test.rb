@@ -35,14 +35,14 @@ class BackreferenceBoundaryAuditTest < Minitest::Test
     regexp.match("a") { |value| assert_instance_of ::MatchData, value }
   end
 
-  def test_case_equal_and_tilde_still_call_mri_match
+  def test_case_equal_uses_native_status_but_tilde_still_calls_mri_match
     regexp = Onibi::Regexp.new("a")
     original = ::Regexp.instance_method(:match)
     ::Regexp.define_method(:match) { |*| raise "MRI match called" }
     $_ = "a"
     assert_instance_of Onibi::MatchData, regexp.match("a")
     assert regexp.match?("a")
-    assert_equal "MRI match called", assert_raises(RuntimeError) { regexp === "a" }.message
+    assert_equal true, regexp === "a"
     assert_equal "MRI match called", assert_raises(RuntimeError) { ~regexp }.message
   ensure
     ::Regexp.define_method(:match, original) if original

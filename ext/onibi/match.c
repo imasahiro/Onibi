@@ -410,9 +410,6 @@ onibi_case_equal(VALUE self, VALUE other)
 	return RTEST(rb_funcall(obj->regexp, id_match, 1, other)) ? Qtrue
 								  : Qfalse;
     }
-    onibi_regexp_t *obj;
-    TypedData_Get_Struct(self, onibi_regexp_t, &onibi_type, obj);
-    rb_funcall(obj->regexp, id_match, 1, other);
     return Qtrue;
 }
 static VALUE

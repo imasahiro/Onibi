@@ -72,11 +72,14 @@ class MatchApiTest < Minitest::Test
     $_ = nil
   end
 
-  def test_case_equality_updates_last_match_state
+  def test_case_equality_preserves_prior_state_on_native_success_and_clears_on_miss
     regexp = Onibi::Regexp.new("a")
 
+    /prior/.match("prior")
+    before = $~
     assert_equal true, regexp.public_send(:===, "ba")
-    assert_equal ["a"], Onibi::Regexp.last_match.to_a
+    assert_same before, $~
+    assert_same before, Onibi::Regexp.last_match
     assert_equal false, regexp.public_send(:===, "x")
     assert_nil Onibi::Regexp.last_match
   end
