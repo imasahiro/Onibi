@@ -217,3 +217,16 @@ Build, Ruby/C formatting, diff check, and cleanup passed with only the two basel
 Exact commands are in docs/task-42b4-evidence.md; retain worker `.task-42b4-logs/` in worktree `5b14`.
 Public routing remains incomplete. Next bounded unit: TASK-42B5A, Luna/High, byte offsets only.
 Character conversion, remaining accessors/value methods, and routing stay separate.
+
+TASK-42B5A ACCEPT at worker commit `457053fb`: bytebegin, byteend, and byteoffset.
+Root verified relay identity, source/workspace, numeric coercion and bounds, named participation lookup, and fresh offset arrays.
+Required differential checks passed: 5 runs, 139 assertions. Regression group passed: 35 runs, 429 assertions.
+Build, RuboCop, diff check, and cleanup passed with the two known warnings. Root C formatting check also passed.
+Exact commands are in docs/task-42b5a-evidence.md; keep logs in `/Users/masa/.codex/worktrees/7c0c/Onibi/.task-42b5a-logs/`.
+No character conversion, fallback change, or public match routing occurred.
+
+At this review, the five-hour window was 86% used. Defer the next larger semantic unit until reset.
+Next action: dispatch TASK-42B5B, Luna/High, lazy character offsets and begin/end/offset/match_length from the frozen subject and retained byte ranges.
+Define encoding-aware conversion, cache ownership/failure cleanup, and MRI differential cases before dispatch.
+Keep remaining match/values_at, copy/value/deconstruction, public routing, and final TASK-55 work separate.
+TASK-42B and TASK-55 remain incomplete. No worker is active and no publication is authorized.
