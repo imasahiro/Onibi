@@ -346,14 +346,132 @@ onibi_matchdata_capture_array(VALUE self, long start, long length)
 static VALUE
 onibi_matchdata_numeric_capture(VALUE self, VALUE index, long count)
 {
-    if (RB_TYPE_P(index, T_STRING) || RB_TYPE_P(index, T_SYMBOL))
-	rb_raise(rb_eIndexError, "undefined group name reference");
     long selected = rb_num2int(index);
     if (selected < 0) {
 	selected += count;
 	if (selected <= 0) return Qnil;
     }
     return onibi_matchdata_capture(self, selected);
+}
+
+static VALUE
+onibi_matchdata_name_string(VALUE selector)
+{
+    if (SYMBOL_P(selector)) return rb_sym2str(selector);
+    if (RB_TYPE_P(selector, T_STRING)) return selector;
+    return Qundef;
+}
+
+typedef struct {
+    const char *bytes;
+    long length;
+    rb_encoding *encoding;
+} OnibiMatchDataNameFormat;
+
+static VALUE
+onibi_matchdata_format_name_body(VALUE opaque)
+{
+    OnibiMatchDataNameFormat *format =
+	(OnibiMatchDataNameFormat *)(uintptr_t)opaque;
+    VALUE result = rb_str_buf_new(format->length);
+    rb_enc_associate(result, format->encoding);
+    long end = format->length - 1;
+    for (long i = 1; i < end;) {
+	if (format->bytes[i] == '\\' && i + 1 < end) {
+	    if (format->bytes[i + 1] == '\\' || format->bytes[i + 1] == '"') {
+		rb_str_buf_cat(result, format->bytes + i + 1, 1);
+		i += 2;
+		continue;
+	    }
+	    if (format->bytes[i + 1] == '#' && i + 2 < end &&
+		(format->bytes[i + 2] == '{' || format->bytes[i + 2] == '@' ||
+		 format->bytes[i + 2] == '$')) {
+		rb_str_buf_cat(result, format->bytes + i + 1, 1);
+		i += 2;
+		continue;
+	    }
+	    if (i + 5 < end && format->bytes[i + 1] == 'u' &&
+		format->bytes[i + 2] == '0' && format->bytes[i + 3] == '0' &&
+		format->bytes[i + 4] == '0' && format->bytes[i + 5] == '0') {
+		rb_str_buf_cat(result, "\\0", 2);
+		i += 6;
+		continue;
+	    }
+	    if (i + 5 < end && format->bytes[i + 1] == 'u' &&
+		format->bytes[i + 2] == '0' && format->bytes[i + 3] == '0' &&
+		format->bytes[i + 4] == '7' &&
+		(format->bytes[i + 5] == 'F' || format->bytes[i + 5] == 'f')) {
+		rb_str_buf_cat(result, "\\c?", 3);
+		i += 6;
+		continue;
+	    }
+	    if (i + 3 < end && format->bytes[i + 1] == 'x' &&
+		format->bytes[i + 2] == '0' && format->bytes[i + 3] == '0') {
+		rb_str_buf_cat(result, "\\0", 2);
+		i += 4;
+		continue;
+	    }
+	    if (i + 3 < end && format->bytes[i + 1] == 'x' &&
+		format->bytes[i + 2] == '7' &&
+		(format->bytes[i + 3] == 'F' || format->bytes[i + 3] == 'f')) {
+		rb_str_buf_cat(result, "\\c?", 3);
+		i += 4;
+		continue;
+	    }
+	}
+	rb_str_buf_cat(result, format->bytes + i, 1);
+	i++;
+    }
+    return result;
+}
+
+static VALUE
+onibi_matchdata_format_name_cleanup(VALUE opaque)
+{
+    ruby_xfree((void *)(uintptr_t)opaque);
+    return Qnil;
+}
+
+static VALUE
+onibi_matchdata_format_name(VALUE name)
+{
+    VALUE inspected = rb_str_inspect(name);
+    long length = RSTRING_LEN(inspected);
+    char *bytes = ruby_xmalloc((size_t)length);
+    memcpy(bytes, RSTRING_PTR(inspected), (size_t)length);
+    OnibiMatchDataNameFormat format = {bytes, length, rb_enc_get(inspected)};
+    VALUE result =
+	rb_ensure(onibi_matchdata_format_name_body, (VALUE)(uintptr_t)&format,
+		  onibi_matchdata_format_name_cleanup, (VALUE)(uintptr_t)bytes);
+    return result;
+}
+
+NORETURN(static void onibi_matchdata_raise_unknown_name(VALUE name));
+static void
+onibi_matchdata_raise_unknown_name(VALUE name)
+{
+    VALUE name_text = onibi_matchdata_format_name(name);
+    VALUE message = rb_str_plus(
+	rb_str_new_cstr("undefined group name reference: "), name_text);
+    rb_exc_raise(rb_exc_new_str(rb_eIndexError, message));
+}
+
+static long
+onibi_matchdata_named_capture_index(OnibiMatchData *data, VALUE selector)
+{
+    VALUE name = onibi_matchdata_name_string(selector);
+    if (name == Qundef) return -1;
+    VALUE indices = rb_hash_lookup(data->named_index, name);
+    if (NIL_P(indices)) onibi_matchdata_raise_unknown_name(name);
+    for (long i = RARRAY_LEN(indices) - 1; i >= 0; i--) {
+	VALUE index_value = rb_ary_entry(indices, i);
+	long index = NUM2LONG(index_value);
+	if (index < 0 || (uint64_t)index >= data->num_regs)
+	    rb_raise(rb_eRangeError,
+		     "Onibi capture metadata index is out of range");
+	if (data->beg[index] >= 0 && data->end[index] >= 0) return index;
+    }
+    return -1;
 }
 
 static VALUE
@@ -385,6 +503,10 @@ onibi_matchdata_aref(int argc, VALUE *argv, VALUE self)
 	    rb_raise(rb_eTypeError, "invalid MatchData index");
 	return onibi_matchdata_capture_array(self, start, length);
     }
+    if (RB_TYPE_P(index, T_STRING) || SYMBOL_P(index)) {
+	long selected = onibi_matchdata_named_capture_index(data, index);
+	return selected < 0 ? Qnil : onibi_matchdata_capture(self, selected);
+    }
     return onibi_matchdata_numeric_capture(self, index, count);
 }
 
@@ -394,6 +516,44 @@ onibi_matchdata_captures(VALUE self)
     OnibiMatchData *data = onibi_matchdata_get(self);
     if (data->num_regs <= 1) return rb_ary_new();
     return onibi_matchdata_capture_array(self, 1, (long)data->num_regs - 1);
+}
+
+static VALUE
+onibi_matchdata_names(VALUE self)
+{
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    VALUE result = rb_ary_new_capa(RARRAY_LEN(data->names));
+    for (long i = 0; i < RARRAY_LEN(data->names); i++)
+	rb_ary_push(result, rb_str_dup(rb_ary_entry(data->names, i)));
+    return result;
+}
+
+static VALUE
+onibi_matchdata_named_captures(int argc, VALUE *argv, VALUE self)
+{
+    VALUE keyword_values[1] = {Qfalse};
+    VALUE keywords = Qnil;
+    rb_scan_args(argc, argv, "0:", &keywords);
+    if (!NIL_P(keywords)) {
+	static ID symbolize_names_id;
+	if (symbolize_names_id == 0)
+	    symbolize_names_id = rb_intern_const("symbolize_names");
+	const ID ids[] = {symbolize_names_id};
+	rb_get_kwargs(keywords, ids, 0, 1, keyword_values);
+    }
+
+    OnibiMatchData *data = onibi_matchdata_get(self);
+    VALUE result = rb_hash_new();
+    for (long i = 0; i < RARRAY_LEN(data->names); i++) {
+	VALUE name = rb_ary_entry(data->names, i);
+	long index = onibi_matchdata_named_capture_index(data, name);
+	VALUE key =
+	    RTEST(keyword_values[0]) ? rb_str_intern(name) : rb_str_dup(name);
+	VALUE value = index < 0 ? Qnil : onibi_matchdata_capture(self, index);
+	if (!RTEST(keyword_values[0])) rb_obj_freeze(key);
+	rb_hash_aset(result, key, value);
+    }
+    return result;
 }
 
 static VALUE

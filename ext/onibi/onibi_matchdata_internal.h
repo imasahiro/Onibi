@@ -20,6 +20,8 @@ static VALUE onibi_matchdata_new(VALUE regexp, VALUE subject,
 static VALUE onibi_matchdata_summary(VALUE self);
 static VALUE onibi_matchdata_aref(int argc, VALUE *argv, VALUE self);
 static VALUE onibi_matchdata_captures(VALUE self);
+static VALUE onibi_matchdata_names(VALUE self);
+static VALUE onibi_matchdata_named_captures(int argc, VALUE *argv, VALUE self);
 static VALUE onibi_matchdata_to_a(VALUE self);
 static VALUE onibi_matchdata_size(VALUE self);
 static VALUE onibi_matchdata_to_s(VALUE self);

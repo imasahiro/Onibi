@@ -147,6 +147,9 @@ Init_onibi(void)
 			     onibi_matchdata_summary, 0);
     rb_define_method(cMatchData, "[]", onibi_matchdata_aref, -1);
     rb_define_method(cMatchData, "captures", onibi_matchdata_captures, 0);
+    rb_define_method(cMatchData, "names", onibi_matchdata_names, 0);
+    rb_define_method(cMatchData, "named_captures",
+		     onibi_matchdata_named_captures, -1);
     rb_define_method(cMatchData, "to_a", onibi_matchdata_to_a, 0);
     rb_define_method(cMatchData, "size", onibi_matchdata_size, 0);
     rb_define_method(cMatchData, "length", onibi_matchdata_size, 0);
